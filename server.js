@@ -21,6 +21,152 @@ async function ghl(method,path,body){
 app.get('/',(req,res)=>res.json({status:'VAL Proxy OK',time:new Date().toISOString()}));
 
 // ════════════════════════════════════════════════════════
+// GOOGLE OAUTH
+// ════════════════════════════════════════════════════════
+
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const REDIRECT_URI         = 'https://jessaval-production.up.railway.app/auth/callback';
+let googleTokens = {}; // stored in memory — persists as long as server runs
+
+// Step 1 — redirect user to Google consent screen
+app.get('/auth/google', (req, res) => {
+  const scopes = [
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/gmail.readonly'
+  ].join(' ');
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent`;
+  res.redirect(url);
+});
+
+// Step 2 — Google redirects back with code, exchange for tokens
+app.get('/auth/callback', async (req, res) => {
+  const {code} = req.query;
+  if(!code) return res.status(400).send('No code received');
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        code, client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        grant_type: 'authorization_code'
+      })
+    });
+    googleTokens = await r.json();
+    console.log('Google tokens stored, expires_in:', googleTokens.expires_in);
+    res.send('<h2 style="font-family:sans-serif;padding:2rem">✅ Google Calendar & Gmail connected to VAL!<br><br>You can close this tab.</h2>');
+  } catch(e) {
+    res.status(500).send('Auth failed: '+e.message);
+  }
+});
+
+// Refresh access token if expired
+async function getGoogleToken() {
+  if(!googleTokens.access_token) return null;
+  // Check if expired (with 60s buffer)
+  const expiresAt = (googleTokens.issued_at||0) + (googleTokens.expires_in||3600)*1000 - 60000;
+  if(Date.now() < expiresAt) return googleTokens.access_token;
+  // Refresh
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        refresh_token: googleTokens.refresh_token,
+        grant_type: 'refresh_token'
+      })
+    });
+    const fresh = await r.json();
+    googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+    return googleTokens.access_token;
+  } catch(e) {
+    console.error('Token refresh failed:', e);
+    return null;
+  }
+}
+
+// Auth status check
+app.get('/auth/status', (req, res) => {
+  res.json({connected: !!googleTokens.access_token, hasRefreshToken: !!googleTokens.refresh_token});
+});
+
+// ════════════════════════════════════════════════════════
+// GOOGLE CALENDAR
+// ════════════════════════════════════════════════════════
+
+app.get('/api/google/calendar', async (req, res) => {
+  try {
+    const token = await getGoogleToken();
+    if(!token) return res.json({calendarEvents:[], needsAuth: true, authUrl: '/auth/google'});
+    const now = new Date();
+    const weekEnd = new Date(); weekEnd.setDate(weekEnd.getDate()+7);
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now.toISOString()}&timeMax=${weekEnd.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`;
+    const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
+    const d = await r.json();
+    const events = (d.items||[]).map(e=>({
+      id: e.id,
+      summary: e.summary||'(No title)',
+      startTime: e.start?.dateTime||e.start?.date,
+      endTime: e.end?.dateTime||e.end?.date,
+      location: e.location,
+      description: e.description,
+      attendees: (e.attendees||[]).map(a=>a.email),
+      status: e.status
+    }));
+    res.json({calendarEvents: events});
+  } catch(e) {
+    res.json({calendarEvents:[], error: e.message});
+  }
+});
+
+// ════════════════════════════════════════════════════════
+// GMAIL — replies from GHL contacts only
+// ════════════════════════════════════════════════════════
+
+app.get('/api/google/gmail', async (req, res) => {
+  try {
+    const token = await getGoogleToken();
+    if(!token) return res.json({emails:[], needsAuth: true});
+
+    // First get GHL contacts to cross-reference
+    const contactsData = await ghl('GET', `/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=desc`);
+    const contacts = contactsData.contacts||[];
+    const contactEmails = new Set(contacts.map(c=>c.email).filter(Boolean).map(e=>e.toLowerCase()));
+
+    // Search Gmail for recent unread messages
+    const searchUrl = `https://www.googleapis.com/gmail/v1/users/me/messages?q=is:unread newer_than:7d&maxResults=20`;
+    const r = await fetch(searchUrl, {headers:{Authorization:`Bearer ${token}`}});
+    const d = await r.json();
+    const messages = d.messages||[];
+
+    // Fetch each message header
+    const emailDetails = await Promise.all(messages.slice(0,10).map(async m=>{
+      const mr = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+        {headers:{Authorization:`Bearer ${token}`}});
+      const md = await mr.json();
+      const headers = md.payload?.headers||[];
+      const from = headers.find(h=>h.name==='From')?.value||'';
+      const subject = headers.find(h=>h.name==='Subject')?.value||'';
+      const date = headers.find(h=>h.name==='Date')?.value||'';
+      const emailMatch = from.match(/<(.+?)>/)||[null,from];
+      const fromEmail = emailMatch[1]?.toLowerCase()||'';
+      const fromName = from.replace(/<.*>/,'').trim().replace(/"/g,'');
+      const isGHLContact = contactEmails.has(fromEmail);
+      return {id:m.id, from, fromEmail, fromName, subject, date, isGHLContact};
+    }));
+
+    const ghlEmails = emailDetails.filter(e=>e.isGHLContact);
+    res.json({emails: emailDetails, ghlEmails, total: messages.length});
+  } catch(e) {
+    res.json({emails:[], error: e.message});
+  }
+});
+
+// ════════════════════════════════════════════════════════
 // DASHBOARD ENDPOINTS (called by VAL on load)
 // ════════════════════════════════════════════════════════
 
@@ -28,21 +174,33 @@ app.get('/api/meetings',async(req,res)=>{
   try{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setHours(23,59,59,999);
-    // GHL expects Unix ms timestamps
-    const startMs=s.getTime();
-    const endMs=e.getTime();
-    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${startMs}&endTime=${endMs}`);
-    console.log('meetings raw response keys:',Object.keys(d));
-    const events=(d.events||d.appointments||[]).map(ev=>({
-      id:ev.id,
-      title:ev.title||ev.name||ev.summary,
-      contactName:ev.contactName||ev.contact?.name,
-      startTime:ev.startTime||ev.start,
-      endTime:ev.endTime||ev.end,
-      status:ev.appointmentStatus||ev.status,
-      calendarId:ev.calendarId
+
+    const [ghlRes, googleRes] = await Promise.allSettled([
+      ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`),
+      (async()=>{
+        const token=await getGoogleToken();
+        if(!token)return{items:[]};
+        const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=20`,{headers:{Authorization:`Bearer ${token}`}});
+        return r.json();
+      })()
+    ]);
+
+    const ghlEvents=(ghlRes.status==='fulfilled'?(ghlRes.value.events||ghlRes.value.appointments||[]):[]).map(ev=>({
+      id:ev.id, title:ev.title||ev.name, contactName:ev.contactName||ev.contact?.name,
+      startTime:ev.startTime||ev.start, endTime:ev.endTime||ev.end,
+      status:ev.appointmentStatus||ev.status, source:'ghl'
     }));
-    res.json({meetingsToday:events.length,appointments:events});
+
+    const googleEvents=(googleRes.status==='fulfilled'?(googleRes.value.items||[]):[]).map(ev=>({
+      id:ev.id, title:ev.summary||'(No title)',
+      startTime:ev.start?.dateTime||ev.start?.date,
+      endTime:ev.end?.dateTime||ev.end?.date,
+      status:ev.status, source:'google'
+    }));
+
+    const allEvents=[...ghlEvents,...googleEvents];
+    allEvents.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
+    res.json({meetingsToday:allEvents.length, appointments:allEvents});
   }catch(e){
     console.error('meetings error:',e);
     res.json({meetingsToday:0,appointments:[]});
@@ -63,16 +221,39 @@ app.get('/api/calendar',async(req,res)=>{
   try{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
-    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
-    const events=(d.events||d.appointments||[]);
-    res.json({calendarEvents:events.map(ev=>({
-      id:ev.id,
-      summary:ev.title||ev.name||ev.summary,
-      startTime:ev.startTime||ev.start,
-      endTime:ev.endTime||ev.end,
-      contactName:ev.contactName||ev.contact?.name,
-      status:ev.appointmentStatus||ev.status
-    }))});
+
+    // Fetch GHL + Google in parallel
+    const [ghlRes, googleRes] = await Promise.allSettled([
+      ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`),
+      (async()=>{
+        const token=await getGoogleToken();
+        if(!token)return{items:[]};
+        const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`,{headers:{Authorization:`Bearer ${token}`}});
+        return r.json();
+      })()
+    ]);
+
+    const ghlEvents = ghlRes.status==='fulfilled'?(ghlRes.value.events||ghlRes.value.appointments||[]):[];
+    const googleEvents = googleRes.status==='fulfilled'?(googleRes.value.items||[]):[];
+
+    const mapped = [
+      ...ghlEvents.map(ev=>({
+        id:ev.id, summary:ev.title||ev.name||ev.summary,
+        startTime:ev.startTime||ev.start, endTime:ev.endTime||ev.end,
+        contactName:ev.contactName||ev.contact?.name,
+        status:ev.appointmentStatus||ev.status, source:'ghl'
+      })),
+      ...googleEvents.map(ev=>({
+        id:ev.id, summary:ev.summary||'(No title)',
+        startTime:ev.start?.dateTime||ev.start?.date,
+        endTime:ev.end?.dateTime||ev.end?.date,
+        location:ev.location, status:ev.status, source:'google'
+      }))
+    ];
+
+    // Sort by start time
+    mapped.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
+    res.json({calendarEvents:mapped});
   }catch(e){res.json({calendarEvents:[]});}
 });
 
