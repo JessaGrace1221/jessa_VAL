@@ -1,6 +1,6 @@
 const express = require('express');
-const cors = require('cors');
-const app = express();
+const cors    = require('cors');
+const app     = express();
 
 app.use(cors());
 app.use(express.json());
@@ -9,178 +9,328 @@ const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
 const BASE    = 'https://services.leadconnectorhq.com';
 
-function ghlHeaders() {
-  return {
-    'Authorization': `Bearer ${GHL_KEY}`,
-    'Version': '2021-07-28',
-    'Content-Type': 'application/json'
-  };
+function gh(){
+  return {'Authorization':`Bearer ${GHL_KEY}`,'Version':'2021-07-28','Content-Type':'application/json'};
+}
+async function ghl(method,path,body){
+  const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
+  return r.json();
 }
 
-// ── MEETINGS / APPOINTMENTS ──────────────────────────────
-app.get('/api/meetings', async (req, res) => {
-  try {
-    const today = new Date();
-    const start = new Date(today); start.setHours(0,0,0,0);
-    const end   = new Date(today); end.setHours(23,59,59,999);
+// ── HEALTH ───────────────────────────────────────────────
+app.get('/',(req,res)=>res.json({status:'VAL Proxy OK',time:new Date().toISOString()}));
 
-    const url = `${BASE}/calendars/events?locationId=${GHL_LOC}&startTime=${start.toISOString()}&endTime=${end.toISOString()}`;
-    const r = await fetch(url, { headers: ghlHeaders() });
-    const d = await r.json();
+// ════════════════════════════════════════════════════════
+// DASHBOARD ENDPOINTS (called by VAL on load)
+// ════════════════════════════════════════════════════════
 
-    const events = d.events || [];
-    res.json({
-      meetingsToday: events.length,
-      appointments: events.map(e => ({
-        id: e.id,
-        title: e.title || e.name,
-        contactName: e.contactName,
-        startTime: e.startTime || e.start,
-        endTime: e.endTime || e.end,
-        status: e.status,
-        calendarId: e.calendarId
-      }))
-    });
-  } catch(e) {
-    console.error('meetings error:', e);
-    res.json({ meetingsToday: 0, appointments: [] });
-  }
+app.get('/api/meetings',async(req,res)=>{
+  try{
+    const s=new Date();s.setHours(0,0,0,0);
+    const e=new Date();e.setHours(23,59,59,999);
+    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.toISOString()}&endTime=${e.toISOString()}`);
+    const events=(d.events||[]).map(e=>({id:e.id,title:e.title||e.name,contactName:e.contactName,startTime:e.startTime,endTime:e.endTime,status:e.appointmentStatus||e.status,calendarId:e.calendarId}));
+    res.json({meetingsToday:events.length,appointments:events});
+  }catch(e){res.json({meetingsToday:0,appointments:[]});}
 });
 
-// ── PIPELINE / OPPORTUNITIES ─────────────────────────────
-app.get('/api/pipeline', async (req, res) => {
-  try {
-    const url = `${BASE}/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100`;
-    const r = await fetch(url, { headers: ghlHeaders() });
-    const d = await r.json();
-
-    const opps = d.opportunities || [];
-    const now = Date.now();
-    const stalled = opps.filter(o => {
-      const updated = new Date(o.lastStatusChangeAt || o.updatedAt).getTime();
-      return (now - updated) > 14 * 24 * 60 * 60 * 1000; // 14 days
-    });
-
-    res.json({
-      pipelineActive: d.meta?.total || opps.length,
-      stalledDeals: stalled.length,
-      opportunities: opps.map(o => ({
-        id: o.id,
-        name: o.name,
-        status: o.status,
-        stage: o.pipelineStage?.name,
-        value: o.monetaryValue,
-        contactName: o.contact?.name,
-        updatedAt: o.updatedAt
-      }))
-    });
-  } catch(e) {
-    console.error('pipeline error:', e);
-    res.json({ pipelineActive: 0, stalledDeals: 0, opportunities: [] });
-  }
+app.get('/api/pipeline',async(req,res)=>{
+  try{
+    const d=await ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100`);
+    const opps=d.opportunities||[];
+    const now=Date.now();
+    const stalled=opps.filter(o=>(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000);
+    res.json({pipelineActive:d.meta?.total||opps.length,stalledDeals:stalled.length,opportunities:opps.map(o=>({id:o.id,name:o.name,status:o.status,stage:o.pipelineStage?.name,value:o.monetaryValue,contactName:o.contact?.name,updatedAt:o.updatedAt}))});
+  }catch(e){res.json({pipelineActive:0,stalledDeals:0,opportunities:[]});}
 });
 
-// ── TASKS ────────────────────────────────────────────────
-app.get('/api/tasks', async (req, res) => {
-  try {
-    // GHL has no global tasks endpoint — return from stored signals
-    // This will be populated by your GHL workflow → Make scenario
-    res.json({ openTasks: 0, overdueTasks: 0, tasks: [] });
-  } catch(e) {
-    res.json({ openTasks: 0, overdueTasks: 0, tasks: [] });
-  }
+app.get('/api/calendar',async(req,res)=>{
+  try{
+    const s=new Date();s.setHours(0,0,0,0);
+    const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
+    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.toISOString()}&endTime=${e.toISOString()}`);
+    res.json({calendarEvents:(d.events||[]).map(e=>({id:e.id,summary:e.title||e.name,startTime:e.startTime,endTime:e.endTime,contactName:e.contactName,status:e.appointmentStatus||e.status}))});
+  }catch(e){res.json({calendarEvents:[]});}
 });
 
-// ── CONTACTS (recent) ────────────────────────────────────
-app.get('/api/contacts', async (req, res) => {
-  try {
-    const url = `${BASE}/contacts/?locationId=${GHL_LOC}&limit=20&sortBy=date_added&sortDirection=desc`;
-    const r = await fetch(url, { headers: ghlHeaders() });
-    const d = await r.json();
-    res.json({ contacts: d.contacts || [] });
-  } catch(e) {
-    res.json({ contacts: [] });
-  }
+app.get('/api/tasks',async(req,res)=>{
+  res.json({openTasks:0,overdueTasks:0,tasks:[]});
 });
 
-// ── CONVERSATIONS (inbound replies) ─────────────────────
-app.get('/api/conversations', async (req, res) => {
-  try {
-    const url = `${BASE}/conversations/search?locationId=${GHL_LOC}&limit=20`;
-    const r = await fetch(url, { headers: ghlHeaders() });
-    const d = await r.json();
-    const convos = d.conversations || [];
-    const unread = convos.filter(c => c.unreadCount > 0);
-    res.json({
-      followups: unread.length,
-      conversations: convos.map(c => ({
-        id: c.id,
-        contactName: c.contactName || c.fullName,
-        lastMessage: c.lastMessage,
-        unread: c.unreadCount,
-        updatedAt: c.dateUpdated
-      }))
-    });
-  } catch(e) {
-    res.json({ followups: 0, conversations: [] });
-  }
+app.get('/api/feed',async(req,res)=>{
+  try{
+    const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=20`);
+    const convos=d.conversations||[];
+    const items=convos.filter(c=>c.unreadCount>0).map(c=>({text:`${c.contactName||'Contact'} replied`,type:'Communication',color:'green',time:new Date(c.dateUpdated).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),contactId:c.contactId,actionUrl:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/conversations/${c.id}`}));
+    res.json({feedItems:items,followups:items.length});
+  }catch(e){res.json({feedItems:[],followups:0});}
 });
 
-// ── CALENDAR (Google via Make feed or GHL) ──────────────
-app.get('/api/calendar', async (req, res) => {
-  // Returns empty until Google Calendar is wired
-  // GHL appointments serve as calendar for now
-  try {
-    const today = new Date();
-    const start = new Date(today); start.setHours(0,0,0,0);
-    const end   = new Date(today); end.setDate(end.getDate()+7); end.setHours(23,59,59,999);
-    const url = `${BASE}/calendars/events?locationId=${GHL_LOC}&startTime=${start.toISOString()}&endTime=${end.toISOString()}`;
-    const r = await fetch(url, { headers: ghlHeaders() });
-    const d = await r.json();
-    const events = (d.events||[]).map(e=>({
-      id: e.id,
-      summary: e.title||e.name,
-      startTime: e.startTime||e.start,
-      endTime: e.endTime||e.end,
-      contactName: e.contactName,
-      status: e.status
-    }));
-    res.json({ calendarEvents: events });
-  } catch(e) {
-    res.json({ calendarEvents: [] });
-  }
+// ════════════════════════════════════════════════════════
+// 1-2. CALENDAR TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/calendar/events',async(req,res)=>{
+  try{
+    const {calendarId,userId,groupId,startTime,endTime}=req.query;
+    let qs=`locationId=${GHL_LOC}`;
+    if(calendarId)qs+=`&calendarId=${calendarId}`;
+    if(userId)qs+=`&userId=${userId}`;
+    if(groupId)qs+=`&groupId=${groupId}`;
+    if(startTime)qs+=`&startTime=${startTime}`;
+    if(endTime)qs+=`&endTime=${endTime}`;
+    res.json(await ghl('GET',`/calendars/events?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
 });
 
-// ── FEED ─────────────────────────────────────────────────
-app.get('/api/feed', async (req, res) => {
-  // Feed items come from Make scenarios writing to GHL Data Store
-  // Return empty array until wired — VAL handles gracefully
-  res.json({ feedItems: [] });
+app.get('/api/ghl/calendar/appointments/:id/notes',async(req,res)=>{
+  try{res.json(await ghl('GET',`/calendars/appointments/${req.params.id}/notes`));}
+  catch(e){res.status(500).json({error:e.message});}
 });
 
-// ── ALL DASHBOARD DATA IN ONE CALL ───────────────────────
-app.get('/api/dashboard', async (req, res) => {
-  try {
-    const [meetings, pipeline, tasks, conversations] = await Promise.allSettled([
-      fetch(`http://localhost:${PORT}/api/meetings`).then(r => r.json()),
-      fetch(`http://localhost:${PORT}/api/pipeline`).then(r => r.json()),
-      fetch(`http://localhost:${PORT}/api/tasks`).then(r => r.json()),
-      fetch(`http://localhost:${PORT}/api/conversations`).then(r => r.json()),
-    ]);
+// ════════════════════════════════════════════════════════
+// 3-10. CONTACT TOOLS
+// ════════════════════════════════════════════════════════
 
-    res.json({
-      ...(meetings.status==='fulfilled' ? meetings.value : {}),
-      ...(pipeline.status==='fulfilled' ? pipeline.value : {}),
-      ...(tasks.status==='fulfilled'    ? tasks.value    : {}),
-      ...(conversations.status==='fulfilled' ? conversations.value : {}),
-    });
-  } catch(e) {
-    res.json({});
-  }
+app.get('/api/ghl/contacts',async(req,res)=>{
+  try{
+    const {limit=20,query,sortBy,sortDirection}=req.query;
+    let qs=`locationId=${GHL_LOC}&limit=${limit}`;
+    if(query)qs+=`&query=${encodeURIComponent(query)}`;
+    if(sortBy)qs+=`&sortBy=${sortBy}`;
+    if(sortDirection)qs+=`&sortDirection=${sortDirection}`;
+    res.json(await ghl('GET',`/contacts/?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
 });
 
-// ── HEALTH CHECK ─────────────────────────────────────────
-app.get('/', (req, res) => res.json({ status: 'VAL Proxy OK', time: new Date().toISOString() }));
+app.post('/api/ghl/contacts',async(req,res)=>{
+  try{res.json(await ghl('POST',`/contacts`,{...req.body,locationId:GHL_LOC}));}
+  catch(e){res.status(500).json({error:e.message});}
+});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`VAL proxy running on port ${PORT}`));
+app.post('/api/ghl/contacts/upsert',async(req,res)=>{
+  try{res.json(await ghl('POST',`/contacts/upsert`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/contacts/:id',async(req,res)=>{
+  try{res.json(await ghl('GET',`/contacts/${req.params.id}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.put('/api/ghl/contacts/:id',async(req,res)=>{
+  try{res.json(await ghl('PUT',`/contacts/${req.params.id}`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/contacts/:id/tasks',async(req,res)=>{
+  try{res.json(await ghl('GET',`/contacts/${req.params.id}/tasks`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/ghl/contacts/:id/tags',async(req,res)=>{
+  try{res.json(await ghl('POST',`/contacts/${req.params.id}/tags`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.delete('/api/ghl/contacts/:id/tags',async(req,res)=>{
+  try{res.json(await ghl('DELETE',`/contacts/${req.params.id}/tags`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 11-13. CONVERSATION TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/conversations',async(req,res)=>{
+  try{
+    const {limit=20,query,status}=req.query;
+    let qs=`locationId=${GHL_LOC}&limit=${limit}`;
+    if(query)qs+=`&query=${encodeURIComponent(query)}`;
+    if(status)qs+=`&status=${status}`;
+    res.json(await ghl('GET',`/conversations/search?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/conversations/:id/messages',async(req,res)=>{
+  try{res.json(await ghl('GET',`/conversations/${req.params.id}/messages`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/ghl/conversations/:id/messages',async(req,res)=>{
+  try{res.json(await ghl('POST',`/conversations/messages`,{...req.body,conversationId:req.params.id}));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 14-15. LOCATION TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/location',async(req,res)=>{
+  try{res.json(await ghl('GET',`/locations/${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/location/custom-fields',async(req,res)=>{
+  try{res.json(await ghl('GET',`/locations/${GHL_LOC}/customFields`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 16-19. OPPORTUNITY TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/opportunities',async(req,res)=>{
+  try{
+    const {limit=20,query,status,pipelineId,stageId}=req.query;
+    let qs=`location_id=${GHL_LOC}&limit=${limit}`;
+    if(query)qs+=`&query=${encodeURIComponent(query)}`;
+    if(status)qs+=`&status=${status}`;
+    if(pipelineId)qs+=`&pipeline_id=${pipelineId}`;
+    if(stageId)qs+=`&pipeline_stage_id=${stageId}`;
+    res.json(await ghl('GET',`/opportunities/search?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/pipelines',async(req,res)=>{
+  try{res.json(await ghl('GET',`/opportunities/pipelines?locationId=${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/opportunities/:id',async(req,res)=>{
+  try{res.json(await ghl('GET',`/opportunities/${req.params.id}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.put('/api/ghl/opportunities/:id',async(req,res)=>{
+  try{res.json(await ghl('PUT',`/opportunities/${req.params.id}`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 20-21. PAYMENT TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/payments/orders/:id',async(req,res)=>{
+  try{res.json(await ghl('GET',`/payments/orders/${req.params.id}?locationId=${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/payments/transactions',async(req,res)=>{
+  try{
+    const {limit=20,startAt,endAt}=req.query;
+    let qs=`locationId=${GHL_LOC}&limit=${limit}`;
+    if(startAt)qs+=`&startAt=${startAt}`;
+    if(endAt)qs+=`&endAt=${endAt}`;
+    res.json(await ghl('GET',`/payments/transactions?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 22-28. BLOG TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/blogs',async(req,res)=>{
+  try{res.json(await ghl('GET',`/blogs/?locationId=${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/blogs/check-slug',async(req,res)=>{
+  try{
+    const {urlSlug,blogId,postId}=req.query;
+    let qs=`locationId=${GHL_LOC}&urlSlug=${encodeURIComponent(urlSlug)}&blogId=${blogId}`;
+    if(postId)qs+=`&postId=${postId}`;
+    res.json(await ghl('GET',`/blogs/posts/url-slug-exists?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/blogs/authors',async(req,res)=>{
+  try{res.json(await ghl('GET',`/blogs/authors?locationId=${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/blogs/categories',async(req,res)=>{
+  try{res.json(await ghl('GET',`/blogs/categories?locationId=${GHL_LOC}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/blogs/:blogId/posts',async(req,res)=>{
+  try{
+    const {limit=20,skip=0}=req.query;
+    res.json(await ghl('GET',`/blogs/${req.params.blogId}/posts?locationId=${GHL_LOC}&limit=${limit}&skip=${skip}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/ghl/blogs/:blogId/posts',async(req,res)=>{
+  try{res.json(await ghl('POST',`/blogs/${req.params.blogId}/posts`,{...req.body,locationId:GHL_LOC}));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.put('/api/ghl/blogs/:blogId/posts/:postId',async(req,res)=>{
+  try{res.json(await ghl('PUT',`/blogs/${req.params.blogId}/posts/${req.params.postId}`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 29-30. EMAIL TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/emails/templates',async(req,res)=>{
+  try{
+    const {limit=20,skip=0}=req.query;
+    res.json(await ghl('GET',`/emails/builder?locationId=${GHL_LOC}&limit=${limit}&skip=${skip}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/ghl/emails/templates',async(req,res)=>{
+  try{res.json(await ghl('POST',`/emails/builder`,{...req.body,locationId:GHL_LOC}));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+// 31-36. SOCIAL MEDIA TOOLS
+// ════════════════════════════════════════════════════════
+
+app.get('/api/ghl/social/accounts',async(req,res)=>{
+  try{res.json(await ghl('GET',`/social-media-posting/oauth/${GHL_LOC}/accounts`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/social/statistics',async(req,res)=>{
+  try{
+    const {startDate,endDate,accountIds}=req.query;
+    let qs=`locationId=${GHL_LOC}`;
+    if(startDate)qs+=`&startDate=${startDate}`;
+    if(endDate)qs+=`&endDate=${endDate}`;
+    if(accountIds)qs+=`&accountIds=${accountIds}`;
+    res.json(await ghl('GET',`/social-media-posting/statistics?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/social/posts',async(req,res)=>{
+  try{
+    const {limit=20,skip=0,status}=req.query;
+    let qs=`limit=${limit}&skip=${skip}`;
+    if(status)qs+=`&status=${status}`;
+    res.json(await ghl('GET',`/social-media-posting/${GHL_LOC}/posts?${qs}`));
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/ghl/social/posts',async(req,res)=>{
+  try{res.json(await ghl('POST',`/social-media-posting/${GHL_LOC}/posts`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/social/posts/:id',async(req,res)=>{
+  try{res.json(await ghl('GET',`/social-media-posting/${GHL_LOC}/posts/${req.params.id}`));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.put('/api/ghl/social/posts/:id',async(req,res)=>{
+  try{res.json(await ghl('PUT',`/social-media-posting/${GHL_LOC}/posts/${req.params.id}`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+// ════════════════════════════════════════════════════════
+const PORT=process.env.PORT||3000;
+app.listen(PORT,()=>console.log(`VAL proxy running on port ${PORT}`));
