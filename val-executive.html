@@ -936,13 +936,34 @@ function chat(msg,inp){
   if(inp){addMsg(msg,true);inp.value='';inp.style.height='auto';}else addMsg(msg,true);
   chatHistory.push({role:'user',content:msg});
   showTyping();
-  // Build system context from dashboard data
-  var ctx='';
-  if(dashData.meetingsToday) ctx+='User has '+dashData.meetingsToday+' meetings today. ';
-  if(dashData.pipelineActive) ctx+='Active pipeline deals: '+dashData.pipelineActive+'. ';
-  if(dashData.openTasks) ctx+='Open tasks: '+dashData.openTasks+'. ';
+  // Build rich system context from live dashboard data
+  var ctx='Today is '+new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'.\n';
+  if(dashData.meetingsToday!==undefined) ctx+='Meetings today: '+dashData.meetingsToday+'.\n';
+  if(dashData.appointments&&dashData.appointments.length){
+    ctx+='Appointments:\n';
+    dashData.appointments.forEach(function(a){
+      var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
+      ctx+='  - '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.status?' ('+a.status+')':'')+'.\n';
+    });
+  }
+  if(dashData.pipelineActive!==undefined) ctx+='Pipeline active deals: '+dashData.pipelineActive+(dashData.stalledDeals?' ('+dashData.stalledDeals+' stalled)':'')+'.\n';
+  if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
+  if(dashData.tasks&&dashData.tasks.length){
+    ctx+='Task list:\n';
+    dashData.tasks.forEach(function(t){
+      var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'no due date';
+      ctx+='  - '+(t.title||'Untitled task')+' | Contact: '+(t.contactName||'unknown')+' | Due: '+due+(t.overdue?' [OVERDUE]':'')+'.\n';
+    });
+  }
+  if(dashData.followups!==undefined) ctx+='Unread conversations: '+dashData.followups+'.\n';
+  if(dashData.conversations&&dashData.conversations.length){
+    ctx+='Recent unread conversations:\n';
+    dashData.conversations.filter(function(c){return c.unread>0;}).slice(0,5).forEach(function(c){
+      ctx+='  - '+(c.contactName||'Contact')+': last message "'+((c.lastMessage||'').substring(0,80))+'".\n';
+    });
+  }
   var msgs=chatHistory.slice();
-  if(ctx) msgs=[{role:'user',content:'[Context: '+ctx+']'},{role:'assistant',content:'Understood. I have your current dashboard context.'}].concat(msgs);
+  if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',headers:{'Api-Key':PINECONE_KEY,'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
   .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(chatHistory.length%4===0){savedChat=false;autoSave();}})
