@@ -28,10 +28,25 @@ app.get('/api/meetings',async(req,res)=>{
   try{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setHours(23,59,59,999);
-    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.toISOString()}&endTime=${e.toISOString()}`);
-    const events=(d.events||[]).map(e=>({id:e.id,title:e.title||e.name,contactName:e.contactName,startTime:e.startTime,endTime:e.endTime,status:e.appointmentStatus||e.status,calendarId:e.calendarId}));
+    // GHL expects Unix ms timestamps
+    const startMs=s.getTime();
+    const endMs=e.getTime();
+    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${startMs}&endTime=${endMs}`);
+    console.log('meetings raw response keys:',Object.keys(d));
+    const events=(d.events||d.appointments||[]).map(ev=>({
+      id:ev.id,
+      title:ev.title||ev.name||ev.summary,
+      contactName:ev.contactName||ev.contact?.name,
+      startTime:ev.startTime||ev.start,
+      endTime:ev.endTime||ev.end,
+      status:ev.appointmentStatus||ev.status,
+      calendarId:ev.calendarId
+    }));
     res.json({meetingsToday:events.length,appointments:events});
-  }catch(e){res.json({meetingsToday:0,appointments:[]});}
+  }catch(e){
+    console.error('meetings error:',e);
+    res.json({meetingsToday:0,appointments:[]});
+  }
 });
 
 app.get('/api/pipeline',async(req,res)=>{
@@ -48,13 +63,58 @@ app.get('/api/calendar',async(req,res)=>{
   try{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
-    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.toISOString()}&endTime=${e.toISOString()}`);
-    res.json({calendarEvents:(d.events||[]).map(e=>({id:e.id,summary:e.title||e.name,startTime:e.startTime,endTime:e.endTime,contactName:e.contactName,status:e.appointmentStatus||e.status}))});
+    const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
+    const events=(d.events||d.appointments||[]);
+    res.json({calendarEvents:events.map(ev=>({
+      id:ev.id,
+      summary:ev.title||ev.name||ev.summary,
+      startTime:ev.startTime||ev.start,
+      endTime:ev.endTime||ev.end,
+      contactName:ev.contactName||ev.contact?.name,
+      status:ev.appointmentStatus||ev.status
+    }))});
   }catch(e){res.json({calendarEvents:[]});}
 });
 
 app.get('/api/tasks',async(req,res)=>{
-  res.json({openTasks:0,overdueTasks:0,tasks:[]});
+  try{
+    // GHL has no global tasks endpoint - fetch recent contacts then get their tasks
+    const contactsData=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=50&sortBy=date_added&sortDirection=desc`);
+    const contacts=contactsData.contacts||[];
+    
+    // Fetch tasks for each contact in parallel (limit to 30 to avoid rate limits)
+    const taskPromises=contacts.slice(0,30).map(async c=>{
+      try{
+        const t=await ghl('GET',`/contacts/${c.id}/tasks`);
+        return (t.tasks||[]).map(task=>({...task,contactName:c.firstName+' '+(c.lastName||''),contactId:c.id}));
+      }catch(e){return [];}
+    });
+    
+    const taskArrays=await Promise.all(taskPromises);
+    const allTasks=taskArrays.flat();
+    const now=new Date();
+    
+    // Filter incomplete tasks
+    const open=allTasks.filter(t=>!t.completed&&t.status!=='completed');
+    const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<now);
+    
+    res.json({
+      openTasks:open.length,
+      overdueTasks:overdue.length,
+      tasks:open.map(t=>({
+        id:t.id,
+        title:t.title,
+        contactName:t.contactName,
+        contactId:t.contactId,
+        dueDate:t.dueDate,
+        status:t.status,
+        overdue:t.dueDate&&new Date(t.dueDate)<now
+      }))
+    });
+  }catch(e){
+    console.error('tasks error:',e);
+    res.json({openTasks:0,overdueTasks:0,tasks:[]});
+  }
 });
 
 app.get('/api/feed',async(req,res)=>{
