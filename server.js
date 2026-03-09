@@ -76,6 +76,29 @@ app.get('/auth/callback', async (req, res) => {
 
 // Refresh access token if expired
 async function getGoogleToken() {
+  // If no access token but we have a refresh token, go get one
+  if(!googleTokens.access_token && googleTokens.refresh_token) {
+    try {
+      const r = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+          client_id: GOOGLE_CLIENT_ID,
+          client_secret: GOOGLE_CLIENT_SECRET,
+          refresh_token: googleTokens.refresh_token,
+          grant_type: 'refresh_token'
+        })
+      });
+      const fresh = await r.json();
+      if(fresh.error){ console.error('Token bootstrap failed:', fresh.error, fresh.error_description); return null; }
+      googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+      console.log('Bootstrapped access token from refresh token');
+      return googleTokens.access_token;
+    } catch(e) {
+      console.error('Token bootstrap error:', e);
+      return null;
+    }
+  }
   if(!googleTokens.access_token) return null;
   // Check if expired (with 60s buffer)
   const expiresAt = (googleTokens.issued_at||0) + (googleTokens.expires_in||3600)*1000 - 60000;
