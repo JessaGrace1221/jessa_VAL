@@ -479,6 +479,60 @@ app.get('/api/debug/tasks',async(req,res)=>{
   }catch(e){res.json({error:e.message});}
 });
 
+app.get('/api/comms',async(req,res)=>{
+  try{
+    const [ghlRes, gmailRes] = await Promise.allSettled([
+      // GHL: unread conversations
+      ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=50`),
+      // Gmail: drafts
+      (async()=>{
+        const token=await getGoogleToken();
+        if(!token) return {drafts:[], needsAuth:true};
+        const r=await fetch(`https://www.googleapis.com/gmail/v1/users/me/drafts?maxResults=20`,{headers:{Authorization:`Bearer ${token}`}});
+        const d=await r.json();
+        if(d.error){console.error('Gmail drafts error:',d.error.message); return {drafts:[]};}
+        // Fetch subject/to for each draft
+        const drafts=await Promise.all((d.drafts||[]).slice(0,10).map(async dr=>{
+          try{
+            const mr=await fetch(`https://www.googleapis.com/gmail/v1/users/me/drafts/${dr.id}?format=metadata&metadataHeaders=To&metadataHeaders=Subject`,{headers:{Authorization:`Bearer ${token}`}});
+            const md=await mr.json();
+            const headers=md.message?.payload?.headers||[];
+            const to=headers.find(h=>h.name==='To')?.value||'';
+            const subject=headers.find(h=>h.name==='Subject')?.value||'(No subject)';
+            return {id:dr.id, to, subject, source:'gmail', type:'draft'};
+          }catch(e){return {id:dr.id,source:'gmail',type:'draft'};}
+        }));
+        return {drafts};
+      })()
+    ]);
+
+    const ghlConvos = ghlRes.status==='fulfilled'?(ghlRes.value.conversations||[]):[];
+    const unread = ghlConvos.filter(c=>c.unreadCount>0).map(c=>({
+      id:c.id, contact:c.contactName||'Contact',
+      preview:c.lastMessage||'', type:c.type||'sms',
+      unreadCount:c.unreadCount,
+      updatedAt:c.dateUpdated,
+      source:'ghl',
+      actionUrl:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/conversations/${c.id}`
+    }));
+
+    const gmailDrafts = gmailRes.status==='fulfilled'?(gmailRes.value.drafts||[]):[];
+
+    res.json({
+      total: unread.length + gmailDrafts.length,
+      ghlUnread: unread.length,
+      gmailDrafts: gmailDrafts.length,
+      items: [
+        ...gmailDrafts.map(d=>({id:d.id, label:`Draft → ${d.to||'?'}`, sublabel:d.subject, source:'gmail', type:'draft'})),
+        ...unread.map(c=>({id:c.id, label:`${c.contact} (${c.unreadCount} unread)`, sublabel:c.preview, source:'ghl', type:c.type, actionUrl:c.actionUrl}))
+      ]
+    });
+  }catch(e){
+    console.error('comms error:',e);
+    res.json({total:0,ghlUnread:0,gmailDrafts:0,items:[],error:e.message});
+  }
+});
+
 app.get('/api/feed',async(req,res)=>{
   try{
     const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=20`);
