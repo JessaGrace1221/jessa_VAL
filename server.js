@@ -29,6 +29,13 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI         = 'https://jessaval-production.up.railway.app/auth/callback';
 let googleTokens = {}; // stored in memory — persists as long as server runs
 
+// On startup, load refresh token from env if available
+if(process.env.GOOGLE_REFRESH_TOKEN){
+  googleTokens.refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
+  googleTokens.issued_at = 0; // force refresh on first use
+  console.log('Loaded Google refresh token from env var');
+}
+
 // Step 1 — redirect user to Google consent screen
 app.get('/auth/google', (req, res) => {
   const scopes = [
@@ -55,8 +62,13 @@ app.get('/auth/callback', async (req, res) => {
       })
     });
     googleTokens = await r.json();
-    console.log('Google tokens stored, expires_in:', googleTokens.expires_in);
-    res.send('<h2 style="font-family:sans-serif;padding:2rem">✅ Google Calendar & Gmail connected to VAL!<br><br>You can close this tab.</h2>');
+    googleTokens.issued_at = Date.now();
+    console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token);
+    // Log refresh token so it can be saved as GOOGLE_REFRESH_TOKEN env var in Railway
+    if(googleTokens.refresh_token){
+      console.log('SAVE THIS AS GOOGLE_REFRESH_TOKEN ENV VAR:', googleTokens.refresh_token);
+    }
+    res.send(`<h2 style="font-family:sans-serif;padding:2rem">✅ Google Calendar & Gmail connected to VAL!<br><br>You can close this tab.</h2>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
   }
@@ -222,27 +234,43 @@ app.get('/api/calendar',async(req,res)=>{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
 
-    // Fetch GHL + Google in parallel
+    // Get GHL user ID for this location first
+    async function getGHLEvents(){
+      // Try to get location users to find the primary user ID
+      const locData = await ghl('GET',`/users/search?locationId=${GHL_LOC}&limit=5`);
+      const users = locData.users||[];
+      console.log('GHL users found:',users.length, users.map(u=>({id:u.id,name:u.name,email:u.email})));
+      
+      let allEvents=[];
+      // Fetch calendar for each user
+      await Promise.all(users.map(async u=>{
+        try{
+          const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&userId=${u.id}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
+          const evs=d.events||d.appointments||[];
+          console.log(`GHL events for user ${u.name||u.id}:`,evs.length);
+          allEvents.push(...evs);
+        }catch(err){console.log('GHL user calendar error:',err.message);}
+      }));
+      return allEvents;
+    }
+
     const [ghlRes, googleRes] = await Promise.allSettled([
-      ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`),
+      getGHLEvents(),
       (async()=>{
         const token=await getGoogleToken();
-        if(!token){console.log('Google token missing - need re-auth');return{items:[],needsAuth:true};}
+        if(!token){console.log('Google token missing');return{items:[],needsAuth:true};}
         const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`,{headers:{Authorization:`Bearer ${token}`}});
         const d=await r.json();
-        if(d.error){console.error('Google Calendar API error:',JSON.stringify(d.error));}
+        if(d.error)console.error('Google Calendar error:',d.error.message);
         return d;
       })()
     ]);
 
-    const ghlRaw = ghlRes.status==='fulfilled'?ghlRes.value:{};
+    const ghlEvents = ghlRes.status==='fulfilled'?ghlRes.value:[];
     const googleRaw = googleRes.status==='fulfilled'?googleRes.value:{};
-    
-    console.log('GHL calendar keys:',Object.keys(ghlRaw),'events count:',(ghlRaw.events||ghlRaw.appointments||[]).length);
-    console.log('Google calendar items count:',(googleRaw.items||[]).length,'error:',googleRaw.error?.message||'none');
-
-    const ghlEvents = ghlRaw.events||ghlRaw.appointments||[];
     const googleEvents = googleRaw.items||[];
+
+    console.log(`Calendar: ${ghlEvents.length} GHL + ${googleEvents.length} Google events`);
 
     const mapped = [
       ...ghlEvents.map(ev=>({
@@ -275,19 +303,31 @@ app.get('/api/debug/calendar',async(req,res)=>{
   try{
     const s=new Date();s.setHours(0,0,0,0);
     const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
-    const ghlRaw=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
+    
+    const locData=await ghl('GET',`/users/search?locationId=${GHL_LOC}&limit=5`);
+    const users=locData.users||[];
+    
+    let ghlEventsByUser={};
+    await Promise.all(users.map(async u=>{
+      try{
+        const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&userId=${u.id}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
+        ghlEventsByUser[u.name||u.id]={count:(d.events||d.appointments||[]).length,keys:Object.keys(d),sample:(d.events||d.appointments||[]).slice(0,2)};
+      }catch(err){ghlEventsByUser[u.name||u.id]={error:err.message};}
+    }));
+
     const token=await getGoogleToken();
     let googleRaw={needsAuth:true};
     if(token){
-      const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=10`,{headers:{Authorization:`Bearer ${token}`}});
+      const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=5`,{headers:{Authorization:`Bearer ${token}`}});
       googleRaw=await r.json();
     }
     res.json({
-      timeRange:{start:s.toISOString(),end:e.toISOString(),startMs:s.getTime(),endMs:e.getTime()},
-      ghl:{keys:Object.keys(ghlRaw),eventsCount:(ghlRaw.events||[]).length,appointmentsCount:(ghlRaw.appointments||[]).length,sample:ghlRaw},
-      google:{hasToken:!!token,keys:Object.keys(googleRaw),itemsCount:(googleRaw.items||[]).length,sample:googleRaw}
+      timeRange:{start:s.toISOString(),end:e.toISOString()},
+      ghlUsers:users.map(u=>({id:u.id,name:u.name,email:u.email})),
+      ghlEventsByUser,
+      google:{hasToken:!!token,itemsCount:(googleRaw.items||[]).length,needsAuth:!!googleRaw.needsAuth,items:(googleRaw.items||[]).map(i=>({summary:i.summary,start:i.start}))}
     });
-  }catch(e){res.json({error:e.message});}
+  }catch(e){res.json({error:e.message,stack:e.stack});}
 });
 
 app.get('/api/tasks',async(req,res)=>{
