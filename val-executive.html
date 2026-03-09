@@ -602,7 +602,7 @@ input[type=file]{display:none}
       <div class="stat-label">Action Items</div>
     </div>
   </div>
-  <div class="stat" onclick="ask('Who has replied to me recently that needs a follow up?')">
+  <div class="stat" onclick="askFollowups()">
     <div class="stat-icon si-gold"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg></div>
     <div class="stat-info">
       <div class="stat-num" id="statFollowups">—<span class="stat-badge sbadge-amber hidden" id="statWaitingBadge"></span></div>
@@ -655,7 +655,7 @@ input[type=file]{display:none}
         <div class="scard-sub" id="scTasksSub">Loading...</div>
         <span class="scard-link">Show Priorities →</span>
       </div>
-      <div class="scard" onclick="ask('Show my drafted communications awaiting approval')">
+      <div class="scard" onclick="askComms()">
         <div class="scard-label">Comms Queue</div>
         <div class="scard-val" id="scCommsVal">—</div>
         <div class="scard-sub" id="scCommsSub">Loading...</div>
@@ -1309,7 +1309,31 @@ function wsSetActive(key){
   // Can't easily target by key without data attrs, skip visual for now
 }
 
-function wsNav(view){
+function askComms(){
+  fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
+    var parts=[];
+    if(d.gmailDrafts>0) parts.push(d.gmailDrafts+' Gmail draft(s) pending');
+    if(d.ghlUnread>0) parts.push(d.ghlUnread+' unread GHL conversation(s)');
+    var detail = (d.items||[]).map(function(i){ return '- '+i.label+(i.sublabel?' | '+i.sublabel:''); }).join('\n');
+    var prompt = parts.length
+      ? 'Here is my real comms queue right now:\n'+parts.join('\n')+'\n\nDetails:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?'
+      : 'My comms queue is currently empty — no Gmail drafts and no unread GHL conversations. Confirm this looks right and suggest if I should follow up with anyone.';
+    ask(prompt);
+  }).catch(function(){ ask('Check my communications queue — any unread messages or drafts needing attention?'); });
+}
+
+function askFollowups(){
+  fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
+    var unread = (d.items||[]).filter(function(i){ return i.source==='ghl'; });
+    var detail = unread.map(function(i){ return '- '+i.label+(i.sublabel?' | '+i.sublabel:''); }).join('\n');
+    var prompt = unread.length
+      ? 'Here are my actual unread GHL conversations right now ('+unread.length+' total):\n'+detail+'\n\nWho needs a reply most urgently? Suggest a response for each.'
+      : 'I have no unread GHL conversations right now. Suggest who I should proactively follow up with based on pipeline or recent activity.';
+    ask(prompt);
+  }).catch(function(){ ask('Who needs a reply from me? Show unread messages and suggested responses.'); });
+}
+
+
   toggleWorkspace();
   setTimeout(function(){
     if(view==='dashboard'){ closeDetail(); }
@@ -1317,7 +1341,7 @@ function wsNav(view){
     else if(view==='meetings'){ ask('Show me all my meetings today and this week with any prep notes.'); }
     else if(view==='tasks'){ ask('Show my overdue tasks and tell me what to do first.'); }
     else if(view==='pipeline'){ ask('Show my active pipeline deals and any stalled signals.'); }
-    else if(view==='followups'){ ask('Who needs a reply from me? Show unread messages and suggested responses.'); }
+    else if(view==='followups'){ askFollowups(); }
   }, 350);
 }
 
