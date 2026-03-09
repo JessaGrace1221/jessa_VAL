@@ -7,6 +7,8 @@ app.use(express.json());
 
 const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
+const OPENAI_KEY = process.env.OPENAI_KEY;
 const BASE    = 'https://services.leadconnectorhq.com';
 
 function gh(){
@@ -37,6 +39,65 @@ if(process.env.GOOGLE_REFRESH_TOKEN){
 }
 
 // Step 1 — redirect user to Google consent screen
+// ── IMAGE ANALYSIS (GPT-4o) ─────────────────────────────
+app.post('/api/analyze-image',async(req,res)=>{
+  try{
+    const {base64,mediaType,prompt}=req.body;
+    if(!base64||!mediaType) return res.status(400).json({error:'Missing base64 or mediaType'});
+    if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    const r=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      body:JSON.stringify({
+        model:'gpt-4o',
+        max_tokens:1000,
+        messages:[{
+          role:'user',
+          content:[
+            {type:'image_url',image_url:{url:`data:${mediaType};base64,${base64}`}},
+            {type:'text',text:prompt||'Analyze this image and give detailed feedback. What do you see, what\'s working well, and what could be improved?'}
+          ]
+        }]
+      })
+    });
+    const d=await r.json();
+    if(d.error) return res.status(500).json({error:d.error.message});
+    res.json({reply:d.choices?.[0]?.message?.content||'No response'});
+  }catch(e){
+    console.error('image analysis error:',e);
+    res.status(500).json({error:e.message});
+  }
+});
+
+// ── IMAGE GENERATION (DALL-E 3) ─────────────────────────
+app.post('/api/generate-image',async(req,res)=>{
+  try{
+    const {prompt,size,quality}=req.body;
+    if(!prompt) return res.status(400).json({error:'Missing prompt'});
+    if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    const r=await fetch('https://api.openai.com/v1/images/generations',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      body:JSON.stringify({
+        model:'dall-e-3',
+        prompt,
+        n:1,
+        size:size||'1024x1024',
+        quality:quality||'standard',
+        response_format:'url'
+      })
+    });
+    const d=await r.json();
+    if(d.error) return res.status(500).json({error:d.error.message});
+    const url=d.data?.[0]?.url;
+    const revised=d.data?.[0]?.revised_prompt;
+    res.json({url,revisedPrompt:revised});
+  }catch(e){
+    console.error('image generation error:',e);
+    res.status(500).json({error:e.message});
+  }
+});
+
 app.get('/auth/google', (req, res) => {
   const scopes = [
     'https://www.googleapis.com/auth/calendar.readonly',
@@ -503,31 +564,36 @@ app.get('/api/tasks',async(req,res)=>{
 // Debug endpoint — tasks
 app.get('/api/debug/tasks',async(req,res)=>{
   try{
-    const [r1,r2,r3,r4,r5] = await Promise.allSettled([
-      ghl('GET',`/contacts/tasks/search?locationId=${GHL_LOC}&limit=10`),
-      ghl('GET',`/locations/${GHL_LOC}/tasks?limit=10`),
-      ghl('POST',`/contacts/tasks/search`,{locationId:GHL_LOC,limit:10}),
-      ghl('GET',`/contacts/tasks?locationId=${GHL_LOC}&limit=10`),
-      ghl('GET',`/locations/${GHL_LOC}/tasks/search?limit=10`)
+    // Test contacts fetch several ways
+    const [cRes1, cRes2, cRes3] = await Promise.allSettled([
+      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=5`),
+      ghl('GET',`/contacts?locationId=${GHL_LOC}&limit=5`),
+      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=5&sortBy=date_added&sortDirection=desc`),
     ]);
-    const fmt=r=>r.status==='fulfilled'?{keys:Object.keys(r.value),sample:r.value}:{error:r.reason?.message||'failed'};
-    
-    // Also try fetching tasks for a known contact to confirm the per-contact endpoint works
-    const contacts=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=5&sortBy=date_added&sortDirection=desc`);
-    const firstContact=(contacts.contacts||[])[0];
-    let contactTaskSample=null;
-    if(firstContact){
-      const ct=await ghl('GET',`/contacts/${firstContact.id}/tasks`);
-      contactTaskSample={contactId:firstContact.id,contactName:(firstContact.firstName||'')+' '+firstContact.lastName,response:ct};
-    }
+    const fmtC=r=>r.status==='fulfilled'?{keys:Object.keys(r.value),count:(r.value.contacts||[]).length,first:(r.value.contacts||[])[0]?.id}:{error:r.reason?.message};
+
+    // Test known contact task fetch (VAL contact from pipeline)
+    const knownContactId='c2tu9Oh6ybL2WMQ5PVJQ';
+    let knownContactTasks=null;
+    try{
+      const ct=await ghl('GET',`/contacts/${knownContactId}/tasks`);
+      knownContactTasks={keys:Object.keys(ct),raw:ct};
+    }catch(e){knownContactTasks={error:e.message};}
+
+    // Try a broader contacts search
+    let allContactsTest=null;
+    try{
+      const ac=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100`);
+      allContactsTest={count:(ac.contacts||[]).length,keys:Object.keys(ac),ids:(ac.contacts||[]).slice(0,5).map(c=>c.id)};
+    }catch(e){allContactsTest={error:e.message};}
 
     res.json({
-      searchGET:fmt(r1),
-      locationTasks:fmt(r2),
-      searchPOST:fmt(r3),
-      tasksGET:fmt(r4),
-      locationSearch:fmt(r5),
-      contactTaskSample
+      contactsV1:fmtC(cRes1),
+      contactsV2:fmtC(cRes2),
+      contactsV3:fmtC(cRes3),
+      allContactsTest,
+      knownContactTasks,
+      knownContactId
     });
   }catch(e){res.json({error:e.message});}
 });
