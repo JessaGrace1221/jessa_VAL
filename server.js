@@ -386,7 +386,37 @@ app.get('/api/debug/calendar',async(req,res)=>{
   }catch(e){res.json({error:e.message});}
 });
 
-app.get('/api/tasks',async(req,res)=>{
+// Debug endpoint — tasks
+app.get('/api/debug/tasks',async(req,res)=>{
+  try{
+    const [r1,r2,r3,r4,r5] = await Promise.allSettled([
+      ghl('GET',`/contacts/tasks/search?locationId=${GHL_LOC}&limit=10`),
+      ghl('GET',`/locations/${GHL_LOC}/tasks?limit=10`),
+      ghl('POST',`/contacts/tasks/search`,{locationId:GHL_LOC,limit:10}),
+      ghl('GET',`/contacts/tasks?locationId=${GHL_LOC}&limit=10`),
+      ghl('GET',`/locations/${GHL_LOC}/tasks/search?limit=10`)
+    ]);
+    const fmt=r=>r.status==='fulfilled'?{keys:Object.keys(r.value),sample:r.value}:{error:r.reason?.message||'failed'};
+    
+    // Also try fetching tasks for a known contact to confirm the per-contact endpoint works
+    const contacts=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=5&sortBy=date_added&sortDirection=desc`);
+    const firstContact=(contacts.contacts||[])[0];
+    let contactTaskSample=null;
+    if(firstContact){
+      const ct=await ghl('GET',`/contacts/${firstContact.id}/tasks`);
+      contactTaskSample={contactId:firstContact.id,contactName:(firstContact.firstName||'')+' '+firstContact.lastName,response:ct};
+    }
+
+    res.json({
+      searchGET:fmt(r1),
+      locationTasks:fmt(r2),
+      searchPOST:fmt(r3),
+      tasksGET:fmt(r4),
+      locationSearch:fmt(r5),
+      contactTaskSample
+    });
+  }catch(e){res.json({error:e.message});}
+});
   const now=new Date();
   
   // Helper to normalize tasks from any endpoint shape
