@@ -490,6 +490,7 @@ app.get('/api/comms',async(req,res)=>{
         if(!token) return {drafts:[], needsAuth:true};
         const r=await fetch(`https://www.googleapis.com/gmail/v1/users/me/drafts?maxResults=20`,{headers:{Authorization:`Bearer ${token}`}});
         const d=await r.json();
+        console.log('Gmail drafts raw:', JSON.stringify(d).substring(0,300));
         if(d.error){console.error('Gmail drafts error:',d.error.message); return {drafts:[]};}
         // Fetch subject/to for each draft
         const drafts=await Promise.all((d.drafts||[]).slice(0,10).map(async dr=>{
