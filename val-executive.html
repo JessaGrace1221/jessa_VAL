@@ -844,10 +844,12 @@ async function loadDashboard(){
 
   if(comms){
     document.getElementById('scCommsVal').textContent = comms.total||0;
-    const parts=[];
-    if(comms.gmailDrafts>0) parts.push(`${comms.gmailDrafts} Gmail draft${comms.gmailDrafts>1?'s':''}`);
-    if(comms.ghlUnread>0) parts.push(`${comms.ghlUnread} unread`);
-    document.getElementById('scCommsSub').textContent = parts.length?parts.join(' · '):'All clear';
+    document.getElementById('scCommsSub').textContent = comms.total>0?comms.total+' unread conversation'+(comms.total>1?'s':''):'All clear';
+    animNum('statFollowups', comms.total||0);
+    if(comms.total>0){
+      var wb=document.getElementById('statWaitingBadge');
+      if(wb){wb.textContent=comms.total+' UNREAD';wb.classList.remove('hidden');}
+    }
   }
 
   // Parse text fields if they contain JSON strings
@@ -1311,26 +1313,22 @@ function wsSetActive(key){
 
 function askComms(){
   fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var parts=[];
-    if(d.gmailDrafts>0) parts.push(d.gmailDrafts+' Gmail draft(s) pending');
-    if(d.ghlUnread>0) parts.push(d.ghlUnread+' unread GHL conversation(s)');
-    var detail = (d.items||[]).map(function(i){ return '- '+i.label+(i.sublabel?' | '+i.sublabel:''); }).join('\n');
-    var prompt = parts.length
-      ? 'Here is my real comms queue right now:\n'+parts.join('\n')+'\n\nDetails:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?'
-      : 'My comms queue is currently empty — no Gmail drafts and no unread GHL conversations. Confirm this looks right and suggest if I should follow up with anyone.';
+    var detail=(d.items||[]).map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
+    var prompt=d.total>0
+      ?'Here are my '+d.total+' unread GHL conversations right now:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?'
+      :'My communications queue is clear — no unread conversations.';
     ask(prompt);
-  }).catch(function(){ ask('Check my communications queue — any unread messages or drafts needing attention?'); });
+  }).catch(function(){ask('Check my communications queue — any unread messages needing attention?');});
 }
 
 function askFollowups(){
   fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var unread = (d.items||[]).filter(function(i){ return i.source==='ghl'; });
-    var detail = unread.map(function(i){ return '- '+i.label+(i.sublabel?' | '+i.sublabel:''); }).join('\n');
-    var prompt = unread.length
-      ? 'Here are my actual unread GHL conversations right now ('+unread.length+' total):\n'+detail+'\n\nWho needs a reply most urgently? Suggest a response for each.'
-      : 'I have no unread GHL conversations right now. Suggest who I should proactively follow up with based on pipeline or recent activity.';
+    var detail=(d.items||[]).map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
+    var prompt=d.total>0
+      ?'Here are my '+d.total+' unread GHL conversations needing a reply:\n'+detail+'\n\nWho needs a reply most urgently? Suggest a response for each.'
+      :'No unread conversations right now. Suggest who I should proactively follow up with based on pipeline or recent activity.';
     ask(prompt);
-  }).catch(function(){ ask('Who needs a reply from me? Show unread messages and suggested responses.'); });
+  }).catch(function(){ask('Who needs a reply from me? Show unread messages and suggested responses.');});
 }
 
 
