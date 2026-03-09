@@ -517,6 +517,82 @@ app.get('/api/debug/tasks',async(req,res)=>{
   }catch(e){res.json({error:e.message});}
 });
 
+app.get('/api/proposals',async(req,res)=>{
+  try{
+    const attempts=await Promise.allSettled([
+      ghl('GET',`/documents/?locationId=${GHL_LOC}&limit=100`),
+      ghl('GET',`/documents?locationId=${GHL_LOC}&limit=100`),
+      ghl('GET',`/payments/documents?locationId=${GHL_LOC}&limit=100`),
+      ghl('GET',`/proposals?locationId=${GHL_LOC}&limit=100`),
+    ]);
+    attempts.forEach((a,i)=>console.log('proposals attempt',i,a.status,a.status==='fulfilled'?JSON.stringify(a.value).substring(0,200):a.reason?.message));
+    const winner=attempts.find(a=>a.status==='fulfilled'&&(a.value.documents||a.value.proposals||a.value.data));
+    if(!winner) return res.json({total:0,draft:0,sent:0,viewed:0,signed:0,proposals:[],error:'No working endpoint found'});
+
+    const raw=winner.value;
+    const docs=raw.documents||raw.proposals||raw.data||[];
+    console.log('proposals sample:', JSON.stringify(docs[0]||{}).substring(0,400));
+
+    const normalize=d=>{
+      const s=(d.status||'').toLowerCase();
+      let stage='other';
+      if(s==='draft'||s==='created') stage='draft';
+      else if(s==='sent'||s==='pending'||s==='waiting') stage='sent';
+      else if(s==='viewed'||s==='opened') stage='viewed';
+      else if(s==='signed'||s==='completed'||s==='accepted') stage='signed';
+      return {
+        id:d.id,
+        title:d.name||d.title||'Proposal',
+        status:d.status,
+        stage,
+        contactName:d.contactName||d.contact?.name||'',
+        value:d.amount||d.total||d.value||0,
+        viewCount:d.viewCount||d.views||d.openCount||0,
+        sentAt:d.sentAt||d.updatedAt||d.createdAt,
+        signedAt:d.signedAt||d.completedAt||null,
+        url:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/payments/proposals-estimates`
+      };
+    };
+
+    const all=docs.map(normalize);
+    const draft  = all.filter(d=>d.stage==='draft');
+    const sent   = all.filter(d=>d.stage==='sent');
+    const viewed = all.filter(d=>d.stage==='viewed');
+    const signed = all.filter(d=>d.stage==='signed');
+    const waiting= [...sent,...viewed]; // "waiting for others"
+
+    res.json({
+      total:waiting.length,
+      draft:draft.length,
+      sent:sent.length,
+      viewed:viewed.length,
+      signed:signed.length,
+      allCount:all.length,
+      proposals:all,
+      waiting
+    });
+  }catch(e){
+    console.error('proposals error:',e);
+    res.json({total:0,draft:0,sent:0,viewed:0,signed:0,proposals:[],error:e.message});
+  }
+});
+
+app.get('/api/debug/proposals',async(req,res)=>{
+  const results={};
+  const endpoints=[
+    `/documents/?locationId=${GHL_LOC}&limit=10`,
+    `/documents?locationId=${GHL_LOC}&limit=10`,
+    `/payments/documents?locationId=${GHL_LOC}&limit=10`,
+    `/proposals?locationId=${GHL_LOC}&limit=10`,
+    `/payments/proposals?locationId=${GHL_LOC}&limit=10`,
+  ];
+  await Promise.all(endpoints.map(async ep=>{
+    try{const d=await ghl('GET',ep);results[ep]={status:'ok',keys:Object.keys(d),sample:JSON.stringify(d).substring(0,200)};}
+    catch(e){results[ep]={status:'error',message:e.message};}
+  }));
+  res.json(results);
+});
+
 app.get('/api/comms',async(req,res)=>{
   try{
     const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=50`);
