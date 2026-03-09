@@ -251,7 +251,8 @@ app.get('/api/pipeline',async(req,res)=>{
 
     // Enrich each opp with contact notes
     const enriched=await Promise.all(opps.map(async o=>{
-      const stage=o.pipelineStage?.name||o.stage?.name||o.stageName||'Unknown Stage';
+      console.log('RAW OPP FIELDS:', JSON.stringify({pipelineStage:o.pipelineStage, stage:o.stage, stageName:o.stageName, pipelineId:o.pipelineId, pipelineStageId:o.pipelineStageId, status:o.status}));
+      const stage=o.pipelineStage?.name||o.stage?.name||o.stageName||o.pipelineStage||'Unknown Stage';
       const contactId=o.contact?.id||o.contactId;
       let notes=[];
       let contactEmail='';
@@ -259,10 +260,11 @@ app.get('/api/pipeline',async(req,res)=>{
       try{
         if(contactId){
           const [notesData,contactData]=await Promise.all([
-            ghl('GET',`/contacts/${contactId}/notes?limit=5`),
+            ghl('GET',`/contacts/${contactId}/notes`),
             ghl('GET',`/contacts/${contactId}`)
           ]);
-          notes=(notesData.notes||[]).map(n=>n.body||n.note||'').filter(Boolean).slice(0,3);
+          console.log('RAW NOTES:', JSON.stringify(notesData).substring(0,300));
+          notes=(notesData.notes||notesData.data||[]).map(n=>n.body||n.note||n.text||n.content||'').filter(Boolean).slice(0,3);
           contactEmail=contactData.contact?.email||'';
           contactPhone=contactData.contact?.phone||'';
         }
