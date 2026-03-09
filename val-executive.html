@@ -616,7 +616,7 @@ input[type=file]{display:none}
       <div class="stat-label">Pipeline Active</div>
     </div>
   </div>
-  <div class="stat" onclick="ask('Show my pending proposals and their status.')">
+  <div class="stat" onclick="askProposals()">
     <div class="stat-icon si-purple"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg></div>
     <div class="stat-info">
       <div class="stat-num" id="statProposals">—</div>
@@ -775,6 +775,7 @@ var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_TASKS    = PROXY+'/api/tasks';
 var HOOK_FEED     = PROXY+'/api/feed';
 var HOOK_COMMS    = PROXY+'/api/comms';
+var HOOK_PROPOSALS= PROXY+'/api/proposals';
 // ────────────────────────────────────────────────────────
 
 var CHAT_URL  = PINECONE_HOST+'/assistant/chat/'+ASSISTANT_NAME;
@@ -830,20 +831,33 @@ async function fetchJSON(url){
 
 async function loadDashboard(){
   // Fire all 5 webhooks in parallel - each independent
-  var [meetings, pipeline, calendar, tasks, feed, comms] = await Promise.allSettled([
+  var [meetings, pipeline, calendar, tasks, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
     fetchJSON(HOOK_CALENDAR),
     fetchJSON(HOOK_TASKS),
     fetchJSON(HOOK_FEED),
-    fetchJSON(HOOK_COMMS)
+    fetchJSON(HOOK_COMMS),
+    fetchJSON(HOOK_PROPOSALS)
   ]);
-  meetings = meetings.status==='fulfilled'?meetings.value:null;
-  pipeline = pipeline.status==='fulfilled'?pipeline.value:null;
-  calendar = calendar.status==='fulfilled'?calendar.value:null;
-  tasks    = tasks.status==='fulfilled'?tasks.value:null;
-  feed     = feed.status==='fulfilled'?feed.value:null;
-  comms    = comms&&comms.status==='fulfilled'?comms.value:null;
+  meetings  = meetings.status==='fulfilled'?meetings.value:null;
+  pipeline  = pipeline.status==='fulfilled'?pipeline.value:null;
+  calendar  = calendar.status==='fulfilled'?calendar.value:null;
+  tasks     = tasks.status==='fulfilled'?tasks.value:null;
+  feed      = feed.status==='fulfilled'?feed.value:null;
+  comms     = comms&&comms.status==='fulfilled'?comms.value:null;
+  var proposals = proposalsRes&&proposalsRes.status==='fulfilled'?proposalsRes.value:null;
+
+  // Proposals Pending stat
+  if(proposals){
+    animNum('statProposals', proposals.total||0);
+    dashData.proposals=proposals.proposals||[];
+    dashData.proposalsTotal=proposals.total||0;
+    dashData.proposalsDraft=proposals.draft||0;
+    dashData.proposalsSent=proposals.sent||0;
+    dashData.proposalsViewed=proposals.viewed||0;
+    dashData.proposalsSigned=proposals.signed||0;
+  }
 
   if(comms){
     document.getElementById('scCommsVal').textContent = comms.total||0;
@@ -1561,6 +1575,42 @@ function buildContext(){
   if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
   return ctx;
+}
+
+function askProposals(){
+  fetch(HOOK_PROPOSALS).then(r=>r.json()).then(function(d){
+    var all=d.proposals||[];
+    if(!all.length){
+      ask('I have no proposals in the system right now. Should I follow up with anyone about sending a proposal?');
+      return;
+    }
+
+    var draft  =all.filter(function(p){return p.stage==='draft';});
+    var sent   =all.filter(function(p){return p.stage==='sent';});
+    var viewed =all.filter(function(p){return p.stage==='viewed';});
+    var signed =all.filter(function(p){return p.stage==='signed';});
+
+    var fmt=function(arr){
+      return arr.map(function(p){
+        var line='  - '+p.title+' | '+p.contactName+(p.value?' | $'+p.value:'');
+        if(p.stage==='viewed') line+=' | Viewed '+(p.viewCount||'?')+'x';
+        if(p.signedAt) line+=' | Signed '+new Date(p.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        if(p.sentAt&&p.stage!=='signed') line+=' | Sent '+new Date(p.sentAt).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+        return line;
+      }).join('\n');
+    };
+
+    var summary='Here is my full proposals overview ('+all.length+' total):\n\n';
+    if(draft.length)  summary+='📝 DRAFT ('+draft.length+'):\n'+fmt(draft)+'\n\n';
+    if(sent.length)   summary+='📤 SENT — waiting for response ('+sent.length+'):\n'+fmt(sent)+'\n\n';
+    if(viewed.length) summary+='👁 VIEWED — they opened it ('+viewed.length+'):\n'+fmt(viewed)+'\n\n';
+    if(signed.length) summary+='✅ SIGNED ('+signed.length+'):\n'+fmt(signed)+'\n\n';
+
+    summary+='For each draft: should I finish and send it? For each sent/viewed: how long have they been waiting and what follow-up should I send? For signed: any next steps?';
+    ask(summary);
+  }).catch(function(){
+    ask('Show my proposals — which are in draft, sent, viewed, and signed?');
+  });
 }
 
 function askComms(){
