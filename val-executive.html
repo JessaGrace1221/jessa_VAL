@@ -595,7 +595,7 @@ input[type=file]{display:none}
       <div class="stat-label">Meetings Today</div>
     </div>
   </div>
-  <div class="stat" onclick="ask('Show my open and overdue tasks prioritized by urgency.')">
+  <div class="stat" onclick="askTasks()">
     <div class="stat-icon si-red"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
     <div class="stat-info">
       <div class="stat-num" id="statTasks">—<span class="stat-badge sbadge-red hidden" id="statOverdueBadge"></span></div>
@@ -649,11 +649,14 @@ input[type=file]{display:none}
         <div class="scard-sub" id="scNextMeetingTime">Loading...</div>
         <span class="scard-link">View Briefing →</span>
       </div>
-      <div class="scard" onclick="ask('Show my open and overdue tasks')">
+      <div class="scard" onclick="askTasks()">
         <div class="scard-label">Action Items</div>
         <div class="scard-val" id="scTasksVal">—</div>
         <div class="scard-sub" id="scTasksSub">Loading...</div>
-        <span class="scard-link">Show Priorities →</span>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <span class="scard-link">Show Priorities →</span>
+          <span class="scard-link" onclick="event.stopPropagation();startAddTask()">+ Add Task</span>
+        </div>
       </div>
       <div class="scard" onclick="askComms()">
         <div class="scard-label">Comms Queue</div>
@@ -1167,6 +1170,18 @@ function sendMessage(){
   var inp=document.getElementById('msgInput');
   var msg=inp.value.trim();
   if(!msg&&!selFile)return;
+  // Intercept for add task flow
+  if(window._addTaskMode&&addTaskState){
+    inp.value='';inp.style.height='auto';
+    handleAddTaskInput(msg);
+    return;
+  }
+  // Trigger add task if user types "add task" or "new task"
+  if(/^(add|new|create)\s+task/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    startAddTask();
+    return;
+  }
   document.getElementById('sendBtn').disabled=true;
   if(selFile){
     uploadFile(selFile).then(function(){addSys('Uploaded: '+selFile.name);selFile=null;if(msg)chat(msg,inp);else document.getElementById('sendBtn').disabled=false;}).catch(function(){addSys('Upload failed');document.getElementById('sendBtn').disabled=false;});
@@ -1309,6 +1324,243 @@ function wsSetActive(key){
   wsActiveItem = key;
   document.querySelectorAll('.ws-item').forEach(function(el){ el.classList.remove('active'); });
   // Can't easily target by key without data attrs, skip visual for now
+}
+
+// ── TASK WALKTHROUGH ───────────────────────────────────
+var taskQueue=[];
+var taskIndex=0;
+
+// ── ADD TASK FLOW ───────────────────────────────────────
+var addTaskState=null;
+
+function startAddTask(){
+  addTaskState={step:'contact',title:'',contactId:'',contactName:'',dueDate:'',notes:''};
+  addMsg('➕ Add a task',true);
+  addMsg("Sure! What's the task title?",false);
+  // Hijack next user input
+  document.getElementById('msgInput').placeholder='Type task title...';
+  document.getElementById('msgInput').focus();
+  window._addTaskMode=true;
+}
+
+function handleAddTaskInput(text){
+  if(!addTaskState) return false;
+  var s=addTaskState;
+
+  if(s.step==='contact'){
+    // First input = task title
+    s.title=text;
+    s.step='searching';
+    addMsg(text,true);
+    addMsg("Got it. Who is this task for? Type a contact name and I'll find them.",false);
+    s.step='contact_name';
+    document.getElementById('msgInput').placeholder='Type contact name...';
+    return true;
+  }
+
+  if(s.step==='contact_name'){
+    addMsg(text,true);
+    addMsg('Searching for "'+text+'"...',false);
+    s.step='contact_selecting';
+    fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(text))
+    .then(r=>r.json()).then(function(d){
+      var contacts=d.contacts||[];
+      if(!contacts.length){
+        addMsg('No contacts found for "'+text+'". Try a different name.',false);
+        s.step='contact_name';
+        return;
+      }
+      // Show contact options as chips
+      var c=document.getElementById('chatScroll');
+      var wrap=document.createElement('div');
+      wrap.style.cssText='padding:4px 0 12px;';
+      var msg=document.createElement('div');
+      msg.className='cmsg assistant';
+      var opts=contacts.map(function(ct,i){
+        return '<button class="chip" onclick="selectTaskContact(\''+ct.id+'\',\''+ct.name.replace(/'/g,"\\'")+'\',this.parentNode.parentNode.parentNode)">'
+          +ct.name+(ct.email?' · '+ct.email:'')+' </button>';
+      }).join('');
+      msg.innerHTML='<div class="cmsg-bubble"><p>Found '+contacts.length+' contact'+(contacts.length>1?'s':'')+'. Pick one:</p>'+opts+'</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+      c.appendChild(msg);c.scrollTop=c.scrollHeight;
+    }).catch(function(){
+      addMsg('Could not search contacts. Try again.',false);
+      s.step='contact_name';
+    });
+    return true;
+  }
+
+  if(s.step==='due_date'){
+    addMsg(text,true);
+    // Parse natural language date
+    var due=parseNaturalDate(text);
+    s.dueDate=due;
+    s.step='notes';
+    addMsg('Any notes for this task? (or say "none")',false);
+    document.getElementById('msgInput').placeholder='Add notes or say none...';
+    return true;
+  }
+
+  if(s.step==='notes'){
+    addMsg(text,true);
+    s.notes=text==='none'||text.toLowerCase()==='none'?'':text;
+    createTask();
+    return true;
+  }
+
+  return false;
+}
+
+function selectTaskContact(id,name,msgEl){
+  if(msgEl) msgEl.remove();
+  addTaskState.contactId=id;
+  addTaskState.contactName=name;
+  addTaskState.step='due_date';
+  addMsg('Selected: '+name,true);
+  addMsg('When is this due? (e.g. "tomorrow", "Friday", "March 15")',false);
+  document.getElementById('msgInput').placeholder='Enter due date...';
+}
+
+function parseNaturalDate(text){
+  var t=text.toLowerCase().trim();
+  var d=new Date();
+  if(t==='today'){d.setHours(23,59,0,0);return d.toISOString();}
+  if(t==='tomorrow'){d.setDate(d.getDate()+1);d.setHours(23,59,0,0);return d.toISOString();}
+  var days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  var di=days.indexOf(t);
+  if(di>=0){
+    var diff=(di-d.getDay()+7)%7||7;
+    d.setDate(d.getDate()+diff);d.setHours(23,59,0,0);return d.toISOString();
+  }
+  var parsed=new Date(text);
+  if(!isNaN(parsed)) return parsed.toISOString();
+  // Default: 3 days out
+  d.setDate(d.getDate()+3);d.setHours(23,59,0,0);return d.toISOString();
+}
+
+function createTask(){
+  var s=addTaskState;
+  addMsg('Creating task...',false);
+  var body={
+    title:s.title,
+    dueDate:s.dueDate,
+    status:'incompleted',
+    assignedTo:'',
+  };
+  if(s.notes) body.description=s.notes;
+  fetch(PROXY+'/api/ghl/contacts/'+s.contactId+'/tasks',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  })
+  .then(r=>r.json()).then(function(d){
+    if(d.task||d.id||d.success!==false){
+      var due=new Date(s.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+      addMsg('✅ Task created!\n\n**'+s.title+'**\nContact: '+s.contactName+'\nDue: '+due+(s.notes?'\nNotes: '+s.notes:''),false);
+      // Refresh dashboard counts
+      loadDashboard();
+    } else {
+      addMsg('⚠ Task may not have saved: '+(d.message||JSON.stringify(d)),false);
+    }
+    addTaskState=null;
+    window._addTaskMode=false;
+    document.getElementById('msgInput').placeholder='Message VAL...';
+  }).catch(function(e){
+    addMsg('Error creating task: '+e.message,false);
+    addTaskState=null;window._addTaskMode=false;
+  });
+}
+
+function askTasks(){
+  fetch(HOOK_TASKS).then(r=>r.json()).then(function(d){
+    var all=(d.tasks||[]).slice();
+    // Sort: overdue first, then by due date
+    all.sort(function(a,b){
+      var aOver=a.dueDate&&new Date(a.dueDate)<new Date()?1:0;
+      var bOver=b.dueDate&&new Date(b.dueDate)<new Date()?1:0;
+      if(bOver!==aOver) return bOver-aOver;
+      if(!a.dueDate) return 1;
+      if(!b.dueDate) return -1;
+      return new Date(a.dueDate)-new Date(b.dueDate);
+    });
+    if(!all.length){
+      ask('I have no open tasks right now. Suggest what I should be working on based on my pipeline and recent conversations.');
+      return;
+    }
+    taskQueue=all;
+    taskIndex=0;
+    presentTask();
+  }).catch(function(){
+    ask('Show my open and overdue tasks prioritized by urgency.');
+  });
+}
+
+function presentTask(){
+  if(taskIndex>=taskQueue.length){
+    // All done
+    addMsg("✅ That's all your tasks — you've reviewed everything. Well done.",false);
+    taskQueue=[];taskIndex=0;
+    return;
+  }
+  var t=taskQueue[taskIndex];
+  var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'No due date';
+  var overdue=t.dueDate&&new Date(t.dueDate)<new Date();
+  var remaining=taskQueue.length-taskIndex;
+
+  // Build the prompt with full task context
+  var prompt='[Task walkthrough — task '+(taskIndex+1)+' of '+taskQueue.length+']\n\n'
+    +'Task: '+(t.title||t.name||'Untitled')+'\n'
+    +(t.contactName?'Contact: '+t.contactName+'\n':'')
+    +(t.contactEmail?'Email: '+t.contactEmail+'\n':'')
+    +'Due: '+due+(overdue?' ⚠ OVERDUE':'')+'\n'
+    +(t.notes||t.description?'Notes: '+(t.notes||t.description)+'\n':'')
+    +'\nPresent this task to me clearly and concisely. Then suggest 3 specific things you can help me do with it right now (e.g. draft a message, update the CRM, schedule a follow-up, write talking points). '
+    +'End with: "Ready to help — just say go, skip, or done."';
+
+  // Inject task counter into UI
+  addMsg('📋 Task '+(taskIndex+1)+' of '+taskQueue.length+(overdue?' · ⚠ OVERDUE':'')+' · Due '+due,true);
+  sendToVAL(prompt,function(){
+    // After VAL responds, listen for skip/done/next in next user message
+    taskIndex++;
+    // Add quick action chips below VAL's response
+    setTimeout(function(){
+      var c=document.getElementById('chatScroll');
+      var chips=document.createElement('div');
+      chips.style.cssText='display:flex;gap:8px;padding:4px 0 12px 0;flex-wrap:wrap;';
+      chips.innerHTML=
+        '<button class="chip" onclick="presentTask()">Next task →</button>'
+        +'<button class="chip" onclick="taskQueue=[];taskIndex=0;addMsg(\'Task review cancelled.\',false)">Stop</button>';
+      c.appendChild(chips);c.scrollTop=c.scrollHeight;
+    },100);
+  });
+}
+
+function sendToVAL(prompt, onComplete){
+  chatHistory.push({role:'user',content:prompt});
+  addMsg(prompt.split('\n\n')[1]||prompt,true); // show clean version
+  addTyping();
+  document.getElementById('sendBtn').disabled=true;
+  var ctx=buildContext();
+  var msgs=chatHistory.slice();
+  if(ctx) msgs=[{role:'user',content:'[Dashboard context]\n'+ctx},{role:'assistant',content:'Got it.'}].concat(msgs);
+  fetch(CHAT_URL,{method:'POST',headers:{'Api-Key':PINECONE_KEY,'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  .then(function(r){removeTyping();return r.json();})
+  .then(function(d){
+    var m=(d.message&&d.message.content)||d.message||'Could not process.';
+    chatHistory.push({role:'assistant',content:m});
+    addMsg(m,false);
+    if(onComplete) onComplete();
+  })
+  .catch(function(e){removeTyping();addSys('Error: '+e.message);})
+  .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
+}
+
+function buildContext(){
+  var ctx='';
+  if(!dashData) return ctx;
+  if(dashData.meetingsToday!==undefined) ctx+='Meetings today: '+dashData.meetingsToday+'.\n';
+  if(dashData.openTasks!==undefined) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
+  if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
+  return ctx;
 }
 
 function askComms(){
