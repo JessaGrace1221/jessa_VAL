@@ -1,6 +1,6 @@
 const express = require('express');
 const cors    = require('cors');
-const app     = express(); 
+const app     = express();
 
 app.use(cors());
 app.use(express.json());
@@ -227,14 +227,22 @@ app.get('/api/calendar',async(req,res)=>{
       ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`),
       (async()=>{
         const token=await getGoogleToken();
-        if(!token)return{items:[]};
+        if(!token){console.log('Google token missing - need re-auth');return{items:[],needsAuth:true};}
         const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`,{headers:{Authorization:`Bearer ${token}`}});
-        return r.json();
+        const d=await r.json();
+        if(d.error){console.error('Google Calendar API error:',JSON.stringify(d.error));}
+        return d;
       })()
     ]);
 
-    const ghlEvents = ghlRes.status==='fulfilled'?(ghlRes.value.events||ghlRes.value.appointments||[]):[];
-    const googleEvents = googleRes.status==='fulfilled'?(googleRes.value.items||[]):[];
+    const ghlRaw = ghlRes.status==='fulfilled'?ghlRes.value:{};
+    const googleRaw = googleRes.status==='fulfilled'?googleRes.value:{};
+    
+    console.log('GHL calendar keys:',Object.keys(ghlRaw),'events count:',(ghlRaw.events||ghlRaw.appointments||[]).length);
+    console.log('Google calendar items count:',(googleRaw.items||[]).length,'error:',googleRaw.error?.message||'none');
+
+    const ghlEvents = ghlRaw.events||ghlRaw.appointments||[];
+    const googleEvents = googleRaw.items||[];
 
     const mapped = [
       ...ghlEvents.map(ev=>({
@@ -251,10 +259,35 @@ app.get('/api/calendar',async(req,res)=>{
       }))
     ];
 
-    // Sort by start time
     mapped.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
-    res.json({calendarEvents:mapped});
-  }catch(e){res.json({calendarEvents:[]});}
+    res.json({
+      calendarEvents:mapped,
+      _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:!!googleRaw.needsAuth}
+    });
+  }catch(e){
+    console.error('calendar error:',e);
+    res.json({calendarEvents:[],_debug:{error:e.message}});
+  }
+});
+
+// Debug endpoint — raw calendar responses
+app.get('/api/debug/calendar',async(req,res)=>{
+  try{
+    const s=new Date();s.setHours(0,0,0,0);
+    const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
+    const ghlRaw=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
+    const token=await getGoogleToken();
+    let googleRaw={needsAuth:true};
+    if(token){
+      const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=10`,{headers:{Authorization:`Bearer ${token}`}});
+      googleRaw=await r.json();
+    }
+    res.json({
+      timeRange:{start:s.toISOString(),end:e.toISOString(),startMs:s.getTime(),endMs:e.getTime()},
+      ghl:{keys:Object.keys(ghlRaw),eventsCount:(ghlRaw.events||[]).length,appointmentsCount:(ghlRaw.appointments||[]).length,sample:ghlRaw},
+      google:{hasToken:!!token,keys:Object.keys(googleRaw),itemsCount:(googleRaw.items||[]).length,sample:googleRaw}
+    });
+  }catch(e){res.json({error:e.message});}
 });
 
 app.get('/api/tasks',async(req,res)=>{
