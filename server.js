@@ -542,11 +542,89 @@ app.get('/api/comms',async(req,res)=>{
 
 app.get('/api/feed',async(req,res)=>{
   try{
-    const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=20`);
-    const convos=d.conversations||[];
-    const items=convos.filter(c=>c.unreadCount>0).map(c=>({text:`${c.contactName||'Contact'} replied`,type:'Communication',color:'green',time:new Date(c.dateUpdated).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),contactId:c.contactId,actionUrl:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/conversations/${c.id}`}));
-    res.json({feedItems:items,followups:items.length});
-  }catch(e){res.json({feedItems:[],followups:0});}
+    const now=Date.now();
+    const todayStart=new Date();todayStart.setHours(0,0,0,0);
+    const todayEnd=new Date();todayEnd.setHours(23,59,59,999);
+
+    const [convosRes, oppsRes, tasksRes, calRes] = await Promise.allSettled([
+      ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=30`),
+      ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=50`),
+      ghl('GET',`/tasks/search?locationId=${GHL_LOC}&limit=50`),
+      (async()=>{
+        const calData=await ghl('GET',`/calendars/?locationId=${GHL_LOC}`);
+        const calendars=calData.calendars||[];
+        let events=[];
+        await Promise.all(calendars.map(async cal=>{
+          try{
+            const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&calendarId=${cal.id}&startTime=${todayStart.getTime()}&endTime=${todayEnd.getTime()}`);
+            events.push(...(d.events||d.appointments||[]));
+          }catch(e){}
+        }));
+        return events;
+      })()
+    ]);
+
+    const items=[];
+
+    // Unread conversations
+    const convos=convosRes.status==='fulfilled'?(convosRes.value.conversations||[]):[];
+    convos.filter(c=>c.unreadCount>0).slice(0,5).forEach(c=>{
+      items.push({
+        text:`${c.contactName||'Contact'} — ${c.unreadCount} unread message${c.unreadCount>1?'s':''}`,
+        type:'Comms',color:'green',
+        time:new Date(c.dateUpdated).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),
+        actionUrl:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/conversations/${c.id}`
+      });
+    });
+
+    // Stalled pipeline deals
+    const opps=oppsRes.status==='fulfilled'?(oppsRes.value.opportunities||[]):[];
+    opps.filter(o=>(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>7*24*60*60*1000).slice(0,3).forEach(o=>{
+      const days=Math.floor((now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())/(24*60*60*1000));
+      items.push({
+        text:`${o.contact?.name||o.name} — pipeline stalled ${days}d`,
+        type:'Pipeline',color:'amber',
+        time:o.pipelineStage?.name||'Open',
+        actionUrl:`https://app.gohighlevel.com/v2/location/${GHL_LOC}/opportunities/${o.id}`
+      });
+    });
+
+    // Overdue tasks
+    const tasks=tasksRes.status==='fulfilled'?(tasksRes.value.tasks||tasksRes.value||[]):[];
+    const taskArr=Array.isArray(tasks)?tasks:(tasks.tasks||[]);
+    taskArr.filter(t=>t.dueDate&&new Date(t.dueDate)<new Date()&&!t.completed).slice(0,3).forEach(t=>{
+      items.push({
+        text:`Overdue: ${t.title||t.name||'Task'}`,
+        type:'Task',color:'red',
+        time:new Date(t.dueDate).toLocaleDateString([],{month:'short',day:'numeric'})
+      });
+    });
+
+    // Today's meetings
+    const events=calRes.status==='fulfilled'?(Array.isArray(calRes.value)?calRes.value:[]):[];
+    events.slice(0,3).forEach(e=>{
+      const start=e.startTime||e.start?.dateTime||e.start?.date;
+      items.push({
+        text:`Meeting: ${e.title||e.summary||'Appointment'}`,
+        type:'Meeting',color:'gold',
+        time:start?new Date(start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):''
+      });
+    });
+
+    // Sort: comms first, then pipeline, tasks, meetings
+    const order={Comms:0,Pipeline:1,Task:2,Meeting:3};
+    items.sort((a,b)=>(order[a.type]||9)-(order[b.type]||9));
+
+    // Fallback if nothing
+    if(!items.length){
+      items.push({text:'All clear — no urgent signals',type:'Status',color:'navy',time:new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})});
+    }
+
+    res.json({feedItems:items,followups:convos.filter(c=>c.unreadCount>0).length});
+  }catch(e){
+    console.error('feed error:',e);
+    res.json({feedItems:[{text:'Feed unavailable',type:'Error',color:'red',time:''}],followups:0});
+  }
 });
 
 // ════════════════════════════════════════════════════════
