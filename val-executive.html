@@ -121,7 +121,7 @@ html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost
 
 /* ── LEFT PANEL ── */
 .lpanel{
-  width:300px;flex-shrink:0;
+  width:320px;flex-shrink:0;
   background:var(--cream);
   border-right:1px solid var(--border);
   display:flex;flex-direction:column;overflow:hidden;
@@ -387,7 +387,7 @@ html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost
 
 /* ── RIGHT PANEL ── */
 .rpanel{
-  width:264px;flex-shrink:0;background:white;
+  width:340px;flex-shrink:0;background:white;
   border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;
 }
 .rpanel-head{
@@ -771,6 +771,7 @@ var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_TASKS    = PROXY+'/api/tasks';
 var HOOK_FEED     = PROXY+'/api/feed';
+var HOOK_COMMS    = PROXY+'/api/comms';
 // ────────────────────────────────────────────────────────
 
 var CHAT_URL  = PINECONE_HOST+'/assistant/chat/'+ASSISTANT_NAME;
@@ -826,18 +827,28 @@ async function fetchJSON(url){
 
 async function loadDashboard(){
   // Fire all 5 webhooks in parallel - each independent
-  var [meetings, pipeline, calendar, tasks, feed] = await Promise.allSettled([
+  var [meetings, pipeline, calendar, tasks, feed, comms] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
     fetchJSON(HOOK_CALENDAR),
     fetchJSON(HOOK_TASKS),
-    fetchJSON(HOOK_FEED)
+    fetchJSON(HOOK_FEED),
+    fetchJSON(HOOK_COMMS)
   ]);
   meetings = meetings.status==='fulfilled'?meetings.value:null;
   pipeline = pipeline.status==='fulfilled'?pipeline.value:null;
   calendar = calendar.status==='fulfilled'?calendar.value:null;
   tasks    = tasks.status==='fulfilled'?tasks.value:null;
   feed     = feed.status==='fulfilled'?feed.value:null;
+  comms    = comms&&comms.status==='fulfilled'?comms.value:null;
+
+  if(comms){
+    document.getElementById('scCommsVal').textContent = comms.total||0;
+    const parts=[];
+    if(comms.gmailDrafts>0) parts.push(`${comms.gmailDrafts} Gmail draft${comms.gmailDrafts>1?'s':''}`);
+    if(comms.ghlUnread>0) parts.push(`${comms.ghlUnread} unread`);
+    document.getElementById('scCommsSub').textContent = parts.length?parts.join(' · '):'All clear';
+  }
 
   // Parse text fields if they contain JSON strings
   function parse(d){ if(!d)return null; if(typeof d.text==='string'){try{return JSON.parse(d.text);}catch(e){}}return d; }
@@ -887,7 +898,10 @@ async function loadDashboard(){
 
   // CALENDAR
   if(calendar&&calendar.calendarEvents&&calendar.calendarEvents.length){
+    console.log('Calendar events received:', calendar.calendarEvents.length, calendar.calendarEvents.map(function(e){return {title:e.summary||e.title,start:e.startTime,source:e.source};}));
     renderWeek(calendar.calendarEvents);
+  } else {
+    console.warn('Calendar: no events or empty response', calendar);
   }
 
   // TASKS
@@ -969,32 +983,60 @@ function renderFeed(items){
 function renderWeek(events){
   var el=document.getElementById('weekScroll');if(!el)return;
   el.innerHTML='';
-  // Group by day
   var days={};
   var today=new Date();today.setHours(0,0,0,0);
+
   events.forEach(function(ev){
-    var dt=new Date(ev.start&&ev.start.dateTime||ev.start&&ev.start.date||ev.startTime||ev.date||ev.summary);
+    // Robust date extraction — never fall back to title
+    var raw = ev.startTime || ev.start_time ||
+              (ev.start && (ev.start.dateTime||ev.start.date)) ||
+              ev.date || null;
+    if(!raw) return; // skip events with no date
+    var dt=new Date(raw);
+    if(isNaN(dt.getTime())) return; // skip unparseable
+    dt.setHours(0,0,0,0); // normalize to day
     var key=dt.toDateString();
-    if(!days[key])days[key]={date:dt,events:[]};
+    if(!days[key])days[key]={date:new Date(raw),dayStart:dt,events:[]};
     days[key].events.push(ev);
   });
-  var sorted=Object.values(days).sort(function(a,b){return a.date-b.date;});
+
+  var sorted=Object.values(days).sort(function(a,b){return a.dayStart-b.dayStart;});
+  if(!sorted.length){
+    el.innerHTML='<div class="day-empty" style="padding:1rem">No events found</div>';
+    return;
+  }
+
   sorted.forEach(function(day){
-    var isToday=day.date.toDateString()===today.toDateString();
+    var isToday=day.dayStart.toDateString()===today.toDateString();
     var block=document.createElement('div');
     block.className='day-block'+(isToday?' today':'');
     var dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     var monthNames=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var headHtml='<div class="day-head">'+(isToday?dayNames[day.date.getDay()]+' — Today':dayNames[day.date.getDay()])+'<span class="day-date-num">'+monthNames[day.date.getMonth()]+' '+day.date.getDate()+'</span></div>';
+    var dayLabel=isToday?dayNames[day.dayStart.getDay()]+' — Today':dayNames[day.dayStart.getDay()];
+    var dateLabel=monthNames[day.dayStart.getMonth()]+' '+day.dayStart.getDate();
+    var headHtml='<div class="day-head">'+dayLabel+'<span class="day-date-num">'+dateLabel+'</span></div>';
+
+    // Sort events within day by start time
+    day.events.sort(function(a,b){
+      var ta=new Date(a.startTime||(a.start&&(a.start.dateTime||a.start.date))||0);
+      var tb=new Date(b.startTime||(b.start&&(b.start.dateTime||b.start.date))||0);
+      return ta-tb;
+    });
+
     var evtsHtml='';
     day.events.forEach(function(ev){
       var title=ev.summary||ev.title||ev.name||'Event';
-      var startDt=ev.start&&ev.start.dateTime||ev.startTime;
-      var timeStr=startDt?new Date(startDt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
-      evtsHtml+='<div class="day-evt"><div class="epip epip-navy"></div><div class="einfo"><div class="etitle">'+title+'</div><div class="emeta">'+timeStr+'</div></div></div>';
+      var rawStart=ev.startTime||(ev.start&&(ev.start.dateTime||ev.start.date));
+      var timeStr=rawStart?new Date(rawStart).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
+      var source=ev.source||'ghl';
+      var pip=source==='google'?'epip-gold':'epip-navy';
+      var status=ev.status||ev.appointmentStatus||'';
+      var badge='';
+      if(status==='unconfirmed'||status==='needs_confirmation') badge='<span class="ebadge">Needs confirmation</span>';
+      evtsHtml+='<div class="day-evt"><div class="epip '+pip+'"></div><div class="einfo"><div class="etitle">'+title+'</div><div class="emeta">'+timeStr+(source==='google'?' · Google Calendar':'')+'</div></div>'+badge+'</div>';
     });
     block.innerHTML=headHtml+evtsHtml;
-    block.onclick=function(){ask('Tell me about my '+dayNames[day.date.getDay()]+' schedule and how to prepare.');};
+    block.onclick=function(){ask('Tell me about my '+dayLabel+' schedule and how to prepare.');};
     el.appendChild(block);
   });
 }
