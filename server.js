@@ -689,6 +689,20 @@ app.get('/api/ghl/contacts/:id/tasks',async(req,res)=>{
   catch(e){res.status(500).json({error:e.message});}
 });
 
+app.post('/api/ghl/contacts/:id/tasks',async(req,res)=>{
+  try{res.json(await ghl('POST',`/contacts/${req.params.id}/tasks`,req.body));}
+  catch(e){res.status(500).json({error:e.message});}
+});
+
+app.get('/api/ghl/contacts/search',async(req,res)=>{
+  try{
+    const q=req.query.q||'';
+    const d=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&query=${encodeURIComponent(q)}&limit=5`);
+    res.json({contacts:(d.contacts||[]).map(c=>({id:c.id,name:c.contactName||c.name||c.firstName+' '+c.lastName,email:c.email,phone:c.phone}))});
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
+
 app.post('/api/ghl/contacts/:id/tags',async(req,res)=>{
   try{res.json(await ghl('POST',`/contacts/${req.params.id}/tags`,req.body));}
   catch(e){res.status(500).json({error:e.message});}
