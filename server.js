@@ -7,7 +7,7 @@ app.use(express.json());
 
 const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY; 
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const BASE    = 'https://services.leadconnectorhq.com';
 
