@@ -765,7 +765,42 @@ var PROXY         = 'https://jessaval-production.up.railway.app';
 var HOOK_MEETINGS = PROXY+'/api/meetings';
 var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
-var HOOK_TASKS    = PROXY+'/api/tasks';
+var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
+
+// ── VAL TASK STORE (in-memory, VAL-managed) ────────────
+var valTasks = [];
+function valTasksLoad(){
+  // Tasks live in memory — seeded from Pinecone context on first chat
+  // and added via addTask flow or VAL suggestions
+  refreshTaskUI();
+}
+function valTasksSave(){}// no persistence needed — VAL knows from transcripts
+function refreshTaskUI(){
+  var now=new Date();
+  var open=valTasks.filter(function(t){return !t.completed;});
+  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
+  animNum('statTasks',open.length);
+  setText('scTasksVal',open.length+' Open');
+  setText('scTasksSub',overdue.length>0?overdue.length+' overdue':'All on track');
+  if(overdue.length>0){
+    var ob=document.getElementById('statOverdueBadge');
+    if(ob){ob.textContent=overdue.length;ob.classList.remove('hidden');}
+  }
+  dashData.openTasks=open.length;
+  dashData.overdueTasks=overdue.length;
+  dashData.tasks=open;
+}
+function valAddTask(title,contactName,dueDate,notes){
+  var task={id:'t'+Date.now(),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',completed:false,createdAt:new Date().toISOString()};
+  valTasks.push(task);
+  refreshTaskUI();
+  return task;
+}
+function valCompleteTask(id){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(t){t.completed=true;refreshTaskUI();}
+}
+valTasksLoad();
 var HOOK_FEED     = PROXY+'/api/feed';
 var HOOK_COMMS    = PROXY+'/api/comms';
 var HOOK_PROPOSALS= PROXY+'/api/proposals';
@@ -845,19 +880,15 @@ function setMode(m,btn){
 
   else if(m==='operations'){
     // Operations: tasks + comms + what needs to be cleared
-    Promise.all([
-      fetch(HOOK_TASKS).then(r=>r.json()).catch(function(){return {};}),
-      fetch(HOOK_COMMS).then(r=>r.json()).catch(function(){return {};})
-    ]).then(function(results){
-      var tasks=results[0];
-      var comms=results[1];
-      var taskCount=(tasks.openTasks||0);
-      var overdueCount=(tasks.overdueTasks||0);
-      var unread=(comms.total||0);
+    var open=valTasks.filter(function(t){return !t.completed;});
+    var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<new Date();});
+    fetch(HOOK_COMMS).then(r=>r.json()).then(function(comms){
       ask('I\'ve switched to Operations Mode. Here is what needs attention:\n\n'
-        +'- Tasks: '+taskCount+' open'+(overdueCount?' ('+overdueCount+' overdue)':'')+'\n'
-        +'- Unread conversations: '+unread+'\n\n'
+        +'- Tasks: '+open.length+' open'+(overdue.length?' ('+overdue.length+' overdue)':'')+'\n'
+        +'- Unread conversations: '+(comms.total||0)+'\n\n'
         +'What should I clear first to run the business cleanly today? Give me a prioritized action list — be specific and operational, not strategic.');
+    }).catch(function(){
+      ask('I\'ve switched to Operations Mode. I have '+open.length+' open tasks. What should I clear first today?');
     });
   }
 }
@@ -894,12 +925,11 @@ async function fetchJSON(url){
 }
 
 async function loadDashboard(){
-  // Fire all 5 webhooks in parallel - each independent
-  var [meetings, pipeline, calendar, tasks, feed, comms, proposalsRes] = await Promise.allSettled([
+  refreshTaskUI(); // use VAL-managed tasks, no GHL fetch needed
+  var [meetings, pipeline, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
     fetchJSON(HOOK_CALENDAR),
-    fetchJSON(HOOK_TASKS),
     fetchJSON(HOOK_FEED),
     fetchJSON(HOOK_COMMS),
     fetchJSON(HOOK_PROPOSALS)
@@ -907,7 +937,6 @@ async function loadDashboard(){
   meetings  = meetings.status==='fulfilled'?meetings.value:null;
   pipeline  = pipeline.status==='fulfilled'?pipeline.value:null;
   calendar  = calendar.status==='fulfilled'?calendar.value:null;
-  tasks     = tasks.status==='fulfilled'?tasks.value:null;
   feed      = feed.status==='fulfilled'?feed.value:null;
   comms     = comms&&comms.status==='fulfilled'?comms.value:null;
   var proposals = proposalsRes&&proposalsRes.status==='fulfilled'?proposalsRes.value:null;
@@ -938,11 +967,10 @@ async function loadDashboard(){
   meetings = parse(meetings);
   pipeline = parse(pipeline);
   calendar = parse(calendar);
-  tasks    = parse(tasks);
   feed     = parse(feed);
-
-  // Merge into dashData
-  dashData = Object.assign({}, meetings||{}, pipeline||{}, calendar||{}, tasks||{}, feed||{});
+  feed     = parse(feed);
+  dashData = Object.assign({}, meetings||{}, pipeline||{}, calendar||{}, feed||{});
+  refreshTaskUI(); // re-sync VAL tasks into dashData
 
   // MEETINGS
   if(meetings){
@@ -1107,21 +1135,44 @@ function renderWeek(events){
     });
 
     var evtsHtml='';
-    day.events.forEach(function(ev){
+    day.events.forEach(function(ev,ei){
       var title=ev.summary||ev.title||ev.name||'Event';
       var rawStart=ev.startTime||(ev.start&&(ev.start.dateTime||ev.start.date));
+      var rawEnd=ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date));
       var timeStr=rawStart?new Date(rawStart).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
+      if(rawEnd) timeStr+=' – '+new Date(rawEnd).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
       var source=ev.source||'ghl';
       var pip=source==='google'?'epip-gold':'epip-navy';
       var status=ev.status||ev.appointmentStatus||'';
-      var badge='';
-      if(status==='unconfirmed'||status==='needs_confirmation') badge='<span class="ebadge">Needs confirmation</span>';
-      evtsHtml+='<div class="day-evt"><div class="epip '+pip+'"></div><div class="einfo"><div class="etitle">'+title+'</div><div class="emeta">'+timeStr+(source==='google'?' · Google Calendar':'')+'</div></div>'+badge+'</div>';
+      var badge=status==='unconfirmed'||status==='needs_confirmation'?'<span class="ebadge">Needs confirmation</span>':'';
+      var contact=ev.contactName||ev.contact?.name||'';
+      var desc=ev.description||ev.notes||'';
+      // Encode event data as JSON in data attribute for click handler
+      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source});
+      evtsHtml+='<div class="day-evt" style="cursor:pointer" data-ev=\''+evData.replace(/'/g,'&apos;')+'\' onclick="onEventClick(this)">'
+        +'<div class="epip '+pip+'"></div>'
+        +'<div class="einfo"><div class="etitle">'+title+'</div>'
+        +'<div class="emeta">'+timeStr+(source==='google'?' · Google':'')+'</div></div>'
+        +badge+'</div>';
     });
     block.innerHTML=headHtml+evtsHtml;
-    block.onclick=function(){ask('Tell me about my '+dayLabel+' schedule and how to prepare.');};
     el.appendChild(block);
   });
+}
+
+function onEventClick(el){
+  try{
+    var ev=JSON.parse(el.getAttribute('data-ev').replace(/&apos;/g,"'"));
+    openDetailWithTitle(ev.title+' Briefing');
+    var prompt='Give me a full briefing for this specific meeting:\n\n'
+      +'Title: '+ev.title+'\n'
+      +'Time: '+ev.timeStr+'\n'
+      +'Date: '+ev.dateLabel+'\n'
+      +(ev.contact?'Contact: '+ev.contact+'\n':'')
+      +(ev.desc?'Details: '+ev.desc+'\n':'')
+      +'\nWho is this with, what should I prepare, what are the key talking points, and what outcome should I aim for?';
+    ask(prompt);
+  }catch(e){console.error('event click error',e);}
 }
 
 function renderWeekFallback(){
@@ -1665,59 +1716,31 @@ function parseNaturalDate(text){
 
 function createTask(){
   var s=addTaskState;
-  addMsg('Creating task...',false);
-  var body={
-    title:s.title,
-    dueDate:s.dueDate,
-    status:'incompleted',
-    assignedTo:'',
-  };
-  if(s.notes) body.description=s.notes;
-  fetch(PROXY+'/api/ghl/contacts/'+s.contactId+'/tasks',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  })
-  .then(r=>r.json()).then(function(d){
-    if(d.task||d.id||d.success!==false){
-      var due=new Date(s.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-      addMsg('✅ Task created!\n\n**'+s.title+'**\nContact: '+s.contactName+'\nDue: '+due+(s.notes?'\nNotes: '+s.notes:''),false);
-      // Refresh dashboard counts
-      loadDashboard();
-    } else {
-      addMsg('⚠ Task may not have saved: '+(d.message||JSON.stringify(d)),false);
-    }
-    addTaskState=null;
-    window._addTaskMode=false;
-    document.getElementById('msgInput').placeholder='Message VAL...';
-  }).catch(function(e){
-    addMsg('Error creating task: '+e.message,false);
-    addTaskState=null;window._addTaskMode=false;
-  });
+  var task=valAddTask(s.title, s.contactName, s.dueDate, s.notes);
+  var due=new Date(s.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  addMsg('✅ Task created!\n\n**'+s.title+'**\nContact: '+s.contactName+'\nDue: '+due+(s.notes?'\nNotes: '+s.notes:''),false);
+  addTaskState=null;
+  window._addTaskMode=false;
+  document.getElementById('msgInput').placeholder='Message VAL...';
 }
 
 function askTasks(){
-  fetch(HOOK_TASKS).then(r=>r.json()).then(function(d){
-    var all=(d.tasks||[]).slice();
-    // Sort: overdue first, then by due date
-    all.sort(function(a,b){
-      var aOver=a.dueDate&&new Date(a.dueDate)<new Date()?1:0;
-      var bOver=b.dueDate&&new Date(b.dueDate)<new Date()?1:0;
-      if(bOver!==aOver) return bOver-aOver;
-      if(!a.dueDate) return 1;
-      if(!b.dueDate) return -1;
-      return new Date(a.dueDate)-new Date(b.dueDate);
-    });
-    if(!all.length){
-      ask('I have no open tasks right now. Suggest what I should be working on based on my pipeline and recent conversations.');
-      return;
-    }
-    taskQueue=all;
-    taskIndex=0;
-    presentTask();
-  }).catch(function(){
-    ask('Show my open and overdue tasks prioritized by urgency.');
+  var all=valTasks.filter(function(t){return !t.completed;});
+  all.sort(function(a,b){
+    var aOver=a.dueDate&&new Date(a.dueDate)<new Date()?1:0;
+    var bOver=b.dueDate&&new Date(b.dueDate)<new Date()?1:0;
+    if(bOver!==aOver) return bOver-aOver;
+    if(!a.dueDate) return 1;
+    if(!b.dueDate) return -1;
+    return new Date(a.dueDate)-new Date(b.dueDate);
   });
+  if(!all.length){
+    ask('I have no open tasks right now. Based on my pipeline, recent conversations, and meetings, what should I be working on? Suggest 3 specific action items.');
+    return;
+  }
+  taskQueue=all;
+  taskIndex=0;
+  presentTask();
 }
 
 function presentTask(){
@@ -1752,9 +1775,11 @@ function presentTask(){
       var c=document.getElementById('chatScroll');
       var chips=document.createElement('div');
       chips.style.cssText='display:flex;gap:8px;padding:4px 0 12px 0;flex-wrap:wrap;';
+      var tid=taskQueue[taskIndex-1]?taskQueue[taskIndex-1].id:'';
       chips.innerHTML=
         '<button class="chip" onclick="presentTask()">Next task →</button>'
-        +'<button class="chip" onclick="taskQueue=[];taskIndex=0;addMsg(\'Task review cancelled.\',false)">Stop</button>';
+        +(tid?'<button class="chip" onclick="valCompleteTask(\''+tid+'\');this.parentNode.remove();addMsg(\'✅ Marked complete.\',false)">Mark complete ✓</button>':'')
+        +'<button class="chip" onclick="taskQueue=[];taskIndex=0;addMsg(\'Task review paused.\',false)">Stop</button>';
       c.appendChild(chips);c.scrollTop=c.scrollHeight;
     },100);
   });
