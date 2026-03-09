@@ -386,6 +386,67 @@ app.get('/api/debug/calendar',async(req,res)=>{
   }catch(e){res.json({error:e.message});}
 });
 
+app.get('/api/tasks',async(req,res)=>{
+  const now=new Date();
+  function normalizeTasks(arr){
+    return arr.map(t=>({
+      id:t.id||t._id,
+      title:t.title||t.name||t['task.title']||'(No title)',
+      contactName:t.contactName||t.contact?.name||t.assignedTo||'',
+      contactId:t.contactId||t.contact?.id||'',
+      dueDate:t.dueDate||t.due_date||t.dueAt||t.due||null,
+      status:t.status||t.taskStatus||'open',
+      completed:t.completed||t.status==='completed'||t.taskStatus==='completed'
+    }));
+  }
+  async function trySearchEndpoint(){
+    const d=await ghl('GET',`/contacts/tasks/search?locationId=${GHL_LOC}&limit=100&status=open`);
+    console.log('tasks search response keys:',Object.keys(d));
+    const arr=d.tasks||d.data||d.items||d.records||[];
+    if(arr.length>0) return normalizeTasks(arr);
+    return null;
+  }
+  async function tryLocationEndpoint(){
+    const d=await ghl('GET',`/locations/${GHL_LOC}/tasks?limit=100&status=open`);
+    console.log('tasks location response keys:',Object.keys(d));
+    const arr=d.tasks||d.data||d.items||d.records||[];
+    if(arr.length>0) return normalizeTasks(arr);
+    return null;
+  }
+  async function trySearchPost(){
+    const d=await ghl('POST',`/contacts/tasks/search`,{locationId:GHL_LOC,limit:100,filters:[{field:'status',value:'open'}]});
+    console.log('tasks POST response keys:',Object.keys(d));
+    const arr=d.tasks||d.data||d.items||d.records||[];
+    if(arr.length>0) return normalizeTasks(arr);
+    return null;
+  }
+  async function tryContactLoop(){
+    const contactsData=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=20&sortBy=date_added&sortDirection=desc`);
+    const contacts=contactsData.contacts||[];
+    const taskArrays=await Promise.all(contacts.map(async c=>{
+      try{
+        const t=await ghl('GET',`/contacts/${c.id}/tasks`);
+        return (t.tasks||[]).map(task=>({...task,contactName:(c.firstName||'')+' '+(c.lastName||''),contactId:c.id}));
+      }catch(e){return [];}
+    }));
+    return normalizeTasks(taskArrays.flat());
+  }
+  try{
+    let allTasks=null,source='';
+    try{ allTasks=await trySearchEndpoint(); source='search'; }catch(e){ console.log('search endpoint failed:',e.message); }
+    if(!allTasks){ try{ allTasks=await tryLocationEndpoint(); source='location'; }catch(e){ console.log('location endpoint failed:',e.message); } }
+    if(!allTasks){ try{ allTasks=await trySearchPost(); source='post'; }catch(e){ console.log('post endpoint failed:',e.message); } }
+    if(!allTasks){ allTasks=await tryContactLoop(); source='loop'; }
+    console.log(`tasks source: ${source}, count: ${allTasks.length}`);
+    const open=allTasks.filter(t=>!t.completed);
+    const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<now);
+    res.json({openTasks:open.length,overdueTasks:overdue.length,source,tasks:open.slice(0,50).map(t=>({id:t.id,title:t.title,contactName:t.contactName,contactId:t.contactId,dueDate:t.dueDate,status:t.status,overdue:!!(t.dueDate&&new Date(t.dueDate)<now)}))});
+  }catch(e){
+    console.error('tasks error:',e);
+    res.json({openTasks:0,overdueTasks:0,tasks:[],error:e.message});
+  }
+});
+
 // Debug endpoint — tasks
 app.get('/api/debug/tasks',async(req,res)=>{
   try{
@@ -416,89 +477,6 @@ app.get('/api/debug/tasks',async(req,res)=>{
       contactTaskSample
     });
   }catch(e){res.json({error:e.message});}
-});
-  const now=new Date();
-  
-  // Helper to normalize tasks from any endpoint shape
-  function normalizeTasks(arr){
-    return arr.map(t=>({
-      id: t.id||t._id,
-      title: t.title||t.name||t['task.title']||'(No title)',
-      contactName: t.contactName||t.contact?.name||t.assignedTo||'',
-      contactId: t.contactId||t.contact?.id||'',
-      dueDate: t.dueDate||t.due_date||t.dueAt||t.due||null,
-      status: t.status||t.taskStatus||'open',
-      completed: t.completed||t.status==='completed'||t.taskStatus==='completed'
-    }));
-  }
-
-  // Try endpoint 1: /contacts/tasks/search (v1 bulk search)
-  async function trySearchEndpoint(){
-    const d=await ghl('GET',`/contacts/tasks/search?locationId=${GHL_LOC}&limit=100&status=open`);
-    console.log('tasks search response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-
-  // Try endpoint 2: /locations/{id}/tasks (v2 location tasks)
-  async function tryLocationEndpoint(){
-    const d=await ghl('GET',`/locations/${GHL_LOC}/tasks?limit=100&status=open`);
-    console.log('tasks location response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-
-  // Try endpoint 3: search via POST
-  async function trySearchPost(){
-    const d=await ghl('POST',`/contacts/tasks/search`,{locationId:GHL_LOC,limit:100,filters:[{field:'status',value:'open'}]});
-    console.log('tasks POST response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-
-  // Fallback: contact loop (original approach, capped at 20 contacts)
-  async function tryContactLoop(){
-    const contactsData=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=20&sortBy=date_added&sortDirection=desc`);
-    const contacts=contactsData.contacts||[];
-    const taskArrays=await Promise.all(contacts.map(async c=>{
-      try{
-        const t=await ghl('GET',`/contacts/${c.id}/tasks`);
-        return (t.tasks||[]).map(task=>({...task,contactName:(c.firstName||'')+' '+(c.lastName||''),contactId:c.id}));
-      }catch(e){return [];}
-    }));
-    return normalizeTasks(taskArrays.flat());
-  }
-
-  try{
-    let allTasks=null;
-    let source='';
-
-    try{ allTasks=await trySearchEndpoint(); source='search'; }catch(e){ console.log('search endpoint failed:',e.message); }
-    if(!allTasks){ try{ allTasks=await tryLocationEndpoint(); source='location'; }catch(e){ console.log('location endpoint failed:',e.message); } }
-    if(!allTasks){ try{ allTasks=await trySearchPost(); source='post'; }catch(e){ console.log('post endpoint failed:',e.message); } }
-    if(!allTasks){ allTasks=await tryContactLoop(); source='loop'; }
-
-    console.log(`tasks source: ${source}, count: ${allTasks.length}`);
-    const open=allTasks.filter(t=>!t.completed);
-    const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<now);
-
-    res.json({
-      openTasks:open.length,
-      overdueTasks:overdue.length,
-      source,
-      tasks:open.slice(0,50).map(t=>({
-        id:t.id, title:t.title, contactName:t.contactName,
-        contactId:t.contactId, dueDate:t.dueDate,
-        status:t.status, overdue:!!(t.dueDate&&new Date(t.dueDate)<now)
-      }))
-    });
-  }catch(e){
-    console.error('tasks error:',e);
-    res.json({openTasks:0,overdueTasks:0,tasks:[],error:e.message});
-  }
 });
 
 app.get('/api/feed',async(req,res)=>{
