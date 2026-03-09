@@ -248,8 +248,44 @@ app.get('/api/pipeline',async(req,res)=>{
     const opps=d.opportunities||[];
     const now=Date.now();
     const stalled=opps.filter(o=>(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000);
-    res.json({pipelineActive:d.meta?.total||opps.length,stalledDeals:stalled.length,opportunities:opps.map(o=>({id:o.id,name:o.name,status:o.status,stage:o.pipelineStage?.name,value:o.monetaryValue,contactName:o.contact?.name,updatedAt:o.updatedAt}))});
-  }catch(e){res.json({pipelineActive:0,stalledDeals:0,opportunities:[]});}
+
+    // Enrich each opp with contact notes
+    const enriched=await Promise.all(opps.map(async o=>{
+      const stage=o.pipelineStage?.name||o.stage?.name||o.stageName||'Unknown Stage';
+      const contactId=o.contact?.id||o.contactId;
+      let notes=[];
+      let contactEmail='';
+      let contactPhone='';
+      try{
+        if(contactId){
+          const [notesData,contactData]=await Promise.all([
+            ghl('GET',`/contacts/${contactId}/notes?limit=5`),
+            ghl('GET',`/contacts/${contactId}`)
+          ]);
+          notes=(notesData.notes||[]).map(n=>n.body||n.note||'').filter(Boolean).slice(0,3);
+          contactEmail=contactData.contact?.email||'';
+          contactPhone=contactData.contact?.phone||'';
+        }
+      }catch(e){console.log('contact enrich error:',e.message);}
+      return {
+        id:o.id,
+        name:o.name,
+        status:o.status,
+        stage,
+        value:o.monetaryValue,
+        contactName:o.contact?.name||o.contactName||'',
+        contactId,
+        contactEmail,
+        contactPhone,
+        notes,
+        updatedAt:o.updatedAt,
+        daysInStage:Math.floor((now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())/(24*60*60*1000)),
+        stalled:(now-new Date(o.lastStatusChangeAt||o.updatedAt).getTime())>14*24*60*60*1000
+      };
+    }));
+
+    res.json({pipelineActive:d.meta?.total||opps.length,stalledDeals:stalled.length,opportunities:enriched});
+  }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[]});}
 });
 
 app.get('/api/calendar',async(req,res)=>{
