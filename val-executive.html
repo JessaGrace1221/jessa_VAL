@@ -725,13 +725,6 @@ input[type=file]{display:none}
           <svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
         </button>
       </div>
-      <div class="chips">
-        <button class="chip" onclick="ask('Prepare a full briefing for my next meeting')">Prepare Ed meeting</button>
-        <button class="chip" onclick="ask('Show overdue tasks and what to do first')">Show overdue tasks</button>
-        <button class="chip" onclick="ask('Draft a follow up to my most recent lead')">Draft follow up</button>
-        <button class="chip" onclick="ask('What happened yesterday and what needs attention today?')">Yesterday\'s summary</button>
-        <button class="chip" onclick="askPipeline()">Pipeline signals</button>
-      </div>
     </div>
   </div>
 
@@ -757,7 +750,7 @@ input[type=file]{display:none}
     <button class="rec-stop" onclick="stopRecording()">Stop</button>
   </div>
 </div>
-<input type="file" id="fileIn" onchange="onFile(event)" accept=".txt,.pdf,.doc,.docx,.md,.json,.html">
+<input type="file" id="fileIn" onchange="onFile(event)" accept=".pdf,.txt,.md,.html,.json,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,image/*">
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
@@ -791,11 +784,82 @@ function clock(){var el=document.getElementById('tbClock');if(el)el.textContent=
 clock();setInterval(clock,10000);
 
 // ── MODE ───────────────────────────────────────────────
+var currentMode='focus';
 function setMode(m,btn){
+  currentMode=m;
   document.querySelectorAll('.mbtn-mode').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
   var labels={focus:'Ready',meeting:'Meeting Mode',strategy:'Strategy Mode',operations:'Operations Mode'};
   setText('stext',labels[m]);
+  openDetailWithTitle(labels[m]);
+
+  if(m==='focus'){
+    // Daily focus: overdue tasks + top priority
+    fetch(HOOK_TASKS).then(r=>r.json()).then(function(d){
+      var tasks=d.tasks||[];
+      var overdue=tasks.filter(function(t){return t.overdue;});
+      var open=tasks.filter(function(t){return !t.overdue;}).slice(0,3);
+      var detail='';
+      if(overdue.length) detail+='Overdue ('+overdue.length+'): '+overdue.map(function(t){return t.title+(t.contactName?' for '+t.contactName:'');}).join(', ')+'. ';
+      if(open.length) detail+='Up next: '+open.map(function(t){return t.title;}).join(', ')+'. ';
+      ask('I\'ve switched to Focus Mode. '+detail+'What is the single most important thing I should be working on right now? Be direct and specific.');
+    }).catch(function(){
+      ask('I\'ve switched to Focus Mode. What is the single most important thing I should work on right now based on my tasks, pipeline, and meetings today? Be direct and give me one clear priority.');
+    });
+  }
+
+  else if(m==='meeting'){
+    // Meeting prep: who is next, full briefing
+    var name=document.getElementById('scNextMeetingName').textContent||'';
+    var time=document.getElementById('scNextMeetingTime').textContent||'';
+    if(name&&name!=='—'&&name!=='None today'){
+      ask('I\'ve switched to Meeting Mode. My next meeting is '+name+' at '+time+'. Give me a full briefing: who they are, what we\'ve discussed before, what the goal of this meeting should be, and 3 talking points to open strong.');
+    } else {
+      fetch(HOOK_CALENDAR).then(r=>r.json()).then(function(d){
+        var events=(d.events||d.appointments||[]);
+        var upcoming=events.filter(function(e){return new Date(e.startTime||e.start?.dateTime)>new Date();}).slice(0,1);
+        var next=upcoming[0];
+        if(next){
+          ask('I\'ve switched to Meeting Mode. My next meeting is "'+( next.title||next.summary||'upcoming meeting')+'" — give me a full briefing including who is attending, what we should accomplish, and 3 strong opening talking points.');
+        } else {
+          ask('I\'ve switched to Meeting Mode but I have no upcoming meetings scheduled today. Help me think about how to prepare for my next important conversation or suggest who I should proactively schedule time with based on my pipeline.');
+        }
+      }).catch(function(){
+        ask('I\'ve switched to Meeting Mode. Give me a briefing for my next meeting — who they are, what we should cover, and 3 talking points.');
+      });
+    }
+  }
+
+  else if(m==='strategy'){
+    // Big picture: pipeline health + growth opportunities
+    fetch(HOOK_PIPELINE).then(r=>r.json()).then(function(d){
+      var opps=d.opportunities||[];
+      var detail=opps.map(function(o){
+        return o.contactName+' | '+o.stage+(o.value?' | $'+o.value:'')+(o.stalled?' [STALLED]':'');
+      }).join('\n');
+      ask('I\'ve switched to Strategy Mode. Here is my current pipeline:\n\n'+(detail||'No active deals')+'\n\nGive me a strategic view: where are the biggest revenue opportunities right now, what patterns do you see, what should I be doing differently, and what is my 30-day priority to grow the business?');
+    }).catch(function(){
+      ask('I\'ve switched to Strategy Mode. Give me a strategic overview of my business right now — pipeline health, growth opportunities, what I should be doing differently, and my top 30-day priority.');
+    });
+  }
+
+  else if(m==='operations'){
+    // Operations: tasks + comms + what needs to be cleared
+    Promise.all([
+      fetch(HOOK_TASKS).then(r=>r.json()).catch(function(){return {};}),
+      fetch(HOOK_COMMS).then(r=>r.json()).catch(function(){return {};})
+    ]).then(function(results){
+      var tasks=results[0];
+      var comms=results[1];
+      var taskCount=(tasks.openTasks||0);
+      var overdueCount=(tasks.overdueTasks||0);
+      var unread=(comms.total||0);
+      ask('I\'ve switched to Operations Mode. Here is what needs attention:\n\n'
+        +'- Tasks: '+taskCount+' open'+(overdueCount?' ('+overdueCount+' overdue)':'')+'\n'
+        +'- Unread conversations: '+unread+'\n\n'
+        +'What should I clear first to run the business cleanly today? Give me a prioritized action list — be specific and operational, not strategic.');
+    });
+  }
 }
 
 // ── DETAIL / CHAT VIEW ─────────────────────────────────
@@ -1176,8 +1240,153 @@ function ask(q){document.getElementById('msgInput').value=q;sendMessage();}
 function copyMsg(text,btn){navigator.clipboard.writeText(text).then(function(){btn.style.opacity='1';setTimeout(function(){btn.style.opacity='';},1600);}).catch(function(){});}
 
 // ── FILE ───────────────────────────────────────────────
-function onFile(e){var f=e.target.files[0];if(!f)return;if(f.size>10*1024*1024){addSys('File too large');e.target.value='';return;}selFile=f;addSys('Ready: '+f.name);}
-function uploadFile(f){var fd=new FormData();fd.append('file',f,f.name);return fetch(FILES_URL,{method:'POST',headers:{'Api-Key':PINECONE_KEY},body:fd}).then(function(r){if(!r.ok)throw new Error('Upload failed');return r.json();});}
+function onFile(e){
+  var f=e.target.files[0];
+  if(!f){return;}
+  e.target.value='';
+  if(f.size>25*1024*1024){addSys('⚠ File too large (max 25MB)');return;}
+  var isImage=f.type.startsWith('image/')||f.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+  if(isImage){
+    analyzeImage(f);
+    return;
+  }
+  var allowed=['application/pdf','text/plain','text/markdown','text/html','application/json',
+    'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  if(!allowed.includes(f.type)&&!f.name.match(/\.(pdf|txt|md|html|json|doc|docx)$/i)){
+    addSys('⚠ Unsupported file type. Use PDF, TXT, MD, HTML, JSON, DOC, DOCX, or an image (JPG, PNG, WEBP).');
+    return;
+  }
+  uploadFileToPinecone(f);
+}
+
+function generateImage(prompt){
+  var c=document.getElementById('chatScroll');
+  var d=document.createElement('div');
+  d.className='cmsg assistant';
+  d.innerHTML='<div class="cmsg-bubble"><p>🎨 Generating image: <em>'+prompt+'</em>...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+
+  fetch(PROXY+'/api/generate-image',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prompt:prompt,size:'1024x1024',quality:'standard'})
+  })
+  .then(function(r){return r.json();})
+  .then(function(data){
+    if(data.error) throw new Error(data.error);
+    var revised=data.revisedPrompt?'<p style="font-size:0.75rem;color:#888;margin-top:6px"><em>Prompt used: '+data.revisedPrompt+'</em></p>':'';
+    d.querySelector('.cmsg-bubble').innerHTML=
+      '<p>🎨 <strong>Generated image</strong></p>'
+      +'<img src="'+data.url+'" style="max-width:100%;border-radius:8px;margin:8px 0;display:block" alt="'+prompt+'">'
+      +'<a href="'+data.url+'" target="_blank" style="font-size:0.78rem;color:var(--gold)">Open full size ↗</a>'
+      +revised;
+    chatHistory.push({role:'assistant',content:'Generated image for: '+prompt});
+  })
+  .catch(function(err){
+    d.querySelector('.cmsg-bubble').innerHTML='<p>❌ Image generation failed: '+err.message+'</p>';
+  });
+}
+
+function analyzeImage(f){
+  var c=document.getElementById('chatScroll');
+
+  // Ask the user what feedback they want
+  var wrap=document.createElement('div');
+  wrap.className='cmsg assistant';
+  var thumbUrl=URL.createObjectURL(f);
+  wrap.innerHTML='<div class="cmsg-bubble">'
+    +'<p>🖼 <strong>'+f.name+'</strong> ready. What would you like me to look at?</p>'
+    +'<img src="'+thumbUrl+'" style="max-width:180px;border-radius:6px;margin:6px 0;display:block">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+    +'<button class="chip" onclick="runImageAnalysis(\''+f.name+'\',\'general\')">General feedback</button>'
+    +'<button class="chip" onclick="runImageAnalysis(\''+f.name+'\',\'brand\')">Brand & design</button>'
+    +'<button class="chip" onclick="runImageAnalysis(\''+f.name+'\',\'marketing\')">Marketing copy</button>'
+    +'<button class="chip" onclick="runImageAnalysis(\''+f.name+'\',\'screenshot\')">Screenshot / UI review</button>'
+    +'</div>'
+    +'</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(wrap);c.scrollTop=c.scrollHeight;
+
+  // Store file for when user picks an option
+  window._pendingImage={file:f,el:wrap};
+}
+
+function runImageAnalysis(filename, mode){
+  if(!window._pendingImage) return;
+  var f=window._pendingImage.file;
+  var el=window._pendingImage.el;
+  window._pendingImage=null;
+
+  var prompts={
+    general:'Analyze this image thoroughly. What do you see? What\'s working well and what could be improved?',
+    brand:'Review this from a brand and design perspective. Comment on colors, typography, layout, visual hierarchy, and overall brand consistency.',
+    marketing:'Review this as a piece of marketing material. Is the message clear? Is the CTA strong? What would you change to improve conversion?',
+    screenshot:'Review this UI/screenshot. Comment on usability, clarity, layout, and any issues you notice. What improvements would you suggest?'
+  };
+
+  el.querySelector('.cmsg-bubble').innerHTML='<p>🖼 Analyzing <strong>'+filename+'</strong>...</p>';
+
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var base64=ev.target.result.split(',')[1];
+    var mediaType=f.type||'image/jpeg';
+
+    fetch(PROXY+'/api/analyze-image',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({base64:base64,mediaType:mediaType,prompt:prompts[mode]||prompts.general})
+    })
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(data.error) throw new Error(data.error);
+      var reply=data.reply||'No response.';
+      el.querySelector('.cmsg-bubble').innerHTML='<p>🖼 <strong>'+filename+'</strong> — '+mode+' review</p><p>'
+        +reply.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')+'</p>';
+      chatHistory.push({role:'assistant',content:reply});
+      if(voiceOn) speak(reply);
+    })
+    .catch(function(err){
+      el.querySelector('.cmsg-bubble').innerHTML='<p>❌ Analysis failed: '+err.message+'</p>';
+    });
+  };
+  reader.readAsDataURL(f);
+}
+
+function uploadFileToPinecone(f){
+  var msgEl=null;
+  // Show uploading state in chat
+  var c=document.getElementById('chatScroll');
+  var d=document.createElement('div');
+  d.className='cmsg assistant';
+  d.innerHTML='<div class="cmsg-bubble"><p>📎 Uploading <strong>'+f.name+'</strong> to knowledge base...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+  msgEl=d;
+
+  var fd=new FormData();
+  fd.append('file',f,f.name);
+
+  fetch(FILES_URL,{
+    method:'POST',
+    headers:{'Api-Key':PINECONE_KEY},
+    body:fd
+  })
+  .then(function(r){
+    if(!r.ok) return r.text().then(function(t){throw new Error(t||'Upload failed ('+r.status+')');});
+    return r.json();
+  })
+  .then(function(data){
+    var fileId=data.id||data.file_id||'saved';
+    msgEl.querySelector('.cmsg-bubble').innerHTML=
+      '<p>✅ <strong>'+f.name+'</strong> saved to knowledge base.</p>'
+      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">VAL can now answer questions about this document. Try asking about it.</p>';
+    chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to the knowledge base. You can now ask me questions about it.'});
+  })
+  .catch(function(err){
+    msgEl.querySelector('.cmsg-bubble').innerHTML=
+      '<p>❌ Upload failed: '+err.message+'</p>'
+      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Check that the file is a supported format and under 25MB.</p>';
+    console.error('Pinecone upload error:',err);
+  });
+}
 
 // ── SEND ───────────────────────────────────────────────
 function sendMessage(){
@@ -1190,16 +1399,19 @@ function sendMessage(){
     handleAddTaskInput(msg);
     return;
   }
-  // Trigger add task if user types "add task" or "new task"
-  if(/^(add|new|create)\s+task/i.test(msg)){
+  // Trigger image generation
+  if(/^(generate|create|make|design)\s+(an?\s+)?image\b/i.test(msg)||/^(generate|create)\s+image:/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    var imgPrompt=msg.replace(/^(generate|create|make|design)\s+(an?\s+)?image\s*(of|showing|of a|a)?\s*/i,'').replace(/^image:\s*/i,'').trim()||msg;
+    generateImage(imgPrompt);
+    return;
+  }  if(/^(add|new|create)\s+task/i.test(msg)){
     inp.value='';inp.style.height='auto';
     startAddTask();
     return;
   }
   document.getElementById('sendBtn').disabled=true;
-  if(selFile){
-    uploadFile(selFile).then(function(){addSys('Uploaded: '+selFile.name);selFile=null;if(msg)chat(msg,inp);else document.getElementById('sendBtn').disabled=false;}).catch(function(){addSys('Upload failed');document.getElementById('sendBtn').disabled=false;});
-  } else chat(msg,inp);
+  chat(msg,inp);
 }
 
 function chat(msg,inp){
