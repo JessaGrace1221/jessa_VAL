@@ -25,10 +25,10 @@
   --ease:cubic-bezier(0.4,0,0.2,1);
   --spring:cubic-bezier(0.34,1.56,0.64,1);
 }
-html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost',sans-serif;color:var(--text);-webkit-font-smoothing:antialiased}
+html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost',sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;margin:0;padding:0}
 
 /* ── LAYOUT ── */
-.app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.app{display:flex;flex-direction:column;height:100vh;width:100vw;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0}
 
 /* ── TOPBAR ── */
 .topbar{
@@ -121,7 +121,7 @@ html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost
 
 /* ── LEFT PANEL ── */
 .lpanel{
-  width:320px;flex-shrink:0;
+  width:340px;flex-shrink:0;
   background:var(--cream);
   border-right:1px solid var(--border);
   display:flex;flex-direction:column;overflow:hidden;
@@ -387,7 +387,7 @@ html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost
 
 /* ── RIGHT PANEL ── */
 .rpanel{
-  width:340px;flex-shrink:0;background:white;
+  width:380px;flex-shrink:0;background:white;
   border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;
 }
 .rpanel-head{
@@ -443,6 +443,142 @@ html,body{height:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost
 input[type=file]{display:none}
 @media(max-width:900px){.rpanel{display:none}}
 @media(max-width:640px){.lpanel{display:none}}
+
+/* ── TOPBAR ACTION BUTTONS ── */
+.tbtn-action{
+  background:rgba(196,150,58,0.12)!important;
+  border-color:rgba(196,150,58,0.3)!important;
+  color:rgba(255,255,255,0.8)!important;
+}
+.tbtn-action:hover{background:rgba(196,150,58,0.22)!important;}
+.tbtn-meeting{
+  background:rgba(26,122,74,0.12)!important;
+  border-color:rgba(26,122,74,0.35)!important;
+  color:rgba(255,255,255,0.75)!important;
+}
+.tbtn-meeting:hover{background:rgba(26,122,74,0.22)!important;}
+.tbtn-meeting.active{
+  background:rgba(26,122,74,0.38)!important;
+  border-color:#1A7A4A!important;
+  color:white!important;
+  animation:meetingGlow 2s ease-in-out infinite;
+}
+@keyframes meetingGlow{0%,100%{box-shadow:0 0 0 0 rgba(26,122,74,0.4)}50%{box-shadow:0 0 0 5px rgba(26,122,74,0)}}
+
+/* ── SOCIAL POST PLATFORM BUTTONS ── */
+.social-plat{
+  padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);
+  background:transparent;color:rgba(255,255,255,0.55);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all 0.2s;font-family:var(--body);letter-spacing:0.04em;
+}
+.social-plat:hover{border-color:rgba(255,255,255,0.3);color:rgba(255,255,255,0.85);}
+.social-plat.sel{background:var(--gold);border-color:var(--gold);color:var(--navy);}
+.tbtn-meeting{
+  background:rgba(26,122,74,0.15)!important;
+  border-color:rgba(26,122,74,0.4)!important;
+  color:rgba(255,255,255,0.8)!important;
+  transition:all 0.2s!important;
+}
+.tbtn-meeting:hover{background:rgba(26,122,74,0.25)!important;}
+.tbtn-meeting.active{
+  background:rgba(26,122,74,0.4)!important;
+  border-color:#1A7A4A!important;
+  color:white!important;
+  animation:meetingPulse 2s ease-in-out infinite;
+}
+@keyframes meetingPulse{0%,100%{box-shadow:0 0 0 0 rgba(26,122,74,0.4)}50%{box-shadow:0 0 0 6px rgba(26,122,74,0)}}
+
+/* ── GENERAL CHAT OVERLAY ── */
+.gchat-overlay{
+  position:fixed;inset:0;background:rgba(27,43,69,0.7);
+  z-index:2000;display:flex;align-items:center;justify-content:center;
+  animation:fadeIn 0.2s;backdrop-filter:blur(8px);
+}
+.gchat-modal{
+  width:720px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;
+  background:var(--cream);border-radius:18px;
+  box-shadow:0 24px 80px rgba(27,43,69,0.35);
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:popIn 0.28s var(--spring);
+}
+.gchat-header{
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+  background:var(--navy);
+}
+.gchat-title{
+  font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;
+  display:flex;align-items:center;gap:8px;
+}
+.gchat-title::before{content:'✦';color:var(--gold);font-size:0.5rem}
+.gchat-close{
+  background:none;border:none;color:rgba(255,255,255,0.5);
+  cursor:pointer;font-size:20px;padding:0;line-height:1;transition:color 0.2s;
+}
+.gchat-close:hover{color:white}
+.gchat-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;}
+.gchat-messages::-webkit-scrollbar{width:3px}
+.gchat-messages::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:2px}
+.gchat-input-row{
+  padding:12px 16px;border-top:1px solid var(--border);
+  display:flex;align-items:flex-end;gap:8px;flex-shrink:0;background:white;
+}
+.gchat-input{
+  flex:1;border:1px solid var(--border-2);border-radius:10px;
+  padding:10px 14px;font-size:14px;font-family:var(--body);color:var(--text);
+  resize:none;height:42px;max-height:120px;outline:none;
+  transition:border 0.2s;line-height:1.5;
+}
+.gchat-input:focus{border-color:var(--gold)}
+.gchat-send{
+  width:38px;height:38px;border-radius:9px;border:none;
+  background:var(--navy);color:white;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  transition:all 0.2s;
+}
+.gchat-send:hover{background:var(--navy-2);transform:scale(1.05)}
+.gchat-send svg{width:16px;height:16px}
+
+/* ── SOCIAL POST PANEL ── */
+.social-overlay{
+  position:fixed;inset:0;background:rgba(27,43,69,0.7);
+  z-index:2000;display:flex;align-items:center;justify-content:center;
+  animation:fadeIn 0.2s;backdrop-filter:blur(8px);
+}
+.social-modal{
+  width:680px;max-width:calc(100vw - 32px);
+  background:var(--navy);border-radius:18px;
+  box-shadow:0 24px 80px rgba(0,0,0,0.4);
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:popIn 0.28s var(--spring);
+}
+.social-header{
+  padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.social-title{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--cream)}
+.social-body{padding:20px;display:flex;flex-direction:column;gap:14px}
+.social-platforms{display:flex;gap:8px;flex-wrap:wrap}
+.social-plat{
+  padding:6px 14px;border-radius:20px;border:1px solid rgba(255,255,255,0.15);
+  background:transparent;color:rgba(255,255,255,0.6);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all 0.2s;font-family:var(--body);letter-spacing:0.04em;
+}
+.social-plat.sel{background:var(--gold);border-color:var(--gold);color:var(--navy)}
+.social-textarea{
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  border-radius:10px;color:var(--cream);font-size:13px;padding:12px 14px;
+  resize:none;height:180px;font-family:var(--body);outline:none;line-height:1.7;
+  transition:border 0.2s;
+}
+.social-textarea:focus{border-color:var(--gold)}
+.social-preview{
+  background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px;padding:12px 14px;font-size:12px;color:rgba(255,255,255,0.6);
+  line-height:1.6;min-height:48px;white-space:pre-wrap;
+}
+.social-actions{display:flex;gap:8px;padding:0 20px 20px;flex-wrap:wrap}
+
 </style>
 </head>
 <body>
@@ -562,6 +698,22 @@ input[type=file]{display:none}
     <button class="mbtn-mode" onclick="setMode('meeting',this)"><span class="mdot"></span>Meeting</button>
     <button class="mbtn-mode" onclick="setMode('strategy',this)"><span class="mdot"></span>Strategy</button>
     <button class="mbtn-mode" onclick="setMode('operations',this)"><span class="mdot"></span>Operations</button>
+  </div>
+
+  <!-- Quick action buttons -->
+  <div style="display:flex;gap:4px;margin-left:8px;">
+    <button class="tbtn tbtn-action" onclick="openGeneralChat()" title="Open a clean, distraction-free chat">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg>
+      Chat
+    </button>
+    <button class="tbtn tbtn-action" onclick="startSocialPost()" title="Create a social media post">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
+      Post
+    </button>
+    <button class="tbtn tbtn-meeting" id="meetingModeBtn" onclick="toggleMeetingMode()" title="Meeting Mode — VAL listens quietly, say 'VAL' to engage">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>
+      <span id="meetingModeBtnLabel">Meeting Mode</span>
+    </button>
   </div>
 
   <div class="tb-status">
@@ -1037,20 +1189,33 @@ function generateDoc(s, details){
 function sendDoc(docId){
   var doc=valDocs.find(function(d){return d.id===docId;});
   if(!doc){addSys('Document not found');return;}
-  // Close panel if open
   var panel=document.getElementById('docDetailPanel');
   if(panel) panel.remove();
   addMsg('Sending to '+doc.recipient+'...',false);
+  // Strip any HTML from body, ensure plain text
+  var plainBody=doc.body.replace(/<[^>]*>/g,'').trim();
   fetch(SEND_HOOK,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({type:'document',documentType:doc.type,title:doc.title,recipient:doc.recipient,recipientEmail:doc.recipientEmail,body:doc.body,timestamp:new Date().toISOString(),source:'VAL'})
+    body:JSON.stringify({
+      type:'document',
+      documentType:doc.type,
+      title:doc.title,
+      recipient:doc.recipient,
+      recipientEmail:doc.recipientEmail,
+      recipientPhone:doc.recipientPhone||'',
+      subject:doc.title,
+      body:plainBody,
+      bodyHtml:doc.body,
+      timestamp:new Date().toISOString(),
+      source:'VAL'
+    })
   }).then(function(){
     doc.status='sent';
     valDocsSave();
     refreshDocUI();
     addMsg('✅ Sent to '+doc.recipient+'!',false);
-    fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:'Document sent to '+doc.recipient+': '+doc.title+'\n\n'+doc.body,type:'document_sent',timestamp:new Date().toISOString(),recipient:doc.recipient,documentType:doc.type})}).catch(function(){});
+    fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:'Document sent to '+doc.recipient+': '+doc.title+'\n\n'+plainBody,type:'document_sent',timestamp:new Date().toISOString(),recipient:doc.recipient,documentType:doc.type})}).catch(function(){});
   }).catch(function(){
     addMsg('⚠ Send failed — check your Make webhook. Draft saved.',false);
   });
@@ -2042,6 +2207,278 @@ var taskIndex=0;
 
 // ── ADD TASK FLOW ───────────────────────────────────────
 var addTaskState=null;
+
+// ── GENERAL CHAT OVERLAY ───────────────────────────────
+var gchatHistory=[];
+function openGeneralChat(){
+  if(document.getElementById('gchatOverlay')){document.getElementById('gchatOverlay').remove();return;}
+  var el=document.createElement('div');
+  el.id='gchatOverlay';
+  el.style.cssText='position:fixed;inset:0;background:rgba(27,43,69,0.75);z-index:2000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s;backdrop-filter:blur(8px);';
+  el.innerHTML=
+    '<div style="width:720px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;background:var(--cream);border-radius:18px;box-shadow:0 24px 80px rgba(27,43,69,0.35);display:flex;flex-direction:column;overflow:hidden;animation:popIn 0.28s var(--spring);">'
+      +'<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--navy);flex-shrink:0;">'
+        +'<div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;display:flex;align-items:center;gap:8px;"><span style="color:var(--gold);font-size:0.5rem;">✦</span>General Chat</div>'
+        +'<button onclick="document.getElementById(\'gchatOverlay\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:20px;padding:0;line-height:1;transition:color 0.2s;" onmouseover="this.style.color=\'white\'" onmouseout="this.style.color=\'rgba(255,255,255,0.5)\'">✕</button>'
+      +'</div>'
+      +'<div id="gchatMessages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;"></div>'
+      +'<div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;background:white;flex-shrink:0;">'
+        +'<textarea id="gchatInput" placeholder="Ask VAL anything — coding, strategy, writing, research..." style="flex:1;border:1px solid var(--border-2);border-radius:10px;padding:10px 14px;font-size:14px;font-family:var(--body);color:var(--text);resize:none;height:42px;max-height:120px;outline:none;transition:border 0.2s;line-height:1.5;" onkeydown="gchatKey(event)" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>'
+        +'<button onclick="gchatSend()" style="width:38px;height:38px;border-radius:9px;border:none;background:var(--navy);color:white;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;" onmouseover="this.style.background=\'var(--navy-2)\'" onmouseout="this.style.background=\'var(--navy)\'">'
+          +'<svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>'
+        +'</button>'
+      +'</div>'
+    +'</div>';
+  el.onclick=function(e){if(e.target===el)el.remove();};
+  document.body.appendChild(el);
+  setTimeout(function(){document.getElementById('gchatInput').focus();},100);
+}
+function gchatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();gchatSend();}}
+function gchatBubble(text,isUser){
+  var c=document.getElementById('gchatMessages');if(!c)return;
+  var d=document.createElement('div');
+  var fmt=isUser?text:text.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
+  if(!isUser)fmt='<p>'+fmt+'</p>';
+  d.style.cssText='max-width:86%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.65;margin-bottom:4px;word-break:break-word;'
+    +(isUser?'background:var(--navy);color:white;align-self:flex-end;border-bottom-right-radius:3px;'
+            :'background:white;color:var(--text);border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px;');
+  d.innerHTML=fmt;
+  c.appendChild(d);c.scrollTop=c.scrollHeight;
+}
+function gchatSend(){
+  var inp=document.getElementById('gchatInput');if(!inp)return;
+  var msg=inp.value.trim();if(!msg)return;
+  inp.value='';inp.style.height='auto';
+  gchatBubble(msg,true);
+  gchatHistory.push({role:'user',content:msg});
+  var typing=document.createElement('div');
+  typing.id='gchatTyping';
+  typing.style.cssText='padding:10px 14px;border-radius:12px;background:white;border:1px solid var(--border);align-self:flex-start;font-size:12px;color:var(--text-3);font-family:var(--mono);';
+  typing.textContent='VAL is thinking...';
+  document.getElementById('gchatMessages').appendChild(typing);
+  document.getElementById('gchatMessages').scrollTop=99999;
+  var sys='You are VAL, executive assistant to Jessa Grace, founder of Grace Intelligence — a high-performance executive coaching practice. This is a clean general chat with no dashboard distractions. Be conversational, warm, sharp, and direct. You are world-class at strategy, writing, coding, analysis, research, and thinking out loud with Jessa. For code: write complete, working, production-quality code. For writing: match her brand voice — authoritative, warm, aspirational. For strategy: be specific, not generic.';
+  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:gchatHistory})})
+  .then(function(r){return r.json();}).then(function(d){
+    var t=document.getElementById('gchatTyping');if(t)t.remove();
+    var text=(d.content||[]).map(function(b){return b.text||'';}).join('');
+    gchatHistory.push({role:'assistant',content:text});
+    gchatBubble(text,false);
+  }).catch(function(e){
+    var t=document.getElementById('gchatTyping');if(t)t.remove();
+    gchatBubble('Error: '+e.message,false);
+  });
+}
+
+// ── MEETING MODE TOGGLE BUTTON ─────────────────────────
+function toggleMeetingMode(){
+  var btn=document.getElementById('meetingModeBtn');
+  var lbl=document.getElementById('meetingModeBtnLabel');
+  if(!meetingMode){
+    if(!voiceOn){toggleVoice();}
+    startMeeting();
+    if(btn)btn.classList.add('active');
+    if(lbl)lbl.textContent='● Listening';
+    addSys('Meeting Mode on — say "VAL" to engage. Say "meeting mode off" to stop.');
+  } else {
+    stopMeeting();
+    if(btn)btn.classList.remove('active');
+    if(lbl)lbl.textContent='Meeting Mode';
+  }
+}
+
+// ── SOCIAL POST FLOW ───────────────────────────────────
+function startSocialPost(){
+  if(document.getElementById('socialOverlay')){document.getElementById('socialOverlay').remove();return;}
+  var el=document.createElement('div');
+  el.id='socialOverlay';
+  el.style.cssText='position:fixed;inset:0;background:rgba(27,43,69,0.75);z-index:2000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s;backdrop-filter:blur(8px);';
+  el.innerHTML=
+    '<div style="width:680px;max-width:calc(100vw - 32px);background:var(--navy);border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,0.45);overflow:hidden;animation:popIn 0.28s var(--spring);">'
+      +'<div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">'
+        +'<div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--cream);">Create Social Post</div>'
+        +'<button onclick="document.getElementById(\'socialOverlay\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:20px;padding:0;line-height:1;">✕</button>'
+      +'</div>'
+      +'<div style="padding:20px;display:flex;flex-direction:column;gap:16px;">'
+        // Platform picker
+        +'<div>'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.35);letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px;">Platform</div>'
+          +'<div id="socialPlatforms" style="display:flex;gap:8px;flex-wrap:wrap;">'
+            +'<button class="social-plat" onclick="toggleSocialPlat(this,\'LinkedIn\')">LinkedIn</button>'
+            +'<button class="social-plat" onclick="toggleSocialPlat(this,\'Instagram\')">Instagram</button>'
+            +'<button class="social-plat" onclick="toggleSocialPlat(this,\'Facebook\')">Facebook</button>'
+            +'<button class="social-plat" onclick="toggleSocialPlat(this,\'X / Twitter\')">X / Twitter</button>'
+            +'<button class="social-plat" onclick="toggleSocialPlat(this,\'Threads\')">Threads</button>'
+          +'</div>'
+        +'</div>'
+        // Tone picker
+        +'<div>'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.35);letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px;">Tone</div>'
+          +'<div id="socialTones" style="display:flex;gap:8px;flex-wrap:wrap;">'
+            +'<button class="social-plat sel" onclick="selectSocialTone(this,\'Authoritative\')" data-tone="Authoritative">Authoritative</button>'
+            +'<button class="social-plat" onclick="selectSocialTone(this,\'Motivational\')" data-tone="Motivational">Motivational</button>'
+            +'<button class="social-plat" onclick="selectSocialTone(this,\'Conversational\')" data-tone="Conversational">Conversational</button>'
+            +'<button class="social-plat" onclick="selectSocialTone(this,\'Story-driven\')" data-tone="Story-driven">Story-driven</button>'
+            +'<button class="social-plat" onclick="selectSocialTone(this,\'Educational\')" data-tone="Educational">Educational</button>'
+          +'</div>'
+        +'</div>'
+        // Topic input
+        +'<div>'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.35);letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px;">What\'s the post about?</div>'
+          +'<textarea id="socialTopic" placeholder="Paste notes, a topic, an insight, a story, or an announcement. VAL will write it in your voice." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--cream);font-size:13px;padding:12px 14px;resize:none;height:100px;font-family:var(--body);outline:none;line-height:1.7;box-sizing:border-box;"></textarea>'
+        +'</div>'
+        // Draft area (hidden until generated)
+        +'<div id="socialDraftWrap" style="display:none;">'
+          +'<div style="font-size:10px;color:rgba(255,255,255,0.35);letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px;">Your Post <span id="socialCharCount" style="color:var(--gold);"></span></div>'
+          +'<textarea id="socialDraft" oninput="updateSocialChar()" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:var(--cream);font-size:13px;padding:12px 14px;resize:none;height:160px;font-family:var(--body);outline:none;line-height:1.7;box-sizing:border-box;"></textarea>'
+        +'</div>'
+      +'</div>'
+      +'<div id="socialActions" style="display:flex;gap:8px;padding:0 20px 20px;flex-wrap:wrap;">'
+        +'<button class="chip" onclick="generateSocialPost()">✨ Write Post</button>'
+        +'<button class="chip" onclick="document.getElementById(\'socialOverlay\').remove()">Cancel</button>'
+      +'</div>'
+    +'</div>';
+  el.onclick=function(e){if(e.target===el)el.remove();};
+  document.body.appendChild(el);
+  window._socialPlatforms=[];
+  window._socialTone='Authoritative';
+}
+function toggleSocialPlat(btn,name){
+  btn.classList.toggle('sel');
+  window._socialPlatforms=window._socialPlatforms||[];
+  if(btn.classList.contains('sel')){window._socialPlatforms.push(name);}
+  else{window._socialPlatforms=window._socialPlatforms.filter(function(p){return p!==name;});}
+}
+function selectSocialTone(btn,tone){
+  document.querySelectorAll('#socialTones .social-plat').forEach(function(b){b.classList.remove('sel');});
+  btn.classList.add('sel');
+  window._socialTone=tone;
+}
+function updateSocialChar(){
+  var d=document.getElementById('socialDraft');
+  var c=document.getElementById('socialCharCount');
+  if(d&&c)c.textContent='('+d.value.length+' chars)';
+}
+function generateSocialPost(){
+  var topic=(document.getElementById('socialTopic')||{}).value;
+  if(!topic||!topic.trim()){alert('Please describe what the post is about.');return;}
+  var platforms=(window._socialPlatforms&&window._socialPlatforms.length)?window._socialPlatforms.join(', '):'social media';
+  var tone=window._socialTone||'Authoritative';
+  document.getElementById('socialActions').innerHTML='<span style="font-size:12px;color:rgba(255,255,255,0.4);padding:4px 0;font-family:var(--mono);">Writing post...</span>';
+  var sys='You are VAL, ghostwriting social media content for Jessa Grace — founder of Grace Intelligence, a high-performance executive coaching practice. Her brand: warm, direct, authoritative, aspirational. She speaks to driven executives and entrepreneurs. Write in first person as Jessa. Never use generic motivational clichés. Be specific, real, and compelling.';
+  var prompt='Write a '+tone.toLowerCase()+' social media post for: '+platforms+'.\n\nContent/topic: '+topic.trim()+'\n\nPlatform guidelines:\n- LinkedIn: 150–280 words, professional, max 3 hashtags, end with a question or call to action\n- Instagram: engaging, vivid, 3–5 targeted hashtags at the end, 100–200 words\n- X/Twitter: punchy, under 280 chars, can use 1–2 hashtags\n- Facebook: conversational, 100–180 words\n- Threads: casual-smart, 150-250 chars\n\nReturn only the post text. No explanation, no labels.';
+  fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys,messages:[{role:'user',content:prompt}]})})
+  .then(function(r){return r.json();}).then(function(d){
+    var text=(d.content||[]).map(function(b){return b.text||'';}).join('').trim();
+    var wrap=document.getElementById('socialDraftWrap');
+    var draftEl=document.getElementById('socialDraft');
+    if(wrap)wrap.style.display='block';
+    if(draftEl){draftEl.value=text;updateSocialChar();}
+    document.getElementById('socialActions').innerHTML=
+      '<button class="chip" onclick="sendSocialPost()">🚀 Send to Make</button>'
+      +'<button class="chip" onclick="generateSocialPost()">↺ Regenerate</button>'
+      +'<button class="chip" onclick="copySocialPost()">⎘ Copy</button>'
+      +'<button class="chip" onclick="document.getElementById(\'socialOverlay\').remove()">Done</button>';
+  }).catch(function(e){
+    document.getElementById('socialActions').innerHTML='<span style="color:rgba(255,100,100,0.8);font-size:12px;">Error: '+e.message+'</span>';
+  });
+}
+function sendSocialPost(){
+  var draft=document.getElementById('socialDraft');
+  if(!draft||!draft.value.trim()){alert('No post to send.');return;}
+  fetch(SEND_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    type:'social_post',
+    platforms:window._socialPlatforms||[],
+    tone:window._socialTone||'',
+    content:draft.value.trim(),
+    timestamp:new Date().toISOString(),
+    source:'VAL'
+  })}).then(function(){
+    addSys('Social post sent to Make ✓');
+    document.getElementById('socialOverlay').remove();
+  }).catch(function(){addSys('Send failed — check Make webhook');});
+}
+function copySocialPost(){
+  var d=document.getElementById('socialDraft');
+  if(d)navigator.clipboard.writeText(d.value).then(function(){addSys('Post copied to clipboard ✓');});
+}
+
+// ── CONTACT LOOKUP ─────────────────────────────────────
+function lookupContact(name, callback){
+  // Search GHL contacts by name — runs before asking user for email
+  fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
+  .then(function(r){return r.json();})
+  .then(function(d){
+    var contacts=d.contacts||[];
+    if(contacts.length&&contacts[0].email){callback(contacts[0]);}
+    else{callback(null);}
+  }).catch(function(){callback(null);});
+}
+
+// ── DOC CREATION FLOW (with contact lookup) ────────────
+function startAddDoc(type){
+  type=type||'proposal';
+  addDocState={step:'title',type:type,title:'',recipient:'',recipientEmail:'',recipientPhone:''};
+  addMsg('📄 New '+type,true);
+  addMsg("What's the title for this "+type+'?',false);
+  document.getElementById('msgInput').placeholder='e.g. "Q2 Coaching Proposal for Sarah"...';
+  document.getElementById('msgInput').focus();
+  window._addDocMode=true;
+}
+
+function handleAddDocStep(text){
+  if(!addDocState)return;
+  var s=addDocState;
+
+  if(s.step==='title'){
+    addMsg(text,true);
+    s.title=text;
+    s.step='recipient';
+    addMsg("Who is this for? (First and last name)",false);
+    document.getElementById('msgInput').placeholder='Recipient name...';
+    return;
+  }
+
+  if(s.step==='recipient'){
+    addMsg(text,true);
+    s.recipient=text;
+    s.step='looking_up';
+    addSys('Looking up '+text+' in your contacts...');
+    // Auto-lookup contact in GHL
+    lookupContact(text, function(contact){
+      if(contact&&contact.email){
+        s.recipientEmail=contact.email;
+        s.recipientPhone=contact.phone||'';
+        addMsg('Found '+text+' — using '+contact.email+'. What are the key points to cover?',false);
+        s.step='details';
+        document.getElementById('msgInput').placeholder='Key points, terms, pricing, context...';
+      } else {
+        addMsg("What's their email address?",false);
+        s.step='email';
+        document.getElementById('msgInput').placeholder='email@example.com...';
+      }
+    });
+    return;
+  }
+
+  if(s.step==='email'){
+    addMsg(text,true);
+    s.recipientEmail=text;
+    s.step='details';
+    addMsg('Got it. What are the key points to cover in this '+s.type+'?',false);
+    document.getElementById('msgInput').placeholder='Key points, terms, pricing, context...';
+    return;
+  }
+
+  if(s.step==='details'){
+    addMsg(text,true);
+    window._addDocMode=false;
+    addDocState=null;
+    document.getElementById('msgInput').placeholder='Message VAL...';
+    generateDoc(s, text);
+    return;
+  }
+}
 
 function startAddTask(){
   addTaskState={step:'title',title:'',dueDate:'',notes:''};
