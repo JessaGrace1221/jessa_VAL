@@ -801,6 +801,139 @@ function valCompleteTask(id){
   if(t){t.completed=true;refreshTaskUI();}
 }
 valTasksLoad();
+
+// ── VAL DOCUMENT STORE (in-memory, VAL-managed) ─────────
+var valDocs = [];
+var addDocState = null;
+function valAddDoc(title, recipient, recipientEmail, body, type){
+  var doc={id:'d'+Date.now(),title:title,recipient:recipient,recipientEmail:recipientEmail||'',body:body,type:type||'proposal',status:'draft',createdAt:new Date().toISOString()};
+  valDocs.push(doc);
+  refreshDocUI();
+  return doc;
+}
+function refreshDocUI(){
+  var drafts=valDocs.filter(function(d){return d.status==='draft';});
+  var sent=valDocs.filter(function(d){return d.status==='sent';});
+  // Update proposals stat if element exists
+  var el=document.getElementById('statProposals');
+  if(el&&!dashData.proposalsTotal) animNum('statProposals',drafts.length+sent.length);
+}
+
+// Start a document/proposal creation flow
+function startAddDoc(typeHint){
+  var type=typeHint||'proposal';
+  addDocState={step:'title',type:type,title:'',recipient:'',recipientEmail:'',body:''};
+  window._addDocMode=true;
+  document.getElementById('msgInput').placeholder='Type document title...';
+  addMsg('Let\'s create a '+type+'. What\'s the title or subject? (e.g. "Strategy Proposal for Michele")',false);
+}
+
+// Handle add-doc conversation steps
+function handleAddDocStep(text){
+  if(!addDocState) return false;
+  var s=addDocState;
+  if(s.step==='title'){
+    s.title=text;
+    s.step='recipient';
+    document.getElementById('msgInput').placeholder='Who is this for? (name)';
+    addMsg('Great. Who is this for?',false);
+    return true;
+  }
+  if(s.step==='recipient'){
+    s.recipient=text;
+    s.step='email';
+    document.getElementById('msgInput').placeholder='Their email address...';
+    addMsg('What\'s their email address so we can send it?',false);
+    return true;
+  }
+  if(s.step==='email'){
+    s.recipientEmail=text;
+    s.step='details';
+    document.getElementById('msgInput').placeholder='Describe what should be in it...';
+    addMsg('What should the '+s.type+' cover? Give me the key points and I\'ll write the full document.',false);
+    return true;
+  }
+  if(s.step==='details'){
+    s.step='generating';
+    window._addDocMode=false;
+    document.getElementById('msgInput').placeholder='Message VAL...';
+    generateDoc(s, text);
+    return true;
+  }
+  return false;
+}
+
+function generateDoc(s, details){
+  addMsg('Writing your '+s.type+'...',false);
+  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a polished, professional '+s.type+' document. Use clear structure with sections. Be compelling but concise. Write in a warm, authoritative tone that reflects Jessa\'s brand.';
+  var userPrompt='Write a complete '+s.type+' for '+s.recipient+'.\n\nTitle: '+s.title+'\nKey points to cover: '+details+'\n\nFormat it as a proper document with appropriate sections. Make it ready to send.';
+  callClaude(systemPrompt, userPrompt, function(body){
+    var doc=valAddDoc(s.title, s.recipient, s.recipientEmail, body, s.type);
+    addDocState=null;
+    // Show doc with approve/send button
+    var wrap=document.createElement('div');
+    wrap.style.cssText='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin:8px 0;';
+    wrap.innerHTML='<div style="font-size:11px;color:var(--gold);font-family:var(--mono);letter-spacing:.08em;margin-bottom:10px;">📄 DRAFT — '+s.title+'</div>'
+      +'<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto;">'+body+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+      +'<button class="chip" onclick="sendDoc(\''+doc.id+'\')">✉ Approve & Send to '+s.recipient+'</button>'
+      +'<button class="chip" onclick="editDoc(\''+doc.id+'\')">✏ Revise</button>'
+      +'<button class="chip" onclick="this.closest(\'div\').parentNode.remove()">Dismiss</button>'
+      +'</div>';
+    document.getElementById('chatMessages').appendChild(wrap);
+    document.getElementById('chatMessages').scrollTop=99999;
+  });
+}
+
+function sendDoc(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc){addSys('Document not found');return;}
+  addMsg('Sending to '+doc.recipient+'...',false);
+  fetch(SEND_HOOK,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      type:'document',
+      documentType:doc.type,
+      title:doc.title,
+      recipient:doc.recipient,
+      recipientEmail:doc.recipientEmail,
+      body:doc.body,
+      timestamp:new Date().toISOString(),
+      source:'VAL'
+    })
+  }).then(function(r){
+    doc.status='sent';
+    refreshDocUI();
+    addMsg('✅ Sent to '+doc.recipient+'! Document saved to memory.',false);
+    // Also save to Pinecone memory
+    fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:'Document sent to '+doc.recipient+': '+doc.title+'\n\n'+doc.body,type:'document_sent',timestamp:new Date().toISOString(),recipient:doc.recipient,documentType:doc.type})}).catch(function(){});
+  }).catch(function(){
+    addMsg('⚠ Send failed — check your Make webhook is active. The document is saved as a draft.',false);
+  });
+}
+
+function editDoc(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc){return;}
+  addMsg('What would you like to change about this '+doc.type+'?',false);
+  window._editDocId=docId;
+}
+
+// Helper: call Claude API directly (used for doc generation)
+function callClaude(system, user, callback){
+  fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:system,messages:[{role:'user',content:user}]})
+  }).then(r=>r.json()).then(function(d){
+    var text=(d.content||[]).map(function(b){return b.text||'';}).join('');
+    callback(text);
+  }).catch(function(e){
+    addMsg('Error generating document: '+e.message,false);
+  });
+}
+
 var HOOK_FEED     = PROXY+'/api/feed';
 var HOOK_COMMS    = PROXY+'/api/comms';
 var HOOK_PROPOSALS= PROXY+'/api/proposals';
@@ -1076,19 +1209,46 @@ function renderFeed(items){
     var meta=(item.time||'')+(item.type?' · '+item.type:'');
     div.innerHTML='<div class="fitem-pip '+pip+'"></div><div class="fitem-body"><div class="fitem-title">'+title+'</div><div class="fitem-meta">'+meta+'</div></div>';
     div.onclick=function(){
-      // Mark active
       document.querySelectorAll('.fitem').forEach(function(f){f.classList.remove('active');});
       div.classList.add('active');
-      // Open in center
       openDetailWithTitle(title);
-      var prompt=item.actionUrl
-        ?'Tell me about this signal and what I should do: '+title
-        :'Tell me about this and what action I should take: '+title;
-      ask(prompt);
+      // If this is a comms item with a conversation ID, read the thread first
+      var convId=item.actionUrl?item.actionUrl.split('/conversations/')[1]:'';
+      if(convId&&item.type==='Comms'){
+        readThreadAndAsk(convId, item.text);
+      } else {
+        ask('Tell me about this and what action I should take: '+title);
+      }
     };
     el.appendChild(div);
   });
 }
+
+function readThreadAndAsk(convId, label){
+  addMsg('Reading conversation thread...',false);
+  fetch(PROXY+'/api/conversation/'+convId)
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(d.error) throw new Error(d.error);
+    var thread=formatThread(d);
+    var prompt='Here is the actual conversation thread with '+d.contactName+':\n\n'+thread
+      +'\n\nSummarize what they want, what the context is, and draft a reply in my voice that I can send right away.';
+    ask(prompt);
+  })
+  .catch(function(){
+    ask('Tell me about this conversation and what I should do: '+label);
+  });
+}
+
+function formatThread(d){
+  if(!d.messages||!d.messages.length) return '(No message content available)';
+  return d.messages.map(function(m){
+    var time=m.dateAdded?new Date(m.dateAdded).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    var dir=m.direction==='outbound'?'You':'  '+d.contactName;
+    return dir+' ['+time+']: '+m.body;
+  }).join('\n');
+}
+
 
 // ── WEEK PANEL ─────────────────────────────────────────
 function renderWeek(events){
@@ -1200,6 +1360,35 @@ loadDashboard();
 setInterval(loadDashboard,5*60*1000);
 renderWeekFallback(); // show immediately while loading
 
+// ── MORNING BRIEFING ───────────────────────────────────
+(function morningBriefing(){
+  var now=new Date();
+  var hour=now.getHours();
+  var lastBriefKey='val_last_brief_'+now.toDateString();
+  // Only auto-brief between 5am and 11am, once per day
+  if(hour>=5&&hour<11&&!sessionStorage.getItem(lastBriefKey)){
+    sessionStorage.setItem(lastBriefKey,'1');
+    setTimeout(function(){
+      openDetailWithTitle('Good Morning Briefing');
+      // Wait for dashboard data to load, then brief
+      setTimeout(function(){
+        var ctx='Today is '+now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.\n';
+        if(dashData.meetingsToday) ctx+='Meetings today: '+dashData.meetingsToday+'.\n';
+        if(dashData.appointments&&dashData.appointments.length){
+          ctx+='Appointments: '+dashData.appointments.map(function(a){
+            var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
+            return (a.title||a.contactName||'Meeting')+(t?' at '+t:'');
+          }).join(', ')+'.\n';
+        }
+        if(dashData.openTasks) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
+        if(dashData.pipelineActive) ctx+='Active pipeline deals: '+dashData.pipelineActive+'.\n';
+        ask('Good morning! '+ctx+'\nGive me a sharp morning briefing: what\'s on my calendar today, any overdue tasks, pipeline signals that need attention, and the one most important thing I should focus on first. Keep it concise — I\'m starting my day.');
+      }, 3000);
+    }, 1500);
+  }
+})();
+
+
 // ── TTS ────────────────────────────────────────────────
 function speak(text,btn){
   if(!text)return;
@@ -1248,9 +1437,24 @@ function stopSTT(){
 function handleVoice(text){
   if(!text||speaking)return;
   var low=text.toLowerCase().trim();
+  // Meeting mode controls
   if(low.includes('meeting mode')&&!meetingMode){startMeeting();return;}
   if(meetingMode&&(low.includes('meeting mode off')||low.includes('stop listening'))){stopMeeting();return;}
   if(meetingMode){meetingLog.push({ts:new Date().toISOString(),text:text});if(!low.includes('val'))return;}
+  // ── Voice commands ──
+  if(/\b(add|new|create)\s+task\b/.test(low)){startAddTask();return;}
+  if(/\b(draft|write|create|send)\s+(a\s+)?(proposal|document|doc|contract|email)\b/.test(low)){
+    var tm=low.match(/proposal|contract|document|email/);startAddDoc(tm?tm[0]:'document');return;
+  }
+  if(/\b(show|open|check)\s+(my\s+)?(comms|messages|conversations|inbox)\b/.test(low)){askComms();return;}
+  if(/\b(show|open|check)\s+(my\s+)?(pipeline|deals)\b/.test(low)){askPipeline();return;}
+  if(/\b(show|what are my|check)\s+(my\s+)?tasks\b/.test(low)){askTasks();return;}
+  if(/\b(morning briefing|daily briefing|what's (on |for )?today)\b/.test(low)){
+    ask('Give me my morning briefing — meetings today, key tasks, pipeline, and one thing to focus on first.');return;
+  }
+  if(/\b(focus mode)\b/.test(low)){setMode('focus');return;}
+  if(/\b(strategy mode)\b/.test(low)){setMode('strategy');return;}
+  if(/\b(operations mode)\b/.test(low)){setMode('operations');return;}
   chat(text);
 }
 
@@ -1450,20 +1654,63 @@ function sendMessage(){
     handleAddTaskInput(msg);
     return;
   }
+  // Intercept for add doc flow
+  if(window._addDocMode&&addDocState){
+    inp.value='';inp.style.height='auto';
+    handleAddDocStep(msg);
+    return;
+  }
+  // Intercept for doc edit flow
+  if(window._editDocId){
+    var docId=window._editDocId;
+    window._editDocId=null;
+    inp.value='';inp.style.height='auto';
+    var doc=valDocs.find(function(d){return d.id===docId;});
+    if(doc){
+      addMsg(msg,true);
+      addMsg('Revising...',false);
+      callClaude('You are VAL, executive assistant to Jessa Grace. Revise the following document based on the feedback provided. Return only the revised document text.',
+        'Original document:\n\n'+doc.body+'\n\nRevision request: '+msg,
+        function(newBody){
+          doc.body=newBody;
+          var wrap=document.createElement('div');
+          wrap.style.cssText='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin:8px 0;';
+          wrap.innerHTML='<div style="font-size:11px;color:var(--gold);font-family:var(--mono);letter-spacing:.08em;margin-bottom:10px;">📄 REVISED — '+doc.title+'</div>'
+            +'<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto;">'+newBody+'</div>'
+            +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+            +'<button class="chip" onclick="sendDoc(\''+docId+'\')">✉ Approve & Send to '+doc.recipient+'</button>'
+            +'<button class="chip" onclick="editDoc(\''+docId+'\')">✏ Revise again</button>'
+            +'</div>';
+          document.getElementById('chatMessages').appendChild(wrap);
+          document.getElementById('chatMessages').scrollTop=99999;
+        });
+    }
+    return;
+  }
   // Trigger image generation
   if(/^(generate|create|make|design)\s+(an?\s+)?image\b/i.test(msg)||/^(generate|create)\s+image:/i.test(msg)){
     inp.value='';inp.style.height='auto';
     var imgPrompt=msg.replace(/^(generate|create|make|design)\s+(an?\s+)?image\s*(of|showing|of a|a)?\s*/i,'').replace(/^image:\s*/i,'').trim()||msg;
     generateImage(imgPrompt);
     return;
-  }  if(/^(add|new|create)\s+task/i.test(msg)){
+  }
+  // Trigger task add
+  if(/^(add|new|create)\s+task/i.test(msg)){
     inp.value='';inp.style.height='auto';
     startAddTask();
+    return;
+  }
+  // Trigger document/proposal creation
+  if(/^(draft|write|create|make|send)\s+(a\s+)?(proposal|document|doc|contract|agreement|invoice|quote|follow.?up\s+email|email\s+to)\b/i.test(msg)){
+    inp.value='';inp.style.height='auto';
+    var typeMatch=msg.match(/proposal|contract|agreement|invoice|quote|document|doc|email/i);
+    startAddDoc(typeMatch?typeMatch[0].toLowerCase():'document');
     return;
   }
   document.getElementById('sendBtn').disabled=true;
   chat(msg,inp);
 }
+
 
 function chat(msg,inp){
   openDetailWithTitle('Chat');
@@ -1852,12 +2099,29 @@ function askProposals(){
 
 function askComms(){
   fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var detail=(d.items||[]).map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
-    var prompt=d.total>0
-      ?'Here are my '+d.total+' unread GHL conversations right now:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?'
-      :'My communications queue is clear — no unread conversations.';
-    ask(prompt);
-  }).catch(function(){ask('Check my communications queue — any unread messages needing attention?');});
+    var items=d.items||[];
+    if(!items.length){ask('My communications queue is clear — no unread conversations. Who should I proactively reach out to today?');return;}
+    // Fetch actual message content for up to 5 conversations in parallel
+    var toFetch=items.slice(0,5).filter(function(i){return i.id||i.conversationId;});
+    if(!toFetch.length){
+      var detail=items.map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
+      ask('Here are my '+d.total+' unread conversations:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?');
+      return;
+    }
+    addMsg('Reading message threads...',false);
+    Promise.allSettled(toFetch.map(function(i){
+      return fetch(PROXY+'/api/conversation/'+(i.id||i.conversationId)).then(r=>r.json());
+    })).then(function(results){
+      var threadsText=results.map(function(r,idx){
+        if(r.status!=='fulfilled'||r.value.error) return '- '+toFetch[idx].label+': (could not load thread)';
+        var d=r.value;
+        var msgs=formatThread(d);
+        return '=== '+d.contactName+' ('+d.type+', '+d.unreadCount+' unread) ===\n'+msgs;
+      }).join('\n\n');
+      ask('Here are my '+d.total+' unread conversations with full message content:\n\n'+threadsText
+        +'\n\nFor each conversation: what do they want, what is the context, and draft a reply in my voice ready to send.');
+    });
+  }).catch(function(){ask('Check my communications queue and summarize what needs a reply.');});
 }
 
 function askPipeline(){
@@ -1880,12 +2144,27 @@ function askPipeline(){
 
 function askFollowups(){
   fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var detail=(d.items||[]).map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
-    var prompt=d.total>0
-      ?'Here are my '+d.total+' unread GHL conversations needing a reply:\n'+detail+'\n\nWho needs a reply most urgently? Suggest a response for each.'
-      :'No unread conversations right now. Suggest who I should proactively follow up with based on pipeline or recent activity.';
-    ask(prompt);
-  }).catch(function(){ask('Who needs a reply from me? Show unread messages and suggested responses.');});
+    var items=d.items||[];
+    if(!items.length){ask('No unread conversations right now. Based on my pipeline and recent activity, who should I proactively follow up with today? Be specific — name, what to say, why now.');return;}
+    var toFetch=items.slice(0,5).filter(function(i){return i.id||i.conversationId;});
+    if(!toFetch.length){
+      var detail=items.map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
+      ask('Here are my unread conversations needing a reply:\n'+detail+'\n\nWho needs a reply most urgently? Draft a response for each.');
+      return;
+    }
+    addMsg('Reading message threads...',false);
+    Promise.allSettled(toFetch.map(function(i){
+      return fetch(PROXY+'/api/conversation/'+(i.id||i.conversationId)).then(r=>r.json());
+    })).then(function(results){
+      var threadsText=results.map(function(r,idx){
+        if(r.status!=='fulfilled'||r.value.error) return '- '+toFetch[idx].label+': (could not load thread)';
+        var d=r.value;
+        return '=== '+d.contactName+' ===\n'+formatThread(d);
+      }).join('\n\n');
+      ask('Here are my unread conversations that need replies:\n\n'+threadsText
+        +'\n\nFor each: write a ready-to-send reply in my voice. Be warm, direct, and professional. After each draft, show an "Approve & Send" option.');
+    });
+  }).catch(function(){ask('Who needs a reply from me? Show unread messages and draft responses.');});
 }
 
 
