@@ -1367,11 +1367,18 @@ function readThreadAndAsk(convId, label){
     console.log('Thread response:', JSON.stringify(d).substring(0,500));
     if(d.error) throw new Error(d.error);
     if(!d.messages||!d.messages.length){
-      console.warn('Empty messages. _rawMessageCount:', d._rawMessageCount, '_rawKeys:', d._rawKeys);
-      ask('I have a conversation with '+(d.contactName||label)+' but the message body came back empty. '
-        +'Raw message count from GHL: '+(d._rawMessageCount||0)+'. '
-        +'Field names on messages: '+(d._rawKeys||[]).join(', ')+'. '
-        +'What should I say to follow up?');
+      var dbg=d._debug||{};
+      console.warn('Empty messages. Debug:', dbg);
+      // Fall back to lastMessageBody on the conversation object
+      var fallback=d.lastMessageBody||d.lastMessage||'';
+      if(fallback){
+        ask('Here is the latest message from '+d.contactName+':\n\n'+fallback.replace(/<[^>]*>/g,' ').trim()
+          +'\n\nWhat does this mean and how should I reply in my voice?');
+      } else {
+        ask('I fetched the conversation with '+(d.contactName||label)+' but could not extract message content. '
+          +(dbg.msgErr?'Error: '+dbg.msgErr+'. ':'')
+          +'What should I say to follow up with this person?');
+      }
       return;
     }
     var thread=formatThread(d);
