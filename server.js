@@ -605,13 +605,13 @@ app.get('/api/proposals',async(req,res)=>{
       draft:['draft'],
       sent:['sent'],
       viewed:['viewed'],
-      signed:['completed','accepted','signed']
+      signed:['completed','accepted']  // 'signed' is not valid per GHL
     };
 
     const results=await Promise.allSettled(
       Object.entries(statusGroups).map(async([stage,statuses])=>{
         const statusParams=statuses.map(s=>`status[]=${s}`).join('&');
-        const d=await ghl('GET',`/proposals/document?locationId=${GHL_LOC}&${statusParams}&skip=0&limit=100`);
+        const d=await ghl('GET',`/proposals/document?locationId=${GHL_LOC}&${statusParams}&skip=0&limit=20`);
         console.log(`proposals ${stage}:`,JSON.stringify(d).substring(0,200));
         const docs=d.documents||d.proposals||d.data||d.list||[];
         return {stage, docs};
@@ -693,47 +693,60 @@ app.get('/api/debug/conversation',async(req,res)=>{
 
 // ── CONVERSATION THREAD ────────────────────────────────
 app.get('/api/conversation/:id',async(req,res)=>{
+  const id=req.params.id;
+  let convRaw={}, msgRaw={}, convErr=null, msgErr=null;
   try{
-    const id=req.params.id;
-    const [convRes, msgRes] = await Promise.allSettled([
-      ghl('GET',`/conversations/${id}`),
-      ghl('GET',`/conversations/${id}/messages?limit=20`)
-    ]);
-    const conv=convRes.status==='fulfilled'?convRes.value.conversation||convRes.value:{};
-    const msgData=msgRes.status==='fulfilled'?msgRes.value:{};
+    convRaw=await ghl('GET',`/conversations/${id}`);
+  }catch(e){ convErr=e.message; }
 
-    // Log raw so we can see field names in Railway logs
-    console.log('CONV RAW:', JSON.stringify(conv).substring(0,300));
-    console.log('MSG RAW:', JSON.stringify(msgData).substring(0,500));
+  try{
+    msgRaw=await ghl('GET',`/conversations/${id}/messages?limit=20`);
+  }catch(e){ msgErr=e.message; }
 
-    const rawMessages=msgData.messages||msgData.data||msgData.conversation?.messages||[];
-    const messages=rawMessages
-      .filter(m=>m.body||m.text||m.content||m.message||m.html)
-      .slice(-15)
-      .map(m=>({
-        id:m.id,
-        direction:m.direction||m.messageType||'inbound',
-        body:m.body||m.text||m.content||m.message||m.html||'(no body)',
-        type:m.messageType||m.type||m.channel||'unknown',
-        dateAdded:m.dateAdded||m.createdAt||m.date||m.timestamp,
-        from:(m.direction==='outbound'||m.messageType==='outbound')?'You':conv.contactName||'Contact'
-      }));
+  const conv=convRaw.conversation||convRaw;
 
-    res.json({
-      id,
-      contactName:conv.contactName||conv.name||'Contact',
-      contactId:conv.contactId||'',
-      type:conv.type||conv.channel||'unknown',
-      unreadCount:conv.unreadCount||0,
-      messages,
-      lastMessage:messages[messages.length-1]?.body||'',
-      _rawMessageCount:rawMessages.length,
-      _rawKeys:rawMessages[0]?Object.keys(rawMessages[0]):[]
-    });
-  }catch(e){
-    console.error('thread error:',e);
-    res.status(500).json({error:e.message});
-  }
+  // GHL nests messages as msgRaw.messages.messages
+  const msgContainer=msgRaw.messages||msgRaw;
+  const rawMessages=Array.isArray(msgContainer)?msgContainer
+    :(msgContainer.messages||msgRaw.data||[]);
+
+  console.log('rawMessages type:', typeof rawMessages, Array.isArray(rawMessages), 'length:', rawMessages.length);
+  if(rawMessages[0]) console.log('first msg keys:', Object.keys(rawMessages[0]));
+
+  const messages=rawMessages
+    .filter(m=>m&&typeof m==='object')
+    .slice(-15)
+    .map(m=>{
+      // GHL email messages store body in meta.email or body or html
+      var body=m.body||m.text||m.content||m.html||m.message
+        ||(m.meta&&m.meta.email&&m.meta.email.body)
+        ||(m.attachments&&m.attachments[0]&&m.attachments[0].url?'[Attachment]':'')
+        ||'(no body)';
+      // Strip HTML tags for readability
+      body=body.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+      var dir=(m.direction==='outbound'||m.type===1||m.type==='outbound')?'outbound':'inbound';
+      return {
+        id:m.id||'',
+        direction:dir,
+        body:body,
+        type:m.type||m.messageType||m.contentType||'unknown',
+        dateAdded:m.dateAdded||m.createdAt||'',
+        from:dir==='outbound'?'You':conv.contactName||'Contact'
+      };
+    })
+    .filter(m=>m.body&&m.body!=='(no body)');
+
+  res.json({
+    id,
+    contactName:conv.contactName||conv.name||'Contact',
+    contactId:conv.contactId||'',
+    type:conv.type||'unknown',
+    unreadCount:conv.unreadCount||0,
+    lastMessageBody:conv.lastMessageBody||'',
+    messages,
+    lastMessage:messages[messages.length-1]?.body||conv.lastMessageBody||'',
+    _debug:{convErr,msgErr,rawMessageCount:rawMessages.length,firstMsgKeys:rawMessages[0]?Object.keys(rawMessages[0]):[]}
+  });
 });
 
 app.get('/api/comms',async(req,res)=>{
