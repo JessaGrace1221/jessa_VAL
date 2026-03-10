@@ -769,38 +769,135 @@ var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks
 
 // ── VAL TASK STORE (in-memory, VAL-managed) ────────────
 var valTasks = [];
+var TASKS_KEY = 'val_tasks_v1';
+
+function valTasksSave(){
+  try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(e){}
+}
 function valTasksLoad(){
-  // Tasks live in memory — seeded from Pinecone context on first chat
-  // and added via addTask flow or VAL suggestions
+  try{
+    var raw=localStorage.getItem(TASKS_KEY);
+    if(raw) valTasks=JSON.parse(raw);
+  }catch(e){ valTasks=[]; }
   refreshTaskUI();
 }
-function valTasksSave(){}// no persistence needed — VAL knows from transcripts
-function refreshTaskUI(){
-  var now=new Date();
-  var open=valTasks.filter(function(t){return !t.completed;});
-  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
-  animNum('statTasks',open.length);
-  setText('scTasksVal',open.length+' Open');
-  setText('scTasksSub',overdue.length>0?overdue.length+' overdue':'All on track');
-  if(overdue.length>0){
-    var ob=document.getElementById('statOverdueBadge');
-    if(ob){ob.textContent=overdue.length;ob.classList.remove('hidden');}
-  }
-  dashData.openTasks=open.length;
-  dashData.overdueTasks=overdue.length;
-  dashData.tasks=open;
-}
 function valAddTask(title,contactName,dueDate,notes){
-  var task={id:'t'+Date.now(),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',completed:false,createdAt:new Date().toISOString()};
+  var task={id:'t'+Date.now(),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
   valTasks.push(task);
+  valTasksSave();
   refreshTaskUI();
   return task;
 }
 function valCompleteTask(id){
   var t=valTasks.find(function(t){return t.id===id;});
-  if(t){t.completed=true;refreshTaskUI();}
+  if(t){t.completed=true;valTasksSave();refreshTaskUI();}
 }
-valTasksLoad();
+function valAddDetail(id, text){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(t){
+    if(!t.details) t.details=[];
+    t.details.push({text:text, ts:new Date().toISOString()});
+    valTasksSave();
+  }
+}
+function refreshTaskUI(){
+  var now=new Date();
+  var open=valTasks.filter(function(t){return !t.completed;});
+  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
+  if(typeof animNum==='function') animNum('statTasks',open.length);
+  if(typeof setText==='function'){
+    setText('scTasksVal',open.length+' Open');
+    setText('scTasksSub',overdue.length>0?overdue.length+' overdue':'All on track');
+  }
+  var ob=document.getElementById('statOverdueBadge');
+  if(ob){
+    if(overdue.length>0){ob.textContent=overdue.length;ob.classList.remove('hidden');}
+    else ob.classList.add('hidden');
+  }
+  dashData.openTasks=open.length;
+  dashData.overdueTasks=overdue.length;
+  dashData.tasks=open;
+}
+
+// ── TASK DETAIL PANEL ──────────────────────────────────
+function openTaskDetail(id){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(!t) return;
+  // Remove any existing panel
+  var existing=document.getElementById('taskDetailPanel');
+  if(existing) existing.remove();
+
+  var due=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'No due date';
+  var overdue=t.dueDate&&new Date(t.dueDate)<new Date();
+  var detailsHtml=(t.details&&t.details.length)
+    ? t.details.map(function(d){
+        var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
+          +'<div style="color:var(--cream);opacity:0.9;">'+d.text+'</div>'
+          +'<div style="color:var(--cream);opacity:0.4;font-size:10px;margin-top:2px;">'+ts+'</div>'
+          +'</div>';
+      }).join('')
+    : '<div style="opacity:0.4;font-size:12px;padding:6px 0;">No notes yet — add ideas, steps, or context below.</div>';
+
+  var panel=document.createElement('div');
+  panel.id='taskDetailPanel';
+  panel.style.cssText='position:fixed;top:0;right:0;width:360px;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:999;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+  panel.innerHTML=
+    '<div style="padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:flex-start;justify-content:space-between;">'
+      +'<div>'
+        +'<div style="font-family:var(--serif);font-size:16px;color:var(--cream);line-height:1.3;max-width:280px;">'+t.title+'</div>'
+        +'<div style="font-size:11px;color:'+(overdue?'#e57373':'var(--gold)')+';margin-top:5px;font-family:var(--mono);">'+due+(overdue?' · OVERDUE':'')+'</div>'
+      +'</div>'
+      +'<button onclick="document.getElementById(\'taskDetailPanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;">✕</button>'
+    +'</div>'
+    +'<div id="taskDetailNotes" style="flex:1;overflow-y:auto;padding:14px 18px;">'+detailsHtml+'</div>'
+    +'<div style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.08);">'
+      +'<textarea id="taskDetailInput" placeholder="Add a note, idea, or step..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--cream);font-size:13px;padding:10px 12px;resize:none;height:72px;font-family:var(--body);box-sizing:border-box;outline:none;"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
+        +'<button class="chip" onclick="saveTaskDetail(\''+id+'\')">+ Add note</button>'
+        +'<button class="chip" onclick="brainstormTask(\''+id+'\')">💡 Brainstorm with VAL</button>'
+        +'<button class="chip" onclick="valCompleteTask(\''+id+'\');document.getElementById(\'taskDetailPanel\').remove();addSys(\'Task marked complete.\')">✓ Complete</button>'
+      +'</div>'
+    +'</div>';
+  document.body.appendChild(panel);
+  document.getElementById('taskDetailInput').focus();
+  // Allow Enter to save
+  document.getElementById('taskDetailInput').onkeydown=function(e){
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();saveTaskDetail(id);}
+  };
+}
+
+function saveTaskDetail(id){
+  var inp=document.getElementById('taskDetailInput');
+  if(!inp) return;
+  var text=inp.value.trim();
+  if(!text) return;
+  valAddDetail(id, text);
+  inp.value='';
+  // Re-render notes section
+  var t=valTasks.find(function(t){return t.id===id;});
+  var notesEl=document.getElementById('taskDetailNotes');
+  if(notesEl&&t&&t.details){
+    notesEl.innerHTML=t.details.map(function(d){
+      var ts=new Date(d.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      return '<div style="border-left:2px solid var(--gold);padding:6px 10px;margin:6px 0;font-size:12px;line-height:1.6;">'
+        +'<div style="color:var(--cream);opacity:0.9;">'+d.text+'</div>'
+        +'<div style="color:var(--cream);opacity:0.4;font-size:10px;margin-top:2px;">'+ts+'</div>'
+        +'</div>';
+    }).join('');
+    notesEl.scrollTop=notesEl.scrollHeight;
+  }
+}
+
+function brainstormTask(id){
+  var t=valTasks.find(function(t){return t.id===id;});
+  if(!t) return;
+  var details=(t.details&&t.details.length)?t.details.map(function(d){return '- '+d.text;}).join('\n'):'';
+  openDetailWithTitle(t.title);
+  ask('Help me brainstorm and plan this task:\n\nTask: '+t.title+(t.dueDate?'\nDue: '+new Date(t.dueDate).toLocaleDateString():'')+(details?'\n\nNotes so far:\n'+details:'')+'\n\nBreak it into clear steps, flag anything I might be missing, and suggest the best way to start.');
+}
+// valTasksLoad() called after all functions defined, near loadDashboard()
+
 
 // ── VAL DOCUMENT STORE (in-memory, VAL-managed) ─────────
 var valDocs = [];
@@ -962,18 +1059,14 @@ function setMode(m,btn){
   openDetailWithTitle(labels[m]);
 
   if(m==='focus'){
-    // Daily focus: overdue tasks + top priority
-    fetch(HOOK_TASKS).then(r=>r.json()).then(function(d){
-      var tasks=d.tasks||[];
-      var overdue=tasks.filter(function(t){return t.overdue;});
-      var open=tasks.filter(function(t){return !t.overdue;}).slice(0,3);
-      var detail='';
-      if(overdue.length) detail+='Overdue ('+overdue.length+'): '+overdue.map(function(t){return t.title+(t.contactName?' for '+t.contactName:'');}).join(', ')+'. ';
-      if(open.length) detail+='Up next: '+open.map(function(t){return t.title;}).join(', ')+'. ';
-      ask('I\'ve switched to Focus Mode. '+detail+'What is the single most important thing I should be working on right now? Be direct and specific.');
-    }).catch(function(){
-      ask('I\'ve switched to Focus Mode. What is the single most important thing I should work on right now based on my tasks, pipeline, and meetings today? Be direct and give me one clear priority.');
-    });
+    var allT=valTasks.filter(function(t){return !t.completed;});
+    var now=new Date();
+    var overdue=allT.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
+    var open=allT.filter(function(t){return !t.dueDate||new Date(t.dueDate)>=now;}).slice(0,3);
+    var detail='';
+    if(overdue.length) detail+='Overdue ('+overdue.length+'): '+overdue.map(function(t){return t.title;}).join(', ')+'. ';
+    if(open.length) detail+='Up next: '+open.map(function(t){return t.title;}).join(', ')+'. ';
+    ask('I\'ve switched to Focus Mode. '+detail+'What is the single most important thing I should be working on right now? Be direct and specific.');
   }
 
   else if(m==='meeting'){
@@ -1148,17 +1241,8 @@ async function loadDashboard(){
     console.warn('Calendar: no events or empty response', calendar);
   }
 
-  // TASKS
-  if(tasks){
-    var ot=tasks.openTasks??0, od=tasks.overdueTasks??0;
-    animNum('statTasks', ot);
-    if(od>0){
-      var ob=document.getElementById('statOverdueBadge');
-      ob.textContent=od+' OVERDUE';ob.classList.remove('hidden');
-    }
-    setText('scTasksVal',ot+' Open');
-    setText('scTasksSub',od>0?od+' overdue today':'All on track');
-  }
+  // TASKS — handled by valTasks (refreshTaskUI called separately)
+  refreshTaskUI();
 
   // FEED
   if(feed&&feed.feedItems&&feed.feedItems.length){
@@ -1213,9 +1297,9 @@ function renderFeed(items){
       div.classList.add('active');
       openDetailWithTitle(title);
       // If this is a comms item with a conversation ID, read the thread first
-      var convId=item.actionUrl?item.actionUrl.split('/conversations/')[1]:'';
-      if(convId&&item.type==='Comms'){
-        readThreadAndAsk(convId, item.text);
+      var convId=item.id||(item.actionUrl?item.actionUrl.split('/conversations/')[1].split('?')[0]:'');
+      if(convId){
+        readThreadAndAsk(convId, item.text||item.label);
       } else {
         ask('Tell me about this and what action I should take: '+title);
       }
@@ -1225,17 +1309,27 @@ function renderFeed(items){
 }
 
 function readThreadAndAsk(convId, label){
-  addMsg('Reading conversation thread...',false);
+  if(!convId){ask('Tell me about this conversation: '+label);return;}
+  addMsg('Reading conversation...',false);
   fetch(PROXY+'/api/conversation/'+convId)
-  .then(function(r){return r.json();})
+  .then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  })
   .then(function(d){
+    console.log('Thread loaded:',d);
     if(d.error) throw new Error(d.error);
+    if(!d.messages||!d.messages.length){
+      ask('I have a conversation with '+d.contactName+' but the messages are empty. Summarize what I should say to follow up based on their contact context.');
+      return;
+    }
     var thread=formatThread(d);
     var prompt='Here is the actual conversation thread with '+d.contactName+':\n\n'+thread
       +'\n\nSummarize what they want, what the context is, and draft a reply in my voice that I can send right away.';
     ask(prompt);
   })
-  .catch(function(){
+  .catch(function(e){
+    console.error('Thread fetch error:',e);
     ask('Tell me about this conversation and what I should do: '+label);
   });
 }
@@ -1356,6 +1450,7 @@ function renderWeekFallback(){
   });
 }
 
+valTasksLoad();
 loadDashboard();
 setInterval(loadDashboard,5*60*1000);
 renderWeekFallback(); // show immediately while loading
@@ -1773,6 +1868,21 @@ function addSys(text){
   var d=document.createElement('div');d.className='sys-line';d.textContent='✦ '+text;
   c.appendChild(d);c.scrollTop=c.scrollHeight;
 }
+function parseNaturalDate(text){
+  var t=text.toLowerCase().trim();
+  var d=new Date();
+  if(t==='today'){d.setHours(23,59,0,0);return d.toISOString();}
+  if(t==='tomorrow'){d.setDate(d.getDate()+1);d.setHours(23,59,0,0);return d.toISOString();}
+  if(t==='next week'){d.setDate(d.getDate()+7);d.setHours(23,59,0,0);return d.toISOString();}
+  var days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  var di=days.indexOf(t);
+  if(di>=0){var diff=(di-d.getDay()+7)%7||7;d.setDate(d.getDate()+diff);d.setHours(23,59,0,0);return d.toISOString();}
+  var parsed=new Date(text);
+  if(!isNaN(parsed)) return parsed.toISOString();
+  d.setDate(d.getDate()+3);d.setHours(23,59,0,0);return d.toISOString();
+}
+function addTyping(){ showTyping(); } // alias
+
 function showTyping(){var c=document.getElementById('chatScroll');var d=document.createElement('div');d.id='typing';d.className='cmsg assistant';d.innerHTML='<div class="typing-row"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div>';c.appendChild(d);c.scrollTop=c.scrollHeight;}
 function removeTyping(){var t=document.getElementById('typing');if(t)t.remove();}
 
@@ -1858,10 +1968,9 @@ var taskIndex=0;
 var addTaskState=null;
 
 function startAddTask(){
-  addTaskState={step:'contact',title:'',contactId:'',contactName:'',dueDate:'',notes:''};
+  addTaskState={step:'title',title:'',dueDate:'',notes:''};
   addMsg('➕ Add a task',true);
-  addMsg("Sure! What's the task title?",false);
-  // Hijack next user input
+  addMsg("What's the task?",false);
   document.getElementById('msgInput').placeholder='Type task title...';
   document.getElementById('msgInput').focus();
   window._addTaskMode=true;
@@ -1871,62 +1980,19 @@ function handleAddTaskInput(text){
   if(!addTaskState) return false;
   var s=addTaskState;
 
-  if(s.step==='contact'){
-    // First input = task title
+  if(s.step==='title'){
+    addMsg(text,true);
     s.title=text;
-    s.step='searching';
-    addMsg(text,true);
-    addMsg("Got it. Who is this task for? Type a contact name and I'll find them.",false);
-    s.step='contact_name';
-    document.getElementById('msgInput').placeholder='Type contact name...';
-    return true;
-  }
-
-  if(s.step==='contact_name'){
-    addMsg(text,true);
-    addMsg('Searching for "'+text+'"...',false);
-    s.step='contact_selecting';
-    fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(text))
-    .then(r=>r.json()).then(function(d){
-      var contacts=d.contacts||[];
-      if(!contacts.length){
-        addMsg('No contacts found for "'+text+'". Try a different name.',false);
-        s.step='contact_name';
-        return;
-      }
-      // Show contact options as chips
-      var c=document.getElementById('chatScroll');
-      var wrap=document.createElement('div');
-      wrap.style.cssText='padding:4px 0 12px;';
-      var msg=document.createElement('div');
-      msg.className='cmsg assistant';
-      var opts=contacts.map(function(ct,i){
-        return '<button class="chip" onclick="selectTaskContact(\''+ct.id+'\',\''+ct.name.replace(/'/g,"\\'")+'\',this.parentNode.parentNode.parentNode)">'
-          +ct.name+(ct.email?' · '+ct.email:'')+' </button>';
-      }).join('');
-      msg.innerHTML='<div class="cmsg-bubble"><p>Found '+contacts.length+' contact'+(contacts.length>1?'s':'')+'. Pick one:</p>'+opts+'</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
-      c.appendChild(msg);c.scrollTop=c.scrollHeight;
-    }).catch(function(){
-      addMsg('Could not search contacts. Try again.',false);
-      s.step='contact_name';
-    });
+    s.step='due_date';
+    addMsg('When is it due? (e.g. "Friday", "tomorrow", "March 20" — or say "no date")',false);
+    document.getElementById('msgInput').placeholder='Due date or "no date"...';
     return true;
   }
 
   if(s.step==='due_date'){
     addMsg(text,true);
-    // Parse natural language date
-    var due=parseNaturalDate(text);
-    s.dueDate=due;
-    s.step='notes';
-    addMsg('Any notes for this task? (or say "none")',false);
-    document.getElementById('msgInput').placeholder='Add notes or say none...';
-    return true;
-  }
-
-  if(s.step==='notes'){
-    addMsg(text,true);
-    s.notes=text==='none'||text.toLowerCase()==='none'?'':text;
+    var t=text.toLowerCase().trim();
+    s.dueDate=(t==='no date'||t==='none'||t==='skip')?null:parseNaturalDate(text);
     createTask();
     return true;
   }
@@ -1934,42 +2000,22 @@ function handleAddTaskInput(text){
   return false;
 }
 
-function selectTaskContact(id,name,msgEl){
-  if(msgEl) msgEl.remove();
-  addTaskState.contactId=id;
-  addTaskState.contactName=name;
-  addTaskState.step='due_date';
-  addMsg('Selected: '+name,true);
-  addMsg('When is this due? (e.g. "tomorrow", "Friday", "March 15")',false);
-  document.getElementById('msgInput').placeholder='Enter due date...';
-}
-
-function parseNaturalDate(text){
-  var t=text.toLowerCase().trim();
-  var d=new Date();
-  if(t==='today'){d.setHours(23,59,0,0);return d.toISOString();}
-  if(t==='tomorrow'){d.setDate(d.getDate()+1);d.setHours(23,59,0,0);return d.toISOString();}
-  var days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-  var di=days.indexOf(t);
-  if(di>=0){
-    var diff=(di-d.getDay()+7)%7||7;
-    d.setDate(d.getDate()+diff);d.setHours(23,59,0,0);return d.toISOString();
-  }
-  var parsed=new Date(text);
-  if(!isNaN(parsed)) return parsed.toISOString();
-  // Default: 3 days out
-  d.setDate(d.getDate()+3);d.setHours(23,59,0,0);return d.toISOString();
-}
-
 function createTask(){
   var s=addTaskState;
-  var task=valAddTask(s.title, s.contactName, s.dueDate, s.notes);
-  var due=new Date(s.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-  addMsg('✅ Task created!\n\n**'+s.title+'**\nContact: '+s.contactName+'\nDue: '+due+(s.notes?'\nNotes: '+s.notes:''),false);
+  var task=valAddTask(s.title,'',s.dueDate,'');
+  var dueStr=s.dueDate?new Date(s.dueDate).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'No due date';
+  // Show confirmation with quick-open button
+  var wrap=document.createElement('div');
+  wrap.style.cssText='display:flex;align-items:center;gap:10px;padding:8px 0 4px;flex-wrap:wrap;';
+  wrap.innerHTML='<span style="font-size:13px;color:var(--cream);">✅ <strong>'+task.title+'</strong> · '+dueStr+'</span>'
+    +'<button class="chip" onclick="openTaskDetail(\''+task.id+'\')">Open →</button>';
+  document.getElementById('chatScroll').appendChild(wrap);
+  document.getElementById('chatScroll').scrollTop=99999;
   addTaskState=null;
   window._addTaskMode=false;
   document.getElementById('msgInput').placeholder='Message VAL...';
 }
+
 
 function askTasks(){
   var all=valTasks.filter(function(t){return !t.completed;});
@@ -2025,6 +2071,7 @@ function presentTask(){
       var tid=taskQueue[taskIndex-1]?taskQueue[taskIndex-1].id:'';
       chips.innerHTML=
         '<button class="chip" onclick="presentTask()">Next task →</button>'
+        +(tid?'<button class="chip" onclick="openTaskDetail(\''+tid+'\')">Open details</button>':'')
         +(tid?'<button class="chip" onclick="valCompleteTask(\''+tid+'\');this.parentNode.remove();addMsg(\'✅ Marked complete.\',false)">Mark complete ✓</button>':'')
         +'<button class="chip" onclick="taskQueue=[];taskIndex=0;addMsg(\'Task review paused.\',false)">Stop</button>';
       c.appendChild(chips);c.scrollTop=c.scrollHeight;
