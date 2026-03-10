@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head> 
+<head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>VAL — Executive Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -902,120 +902,162 @@ function brainstormTask(id){
 // ── VAL DOCUMENT STORE (in-memory, VAL-managed) ─────────
 var valDocs = [];
 var addDocState = null;
+var DOCS_KEY = 'val_docs_v1';
+
+function valDocsSave(){
+  try{ localStorage.setItem(DOCS_KEY, JSON.stringify(valDocs)); }catch(e){}
+}
+function valDocsLoad(){
+  try{ var r=localStorage.getItem(DOCS_KEY); if(r) valDocs=JSON.parse(r); }catch(e){ valDocs=[]; }
+  refreshDocUI();
+}
 function valAddDoc(title, recipient, recipientEmail, body, type){
   var doc={id:'d'+Date.now(),title:title,recipient:recipient,recipientEmail:recipientEmail||'',body:body,type:type||'proposal',status:'draft',createdAt:new Date().toISOString()};
   valDocs.push(doc);
+  valDocsSave();
   refreshDocUI();
   return doc;
 }
 function refreshDocUI(){
   var drafts=valDocs.filter(function(d){return d.status==='draft';});
   var sent=valDocs.filter(function(d){return d.status==='sent';});
-  // Update proposals stat if element exists
   var el=document.getElementById('statProposals');
   if(el&&!dashData.proposalsTotal) animNum('statProposals',drafts.length+sent.length);
 }
 
-// Start a document/proposal creation flow
-function startAddDoc(typeHint){
-  var type=typeHint||'proposal';
-  addDocState={step:'title',type:type,title:'',recipient:'',recipientEmail:'',body:''};
-  window._addDocMode=true;
-  document.getElementById('msgInput').placeholder='Type document title...';
-  addMsg('Let\'s create a '+type+'. What\'s the title or subject? (e.g. "Strategy Proposal for Michele")',false);
+// ── DOC DETAIL PANEL ───────────────────────────────────
+function openDocPanel(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc) return;
+  var existing=document.getElementById('docDetailPanel');
+  if(existing) existing.remove();
+
+  var typeLabel=doc.type.charAt(0).toUpperCase()+doc.type.slice(1);
+  var statusColor=doc.status==='sent'?'#81c784':doc.status==='draft'?'var(--gold)':'var(--cream)';
+  var statusLabel=doc.status.toUpperCase();
+  var createdStr=new Date(doc.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+  var panel=document.createElement('div');
+  panel.id='docDetailPanel';
+  panel.style.cssText='position:fixed;top:0;right:0;width:480px;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:999;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+
+  panel.innerHTML=
+    // Header
+    '<div style="padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,0.08);">'
+      +'<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">'
+        +'<div>'
+          +'<div style="font-size:10px;color:var(--gold);font-family:var(--mono);letter-spacing:.1em;margin-bottom:4px;">'+typeLabel.toUpperCase()+' · <span style="color:'+statusColor+'">'+statusLabel+'</span></div>'
+          +'<div style="font-family:var(--serif);font-size:17px;color:var(--cream);line-height:1.3;max-width:380px;">'+doc.title+'</div>'
+          +'<div style="font-size:11px;color:var(--cream);opacity:0.5;margin-top:4px;">To: '+doc.recipient+(doc.recipientEmail?' · '+doc.recipientEmail:'')+'</div>'
+        +'</div>'
+        +'<button onclick="document.getElementById(\'docDetailPanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;flex-shrink:0;">✕</button>'
+      +'</div>'
+      // Action buttons
+      +(doc.status==='draft'
+        ?'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+          +'<button class="chip" onclick="sendDoc(\''+docId+'\')">✉ Approve & Send</button>'
+          +'<button class="chip" onclick="startDocRevise(\''+docId+'\')">✏ Revise</button>'
+          +'<button class="chip" onclick="copyDocBody(\''+docId+'\')">⎘ Copy text</button>'
+          +'</div>'
+        :'<div style="font-size:11px;color:#81c784;margin-top:8px;">✓ Sent to '+doc.recipient+'</div>'
+      )
+    +'</div>'
+    // Body
+    +'<div id="docPanelBody" style="flex:1;overflow-y:auto;padding:18px 20px;font-size:13px;line-height:1.8;color:var(--cream);opacity:0.9;white-space:pre-wrap;">'+doc.body+'</div>'
+    // Revise input (hidden by default)
+    +'<div id="docReviseBar" style="display:none;padding:12px 18px;border-top:1px solid rgba(255,255,255,0.08);">'
+      +'<textarea id="docReviseInput" placeholder="What should I change? (e.g. \'Make the opening stronger\', \'Add a pricing section\')" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:var(--cream);font-size:13px;padding:10px 12px;resize:none;height:72px;font-family:var(--body);box-sizing:border-box;outline:none;"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-top:8px;">'
+        +'<button class="chip" onclick="submitDocRevise(\''+docId+'\')">Rewrite ↵</button>'
+        +'<button class="chip" onclick="document.getElementById(\'docReviseBar\').style.display=\'none\'">Cancel</button>'
+      +'</div>'
+    +'</div>';
+
+  document.body.appendChild(panel);
 }
 
-// Handle add-doc conversation steps
-function handleAddDocStep(text){
-  if(!addDocState) return false;
-  var s=addDocState;
-  if(s.step==='title'){
-    s.title=text;
-    s.step='recipient';
-    document.getElementById('msgInput').placeholder='Who is this for? (name)';
-    addMsg('Great. Who is this for?',false);
-    return true;
-  }
-  if(s.step==='recipient'){
-    s.recipient=text;
-    s.step='email';
-    document.getElementById('msgInput').placeholder='Their email address...';
-    addMsg('What\'s their email address so we can send it?',false);
-    return true;
-  }
-  if(s.step==='email'){
-    s.recipientEmail=text;
-    s.step='details';
-    document.getElementById('msgInput').placeholder='Describe what should be in it...';
-    addMsg('What should the '+s.type+' cover? Give me the key points and I\'ll write the full document.',false);
-    return true;
-  }
-  if(s.step==='details'){
-    s.step='generating';
-    window._addDocMode=false;
-    document.getElementById('msgInput').placeholder='Message VAL...';
-    generateDoc(s, text);
-    return true;
-  }
-  return false;
+function startDocRevise(docId){
+  var bar=document.getElementById('docReviseBar');
+  if(bar){ bar.style.display='block'; document.getElementById('docReviseInput').focus(); }
+}
+
+function submitDocRevise(docId){
+  var inp=document.getElementById('docReviseInput');
+  if(!inp) return;
+  var feedback=inp.value.trim();
+  if(!feedback) return;
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc) return;
+  inp.value='';
+  document.getElementById('docReviseBar').style.display='none';
+  var bodyEl=document.getElementById('docPanelBody');
+  if(bodyEl) bodyEl.textContent='Rewriting...';
+  callClaude(
+    'You are VAL, executive assistant to Jessa Grace. Revise the document based on the feedback. Return only the revised document text, no preamble.',
+    'Original document:\n\n'+doc.body+'\n\nRevision request: '+feedback,
+    function(newBody){
+      doc.body=newBody;
+      valDocsSave();
+      if(bodyEl) bodyEl.textContent=newBody;
+    }
+  );
+}
+
+function copyDocBody(docId){
+  var doc=valDocs.find(function(d){return d.id===docId;});
+  if(!doc) return;
+  navigator.clipboard.writeText(doc.body).then(function(){
+    addSys('Document text copied to clipboard');
+  }).catch(function(){addSys('Copy failed — try selecting manually');});
 }
 
 function generateDoc(s, details){
   addMsg('Writing your '+s.type+'...',false);
-  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a polished, professional '+s.type+' document. Use clear structure with sections. Be compelling but concise. Write in a warm, authoritative tone that reflects Jessa\'s brand.';
-  var userPrompt='Write a complete '+s.type+' for '+s.recipient+'.\n\nTitle: '+s.title+'\nKey points to cover: '+details+'\n\nFormat it as a proper document with appropriate sections. Make it ready to send.';
+  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a polished, professional '+s.type+'. Use clear structure with sections. Be compelling but concise. Warm, authoritative tone that reflects Jessa\'s brand — a high-performance executive coaching practice.';
+  var userPrompt='Write a complete '+s.type+' for '+s.recipient+'.\n\nTitle: '+s.title+'\nKey points to cover: '+details+'\n\nFormat it with appropriate sections, ready to send.';
   callClaude(systemPrompt, userPrompt, function(body){
     var doc=valAddDoc(s.title, s.recipient, s.recipientEmail, body, s.type);
     addDocState=null;
-    // Show doc with approve/send button
+    // Show compact preview in chat with Open button
+    var c=document.getElementById('chatScroll');
     var wrap=document.createElement('div');
-    wrap.style.cssText='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin:8px 0;';
-    wrap.innerHTML='<div style="font-size:11px;color:var(--gold);font-family:var(--mono);letter-spacing:.08em;margin-bottom:10px;">📄 DRAFT — '+s.title+'</div>'
-      +'<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto;">'+body+'</div>'
-      +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-      +'<button class="chip" onclick="sendDoc(\''+doc.id+'\')">✉ Approve & Send to '+s.recipient+'</button>'
-      +'<button class="chip" onclick="editDoc(\''+doc.id+'\')">✏ Revise</button>'
-      +'<button class="chip" onclick="this.closest(\'div\').parentNode.remove()">Dismiss</button>'
+    wrap.style.cssText='background:rgba(196,150,58,0.08);border:1px solid rgba(196,150,58,0.25);border-radius:12px;padding:14px 16px;margin:6px 0;';
+    wrap.innerHTML=
+      '<div style="font-size:10px;color:var(--gold);font-family:var(--mono);letter-spacing:.1em;margin-bottom:6px;">📄 DRAFT '+s.type.toUpperCase()+' · '+s.title+'</div>'
+      +'<div style="font-size:12px;color:var(--cream);opacity:0.7;line-height:1.5;max-height:80px;overflow:hidden;">'+body.substring(0,200)+'…</div>'
+      +'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
+        +'<button class="chip" onclick="openDocPanel(\''+doc.id+'\')">Open & Review →</button>'
+        +'<button class="chip" onclick="sendDoc(\''+doc.id+'\')">✉ Send now</button>'
       +'</div>';
-    document.getElementById('chatMessages').appendChild(wrap);
-    document.getElementById('chatMessages').scrollTop=99999;
+    c.appendChild(wrap);
+    c.scrollTop=c.scrollHeight;
   });
 }
 
 function sendDoc(docId){
   var doc=valDocs.find(function(d){return d.id===docId;});
   if(!doc){addSys('Document not found');return;}
+  // Close panel if open
+  var panel=document.getElementById('docDetailPanel');
+  if(panel) panel.remove();
   addMsg('Sending to '+doc.recipient+'...',false);
   fetch(SEND_HOOK,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      type:'document',
-      documentType:doc.type,
-      title:doc.title,
-      recipient:doc.recipient,
-      recipientEmail:doc.recipientEmail,
-      body:doc.body,
-      timestamp:new Date().toISOString(),
-      source:'VAL'
-    })
-  }).then(function(r){
+    body:JSON.stringify({type:'document',documentType:doc.type,title:doc.title,recipient:doc.recipient,recipientEmail:doc.recipientEmail,body:doc.body,timestamp:new Date().toISOString(),source:'VAL'})
+  }).then(function(){
     doc.status='sent';
+    valDocsSave();
     refreshDocUI();
-    addMsg('✅ Sent to '+doc.recipient+'! Document saved to memory.',false);
-    // Also save to Pinecone memory
+    addMsg('✅ Sent to '+doc.recipient+'!',false);
     fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:'Document sent to '+doc.recipient+': '+doc.title+'\n\n'+doc.body,type:'document_sent',timestamp:new Date().toISOString(),recipient:doc.recipient,documentType:doc.type})}).catch(function(){});
   }).catch(function(){
-    addMsg('⚠ Send failed — check your Make webhook is active. The document is saved as a draft.',false);
+    addMsg('⚠ Send failed — check your Make webhook. Draft saved.',false);
   });
 }
 
-function editDoc(docId){
-  var doc=valDocs.find(function(d){return d.id===docId;});
-  if(!doc){return;}
-  addMsg('What would you like to change about this '+doc.type+'?',false);
-  window._editDocId=docId;
-}
+function editDoc(docId){ openDocPanel(docId); }
+
 
 // Helper: call Claude API directly (used for doc generation)
 function callClaude(system, user, callback){
@@ -1309,7 +1351,12 @@ function renderFeed(items){
 }
 
 function readThreadAndAsk(convId, label){
-  if(!convId){ask('Tell me about this conversation: '+label);return;}
+  if(!convId){
+    console.warn('readThreadAndAsk: no convId for', label);
+    ask('Tell me about this conversation: '+label);
+    return;
+  }
+  console.log('Fetching thread for convId:', convId);
   addMsg('Reading conversation...',false);
   fetch(PROXY+'/api/conversation/'+convId)
   .then(function(r){
@@ -1317,19 +1364,22 @@ function readThreadAndAsk(convId, label){
     return r.json();
   })
   .then(function(d){
-    console.log('Thread loaded:',d);
+    console.log('Thread response:', JSON.stringify(d).substring(0,500));
     if(d.error) throw new Error(d.error);
     if(!d.messages||!d.messages.length){
-      ask('I have a conversation with '+d.contactName+' but the messages are empty. Summarize what I should say to follow up based on their contact context.');
+      console.warn('Empty messages. _rawMessageCount:', d._rawMessageCount, '_rawKeys:', d._rawKeys);
+      ask('I have a conversation with '+(d.contactName||label)+' but the message body came back empty. '
+        +'Raw message count from GHL: '+(d._rawMessageCount||0)+'. '
+        +'Field names on messages: '+(d._rawKeys||[]).join(', ')+'. '
+        +'What should I say to follow up?');
       return;
     }
     var thread=formatThread(d);
-    var prompt='Here is the actual conversation thread with '+d.contactName+':\n\n'+thread
-      +'\n\nSummarize what they want, what the context is, and draft a reply in my voice that I can send right away.';
-    ask(prompt);
+    ask('Here is the actual conversation thread with '+d.contactName+':\n\n'+thread
+      +'\n\nSummarize what they want, what the context is, and draft a reply in my voice that I can send right away.');
   })
   .catch(function(e){
-    console.error('Thread fetch error:',e);
+    console.error('Thread fetch error:', e);
     ask('Tell me about this conversation and what I should do: '+label);
   });
 }
@@ -1451,6 +1501,7 @@ function renderWeekFallback(){
 }
 
 valTasksLoad();
+valDocsLoad();
 loadDashboard();
 setInterval(loadDashboard,5*60*1000);
 renderWeekFallback(); // show immediately while loading
@@ -1460,28 +1511,73 @@ renderWeekFallback(); // show immediately while loading
   var now=new Date();
   var hour=now.getHours();
   var lastBriefKey='val_last_brief_'+now.toDateString();
-  // Only auto-brief between 5am and 11am, once per day
   if(hour>=5&&hour<11&&!sessionStorage.getItem(lastBriefKey)){
     sessionStorage.setItem(lastBriefKey,'1');
     setTimeout(function(){
-      openDetailWithTitle('Good Morning Briefing');
-      // Wait for dashboard data to load, then brief
-      setTimeout(function(){
-        var ctx='Today is '+now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.\n';
-        if(dashData.meetingsToday) ctx+='Meetings today: '+dashData.meetingsToday+'.\n';
-        if(dashData.appointments&&dashData.appointments.length){
-          ctx+='Appointments: '+dashData.appointments.map(function(a){
-            var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
-            return (a.title||a.contactName||'Meeting')+(t?' at '+t:'');
-          }).join(', ')+'.\n';
-        }
-        if(dashData.openTasks) ctx+='Open tasks: '+dashData.openTasks+(dashData.overdueTasks?' ('+dashData.overdueTasks+' overdue)':'')+'.\n';
-        if(dashData.pipelineActive) ctx+='Active pipeline deals: '+dashData.pipelineActive+'.\n';
-        ask('Good morning! '+ctx+'\nGive me a sharp morning briefing: what\'s on my calendar today, any overdue tasks, pipeline signals that need attention, and the one most important thing I should focus on first. Keep it concise — I\'m starting my day.');
-      }, 3000);
+      // Wait for dashboard data then deliver briefing
+      setTimeout(deliverMorningBriefing, 3500);
     }, 1500);
   }
 })();
+
+function deliverMorningBriefing(){
+  var now=new Date();
+  var greeting=now.getHours()<12?'Good morning':'Good afternoon';
+  var dateStr=now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+
+  // Build rich context from all loaded dashboard data
+  var ctx=[];
+  ctx.push('Today is '+dateStr+'.');
+
+  // Meetings
+  if(dashData.appointments&&dashData.appointments.length){
+    var appts=dashData.appointments.slice(0,5).map(function(a){
+      var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
+      return '• '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.status==='unconfirmed'?' (unconfirmed)':'');
+    });
+    ctx.push('MEETINGS TODAY ('+dashData.appointments.length+'):\n'+appts.join('\n'));
+  } else {
+    ctx.push('No meetings scheduled today.');
+  }
+
+  // Tasks
+  var openTasks=valTasks.filter(function(t){return !t.completed;});
+  var overdueTasks=openTasks.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
+  var dueTodayTasks=openTasks.filter(function(t){
+    if(!t.dueDate) return false;
+    var d=new Date(t.dueDate); d.setHours(0,0,0,0);
+    var today=new Date(); today.setHours(0,0,0,0);
+    return d.getTime()===today.getTime();
+  });
+  if(openTasks.length){
+    ctx.push('TASKS: '+openTasks.length+' open'
+      +(overdueTasks.length?' | '+overdueTasks.length+' OVERDUE: '+overdueTasks.map(function(t){return t.title;}).join(', '):'')
+      +(dueTodayTasks.length?' | Due today: '+dueTodayTasks.map(function(t){return t.title;}).join(', '):''));
+  } else {
+    ctx.push('No open tasks.');
+  }
+
+  // Pipeline
+  if(dashData.opportunities&&dashData.opportunities.length){
+    var stalled=dashData.opportunities.filter(function(o){return o.stalled;});
+    ctx.push('PIPELINE: '+dashData.opportunities.length+' active deals'+(stalled.length?' | '+stalled.length+' stalled: '+stalled.map(function(o){return o.contactName;}).join(', '):''));
+  }
+
+  // Comms
+  if(dashData.commsUnread>0){
+    ctx.push('UNREAD MESSAGES: '+dashData.commsUnread+' conversations need a reply.');
+  }
+
+  openDetailWithTitle(greeting+' Briefing');
+  ask(greeting+', Jessa. Here\'s your situation for '+dateStr+':\n\n'
+    +ctx.join('\n\n')
+    +'\n\nGive me a sharp executive briefing in 3 parts:\n'
+    +'1. The headline — what\'s the single most important thing I need to handle today?\n'
+    +'2. What to do in the first 30 minutes\n'
+    +'3. Any flags or things that could derail the day\n\n'
+    +'Be direct, specific, and brief. I\'m starting my day.');
+}
+
 
 
 // ── TTS ────────────────────────────────────────────────
@@ -1545,7 +1641,7 @@ function handleVoice(text){
   if(/\b(show|open|check)\s+(my\s+)?(pipeline|deals)\b/.test(low)){askPipeline();return;}
   if(/\b(show|what are my|check)\s+(my\s+)?tasks\b/.test(low)){askTasks();return;}
   if(/\b(morning briefing|daily briefing|what's (on |for )?today)\b/.test(low)){
-    ask('Give me my morning briefing — meetings today, key tasks, pipeline, and one thing to focus on first.');return;
+    deliverMorningBriefing();return;
   }
   if(/\b(focus mode)\b/.test(low)){setMode('focus');return;}
   if(/\b(strategy mode)\b/.test(low)){setMode('strategy');return;}
@@ -1753,33 +1849,6 @@ function sendMessage(){
   if(window._addDocMode&&addDocState){
     inp.value='';inp.style.height='auto';
     handleAddDocStep(msg);
-    return;
-  }
-  // Intercept for doc edit flow
-  if(window._editDocId){
-    var docId=window._editDocId;
-    window._editDocId=null;
-    inp.value='';inp.style.height='auto';
-    var doc=valDocs.find(function(d){return d.id===docId;});
-    if(doc){
-      addMsg(msg,true);
-      addMsg('Revising...',false);
-      callClaude('You are VAL, executive assistant to Jessa Grace. Revise the following document based on the feedback provided. Return only the revised document text.',
-        'Original document:\n\n'+doc.body+'\n\nRevision request: '+msg,
-        function(newBody){
-          doc.body=newBody;
-          var wrap=document.createElement('div');
-          wrap.style.cssText='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:16px;margin:8px 0;';
-          wrap.innerHTML='<div style="font-size:11px;color:var(--gold);font-family:var(--mono);letter-spacing:.08em;margin-bottom:10px;">📄 REVISED — '+doc.title+'</div>'
-            +'<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto;">'+newBody+'</div>'
-            +'<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-            +'<button class="chip" onclick="sendDoc(\''+docId+'\')">✉ Approve & Send to '+doc.recipient+'</button>'
-            +'<button class="chip" onclick="editDoc(\''+docId+'\')">✏ Revise again</button>'
-            +'</div>';
-          document.getElementById('chatMessages').appendChild(wrap);
-          document.getElementById('chatMessages').scrollTop=99999;
-        });
-    }
     return;
   }
   // Trigger image generation
@@ -2219,7 +2288,7 @@ function wsNav(view){
   toggleWorkspace();
   setTimeout(function(){
     if(view==='dashboard'){ closeDetail(); }
-    else if(view==='briefing'){ ask('Give me a full daily briefing: my meetings today, overdue tasks, unread messages, and top pipeline signals.'); }
+    else if(view==='briefing'){ deliverMorningBriefing(); }
     else if(view==='meetings'){ ask('Show me all my meetings today and this week with any prep notes.'); }
     else if(view==='tasks'){ ask('Show my overdue tasks and tell me what to do first.'); }
     else if(view==='pipeline'){ askPipeline(); }
