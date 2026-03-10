@@ -7,7 +7,7 @@ app.use(express.json());
 
 const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY; 
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const BASE    = 'https://services.leadconnectorhq.com';
 
@@ -670,6 +670,42 @@ app.get('/api/debug/proposals',async(req,res)=>{
     catch(e){results[ep]={status:'error',message:e.message};}
   }));
   res.json(results);
+});
+
+// ── CONVERSATION THREAD ────────────────────────────────
+app.get('/api/conversation/:id',async(req,res)=>{
+  try{
+    const id=req.params.id;
+    const [convRes, msgRes] = await Promise.allSettled([
+      ghl('GET',`/conversations/${id}`),
+      ghl('GET',`/conversations/${id}/messages?limit=20`)
+    ]);
+    const conv=convRes.status==='fulfilled'?convRes.value.conversation||convRes.value:{};
+    const msgData=msgRes.status==='fulfilled'?msgRes.value:{};
+    const messages=(msgData.messages||msgData.data||[])
+      .filter(m=>m.body||m.text||m.content)
+      .slice(-15) // last 15 messages
+      .map(m=>({
+        id:m.id,
+        direction:m.direction||m.type||'inbound',
+        body:m.body||m.text||m.content||'',
+        type:m.messageType||m.type||'SMS',
+        dateAdded:m.dateAdded||m.createdAt||m.date,
+        from:m.direction==='outbound'?'You':conv.contactName||'Contact'
+      }));
+    res.json({
+      id,
+      contactName:conv.contactName||'Contact',
+      contactId:conv.contactId||'',
+      type:conv.type||'SMS',
+      unreadCount:conv.unreadCount||0,
+      messages,
+      lastMessage:messages[messages.length-1]?.body||''
+    });
+  }catch(e){
+    console.error('thread error:',e);
+    res.status(500).json({error:e.message});
+  }
 });
 
 app.get('/api/comms',async(req,res)=>{
