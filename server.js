@@ -672,6 +672,25 @@ app.get('/api/debug/proposals',async(req,res)=>{
   res.json(results);
 });
 
+// ── DEBUG: first unread conversation messages ──────────
+app.get('/api/debug/conversation',async(req,res)=>{
+  try{
+    const d=await ghl('GET',`/conversations/search?locationId=${GHL_LOC}&limit=10`);
+    const convos=d.conversations||[];
+    const unread=convos.filter(c=>c.unreadCount>0);
+    if(!unread.length) return res.json({error:'No unread conversations found', total:convos.length});
+    const first=unread[0];
+    const msgs=await ghl('GET',`/conversations/${first.id}/messages?limit=10`);
+    res.json({
+      conversationId:first.id,
+      contactName:first.contactName,
+      unreadCount:first.unreadCount,
+      rawConversation:first,
+      rawMessages:msgs
+    });
+  }catch(e){res.status(500).json({error:e.message});}
+});
+
 // ── CONVERSATION THREAD ────────────────────────────────
 app.get('/api/conversation/:id',async(req,res)=>{
   try{
