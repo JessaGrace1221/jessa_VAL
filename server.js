@@ -521,13 +521,20 @@ app.get('/api/tasks',async(req,res)=>{
     return null;
   }
   async function tryContactLoop(){
-    // Fetch contacts in batches to cover more ground
-    const [batch1, batch2, batch3] = await Promise.allSettled([
+    // Fetch val_task tagged contacts first (from GHL automation), then general batches
+    const [taggedRes, batch1, batch2, batch3] = await Promise.allSettled([
+      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&tags[]=val_task`),
       ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=desc`),
       ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=asc`),
       ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=last_activity&sortDirection=desc`),
     ]);
     const allContacts=new Map();
+    // Add tagged contacts first so they're always included
+    if(taggedRes.status==='fulfilled'){
+      const tagged=taggedRes.value.contacts||[];
+      console.log('val_task tagged contacts found:',tagged.length);
+      tagged.forEach(c=>allContacts.set(c.id,c));
+    }
     [batch1,batch2,batch3].forEach(b=>{
       if(b.status==='fulfilled')(b.value.contacts||[]).forEach(c=>allContacts.set(c.id,c));
     });
