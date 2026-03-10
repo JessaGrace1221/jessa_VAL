@@ -701,25 +701,34 @@ app.get('/api/conversation/:id',async(req,res)=>{
     ]);
     const conv=convRes.status==='fulfilled'?convRes.value.conversation||convRes.value:{};
     const msgData=msgRes.status==='fulfilled'?msgRes.value:{};
-    const messages=(msgData.messages||msgData.data||[])
-      .filter(m=>m.body||m.text||m.content)
-      .slice(-15) // last 15 messages
+
+    // Log raw so we can see field names in Railway logs
+    console.log('CONV RAW:', JSON.stringify(conv).substring(0,300));
+    console.log('MSG RAW:', JSON.stringify(msgData).substring(0,500));
+
+    const rawMessages=msgData.messages||msgData.data||msgData.conversation?.messages||[];
+    const messages=rawMessages
+      .filter(m=>m.body||m.text||m.content||m.message||m.html)
+      .slice(-15)
       .map(m=>({
         id:m.id,
-        direction:m.direction||m.type||'inbound',
-        body:m.body||m.text||m.content||'',
-        type:m.messageType||m.type||'SMS',
-        dateAdded:m.dateAdded||m.createdAt||m.date,
-        from:m.direction==='outbound'?'You':conv.contactName||'Contact'
+        direction:m.direction||m.messageType||'inbound',
+        body:m.body||m.text||m.content||m.message||m.html||'(no body)',
+        type:m.messageType||m.type||m.channel||'unknown',
+        dateAdded:m.dateAdded||m.createdAt||m.date||m.timestamp,
+        from:(m.direction==='outbound'||m.messageType==='outbound')?'You':conv.contactName||'Contact'
       }));
+
     res.json({
       id,
-      contactName:conv.contactName||'Contact',
+      contactName:conv.contactName||conv.name||'Contact',
       contactId:conv.contactId||'',
-      type:conv.type||'SMS',
+      type:conv.type||conv.channel||'unknown',
       unreadCount:conv.unreadCount||0,
       messages,
-      lastMessage:messages[messages.length-1]?.body||''
+      lastMessage:messages[messages.length-1]?.body||'',
+      _rawMessageCount:rawMessages.length,
+      _rawKeys:rawMessages[0]?Object.keys(rawMessages[0]):[]
     });
   }catch(e){
     console.error('thread error:',e);
@@ -780,6 +789,7 @@ app.get('/api/feed',async(req,res)=>{
     const convos=convosRes.status==='fulfilled'?(convosRes.value.conversations||[]):[];
     convos.filter(c=>c.unreadCount>0).slice(0,5).forEach(c=>{
       items.push({
+        id:c.id,
         text:`${c.contactName||'Contact'} — ${c.unreadCount} unread message${c.unreadCount>1?'s':''}`,
         type:'Comms',color:'green',
         time:new Date(c.dateUpdated).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),
