@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+* { cursor: none !important; }
+#val-cursor{position:fixed;width:8px;height:8px;background:var(--gold);border-radius:50%;pointer-events:none;z-index:10000;transform:translate(-50%,-50%);transition:transform 0.1s,background 0.2s;}
+#val-cursor-ring{position:fixed;width:32px;height:32px;border:1px solid rgba(196,150,58,0.4);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:transform 0.15s ease,width 0.2s,height 0.2s,opacity 0.2s;}
 :root{
   --navy:#1B2B45;--navy-2:#243450;--navy-3:#1a2535;
   --cream:#F8F5EE;--cream-2:#F2EFE7;--cream-3:#E8E4D8;
@@ -2797,11 +2800,26 @@ function newSession(){
 // Auto-save thread on chat activity (after every 4 messages)
 var _origAutoSave = typeof autoSave === 'function' ? autoSave : function(){};
 
-window.addEventListener('beforeunload',function(){
+// ── CUSTOM CURSOR ──
+(function(){
+  var cur=document.getElementById("val-cursor");
+  var ring=document.getElementById("val-cursor-ring");
+  var mx=0,my=0,rx=0,ry=0;
+  document.addEventListener("mousemove",function(e){mx=e.clientX;my=e.clientY;cur.style.left=mx+"px";cur.style.top=my+"px";});
+  function animRing(){rx+=(mx-rx)*0.12;ry+=(my-ry)*0.12;ring.style.left=rx+"px";ring.style.top=ry+"px";requestAnimationFrame(animRing);}
+  animRing();
+  function bindHover(el){el.addEventListener("mouseenter",function(){cur.style.transform="translate(-50%,-50%) scale(2.5)";cur.style.background="rgba(196,150,58,0.9)";ring.style.width="48px";ring.style.height="48px";ring.style.opacity="0.3";});el.addEventListener("mouseleave",function(){cur.style.transform="translate(-50%,-50%) scale(1)";cur.style.background="var(--gold)";ring.style.width="32px";ring.style.height="32px";ring.style.opacity="1";});}
+  document.querySelectorAll("a,button,.fitem,.scard,.stat,.cw-action,.day-evt,.ws-item").forEach(bindHover);
+  var obs=new MutationObserver(function(){document.querySelectorAll("a,button,.fitem,.scard,.stat,.cw-action,.day-evt,.ws-item").forEach(bindHover);});
+  obs.observe(document.body,{childList:true,subtree:true});
+})();
+
+window.addEventListener("beforeunload',function(){
   if(!chatHistory.length)return;
   navigator.sendBeacon(MEMORY_HOOK,new Blob([JSON.stringify({transcript:chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n'),messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
   stopSTT();stopSpeak();
 });
 </script>
+<div id="val-cursor"></div><div id="val-cursor-ring"></div>
 </body>
 </html>
