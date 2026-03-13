@@ -21,6 +21,9 @@ async function ghl(method,path,body){
 
 // ── HEALTH ───────────────────────────────────────────────
 app.get('/',(req,res)=>res.json({status:'VAL Proxy OK',time:new Date().toISOString()}));
+const path = require('path');
+app.use(express.static(__dirname));
+app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-executive.html')));
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
