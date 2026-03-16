@@ -906,6 +906,8 @@ input[type=file]{display:none}
   </div>
 </div>
 <input type="file" id="fileIn" onchange="onFile(event)" accept=".pdf,.txt,.md,.html,.json,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,image/*">
+<div id="val-cursor"></div>
+<div id="val-cursor-ring"></div>
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
@@ -1405,7 +1407,7 @@ async function loadDashboard(){
   calendar = parse(calendar);
   feed     = parse(feed);
   feed     = parse(feed);
-  dashData = Object.assign({}, meetings||{}, pipeline||{}, calendar||{}, feed||{});
+  dashData = Object.assign({}, feed||{}, pipeline||{}, meetings||{}, calendar||{});
   refreshTaskUI(); // re-sync VAL tasks into dashData
 
   // MEETINGS
@@ -1444,8 +1446,11 @@ async function loadDashboard(){
   }
 
   // CALENDAR
+  console.log('Calendar response:', JSON.stringify(calendar).substring(0,400));
   if(calendar&&calendar.calendarEvents&&calendar.calendarEvents.length){
     renderWeek(calendar.calendarEvents);
+  } else if(calendar&&calendar._debug&&calendar._debug.googleNeedsAuth){
+    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--amber);">⚠ Google Calendar needs re-authentication. Visit <a href="'+PROXY+'/auth/google" style="color:var(--gold)">'+PROXY+'/auth/google</a></div>';
   } else {
     document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">No upcoming events found.</div>';
   }
@@ -2814,12 +2819,11 @@ var _origAutoSave = typeof autoSave === 'function' ? autoSave : function(){};
   obs.observe(document.body,{childList:true,subtree:true});
 })();
 
-window.addEventListener("beforeunload',function(){
+window.addEventListener("beforeunload",function(){
   if(!chatHistory.length)return;
   navigator.sendBeacon(MEMORY_HOOK,new Blob([JSON.stringify({transcript:chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n'),messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
   stopSTT();stopSpeak();
 });
 </script>
-<div id="val-cursor"></div><div id="val-cursor-ring"></div>
 </body>
 </html>
