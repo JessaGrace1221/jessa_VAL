@@ -924,19 +924,51 @@ var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
 
-// ── VAL TASK STORE (in-memory, VAL-managed) ────────────
+// ── VAL TASK STORE (server-persisted) ─────────────────
 var valTasks = [];
-var TASKS_KEY = 'val_tasks_v1';
+var TASKS_KEY = 'val_tasks_v1'; // kept for one-time migration only
 
 function valTasksSave(){
-  try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(e){}
+  fetch(PROXY+'/api/val/tasks',{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(valTasks)
+  }).catch(function(e){
+    // Fallback to localStorage if server unreachable
+    try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
+    console.warn('Task save failed, used localStorage fallback:', e.message);
+  });
 }
 function valTasksLoad(){
-  try{
-    var raw=localStorage.getItem(TASKS_KEY);
-    if(raw) valTasks=JSON.parse(raw);
-  }catch(e){ valTasks=[]; }
-  refreshTaskUI();
+  fetch(PROXY+'/api/val/tasks')
+  .then(function(r){ return r.json(); })
+  .then(function(serverTasks){
+    if(Array.isArray(serverTasks) && serverTasks.length){
+      valTasks = serverTasks;
+    } else {
+      // One-time migration from localStorage
+      try{
+        var raw = localStorage.getItem(TASKS_KEY);
+        if(raw){
+          valTasks = JSON.parse(raw);
+          if(valTasks.length){
+            valTasksSave(); // push to server
+            localStorage.removeItem(TASKS_KEY);
+            console.log('Migrated '+valTasks.length+' tasks from localStorage to server');
+          }
+        }
+      }catch(e){ valTasks=[]; }
+    }
+    refreshTaskUI();
+  })
+  .catch(function(){
+    // Server unreachable — fall back to localStorage
+    try{
+      var raw = localStorage.getItem(TASKS_KEY);
+      if(raw) valTasks = JSON.parse(raw);
+    }catch(e){ valTasks=[]; }
+    refreshTaskUI();
+  });
 }
 function valAddTask(title,contactName,dueDate,notes){
   var task={id:'t'+Date.now(),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
@@ -1450,7 +1482,7 @@ async function loadDashboard(){
   if(calendar&&calendar.calendarEvents&&calendar.calendarEvents.length){
     renderWeek(calendar.calendarEvents);
   } else if(calendar&&calendar._debug&&calendar._debug.googleNeedsAuth){
-    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--amber);">⚠ Google Calendar needs re-authentication. Visit <a href="'+PROXY+'/auth/google" style="color:var(--gold)">'+PROXY+'/auth/google</a></div>';
+    document.getElementById('weekScroll').innerHTML='<div style="padding:1.25rem 1rem;display:flex;flex-direction:column;gap:8px"><div style="font-size:0.5625rem;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-4)">Google Calendar</div><div style="font-size:0.8125rem;color:var(--text-2);line-height:1.5;">Connect your calendar to see your week here.</div><a href="'+PROXY+'/auth/google" target="_blank" style="display:inline-block;margin-top:4px;padding:6px 14px;background:var(--gold-dim);border:1px solid var(--gold-border);border-radius:7px;font-size:0.6875rem;font-weight:600;color:var(--gold);text-decoration:none;letter-spacing:0.04em">Connect Google Calendar →</a></div>';
   } else {
     document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">No upcoming events found.</div>';
   }
