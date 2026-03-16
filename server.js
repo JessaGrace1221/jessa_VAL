@@ -356,93 +356,45 @@ app.get('/api/pipeline',async(req,res)=>{
 
 app.get('/api/calendar',async(req,res)=>{
   try{
-    const s=new Date();s.setHours(0,0,0,0);
-    const e=new Date();e.setDate(e.getDate()+7);e.setHours(23,59,59,999);
-
-    // Get GHL events by fetching calendars list first
-    async function getGHLEvents(){
-      try{
-        // Get all calendars for this location
-        const calData = await ghl('GET',`/calendars/?locationId=${GHL_LOC}`);
-        const calendars = calData.calendars||[];
-        console.log('GHL calendars found:',calendars.length, calendars.map(c=>({id:c.id,name:c.name})));
-
-        if(calendars.length){
-          // Fetch events for each calendar
-          let allEvents=[];
-          await Promise.all(calendars.map(async cal=>{
-            try{
-              const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&calendarId=${cal.id}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
-              const evs=d.events||d.appointments||[];
-              console.log(`GHL events for calendar ${cal.name||cal.id}:`,evs.length);
-              allEvents.push(...evs);
-            }catch(err){console.log('GHL calendar events error:',err.message);}
-          }));
-          return allEvents;
-        }
-
-        // Fallback: try groupId approach
-        const groupData = await ghl('GET',`/calendars/groups?locationId=${GHL_LOC}`);
-        const groups = groupData.groups||[];
-        console.log('GHL groups found:',groups.length);
-        if(groups.length){
-          let allEvents=[];
-          await Promise.all(groups.map(async g=>{
-            try{
-              const d=await ghl('GET',`/calendars/events?locationId=${GHL_LOC}&groupId=${g.id}&startTime=${s.getTime()}&endTime=${e.getTime()}`);
-              allEvents.push(...(d.events||d.appointments||[]));
-            }catch(err){}
-          }));
-          return allEvents;
-        }
-        return [];
-      }catch(err){
-        console.error('getGHLEvents error:',err.message);
-        return [];
-      }
+    const token = await getGoogleToken();
+    if(!token){
+      console.log('Google token missing — needs auth');
+      return res.json({calendarEvents:[], _debug:{googleNeedsAuth:true}});
     }
 
-    const [ghlRes, googleRes] = await Promise.allSettled([
-      getGHLEvents(),
-      (async()=>{
-        const token=await getGoogleToken();
-        if(!token){console.log('Google token missing');return{items:[],needsAuth:true};}
-        const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=50`,{headers:{Authorization:`Bearer ${token}`}});
-        const d=await r.json();
-        if(d.error)console.error('Google Calendar error:',d.error.message);
-        return d;
-      })()
-    ]);
+    const s = new Date(); s.setHours(0,0,0,0);
+    const e = new Date(); e.setDate(e.getDate()+14); e.setHours(23,59,59,999);
 
-    const ghlEvents = ghlRes.status==='fulfilled'?ghlRes.value:[];
-    const googleRaw = googleRes.status==='fulfilled'?googleRes.value:{};
-    const googleEvents = googleRaw.items||[];
+    const r = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events`
+      +`?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}`
+      +`&singleEvents=true&orderBy=startTime&maxResults=100`,
+      {headers:{Authorization:`Bearer ${token}`}}
+    );
+    const d = await r.json();
 
-    console.log(`Calendar: ${ghlEvents.length} GHL + ${googleEvents.length} Google events`);
+    if(d.error){
+      console.error('Google Calendar API error:', d.error.message);
+      return res.json({calendarEvents:[], _debug:{googleError:d.error.message}});
+    }
 
-    const mapped = [
-      ...ghlEvents.map(ev=>({
-        id:ev.id, summary:ev.title||ev.name||ev.summary,
-        startTime:ev.startTime||ev.start, endTime:ev.endTime||ev.end,
-        contactName:ev.contactName||ev.contact?.name,
-        status:ev.appointmentStatus||ev.status, source:'ghl'
-      })),
-      ...googleEvents.map(ev=>({
-        id:ev.id, summary:ev.summary||'(No title)',
-        startTime:ev.start?.dateTime||ev.start?.date,
-        endTime:ev.end?.dateTime||ev.end?.date,
-        location:ev.location, status:ev.status, source:'google'
-      }))
-    ];
+    const calendarEvents = (d.items||[]).map(ev=>({
+      id:        ev.id,
+      summary:   ev.summary||'(No title)',
+      startTime: ev.start?.dateTime||ev.start?.date,
+      endTime:   ev.end?.dateTime||ev.end?.date,
+      location:  ev.location||'',
+      description: ev.description||'',
+      attendees: (ev.attendees||[]).map(a=>a.displayName||a.email),
+      status:    ev.status,
+      source:    'google'
+    }));
 
-    mapped.sort((a,b)=>new Date(a.startTime)-new Date(b.startTime));
-    res.json({
-      calendarEvents:mapped,
-      _debug:{ghlCount:ghlEvents.length, googleCount:googleEvents.length, googleNeedsAuth:!!googleRaw.needsAuth}
-    });
+    console.log(`Calendar: ${calendarEvents.length} Google events`);
+    res.json({calendarEvents, _debug:{googleCount:calendarEvents.length}});
   }catch(e){
     console.error('calendar error:',e);
-    res.json({calendarEvents:[],_debug:{error:e.message}});
+    res.json({calendarEvents:[], _debug:{error:e.message}});
   }
 });
 
