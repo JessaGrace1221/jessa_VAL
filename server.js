@@ -1102,5 +1102,51 @@ app.put('/api/ghl/social/posts/:id',async(req,res)=>{
 });
 
 // ════════════════════════════════════════════════════════
+// VAL TASK STORE — persisted to disk as JSON
+// ════════════════════════════════════════════════════════
+const fs   = require('fs');
+const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
+
+function readTasks(){
+  try{ return JSON.parse(fs.readFileSync(TASKS_FILE,'utf8')); }
+  catch(e){ return []; }
+}
+function writeTasks(tasks){
+  try{ fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks,null,2)); }
+  catch(e){ console.error('writeTasks error:',e.message); }
+}
+
+// GET all tasks
+app.get('/api/val/tasks',(req,res)=>{
+  res.json(readTasks());
+});
+
+// POST — add a task  { id, title, contactName, dueDate, notes, details, completed, createdAt }
+app.post('/api/val/tasks',(req,res)=>{
+  const tasks = readTasks();
+  const task  = req.body;
+  if(!task||!task.id) return res.status(400).json({error:'Missing task id'});
+  const idx = tasks.findIndex(t=>t.id===task.id);
+  if(idx>=0) tasks[idx]=task; else tasks.push(task);
+  writeTasks(tasks);
+  res.json({ok:true, task});
+});
+
+// PUT — replace all tasks (bulk save)
+app.put('/api/val/tasks',(req,res)=>{
+  const tasks = req.body;
+  if(!Array.isArray(tasks)) return res.status(400).json({error:'Expected array'});
+  writeTasks(tasks);
+  res.json({ok:true, count:tasks.length});
+});
+
+// DELETE — remove a task by id
+app.delete('/api/val/tasks/:id',(req,res)=>{
+  const tasks = readTasks().filter(t=>t.id!==req.params.id);
+  writeTasks(tasks);
+  res.json({ok:true});
+});
+
+// ════════════════════════════════════════════════════════
 const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>console.log(`VAL proxy running on port ${PORT}`));
