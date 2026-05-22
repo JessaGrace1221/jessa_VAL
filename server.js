@@ -15,6 +15,8 @@ const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
 const VAL_USER_ID = process.env.VAL_USER_ID || 'default';
+const MEMORY_CHUNK_SIZE = Number(process.env.MEMORY_CHUNK_SIZE) || 1800;
+const MEMORY_CHUNK_OVERLAP = Number(process.env.MEMORY_CHUNK_OVERLAP) || 250;
 let pgPool = null;
 
 if(process.env.DATABASE_URL){
@@ -51,6 +53,32 @@ function valStore(){
 function saveValStore(store){ writeJson(STORE_FILE,store); }
 function uuid(prefix){
   return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+}
+function memoryChunks(text){
+  const clean = String(text||'').replace(/\r\n/g,'\n').trim();
+  if(!clean) return [];
+  if(clean.length <= MEMORY_CHUNK_SIZE) return [clean];
+  const chunks = [];
+  let start = 0;
+  while(start < clean.length){
+    let end = Math.min(start + MEMORY_CHUNK_SIZE, clean.length);
+    if(end < clean.length){
+      const breakAt = Math.max(clean.lastIndexOf('\n\n',end), clean.lastIndexOf('. ',end), clean.lastIndexOf('\n',end));
+      if(breakAt > start + MEMORY_CHUNK_SIZE * 0.55) end = breakAt + 1;
+    }
+    chunks.push(clean.slice(start,end).trim());
+    if(end >= clean.length) break;
+    start = Math.max(0,end - MEMORY_CHUNK_OVERLAP);
+  }
+  return chunks.filter(Boolean);
+}
+function queryTerms(text){
+  const stop = new Set(['about','after','again','all','also','and','are','because','been','but','can','could','does','for','from','have','her','him','how','into','just','like','more','need','not','now','our','out','she','should','that','the','their','then','there','they','this','through','what','when','where','which','with','would','you','your']);
+  return String(text||'').toLowerCase().match(/[a-z0-9']{3,}/g)?.filter(w=>!stop.has(w)).slice(-20) || [];
+}
+function scoreMemory(item,terms){
+  const hay = `${item.kind||''} ${item.summary||''} ${item.raw_text||item.rawText||''}`.toLowerCase();
+  return terms.reduce((score,term)=>score+(hay.includes(term)?1:0),0);
 }
 async function dbQuery(sql,params){
   if(!pgPool) return null;
@@ -1329,7 +1357,20 @@ async function saveTranscript(payload){
     saveValStore(store);
   }
   if(rawText){
-    await saveMemoryItem({kind:type,summary:payload.title||type,rawText,metadata,importance:payload.importance||1});
+    const chunks = memoryChunks(rawText);
+    if(chunks.length <= 1){
+      await saveMemoryItem({kind:type,summary:payload.title||type,rawText,metadata,importance:payload.importance||1});
+    }else{
+      for(let i=0;i<chunks.length;i++){
+        await saveMemoryItem({
+          kind:type,
+          summary:`${payload.title||type} (${i+1}/${chunks.length})`,
+          rawText:chunks[i],
+          metadata:{...metadata,transcriptId:id,chunkIndex:i+1,chunkCount:chunks.length},
+          importance:payload.importance||1
+        });
+      }
+    }
   }
   return {id,type};
 }
@@ -1416,23 +1457,32 @@ app.get('/api/val/conversations/:id/messages',async(req,res)=>{
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-async function recentMemoryContext(){
+async function recentMemoryContext(query){
   await valDbReady;
+  const terms = queryTerms(query);
+  const format = (items)=>items.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||m.rawText||'').slice(0,140)}${(m.raw_text||m.rawText)&&((m.raw_text||m.rawText)!==m.summary)?': '+(m.raw_text||m.rawText).slice(0,650):''}`).join('\n');
   if(pgPool){
     const r=await dbQuery(
-      'select kind,summary,raw_text,created_at from val_memory_items where user_id=$1 order by importance desc, created_at desc limit 12',
+      'select kind,summary,raw_text,importance,created_at from val_memory_items where user_id=$1 order by created_at desc limit 200',
       [VAL_USER_ID]
     );
-    return r.rows.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||'').slice(0,140)}${m.raw_text&&m.raw_text!==m.summary?': '+m.raw_text.slice(0,500):''}`).join('\n');
+    const ranked = r.rows.map(m=>({...m,_score:scoreMemory(m,terms)}))
+      .sort((a,b)=>(b._score-a._score)||(b.importance-a.importance))
+      .slice(0,12);
+    return format(ranked);
   }
-  return valStore().memoryItems.slice(0,12).map(m=>`- [${m.kind}] ${(m.summary||m.rawText||'').slice(0,140)}${m.rawText&&m.rawText!==m.summary?': '+m.rawText.slice(0,500):''}`).join('\n');
+  const ranked = valStore().memoryItems.map(m=>({...m,_score:scoreMemory(m,terms)}))
+    .sort((a,b)=>(b._score-a._score)||((b.importance||1)-(a.importance||1)))
+    .slice(0,12);
+  return format(ranked);
 }
 
 app.post('/api/val/chat',async(req,res)=>{
   try{
     if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
-    const memory = await recentMemoryContext();
+    const lastUser = [...messages].reverse().find(m=>m.role==='user')?.content || '';
+    const memory = await recentMemoryContext(lastUser);
     const system = [
       "You are VAL, Jessa's executive assistant. Be direct, useful, warm, and specific.",
       'Use dashboard context and saved memory when relevant. Do not pretend to know facts that are not present.',
