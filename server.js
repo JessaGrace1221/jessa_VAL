@@ -212,6 +212,7 @@ const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI         = 'https://jessaval-production.up.railway.app/auth/callback';
 let googleTokens = {}; // stored in memory — persists as long as server runs
+let lastGoogleAuthError = null;
 
 // On startup, load refresh token from env if available
 if(process.env.GOOGLE_REFRESH_TOKEN){
@@ -329,6 +330,7 @@ app.get('/auth/callback', async (req, res) => {
   const {code} = req.query;
   if(!code) return res.status(400).send('No code received');
   try {
+    const existingTokens = await loadOAuthTokens('google') || googleTokens || {};
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {'Content-Type':'application/x-www-form-urlencoded'},
@@ -339,11 +341,15 @@ app.get('/auth/callback', async (req, res) => {
         grant_type: 'authorization_code'
       })
     });
-    googleTokens = await r.json();
+    const exchangedTokens = await r.json();
+    if(exchangedTokens.error) throw new Error(exchangedTokens.error_description || exchangedTokens.error);
+    googleTokens = {
+      ...existingTokens,
+      ...exchangedTokens,
+      refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || process.env.GOOGLE_REFRESH_TOKEN
+    };
     googleTokens.issued_at = Date.now();
-    if(!googleTokens.refresh_token && process.env.GOOGLE_REFRESH_TOKEN){
-      googleTokens.refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
-    }
+    lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token);
     // Log refresh token so it can be saved as GOOGLE_REFRESH_TOKEN env var in Railway
@@ -373,8 +379,9 @@ async function getGoogleToken() {
         })
       });
       const fresh = await r.json();
-      if(fresh.error){ console.error('Token bootstrap failed:', fresh.error, fresh.error_description); return null; }
+      if(fresh.error){ lastGoogleAuthError = fresh.error_description || fresh.error; console.error('Token bootstrap failed:', fresh.error, fresh.error_description); return null; }
       googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+      lastGoogleAuthError = null;
       await saveOAuthTokens('google',googleTokens);
       console.log('Bootstrapped access token from refresh token');
       return googleTokens.access_token;
@@ -400,11 +407,13 @@ async function getGoogleToken() {
       })
     });
     const fresh = await r.json();
-    if(fresh.error){ console.error('Token refresh failed:', fresh.error, fresh.error_description); return null; }
+    if(fresh.error){ lastGoogleAuthError = fresh.error_description || fresh.error; console.error('Token refresh failed:', fresh.error, fresh.error_description); return null; }
     googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+    lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     return googleTokens.access_token;
   } catch(e) {
+    lastGoogleAuthError = e.message;
     console.error('Token refresh failed:', e);
     return null;
   }
@@ -412,8 +421,13 @@ async function getGoogleToken() {
 
 // Auth status check
 app.get('/auth/status', async (req, res) => {
-  await ensureGoogleTokensLoaded();
-  res.json({connected: !!googleTokens.access_token, hasRefreshToken: !!googleTokens.refresh_token});
+  const token = await getGoogleToken();
+  res.json({
+    connected: !!token,
+    hasRefreshToken: !!googleTokens.refresh_token,
+    needsAuth: !token,
+    error: token ? null : lastGoogleAuthError
+  });
 });
 
 // ════════════════════════════════════════════════════════
