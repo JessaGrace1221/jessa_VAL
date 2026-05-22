@@ -156,6 +156,39 @@ const valDbReady = initValDb().catch(e=>console.error('VAL DB init error:',e.mes
 
 // ── HEALTH ───────────────────────────────────────────────
 app.get('/',(req,res)=>res.json({status:'VAL Proxy OK',time:new Date().toISOString()}));
+function guideHtml(markdown){
+  const escaped = String(markdown||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+  const html = escaped
+    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/^\d+\. (.+)$/gm,'<li>$1</li>')
+    .replace(/\n\n/g,'</p><p>')
+    .replace(/\n/g,'<br>');
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<title>VAL User Guide</title><style>'
+    + 'body{margin:0;background:#111827;color:#f7f0df;font-family:Inter,Arial,sans-serif;line-height:1.65;}'
+    + 'main{max-width:900px;margin:0 auto;padding:44px 22px 80px;}'
+    + 'h1,h2,h3{font-family:Georgia,serif;color:#f8d889;line-height:1.2;margin:32px 0 12px;}'
+    + 'h1{font-size:42px;margin-top:0;}h2{font-size:26px;border-top:1px solid rgba(255,255,255,.12);padding-top:24px;}h3{font-size:19px;color:#fff;}'
+    + 'p{margin:0 0 14px;}li{margin:4px 0 4px 22px;}code{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:2px 5px;color:#fff;}'
+    + 'a{color:#f8d889}.top{position:sticky;top:0;background:rgba(17,24,39,.92);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.1);padding:12px 22px;}'
+    + '.top a{color:#f8d889;text-decoration:none;font-size:13px;text-transform:uppercase;letter-spacing:.08em;}'
+    + '</style></head><body><div class="top"><a href="/dashboard">Back to VAL</a></div><main><p>'+html+'</p></main></body></html>';
+}
+app.get('/guide',(req,res)=>{
+  const file = path.join(__dirname,'VAL_USER_GUIDE.md');
+  fs.readFile(file,'utf8',(err,markdown)=>{
+    if(err) return res.status(404).send('VAL guide not found.');
+    res.type('html').send(guideHtml(markdown));
+  });
+});
 app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-executive.html')));
 
