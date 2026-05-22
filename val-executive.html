@@ -887,7 +887,7 @@ input[type=file]{display:none}
   <aside class="rpanel">
     <div class="rpanel-head">
       <div class="rpanel-title">Your Week</div>
-      <button class="rpanel-link">Full View</button>
+      <button class="rpanel-link" onclick="openCalendarFullView()">Full View</button>
     </div>
     <div class="week-scroll" id="weekScroll">
       <!-- Static week — replaced by live data when available -->
@@ -1649,6 +1649,7 @@ function formatThread(d){
 function renderWeek(events){
   var el=document.getElementById('weekScroll');if(!el)return;
   el.innerHTML='';
+  window._valCalendarEvents = events||[];
   var days={};
   var today=new Date();today.setHours(0,0,0,0);
 
@@ -1703,7 +1704,7 @@ function renderWeek(events){
       var contact=ev.contactName||ev.contact?.name||'';
       var desc=ev.description||ev.notes||'';
       // Encode event data as JSON in data attribute for click handler
-      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source});
+      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source,startTime:rawStart,endTime:rawEnd,id:ev.id||ev.eventId||ev.appointmentId||''});
       evtsHtml+='<div class="day-evt" style="cursor:pointer" data-ev=\''+evData.replace(/'/g,'&apos;')+'\' onclick="onEventClick(this)">'
         +'<div class="epip '+pip+'"></div>'
         +'<div class="einfo"><div class="etitle">'+title+'</div>'
@@ -1718,16 +1719,76 @@ function renderWeek(events){
 function onEventClick(el){
   try{
     var ev=JSON.parse(el.getAttribute('data-ev').replace(/&apos;/g,"'"));
-    openDetailWithTitle(ev.title+' Briefing');
-    var prompt='Give me a full briefing for this specific meeting:\n\n'
-      +'Title: '+ev.title+'\n'
-      +'Time: '+ev.timeStr+'\n'
-      +'Date: '+ev.dateLabel+'\n'
-      +(ev.contact?'Contact: '+ev.contact+'\n':'')
-      +(ev.desc?'Details: '+ev.desc+'\n':'')
-      +'\nWho is this with, what should I prepare, what are the key talking points, and what outcome should I aim for?';
-    ask(prompt);
+    openCalendarEvent(ev);
   }catch(e){console.error('event click error',e);}
+}
+
+function openCalendarFullView(){
+  openDetailWithTitle('Calendar');
+  var events=window._valCalendarEvents||[];
+  var c=document.getElementById('chatScroll');
+  c.innerHTML='';
+  if(!events.length){
+    addMsg('No calendar events loaded yet. Try Refresh, or connect Google Calendar if prompted.',false);
+    return;
+  }
+  var grouped={};
+  events.forEach(function(ev){
+    var raw=ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date;
+    if(!raw)return;
+    var d=new Date(raw);
+    if(isNaN(d))return;
+    var key=d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+    if(!grouped[key])grouped[key]=[];
+    grouped[key].push(ev);
+  });
+  Object.keys(grouped).forEach(function(day){
+    var block=document.createElement('div');
+    block.className='cmsg assistant';
+    var html='<div class="cmsg-bubble"><p><strong>'+day+'</strong></p>';
+    grouped[day].forEach(function(ev){
+      var raw=ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date;
+      var t=raw?new Date(raw).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
+      var title=ev.summary||ev.title||ev.name||'Event';
+      var payload=JSON.stringify({title:title,timeStr:t,dateLabel:day,contact:ev.contactName||'',desc:ev.description||ev.notes||'',source:ev.source||'',startTime:raw,endTime:ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date))||'',id:ev.id||ev.eventId||ev.appointmentId||''}).replace(/'/g,'&apos;');
+      html+='<button class="chip" style="margin:4px 4px 4px 0" data-ev=\''+payload+'\' onclick="onEventClick(this)">'+t+' · '+title+'</button>';
+    });
+    html+='</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+    block.innerHTML=html;
+    c.appendChild(block);
+  });
+}
+
+function openCalendarEvent(ev){
+  openDetailWithTitle(ev.title);
+  var c=document.getElementById('chatScroll');
+  c.innerHTML='';
+  var past=ev.startTime&&new Date(ev.startTime)<new Date();
+  var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.desc?'\nDetails: '+ev.desc:'');
+  addMsg(header,true);
+  showTyping();
+  var q=[ev.title,ev.contact,ev.dateLabel,'meeting transcript notes tasks decisions follow-up'].filter(Boolean).join(' ');
+  fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q)+'&limit=8')
+  .then(function(r){return r.json();})
+  .then(function(d){
+    removeTyping();
+    var results=d.results||[];
+    var notes=results.length?results.map(function(m,i){
+      return (i+1)+'. ['+(m.kind||'memory')+'] '+(m.summary||'Untitled')+'\n'+(m.preview||'').slice(0,360);
+    }).join('\n\n'):'No saved meeting notes or transcripts matched this event yet.';
+    var tasks=valTasks.filter(function(t){
+      var hay=((t.title||'')+' '+(t.notes||'')+' '+(t.contactName||'')+' '+((t.details||[]).map(function(d){return d.text;}).join(' '))).toLowerCase();
+      return (ev.title&&hay.includes(ev.title.toLowerCase().split(' ')[0])) || (ev.contact&&hay.includes(ev.contact.toLowerCase()));
+    });
+    var taskText=tasks.length?tasks.slice(0,6).map(function(t){return '- '+t.title+(t.dueDate?' · due '+new Date(t.dueDate).toLocaleDateString():'');}).join('\n'):'No linked tasks found.';
+    addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText,false);
+    var prompt=(past?'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.':'Prepare me for this upcoming meeting using saved memory and dashboard context.')+'\n\n'+header+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText;
+    setTimeout(function(){chat(prompt);},250);
+  })
+  .catch(function(e){
+    removeTyping();
+    addSys('Meeting memory lookup failed: '+e.message);
+  });
 }
 
 function renderWeekFallback(){
