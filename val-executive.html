@@ -950,33 +950,52 @@ function valSaveConversation(extra){
 // ── VAL TASK STORE (server-persisted) ─────────────────
 var valTasks = [];
 var TASKS_KEY = 'val_tasks_v1'; // kept for one-time migration only
+var valTasksSyncing = false;
 
 function valTasksSave(){
-  fetch(PROXY+'/api/val/tasks',{
+  try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
+  valTasksSyncing = true;
+  return fetch(PROXY+'/api/val/tasks',{
     method:'PUT',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(valTasks)
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){throw new Error(t||'Task save failed');});
+    return r.json();
+  }).then(function(){
+    valTasksSyncing = false;
   }).catch(function(e){
-    // Fallback to localStorage if server unreachable
-    try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
-    console.warn('Task save failed, used localStorage fallback:', e.message);
+    valTasksSyncing = false;
+    console.warn('Task save failed, kept localStorage copy:', e.message);
   });
 }
 function valTasksLoad(){
+  var localTasks = [];
+  try{
+    var rawLocal = localStorage.getItem(TASKS_KEY);
+    if(rawLocal) localTasks = JSON.parse(rawLocal) || [];
+  }catch(e){ localTasks=[]; }
+  if(localTasks.length){
+    valTasks = localTasks;
+    refreshTaskUI();
+  }
   fetch(PROXY+'/api/val/tasks')
   .then(function(r){ return r.json(); })
   .then(function(serverTasks){
     if(Array.isArray(serverTasks) && serverTasks.length){
-      valTasks = serverTasks;
+      var merged = {};
+      serverTasks.concat(localTasks).forEach(function(t){
+        if(t&&t.id) merged[t.id]=t;
+      });
+      valTasks = Object.keys(merged).map(function(id){return merged[id];});
+      try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
     } else {
       // One-time migration from localStorage
       try{
-        var raw = localStorage.getItem(TASKS_KEY);
-        if(raw){
-          valTasks = JSON.parse(raw);
-          if(valTasks.length){
+        if(localTasks.length){
+          valTasks = localTasks;
+          if(!valTasksSyncing){
             valTasksSave(); // push to server
-            localStorage.removeItem(TASKS_KEY);
             console.log('Migrated '+valTasks.length+' tasks from localStorage to server');
           }
         }
