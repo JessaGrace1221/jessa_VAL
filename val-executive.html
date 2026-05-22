@@ -916,13 +916,36 @@ var ASSISTANT_NAME = 'jessa-transcripts';
 var PINECONE_HOST  = 'https://prod-1-data.ke.pinecone.io';
 var DG_KEY         = 'c6b3c32aa547322ca7f38809d90b50581f7af294';
 var DG_VOICE       = 'aura-arcas-en';
-var MEMORY_HOOK   = 'https://hook.us1.make.com/a6xx2p4e5cdhsvjqan96vot2ncc8r367';
 var SEND_HOOK     = 'https://hook.us1.make.com/fr51wh2r58fbgcmlyu2xflywj794ov62';
 var PROXY         = 'https://jessaval-production.up.railway.app';
+var MEMORY_HOOK   = PROXY+'/api/val/transcripts';
+var CONVERSATION_HOOK = PROXY+'/api/val/conversations';
 var HOOK_MEETINGS = PROXY+'/api/meetings';
 var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
+
+function valTranscriptPayload(type,transcript,extra){
+  var payload=extra||{};
+  payload.type=type;
+  payload.transcript=transcript;
+  payload.timestamp=payload.timestamp||new Date().toISOString();
+  return payload;
+}
+function valSaveTranscript(type,transcript,extra){
+  return fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(valTranscriptPayload(type,transcript,extra||{}))});
+}
+function valSaveConversation(extra){
+  if(!chatHistory.length) return Promise.resolve();
+  var transcript=chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n');
+  var payload=extra||{};
+  payload.type=payload.type||'chat_memory';
+  payload.transcript=transcript;
+  payload.messages=chatHistory;
+  payload.messageCount=chatHistory.length;
+  payload.timestamp=payload.timestamp||new Date().toISOString();
+  return fetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+}
 
 // ── VAL TASK STORE (server-persisted) ─────────────────
 var valTasks = [];
@@ -1252,7 +1275,7 @@ function sendDoc(docId){
     valDocsSave();
     refreshDocUI();
     addMsg('✅ Sent to '+doc.recipient+'!',false);
-    fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:'Document sent to '+doc.recipient+': '+doc.title+'\n\n'+plainBody,type:'document_sent',timestamp:new Date().toISOString(),recipient:doc.recipient,documentType:doc.type})}).catch(function(){});
+    valSaveTranscript('document_sent','Document sent to '+doc.recipient+': '+doc.title+'\n\n'+plainBody,{recipient:doc.recipient,documentType:doc.type,title:doc.title}).catch(function(){});
   }).catch(function(){
     addMsg('⚠ Send failed — check your Make webhook. Draft saved.',false);
   });
@@ -1280,7 +1303,7 @@ var HOOK_COMMS    = PROXY+'/api/comms';
 var HOOK_PROPOSALS= PROXY+'/api/proposals';
 // ────────────────────────────────────────────────────────
 
-var CHAT_URL  = PINECONE_HOST+'/assistant/chat/'+ASSISTANT_NAME;
+var CHAT_URL  = PROXY+'/api/val/chat';
 var FILES_URL = PINECONE_HOST+'/assistant/files/'+ASSISTANT_NAME;
 
 var chatHistory=[],selFile=null,voiceOn=false,recording=false;
@@ -1864,7 +1887,7 @@ function handleVoice(text){
 // ── MEETING MODE ───────────────────────────────────────
 function startMeeting(){meetingMode=true;meetingLog=[];setText('stext','Meeting Mode Active');var m="Meeting Mode on. Listening quietly — say 'VAL' to engage me.";addMsg(m,false);chatHistory.push({role:'assistant',content:m});}
 function stopMeeting(){meetingMode=false;setText('stext','Voice Active');addSys('Meeting Mode off');if(meetingLog.length)saveMeeting();meetingLog=[];}
-function saveMeeting(){var txt=meetingLog.map(function(e){return '['+new Date(e.ts).toLocaleTimeString()+'] '+e.text;}).join('\n');fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:txt,messages:meetingLog.map(function(e){return{role:'meeting',content:e.text,timestamp:e.ts};}),timestamp:new Date().toISOString(),messageCount:meetingLog.length,type:'meeting_transcript'})}).catch(function(){});}
+function saveMeeting(){var txt=meetingLog.map(function(e){return '['+new Date(e.ts).toLocaleTimeString()+'] '+e.text;}).join('\n');valSaveTranscript('meeting_transcript',txt,{messages:meetingLog.map(function(e){return{role:'meeting',content:e.text,timestamp:e.ts};}),messageCount:meetingLog.length}).catch(function(){});}
 
 // ── VOICE TOGGLE ───────────────────────────────────────
 function toggleVoice(){
@@ -2121,7 +2144,7 @@ function chat(msg,inp){
   }
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
-  fetch(CHAT_URL,{method:'POST',headers:{'Api-Key':PINECONE_KEY,'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
   .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
@@ -2168,8 +2191,8 @@ function showTyping(){var c=document.getElementById('chatScroll');var d=document
 function removeTyping(){var t=document.getElementById('typing');if(t)t.remove();}
 
 // ── MEMORY ─────────────────────────────────────────────
-function autoSave(){if(!chatHistory.length||savedChat)return;fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n'),messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})}).then(function(){savedChat=true;}).catch(function(){});}
-function saveChat(){if(!chatHistory.length){addSys('Nothing to save yet');return;}fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n'),messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})}).then(function(){savedChat=true;addSys('Saved to memory');}).catch(function(){addSys('Save failed');});}
+function autoSave(){if(!chatHistory.length||savedChat)return;valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;}).catch(function(){});}
+function saveChat(){if(!chatHistory.length){addSys('Nothing to save yet');return;}valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;addSys('Saved to memory');}).catch(function(){addSys('Save failed');});}
 function sendLast(){var last=null,lastQ=null;for(var i=chatHistory.length-1;i>=0;i--){if(!last&&chatHistory[i].role==='assistant')last=chatHistory[i].content;if(!lastQ&&chatHistory[i].role==='user')lastQ=chatHistory[i].content;if(last&&lastQ)break;}if(!last){addSys('No response to send yet');return;}fetch(SEND_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response:last,userQuestion:lastQ||'',timestamp:new Date().toISOString(),source:'VAL'})}).then(function(){addSys('Response sent');}).catch(function(){addSys('Send failed');});}
 
 // ── WORKSPACE SIDEBAR ──────────────────────────────────
@@ -2641,7 +2664,7 @@ function sendToVAL(prompt, onComplete){
   var ctx=buildContext();
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context]\n'+ctx},{role:'assistant',content:'Got it.'}].concat(msgs);
-  fetch(CHAT_URL,{method:'POST',headers:{'Api-Key':PINECONE_KEY,'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return r.json();})
   .then(function(d){
     var m=(d.message&&d.message.content)||d.message||'Could not process.';
@@ -2853,7 +2876,8 @@ var _origAutoSave = typeof autoSave === 'function' ? autoSave : function(){};
 
 window.addEventListener("beforeunload",function(){
   if(!chatHistory.length)return;
-  navigator.sendBeacon(MEMORY_HOOK,new Blob([JSON.stringify({transcript:chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n'),messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
+  var transcript=chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n');
+  navigator.sendBeacon(CONVERSATION_HOOK,new Blob([JSON.stringify({transcript:transcript,messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
   stopSTT();stopSpeak();
 });
 </script>

@@ -1,15 +1,33 @@
 const express = require('express');
 const cors    = require('cors');
+const fs      = require('fs');
+const path    = require('path');
 const app     = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({limit:'10mb'}));
 
 const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const BASE    = 'https://services.leadconnectorhq.com';
+const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
+const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
+const VAL_USER_ID = process.env.VAL_USER_ID || 'default';
+let pgPool = null;
+
+if(process.env.DATABASE_URL){
+  try{
+    const {Pool} = require('pg');
+    pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.PGSSLMODE === 'disable' ? false : {rejectUnauthorized:false}
+    });
+  }catch(e){
+    console.error('Postgres disabled:', e.message);
+  }
+}
 
 function gh(){
   return {'Authorization':`Bearer ${GHL_KEY}`,'Version':'2021-07-28','Content-Type':'application/json'};
@@ -19,9 +37,87 @@ async function ghl(method,path,body){
   return r.json();
 }
 
+function readJson(file,fallback){
+  try{ return JSON.parse(fs.readFileSync(file,'utf8')); }
+  catch(e){ return fallback; }
+}
+function writeJson(file,value){
+  try{ fs.writeFileSync(file, JSON.stringify(value,null,2)); }
+  catch(e){ console.error('writeJson error:',e.message); }
+}
+function valStore(){
+  return readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[]});
+}
+function saveValStore(store){ writeJson(STORE_FILE,store); }
+function uuid(prefix){
+  return prefix+'_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);
+}
+async function dbQuery(sql,params){
+  if(!pgPool) return null;
+  return pgPool.query(sql,params);
+}
+async function initValDb(){
+  if(!pgPool) return;
+  await dbQuery(`
+    create table if not exists val_tasks (
+      id text primary key,
+      user_id text not null default 'default',
+      title text not null,
+      contact_name text,
+      due_date timestamptz,
+      notes text,
+      details jsonb not null default '[]',
+      completed boolean not null default false,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists val_conversations (
+      id text primary key,
+      user_id text not null default 'default',
+      title text,
+      source text not null default 'chat',
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists val_messages (
+      id text primary key,
+      conversation_id text references val_conversations(id) on delete cascade,
+      role text not null,
+      content text not null,
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists val_transcripts (
+      id text primary key,
+      user_id text not null default 'default',
+      type text not null,
+      title text,
+      raw_text text not null,
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists val_memory_items (
+      id text primary key,
+      user_id text not null default 'default',
+      kind text not null default 'note',
+      summary text,
+      raw_text text not null,
+      importance integer not null default 1,
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
+    create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
+    create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
+    create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
+    create index if not exists val_memory_user_created_idx on val_memory_items(user_id,created_at desc);
+  `);
+  console.log('VAL Postgres store ready');
+}
+const valDbReady = initValDb().catch(e=>console.error('VAL DB init error:',e.message));
+
 // ── HEALTH ───────────────────────────────────────────────
 app.get('/',(req,res)=>res.json({status:'VAL Proxy OK',time:new Date().toISOString()}));
-const path = require('path');
 app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-executive.html')));
 
@@ -1101,50 +1197,260 @@ app.put('/api/ghl/social/posts/:id',async(req,res)=>{
   catch(e){res.status(500).json({error:e.message});}
 });
 
-// ════════════════════════════════════════════════════════
-// VAL TASK STORE — persisted to disk as JSON
-// ════════════════════════════════════════════════════════
-const fs   = require('fs');
-const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
-
 function readTasks(){
-  try{ return JSON.parse(fs.readFileSync(TASKS_FILE,'utf8')); }
-  catch(e){ return []; }
+  return readJson(TASKS_FILE,[]);
 }
 function writeTasks(tasks){
-  try{ fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks,null,2)); }
-  catch(e){ console.error('writeTasks error:',e.message); }
+  writeJson(TASKS_FILE,tasks);
 }
-
-// GET all tasks
-app.get('/api/val/tasks',(req,res)=>{
-  res.json(readTasks());
-});
-
-// POST — add a task  { id, title, contactName, dueDate, notes, details, completed, createdAt }
-app.post('/api/val/tasks',(req,res)=>{
+function rowToTask(row){
+  return {
+    id: row.id,
+    title: row.title,
+    contactName: row.contact_name || '',
+    dueDate: row.due_date ? row.due_date.toISOString() : null,
+    notes: row.notes || '',
+    details: row.details || [],
+    completed: !!row.completed,
+    createdAt: row.created_at ? row.created_at.toISOString() : new Date().toISOString()
+  };
+}
+async function loadTasks(){
+  await valDbReady;
+  if(pgPool){
+    const r = await dbQuery('select * from val_tasks where user_id=$1 order by completed asc, due_date asc nulls last, created_at desc',[VAL_USER_ID]);
+    return r.rows.map(rowToTask);
+  }
+  return readTasks();
+}
+async function saveTask(task){
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`
+      insert into val_tasks (id,user_id,title,contact_name,due_date,notes,details,completed,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9::timestamptz,now()),now())
+      on conflict (id) do update set
+        title=excluded.title,
+        contact_name=excluded.contact_name,
+        due_date=excluded.due_date,
+        notes=excluded.notes,
+        details=excluded.details,
+        completed=excluded.completed,
+        updated_at=now()
+    `,[
+      task.id,
+      VAL_USER_ID,
+      task.title || 'Untitled task',
+      task.contactName || '',
+      task.dueDate || null,
+      task.notes || '',
+      JSON.stringify(task.details || []),
+      !!task.completed,
+      task.createdAt || null
+    ]);
+    return;
+  }
   const tasks = readTasks();
-  const task  = req.body;
-  if(!task||!task.id) return res.status(400).json({error:'Missing task id'});
   const idx = tasks.findIndex(t=>t.id===task.id);
   if(idx>=0) tasks[idx]=task; else tasks.push(task);
   writeTasks(tasks);
-  res.json({ok:true, task});
+}
+async function replaceTasks(tasks){
+  await valDbReady;
+  if(pgPool){
+    await dbQuery('delete from val_tasks where user_id=$1',[VAL_USER_ID]);
+    for(const task of tasks) await saveTask(task);
+    return;
+  }
+  writeTasks(tasks);
+}
+async function deleteTask(id){
+  await valDbReady;
+  if(pgPool){
+    await dbQuery('delete from val_tasks where user_id=$1 and id=$2',[VAL_USER_ID,id]);
+    return;
+  }
+  writeTasks(readTasks().filter(t=>t.id!==id));
+}
+
+// GET all tasks
+app.get('/api/val/tasks',async(req,res)=>{
+  try{ res.json(await loadTasks()); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// POST — add a task  { id, title, contactName, dueDate, notes, details, completed, createdAt }
+app.post('/api/val/tasks',async(req,res)=>{
+  try{
+    const task = req.body;
+    if(!task||!task.id) return res.status(400).json({error:'Missing task id'});
+    await saveTask(task);
+    res.json({ok:true, task});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // PUT — replace all tasks (bulk save)
-app.put('/api/val/tasks',(req,res)=>{
-  const tasks = req.body;
-  if(!Array.isArray(tasks)) return res.status(400).json({error:'Expected array'});
-  writeTasks(tasks);
-  res.json({ok:true, count:tasks.length});
+app.put('/api/val/tasks',async(req,res)=>{
+  try{
+    const tasks = req.body;
+    if(!Array.isArray(tasks)) return res.status(400).json({error:'Expected array'});
+    await replaceTasks(tasks);
+    res.json({ok:true, count:tasks.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // DELETE — remove a task by id
-app.delete('/api/val/tasks/:id',(req,res)=>{
-  const tasks = readTasks().filter(t=>t.id!==req.params.id);
-  writeTasks(tasks);
-  res.json({ok:true});
+app.delete('/api/val/tasks/:id',async(req,res)=>{
+  try{
+    await deleteTask(req.params.id);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+// ════════════════════════════════════════════════════════
+// VAL MEMORY STORE — conversations, messages, transcripts
+// ════════════════════════════════════════════════════════
+async function saveTranscript(payload){
+  await valDbReady;
+  const id = payload.id || uuid('tr');
+  const type = payload.type || 'transcript';
+  const rawText = payload.transcript || payload.rawText || '';
+  const metadata = {...payload};
+  delete metadata.transcript;
+  delete metadata.rawText;
+  if(pgPool){
+    await dbQuery(
+      'insert into val_transcripts (id,user_id,type,title,raw_text,metadata,created_at) values ($1,$2,$3,$4,$5,$6,coalesce($7::timestamptz,now()))',
+      [id,VAL_USER_ID,type,payload.title||null,rawText,JSON.stringify(metadata),payload.timestamp||null]
+    );
+  }else{
+    const store = valStore();
+    store.transcripts.unshift({id,userId:VAL_USER_ID,type,title:payload.title||'',rawText,metadata,createdAt:payload.timestamp||new Date().toISOString()});
+    saveValStore(store);
+  }
+  if(rawText){
+    await saveMemoryItem({kind:type,summary:payload.title||type,rawText,metadata,importance:payload.importance||1});
+  }
+  return {id,type};
+}
+async function saveMemoryItem(payload){
+  await valDbReady;
+  const id = payload.id || uuid('mem');
+  const rawText = payload.rawText || payload.transcript || payload.summary || '';
+  if(pgPool){
+    await dbQuery(
+      'insert into val_memory_items (id,user_id,kind,summary,raw_text,importance,metadata,created_at) values ($1,$2,$3,$4,$5,$6,$7,now())',
+      [id,VAL_USER_ID,payload.kind||payload.type||'note',payload.summary||null,rawText,payload.importance||1,JSON.stringify(payload.metadata||{})]
+    );
+  }else{
+    const store = valStore();
+    store.memoryItems.unshift({id,userId:VAL_USER_ID,kind:payload.kind||payload.type||'note',summary:payload.summary||'',rawText,importance:payload.importance||1,metadata:payload.metadata||{},createdAt:new Date().toISOString()});
+    saveValStore(store);
+  }
+  return {id};
+}
+async function saveConversation(payload){
+  await valDbReady;
+  const id = payload.id || uuid('conv');
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const title = payload.title || (messages.find(m=>m.role==='user')?.content || 'Conversation').slice(0,80);
+  if(pgPool){
+    await dbQuery(`
+      insert into val_conversations (id,user_id,title,source,metadata,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()),now())
+      on conflict (id) do update set title=excluded.title, metadata=excluded.metadata, updated_at=now()
+    `,[id,VAL_USER_ID,title,payload.source||payload.type||'chat',JSON.stringify(payload.metadata||{}),payload.timestamp||null]);
+    await dbQuery('delete from val_messages where conversation_id=$1',[id]);
+    for(const m of messages){
+      await dbQuery(
+        'insert into val_messages (id,conversation_id,role,content,metadata,created_at) values ($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()))',
+        [uuid('msg'),id,m.role||'user',m.content||'',JSON.stringify(m.metadata||{}),m.timestamp||null]
+      );
+    }
+  }else{
+    const store = valStore();
+    store.conversations = store.conversations.filter(c=>c.id!==id);
+    store.messages = store.messages.filter(m=>m.conversationId!==id);
+    store.conversations.unshift({id,userId:VAL_USER_ID,title,source:payload.source||payload.type||'chat',metadata:payload.metadata||{},createdAt:payload.timestamp||new Date().toISOString(),updatedAt:new Date().toISOString()});
+    messages.forEach(m=>store.messages.push({id:uuid('msg'),conversationId:id,role:m.role||'user',content:m.content||'',metadata:m.metadata||{},createdAt:m.timestamp||new Date().toISOString()}));
+    saveValStore(store);
+  }
+  if(payload.transcript) await saveTranscript({...payload,title,type:payload.type||'chat_memory'});
+  return {id,title,count:messages.length};
+}
+
+app.post('/api/val/memory',async(req,res)=>{
+  try{ res.json({ok:true,...await saveMemoryItem(req.body||{})}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/val/transcripts',async(req,res)=>{
+  try{ res.json({ok:true,...await saveTranscript(req.body||{})}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.post('/api/val/conversations',async(req,res)=>{
+  try{ res.json({ok:true,...await saveConversation(req.body||{})}); }
+  catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.get('/api/val/conversations',async(req,res)=>{
+  try{
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 order by updated_at desc limit $2',[VAL_USER_ID,Number(req.query.limit)||25]);
+      return res.json(r.rows);
+    }
+    res.json(valStore().conversations.slice(0,Number(req.query.limit)||25));
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+app.get('/api/val/conversations/:id/messages',async(req,res)=>{
+  try{
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('select role,content,metadata,created_at from val_messages where conversation_id=$1 order by created_at asc',[req.params.id]);
+      return res.json(r.rows);
+    }
+    res.json(valStore().messages.filter(m=>m.conversationId===req.params.id));
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+async function recentMemoryContext(){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(
+      'select kind,summary,raw_text,created_at from val_memory_items where user_id=$1 order by importance desc, created_at desc limit 12',
+      [VAL_USER_ID]
+    );
+    return r.rows.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||'').slice(0,140)}${m.raw_text&&m.raw_text!==m.summary?': '+m.raw_text.slice(0,500):''}`).join('\n');
+  }
+  return valStore().memoryItems.slice(0,12).map(m=>`- [${m.kind}] ${(m.summary||m.rawText||'').slice(0,140)}${m.rawText&&m.rawText!==m.summary?': '+m.rawText.slice(0,500):''}`).join('\n');
+}
+
+app.post('/api/val/chat',async(req,res)=>{
+  try{
+    if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    const memory = await recentMemoryContext();
+    const system = [
+      "You are VAL, Jessa's executive assistant. Be direct, useful, warm, and specific.",
+      'Use dashboard context and saved memory when relevant. Do not pretend to know facts that are not present.',
+      memory ? 'Recent saved VAL memory:\n'+memory : ''
+    ].filter(Boolean).join('\n\n');
+    const r=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      body:JSON.stringify({
+        model:process.env.VAL_CHAT_MODEL||'gpt-4o-mini',
+        messages:[{role:'system',content:system}].concat(messages),
+        temperature:0.7
+      })
+    });
+    const d=await r.json();
+    if(d.error) return res.status(500).json({error:d.error.message});
+    res.json({message:{role:'assistant',content:d.choices?.[0]?.message?.content||'I could not process that.'}});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // ════════════════════════════════════════════════════════
