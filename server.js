@@ -1424,13 +1424,144 @@ async function saveConversation(payload){
   return {id,title,count:messages.length};
 }
 
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
+  if(!OPENAI_KEY) throw new Error('OPENAI_KEY not configured');
+  const r=await fetch('https://api.openai.com/v1/chat/completions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+    body:JSON.stringify({
+      model:process.env.VAL_CHAT_MODEL||'gpt-4o-mini',
+      messages:[{role:'system',content:system},{role:'user',content:user}],
+      max_tokens:maxTokens,
+      temperature,
+      response_format:json?{type:'json_object'}:undefined
+    })
+  });
+  const d=await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return d.choices?.[0]?.message?.content || '';
+}
+
+function actionPrompt(action){
+  const prompts={
+    daily_command:'Create a daily command-center briefing. Include meetings, urgent tasks, open loops, follow-up radar, one focus block, and the single best next action.',
+    what_now:'Choose exactly what Jessa should do next. Consider energy, urgency, calendar, overdue tasks, HALOS/DISC memory, and business leverage. Be decisive.',
+    weekly_review:'Create a weekly review: wins, stuck loops, avoided work, relationship follow-ups, stop/start/continue, and top 3 priorities for next week.',
+    relationship_briefing:'Create a relationship briefing for the person or meeting named by the user. Include context, last known interaction, tone, likely needs, questions, and follow-up suggestions.',
+    project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',
+    task_intelligence:'Review the task list. Group by urgency/energy/project, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first.',
+    followup_radar:'Scan for dangling commitments, quiet leads, overdue replies, relational warmth opportunities, and concrete follow-up drafts.',
+    document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.'
+  };
+  return prompts[action] || prompts.what_now;
+}
+
+app.post('/api/val/intelligence',async(req,res)=>{
+  try{
+    const action=req.body.action||'what_now';
+    const query=req.body.query||'';
+    const dashboard=req.body.dashboard||{};
+    const tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
+    const memory=await recentMemoryContext(`${action} ${query}`);
+    const system=[
+      "You are VAL, Jessa's executive function partner and strategic assistant.",
+      'Use saved memory, HALOS/DISC context, dashboard data, task state, and the requested action.',
+      'Be specific, practical, and decisive. If you recommend work, make it easy to start immediately.',
+      memory?'Relevant saved memory:\n'+memory:''
+    ].filter(Boolean).join('\n\n');
+    const user=[
+      'Requested VAL action: '+action,
+      'Instruction: '+actionPrompt(action),
+      query?'User query: '+query:'',
+      'Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),
+      'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)
+    ].filter(Boolean).join('\n\n');
+    const content=await callValModel({system,user,maxTokens:1600,temperature:0.35});
+    res.json({ok:true,action,content});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
+async function processTranscriptPayload(payload){
+  const transcript=payload.transcript||payload.rawText||'';
+  if(!transcript.trim()) throw new Error('Missing transcript');
+  const title=payload.title||'Processed transcript';
+  const memory=await recentMemoryContext(title+' '+transcript.slice(0,1000));
+  const system=[
+    "You process transcripts for VAL, Jessa's executive assistant.",
+    'Return strict JSON with keys: summary, actionItems, decisions, people, memoryUpdates, followupDrafts.',
+    'actionItems must be an array of objects with title, dueDate, notes, priority.',
+    memory?'Relevant saved memory:\n'+memory:''
+  ].filter(Boolean).join('\n\n');
+  const raw=await callValModel({
+    system,
+    user:'Transcript title: '+title+'\n\nTranscript:\n'+transcript.slice(0,30000),
+    maxTokens:1800,
+    temperature:0.2,
+    json:true
+  });
+  let parsed={};
+  try{ parsed=JSON.parse(raw); }catch(e){ parsed={summary:raw,actionItems:[],decisions:[],people:[],memoryUpdates:[],followupDrafts:[]}; }
+  const createdTasks=[];
+  if(Array.isArray(parsed.actionItems)){
+    for(const item of parsed.actionItems.slice(0,12)){
+      if(!item||!item.title) continue;
+      const task={id:uuid('task'),title:item.title,contactName:'',dueDate:item.dueDate||null,notes:item.notes||'',details:[{text:'Created from transcript: '+title,ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
+      await saveTask(task);
+      createdTasks.push(task);
+    }
+  }
+  if(Array.isArray(parsed.memoryUpdates)){
+    for(const m of parsed.memoryUpdates.slice(0,12)){
+      const text=typeof m==='string'?m:(m.text||m.summary||JSON.stringify(m));
+      await saveMemoryItem({kind:'transcript_insight',summary:title,rawText:text,importance:3,metadata:{title,source:'transcript_processing'}});
+    }
+  }
+  return {analysis:parsed,createdTasks};
+}
+
+app.post('/api/val/transcripts/process',async(req,res)=>{
+  try{
+    const title=req.body.title||'Processed transcript';
+    await saveTranscript({type:'processed_transcript',title,transcript:req.body.transcript||req.body.rawText||'',metadata:{source:req.body.source||'manual_process'},importance:3});
+    res.json({ok:true,...await processTranscriptPayload(req.body||{})});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/val/memory',async(req,res)=>{
   try{ res.json({ok:true,...await saveMemoryItem(req.body||{})}); }
   catch(e){ res.status(500).json({error:e.message}); }
 });
 
+app.get('/api/val/memory/search',async(req,res)=>{
+  try{
+    await valDbReady;
+    const q=req.query.q||'';
+    const limit=Math.min(Number(req.query.limit)||20,50);
+    const terms=queryTerms(q);
+    let items=[];
+    if(pgPool){
+      const r=await dbQuery('select id,kind,summary,raw_text,importance,metadata,created_at from val_memory_items where user_id=$1 order by created_at desc limit 500',[VAL_USER_ID]);
+      items=r.rows;
+    }else{
+      items=valStore().memoryItems.map(m=>({id:m.id,kind:m.kind,summary:m.summary,raw_text:m.rawText,importance:m.importance,metadata:m.metadata,created_at:m.createdAt}));
+    }
+    const ranked=items.map(m=>({...m,score:scoreMemory(m,terms)}))
+      .filter(m=>!q||m.score>0)
+      .sort((a,b)=>(b.score-a.score)||((b.importance||1)-(a.importance||1)))
+      .slice(0,limit)
+      .map(m=>({id:m.id,kind:m.kind,summary:m.summary,preview:(m.raw_text||'').slice(0,500),importance:m.importance,metadata:m.metadata,createdAt:m.created_at}));
+    res.json({ok:true,query:q,results:ranked});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/val/transcripts',async(req,res)=>{
-  try{ res.json({ok:true,...await saveTranscript(req.body||{})}); }
+  try{
+    const saved=await saveTranscript(req.body||{});
+    if(req.body&&req.body.process){
+      return res.json({ok:true,...saved,...await processTranscriptPayload(req.body)});
+    }
+    res.json({ok:true,...saved});
+  }
   catch(e){ res.status(500).json({error:e.message}); }
 });
 

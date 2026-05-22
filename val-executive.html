@@ -840,17 +840,17 @@ input[type=file]{display:none}
           <div class="cw-action-label">Draft</div>
           <div class="cw-action-text">Follow-up to latest lead</div>
         </div>
-        <div class="cw-action" onclick="ask('Prepare a full briefing for my next meeting today')">
-          <div class="cw-action-label">Prepare</div>
-          <div class="cw-action-text">Next meeting brief</div>
+        <div class="cw-action" onclick="runValAction('daily_command','Start My Day')">
+          <div class="cw-action-label">Command</div>
+          <div class="cw-action-text">Start my day</div>
         </div>
-        <div class="cw-action" onclick="ask('Show my overdue tasks and tell me what to do first')">
-          <div class="cw-action-label">Review</div>
-          <div class="cw-action-text">Overdue tasks</div>
+        <div class="cw-action" onclick="runValAction('what_now','What Should I Do Now?')">
+          <div class="cw-action-label">Decide</div>
+          <div class="cw-action-text">What now?</div>
         </div>
-        <div class="cw-action" onclick="ask('Summarize all activity from yesterday')">
-          <div class="cw-action-label">Summarize</div>
-          <div class="cw-action-text">Yesterday\'s activity</div>
+        <div class="cw-action" onclick="runValAction('followup_radar','Follow-Up Radar')">
+          <div class="cw-action-label">Radar</div>
+          <div class="cw-action-text">Open loops</div>
         </div>
       </div>
     </div>
@@ -1893,8 +1893,15 @@ function handleVoice(text){
   if(/\b(show|open|check)\s+(my\s+)?(pipeline|deals)\b/.test(low)){askPipeline();return;}
   if(/\b(show|what are my|check)\s+(my\s+)?tasks\b/.test(low)){askTasks();return;}
   if(/\b(morning briefing|daily briefing|what's (on |for )?today)\b/.test(low)){
-    deliverMorningBriefing();return;
+    runValAction('daily_command','Start My Day');return;
   }
+  if(/\b(what should i do now|what now|next best action|do next)\b/.test(low)){runValAction('what_now','What Should I Do Now?',text);return;}
+  if(/\b(weekly review|review my week)\b/.test(low)){runValAction('weekly_review','Weekly Review',text);return;}
+  if(/\b(follow.?up radar|open loops|dangling commitments)\b/.test(low)){runValAction('followup_radar','Follow-Up Radar',text);return;}
+  if(/\b(task intelligence|prioritize tasks|stale tasks)\b/.test(low)){runValAction('task_intelligence','Task Intelligence',text);return;}
+  if(/\b(relationship briefing|brief me on|person briefing)\b/.test(low)){runValAction('relationship_briefing','Relationship Briefing',text);return;}
+  if(/\b(project space|project briefing)\b/.test(low)){runValAction('project_space','Project Space',text);return;}
+  if(/\b(search memory|find in memory|document vault)\b/.test(low)){searchValMemory(text.replace(/^(search memory|find in memory|document vault)\s*/i,''));return;}
   if(/\b(focus mode)\b/.test(low)){setMode('focus');return;}
   if(/\b(strategy mode)\b/.test(low)){setMode('strategy');return;}
   if(/\b(operations mode)\b/.test(low)){setMode('operations');return;}
@@ -2209,6 +2216,47 @@ function removeTyping(){var t=document.getElementById('typing');if(t)t.remove();
 function autoSave(){if(!chatHistory.length||savedChat)return;valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;}).catch(function(){});}
 function saveChat(){if(!chatHistory.length){addSys('Nothing to save yet');return;}valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;addSys('Saved to memory');}).catch(function(){addSys('Save failed');});}
 function sendLast(){var last=null,lastQ=null;for(var i=chatHistory.length-1;i>=0;i--){if(!last&&chatHistory[i].role==='assistant')last=chatHistory[i].content;if(!lastQ&&chatHistory[i].role==='user')lastQ=chatHistory[i].content;if(last&&lastQ)break;}if(!last){addSys('No response to send yet');return;}fetch(SEND_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response:last,userQuestion:lastQ||'',timestamp:new Date().toISOString(),source:'VAL'})}).then(function(){addSys('Response sent');}).catch(function(){addSys('Send failed');});}
+
+function runValAction(action,label,query){
+  openDetailWithTitle(label||'VAL');
+  var userText=label||action;
+  if(query) userText+=': '+query;
+  addMsg(userText,true);
+  chatHistory.push({role:'user',content:userText});
+  showTyping();
+  fetch(PROXY+'/api/val/intelligence',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:action,query:query||'',dashboard:dashData,tasks:valTasks})
+  })
+  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(d){
+    var text=d.content||'I could not generate that yet.';
+    chatHistory.push({role:'assistant',content:text});
+    addMsg(text,false);
+    savedChat=false;autoSave();
+  })
+  .catch(function(e){removeTyping();addSys('VAL action failed: '+e.message);});
+}
+
+function searchValMemory(q){
+  q=q||prompt('Search VAL memory for:');
+  if(!q)return;
+  openDetailWithTitle('Memory Search');
+  addMsg('Search memory: '+q,true);
+  showTyping();
+  fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q))
+  .then(function(r){removeTyping();return r.json();})
+  .then(function(d){
+    var results=d.results||[];
+    if(!results.length){addMsg('No matching memory found.',false);return;}
+    var text='Found '+results.length+' relevant memory item'+(results.length===1?'':'s')+':\n\n'+results.slice(0,8).map(function(m,i){
+      return (i+1)+'. ['+(m.kind||'memory')+'] '+(m.summary||'Untitled')+'\n'+(m.preview||'').slice(0,260);
+    }).join('\n\n');
+    addMsg(text,false);
+  })
+  .catch(function(e){removeTyping();addSys('Memory search failed: '+e.message);});
+}
 
 // ── WORKSPACE SIDEBAR ──────────────────────────────────
 var wsOpen = false;
