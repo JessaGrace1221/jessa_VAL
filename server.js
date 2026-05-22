@@ -139,6 +139,12 @@ async function initValDb(){
       metadata jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists val_oauth_tokens (
+      provider text primary key,
+      user_id text not null default 'default',
+      tokens jsonb not null,
+      updated_at timestamptz not null default now()
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
@@ -167,6 +173,41 @@ if(process.env.GOOGLE_REFRESH_TOKEN){
   googleTokens.refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
   googleTokens.issued_at = 0; // force refresh on first use
   console.log('Loaded Google refresh token from env var');
+}
+
+async function saveOAuthTokens(provider,tokens){
+  if(!tokens||!Object.keys(tokens).length) return;
+  if(pgPool){
+    await valDbReady;
+    await dbQuery(`
+      insert into val_oauth_tokens (provider,user_id,tokens,updated_at)
+      values ($1,$2,$3,now())
+      on conflict (provider) do update set tokens=excluded.tokens, updated_at=now()
+    `,[provider,VAL_USER_ID,JSON.stringify(tokens)]);
+  }else{
+    const store=valStore();
+    store.oauthTokens=store.oauthTokens||{};
+    store.oauthTokens[provider]=tokens;
+    saveValStore(store);
+  }
+}
+
+async function loadOAuthTokens(provider){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select tokens from val_oauth_tokens where provider=$1',[provider]);
+    return r.rows[0]?.tokens || null;
+  }
+  return (valStore().oauthTokens||{})[provider] || null;
+}
+
+async function ensureGoogleTokensLoaded(){
+  if(googleTokens.access_token||googleTokens.refresh_token) return;
+  const saved=await loadOAuthTokens('google');
+  if(saved){
+    googleTokens=saved;
+    console.log('Loaded Google tokens from VAL store');
+  }
 }
 
 // Step 1 — redirect user to Google consent screen
@@ -255,6 +296,10 @@ app.get('/auth/callback', async (req, res) => {
     });
     googleTokens = await r.json();
     googleTokens.issued_at = Date.now();
+    if(!googleTokens.refresh_token && process.env.GOOGLE_REFRESH_TOKEN){
+      googleTokens.refresh_token = process.env.GOOGLE_REFRESH_TOKEN;
+    }
+    await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token);
     // Log refresh token so it can be saved as GOOGLE_REFRESH_TOKEN env var in Railway
     if(googleTokens.refresh_token){
@@ -268,6 +313,7 @@ app.get('/auth/callback', async (req, res) => {
 
 // Refresh access token if expired
 async function getGoogleToken() {
+  await ensureGoogleTokensLoaded();
   // If no access token but we have a refresh token, go get one
   if(!googleTokens.access_token && googleTokens.refresh_token) {
     try {
@@ -284,6 +330,7 @@ async function getGoogleToken() {
       const fresh = await r.json();
       if(fresh.error){ console.error('Token bootstrap failed:', fresh.error, fresh.error_description); return null; }
       googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+      await saveOAuthTokens('google',googleTokens);
       console.log('Bootstrapped access token from refresh token');
       return googleTokens.access_token;
     } catch(e) {
@@ -308,7 +355,9 @@ async function getGoogleToken() {
       })
     });
     const fresh = await r.json();
+    if(fresh.error){ console.error('Token refresh failed:', fresh.error, fresh.error_description); return null; }
     googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+    await saveOAuthTokens('google',googleTokens);
     return googleTokens.access_token;
   } catch(e) {
     console.error('Token refresh failed:', e);
@@ -317,7 +366,8 @@ async function getGoogleToken() {
 }
 
 // Auth status check
-app.get('/auth/status', (req, res) => {
+app.get('/auth/status', async (req, res) => {
+  await ensureGoogleTokensLoaded();
   res.json({connected: !!googleTokens.access_token, hasRefreshToken: !!googleTokens.refresh_token});
 });
 
@@ -487,7 +537,7 @@ app.get('/api/calendar',async(req,res)=>{
     const token = await getGoogleToken();
     if(!token){
       console.log('Google token missing — needs auth');
-      return res.json({calendarEvents:[], _debug:{googleNeedsAuth:true}});
+      return res.json({calendarEvents:[], _debug:{googleNeedsAuth:true,hasRefreshToken:!!googleTokens.refresh_token}});
     }
 
     const s = new Date(); s.setHours(0,0,0,0);
