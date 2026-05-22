@@ -80,9 +80,21 @@ function queryTerms(text){
   const stop = new Set(['about','after','again','all','also','and','are','because','been','but','can','could','does','for','from','have','her','him','how','into','just','like','more','need','not','now','our','out','she','should','that','the','their','then','there','they','this','through','what','when','where','which','with','would','you','your']);
   return String(text||'').toLowerCase().match(/[a-z0-9']{3,}/g)?.filter(w=>!stop.has(w)).slice(-20) || [];
 }
+function isIdentityQuery(text){
+  return /\b(who am i|tell me about myself|about myself|myself|i am jessa|i'm jessa|jessa|disc|halos|operating system|profile|personality|how i work|what do you know about me)\b/i.test(String(text||''));
+}
+function expandedMemoryTerms(text){
+  const base = queryTerms(text);
+  if(!isIdentityQuery(text)) return base;
+  return Array.from(new Set(base.concat([
+    'jessa','profile','disc','halos','operating','system','personal','behavioral',
+    'influence','dominance','steadiness','conscientiousness','capacity','drift',
+    'strategic','reasoning','nervous','executive'
+  ])));
+}
 function scoreMemory(item,terms){
-  const hay = `${item.kind||''} ${item.summary||''} ${item.raw_text||item.rawText||''}`.toLowerCase();
-  return terms.reduce((score,term)=>score+(hay.includes(term)?1:0),0);
+  const hay = `${item.kind||''} ${item.summary||''} ${item.raw_text||item.rawText||''} ${JSON.stringify(item.metadata||{})}`.toLowerCase();
+  return terms.reduce((score,term)=>score+(hay.includes(term)?1:0),0) + ((item.importance||1) * 0.1);
 }
 async function dbQuery(sql,params){
   if(!pgPool) return null;
@@ -1759,22 +1771,50 @@ app.get('/api/val/conversations/:id/messages',async(req,res)=>{
 
 async function recentMemoryContext(query){
   await valDbReady;
-  const terms = queryTerms(query);
+  const terms = expandedMemoryTerms(query);
+  const identityMode = isIdentityQuery(query);
   const format = (items)=>items.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||m.rawText||'').slice(0,140)}${(m.raw_text||m.rawText)&&((m.raw_text||m.rawText)!==m.summary)?': '+(m.raw_text||m.rawText).slice(0,650):''}`).join('\n');
+  const identityPinned = (items)=>{
+    if(!identityMode) return [];
+    return items
+      .filter(m=>{
+        const meta = typeof m.metadata === 'string' ? (()=>{try{return JSON.parse(m.metadata);}catch(e){return {};}})() : (m.metadata||{});
+        const chunk = Number(meta.chunkIndex || 0);
+        return /core_user_profile|val_operating_prompt/i.test(m.kind||'') && (!chunk || chunk <= 4);
+      })
+      .sort((a,b)=>{
+        const am = typeof a.metadata === 'string' ? (()=>{try{return JSON.parse(a.metadata);}catch(e){return {};}})() : (a.metadata||{});
+        const bm = typeof b.metadata === 'string' ? (()=>{try{return JSON.parse(b.metadata);}catch(e){return {};}})() : (b.metadata||{});
+        return String(am.title||a.summary||'').localeCompare(String(bm.title||b.summary||'')) || (Number(am.chunkIndex||0)-Number(bm.chunkIndex||0));
+      })
+      .slice(0,10);
+  };
+  const uniqueByContent = (items)=>{
+    const seen = new Set();
+    return items.filter(m=>{
+      const key = `${m.kind||''}|${m.summary||''}|${(m.raw_text||m.rawText||'').slice(0,80)}`;
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
   if(pgPool){
     const r=await dbQuery(
-      'select kind,summary,raw_text,importance,created_at from val_memory_items where user_id=$1 order by created_at desc limit 200',
+      'select kind,summary,raw_text,importance,metadata,created_at from val_memory_items where user_id=$1 order by created_at desc limit 1200',
       [VAL_USER_ID]
     );
     const ranked = r.rows.map(m=>({...m,_score:scoreMemory(m,terms)}))
-      .sort((a,b)=>(b._score-a._score)||(b.importance-a.importance))
-      .slice(0,12);
-    return format(ranked);
+      .filter(m=>identityMode ? (m._score > 0 || /core_user_profile|val_operating_prompt/i.test(m.kind||'')) : true)
+      .sort((a,b)=>(b._score-a._score)||((b.importance||1)-(a.importance||1)))
+      .slice(0,identityMode?22:12);
+    return format(uniqueByContent(identityPinned(r.rows).concat(ranked)).slice(0,identityMode?24:12));
   }
-  const ranked = valStore().memoryItems.map(m=>({...m,_score:scoreMemory(m,terms)}))
+  const storeItems = valStore().memoryItems;
+  const ranked = storeItems.map(m=>({...m,_score:scoreMemory(m,terms)}))
+    .filter(m=>identityMode ? (m._score > 0 || /core_user_profile|val_operating_prompt/i.test(m.kind||'')) : true)
     .sort((a,b)=>(b._score-a._score)||((b.importance||1)-(a.importance||1)))
-    .slice(0,12);
-  return format(ranked);
+    .slice(0,identityMode?22:12);
+  return format(uniqueByContent(identityPinned(storeItems).concat(ranked)).slice(0,identityMode?24:12));
 }
 
 app.post('/api/val/chat',async(req,res)=>{
@@ -1785,7 +1825,8 @@ app.post('/api/val/chat',async(req,res)=>{
     const memory = await recentMemoryContext(lastUser);
     const system = [
       VAL_SYSTEM_PROMPT,
-      'Use dashboard context and saved memory when relevant. Do not pretend to know facts that are not present.',
+      'Use saved memory when relevant. Do not pretend to know facts that are not present.',
+      'For identity, self-knowledge, profile, DISC, HALOS, or "tell me about myself" questions, prioritize saved core user profile memory over calendar/dashboard context. Answer from the profile memory first, then mention live dashboard items only if they are directly relevant.',
       memory ? 'Recent saved VAL memory:\n'+memory : ''
     ].filter(Boolean).join('\n\n');
     const r=await fetch('https://api.openai.com/v1/chat/completions',{
