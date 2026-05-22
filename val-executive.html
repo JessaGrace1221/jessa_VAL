@@ -911,9 +911,7 @@ input[type=file]{display:none}
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-var PINECONE_KEY    = 'pcsk_7WBWjL_9Eyz13dFvg2yApCAn1NFbrH4iAWCp9wYPFU7JPYaii9sEhWeqUKvxHkSXdPJAX1';
 var ASSISTANT_NAME = 'jessa-transcripts';
-var PINECONE_HOST  = 'https://prod-1-data.ke.pinecone.io';
 var DG_KEY         = 'c6b3c32aa547322ca7f38809d90b50581f7af294';
 var DG_VOICE       = 'aura-arcas-en';
 var SEND_HOOK     = 'https://hook.us1.make.com/fr51wh2r58fbgcmlyu2xflywj794ov62';
@@ -1323,7 +1321,7 @@ var HOOK_PROPOSALS= PROXY+'/api/proposals';
 // ────────────────────────────────────────────────────────
 
 var CHAT_URL  = PROXY+'/api/val/chat';
-var FILES_URL = PINECONE_HOST+'/assistant/files/'+ASSISTANT_NAME;
+var FILES_URL = PROXY+'/api/val/files';
 
 var chatHistory=[],selFile=null,voiceOn=false,recording=false;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
@@ -1956,7 +1954,7 @@ function onFile(e){
     addSys('⚠ Unsupported file type. Use PDF, TXT, MD, HTML, JSON, DOC, DOCX, or an image (JPG, PNG, WEBP).');
     return;
   }
-  uploadFileToPinecone(f);
+  uploadFileToVAL(f);
 }
 
 function generateImage(prompt){
@@ -2051,13 +2049,13 @@ function runImageAnalysis(filename, mode){
   reader.readAsDataURL(f);
 }
 
-function uploadFileToPinecone(f){
+function uploadFileToVAL(f){
   var msgEl=null;
   // Show uploading state in chat
   var c=document.getElementById('chatScroll');
   var d=document.createElement('div');
   d.className='cmsg assistant';
-  d.innerHTML='<div class="cmsg-bubble"><p>📎 Uploading <strong>'+f.name+'</strong> to knowledge base...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  d.innerHTML='<div class="cmsg-bubble"><p>📎 Uploading <strong>'+f.name+'</strong> to VAL memory...</p></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);c.scrollTop=c.scrollHeight;
   msgEl=d;
 
@@ -2066,7 +2064,6 @@ function uploadFileToPinecone(f){
 
   fetch(FILES_URL,{
     method:'POST',
-    headers:{'Api-Key':PINECONE_KEY},
     body:fd
   })
   .then(function(r){
@@ -2074,17 +2071,16 @@ function uploadFileToPinecone(f){
     return r.json();
   })
   .then(function(data){
-    var fileId=data.id||data.file_id||'saved';
     msgEl.querySelector('.cmsg-bubble').innerHTML=
-      '<p>✅ <strong>'+f.name+'</strong> saved to knowledge base.</p>'
-      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">VAL can now answer questions about this document. Try asking about it.</p>';
-    chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to the knowledge base. You can now ask me questions about it.'});
+      '<p>✅ <strong>'+f.name+'</strong> saved to VAL memory.</p>'
+      +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Extracted '+(data.chars||0)+' characters. VAL can now answer questions about this document.</p>';
+    chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to VAL memory. You can now ask me questions about it.'});
   })
   .catch(function(err){
     msgEl.querySelector('.cmsg-bubble').innerHTML=
       '<p>❌ Upload failed: '+err.message+'</p>'
       +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Check that the file is a supported format and under 25MB.</p>';
-    console.error('Pinecone upload error:',err);
+    console.error('VAL upload error:',err);
   });
 }
 

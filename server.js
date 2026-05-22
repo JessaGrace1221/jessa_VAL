@@ -2,10 +2,14 @@ const express = require('express');
 const cors    = require('cors');
 const fs      = require('fs');
 const path    = require('path');
+const multer  = require('multer');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 const app     = express();
 
 app.use(cors());
 app.use(express.json({limit:'10mb'}));
+const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:25*1024*1024}});
 
 const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
@@ -1428,6 +1432,46 @@ app.post('/api/val/memory',async(req,res)=>{
 app.post('/api/val/transcripts',async(req,res)=>{
   try{ res.json({ok:true,...await saveTranscript(req.body||{})}); }
   catch(e){ res.status(500).json({error:e.message}); }
+});
+
+async function extractUploadedText(file){
+  const name = file.originalname || 'uploaded-file';
+  const mime = file.mimetype || '';
+  const ext = path.extname(name).toLowerCase();
+  if(mime.startsWith('text/') || ['.txt','.md','.markdown','.html','.htm','.json','.csv','.tsv'].includes(ext)){
+    return file.buffer.toString('utf8');
+  }
+  if(mime === 'application/pdf' || ext === '.pdf'){
+    const parsed = await pdfParse(file.buffer);
+    return parsed.text || '';
+  }
+  if(mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === '.docx'){
+    const result = await mammoth.extractRawText({buffer:file.buffer});
+    return result.value || '';
+  }
+  throw new Error('Unsupported file type. Upload TXT, MD, HTML, JSON, CSV, PDF, or DOCX.');
+}
+
+app.post('/api/val/files',upload.single('file'),async(req,res)=>{
+  try{
+    if(!req.file) return res.status(400).json({error:'Missing file'});
+    const text = (await extractUploadedText(req.file)).trim();
+    if(!text) return res.status(400).json({error:'No readable text found in file'});
+    const saved = await saveTranscript({
+      type:'knowledge_document',
+      title:req.file.originalname,
+      transcript:text,
+      timestamp:new Date().toISOString(),
+      source:'val_file_upload',
+      importance:3,
+      metadata:{
+        fileName:req.file.originalname,
+        mimeType:req.file.mimetype,
+        size:req.file.size
+      }
+    });
+    res.json({ok:true,...saved,fileName:req.file.originalname,chars:text.length});
+  }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/val/conversations',async(req,res)=>{
