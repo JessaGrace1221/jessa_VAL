@@ -1330,6 +1330,7 @@ var FILES_URL = PROXY+'/api/val/files';
 var chatHistory=[],selFile=null,voiceOn=false,recording=false;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
 var keepAlive=null,meetingMode=false,meetingLog=[],savedChat=false;
+var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0;
 var dashData={};
 
 // ── CLOCK ──────────────────────────────────────────────
@@ -1919,6 +1920,9 @@ function deliverMorningBriefing(){
 function speak(text,btn){
   if(!text)return;
   var clean=String(text).replace(/\*\*(.*?)\*\*/g,'$1').replace(/\[(.*?)\]\(.*?\)/g,'$1').replace(/<[^>]*>/g,'').substring(0,2000);
+  var now=Date.now();
+  if(!btn && clean===voiceLastSpoken && now-voiceLastSpokenAt<5000)return;
+  voiceLastSpoken=clean;voiceLastSpokenAt=now;
   speaking=true;pauseListen();
   if(curAudio){curAudio.pause();curAudio=null;}
   fetch('https://api.deepgram.com/v1/speak?model='+DG_VOICE,{
@@ -1929,18 +1933,18 @@ function speak(text,btn){
     var url=URL.createObjectURL(b);curAudio=new Audio(url);
     curAudio.onended=function(){URL.revokeObjectURL(url);curAudio=null;setTimeout(function(){speaking=false;resumeListen();},700);};
     curAudio.onerror=function(){curAudio=null;speaking=false;resumeListen();};
-    curAudio.play().catch(function(){speaking=false;resumeListen();});
-  }).catch(function(){speaking=false;resumeListen();fallbackSpeak(clean);});
+    curAudio.play().catch(function(){fallbackSpeak(clean);});
+  }).catch(function(){fallbackSpeak(clean);});
 }
 function pauseListen(){if(!deepgramWS||!voiceOn)return;listenPaused=true;if(mediaRec&&mediaRec.state==='recording')mediaRec.pause();}
 function resumeListen(){if(!deepgramWS||!voiceOn||!listenPaused)return;listenPaused=false;if(mediaRec&&mediaRec.state==='paused')mediaRec.resume();}
-function fallbackSpeak(t){try{var u=new SpeechSynthesisUtterance(t);u.onend=function(){setTimeout(function(){speaking=false;},400);};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){speaking=false;}}
+function fallbackSpeak(t){try{speaking=true;pauseListen();var u=new SpeechSynthesisUtterance(t);u.onend=function(){setTimeout(function(){speaking=false;resumeListen();},600);};u.onerror=function(){speaking=false;resumeListen();};speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){speaking=false;resumeListen();}}
 function stopSpeak(){if(curAudio){curAudio.pause();curAudio=null;}try{speechSynthesis.cancel();}catch(e){}speaking=false;resumeListen();}
 
 // ── STT ────────────────────────────────────────────────
 function startSTT(){
   navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
-    var ws=new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-2&language=en&smart_format=true&interim_results=true&endpointing=300&vad_events=true',['token',DG_KEY]);
+    var ws=new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-2&language=en&smart_format=true&interim_results=false&endpointing=1100&vad_events=true',['token',DG_KEY]);
     deepgramWS=ws;
     ws.onopen=function(){
       setText('stext','Listening...');
@@ -1949,13 +1953,36 @@ function startSTT(){
       mediaRec.start(250);
       keepAlive=setInterval(function(){if(ws.readyState===WebSocket.OPEN)try{ws.send(JSON.stringify({type:'KeepAlive'}));}catch(e){}},5000);
     };
-    ws.onmessage=function(m){var d=JSON.parse(m.data);if(d.type==='Results'){var t=d.channel.alternatives[0].transcript;if(t&&t.trim()&&d.is_final&&!speaking&&!listenPaused)handleVoice(t);}};
+    ws.onmessage=function(m){var d=JSON.parse(m.data);if(d.type==='Results'){var t=d.channel.alternatives[0].transcript;if(t&&t.trim()&&d.is_final&&!speaking&&!listenPaused)queueVoiceFinal(t);}};
     ws.onerror=function(){stopSTT();};
     ws.onclose=function(){if(keepAlive){clearInterval(keepAlive);keepAlive=null;}if(voiceOn)setTimeout(function(){if(voiceOn)startSTT();},1000);};
   }).catch(function(){addSys('Microphone access denied');});
 }
+function queueVoiceFinal(text){
+  var cleaned=String(text||'').trim();
+  if(!cleaned||speaking||listenPaused)return;
+  var now=Date.now();
+  if(cleaned===voiceLastHeard&&now-voiceLastHeardAt<4500)return;
+  voiceLastHeard=cleaned;voiceLastHeardAt=now;
+  if(voiceFinalBuffer){
+    var last=voiceFinalBuffer.toLowerCase();
+    var next=cleaned.toLowerCase();
+    if(last.includes(next))return;
+    if(!next.includes(last))voiceFinalBuffer+=' '+cleaned;
+    else voiceFinalBuffer=cleaned;
+  }else{
+    voiceFinalBuffer=cleaned;
+  }
+  clearTimeout(voiceFinalTimer);
+  voiceFinalTimer=setTimeout(function(){
+    var phrase=voiceFinalBuffer.trim();
+    voiceFinalBuffer='';
+    if(phrase)handleVoice(phrase);
+  },900);
+}
 function stopSTT(){
   if(keepAlive){clearInterval(keepAlive);keepAlive=null;}
+  clearTimeout(voiceFinalTimer);voiceFinalTimer=null;voiceFinalBuffer='';
   if(mediaRec&&mediaRec.state!=='inactive'){mediaRec.stop();mediaRec.stream.getTracks().forEach(function(t){t.stop();});mediaRec=null;}
   if(deepgramWS){try{deepgramWS.close();}catch(e){}deepgramWS=null;}
   setText('stext',voiceOn?'Voice Active':'Ready');
