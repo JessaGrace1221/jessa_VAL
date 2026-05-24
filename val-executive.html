@@ -1251,7 +1251,7 @@ function copyDocBody(docId){
 
 function generateDoc(s, details){
   addMsg('Writing your '+s.type+'...',false);
-  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a clear, useful '+s.type+' that sounds like it came from a sharp human operator. No em dashes. No generic AI phrasing. No corporate filler. Use structure only where it helps. Warm, direct, specific, and grounded in Jessa\\'s actual voice.';
+  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a clear, useful '+s.type+' that sounds like it came from a sharp human operator. No em dashes. No generic AI phrasing. No corporate filler. Use structure only where it helps. Warm, direct, specific, and grounded in Jessa voice.';
   var userPrompt='Write a complete '+s.type+' for '+s.recipient+'.\n\nTitle: '+s.title+'\nKey points to cover: '+details+'\n\nFormat it with appropriate sections, ready to send.';
   callClaude(systemPrompt, userPrompt, function(body){
     var doc=valAddDoc(s.title, s.recipient, s.recipientEmail, body, s.type);
