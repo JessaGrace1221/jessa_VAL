@@ -15,6 +15,15 @@ const GHL_KEY = process.env.GHL_KEY;
 const GHL_LOC = process.env.GHL_LOC;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
+const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
+const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
+const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
+const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
+const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
+  .split(',')
+  .map(e=>e.trim().toLowerCase())
+  .filter(Boolean));
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -41,6 +50,11 @@ function gh(){
 async function ghl(method,path,body){
   const r=await fetch(BASE+path,{method,headers:gh(),body:body?JSON.stringify(body):undefined});
   return r.json();
+}
+async function readJsonResponse(response){
+  const text = await response.text();
+  try{ return text ? JSON.parse(text) : {}; }
+  catch(e){ return {raw:text}; }
 }
 
 function readJson(file,fallback){
@@ -502,6 +516,121 @@ app.get('/api/google/gmail', async (req, res) => {
   }
 });
 
+function normalizeAttendee(attendee){
+  if(!attendee) return null;
+  if(typeof attendee === 'string'){
+    const emailMatch = attendee.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    const email = emailMatch ? emailMatch[0].toLowerCase() : '';
+    const name = attendee.replace(/<.*?>/g,'').replace(email,'').trim();
+    if(!email && !name) return null;
+    return {name:name || email.split('@')[0] || '', email};
+  }
+  const email = String(attendee.email || attendee.contactEmail || '').trim().toLowerCase();
+  const name = String(attendee.displayName || attendee.name || attendee.contactName || '').trim();
+  if(!email && !name) return null;
+  return {name:name || (email ? email.split('@')[0] : ''), email};
+}
+
+function inferAttendeesFromEvent(event){
+  const seen = new Set();
+  const people = [];
+  const push = (item)=>{
+    const attendee = normalizeAttendee(item);
+    if(!attendee) return;
+    if(attendee.email && OWNER_EMAILS.has(attendee.email)) return;
+    const key = (attendee.email || attendee.name).toLowerCase();
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    people.push(attendee);
+  };
+  (Array.isArray(event.attendees) ? event.attendees : []).forEach(push);
+  if(event.contact || event.contactName) push({name:event.contact || event.contactName, email:event.contactEmail || ''});
+  const text = [event.title,event.summary,event.description,event.desc,event.notes].filter(Boolean).join(' ');
+  (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[]).forEach(email=>push({email}));
+  if(!people.length){
+    const title = String(event.title || event.summary || '').replace(/\b(call|meeting|sync|strategy|consult|session|with)\b/ig,' ');
+    title.split(/\s[-|/:]\s|\swith\s/i).map(s=>s.trim()).filter(s=>/^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$/.test(s)).forEach(name=>push({name}));
+  }
+  return people.slice(0,8);
+}
+
+function extractLinkedInUrl(data){
+  const text = JSON.stringify(data||{});
+  return (text.match(/https?:\/\/([a-z]+\.)?linkedin\.com\/in\/[^"',\s)]+/i)||[])[0] || '';
+}
+
+function normalizeRocketReachPerson(data){
+  const person = data.person || data.profile || data.data || data;
+  return {
+    found: !!(person && Object.keys(person).length),
+    id: person.id || person.profile_id || '',
+    name: person.name || person.full_name || [person.first_name,person.last_name].filter(Boolean).join(' '),
+    title: person.current_title || person.title || person.job_title || '',
+    company: person.current_employer || person.current_company || person.company || '',
+    location: person.location || person.city || '',
+    linkedinUrl: person.linkedin_url || person.linkedin || extractLinkedInUrl(person),
+    connections: person.connections || person.num_connections || person.linkedin_connections || null,
+    mutualConnections: person.mutual_connections || person.shared_connections || person.common_connections || null,
+    rawPreview: JSON.stringify(person).slice(0,1400)
+  };
+}
+
+async function lookupRocketReach(attendee){
+  if(!ROCKETREACH_API_KEY) return {configured:false, error:'ROCKETREACH_API_KEY is not set'};
+  const params = new URLSearchParams();
+  if(attendee.email) params.set('email',attendee.email);
+  if(attendee.linkedinUrl) params.set('linkedin_url',attendee.linkedinUrl);
+  if(attendee.name) params.set('name',attendee.name);
+  if(attendee.company) params.set('current_employer',attendee.company);
+  const url = `${ROCKETREACH_BASE_URL.replace(/\/$/,'')}/person/lookup?${params.toString()}`;
+  const response = await fetch(url,{headers:{'Api-Key':ROCKETREACH_API_KEY}});
+  const data = await readJsonResponse(response);
+  if(!response.ok) return {configured:true, error:data.message || data.error || `RocketReach ${response.status}`};
+  return {configured:true, data:normalizeRocketReachPerson(data)};
+}
+
+async function lookupOutscraperLinkedIn(attendee, profile){
+  if(!OUTSCRAPER_API_KEY) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
+  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
+  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
+  const query = profile?.linkedinUrl || attendee.linkedinUrl || attendee.email || attendee.name;
+  if(query) url.searchParams.set('query', query);
+  url.searchParams.set('async','false');
+  const response = await fetch(url.toString(),{headers:{'X-API-KEY':OUTSCRAPER_API_KEY}});
+  const data = await readJsonResponse(response);
+  if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
+  const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
+  const weekAgo = Date.now() - 7*24*60*60*1000;
+  const recentPosts = posts.filter(p=>{
+    const rawDate = p.date || p.posted_at || p.created_at || p.time || p.timestamp;
+    const time = rawDate ? new Date(rawDate).getTime() : NaN;
+    return !Number.isFinite(time) || time >= weekAgo;
+  }).slice(0,6).map(p=>({
+    date:p.date || p.posted_at || p.created_at || '',
+    text:String(p.text || p.post_text || p.content || p.description || p.title || '').slice(0,700),
+    url:p.url || p.post_url || p.link || ''
+  }));
+  return {configured:true, postsLastWeek:recentPosts, rawCount:posts.length};
+}
+
+app.post('/api/val/meeting-intel',async(req,res)=>{
+  try{
+    const event = req.body.event || req.body || {};
+    const attendees = inferAttendeesFromEvent(event);
+    const enriched = [];
+    for(const attendee of attendees){
+      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
+      const profile = rocket.data || {};
+      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
+      enriched.push({attendee, rocketReach:rocket, outscraper});
+    }
+    res.json({ok:true, attendees:enriched, missingConfig:{
+      rocketReach:!ROCKETREACH_API_KEY,
+      outscraper:!OUTSCRAPER_API_KEY || !OUTSCRAPER_LINKEDIN_POSTS_URL
+    }});
+  }catch(e){ res.status(500).json({error:e.message}); }
+});
+
 // ════════════════════════════════════════════════════════
 // DASHBOARD ENDPOINTS (called by VAL on load)
 // ════════════════════════════════════════════════════════
@@ -531,6 +660,8 @@ app.get('/api/meetings',async(req,res)=>{
       id:ev.id, title:ev.summary||'(No title)',
       startTime:ev.start?.dateTime||ev.start?.date,
       endTime:ev.end?.dateTime||ev.end?.date,
+      description:ev.description||'',
+      attendees:(ev.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
       status:ev.status, source:'google'
     }));
 
@@ -622,7 +753,7 @@ app.get('/api/calendar',async(req,res)=>{
       endTime:   ev.end?.dateTime||ev.end?.date,
       location:  ev.location||'',
       description: ev.description||'',
-      attendees: (ev.attendees||[]).map(a=>a.displayName||a.email),
+      attendees: (ev.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
       status:    ev.status,
       source:    'google'
     }));
@@ -1574,22 +1705,65 @@ Monthly synthesis: provide improvements, recurring drift, leverage increases, en
 Final governing principle: you are not here to maximize activity. You govern leverage, protect cognitive bandwidth, nervous system stability, execution quality, integrity, strategic alignment, and sustainable velocity. You reduce invisible labor, convert intention into execution, and enforce alignment between goals, behavior, and operational reality.
 `.trim();
 
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
+const HUMAN_VOICE_RULES = `
+Voice rules for every response:
+Write like a real operator talking to another real person.
+Do not use em dashes.
+Do not use polished AI language, corporate filler, fake enthusiasm, or motivational-speaker energy.
+Avoid phrases like "it's important to note", "in conclusion", "delve", "robust", "seamless", "transformative", "utilize", "unlock", "game-changing", "next-level", "dive into", and "elevate".
+Do not over-explain. Leave obvious things alone.
+Use plain words. Keep some edges.
+Vary rhythm. Some sentences can be short. Some can be a little uneven.
+Use bullets only when they help the user scan something operational.
+Never sound like customer support. Never pad the ending.
+If a sentence sounds polished just to sound smart, rewrite it.
+`.trim();
+
+function responseText(payload){
+  if(payload.output_text) return payload.output_text;
+  const parts = [];
+  for(const item of payload.output||[]){
+    for(const content of item.content||[]){
+      if(content.text) parts.push(content.text);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
   if(!OPENAI_KEY) throw new Error('OPENAI_KEY not configured');
-  const r=await fetch('https://api.openai.com/v1/chat/completions',{
+  const body = {
+    model:OPENAI_CHAT_MODEL,
+    instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
+    input:messages.map(m=>({
+      role:m.role === 'assistant' ? 'assistant' : 'user',
+      content:String(m.content||'')
+    })),
+    max_output_tokens:maxTokens,
+    temperature
+  };
+  if(json) body.text = {format:{type:'json_object'}};
+  let r=await fetch('https://api.openai.com/v1/responses',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
-    body:JSON.stringify({
-      model:process.env.VAL_CHAT_MODEL||'gpt-4o-mini',
-      messages:[{role:'system',content:system},{role:'user',content:user}],
-      max_tokens:maxTokens,
-      temperature,
-      response_format:json?{type:'json_object'}:undefined
-    })
+    body:JSON.stringify(body)
   });
-  const d=await r.json();
+  let d=await r.json();
+  if(d.error && /temperature/i.test(d.error.message||'')){
+    delete body.temperature;
+    r=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
+      body:JSON.stringify(body)
+    });
+    d=await r.json();
+  }
   if(d.error) throw new Error(d.error.message);
-  return d.choices?.[0]?.message?.content || '';
+  return responseText(d);
+}
+
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
+  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
 }
 
 function actionPrompt(action){
@@ -1843,18 +2017,8 @@ app.post('/api/val/chat',async(req,res)=>{
       'For identity, self-knowledge, profile, DISC, HALOS, or "tell me about myself" questions, prioritize saved core user profile memory over calendar/dashboard context. Answer from the profile memory first, then mention live dashboard items only if they are directly relevant.',
       memory ? 'Recent saved VAL memory:\n'+memory : ''
     ].filter(Boolean).join('\n\n');
-    const r=await fetch('https://api.openai.com/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_KEY}`},
-      body:JSON.stringify({
-        model:process.env.VAL_CHAT_MODEL||'gpt-4o-mini',
-        messages:[{role:'system',content:system}].concat(messages),
-        temperature:0.7
-      })
-    });
-    const d=await r.json();
-    if(d.error) return res.status(500).json({error:d.error.message});
-    res.json({message:{role:'assistant',content:d.choices?.[0]?.message?.content||'I could not process that.'}});
+    const content = await callOpenAIResponses({system,messages,maxTokens:1800,temperature:0.7});
+    res.json({message:{role:'assistant',content:content||'I could not process that.'}});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
 

@@ -1246,7 +1246,7 @@ function copyDocBody(docId){
 
 function generateDoc(s, details){
   addMsg('Writing your '+s.type+'...',false);
-  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a polished, professional '+s.type+'. Use clear structure with sections. Be compelling but concise. Warm, authoritative tone that reflects Jessa\'s brand — a high-performance executive coaching practice.';
+  var systemPrompt='You are VAL, executive assistant to Jessa Grace. Write a clear, useful '+s.type+' that sounds like it came from a sharp human operator. No em dashes. No generic AI phrasing. No corporate filler. Use structure only where it helps. Warm, direct, specific, and grounded in Jessa\\'s actual voice.';
   var userPrompt='Write a complete '+s.type+' for '+s.recipient+'.\n\nTitle: '+s.title+'\nKey points to cover: '+details+'\n\nFormat it with appropriate sections, ready to send.';
   callClaude(systemPrompt, userPrompt, function(body){
     var doc=valAddDoc(s.title, s.recipient, s.recipientEmail, body, s.type);
@@ -1369,12 +1369,12 @@ function setMode(m,btn){
         var upcoming=events.filter(function(e){return new Date(e.startTime||e.start?.dateTime)>new Date();}).slice(0,1);
         var next=upcoming[0];
         if(next){
-          ask('I\'ve switched to Meeting Mode. My next meeting is "'+( next.title||next.summary||'upcoming meeting')+'" — give me a full briefing including who is attending, what we should accomplish, and 3 strong opening talking points.');
+          ask('I\'ve switched to Meeting Mode. My next meeting is "'+( next.title||next.summary||'upcoming meeting')+'". Give me a full briefing including who is attending, what we should accomplish, and 3 strong opening talking points.');
         } else {
           ask('I\'ve switched to Meeting Mode but I have no upcoming meetings scheduled today. Help me think about how to prepare for my next important conversation or suggest who I should proactively schedule time with based on my pipeline.');
         }
       }).catch(function(){
-        ask('I\'ve switched to Meeting Mode. Give me a briefing for my next meeting — who they are, what we should cover, and 3 talking points.');
+        ask('I\'ve switched to Meeting Mode. Give me a briefing for my next meeting: who they are, what we should cover, and 3 talking points.');
       });
     }
   }
@@ -1388,7 +1388,7 @@ function setMode(m,btn){
       }).join('\n');
       ask('I\'ve switched to Strategy Mode. Here is my current pipeline:\n\n'+(detail||'No active deals')+'\n\nGive me a strategic view: where are the biggest revenue opportunities right now, what patterns do you see, what should I be doing differently, and what is my 30-day priority to grow the business?');
     }).catch(function(){
-      ask('I\'ve switched to Strategy Mode. Give me a strategic overview of my business right now — pipeline health, growth opportunities, what I should be doing differently, and my top 30-day priority.');
+      ask('I\'ve switched to Strategy Mode. Give me a strategic overview of my business right now: pipeline health, growth opportunities, what I should be doing differently, and my top 30-day priority.');
     });
   }
 
@@ -1400,7 +1400,7 @@ function setMode(m,btn){
       ask('I\'ve switched to Operations Mode. Here is what needs attention:\n\n'
         +'- Tasks: '+open.length+' open'+(overdue.length?' ('+overdue.length+' overdue)':'')+'\n'
         +'- Unread conversations: '+(comms.total||0)+'\n\n'
-        +'What should I clear first to run the business cleanly today? Give me a prioritized action list — be specific and operational, not strategic.');
+        +'What should I clear first to run the business cleanly today? Give me a prioritized action list. Be specific and operational, not strategic.');
     }).catch(function(){
       ask('I\'ve switched to Operations Mode. I have '+open.length+' open tasks. What should I clear first today?');
     });
@@ -1707,8 +1707,9 @@ function renderWeek(events){
       var badge=status==='unconfirmed'||status==='needs_confirmation'?'<span class="ebadge">Needs confirmation</span>':'';
       var contact=ev.contactName||ev.contact?.name||'';
       var desc=ev.description||ev.notes||'';
+      var attendees=ev.attendees||[];
       // Encode event data as JSON in data attribute for click handler
-      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source,startTime:rawStart,endTime:rawEnd,id:ev.id||ev.eventId||ev.appointmentId||''});
+      var evData=JSON.stringify({title,timeStr,dateLabel,contact,desc,source,startTime:rawStart,endTime:rawEnd,id:ev.id||ev.eventId||ev.appointmentId||'',attendees:attendees});
       evtsHtml+='<div class="day-evt" style="cursor:pointer" data-ev=\''+evData.replace(/'/g,'&apos;')+'\' onclick="onEventClick(this)">'
         +'<div class="epip '+pip+'"></div>'
         +'<div class="einfo"><div class="etitle">'+title+'</div>'
@@ -1754,7 +1755,7 @@ function openCalendarFullView(){
       var raw=ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date;
       var t=raw?new Date(raw).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'All day';
       var title=ev.summary||ev.title||ev.name||'Event';
-      var payload=JSON.stringify({title:title,timeStr:t,dateLabel:day,contact:ev.contactName||'',desc:ev.description||ev.notes||'',source:ev.source||'',startTime:raw,endTime:ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date))||'',id:ev.id||ev.eventId||ev.appointmentId||''}).replace(/'/g,'&apos;');
+      var payload=JSON.stringify({title:title,timeStr:t,dateLabel:day,contact:ev.contactName||'',desc:ev.description||ev.notes||'',source:ev.source||'',startTime:raw,endTime:ev.endTime||(ev.end&&(ev.end.dateTime||ev.end.date))||'',id:ev.id||ev.eventId||ev.appointmentId||'',attendees:ev.attendees||[]}).replace(/'/g,'&apos;');
       html+='<button class="chip" style="margin:4px 4px 4px 0" data-ev=\''+payload+'\' onclick="onEventClick(this)">'+t+' · '+title+'</button>';
     });
     html+='</div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
@@ -1772,21 +1773,38 @@ function openCalendarEvent(ev){
   addMsg(header,true);
   showTyping();
   var q=[ev.title,ev.contact,ev.dateLabel,'meeting transcript notes tasks decisions follow-up'].filter(Boolean).join(' ');
-  fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q)+'&limit=8')
-  .then(function(r){return r.json();})
-  .then(function(d){
+  Promise.all([
+    fetch(PROXY+'/api/val/memory/search?q='+encodeURIComponent(q)+'&limit=8').then(function(r){return r.json();}),
+    fetch(PROXY+'/api/val/meeting-intel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:ev})}).then(function(r){return r.json();}).catch(function(e){return {error:e.message,attendees:[]};})
+  ])
+  .then(function(parts){
     removeTyping();
+    var d=parts[0]||{};
+    var intel=parts[1]||{};
     var results=d.results||[];
     var notes=results.length?results.map(function(m,i){
       return (i+1)+'. ['+(m.kind||'memory')+'] '+(m.summary||'Untitled')+'\n'+(m.preview||'').slice(0,360);
     }).join('\n\n'):'No saved meeting notes or transcripts matched this event yet.';
+    var people=(intel.attendees||[]).map(function(p,i){
+      var rr=p.rocketReach&&p.rocketReach.data?p.rocketReach.data:{};
+      var os=p.outscraper||{};
+      var posts=os.postsLastWeek||[];
+      return (i+1)+'. '+(rr.name||p.attendee.name||p.attendee.email||'Unknown attendee')
+        +(rr.title?' · '+rr.title:'')
+        +(rr.company?' at '+rr.company:'')
+        +(rr.linkedinUrl?'\nLinkedIn: '+rr.linkedinUrl:'')
+        +(rr.connections?'\nConnections: '+rr.connections:'')
+        +(rr.mutualConnections?'\nMutual connections: '+rr.mutualConnections:'')
+        +(posts.length?'\nRecent LinkedIn posts:\n'+posts.map(function(post){return '- '+(post.date?post.date+' · ':'')+(post.text||post.url||'Post found').slice(0,240);}).join('\n'):'');
+    }).join('\n\n');
+    if(!people) people='No attendee enrichment found yet. Check RocketReach and Outscraper API settings if this should be populated.';
     var tasks=valTasks.filter(function(t){
       var hay=((t.title||'')+' '+(t.notes||'')+' '+(t.contactName||'')+' '+((t.details||[]).map(function(d){return d.text;}).join(' '))).toLowerCase();
       return (ev.title&&hay.includes(ev.title.toLowerCase().split(' ')[0])) || (ev.contact&&hay.includes(ev.contact.toLowerCase()));
     });
     var taskText=tasks.length?tasks.slice(0,6).map(function(t){return '- '+t.title+(t.dueDate?' · due '+new Date(t.dueDate).toLocaleDateString():'');}).join('\n'):'No linked tasks found.';
-    addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText,false);
-    var prompt=(past?'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.':'Prepare me for this upcoming meeting using saved memory and dashboard context.')+'\n\n'+header+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText;
+    addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText,false);
+    var prompt=(past?'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.':'Prepare me for this upcoming meeting using attendee intelligence, saved memory, dashboard context, and Jessa profile context.')+'\n\n'+header+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText+'\n\nUse all known attendees. If the data is thin, say what is missing plainly. Keep it natural. No em dashes.';
     setTimeout(function(){chat(prompt);},250);
   })
   .catch(function(e){
@@ -2448,7 +2466,7 @@ function gchatSend(){
   typing.textContent='VAL is thinking...';
   document.getElementById('gchatMessages').appendChild(typing);
   document.getElementById('gchatMessages').scrollTop=99999;
-  var sys='You are VAL, executive assistant to Jessa Grace, founder of Grace Intelligence — a high-performance executive coaching practice. This is a clean general chat with no dashboard distractions. Be conversational, warm, sharp, and direct. You are world-class at strategy, writing, coding, analysis, research, and thinking out loud with Jessa. For code: write complete, working, production-quality code. For writing: match her brand voice — authoritative, warm, aspirational. For strategy: be specific, not generic.';
+  var sys='You are VAL, executive assistant to Jessa Grace, founder of Grace Intelligence. This is a clean general chat with no dashboard distractions. Be conversational, warm, sharp, and direct. Write like a real person who has opinions and has done the work. No em dashes. No generic AI phrasing. No corporate filler. Do not over-explain. For code: write complete, working, production-quality code. For writing: match her brand voice: authoritative, warm, grounded, specific. For strategy: be specific, not generic.';
   fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,system:sys,messages:gchatHistory})})
   .then(function(r){return r.json();}).then(function(d){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
@@ -2556,8 +2574,8 @@ function generateSocialPost(){
   var platforms=(window._socialPlatforms&&window._socialPlatforms.length)?window._socialPlatforms.join(', '):'social media';
   var tone=window._socialTone||'Authoritative';
   document.getElementById('socialActions').innerHTML='<span style="font-size:12px;color:rgba(255,255,255,0.4);padding:4px 0;font-family:var(--mono);">Writing post...</span>';
-  var sys='You are VAL, ghostwriting social media content for Jessa Grace — founder of Grace Intelligence, a high-performance executive coaching practice. Her brand: warm, direct, authoritative, aspirational. She speaks to driven executives and entrepreneurs. Write in first person as Jessa. Never use generic motivational clichés. Be specific, real, and compelling.';
-  var prompt='Write a '+tone.toLowerCase()+' social media post for: '+platforms+'.\n\nContent/topic: '+topic.trim()+'\n\nPlatform guidelines:\n- LinkedIn: 150–280 words, professional, max 3 hashtags, end with a question or call to action\n- Instagram: engaging, vivid, 3–5 targeted hashtags at the end, 100–200 words\n- X/Twitter: punchy, under 280 chars, can use 1–2 hashtags\n- Facebook: conversational, 100–180 words\n- Threads: casual-smart, 150-250 chars\n\nReturn only the post text. No explanation, no labels.';
+  var sys='You are VAL, ghostwriting social media content for Jessa Grace, founder of Grace Intelligence. Her brand is warm, direct, authoritative, and emotionally intelligent. She speaks to driven executives and entrepreneurs. Write in first person as Jessa. No em dashes. No generic motivational clichés. No AI polish. Sound like a real founder with lived experience and a point of view.';
+  var prompt='Write a '+tone.toLowerCase()+' social media post for: '+platforms+'.\n\nContent/topic: '+topic.trim()+'\n\nPlatform guidelines:\n- LinkedIn: 150-280 words, professional, max 3 hashtags, end with a question or call to action\n- Instagram: engaging, vivid, 3-5 targeted hashtags at the end, 100-200 words\n- X/Twitter: punchy, under 280 chars, can use 1-2 hashtags\n- Facebook: conversational, 100-180 words\n- Threads: casual-smart, 150-250 chars\n\nReturn only the post text. No explanation, no labels. Do not use em dashes.';
   fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:sys,messages:[{role:'user',content:prompt}]})})
   .then(function(r){return r.json();}).then(function(d){
     var text=(d.content||[]).map(function(b){return b.text||'';}).join('').trim();

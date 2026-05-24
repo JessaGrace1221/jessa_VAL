@@ -350,6 +350,9 @@ For upcoming meetings, VAL can provide:
 
 - prep notes
 - known client context
+- attendee intelligence from calendar attendees, RocketReach, and Outscraper when configured
+- recent LinkedIn post context when available
+- connection count and mutual connection context when available from the data provider
 - suggested agenda
 - risks or open loops
 - questions to ask
@@ -1003,7 +1006,27 @@ Used to build the Google OAuth callback URL.
 
 `VAL_CHAT_MODEL`
 
-Overrides the default chat model.
+Overrides the default chat model. The default is `gpt-5.5`.
+
+`ROCKETREACH_API_KEY`
+
+Enables RocketReach attendee lookup for meeting intelligence.
+
+`ROCKETREACH_BASE_URL`
+
+Optional RocketReach base URL override. Defaults to `https://api.rocketreach.co/api/v2`.
+
+`OUTSCRAPER_API_KEY`
+
+Enables Outscraper lookup for LinkedIn post context.
+
+`OUTSCRAPER_LINKEDIN_POSTS_URL`
+
+The Outscraper endpoint VAL should call to retrieve LinkedIn posts for a profile or attendee query. VAL passes a `query` parameter and expects post data in the response.
+
+`VAL_OWNER_EMAILS`
+
+Comma-separated owner emails to exclude from attendee enrichment.
 
 `VAL_USER_ID`
 
