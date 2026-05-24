@@ -1795,12 +1795,15 @@ function openCalendarEvent(ev){
       var rr=p.rocketReach&&p.rocketReach.data?p.rocketReach.data:{};
       var os=p.outscraper||{};
       var posts=os.postsLastWeek||[];
+      var opp=p.opportunity||{};
+      var oppLine=opp.created?'\nGHL opportunity: created at $'+(opp.amount||7500):opp.created===false?'\nGHL opportunity: already exists':opp.reason?'\nGHL opportunity: skipped - '+opp.reason:opp.error?'\nGHL opportunity: error - '+opp.error:'';
       return (i+1)+'. '+(rr.name||p.attendee.name||p.attendee.email||'Unknown attendee')
         +(rr.title?' · '+rr.title:'')
         +(rr.company?' at '+rr.company:'')
         +(rr.linkedinUrl?'\nLinkedIn: '+rr.linkedinUrl:'')
         +(rr.connections?'\nConnections: '+rr.connections:'')
         +(rr.mutualConnections?'\nMutual connections: '+rr.mutualConnections:'')
+        +oppLine
         +(posts.length?'\nRecent LinkedIn posts:\n'+posts.map(function(post){return '- '+(post.date?post.date+' · ':'')+(post.text||post.url||'Post found').slice(0,240);}).join('\n'):'');
     }).join('\n\n');
     if(!people) people='No attendee enrichment found yet. Check RocketReach and Outscraper API settings if this should be populated.';

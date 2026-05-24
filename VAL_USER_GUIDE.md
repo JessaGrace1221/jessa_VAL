@@ -1028,6 +1028,18 @@ The Outscraper endpoint VAL should call to retrieve LinkedIn posts for a profile
 
 Comma-separated owner emails to exclude from attendee enrichment.
 
+`MEETING_OPPORTUNITY_AMOUNT`
+
+Default dollar amount for opportunities VAL creates from new calendar attendees. Defaults to `7500`.
+
+`GHL_OPPORTUNITY_PIPELINE_ID`
+
+Optional pipeline ID for opportunities created from calendar attendees. If omitted, VAL uses the first available GHL pipeline.
+
+`GHL_OPPORTUNITY_STAGE_ID`
+
+Optional pipeline stage ID for opportunities created from calendar attendees. If omitted, VAL uses the first stage in the selected pipeline.
+
 `VAL_USER_ID`
 
 Sets the user scope for tasks, memory, transcripts, and conversations.

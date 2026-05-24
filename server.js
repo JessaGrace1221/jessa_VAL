@@ -20,6 +20,9 @@ const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
+const MEETING_OPPORTUNITY_AMOUNT = Number(process.env.MEETING_OPPORTUNITY_AMOUNT) || 7500;
+const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || process.env.GHL_PIPELINE_ID || '';
+const GHL_OPPORTUNITY_STAGE_ID = process.env.GHL_OPPORTUNITY_STAGE_ID || process.env.GHL_STAGE_ID || '';
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
   .map(e=>e.trim().toLowerCase())
@@ -613,6 +616,97 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   return {configured:true, postsLastWeek:recentPosts, rawCount:posts.length};
 }
 
+function nameParts(fullName){
+  const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.length > 1 ? parts.slice(1).join(' ') : ''
+  };
+}
+
+async function findGhlContact(attendee){
+  const q = attendee.email || attendee.name;
+  if(!q || !GHL_KEY || !GHL_LOC) return null;
+  const data = await ghl('GET',`/contacts/?locationId=${GHL_LOC}&query=${encodeURIComponent(q)}&limit=10`);
+  const contacts = data.contacts || [];
+  if(attendee.email){
+    const email = attendee.email.toLowerCase();
+    return contacts.find(c=>String(c.email||'').toLowerCase()===email) || null;
+  }
+  const name = String(attendee.name||'').toLowerCase();
+  return contacts.find(c=>String(c.contactName||c.name||`${c.firstName||''} ${c.lastName||''}`).trim().toLowerCase()===name) || null;
+}
+
+async function findOrCreateGhlContact(attendee){
+  const existing = await findGhlContact(attendee).catch(()=>null);
+  if(existing) return {contact:existing, created:false};
+  const parts = nameParts(attendee.name || attendee.email || 'Meeting Attendee');
+  const body = {
+    locationId:GHL_LOC,
+    firstName:parts.firstName || attendee.name || attendee.email || 'Meeting',
+    lastName:parts.lastName,
+    email:attendee.email || undefined,
+    tags:['val_meeting_attendee']
+  };
+  const data = await ghl('POST','/contacts',body);
+  const contact = data.contact || data;
+  return {contact, created:true};
+}
+
+async function getOpportunityPipelineDefaults(){
+  if(GHL_OPPORTUNITY_PIPELINE_ID && GHL_OPPORTUNITY_STAGE_ID){
+    return {pipelineId:GHL_OPPORTUNITY_PIPELINE_ID, stageId:GHL_OPPORTUNITY_STAGE_ID};
+  }
+  const data = await ghl('GET',`/opportunities/pipelines?locationId=${GHL_LOC}`);
+  const pipeline = (data.pipelines || [])[0];
+  const stage = (pipeline?.stages || pipeline?.pipelineStages || [])[0];
+  return {
+    pipelineId:GHL_OPPORTUNITY_PIPELINE_ID || pipeline?.id || '',
+    stageId:GHL_OPPORTUNITY_STAGE_ID || stage?.id || ''
+  };
+}
+
+async function findExistingOpenOpportunity(contact,name){
+  const contactId = contact?.id || contact?.contactId;
+  const query = encodeURIComponent(contact?.email || name || contact?.contactName || '');
+  const data = await ghl('GET',`/opportunities/search?location_id=${GHL_LOC}&status=open&limit=100${query?`&query=${query}`:''}`);
+  const opportunities = data.opportunities || [];
+  const normalizedName = String(name||contact?.contactName||contact?.name||'').toLowerCase();
+  return opportunities.find(o=>{
+    const oid = o.contact?.id || o.contactId;
+    if(contactId && oid === contactId) return true;
+    const oname = String(o.contact?.name || o.contactName || o.name || '').toLowerCase();
+    return normalizedName && oname.includes(normalizedName);
+  }) || null;
+}
+
+async function ensureMeetingOpportunity(attendee,event,amount){
+  if(!GHL_KEY || !GHL_LOC) return {ok:false, skipped:true, reason:'GHL_KEY or GHL_LOC is not configured'};
+  const contactResult = await findOrCreateGhlContact(attendee);
+  const contact = contactResult.contact || {};
+  const contactId = contact.id || contact.contactId;
+  if(!contactId) return {ok:false, skipped:true, reason:'Could not resolve GHL contact id', contactCreated:contactResult.created};
+  const name = attendee.name || contact.contactName || contact.name || attendee.email || 'Meeting attendee';
+  const existing = await findExistingOpenOpportunity(contact,name).catch(()=>null);
+  if(existing) return {ok:true, created:false, contactCreated:contactResult.created, contactId, opportunity:existing};
+  const defaults = await getOpportunityPipelineDefaults();
+  if(!defaults.pipelineId || !defaults.stageId) return {ok:false, skipped:true, reason:'No GHL pipeline/stage found', contactCreated:contactResult.created, contactId};
+  const value = Number(amount || event.monetaryValue || event.value || MEETING_OPPORTUNITY_AMOUNT) || MEETING_OPPORTUNITY_AMOUNT;
+  const body = {
+    locationId:GHL_LOC,
+    contactId,
+    pipelineId:defaults.pipelineId,
+    pipelineStageId:defaults.stageId,
+    name:`${name} - VAL Meeting Opportunity`,
+    status:'open',
+    monetaryValue:value,
+    source:'VAL calendar attendee',
+    notes:`Created by VAL from calendar meeting: ${event.title || event.summary || 'Untitled meeting'}`
+  };
+  const data = await ghl('POST','/opportunities/',body);
+  return {ok:true, created:true, contactCreated:contactResult.created, contactId, opportunity:data.opportunity || data, amount:value};
+}
+
 app.post('/api/val/meeting-intel',async(req,res)=>{
   try{
     const event = req.body.event || req.body || {};
@@ -622,7 +716,8 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
       const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
       const profile = rocket.data || {};
       const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
-      enriched.push({attendee, rocketReach:rocket, outscraper});
+      const opportunity = await ensureMeetingOpportunity(attendee,event,req.body.amount).catch(e=>({ok:false,error:e.message}));
+      enriched.push({attendee, rocketReach:rocket, outscraper, opportunity});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
       rocketReach:!ROCKETREACH_API_KEY,
