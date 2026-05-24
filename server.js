@@ -1775,6 +1775,7 @@ function actionPrompt(action){
     project_space:'Create a project-space view for the requested project: current context, docs/memory, open tasks, decisions, risks, and next actions.',
     task_intelligence:'Review the task list. Group by urgency/energy/project, flag stale/vague tasks, rewrite vague tasks into next actions, and recommend what to clear first.',
     followup_radar:'Scan for dangling commitments, quiet leads, overdue replies, relational warmth opportunities, and concrete follow-up drafts.',
+    executive_review:'Run an executive review in this exact order. First: draft all follow-ups that should go out now. For each one, include person, why now, ready-to-send draft, and the smallest approval action. Second: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Third: clean up the task list by grouping tasks into do now, delegate, defer, delete, and needs clarification. End with one question only: "Do you want me to send/draft the follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',
     document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.'
   };
   return prompts[action] || prompts.what_now;
