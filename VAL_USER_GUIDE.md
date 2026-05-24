@@ -4,6 +4,44 @@ VAL is an Executive Velocity Layer. It is designed to listen, remember, organize
 
 This guide documents the major functions available in the VAL web app and the supporting backend routes.
 
+## What's New
+
+### Executive Review
+
+What you can do with it: click Executive Review and VAL will draft follow-ups first, prep the next meeting second, and clean up the task list third.
+
+How this helps: it gives the user a clear sequence instead of a pile of information. The goal is fast approval, not another report.
+
+### Smarter Meeting Intelligence
+
+What you can do with it: click a calendar meeting and VAL will look at the attendees, meeting title, description, saved notes, related tasks, and available profile data.
+
+How this helps: meeting prep becomes specific. VAL can surface who is attending, what matters, what to say, and what relationship context is useful.
+
+### LinkedIn And Relationship Context
+
+What you can do with it: when RocketReach and Outscraper are connected, VAL can look for attendee profile details, recent LinkedIn activity, connection counts, and mutual connection context.
+
+How this helps: the user walks into meetings with timely relationship signals instead of generic prep notes.
+
+### Opportunity Creation From Meetings
+
+What you can do with it: in Jessa VAL, new calendar attendees can be added to GoHighLevel as contacts and given an open opportunity. If the value is unknown, VAL uses $7,500.
+
+How this helps: new relationship momentum gets captured automatically. The user does not have to remember to create pipeline records after every meeting.
+
+### More Stable Voice Chat
+
+What you can do with it: speak to VAL with fewer interruptions and fewer repeated spoken replies.
+
+How this helps: voice mode feels less jumpy. VAL waits longer before deciding the user is finished speaking and avoids repeating the same spoken answer.
+
+### More Natural Writing
+
+What you can do with it: ask VAL for messages, strategy, briefs, and drafts that sound less like AI.
+
+How this helps: outputs are easier to trust, edit, and send. VAL avoids em dashes, generic filler, over-polished phrasing, and customer-support style responses.
+
 ## 1. Core Concept
 
 VAL is not meant to behave like a blank chatbot. It is designed to act as a private executive operating layer that:
@@ -132,6 +170,21 @@ Use when:
 - follow-ups are scattered across conversations
 - pipeline momentum needs protection
 - client or lead communication needs review
+
+### Executive Review
+
+Runs a focused executive review in the order that matters most:
+
+1. Draft all follow-ups first.
+2. Prep for the next meeting.
+3. Clean up the task list.
+
+Use when:
+
+- the user needs VAL to reduce the mental pile quickly
+- follow-ups, meetings, and tasks are all competing for attention
+- the user wants approval-ready drafts and a short next-step sequence
+- the priority is action, not analysis
 
 ## 5. Natural Language Commands
 
@@ -353,6 +406,7 @@ For upcoming meetings, VAL can provide:
 - attendee intelligence from calendar attendees, RocketReach, and Outscraper when configured
 - recent LinkedIn post context when available
 - connection count and mutual connection context when available from the data provider
+- GoHighLevel opportunity status for new attendees in Jessa VAL
 - suggested agenda
 - risks or open loops
 - questions to ask
@@ -389,6 +443,8 @@ Depending on browser support and configured services, VAL can:
 - send speech as chat input
 - respond conversationally
 - speak back using text-to-speech
+- wait longer before cutting off a spoken thought
+- avoid repeating the same spoken reply
 
 ### One-Shot Mic
 
@@ -1187,6 +1243,7 @@ Sensitive data should only be uploaded or sent if:
 Useful phrases:
 
 - "Start my day."
+- "Executive review."
 - "What should I do now?"
 - "Show my tasks."
 - "Add a task."
