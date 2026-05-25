@@ -1902,6 +1902,42 @@ async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=fal
   return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
 }
 
+function cleanTaskTitle(title){
+  return String(title||'').replace(/\s+/g,' ').trim();
+}
+function taskFingerprint(title,contactName){
+  return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|');
+}
+function validDueDate(value){
+  if(!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+function transcriptTaskFromItem(item,title,sourceId,kind){
+  const taskTitle = cleanTaskTitle(item.title || item.task || item.action || item.nextAction);
+  if(!taskTitle) return null;
+  const contactName = item.contactName || item.person || item.who || item.for || item.owner || '';
+  const notes = [
+    item.notes || item.context || item.reason || '',
+    item.priority ? 'Priority: '+item.priority : '',
+    item.evidence ? 'Evidence: '+item.evidence : ''
+  ].filter(Boolean).join('\n');
+  return {
+    id: uuid('task'),
+    title: taskTitle,
+    contactName,
+    dueDate: validDueDate(item.dueDate || item.due || item.deadline),
+    notes,
+    details: [
+      {text:'Created from transcript: '+title,ts:new Date().toISOString()},
+      {text:'Source: '+(sourceId||title),ts:new Date().toISOString()},
+      {text:'Kind: '+(kind||'commitment'),ts:new Date().toISOString()}
+    ],
+    completed:false,
+    createdAt:new Date().toISOString()
+  };
+}
+
 function actionPrompt(action){
   const prompts={
     daily_command:'Create a relationship-first daily command briefing for a founder/executive whose highest leverage is high-trust connection. Include today meetings, 15-minute prep needs, urgent promises, relationship radar, approvals waiting, one focus block, the single highest-leverage action, and one high-impact use of the time VAL is saving. Be assertive and practical.',
@@ -1954,12 +1990,18 @@ async function processTranscriptPayload(payload){
   const transcript=payload.transcript||payload.rawText||'';
   if(!transcript.trim()) throw new Error('Missing transcript');
   const title=payload.title||'Processed transcript';
+  const sourceId=payload.id||payload.transcriptId||payload.sourceId||title;
   const memory=await recentMemoryContext(title+' '+transcript.slice(0,1000));
   const system=[
     VAL_SYSTEM_PROMPT,
-    "You process transcripts for VAL.",
+    'You process transcripts for VAL. Your job is to prevent commitments from leaking.',
+    'Extract every unresolved promise, next step, follow-up, owner action, waiting-for item, meeting prep need, and task implied by the conversation.',
+    'If someone says they will send, review, schedule, introduce, decide, follow up, check, draft, prepare, update, research, or circle back, that belongs in actionItems unless it was explicitly completed in the transcript.',
+    'If a follow-up message should be sent after the meeting, include it in followupDrafts and also create a matching actionItems entry unless another action item already covers it.',
+    'Do not invent work. Do not create tasks for completed items. When due timing is unclear, use null.',
     'Return strict JSON with keys: summary, actionItems, decisions, people, memoryUpdates, followupDrafts.',
-    'actionItems must be an array of objects with title, dueDate, notes, priority.',
+    'actionItems must be an array of objects with title, dueDate, notes, priority, contactName, person, evidence.',
+    'Every action item title should start with a verb and be clear enough to execute without reopening the transcript.',
     memory?'Relevant saved memory:\n'+memory:''
   ].filter(Boolean).join('\n\n');
   const raw=await callValModel({
@@ -1972,13 +2014,25 @@ async function processTranscriptPayload(payload){
   let parsed={};
   try{ parsed=JSON.parse(raw); }catch(e){ parsed={summary:raw,actionItems:[],decisions:[],people:[],memoryUpdates:[],followupDrafts:[]}; }
   const createdTasks=[];
-  if(Array.isArray(parsed.actionItems)){
-    for(const item of parsed.actionItems.slice(0,12)){
-      if(!item||!item.title) continue;
-      const task={id:uuid('task'),title:item.title,contactName:'',dueDate:item.dueDate||null,notes:item.notes||'',details:[{text:'Created from transcript: '+title,ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
-      await saveTask(task);
-      createdTasks.push(task);
-    }
+  const taskItems=Array.isArray(parsed.actionItems)?parsed.actionItems.slice(0,18):[];
+  const followupItems=(Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8).map(f=>({
+    title:f.title||f.task||('Send follow-up'+(f.recipient||f.contactName||f.person?' to '+(f.recipient||f.contactName||f.person):'')),
+    contactName:f.contactName||f.person||f.recipient||'',
+    dueDate:f.dueDate||null,
+    notes:[f.reason||'',f.subject?'Subject: '+f.subject:'',f.message||f.body||''].filter(Boolean).join('\n'),
+    priority:f.priority||'high',
+    evidence:f.evidence||'Follow-up draft created from transcript'
+  }));
+  const existing = await loadTasks();
+  const seen = new Set(existing.filter(t=>!t.completed).map(t=>taskFingerprint(t.title,t.contactName)));
+  for(const item of taskItems.concat(followupItems)){
+    const task=transcriptTaskFromItem(item,title,sourceId,'transcript_action');
+    if(!task) continue;
+    const fp=taskFingerprint(task.title,task.contactName);
+    if(seen.has(fp)) continue;
+    seen.add(fp);
+    await saveTask(task);
+    createdTasks.push(task);
   }
   if(Array.isArray(parsed.memoryUpdates)){
     for(const m of parsed.memoryUpdates.slice(0,12)){
@@ -2027,7 +2081,7 @@ app.get('/api/val/memory/search',async(req,res)=>{
 app.post('/api/val/transcripts',async(req,res)=>{
   try{
     const saved=await saveTranscript(req.body||{});
-    if(req.body&&req.body.process){
+    if(req.body&&req.body.process!==false){
       return res.json({ok:true,...saved,...await processTranscriptPayload(req.body)});
     }
     res.json({ok:true,...saved});
