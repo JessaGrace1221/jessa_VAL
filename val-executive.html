@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
 <title>VAL — Executive Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -450,9 +450,9 @@ input[type=file]{display:none}
 @media(max-width:900px){.rpanel{display:none}}
 @media(max-width:760px){.cw-actions{grid-template-columns:1fr 1fr;max-width:460px}}
 @media(max-width:640px){
-  html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+  html,body{height:100%;min-height:100%;overflow:hidden}
   .lpanel{display:none}
-  .app{height:auto;min-height:100svh;position:relative;overflow:visible;width:100%}
+  .app{height:100svh;min-height:100svh;position:fixed;inset:0;overflow:hidden;width:100%}
   .topbar{height:auto;min-height:52px;padding:0.5rem 0.75rem;flex-wrap:wrap;gap:0.45rem;position:sticky;top:0;z-index:60}
   .tb-logo{font-size:1.25rem}
   .tb-tagline,.tb-status,.tb-clock{display:none}
@@ -465,18 +465,18 @@ input[type=file]{display:none}
   .stat-icon{width:28px;height:28px;border-radius:8px}
   .stat-num{font-size:1.35rem}
   .stat-label{font-size:0.5rem}
-  .body{display:block;height:auto;min-height:calc(100svh - 126px);max-height:none;overflow:visible}
-  .center{min-width:0;min-height:calc(100svh - 126px);overflow:visible}
-  .center-welcome{min-height:calc(100svh - 220px);overflow:visible;justify-content:flex-start;padding:1.25rem 0.9rem 1rem}
+  .body{display:block;height:calc(100svh - 126px);min-height:0;max-height:none;overflow:hidden;padding-bottom:92px}
+  .center{min-width:0;height:100%;min-height:0;overflow:hidden}
+  .center-welcome{height:100%;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;justify-content:flex-start;padding:1.25rem 0.9rem 7rem}
   .cw-title{font-size:1.75rem}
   .cw-sub{font-size:0.875rem;margin-bottom:1.25rem}
   .cw-actions{grid-template-columns:1fr;max-width:none}
   .cw-action{padding:0.85rem}
-  .center-detail{min-height:calc(100svh - 126px);overflow:visible}
+  .center-detail{height:100%;min-height:0;overflow:hidden}
   .detail-topbar{position:sticky;top:0;z-index:20;padding:0 0.875rem}
-  .chat-scroll{min-height:calc(100svh - 230px);overflow:visible;padding:1rem 0.875rem 1.25rem}
+  .chat-scroll{height:calc(100% - 48px);min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:1rem 0.875rem 7rem}
   .cmsg{max-width:94%}
-  .cmd-area{position:sticky;bottom:0;z-index:70;padding:0.625rem 0.75rem calc(0.625rem + env(safe-area-inset-bottom));box-shadow:0 -10px 24px rgba(27,43,69,0.08)}
+  .cmd-area{position:fixed;left:0;right:0;bottom:0;z-index:500;padding:0.625rem 0.75rem calc(0.625rem + env(safe-area-inset-bottom));box-shadow:0 -10px 24px rgba(27,43,69,0.12)}
   .cmd-box{min-height:48px}
   .cmd-ta{font-size:16px}
   .dynamic-suggestions .chip{width:100%;justify-content:flex-start;height:auto;min-height:30px;text-align:left;white-space:normal;line-height:1.25;padding:0.45rem 0.625rem}
