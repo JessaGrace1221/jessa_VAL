@@ -1016,59 +1016,37 @@ var valTasks = [];
 var TASKS_KEY = 'val_tasks_v1'; // kept for one-time migration only
 var valTasksSyncing = false;
 
-function valTasksSave(){
+function taskKey(title,contactName){
+  return String(title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+'|'+String(contactName||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+function cacheValTasks(){
   try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
-  valTasksSyncing = true;
+}
+function valTasksSave(){
+  cacheValTasks();
+  return Promise.resolve({ok:true});
+}
+function valTaskSaveOne(task){
+  cacheValTasks();
+  valTasksSyncing=true;
   return fetch(PROXY+'/api/val/tasks',{
-    method:'PUT',
+    method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(valTasks)
+    body:JSON.stringify(task)
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){throw new Error(t||'Task save failed');});
     return r.json();
-  }).then(function(){
-    valTasksSyncing = false;
-  }).catch(function(e){
-    valTasksSyncing = false;
-    console.warn('Task save failed, kept localStorage copy:', e.message);
-  });
+  }).then(function(){valTasksSyncing=false;}).catch(function(e){valTasksSyncing=false;console.warn('Task save failed, kept local cache:',e.message);});
 }
 function valTasksLoad(){
-  var localTasks = [];
-  try{
-    var rawLocal = localStorage.getItem(TASKS_KEY);
-    if(rawLocal) localTasks = JSON.parse(rawLocal) || [];
-  }catch(e){ localTasks=[]; }
-  if(localTasks.length){
-    valTasks = localTasks;
-    refreshTaskUI();
-  }
   fetch(PROXY+'/api/val/tasks')
-  .then(function(r){ return r.json(); })
+  .then(function(r){ if(!r.ok) throw new Error('Task load failed'); return r.json(); })
   .then(function(serverTasks){
-    if(Array.isArray(serverTasks) && serverTasks.length){
-      var merged = {};
-      serverTasks.concat(localTasks).forEach(function(t){
-        if(t&&t.id) merged[t.id]=t;
-      });
-      valTasks = Object.keys(merged).map(function(id){return merged[id];});
-      try{ localStorage.setItem(TASKS_KEY, JSON.stringify(valTasks)); }catch(ex){}
-    } else {
-      // One-time migration from localStorage
-      try{
-        if(localTasks.length){
-          valTasks = localTasks;
-          if(!valTasksSyncing){
-            valTasksSave(); // push to server
-            console.log('Migrated '+valTasks.length+' tasks from localStorage to server');
-          }
-        }
-      }catch(e){ valTasks=[]; }
-    }
+    valTasks=Array.isArray(serverTasks)?serverTasks:[];
+    cacheValTasks();
     refreshTaskUI();
   })
   .catch(function(){
-    // Server unreachable — fall back to localStorage
     try{
       var raw = localStorage.getItem(TASKS_KEY);
       if(raw) valTasks = JSON.parse(raw);
@@ -1077,22 +1055,31 @@ function valTasksLoad(){
   });
 }
 function valAddTask(title,contactName,dueDate,notes){
-  var task={id:'t'+Date.now(),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
+  title=String(title||'').trim();
+  if(!title) return null;
+  var key=taskKey(title,contactName);
+  var existing=valTasks.find(function(t){return !t.completed&&taskKey(t.title,t.contactName)===key;});
+  if(existing){
+    if(notes) valAddDetail(existing.id,'Duplicate avoided. Extra context: '+notes);
+    refreshTaskUI();
+    return existing;
+  }
+  var task={id:'t'+Date.now()+'_'+Math.random().toString(36).slice(2,7),title:title,contactName:contactName||'',dueDate:dueDate||null,notes:notes||'',details:[],completed:false,createdAt:new Date().toISOString()};
   valTasks.push(task);
-  valTasksSave();
+  valTaskSaveOne(task);
   refreshTaskUI();
   return task;
 }
 function valCompleteTask(id){
   var t=valTasks.find(function(t){return t.id===id;});
-  if(t){t.completed=true;valTasksSave();refreshTaskUI();}
+  if(t){t.completed=true;valTaskSaveOne(t);refreshTaskUI();}
 }
 function valAddDetail(id, text){
   var t=valTasks.find(function(t){return t.id===id;});
   if(t){
     if(!t.details) t.details=[];
     t.details.push({text:text, ts:new Date().toISOString()});
-    valTasksSave();
+    valTaskSaveOne(t);
   }
 }
 function refreshTaskUI(){

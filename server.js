@@ -963,82 +963,12 @@ app.get('/api/debug/calendar',async(req,res)=>{
 });
 
 app.get('/api/tasks',async(req,res)=>{
-  const now=new Date();
-  function normalizeTasks(arr){
-    return arr.map(t=>({
-      id:t.id||t._id,
-      title:t.title||t.name||'(No title)',
-      contactName:t.contactName||t.contact?.name||'',
-      contactId:t.contactId||t.contact?.id||'',
-      contactEmail:t.contactEmail||'',
-      dueDate:t.dueDate||t.due_date||t.dueAt||t.due||null,
-      status:t.status||'open',
-      completed:t.completed===true||t.status==='completed'||t.status==='closed'
-    }));
-  }
-  async function trySearchEndpoint(){
-    const d=await ghl('GET',`/contacts/tasks/search?locationId=${GHL_LOC}&limit=100&status=open`);
-    console.log('tasks search response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-  async function tryLocationEndpoint(){
-    const d=await ghl('GET',`/locations/${GHL_LOC}/tasks?limit=100&status=open`);
-    console.log('tasks location response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-  async function trySearchPost(){
-    const d=await ghl('POST',`/contacts/tasks/search`,{locationId:GHL_LOC,limit:100,filters:[{field:'status',value:'open'}]});
-    console.log('tasks POST response keys:',Object.keys(d));
-    const arr=d.tasks||d.data||d.items||d.records||[];
-    if(arr.length>0) return normalizeTasks(arr);
-    return null;
-  }
-  async function tryContactLoop(){
-    // Fetch val_task tagged contacts first (from GHL automation), then general batches
-    const [taggedRes, batch1, batch2, batch3] = await Promise.allSettled([
-      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&tags[]=val_task`),
-      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=desc`),
-      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=date_added&sortDirection=asc`),
-      ghl('GET',`/contacts/?locationId=${GHL_LOC}&limit=100&sortBy=last_activity&sortDirection=desc`),
-    ]);
-    const allContacts=new Map();
-    // Add tagged contacts first so they're always included
-    if(taggedRes.status==='fulfilled'){
-      const tagged=taggedRes.value.contacts||[];
-      console.log('val_task tagged contacts found:',tagged.length);
-      tagged.forEach(c=>allContacts.set(c.id,c));
-    }
-    [batch1,batch2,batch3].forEach(b=>{
-      if(b.status==='fulfilled')(b.value.contacts||[]).forEach(c=>allContacts.set(c.id,c));
-    });
-    console.log('task loop: total unique contacts',allContacts.size);
-    const contacts=[...allContacts.values()];
-    const taskArrays=await Promise.all(contacts.map(async c=>{
-      try{
-        const t=await ghl('GET',`/contacts/${c.id}/tasks`);
-        const tasks=t.tasks||[];
-        if(tasks.length) console.log(`contact ${c.firstName} ${c.lastName} has ${tasks.length} tasks:`, JSON.stringify(tasks[0]).substring(0,200));
-        return tasks.map(task=>({...task,contactName:((c.firstName||'')+' '+(c.lastName||'')).trim()||c.email||'Contact',contactId:c.id,contactEmail:c.email||''}));
-      }catch(e){return [];}
-    }));
-    const flat=taskArrays.flat();
-    console.log('task loop total raw tasks found:',flat.length);
-    return normalizeTasks(flat);
-  }
   try{
-    let allTasks=null,source='';
-    try{ allTasks=await trySearchEndpoint(); source='search'; }catch(e){ console.log('search endpoint failed:',e.message); }
-    if(!allTasks){ try{ allTasks=await tryLocationEndpoint(); source='location'; }catch(e){ console.log('location endpoint failed:',e.message); } }
-    if(!allTasks){ try{ allTasks=await trySearchPost(); source='post'; }catch(e){ console.log('post endpoint failed:',e.message); } }
-    if(!allTasks){ allTasks=await tryContactLoop(); source='loop'; }
-    console.log(`tasks source: ${source}, count: ${allTasks.length}`);
+    const now=new Date();
+    const allTasks=await loadTasks();
     const open=allTasks.filter(t=>!t.completed);
     const overdue=open.filter(t=>t.dueDate&&new Date(t.dueDate)<now);
-    res.json({openTasks:open.length,overdueTasks:overdue.length,source,tasks:open.slice(0,50).map(t=>({id:t.id,title:t.title,contactName:t.contactName,contactId:t.contactId,dueDate:t.dueDate,status:t.status,overdue:!!(t.dueDate&&new Date(t.dueDate)<now)}))});
+    res.json({openTasks:open.length,overdueTasks:overdue.length,source:'val',tasks:open.slice(0,100).map(t=>({...t,overdue:!!(t.dueDate&&new Date(t.dueDate)<now)}))});
   }catch(e){
     console.error('tasks error:',e);
     res.json({openTasks:0,overdueTasks:0,tasks:[],error:e.message});
@@ -1665,7 +1595,20 @@ async function loadTasks(){
 }
 async function saveTask(task){
   await valDbReady;
+  task.title = String(task.title||'Untitled task').trim() || 'Untitled task';
+  task.contactName = task.contactName || '';
   if(pgPool){
+    if(!task.completed){
+      const dupe = await dbQuery(
+        'select id,details from val_tasks where user_id=$1 and completed=false and lower(title)=lower($2) and lower(coalesce(contact_name,\'\'))=lower($3) limit 1',
+        [VAL_USER_ID,task.title,task.contactName]
+      );
+      if(dupe.rows[0] && dupe.rows[0].id !== task.id){
+        task.id = dupe.rows[0].id;
+        const existingDetails = Array.isArray(dupe.rows[0].details) ? dupe.rows[0].details : [];
+        task.details = existingDetails.concat(task.details||[]);
+      }
+    }
     await dbQuery(`
       insert into val_tasks (id,user_id,title,contact_name,due_date,notes,details,completed,created_at,updated_at)
       values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9::timestamptz,now()),now())
@@ -1698,11 +1641,13 @@ async function saveTask(task){
 async function replaceTasks(tasks){
   await valDbReady;
   if(pgPool){
-    await dbQuery('delete from val_tasks where user_id=$1',[VAL_USER_ID]);
     for(const task of tasks) await saveTask(task);
     return;
   }
-  writeTasks(tasks);
+  const existing = readTasks();
+  const byId = {};
+  existing.concat(tasks).forEach(t=>{ if(t&&t.id) byId[t.id]=t; });
+  writeTasks(Object.keys(byId).map(id=>byId[id]));
 }
 async function deleteTask(id){
   await valDbReady;
