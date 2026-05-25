@@ -1931,7 +1931,7 @@ function openCalendarEvent(ev){
   c.innerHTML='';
   var past=ev.startTime&&new Date(ev.startTime)<new Date();
   var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.desc?'\nDetails: '+ev.desc:'');
-  addMsg(header,true);
+  addMsg(header,false);
   showTyping();
   var q=[ev.title,ev.contact,ev.dateLabel,'meeting transcript notes tasks decisions follow-up'].filter(Boolean).join(' ');
   Promise.all([
@@ -1969,7 +1969,7 @@ function openCalendarEvent(ev){
     var taskText=tasks.length?tasks.slice(0,6).map(function(t){return '- '+t.title+(t.dueDate?' · due '+new Date(t.dueDate).toLocaleDateString():'');}).join('\n'):'No linked tasks found.';
     addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText,false);
     var prompt=(past?'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.':'Prepare me for this upcoming meeting using attendee intelligence, saved memory, dashboard context, and Jessa profile context.')+'\n\n'+header+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText+'\n\nUse all known attendees. If the data is thin, say what is missing plainly. Keep it natural. No em dashes.';
-    setTimeout(function(){chat(prompt);},250);
+    setTimeout(function(){chatSilent(prompt);},250);
   })
   .catch(function(e){
     removeTyping();
@@ -2494,6 +2494,19 @@ function chat(msg,inp){
       ctx+='  - '+(c.contactName||'Contact')+': last message "'+((c.lastMessage||'').substring(0,80))+'".\n';
     });
   }
+  var msgs=chatHistory.slice();
+  if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
+  fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
+  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  .catch(function(e){removeTyping();addSys('Error: '+e.message);})
+  .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
+}
+
+function chatSilent(msg){
+  chatHistory.push({role:'user',content:msg});
+  showTyping();
+  var ctx=buildContext();
   var msgs=chatHistory.slice();
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
