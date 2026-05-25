@@ -100,6 +100,9 @@ function queryTerms(text){
 function isIdentityQuery(text){
   return /\b(who am i|tell me about myself|about myself|myself|i am jessa|i'm jessa|jessa|disc|halos|operating system|profile|personality|how i work|what do you know about me)\b/i.test(String(text||''));
 }
+function isDocumentMemoryQuery(text){
+  return /\b(document|documents|file|files|upload|uploaded|transcript|transcripts|summary|summarize|overview|saved|vault|about them|what are they|mgsh)\b/i.test(String(text||''));
+}
 function expandedMemoryTerms(text){
   const base = queryTerms(text);
   if(!isIdentityQuery(text)) return base;
@@ -2141,20 +2144,34 @@ async function recentMemoryContext(query){
   await valDbReady;
   const terms = expandedMemoryTerms(query);
   const identityMode = isIdentityQuery(query);
-  const format = (items)=>items.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||m.rawText||'').slice(0,140)}${(m.raw_text||m.rawText)&&((m.raw_text||m.rawText)!==m.summary)?': '+(m.raw_text||m.rawText).slice(0,650):''}`).join('\n');
+  const documentMode = isDocumentMemoryQuery(query);
+  const format = (items)=>items.map(m=>`- [${m.kind}] ${(m.summary||m.raw_text||m.rawText||'').slice(0,140)}${(m.raw_text||m.rawText)&&((m.raw_text||m.rawText)!==m.summary)?': '+(m.raw_text||m.rawText).slice(0,documentMode?1200:650):''}`).join('\n');
+  const metaOf = (m)=>typeof m.metadata === 'string' ? (()=>{try{return JSON.parse(m.metadata);}catch(e){return {};}})() : (m.metadata||{});
   const coreProfilePinned = (items)=>{
     return items
       .filter(m=>{
-        const meta = typeof m.metadata === 'string' ? (()=>{try{return JSON.parse(m.metadata);}catch(e){return {};}})() : (m.metadata||{});
+        const meta = metaOf(m);
         const chunk = Number(meta.chunkIndex || 0);
         return /core_user_profile/i.test(m.kind||'') && (!chunk || chunk <= 4);
       })
       .sort((a,b)=>{
-        const am = typeof a.metadata === 'string' ? (()=>{try{return JSON.parse(a.metadata);}catch(e){return {};}})() : (a.metadata||{});
-        const bm = typeof b.metadata === 'string' ? (()=>{try{return JSON.parse(b.metadata);}catch(e){return {};}})() : (b.metadata||{});
+        const am = metaOf(a);
+        const bm = metaOf(b);
         return String(am.title||a.summary||'').localeCompare(String(bm.title||b.summary||'')) || (Number(am.chunkIndex||0)-Number(bm.chunkIndex||0));
       })
       .slice(0,8);
+  };
+  const recentDocumentPinned = (items)=>{
+    if(!documentMode) return [];
+    return items
+      .filter(m=>/knowledge_document|processed_transcript|transcript/i.test(m.kind||''))
+      .sort((a,b)=>{
+        const ad = new Date(a.created_at||a.createdAt||0).getTime();
+        const bd = new Date(b.created_at||b.createdAt||0).getTime();
+        const am = metaOf(a), bm = metaOf(b);
+        return (bd-ad) || (Number(am.chunkIndex||0)-Number(bm.chunkIndex||0));
+      })
+      .slice(0,10);
   };
   const uniqueByContent = (items)=>{
     const seen = new Set();
@@ -2174,14 +2191,14 @@ async function recentMemoryContext(query){
       .filter(m=>identityMode ? (m._score > 0 || /core_user_profile|val_operating_prompt/i.test(m.kind||'')) : true)
       .sort((a,b)=>(b._score-a._score)||((b.importance||1)-(a.importance||1)))
       .slice(0,identityMode?22:14);
-    return format(uniqueByContent(coreProfilePinned(r.rows).concat(ranked)).slice(0,identityMode?24:18));
+    return format(uniqueByContent(coreProfilePinned(r.rows).concat(recentDocumentPinned(r.rows),ranked)).slice(0,documentMode?22:(identityMode?24:18)));
   }
   const storeItems = valStore().memoryItems;
   const ranked = storeItems.map(m=>({...m,_score:scoreMemory(m,terms)}))
     .filter(m=>identityMode ? (m._score > 0 || /core_user_profile|val_operating_prompt/i.test(m.kind||'')) : true)
     .sort((a,b)=>(b._score-a._score)||((b.importance||1)-(a.importance||1)))
     .slice(0,identityMode?22:14);
-  return format(uniqueByContent(coreProfilePinned(storeItems).concat(ranked)).slice(0,identityMode?24:18));
+  return format(uniqueByContent(coreProfilePinned(storeItems).concat(recentDocumentPinned(storeItems),ranked)).slice(0,documentMode?22:(identityMode?24:18)));
 }
 
 app.post('/api/val/chat',async(req,res)=>{
@@ -2189,11 +2206,13 @@ app.post('/api/val/chat',async(req,res)=>{
     if(!OPENAI_KEY) return res.status(500).json({error:'OPENAI_KEY not configured'});
     const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
     const lastUser = [...messages].reverse().find(m=>m.role==='user')?.content || '';
-    const memory = await recentMemoryContext(lastUser);
+    const memoryQuery = messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000);
+    const memory = await recentMemoryContext(lastUser+'\n'+memoryQuery);
     const system = [
       VAL_SYSTEM_PROMPT,
       'Always use the saved core user profile memory as a behavioral operating context for how you speak to, prioritize for, and advise Jessa. Adapt recommendations to her DISC/HALOS patterns, capacity, nervous system load, communication style, and execution tendencies.',
       'Use other saved memory when relevant. Do not pretend to know facts that are not present.',
+      'When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.',
       'For identity, self-knowledge, profile, DISC, HALOS, or "tell me about myself" questions, prioritize saved core user profile memory over calendar/dashboard context. Answer from the profile memory first, then mention live dashboard items only if they are directly relevant.',
       memory ? 'Recent saved VAL memory:\n'+memory : ''
     ].filter(Boolean).join('\n\n');

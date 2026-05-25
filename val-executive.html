@@ -1480,7 +1480,7 @@ var HOOK_PROPOSALS= PROXY+'/api/proposals';
 var CHAT_URL  = PROXY+'/api/val/chat';
 var FILES_URL = PROXY+'/api/val/files';
 
-var chatHistory=[],selFile=null,voiceOn=false,recording=false;
+var chatHistory=[],selFile=null,voiceOn=false,recording=false,uploadBatchState=null,uploadAudioCtx=null;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
 var keepAlive=null,meetingMode=false,meetingLog=[],savedChat=false,activeConversationId=null;
 var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0;
@@ -2275,6 +2275,52 @@ function isDocumentUpload(f){
   return allowed.includes(f.type)||f.name.match(/\.(pdf|txt|md|html|json|doc|docx)$/i);
 }
 
+function primeUploadSound(){
+  try{
+    var AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx){return;}
+    uploadAudioCtx=uploadAudioCtx||new AudioCtx();
+    if(uploadAudioCtx.state==='suspended'){uploadAudioCtx.resume().catch(function(){});}
+  }catch(e){}
+}
+
+function playUploadCompleteSound(){
+  try{
+    var AudioCtx=window.AudioContext||window.webkitAudioContext;
+    var ctx=uploadAudioCtx||new AudioCtx();
+    uploadAudioCtx=ctx;
+    var now=ctx.currentTime;
+    [[523.25,0,0.16],[659.25,0.13,0.18],[783.99,0.28,0.32]].forEach(function(note){
+      var osc=ctx.createOscillator();
+      var gain=ctx.createGain();
+      osc.type='sine';
+      osc.frequency.setValueAtTime(note[0],now+note[1]);
+      gain.gain.setValueAtTime(0,now+note[1]);
+      gain.gain.linearRampToValueAtTime(0.055,now+note[1]+0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001,now+note[1]+note[2]);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now+note[1]);
+      osc.stop(now+note[1]+note[2]+0.04);
+    });
+  }catch(e){}
+}
+
+function beginUploadBatch(count){
+  uploadBatchState={total:count,done:0,success:0};
+  primeUploadSound();
+}
+
+function finishUploadItem(success){
+  if(!uploadBatchState){if(success){playUploadCompleteSound();}return;}
+  uploadBatchState.done+=1;
+  if(success){uploadBatchState.success+=1;}
+  if(uploadBatchState.done>=uploadBatchState.total){
+    if(uploadBatchState.success>0){playUploadCompleteSound();}
+    uploadBatchState=null;
+  }
+}
+
 function onFile(e){
   var files=Array.prototype.slice.call(e.target.files||[]);
   e.target.value='';
@@ -2292,6 +2338,7 @@ function onFile(e){
   else if(images.length===1){analyzeImage(images[0]);return;}
   else if(images.length>1){addSys('Image review is one file at a time. Please choose one image for analysis.');}
   if(docs.length>1){addSys('Uploading '+docs.length+' documents to VAL memory...');}
+  if(docs.length){beginUploadBatch(docs.length);}
   docs.forEach(function(f){uploadFileToVAL(f);});
 }
 
@@ -2413,12 +2460,14 @@ function uploadFileToVAL(f){
       '<p>✅ <strong>'+f.name+'</strong> saved to VAL memory.</p>'
       +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Extracted '+(data.chars||0)+' characters. VAL can now answer questions about this document.</p>';
     chatHistory.push({role:'assistant',content:'I\'ve saved "'+f.name+'" to VAL memory. You can now ask me questions about it.'});
+    finishUploadItem(true);
   })
   .catch(function(err){
     msgEl.querySelector('.cmsg-bubble').innerHTML=
       '<p>❌ Upload failed: '+err.message+'</p>'
       +'<p style="font-size:0.78rem;color:#666;margin-top:4px">Check that the file is a supported format and under 25MB.</p>';
     console.error('VAL upload error:',err);
+    finishUploadItem(false);
   });
 }
 
