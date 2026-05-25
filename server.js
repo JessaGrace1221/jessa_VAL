@@ -583,6 +583,8 @@ function inferAttendeesFromEvent(event){
     people.push(attendee);
   };
   (Array.isArray(event.attendees) ? event.attendees : []).forEach(push);
+  if(event.organizer) push(event.organizer);
+  if(event.creator) push(event.creator);
   if(event.contact || event.contactName) push({name:event.contact || event.contactName, email:event.contactEmail || ''});
   const text = [event.title,event.summary,event.description,event.desc,event.notes].filter(Boolean).join(' ');
   (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[]).forEach(email=>push({email}));
@@ -591,6 +593,34 @@ function inferAttendeesFromEvent(event){
     title.split(/\s[-|/:]\s|\swith\s/i).map(s=>s.trim()).filter(s=>/^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$/.test(s)).forEach(name=>push({name}));
   }
   return people.slice(0,8);
+}
+
+function mapGoogleEvent(ev){
+  return {
+    id:        ev.id,
+    summary:   ev.summary||'(No title)',
+    startTime: ev.start?.dateTime||ev.start?.date,
+    endTime:   ev.end?.dateTime||ev.end?.date,
+    location:  ev.location||'',
+    description: ev.description||'',
+    attendees: (ev.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||'',self:!!a.self,organizer:!!a.organizer})),
+    attendeesOmitted: !!ev.attendeesOmitted,
+    organizer: ev.organizer ? {name:ev.organizer.displayName||'',email:ev.organizer.email||'',self:!!ev.organizer.self} : null,
+    creator: ev.creator ? {name:ev.creator.displayName||'',email:ev.creator.email||'',self:!!ev.creator.self} : null,
+    hangoutLink: ev.hangoutLink||'',
+    status:    ev.status,
+    source:    'google'
+  };
+}
+
+async function hydrateGoogleEventAttendees(token, ev){
+  if(ev.attendees&&ev.attendees.length&&!ev.attendeesOmitted) return ev;
+  try{
+    const r=await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(ev.id)}?maxAttendees=50`,{headers:{Authorization:`Bearer ${token}`}});
+    const full=await r.json();
+    if(!full.error) return {...ev,...full};
+  }catch(e){ console.log('Google event attendee hydrate failed:',e.message); }
+  return ev;
 }
 
 function extractLinkedInUrl(data){
@@ -868,7 +898,7 @@ app.get('/api/calendar',async(req,res)=>{
     const r = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/primary/events`
       +`?timeMin=${s.toISOString()}&timeMax=${e.toISOString()}`
-      +`&singleEvents=true&orderBy=startTime&maxResults=100`,
+      +`&singleEvents=true&orderBy=startTime&maxResults=100&maxAttendees=50`,
       {headers:{Authorization:`Bearer ${token}`}}
     );
     const d = await r.json();
@@ -878,17 +908,8 @@ app.get('/api/calendar',async(req,res)=>{
       return res.json({calendarEvents:[], _debug:{googleError:d.error.message}});
     }
 
-    const calendarEvents = (d.items||[]).map(ev=>({
-      id:        ev.id,
-      summary:   ev.summary||'(No title)',
-      startTime: ev.start?.dateTime||ev.start?.date,
-      endTime:   ev.end?.dateTime||ev.end?.date,
-      location:  ev.location||'',
-      description: ev.description||'',
-      attendees: (ev.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
-      status:    ev.status,
-      source:    'google'
-    }));
+    const fullItems = await Promise.all((d.items||[]).map(ev=>hydrateGoogleEventAttendees(token,ev)));
+    const calendarEvents = fullItems.map(mapGoogleEvent);
 
     console.log(`Calendar: ${calendarEvents.length} Google events`);
     res.json({calendarEvents, _debug:{googleCount:calendarEvents.length}});

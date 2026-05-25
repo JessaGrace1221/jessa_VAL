@@ -31,7 +31,7 @@
 html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-family:'Jost',sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;margin:0;padding:0}
 
 /* ── LAYOUT ── */
-.app{display:flex;flex-direction:column;height:100vh;width:100vw;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0}
+.app{display:flex;flex-direction:column;height:100dvh;width:100vw;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0}
 
 /* ── TOPBAR ── */
 .topbar{
@@ -120,7 +120,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .stat-label{font-size:0.5625rem;color:rgba(255,255,255,0.3);letter-spacing:0.08em;text-transform:uppercase;margin-top:2px}
 
 /* ── BODY ── */
-.body{flex:1;display:flex;overflow:hidden;min-height:0;max-height:calc(100vh - 52px - 72px)}
+.body{flex:1;display:flex;overflow:hidden;min-height:0;max-height:calc(100dvh - 52px - 72px)}
 
 /* ── LEFT PANEL ── */
 .lpanel{
@@ -251,7 +251,7 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .sys-line{align-self:center;font-size:0.625rem;color:var(--text-3);background:var(--cream-2);border:1px solid var(--border);border-radius:20px;padding:0.25rem 0.875rem;margin-bottom:0.75rem;letter-spacing:0.04em}
 
 /* command input */
-.cmd-area{border-top:1px solid var(--border);padding:0.75rem 1.25rem;background:var(--cream);flex-shrink:0;position:relative;z-index:10}
+.cmd-area{border-top:1px solid var(--border);padding:0.75rem 1.25rem calc(0.75rem + env(safe-area-inset-bottom));background:var(--cream);flex-shrink:0;position:relative;z-index:10}
 .cmd-box{
   display:flex;align-items:flex-end;gap:0.375rem;
   background:white;border:1px solid var(--border-2);
@@ -293,8 +293,8 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
   transition:all 0.2s var(--ease);letter-spacing:0.03em;
 }
 .chip:hover{border-color:var(--gold-border);background:var(--gold-dim);color:var(--navy);transform:translateY(-1px)}
-.dynamic-suggestions{display:flex;gap:0.375rem;margin-top:0.5rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
-.dynamic-suggestions::-webkit-scrollbar{display:none}
+.suggestion-label{font-size:0.5625rem;font-weight:700;color:var(--text-4);letter-spacing:0.12em;text-transform:uppercase;margin-top:0.75rem;margin-bottom:0.375rem}
+.dynamic-suggestions{display:flex;flex-direction:column;gap:0.375rem;margin-top:0;flex-wrap:nowrap;overflow:visible;padding-bottom:2px}
 .dynamic-suggestions .chip{background:rgba(248,245,238,0.86)}
 
 /* ── WORKSPACE SIDEBAR OVERLAY ── */
@@ -449,7 +449,20 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 input[type=file]{display:none}
 @media(max-width:900px){.rpanel{display:none}}
 @media(max-width:760px){.cw-actions{grid-template-columns:1fr 1fr;max-width:460px}}
-@media(max-width:640px){.lpanel{display:none}}
+@media(max-width:640px){
+  html,body{height:100dvh;overflow:hidden}
+  .lpanel{display:none}
+  .app{height:100dvh;min-height:100dvh;position:fixed}
+  .body{height:calc(100dvh - 124px);max-height:none;overflow:hidden}
+  .center{min-width:0}
+  .center-welcome{overflow-y:auto;padding-bottom:1.25rem}
+  .center-detail{min-height:0}
+  .chat-scroll{padding:1rem 1rem 1.25rem}
+  .cmd-area{padding:0.625rem 0.75rem calc(0.625rem + env(safe-area-inset-bottom))}
+  .cmd-box{min-height:48px}
+  .cmd-ta{font-size:16px}
+  .dynamic-suggestions .chip{width:100%;justify-content:flex-start;height:auto;min-height:30px;text-align:left;white-space:normal;line-height:1.25;padding:0.45rem 0.625rem}
+}
 
 /* ── TOPBAR ACTION BUTTONS ── */
 .tbtn-action{
@@ -848,6 +861,7 @@ input[type=file]{display:none}
         <div class="scard-sub" id="scPipelineSub">Loading...</div>
         <span class="scard-link">Show Signals →</span>
       </div>
+      <div class="suggestion-label">Suggested Prompts</div>
       <div class="dynamic-suggestions" id="dynamicSuggestions"></div>
     </div>
   </div>
