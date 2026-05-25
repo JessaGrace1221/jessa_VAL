@@ -2378,6 +2378,11 @@ function sendMessage(){
     handleAddDocStep(msg);
     return;
   }
+  if(isAddSuggestedTasksRequest(msg)){
+    inp.value='';inp.style.height='auto';
+    addSuggestedTasksFromLastResponse(msg);
+    return;
+  }
   // Trigger image generation
   if(/^(generate|create|make|design)\s+(an?\s+)?image\b/i.test(msg)||/^(generate|create)\s+image:/i.test(msg)){
     inp.value='';inp.style.height='auto';
@@ -2924,6 +2929,72 @@ function createTask(){
   addTaskState=null;
   window._addTaskMode=false;
   document.getElementById('msgInput').placeholder='Message VAL...';
+}
+
+function isAddSuggestedTasksRequest(msg){
+  var low=String(msg||'').toLowerCase();
+  return /\b(add|save|put|turn|make|create)\b/.test(low)
+    && /\b(task|tasks|task list|action item|action items|to[- ]?do|todo)\b/.test(low)
+    && /\b(that|this|those|these|it|what you suggested|your suggestion|suggested|above|last response|recommendation|recommendations)\b/.test(low);
+}
+
+function lastAssistantText(){
+  for(var i=chatHistory.length-1;i>=0;i--){
+    if(chatHistory[i].role==='assistant'&&chatHistory[i].content)return chatHistory[i].content;
+  }
+  return '';
+}
+
+function cleanSuggestedTaskLine(line){
+  return String(line||'')
+    .replace(/<[^>]*>/g,'')
+    .replace(/^\s*(?:[-*•]|\d+[\.)])\s*/,'')
+    .replace(/^\s*(?:task|next step|action item|recommendation|priority)\s*[:\-]\s*/i,'')
+    .replace(/\*\*/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function extractSuggestedTasks(text){
+  var lines=String(text||'').split(/\n+/).map(cleanSuggestedTaskLine).filter(Boolean);
+  var candidates=lines.filter(function(line){
+    if(line.length<8||line.length>150)return false;
+    if(/[?]$/.test(line))return false;
+    if(/^(here|sure|yes|okay|first|second|third|why|how this helps|try asking)$/i.test(line))return false;
+    return /\b(send|draft|call|email|schedule|review|prep|prepare|create|update|follow|follow up|check|finish|decide|delegate|book|write|ask|confirm|share|add|research|organize|clean|summarize|reach out)\b/i.test(line)
+      || /^[A-Z][^:]{2,60}:/.test(line);
+  });
+  if(!candidates.length&&lines.length)candidates=lines.filter(function(line){return line.length>=8&&line.length<=120&&!/[?]$/.test(line);}).slice(0,5);
+  var seen={};
+  return candidates.map(function(line){
+    return line.replace(/^[A-Z][^:]{2,60}:\s*/,'').trim();
+  }).filter(function(line){
+    var key=line.toLowerCase();
+    if(seen[key])return false;
+    seen[key]=true;
+    return true;
+  }).slice(0,8);
+}
+
+function addSuggestedTasksFromLastResponse(userMsg){
+  openDetailWithTitle('Tasks');
+  addMsg(userMsg,true);
+  var source=lastAssistantText();
+  if(!source){
+    addMsg("I do not have a recent suggestion to turn into tasks yet. Tell me what to add, or ask VAL for a recommendation first.",false);
+    return;
+  }
+  var tasks=extractSuggestedTasks(source);
+  if(!tasks.length){
+    addMsg("I could not find clear task lines in my last response. Tell me the exact task title and I will add it.",false);
+    return;
+  }
+  var created=tasks.map(function(title){
+    return valAddTask(title,'',null,'Created from VAL suggestion: '+source.slice(0,500));
+  });
+  var html='Added '+created.length+' task'+(created.length===1?'':'s')+':\n\n'+created.map(function(t){return '- '+t.title;}).join('\n');
+  addMsg(html,false);
+  refreshTaskUI();
 }
 
 
