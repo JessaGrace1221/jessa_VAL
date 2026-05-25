@@ -1,94 +1,248 @@
 # VAL User Guide
 
-VAL is an Executive Velocity Layer. It is designed to listen, remember, organize, prioritize, and convert conversations into operational movement. Users can chat with VAL, save meeting transcripts, create tasks, draft documents, review pipeline activity, inspect follow-ups, search memory, and use calendar context to prepare for meetings or review past ones.
+VAL is a relationship operating system for founders, executives, and high-level networkers who cannot afford to let valuable conversations, promises, or opportunities fall through the cracks.
 
-This guide documents the major functions available in the VAL web app and the supporting backend routes.
+It prepares you for meetings, protects follow-up, organizes commitments by person, drafts approval-ready communication, and helps you use your reclaimed time on the work that actually compounds.
 
-## What's New
+## Start Here
 
-### Relationship Radar
+New to VAL? Start with these four moves.
 
-What you can do with it: see the highest-priority relationships that need attention right now, including people tied to revenue, referrals, partnerships, trust, or promised follow-up.
+1. [Tell VAL about yourself](#tell-me-about-yourself)
+2. [Review meeting prep](#meeting-prep)
+3. [Run Relationship Radar](#relationship-radar)
+4. [Open the Approval Queue](#approval-queue)
 
-How this helps: VAL keeps valuable relationships from going cold just because the user had a full day and too many conversations to mentally track.
+## Quick Links
 
-### Pre-Meeting Brief
+- [What VAL helps you do](#what-val-helps-you-do)
+- [Daily rhythm](#daily-executive-rhythm)
+- [Relationship Radar](#relationship-radar)
+- [Meeting prep](#meeting-prep)
+- [Follow-ups and drafts](#follow-ups-and-drafts)
+- [Approval Queue](#approval-queue)
+- [Tasks by relationship](#tasks-by-relationship)
+- [Contact Command Center](#contact-command-center)
+- [Integrity Tracker](#integrity-tracker)
+- [Use My Saved Time](#use-my-saved-time)
+- [Voice mode](#voice-mode)
+- [Documents and uploads](#documents-and-uploads)
+- [Detailed reference](#detailed-reference)
 
-What you can do with it: prepare for the next meeting as if it starts in 15 minutes. VAL reviews attendees, prior context, open promises, likely objectives, relationship risks, and suggested talking points.
+## What VAL Helps You Do
 
-How this helps: the user walks into important conversations prepared, confident, and clear on the best next move.
+VAL is built for people whose business runs on trust, timing, and high-value relationships.
 
-### Approval Queue
+Use VAL when you need to:
 
-What you can do with it: open one place where VAL keeps drafts that need review before sending, including follow-ups, emails, proposals, notes, and other approval-ready messages.
+- remember what was said in important conversations
+- prepare for meetings without digging through notes
+- follow up before momentum dies
+- keep promises visible until they are closed
+- turn conversations into tasks, notes, and next steps
+- review the people who need attention now
+- draft messages, proposals, scopes, and recap notes
+- stay ahead of your calendar instead of reacting to it
+- use saved time for higher-leverage work
 
-How this helps: VAL can move quickly without losing user control. Nothing important gets buried in chat, and the user can approve, revise, copy, or send when ready.
-
-### Contact Command Center
-
-What you can do with it: ask VAL for a person or company view that groups the relationship summary, meetings, tasks, notes, promises, opportunities, and next moves.
-
-How this helps: the user does not have to reconstruct the relationship from memory before every call or follow-up.
-
-### Integrity Tracker
-
-What you can do with it: ask VAL to show open promises and commitments by person.
-
-How this helps: it protects trust. The user can see what needs closure without relying on mental memory at the end of a packed day.
-
-### Daily Executive Rhythm
-
-What you can do with it: use VAL for morning briefing, midday check-in, end-of-day wrap, and tomorrow prep.
-
-How this helps: the day has a clear rhythm. VAL keeps relationships, follow-ups, approvals, meetings, and tasks moving without overwhelming the user.
-
-### Use My Saved Time
-
-What you can do with it: ask VAL what high-impact work deserves the time, energy, and mental space it has freed up.
-
-How this helps: the user does not just become more efficient. They redirect saved time into revenue, authority, strategic thinking, recovery, creativity, or high-value relationships.
+## Best First 10 Minutes
 
 ### Tell Me About Yourself
 
-What you can do with it: start a dedicated onboarding conversation where VAL asks thoughtful questions about the user, their business, relationship network, decision patterns, working style, voice, boundaries, and goals.
+Click **Tell Me About Yourself**.
 
-How this helps: VAL becomes more personal and useful faster. The user can also upload business plans, personality profiles, DISC reports, brand voice docs, offers, sales process notes, strategic plans, or other personal operating documents.
+VAL will ask thoughtful questions about who you are, what you are building, how you make decisions, which relationships matter most, where follow-up tends to break down, and how you want to be supported.
 
-### Executive Review
+Upload helpful documents if you have them:
 
-What you can do with it: click Executive Review and VAL will draft follow-ups first, prep the next meeting second, and clean up the task list third.
+- business plan
+- personality profile or DISC report
+- brand voice notes
+- offers and sales process
+- client or partner context
+- strategic plans
+- operating principles
 
-How this helps: it gives the user a clear sequence instead of a pile of information. The goal is fast approval, not another report.
+Why it matters: VAL gets sharper when it understands how you think, what matters to you, and how your relationships create value.
 
-### Smarter Meeting Intelligence
+### Use Relationship Radar
 
-What you can do with it: click a calendar meeting and VAL will look at the attendees, meeting title, description, saved notes, related tasks, and available profile data.
+Click **Relationship Radar** when you want to know who needs attention now.
 
-How this helps: meeting prep becomes specific. VAL can surface who is attending, what matters, what to say, and what relationship context is useful.
+VAL looks for people connected to open loops, revenue, referrals, partnership potential, recent conversations, upcoming meetings, and stalled momentum.
 
-### LinkedIn And Relationship Context
+Why it matters: this is where VAL protects the value that usually leaks out of a busy executive's day.
 
-What you can do with it: when RocketReach and Outscraper are connected, VAL can look for attendee profile details, recent LinkedIn activity, connection counts, and mutual connection context.
+### Review Meeting Prep
 
-How this helps: the user walks into meetings with timely relationship signals instead of generic prep notes.
+Click an upcoming meeting or use **Pre-Meeting Brief**.
+
+VAL reviews the attendees, prior context, open promises, possible opportunity, relationship risks, and useful talking points.
+
+Why it matters: you walk into the room with context, confidence, and a cleaner point of view.
+
+### Open Drafts
+
+Click **Drafts** or **Approval Queue**.
+
+This is where VAL keeps anything it created that needs your approval before sending.
+
+Why it matters: VAL can move fast without making you hunt through chat for the message you meant to approve.
+
+## Feature Guide
+
+### Daily Executive Rhythm
+
+What you can do with it: use VAL in the morning, midday, end of day, and before tomorrow begins.
+
+How this helps: your day gets a structure that protects relationships, follow-up, energy, and strategic focus.
+
+Try asking:
+
+- "Start my day."
+- "What changed since this morning?"
+- "Wrap my day and prep tomorrow."
+- "What should I do before my next meeting?"
+
+### Relationship Radar
+
+What you can do with it: see the highest-priority relationships to nurture now.
+
+How this helps: VAL helps you catch the people, opportunities, referrals, and promises that are most likely to create value or lose trust if ignored.
+
+Try asking:
+
+- "Open Relationship Radar."
+- "Who am I at risk of dropping?"
+- "Which relationships need attention today?"
+- "Who should I follow up with before the week gets away from me?"
+
+### Meeting Prep
+
+What you can do with it: get a fast, useful brief before a meeting.
+
+How this helps: VAL pulls together attendee context, past notes, related tasks, open promises, likely objectives, and suggested questions.
+
+Try asking:
+
+- "Prep my next meeting."
+- "What do I need to know before my 2pm?"
+- "Give me the relationship context for this call."
+- "What should I ask in this meeting?"
+
+### Follow-Ups And Drafts
+
+What you can do with it: have VAL draft follow-ups after meetings or conversations.
+
+How this helps: the message gets written while the context is fresh. You can approve, revise, copy, or send from the Approval Queue.
+
+Try asking:
+
+- "Draft follow-ups from today."
+- "Who needs a reply from me?"
+- "Write the follow-up from my last call."
+- "Create follow-ups and put anything sensitive in the Approval Queue."
+
+### Approval Queue
+
+What you can do with it: review every draft VAL has created that still needs approval.
+
+How this helps: important messages do not disappear into chat. The Approval Queue gives you one calm place to approve, revise, copy, or send.
+
+Use it for:
+
+- follow-up emails
+- proposals
+- recap notes
+- scopes or agreements
+- sensitive replies
+- messages that need your judgment before sending
+
+### Tasks By Relationship
+
+What you can do with it: organize tasks around the person, contact, company, or opportunity they belong to.
+
+How this helps: instead of a flat task pile, VAL helps you see what needs to happen for each relationship.
+
+Try asking:
+
+- "Group my tasks by person."
+- "What tasks are tied to Sarah?"
+- "Show me open loops by contact."
+- "What did I promise this person?"
+
+### Contact Command Center
+
+What you can do with it: ask VAL for a complete view of a person or company.
+
+How this helps: you can see relationship context, meetings, notes, tasks, promises, opportunities, and the next best move in one place.
+
+Try asking:
+
+- "Open the contact command center for Marcus."
+- "Show me everything connected to this contact."
+- "What is waiting on me with this person?"
+- "What is the smartest next move with this relationship?"
+
+### Integrity Tracker
+
+What you can do with it: see what you said you would do, who it is for, and what still needs closure.
+
+How this helps: VAL protects your credibility. It keeps promises visible until you intentionally close the loop.
+
+Try asking:
+
+- "Show my open promises."
+- "What commitments are still unresolved?"
+- "What did I say I would send?"
+- "What needs closure today?"
+
+### Use My Saved Time
+
+What you can do with it: ask VAL where to put the time and energy it saved you.
+
+How this helps: the goal is not just to be less busy. VAL helps you redirect saved time toward revenue, authority, creative thinking, recovery, strategic relationships, or work that compounds.
+
+Try asking:
+
+- "What should I do with the time VAL saved me?"
+- "What high-impact move should I make now?"
+- "Where would one hour create the most leverage?"
+- "Should I use this window for outreach, strategy, or recovery?"
+
+### Voice Mode
+
+What you can do with it: talk to VAL instead of typing.
+
+How this helps: when your hands are full or your thoughts are moving quickly, you can capture direction, tasks, follow-ups, and context out loud.
+
+### Documents And Uploads
+
+What you can do with it: upload documents so VAL can understand you, your business, your offers, your operating style, and your relationships.
+
+How this helps: VAL becomes more accurate when it has the context you would normally have to repeat.
+
+Good uploads include:
+
+- business plans
+- personality profiles
+- DISC reports
+- brand voice guides
+- pitch decks
+- offer documents
+- client notes
+- strategy docs
+- meeting transcripts
 
 ### Opportunity Creation From Meetings
 
-What you can do with it: in Jessa VAL, new calendar attendees can be added to GoHighLevel as contacts and given an open opportunity. If the value is unknown, VAL uses $7,500.
+What you can do with it: new calendar attendees can be added to GoHighLevel as contacts and given an open opportunity. If the value is unknown, VAL uses $7,500.
 
-How this helps: new relationship momentum gets captured automatically. The user does not have to remember to create pipeline records after every meeting.
+How this helps: new relationship momentum gets captured automatically instead of waiting for manual CRM cleanup.
 
-### More Stable Voice Chat
+## Detailed Reference
 
-What you can do with it: speak to VAL with fewer interruptions and fewer repeated spoken replies.
-
-How this helps: voice mode feels less jumpy. VAL waits longer before deciding the user is finished speaking and avoids repeating the same spoken answer.
-
-### More Natural Writing
-
-What you can do with it: ask VAL for messages, strategy, briefs, and drafts that sound less like AI.
-
-How this helps: outputs are easier to trust, edit, and send. VAL avoids em dashes, generic filler, over-polished phrasing, and customer-support style responses.
+The sections below document the app in more detail for users who want a fuller walkthrough.
 
 ## 1. Core Concept
 
