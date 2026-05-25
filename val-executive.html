@@ -635,6 +635,11 @@ input[type=file]{display:none}
           <div class="ws-item-text"><div class="ws-item-title">Followups</div><div class="ws-item-sub" id="wsFollowupsSub">Unread messages</div></div>
           <div class="ws-item-badge" id="wsFollowupsBadge" style="display:none">0</div>
         </div>
+        <div class="ws-item" onclick="wsNav('approvals')">
+          <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h3.75c.621 0 1.125.504 1.125 1.125v1.5h3.375c.621 0 1.125.504 1.125 1.125v14.625c0 .621-.504 1.125-1.125 1.125H5.625A1.125 1.125 0 014.5 20.625V6c0-.621.504-1.125 1.125-1.125H9v-1.5c0-.621.504-1.125 1.125-1.125z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 13.5l2.25 2.25L15.75 9"/></svg></div>
+          <div class="ws-item-text"><div class="ws-item-title">Approvals</div><div class="ws-item-sub" id="wsApprovalsSub">Drafts waiting</div></div>
+          <div class="ws-item-badge" id="wsApprovalsBadge" style="display:none">0</div>
+        </div>
       </div>
 
       <div class="ws-divider"></div>
@@ -735,6 +740,10 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>
       Send
     </button>
+    <button class="tbtn" onclick="openApprovalQueue()" title="Open drafts waiting for approval">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.125 2.25h3.75c.621 0 1.125.504 1.125 1.125v1.5h3.375c.621 0 1.125.504 1.125 1.125v14.625c0 .621-.504 1.125-1.125 1.125H5.625A1.125 1.125 0 014.5 20.625V6c0-.621.504-1.125 1.125-1.125H9v-1.5c0-.621.504-1.125 1.125-1.125z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 13.5l2.25 2.25L15.75 9"/></svg>
+      Drafts
+    </button>
     <button class="tbtn" onclick="window.open(PROXY + '/guide','_blank')" title="Open the VAL user guide">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.178-.43.326-.67.442-.745.361-1.451.999-1.451 1.827v.75M12 17.25h.008v.008H12v-.008z"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       Guide
@@ -824,6 +833,12 @@ input[type=file]{display:none}
         <div class="scard-sub" id="scCommsSub">Loading...</div>
         <span class="scard-link">Review →</span>
       </div>
+      <div class="scard" onclick="openApprovalQueue()">
+        <div class="scard-label">Approval Queue</div>
+        <div class="scard-val" id="scApprovalVal">—</div>
+        <div class="scard-sub" id="scApprovalSub">Drafts waiting</div>
+        <span class="scard-link">Open Drafts →</span>
+      </div>
       <div class="scard" onclick="askPipeline()">
         <div class="scard-label">Pipeline</div>
         <div class="scard-val" id="scPipelineVal">—</div>
@@ -855,11 +870,19 @@ input[type=file]{display:none}
         </div>
         <div class="cw-action" onclick="runValAction('followup_radar','Follow-Up Radar')">
           <div class="cw-action-label">Radar</div>
-          <div class="cw-action-text">Open loops</div>
+          <div class="cw-action-text">Relationship radar</div>
+        </div>
+        <div class="cw-action" onclick="runValAction('pre_meeting_brief','Pre-Meeting Brief','Prepare the next meeting with attendee research, relationship context, open promises, and suggested talking points.')">
+          <div class="cw-action-label">Prep</div>
+          <div class="cw-action-text">Next meeting</div>
         </div>
         <div class="cw-action" onclick="runValAction('executive_review','Executive Review','Draft all followups first, then prep for the next meeting, then clean up the task list.')">
           <div class="cw-action-label">Review</div>
           <div class="cw-action-text">Executive review</div>
+        </div>
+        <div class="cw-action" onclick="openApprovalQueue()">
+          <div class="cw-action-label">Approve</div>
+          <div class="cw-action-text">Draft queue</div>
         </div>
       </div>
     </div>
@@ -1161,9 +1184,50 @@ function refreshDocUI(){
   var sent=valDocs.filter(function(d){return d.status==='sent';});
   var el=document.getElementById('statProposals');
   if(el&&!dashData.proposalsTotal) animNum('statProposals',drafts.length+sent.length);
+  var av=document.getElementById('scApprovalVal');
+  var as=document.getElementById('scApprovalSub');
+  var wb=document.getElementById('wsApprovalsBadge');
+  var ws=document.getElementById('wsApprovalsSub');
+  if(av) av.textContent=drafts.length;
+  if(as) as.textContent=drafts.length?drafts.length+' draft'+(drafts.length===1?'':'s')+' need approval':'No drafts waiting';
+  if(ws) ws.textContent=drafts.length?drafts.length+' waiting':'All clear';
+  if(wb){wb.textContent=drafts.length;wb.style.display=drafts.length?'':'none';}
 }
 
 // ── DOC DETAIL PANEL ───────────────────────────────────
+function docSafe(v){
+  return String(v||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+
+function openApprovalQueue(){
+  var existing=document.getElementById('approvalQueuePanel');
+  if(existing) existing.remove();
+  var drafts=valDocs.filter(function(d){return d.status==='draft';}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);});
+  var panel=document.createElement('div');
+  panel.id='approvalQueuePanel';
+  panel.style.cssText='position:fixed;top:0;right:0;width:520px;max-width:94vw;height:100vh;background:#1a2636;border-left:1px solid rgba(196,150,58,0.3);z-index:998;display:flex;flex-direction:column;box-shadow:-8px 0 32px rgba(0,0,0,0.4);';
+  var body=drafts.length?drafts.map(function(d){
+    var created=new Date(d.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    return '<div style="border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:13px 14px;background:rgba(255,255,255,0.04);margin-bottom:10px;">'
+      +'<div style="font-size:10px;color:var(--gold);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">'+docSafe(d.type||'draft')+' · '+created+'</div>'
+      +'<div style="font-family:var(--serif);font-size:17px;color:var(--cream);line-height:1.3;">'+docSafe(d.title||'Untitled draft')+'</div>'
+      +'<div style="font-size:11px;color:var(--cream);opacity:.55;margin-top:4px;">To: '+docSafe(d.recipient||'Recipient needed')+(d.recipientEmail?' · '+docSafe(d.recipientEmail):'')+'</div>'
+      +'<div style="font-size:12px;color:var(--cream);opacity:.75;line-height:1.55;margin-top:10px;max-height:72px;overflow:hidden;white-space:pre-wrap;">'+docSafe((d.body||'').slice(0,220))+'</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
+        +'<button class="chip" onclick="openDocPanel(\''+d.id+'\')">Open</button>'
+        +'<button class="chip" onclick="sendDoc(\''+d.id+'\')">Approve & Send</button>'
+        +'<button class="chip" onclick="copyDocBody(\''+d.id+'\')">Copy</button>'
+      +'</div>'
+    +'</div>';
+  }).join(''):'<div style="padding:22px;border:1px solid rgba(255,255,255,0.08);border-radius:12px;background:rgba(255,255,255,0.04);color:var(--cream);line-height:1.6;">No drafts are waiting for approval. When VAL creates follow-ups, proposals, emails, or notes that need review, they will appear here.</div>';
+  panel.innerHTML='<div style="padding:18px 20px 14px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">'
+      +'<div><div style="font-size:10px;color:var(--gold);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px;">Approval Queue</div><div style="font-family:var(--serif);font-size:22px;color:var(--cream);line-height:1.2;">Drafts VAL needs approved</div><div style="font-size:12px;color:var(--cream);opacity:.55;margin-top:5px;">Review, revise, copy, or send from one place.</div></div>'
+      +'<button onclick="document.getElementById(\'approvalQueuePanel\').remove()" style="background:none;border:none;color:var(--cream);opacity:0.5;cursor:pointer;font-size:18px;padding:0;line-height:1;flex-shrink:0;">x</button>'
+    +'</div>'
+    +'<div style="flex:1;overflow-y:auto;padding:16px 18px 22px;">'+body+'</div>';
+  document.body.appendChild(panel);
+}
+
 function openDocPanel(docId){
   var doc=valDocs.find(function(d){return d.id===docId;});
   if(!doc) return;
@@ -1277,6 +1341,8 @@ function sendDoc(docId){
   if(!doc){addSys('Document not found');return;}
   var panel=document.getElementById('docDetailPanel');
   if(panel) panel.remove();
+  var queue=document.getElementById('approvalQueuePanel');
+  if(queue) queue.remove();
   addMsg('Sending to '+doc.recipient+'...',false);
   // Strip any HTML from body, ensure plain text
   var plainBody=doc.body.replace(/<[^>]*>/g,'').trim();
@@ -1300,6 +1366,7 @@ function sendDoc(docId){
     doc.status='sent';
     valDocsSave();
     refreshDocUI();
+    openApprovalQueue();
     addMsg('✅ Sent to '+doc.recipient+'!',false);
     valSaveTranscript('document_sent','Document sent to '+doc.recipient+': '+doc.title+'\n\n'+plainBody,{recipient:doc.recipient,documentType:doc.type,title:doc.title}).catch(function(){});
   }).catch(function(){
@@ -2982,6 +3049,7 @@ function wsNav(view){
     else if(view==='tasks'){ ask('Show my overdue tasks and tell me what to do first.'); }
     else if(view==='pipeline'){ askPipeline(); }
     else if(view==='followups'){ askFollowups(); }
+    else if(view==='approvals'){ openApprovalQueue(); }
   }, 350);
 }
 

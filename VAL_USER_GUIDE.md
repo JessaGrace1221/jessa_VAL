@@ -6,6 +6,42 @@ This guide documents the major functions available in the VAL web app and the su
 
 ## What's New
 
+### Relationship Radar
+
+What you can do with it: see the highest-priority relationships that need attention right now, including people tied to revenue, referrals, partnerships, trust, or promised follow-up.
+
+How this helps: VAL keeps valuable relationships from going cold just because the user had a full day and too many conversations to mentally track.
+
+### Pre-Meeting Brief
+
+What you can do with it: prepare for the next meeting as if it starts in 15 minutes. VAL reviews attendees, prior context, open promises, likely objectives, relationship risks, and suggested talking points.
+
+How this helps: the user walks into important conversations prepared, confident, and clear on the best next move.
+
+### Approval Queue
+
+What you can do with it: open one place where VAL keeps drafts that need review before sending, including follow-ups, emails, proposals, notes, and other approval-ready messages.
+
+How this helps: VAL can move quickly without losing user control. Nothing important gets buried in chat, and the user can approve, revise, copy, or send when ready.
+
+### Contact Command Center
+
+What you can do with it: ask VAL for a person or company view that groups the relationship summary, meetings, tasks, notes, promises, opportunities, and next moves.
+
+How this helps: the user does not have to reconstruct the relationship from memory before every call or follow-up.
+
+### Integrity Tracker
+
+What you can do with it: ask VAL to show open promises and commitments by person.
+
+How this helps: it protects trust. The user can see what needs closure without relying on mental memory at the end of a packed day.
+
+### Daily Executive Rhythm
+
+What you can do with it: use VAL for morning briefing, midday check-in, end-of-day wrap, and tomorrow prep.
+
+How this helps: the day has a clear rhythm. VAL keeps relationships, follow-ups, approvals, meetings, and tasks moving without overwhelming the user.
+
 ### Executive Review
 
 What you can do with it: click Executive Review and VAL will draft follow-ups first, prep the next meeting second, and clean up the task list third.
