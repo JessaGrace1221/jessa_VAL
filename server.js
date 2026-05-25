@@ -258,8 +258,9 @@ app.get('/dashboard',(req,res)=>res.sendFile(path.join(__dirname,'val-executive.
 
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI         = 'https://jessaval-production.up.railway.app/auth/callback';
-let googleTokens = {}; // stored in memory — persists as long as server runs
+const REDIRECT_URI         = process.env.REDIRECT_URI || `https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'jessaval-production.up.railway.app'}/auth/callback`;
+let googleTokens = {}; // hot cache; durable copy lives in Postgres or GOOGLE_REFRESH_TOKEN
+let googleTokensLoaded = false;
 let lastGoogleAuthError = null;
 
 // On startup, load refresh token from env if available
@@ -296,12 +297,13 @@ async function loadOAuthTokens(provider){
 }
 
 async function ensureGoogleTokensLoaded(){
-  if(googleTokens.access_token||googleTokens.refresh_token) return;
+  if(googleTokensLoaded) return;
   const saved=await loadOAuthTokens('google');
   if(saved){
-    googleTokens=saved;
+    googleTokens={...googleTokens,...saved};
     console.log('Loaded Google tokens from VAL store');
   }
+  googleTokensLoaded = true;
 }
 
 // Step 1 — redirect user to Google consent screen
@@ -397,6 +399,7 @@ app.get('/auth/callback', async (req, res) => {
       refresh_token: exchangedTokens.refresh_token || existingTokens.refresh_token || process.env.GOOGLE_REFRESH_TOKEN
     };
     googleTokens.issued_at = Date.now();
+    googleTokensLoaded = true;
     lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token);
@@ -429,6 +432,7 @@ async function getGoogleToken() {
       const fresh = await r.json();
       if(fresh.error){ lastGoogleAuthError = fresh.error_description || fresh.error; console.error('Token bootstrap failed:', fresh.error, fresh.error_description); return null; }
       googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+      googleTokensLoaded = true;
       lastGoogleAuthError = null;
       await saveOAuthTokens('google',googleTokens);
       console.log('Bootstrapped access token from refresh token');
@@ -457,6 +461,7 @@ async function getGoogleToken() {
     const fresh = await r.json();
     if(fresh.error){ lastGoogleAuthError = fresh.error_description || fresh.error; console.error('Token refresh failed:', fresh.error, fresh.error_description); return null; }
     googleTokens = {...googleTokens, ...fresh, issued_at: Date.now()};
+    googleTokensLoaded = true;
     lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     return googleTokens.access_token;
