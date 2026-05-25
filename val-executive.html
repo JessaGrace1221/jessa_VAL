@@ -977,10 +977,18 @@ function valTranscriptPayload(type,transcript,extra){
 function valSaveTranscript(type,transcript,extra){
   return fetch(MEMORY_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(valTranscriptPayload(type,transcript,extra||{}))});
 }
+function valConversationTitle(messages){
+  var first=(messages||[]).find(function(m){return m&&m.role==='user'&&m.content;});
+  var title=(first&&first.content?first.content:'VAL Conversation').replace(/\s+/g,' ').trim();
+  return title.length>54?title.slice(0,54)+'...':(title||'VAL Conversation');
+}
 function valSaveConversation(extra){
   if(!chatHistory.length) return Promise.resolve();
+  if(!activeConversationId) activeConversationId='conversation-'+Date.now();
   var transcript=chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n');
   var payload=extra||{};
+  payload.id=payload.id||activeConversationId;
+  payload.title=payload.title||valConversationTitle(chatHistory);
   payload.type=payload.type||'chat_memory';
   payload.transcript=transcript;
   payload.messages=chatHistory;
@@ -1473,7 +1481,7 @@ var FILES_URL = PROXY+'/api/val/files';
 
 var chatHistory=[],selFile=null,voiceOn=false,recording=false;
 var curAudio=null,deepgramWS=null,mediaRec=null,speaking=false,listenPaused=false;
-var keepAlive=null,meetingMode=false,meetingLog=[],savedChat=false;
+var keepAlive=null,meetingMode=false,meetingLog=[],savedChat=false,activeConversationId=null;
 var voiceFinalBuffer='',voiceFinalTimer=null,voiceLastHeard='',voiceLastHeardAt=0,voiceLastSpoken='',voiceLastSpokenAt=0;
 var dashData={};
 
@@ -1991,6 +1999,7 @@ function renderWeekFallback(){
 
 valTasksLoad();
 valDocsLoad();
+loadWsThreads();
 loadDashboard();
 setInterval(loadDashboard,5*60*1000);
 // No fallback — show loading state until real data arrives
@@ -2488,8 +2497,8 @@ function showTyping(){var c=document.getElementById('chatScroll');var d=document
 function removeTyping(){var t=document.getElementById('typing');if(t)t.remove();}
 
 // ── MEMORY ─────────────────────────────────────────────
-function autoSave(){if(!chatHistory.length||savedChat)return;valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;}).catch(function(){});}
-function saveChat(){if(!chatHistory.length){addSys('Nothing to save yet');return;}valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;addSys('Saved to memory');}).catch(function(){addSys('Save failed');});}
+function autoSave(){if(!chatHistory.length||savedChat)return;valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;loadWsThreads();}).catch(function(){});}
+function saveChat(){if(!chatHistory.length){addSys('Nothing to save yet');return;}valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;loadWsThreads();addSys('Saved to memory');}).catch(function(){addSys('Save failed');});}
 function sendLast(){var last=null,lastQ=null;for(var i=chatHistory.length-1;i>=0;i--){if(!last&&chatHistory[i].role==='assistant')last=chatHistory[i].content;if(!lastQ&&chatHistory[i].role==='user')lastQ=chatHistory[i].content;if(last&&lastQ)break;}if(!last){addSys('No response to send yet');return;}fetch(SEND_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({response:last,userQuestion:lastQ||'',timestamp:new Date().toISOString(),source:'VAL'})}).then(function(){addSys('Response sent');}).catch(function(){addSys('Send failed');});}
 
 function runValAction(action,label,query){
@@ -2581,6 +2590,33 @@ function updateWsSidebar(){
   renderWsThreads();
 }
 
+function wsEsc(s){
+  return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+
+function wsThreadTime(raw){
+  var d=new Date(raw||Date.now());
+  if(isNaN(d.getTime())) d=new Date();
+  return d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+
+function loadWsThreads(){
+  return fetch(CONVERSATION_HOOK+'?limit=25')
+    .then(function(r){if(!r.ok)throw new Error('threads unavailable');return r.json();})
+    .then(function(d){
+      var rows=Array.isArray(d)?d:(d.conversations||d.items||d.data||[]);
+      wsThreads=rows.map(function(c){
+        var meta=c.metadata||{};
+        var title=c.title||meta.title||c.summary||'VAL Conversation';
+        var time=c.updated_at||c.updatedAt||c.created_at||c.createdAt||c.timestamp||Date.now();
+        return {id:c.id||c.conversation_id||c.conversationId,title:title,time:wsThreadTime(time),raw:c};
+      }).filter(function(t){return !!t.id;});
+      renderWsThreads();
+      return wsThreads;
+    })
+    .catch(function(){renderWsThreads();return wsThreads;});
+}
+
 function renderWsThreads(){
   var container = document.getElementById('wsRecentThreads');
   if(!container) return;
@@ -2589,9 +2625,9 @@ function renderWsThreads(){
     return;
   }
   container.innerHTML = wsThreads.slice(0,8).map(function(t){
-    return '<div class="ws-item" onclick="wsLoadThread(\''+t.id+'\')">'
+    return '<div class="ws-item" data-thread-id="'+wsEsc(t.id)+'" onclick="wsLoadThread(this.getAttribute(\'data-thread-id\'))">'
       +'<div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/></svg></div>'
-      +'<div class="ws-item-text"><div class="ws-item-title">'+t.title+'</div><div class="ws-item-sub">'+t.time+'</div></div>'
+      +'<div class="ws-item-text"><div class="ws-item-title">'+wsEsc(t.title)+'</div><div class="ws-item-sub">'+wsEsc(t.time)+'</div></div>'
       +'</div>';
   }).join('');
 }
@@ -3224,41 +3260,44 @@ function wsLoadThread(id){
   if(!thread) return;
   toggleWorkspace();
   setTimeout(function(){
-    // Restore thread history
-    chatHistory = thread.history || [];
     var scroll = document.getElementById('chatScroll');
     scroll.innerHTML = '';
-    chatHistory.forEach(function(m){ addMsg(m.content, m.role==='user'); });
+    addSys('Loading saved thread...');
     openDetail('thread-'+id);
-    document.getElementById('detailBreadcrumb').innerHTML = 'VAL / <strong>'+thread.title+'</strong>';
+    document.getElementById('detailBreadcrumb').innerHTML = 'VAL / <strong>'+wsEsc(thread.title)+'</strong>';
+    fetch(CONVERSATION_HOOK+'/'+encodeURIComponent(id)+'/messages')
+      .then(function(r){if(!r.ok)throw new Error('Thread unavailable');return r.json();})
+      .then(function(d){
+        var rows=Array.isArray(d)?d:(d.messages||d.items||d.data||[]);
+        chatHistory=rows.map(function(m){return {role:m.role||'assistant',content:m.content||m.text||''};}).filter(function(m){return !!m.content;});
+        scroll.innerHTML='';
+        chatHistory.forEach(function(m){ addMsg(m.content, m.role==='user'); });
+        activeConversationId=id;
+        savedChat=true;
+        if(!chatHistory.length) addSys('This saved thread has no messages yet');
+      })
+      .catch(function(e){addSys('Could not load that thread: '+e.message);});
   }, 350);
 }
 
 function newSession(){
   toggleWorkspace();
   setTimeout(function(){
-    // Save current thread if it has messages
+    var clearSession=function(){
+      chatHistory = [];
+      activeConversationId = null;
+      savedChat = false;
+      var scroll = document.getElementById('chatScroll');
+      scroll.innerHTML = '';
+      closeDetail();
+      loadWsThreads();
+      addSys('New session started');
+    };
     if(chatHistory.length >= 2){
-      var firstUserMsg = chatHistory.find(function(m){ return m.role==='user'; });
-      if(firstUserMsg){
-        var title = firstUserMsg.content.substring(0,40) + (firstUserMsg.content.length>40?'...':'');
-        var threadId = 'thread-'+Date.now();
-        wsThreads.unshift({
-          id: threadId,
-          title: title,
-          time: new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),
-          history: chatHistory.slice()
-        });
-        if(wsThreads.length > 20) wsThreads.pop();
-      }
+      valSaveConversation({type:'chat_memory'}).then(function(){savedChat=true;clearSession();}).catch(clearSession);
+    }else{
+      clearSession();
     }
-    // Clear for new session
-    chatHistory = [];
-    savedChat = false;
-    var scroll = document.getElementById('chatScroll');
-    scroll.innerHTML = '';
-    closeDetail();
-    addSys('New session started');
   }, 350);
 }
 
@@ -3281,8 +3320,9 @@ var _origAutoSave = typeof autoSave === 'function' ? autoSave : function(){};
 
 window.addEventListener("beforeunload",function(){
   if(!chatHistory.length)return;
+  if(!activeConversationId) activeConversationId='conversation-'+Date.now();
   var transcript=chatHistory.map(function(m){return(m.role==='user'?'User':'VAL')+': '+m.content;}).join('\n\n');
-  navigator.sendBeacon(CONVERSATION_HOOK,new Blob([JSON.stringify({transcript:transcript,messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
+  navigator.sendBeacon(CONVERSATION_HOOK,new Blob([JSON.stringify({id:activeConversationId,title:valConversationTitle(chatHistory),transcript:transcript,messages:chatHistory,timestamp:new Date().toISOString(),messageCount:chatHistory.length,type:'chat_memory'})],{type:'application/json'}));
   stopSTT();stopSpeak();
 });
 </script>

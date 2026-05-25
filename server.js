@@ -1787,7 +1787,11 @@ async function saveConversation(payload){
     messages.forEach(m=>store.messages.push({id:uuid('msg'),conversationId:id,role:m.role||'user',content:m.content||'',metadata:m.metadata||{},createdAt:m.timestamp||new Date().toISOString()}));
     saveValStore(store);
   }
-  if(payload.transcript) await saveTranscript({...payload,title,type:payload.type||'chat_memory'});
+  if(payload.transcript){
+    const transcriptPayload = {...payload,conversationId:id,title,type:payload.type||'chat_memory'};
+    delete transcriptPayload.id;
+    await saveTranscript(transcriptPayload);
+  }
   return {id,title,count:messages.length};
 }
 
