@@ -2228,6 +2228,46 @@ function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeigh
 function onKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
 function ask(q){document.getElementById('msgInput').value=q;sendMessage();}
 
+function isCreateContactRequest(msg){
+  return /\b(create|add|new|save)\b\s+(a\s+|new\s+)?contact\b/i.test(msg)||/\b(create|add|save)\b.+\bto\s+(ghl|contacts|crm)\b/i.test(msg);
+}
+function parseContactRequest(msg){
+  var email=(msg.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)||[])[0]||'';
+  var phone=(msg.match(/(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/)||[])[0]||'';
+  var text=msg.replace(email,'').replace(phone,'');
+  text=text.replace(/\b(create|add|new|save)\b\s+(a\s+|new\s+)?contact\s*(for|named|called)?/ig,'');
+  text=text.replace(/\b(to|in)\s+(ghl|contacts|crm)\b/ig,'').replace(/\b(with\s+)?(email|phone|number)\b/ig,'');
+  text=text.replace(/[,;:]/g,' ').replace(/\s+/g,' ').trim();
+  var name=text||email.split('@')[0]||'';
+  var parts=name.split(/\s+/).filter(Boolean);
+  return {name:name,firstName:parts[0]||'',lastName:parts.slice(1).join(' '),email:email,phone:phone};
+}
+function createContactFromMessage(msg){
+  var contact=parseContactRequest(msg);
+  if(!contact.name&&!contact.email){
+    addMsg('I can create the contact. Send it like: Create contact for Jane Smith, jane@email.com, 555-555-5555.',false);
+    return;
+  }
+  openDetailWithTitle('Create Contact');
+  addMsg(msg,true);
+  chatHistory.push({role:'user',content:msg});
+  showTyping();
+  fetch(PROXY+'/api/val/contacts/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(contact)})
+  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+  .then(function(d){
+    var c=d.contact||{};
+    var name=c.contactName||c.name||[c.firstName,c.lastName].filter(Boolean).join(' ')||contact.name||contact.email;
+    var opp=d.opportunity;
+    var text='Created contact: '+name+(contact.email?'\nEmail: '+contact.email:'')+(contact.phone?'\nPhone: '+contact.phone:'');
+    if(opp&&opp.ok!==false) text+='\nOpportunity: '+(opp.created?'created':'already existed or was already covered')+(opp.amount?' at $'+opp.amount:'');
+    else if(opp&&opp.reason) text+='\nOpportunity was not created yet: '+opp.reason;
+    chatHistory.push({role:'assistant',content:text});
+    addMsg(text,false);
+    savedChat=false;autoSave();
+  })
+  .catch(function(e){removeTyping();addMsg('Contact creation failed: '+e.message,false);});
+}
+
 function startOnboardingProfile(){
   openDetailWithTitle('Tell Me About Yourself');
   addSys('You can upload business plans, personality profiles, operating docs, offers, bios, or client context with the attachment button.');
@@ -2404,6 +2444,11 @@ function sendMessage(){
   if(isAddSuggestedTasksRequest(msg)){
     inp.value='';inp.style.height='auto';
     addSuggestedTasksFromLastResponse(msg);
+    return;
+  }
+  if(isCreateContactRequest(msg)){
+    inp.value='';inp.style.height='auto';
+    createContactFromMessage(msg);
     return;
   }
   // Trigger image generation

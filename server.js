@@ -712,7 +712,8 @@ async function findOrCreateGhlContact(attendee){
     firstName:parts.firstName || attendee.name || attendee.email || 'Meeting',
     lastName:parts.lastName,
     email:attendee.email || undefined,
-    tags:['val_meeting_attendee']
+    phone:attendee.phone || undefined,
+    tags:[attendee.source==='manual'?'val_created_contact':'val_meeting_attendee']
   };
   const data = await ghl('POST','/contacts',body);
   const contact = data.contact || data;
@@ -1383,6 +1384,20 @@ app.get('/api/ghl/contacts',async(req,res)=>{
 app.post('/api/ghl/contacts',async(req,res)=>{
   try{res.json(await ghl('POST',`/contacts`,{...req.body,locationId:GHL_LOC}));}
   catch(e){res.status(500).json({error:e.message});}
+});
+
+app.post('/api/val/contacts/create',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const name=body.name||[body.firstName,body.lastName].filter(Boolean).join(' ')||body.email||'New contact';
+    const contactResult=await findOrCreateGhlContact({name,email:body.email||'',phone:body.phone||'',source:'manual'});
+    const contact=contactResult.contact||{};
+    if(body.phone && contactResult.created===false && (contact.id||contact.contactId)){
+      await ghl('PUT',`/contacts/${contact.id||contact.contactId}`,{phone:body.phone}).catch(()=>null);
+    }
+    const opportunity=await ensureMeetingOpportunity({name,email:body.email||''},{title:'Manual VAL contact creation',value:body.amount||MEETING_OPPORTUNITY_AMOUNT},body.amount||MEETING_OPPORTUNITY_AMOUNT).catch(e=>({ok:false,skipped:true,reason:e.message}));
+    res.json({ok:true,created:contactResult.created,contact,opportunity});
+  }catch(e){res.status(500).json({error:e.message});}
 });
 
 app.post('/api/ghl/contacts/upsert',async(req,res)=>{
