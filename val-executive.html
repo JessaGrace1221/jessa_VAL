@@ -293,6 +293,9 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
   transition:all 0.2s var(--ease);letter-spacing:0.03em;
 }
 .chip:hover{border-color:var(--gold-border);background:var(--gold-dim);color:var(--navy);transform:translateY(-1px)}
+.dynamic-suggestions{display:flex;gap:0.375rem;margin-top:0.5rem;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+.dynamic-suggestions::-webkit-scrollbar{display:none}
+.dynamic-suggestions .chip{background:rgba(248,245,238,0.86)}
 
 /* ── WORKSPACE SIDEBAR OVERLAY ── */
 .ws-overlay{
@@ -845,6 +848,7 @@ input[type=file]{display:none}
         <div class="scard-sub" id="scPipelineSub">Loading...</div>
         <span class="scard-link">Show Signals →</span>
       </div>
+      <div class="dynamic-suggestions" id="dynamicSuggestions"></div>
     </div>
   </div>
 
@@ -1086,6 +1090,66 @@ function refreshTaskUI(){
   dashData.openTasks=open.length;
   dashData.overdueTasks=overdue.length;
   dashData.tasks=open;
+  updateDynamicSuggestions();
+}
+
+function dynamicSuggestionPromptSafe(v){
+  return String(v||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+
+function eventStart(ev){
+  var raw=ev&&(ev.startTime||ev.start_time||(ev.start&&(ev.start.dateTime||ev.start.date))||ev.date);
+  if(!raw) return null;
+  var dt=new Date(raw);
+  return isNaN(dt.getTime())?null:dt;
+}
+
+function eventTitle(ev){
+  return (ev&&(ev.summary||ev.title||ev.name||ev.contactName))||'my next meeting';
+}
+
+function updateDynamicSuggestions(){
+  var el=document.getElementById('dynamicSuggestions');
+  if(!el) return;
+  var input=document.getElementById('msgInput');
+  var suggestions=[];
+  var now=new Date();
+  var events=(dashData.appointments||[]).concat(dashData.calendarEvents||[]);
+  var upcoming=events.map(function(ev){return {ev:ev,dt:eventStart(ev)};})
+    .filter(function(x){return x.dt&&x.dt>=now;})
+    .sort(function(a,b){return a.dt-b.dt;});
+  var open=valTasks.filter(function(t){return !t.completed;});
+  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<now;});
+  var todayEnd=new Date();todayEnd.setHours(23,59,59,999);
+  var dueToday=open.filter(function(t){var d=t.dueDate?new Date(t.dueDate):null;return d&&!isNaN(d)&&d>=now&&d<=todayEnd;});
+  var drafts=valDocs.filter(function(d){return d.status==='draft';});
+
+  if(upcoming.length){
+    var nx=upcoming[0];
+    var t=eventTitle(nx.ev);
+    var time=nx.dt.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    suggestions.push({label:'Prep '+t, prompt:'Prep me for '+t+' at '+time+'. Include attendees, relationship context, open promises, likely objective, and the best questions to ask.'});
+  }
+  if(overdue.length) suggestions.push({label:overdue.length+' overdue tasks', prompt:'Prioritize my '+overdue.length+' overdue tasks. Group them by relationship, urgency, and what should be done, delegated, deferred, or clarified.'});
+  else if(dueToday.length) suggestions.push({label:'Due today: '+dueToday[0].title, prompt:'Help me complete this task today: '+dueToday[0].title+'. Give me the next step and any message or follow-up I should draft.'});
+  if(dashData.followups>0) suggestions.push({label:'Draft replies', prompt:'Review my unread conversations and draft the replies that should go out now. Put anything sensitive in the Approval Queue.'});
+  suggestions.push({label:'Relationship Radar', prompt:'Open Relationship Radar. Who needs attention now based on my calendar, tasks, follow-ups, and pipeline?'});
+  if(drafts.length) suggestions.push({label:'Review '+drafts.length+' drafts', prompt:'Open my Approval Queue and help me decide what to approve, revise, or send first.'});
+  suggestions.push({label:'Use saved time', prompt:'What high-impact thing should I do with the time VAL has saved me today?'});
+
+  suggestions=suggestions.slice(0,5);
+  el.innerHTML='';
+  suggestions.forEach(function(s){
+    var b=document.createElement('button');
+    b.className='chip';
+    b.type='button';
+    b.textContent=s.label;
+    b.onclick=function(){ask(s.prompt);};
+    el.appendChild(b);
+  });
+  if(input&&!addDocState&&!addTaskState&&suggestions.length){
+    input.placeholder=suggestions.slice(0,3).map(function(s){return s.label;}).join(' · ');
+  }
 }
 
 // ── TASK DETAIL PANEL ──────────────────────────────────
@@ -1565,6 +1629,12 @@ async function loadDashboard(){
   feed     = parse(feed);
   feed     = parse(feed);
   dashData = Object.assign({}, feed||{}, pipeline||{}, meetings||{}, calendar||{});
+  if(comms) dashData.followups=comms.total||0;
+  if(proposals){
+    dashData.proposals=proposals.proposals||[];
+    dashData.proposalsTotal=proposals.total||0;
+    dashData.proposalsDraft=proposals.draft||0;
+  }
   refreshTaskUI(); // re-sync VAL tasks into dashData
 
   // MEETINGS
@@ -1623,6 +1693,7 @@ async function loadDashboard(){
   }
 
   flashLive();
+  updateDynamicSuggestions();
 }
 
 function animNum(id,target){
