@@ -720,8 +720,9 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
       enriched.push({attendee, rocketReach:rocket, outscraper, opportunity});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
-      rocketReach:!ROCKETREACH_API_KEY,
-      outscraper:!OUTSCRAPER_API_KEY || !OUTSCRAPER_LINKEDIN_POSTS_URL
+      rocketReach:!ROCKETREACH_API_KEY
+    }, optionalConfig:{
+      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });

@@ -1806,7 +1806,7 @@ function openCalendarEvent(ev){
         +oppLine
         +(posts.length?'\nRecent LinkedIn posts:\n'+posts.map(function(post){return '- '+(post.date?post.date+' · ':'')+(post.text||post.url||'Post found').slice(0,240);}).join('\n'):'');
     }).join('\n\n');
-    if(!people) people='No attendee enrichment found yet. Check RocketReach and Outscraper API settings if this should be populated.';
+    if(!people) people='No attendee enrichment found yet. Check the RocketReach API setting if this should be populated. LinkedIn posts are optional and only appear when Outscraper is connected.';
     var tasks=valTasks.filter(function(t){
       var hay=((t.title||'')+' '+(t.notes||'')+' '+(t.contactName||'')+' '+((t.details||[]).map(function(d){return d.text;}).join(' '))).toLowerCase();
       return (ev.title&&hay.includes(ev.title.toLowerCase().split(' ')[0])) || (ev.contact&&hay.includes(ev.contact.toLowerCase()));
