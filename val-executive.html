@@ -963,7 +963,7 @@ input[type=file]{display:none}
     <button class="rec-stop" onclick="stopRecording()">Stop</button>
   </div>
 </div>
-<input type="file" id="fileIn" onchange="onFile(event)" accept=".pdf,.txt,.md,.html,.json,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,image/*">
+<input type="file" id="fileIn" onchange="onFile(event)" multiple accept=".pdf,.txt,.md,.html,.json,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,image/*">
 <div id="val-cursor"></div>
 <div id="val-cursor-ring"></div>
 
@@ -2265,23 +2265,34 @@ function startOnboardingProfile(){
 function copyMsg(text,btn){navigator.clipboard.writeText(text).then(function(){btn.style.opacity='1';setTimeout(function(){btn.style.opacity='';},1600);}).catch(function(){});}
 
 // ── FILE ───────────────────────────────────────────────
-function onFile(e){
-  var f=e.target.files[0];
-  if(!f){return;}
-  e.target.value='';
-  if(f.size>25*1024*1024){addSys('⚠ File too large (max 25MB)');return;}
-  var isImage=f.type.startsWith('image/')||f.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
-  if(isImage){
-    analyzeImage(f);
-    return;
-  }
+function isImageUpload(f){
+  return f.type.startsWith('image/')||f.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+}
+
+function isDocumentUpload(f){
   var allowed=['application/pdf','text/plain','text/markdown','text/html','application/json',
     'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-  if(!allowed.includes(f.type)&&!f.name.match(/\.(pdf|txt|md|html|json|doc|docx)$/i)){
-    addSys('⚠ Unsupported file type. Use PDF, TXT, MD, HTML, JSON, DOC, DOCX, or an image (JPG, PNG, WEBP).');
-    return;
-  }
-  uploadFileToVAL(f);
+  return allowed.includes(f.type)||f.name.match(/\.(pdf|txt|md|html|json|doc|docx)$/i);
+}
+
+function onFile(e){
+  var files=Array.prototype.slice.call(e.target.files||[]);
+  e.target.value='';
+  if(!files.length){return;}
+  var docs=[],images=[],tooLarge=[],unsupported=[];
+  files.forEach(function(f){
+    if(f.size>25*1024*1024){tooLarge.push(f.name);return;}
+    if(isImageUpload(f)){images.push(f);return;}
+    if(isDocumentUpload(f)){docs.push(f);return;}
+    unsupported.push(f.name);
+  });
+  if(tooLarge.length){addSys('⚠ Skipped large file'+(tooLarge.length>1?'s':'')+' (max 25MB): '+tooLarge.join(', '));}
+  if(unsupported.length){addSys('⚠ Unsupported file'+(unsupported.length>1?'s':'')+': '+unsupported.join(', ')+'. Use PDF, TXT, MD, HTML, JSON, DOC, DOCX, or one image.');}
+  if(images.length&&docs.length){addSys('Image review is one file at a time. Uploading the selected documents now; choose one image separately for analysis.');}
+  else if(images.length===1){analyzeImage(images[0]);return;}
+  else if(images.length>1){addSys('Image review is one file at a time. Please choose one image for analysis.');}
+  if(docs.length>1){addSys('Uploading '+docs.length+' documents to VAL memory...');}
+  docs.forEach(function(f){uploadFileToVAL(f);});
 }
 
 function generateImage(prompt){
