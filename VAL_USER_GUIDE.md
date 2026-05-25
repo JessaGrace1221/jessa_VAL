@@ -42,6 +42,18 @@ What you can do with it: use VAL for morning briefing, midday check-in, end-of-d
 
 How this helps: the day has a clear rhythm. VAL keeps relationships, follow-ups, approvals, meetings, and tasks moving without overwhelming the user.
 
+### Use My Saved Time
+
+What you can do with it: ask VAL what high-impact work deserves the time, energy, and mental space it has freed up.
+
+How this helps: the user does not just become more efficient. They redirect saved time into revenue, authority, strategic thinking, recovery, creativity, or high-value relationships.
+
+### Tell Me About Yourself
+
+What you can do with it: start a dedicated onboarding conversation where VAL asks thoughtful questions about the user, their business, relationship network, decision patterns, working style, voice, boundaries, and goals.
+
+How this helps: VAL becomes more personal and useful faster. The user can also upload business plans, personality profiles, DISC reports, brand voice docs, offers, sales process notes, strategic plans, or other personal operating documents.
+
 ### Executive Review
 
 What you can do with it: click Executive Review and VAL will draft follow-ups first, prep the next meeting second, and clean up the task list third.

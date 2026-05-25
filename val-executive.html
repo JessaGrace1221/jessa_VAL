@@ -868,6 +868,10 @@ input[type=file]{display:none}
           <div class="cw-action-label">Decide</div>
           <div class="cw-action-text">What now?</div>
         </div>
+        <div class="cw-action" onclick="startOnboardingProfile()">
+          <div class="cw-action-label">Profile</div>
+          <div class="cw-action-text">Tell me about yourself</div>
+        </div>
         <div class="cw-action" onclick="runValAction('followup_radar','Follow-Up Radar')">
           <div class="cw-action-label">Radar</div>
           <div class="cw-action-text">Relationship radar</div>
@@ -883,6 +887,10 @@ input[type=file]{display:none}
         <div class="cw-action" onclick="openApprovalQueue()">
           <div class="cw-action-label">Approve</div>
           <div class="cw-action-text">Draft queue</div>
+        </div>
+        <div class="cw-action" onclick="runValAction('saved_time_leverage','Use My Saved Time','Suggest the highest-impact things I could do with the time, energy, and cognitive load VAL has saved me.')">
+          <div class="cw-action-label">Leverage</div>
+          <div class="cw-action-text">Use saved time</div>
         </div>
       </div>
     </div>
@@ -2125,6 +2133,12 @@ function stopRecording(){recording=false;document.getElementById('recOverlay').c
 function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
 function onKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
 function ask(q){document.getElementById('msgInput').value=q;sendMessage();}
+
+function startOnboardingProfile(){
+  openDetailWithTitle('Tell Me About Yourself');
+  addSys('You can upload business plans, personality profiles, operating docs, offers, bios, or client context with the attachment button.');
+  ask('Start my VAL onboarding profile. Ask me thoughtful questions one at a time so you can understand how to help me best.\n\nCover these areas without overwhelming me:\n- who I am and what I am building\n- what relationships drive my business\n- how I make money\n- my highest-value contacts and communities\n- where I drop balls or lose follow-up\n- how I prefer to be pushed, reminded, and supported\n- my communication style and voice\n- my decision patterns, energy patterns, personality profile, and leadership style\n- what I never want automated without approval\n- what documents I should upload so you can understand me better\n\nAfter the questions, tell me which documents to upload first, such as business plan, personality profile, DISC, brand voice, offers, sales process, client list, pipeline notes, or strategic plans. Keep the tone warm, direct, and insightful. Ask only one question first.');
+}
 
 // ── COPY ───────────────────────────────────────────────
 function copyMsg(text,btn){navigator.clipboard.writeText(text).then(function(){btn.style.opacity='1';setTimeout(function(){btn.style.opacity='';},1600);}).catch(function(){});}
