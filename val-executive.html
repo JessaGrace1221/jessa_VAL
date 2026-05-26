@@ -1222,7 +1222,7 @@ function updateDynamicSuggestions(){
     b.className='chip';
     b.type='button';
     b.textContent=s.label;
-    b.onclick=function(){ask(s.prompt);};
+    b.onclick=function(){askHidden(s.label,s.prompt);};
     el.appendChild(b);
   });
   if(input&&!addDocState&&!addTaskState&&suggestions.length){
@@ -2080,6 +2080,7 @@ valTasksLoad();
 valDocsLoad();
 loadWsThreads();
 loadDashboard();
+runGuideActionFromUrl();
 setInterval(loadDashboard,5*60*1000);
 // No fallback — show loading state until real data arrives
 document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">Loading calendar...</div>';
@@ -2292,6 +2293,10 @@ function stopRecording(){recording=false;document.getElementById('recOverlay').c
 function grow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px';}
 function onKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
 function ask(q){document.getElementById('msgInput').value=q;sendMessage();}
+function askHidden(displayText,promptText){
+  document.getElementById('sendBtn').disabled=true;
+  chat(displayText||'Start this function',null,promptText||displayText||'');
+}
 
 function isCreateContactRequest(msg){
   return /\b(create|add|new|save)\b\s+(a\s+|new\s+)?contact\b/i.test(msg)||/\b(create|add|save)\b.+\bto\s+(ghl|contacts|crm)\b/i.test(msg);
@@ -2354,7 +2359,7 @@ function createContactFromMessage(msg){
 function startOnboardingProfile(){
   openDetailWithTitle('Tell Me About Yourself');
   addSys('You can upload business plans, personality profiles, operating docs, offers, bios, or client context with the attachment button.');
-  ask('Start my VAL onboarding profile. Ask me thoughtful questions one at a time so you can understand how to help me best.\n\nCover these areas without overwhelming me:\n- who I am and what I am building\n- what relationships drive my business\n- how I make money\n- my highest-value contacts and communities\n- where I drop balls or lose follow-up\n- how I prefer to be pushed, reminded, and supported\n- my communication style and voice\n- my decision patterns, energy patterns, personality profile, and leadership style\n- what I never want automated without approval\n- what documents I should upload so you can understand me better\n\nAfter the questions, tell me which documents to upload first, such as business plan, personality profile, DISC, brand voice, offers, sales process, client list, pipeline notes, or strategic plans. Keep the tone warm, direct, and insightful. Ask only one question first.');
+  askHidden('Tell Me About Yourself','Start my VAL onboarding profile. Ask me thoughtful questions one at a time so you can understand how to help me best.\n\nCover these areas without overwhelming me:\n- who I am and what I am building\n- what relationships drive my business\n- how I make money\n- my highest-value contacts and communities\n- where I drop balls or lose follow-up\n- how I prefer to be pushed, reminded, and supported\n- my communication style and voice\n- my decision patterns, energy patterns, personality profile, and leadership style\n- what I never want automated without approval\n- what documents I should upload so you can understand me better\n\nAfter the questions, tell me which documents to upload first, such as business plan, personality profile, DISC, brand voice, offers, sales process, client list, pipeline notes, or strategic plans. Keep the tone warm, direct, and insightful. Ask only one question first.');
 }
 
 // ── COPY ───────────────────────────────────────────────
@@ -2619,7 +2624,7 @@ function sendMessage(){
 }
 
 
-function chat(msg,inp){
+function chat(msg,inp,sendMsg){
   openDetailWithTitle('Chat');
   if(inp){addMsg(msg,true);inp.value='';inp.style.height='auto';}else addMsg(msg,true);
   chatHistory.push({role:'user',content:msg});
@@ -2651,6 +2656,7 @@ function chat(msg,inp){
     });
   }
   var msgs=chatHistory.slice();
+  if(sendMsg&&msgs.length) msgs[msgs.length-1]={role:'user',content:sendMsg};
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
@@ -2736,6 +2742,40 @@ function runValAction(action,label,query){
     savedChat=false;autoSave();
   })
   .catch(function(e){removeTyping();addSys('VAL action failed: '+e.message);});
+}
+
+function guideIntro(title,what,why){
+  openDetailWithTitle(title);
+  var text=title+'\n\nWhat you can do with it:\n'+what+'\n\nHow this helps:\n'+why;
+  chatHistory.push({role:'assistant',content:text});
+  addMsg(text,false);
+}
+function runGuideAction(action){
+  var guide={
+    today:{title:'Open Today',what:"See today's meetings, priorities, follow-ups, and the one move that matters most right now.",why:'It gives you a calm starting point instead of forcing you to scan every system yourself.',run:function(){runValAction('daily_command','Open Today');}},
+    radar:{title:'Relationship Radar',what:'Find the relationships that need attention before trust, revenue, or momentum slips.',why:'It turns a fuzzy "I should follow up with people" feeling into a short, useful list of next moves.',run:function(){runValAction('relationship_radar','Relationship Radar');}},
+    approvals:{title:'Approval Queue',what:'Open every draft VAL has prepared for review, revision, copying, or sending.',why:'You keep control while VAL handles the drafting and organization work.',run:function(){openApprovalQueue();}},
+    onboarding:{title:'Tell Me About Yourself',what:'Teach VAL how you work, who matters, what you are building, and what kind of support actually helps.',why:'The better VAL understands you, the less generic its guidance feels.',run:function(){startOnboardingProfile();}},
+    meetings:{title:'Meeting Prep',what:"Prepare for today's calls with attendee context, likely objectives, open promises, and smart questions.",why:'You walk into conversations sharper, calmer, and less likely to miss the relational angle.',run:function(){runValAction('pre_meeting_brief','Meeting Prep');}},
+    rhythm:{title:'Daily Rhythm',what:'Start the morning, check in midday, wrap the day, and prep tomorrow from one flow.',why:'It creates forward motion without adding another planning ritual to manage.',run:function(){runValAction('daily_rhythm','Daily Rhythm');}},
+    calendar:{title:'Calendar Intelligence',what:'Use your calendar to understand what is coming, who is involved, and what needs prep.',why:'Your schedule becomes a relationship and execution map, not just a list of appointments.',run:function(){runValAction('pre_meeting_brief','Calendar Intelligence');}},
+    followups:{title:'Follow-Ups',what:'Review recent conversations and generate the follow-ups that should go out now.',why:'It protects trust and revenue by catching the promises that usually leak after a busy day.',run:function(){runValAction('auto_followups','Follow-Ups');}},
+    contacts:{title:'Contact Command Center',what:'See tasks, notes, meetings, opportunities, and promises organized around a person or company.',why:'You stop hunting across tools for the full story before taking action.',run:function(){runValAction('contact_command_center','Contact Command Center');}},
+    drafts:{title:'Drafts',what:'Review messages, proposals, and notes VAL has prepared before anything goes out.',why:'You move faster without losing judgment or control.',run:function(){openApprovalQueue();}},
+    tasks:{title:'Tasks By Relationship',what:'Group open tasks by who they affect and what needs to happen next.',why:'It makes follow-through feel cleaner because work is tied to the relationship it supports.',run:function(){runValAction('task_intelligence','Tasks By Relationship');}},
+    voice:{title:'Voice Mode',what:'Talk to VAL when typing would slow you down.',why:'It gives you executive support while you are moving, driving between calls, or thinking out loud.',run:function(){toggleMeetingMode();}},
+    reflection:{title:'Executive Reflection',what:'Review patterns, avoided work, overload, decisions, and what needs to change.',why:'It helps you think like an operator instead of reacting to the noise of the day.',run:function(){runValAction('executive_review','Executive Reflection');}},
+    savedtime:{title:'Use Saved Time',what:'Choose a high-impact move to make with the time and mental load VAL has taken off your plate.',why:'The goal is not just doing less admin. It is putting that reclaimed capacity somewhere that compounds.',run:function(){runValAction('saved_time_leverage','Use Saved Time');}}
+  };
+  var item=guide[action]||guide.today;
+  guideIntro(item.title,item.what,item.why);
+  setTimeout(item.run,350);
+}
+function runGuideActionFromUrl(){
+  var params=new URLSearchParams(window.location.search);
+  var action=params.get('guideAction');
+  if(!action) return;
+  setTimeout(function(){runGuideAction(action);},900);
 }
 
 function searchValMemory(q){
