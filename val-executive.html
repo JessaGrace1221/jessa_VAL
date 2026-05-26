@@ -2317,20 +2317,38 @@ function createContactFromMessage(msg){
   addMsg(msg,true);
   chatHistory.push({role:'user',content:msg});
   showTyping();
-  fetch(PROXY+'/api/val/contacts/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(contact)})
-  .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
-  .then(function(d){
-    var c=d.contact||{};
-    var name=c.contactName||c.name||[c.firstName,c.lastName].filter(Boolean).join(' ')||contact.name||contact.email;
-    var opp=d.opportunity;
-    var text='Created contact: '+name+(contact.email?'\nEmail: '+contact.email:'')+(contact.phone?'\nPhone: '+contact.phone:'');
-    if(opp&&opp.ok!==false) text+='\nOpportunity: '+(opp.created?'created':'already existed or was already covered')+(opp.amount?' at $'+opp.amount:'');
-    else if(opp&&opp.reason) text+='\nOpportunity was not created yet: '+opp.reason;
-    chatHistory.push({role:'assistant',content:text});
-    addMsg(text,false);
-    savedChat=false;autoSave();
-  })
-  .catch(function(e){removeTyping();addMsg('Contact creation failed: '+e.message,false);});
+  function finishCreateContact(finalContact, lookupMatch){
+    fetch(PROXY+'/api/val/contacts/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalContact)})
+    .then(function(r){removeTyping();if(!r.ok)return r.text().then(function(t){throw new Error(t);});return r.json();})
+    .then(function(d){
+      var c=d.contact||{};
+      var name=c.contactName||c.name||[c.firstName,c.lastName].filter(Boolean).join(' ')||finalContact.name||finalContact.email;
+      var email=c.email||finalContact.email||'';
+      var phone=c.phone||finalContact.phone||'';
+      var opp=d.opportunity;
+      var text=(d.created?'Created contact: ':'Found existing contact: ')+name+(email?'\nEmail: '+email:'')+(phone?'\nPhone: '+phone:'');
+      if(lookupMatch&&!lookupMatch.email&&!lookupMatch.phone&&!finalContact.email&&!finalContact.phone) text+='\nI did not find an email or phone yet, so I saved the contact with the name I have.';
+      if(opp&&opp.ok!==false) text+='\nOpportunity: '+(opp.created?'created':'already existed or was already covered')+(opp.amount?' at $'+opp.amount:'');
+      else if(opp&&opp.reason) text+='\nOpportunity was not created yet: '+opp.reason;
+      chatHistory.push({role:'assistant',content:text});
+      addMsg(text,false);
+      savedChat=false;autoSave();
+    })
+    .catch(function(e){removeTyping();addMsg('Contact creation failed: '+e.message,false);});
+  }
+  if(contact.name && (!contact.email || !contact.phone)){
+    addSys('Searching contacts for '+contact.name+' before creating anything...');
+    lookupContact(contact.name,function(found){
+      if(found){
+        contact.name=contact.name||found.name||'';
+        contact.email=contact.email||found.email||'';
+        contact.phone=contact.phone||found.phone||'';
+      }
+      finishCreateContact(contact,found);
+    });
+    return;
+  }
+  finishCreateContact(contact,null);
 }
 
 function startOnboardingProfile(){
@@ -3040,12 +3058,14 @@ function copySocialPost(){
 // ── CONTACT LOOKUP ─────────────────────────────────────
 function lookupContact(name, callback){
   // Search GHL contacts by name — runs before asking user for email
+  if(!String(name||'').trim()){callback(null);return;}
   fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
   .then(function(r){return r.json();})
   .then(function(d){
     var contacts=d.contacts||[];
-    if(contacts.length&&contacts[0].email){callback(contacts[0]);}
-    else{callback(null);}
+    var useful=contacts.find(function(c){return c.email||c.phone;})||contacts[0];
+    if(useful){callback(useful);}
+    else callback(null);
   }).catch(function(){callback(null);});
 }
 
@@ -3086,6 +3106,11 @@ function handleAddDocStep(text){
         addMsg('Found '+text+' — using '+contact.email+'. What are the key points to cover?',false);
         s.step='details';
         document.getElementById('msgInput').placeholder='Key points, terms, pricing, context...';
+      } else if(contact&&contact.phone){
+        s.recipientPhone=contact.phone;
+        addMsg('I found '+text+' with phone '+contact.phone+', but no email is saved. What email address should I use?',false);
+        s.step='email';
+        document.getElementById('msgInput').placeholder='email@example.com...';
       } else {
         addMsg("What's their email address?",false);
         s.step='email';
