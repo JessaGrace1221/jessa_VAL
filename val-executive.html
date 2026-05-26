@@ -2090,8 +2090,8 @@ document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="p
   var now=new Date();
   var hour=now.getHours();
   var lastBriefKey='val_last_brief_'+now.toDateString();
-  if(hour>=5&&hour<11&&!sessionStorage.getItem(lastBriefKey)){
-    sessionStorage.setItem(lastBriefKey,'1');
+  if(hour>=5&&hour<11&&!localStorage.getItem(lastBriefKey)){
+    localStorage.setItem(lastBriefKey,'1');
     setTimeout(function(){
       // Wait for dashboard data then deliver briefing
       setTimeout(deliverMorningBriefing, 3500);
@@ -3423,31 +3423,60 @@ function askProposals(){
   });
 }
 
-function askComms(){
+var unreadTriageQueue=[];
+var unreadTriageIndex=0;
+var unreadDismissed=JSON.parse(sessionStorage.getItem('val_unread_dismissed')||'[]');
+function unreadKey(item){return String(item&&((item.id||item.conversationId)||item.label)||'');}
+function saveUnreadDismissed(){sessionStorage.setItem('val_unread_dismissed',JSON.stringify(unreadDismissed.slice(-200)));}
+function updateUnreadVisibleCount(){
+  var left=Math.max(0,unreadTriageQueue.length-unreadTriageIndex);
+  dashData.followups=left;
+  var sc=document.getElementById('scCommsVal');if(sc)sc.textContent=left;
+  var sub=document.getElementById('scCommsSub');if(sub)sub.textContent=left?left+' unread conversation'+(left===1?'':'s'):'All clear';
+  var stat=document.getElementById('statFollowups');if(stat)stat.firstChild.nodeValue=left;
+  var badge=document.getElementById('statWaitingBadge');if(badge){badge.textContent=left?left+' UNREAD':'';badge.classList.toggle('hidden',!left);}
+}
+function addUnreadTriageControls(item,threadText){
+  var c=document.getElementById('chatScroll');
+  var row=document.createElement('div');
+  row.className='chips';
+  row.style.margin='0 0 14px 0';
+  function btn(label,fn){var b=document.createElement('button');b.className='chip';b.type='button';b.textContent=label;b.onclick=fn;row.appendChild(b);}
+  btn('Draft reply',function(){ask('Draft one reply for this conversation only:\n\n'+threadText+'\n\nKeep it concise, human, and ready to send.');});
+  btn('Mark handled',function(){var key=unreadKey(item);if(key&&!unreadDismissed.includes(key))unreadDismissed.push(key);saveUnreadDismissed();unreadTriageQueue.splice(unreadTriageIndex,1);updateUnreadVisibleCount();presentUnreadTriageItem();});
+  btn('Skip',function(){unreadTriageIndex=Math.min(unreadTriageIndex+1,unreadTriageQueue.length);updateUnreadVisibleCount();presentUnreadTriageItem();});
+  if(item.actionUrl)btn('Open in GHL',function(){window.open(item.actionUrl,'_blank');});
+  c.appendChild(row);c.scrollTop=c.scrollHeight;
+}
+function presentUnreadTriageItem(){
+  if(unreadTriageIndex>=unreadTriageQueue.length){addMsg('Unread triage is clear for now. Anything marked handled has been removed from this VAL queue.',false);updateUnreadVisibleCount();return;}
+  var item=unreadTriageQueue[unreadTriageIndex];
+  var total=unreadTriageQueue.length;
+  addMsg('Loading unread conversation '+(unreadTriageIndex+1)+' of '+total+'...',false);
+  fetch(PROXY+'/api/conversation/'+(item.id||item.conversationId)).then(function(r){return r.json();}).then(function(d){
+    var threadText='Unread conversation '+(unreadTriageIndex+1)+' of '+total+'\n\nFrom: '+(d.contactName||item.label||'Contact')+'\nUnread: '+(d.unreadCount||item.unreadCount||'')+'\n\n'+formatThread(d);
+    addMsg(threadText,false);
+    addUnreadTriageControls(item,threadText);
+  }).catch(function(){
+    var fallback='Unread conversation '+(unreadTriageIndex+1)+' of '+total+'\n\n'+(item.label||'Contact')+(item.sublabel?'\n\nLatest: '+item.sublabel:'');
+    addMsg(fallback,false);
+    addUnreadTriageControls(item,fallback);
+  });
+}
+function startUnreadTriage(emptyPrompt){
+  openDetailWithTitle('Unread Triage');
   fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var items=d.items||[];
-    if(!items.length){ask('My communications queue is clear — no unread conversations. Who should I proactively reach out to today?');return;}
-    // Fetch actual message content for up to 5 conversations in parallel
-    var toFetch=items.slice(0,5).filter(function(i){return i.id||i.conversationId;});
-    if(!toFetch.length){
-      var detail=items.map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
-      ask('Here are my '+d.total+' unread conversations:\n'+detail+'\n\nWhat should I prioritize and what are suggested next actions?');
-      return;
-    }
-    addMsg('Reading message threads...',false);
-    Promise.allSettled(toFetch.map(function(i){
-      return fetch(PROXY+'/api/conversation/'+(i.id||i.conversationId)).then(r=>r.json());
-    })).then(function(results){
-      var threadsText=results.map(function(r,idx){
-        if(r.status!=='fulfilled'||r.value.error) return '- '+toFetch[idx].label+': (could not load thread)';
-        var d=r.value;
-        var msgs=formatThread(d);
-        return '=== '+d.contactName+' ('+d.type+', '+d.unreadCount+' unread) ===\n'+msgs;
-      }).join('\n\n');
-      ask('Here are my '+d.total+' unread conversations with full message content:\n\n'+threadsText
-        +'\n\nFor each conversation: what do they want, what is the context, and draft a reply in my voice ready to send.');
-    });
-  }).catch(function(){ask('Check my communications queue and summarize what needs a reply.');});
+    var items=(d.items||[]).filter(function(i){return !unreadDismissed.includes(unreadKey(i));});
+    if(!items.length){ask(emptyPrompt||'My communications queue is clear. Who should I proactively reach out to today?');return;}
+    unreadTriageQueue=items;
+    unreadTriageIndex=0;
+    updateUnreadVisibleCount();
+    addMsg('I will go one unread conversation at a time. Use Draft reply, Mark handled, or Skip. Mark handled removes it from this VAL unread queue.',false);
+    presentUnreadTriageItem();
+  }).catch(function(){ask('Check my communications queue and show me one unread message at a time.');});
+}
+function askComms(){
+  startUnreadTriage('My communications queue is clear — no unread conversations. Who should I proactively reach out to today?');
 }
 
 function askPipeline(){
@@ -3469,28 +3498,7 @@ function askPipeline(){
 }
 
 function askFollowups(){
-  fetch(HOOK_COMMS).then(r=>r.json()).then(function(d){
-    var items=d.items||[];
-    if(!items.length){ask('No unread conversations right now. Based on my pipeline and recent activity, who should I proactively follow up with today? Be specific — name, what to say, why now.');return;}
-    var toFetch=items.slice(0,5).filter(function(i){return i.id||i.conversationId;});
-    if(!toFetch.length){
-      var detail=items.map(function(i){return '- '+i.label+(i.sublabel?' | '+i.sublabel:'');}).join('\n');
-      ask('Here are my unread conversations needing a reply:\n'+detail+'\n\nWho needs a reply most urgently? Draft a response for each.');
-      return;
-    }
-    addMsg('Reading message threads...',false);
-    Promise.allSettled(toFetch.map(function(i){
-      return fetch(PROXY+'/api/conversation/'+(i.id||i.conversationId)).then(r=>r.json());
-    })).then(function(results){
-      var threadsText=results.map(function(r,idx){
-        if(r.status!=='fulfilled'||r.value.error) return '- '+toFetch[idx].label+': (could not load thread)';
-        var d=r.value;
-        return '=== '+d.contactName+' ===\n'+formatThread(d);
-      }).join('\n\n');
-      ask('Here are my unread conversations that need replies:\n\n'+threadsText
-        +'\n\nFor each: write a ready-to-send reply in my voice. Be warm, direct, and professional. After each draft, show an "Approve & Send" option.');
-    });
-  }).catch(function(){ask('Who needs a reply from me? Show unread messages and draft responses.');});
+  startUnreadTriage('No unread conversations right now. Based on my pipeline and recent activity, who should I proactively follow up with today? Be specific — name, what to say, why now.');
 }
 
 
