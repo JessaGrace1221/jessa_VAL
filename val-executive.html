@@ -719,6 +719,10 @@ input[type=file]{display:none}
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/></svg></div>
           <div class="ws-item-text"><div class="ws-item-title">GOALL</div><div class="ws-item-sub">Planning thread</div></div>
         </div>
+        <div class="ws-item" onclick="openHelpByShoppingVal()">
+          <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l3.75 3.75L21.75 6m0 0h-5.25m5.25 0v5.25"/></svg></div>
+          <div class="ws-item-text"><div class="ws-item-title">HelpByShopping</div><div class="ws-item-sub">Client VAL</div></div>
+        </div>
         <div class="ws-item" onclick="wsThread('ed-brown')">
           <div class="ws-item-icon"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/></svg></div>
           <div class="ws-item-text"><div class="ws-item-title">Ed Brown</div><div class="ws-item-sub">Client thread</div></div>
@@ -760,6 +764,10 @@ input[type=file]{display:none}
     <button class="tbtn tbtn-action" onclick="connectGoogleCalendar()" title="Connect or reconnect Google Calendar">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0118.75 20.25H5.25a1.5 1.5 0 01-1.5-1.5v-12a1.5 1.5 0 011.5-1.5z"/></svg>
       Calendar
+    </button>
+    <button class="tbtn tbtn-action" onclick="openHelpByShoppingVal()" title="Open HelpByShopping VAL">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l3.75 3.75L21.75 6m0 0h-5.25m5.25 0v5.25"/></svg>
+      HBS
     </button>
     <button class="tbtn tbtn-meeting" id="meetingModeBtn" onclick="toggleMeetingMode()" title="Meeting Mode — VAL listens quietly, say 'VAL' to engage">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>
@@ -1000,12 +1008,17 @@ var DG_KEY         = 'c6b3c32aa547322ca7f38809d90b50581f7af294';
 var DG_VOICE       = 'aura-arcas-en';
 var SEND_HOOK     = 'https://hook.us1.make.com/fr51wh2r58fbgcmlyu2xflywj794ov62';
 var PROXY         = 'https://jessaval-production.up.railway.app';
+var HELP_BY_SHOPPING_VAL_URL = 'https://helpbyshopping-val-production.up.railway.app/dashboard';
 var MEMORY_HOOK   = PROXY+'/api/val/transcripts';
 var CONVERSATION_HOOK = PROXY+'/api/val/conversations';
 var HOOK_MEETINGS = PROXY+'/api/meetings';
 var HOOK_PIPELINE = PROXY+'/api/pipeline';
 var HOOK_CALENDAR = PROXY+'/api/calendar';
 var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks below
+
+function openHelpByShoppingVal(){
+  window.open(HELP_BY_SHOPPING_VAL_URL,'_blank','noopener');
+}
 
 function valTranscriptPayload(type,transcript,extra){
   var payload=extra||{};
