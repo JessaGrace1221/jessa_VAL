@@ -9,15 +9,20 @@ It prepares you for meetings, protects follow-up, organizes commitments by perso
 New to VAL? Start with these four moves.
 
 1. [Tell VAL about yourself](#tell-me-about-yourself)
-2. [Review meeting prep](#meeting-prep)
-3. [Run Relationship Radar](#relationship-radar)
+2. [Run Relationship Review](#relationship-review)
+3. [Review meeting prep](#meeting-prep)
 4. [Open the Approval Queue](#approval-queue)
 
 ## Quick Links
 
 - [What VAL helps you do](#what-val-helps-you-do)
 - [Daily rhythm](#daily-executive-rhythm)
+- [Relationship Review](#relationship-review)
 - [Relationship Radar](#relationship-radar)
+- [Email Intelligence](#email-intelligence)
+- [Integration Status](#integration-status)
+- [Register Your Keys](#register-your-keys)
+- [Transcript Webhook](#transcript-webhook)
 - [Meeting prep](#meeting-prep)
 - [Follow-ups and drafts](#follow-ups-and-drafts)
 - [Approval Queue](#approval-queue)
@@ -25,6 +30,7 @@ New to VAL? Start with these four moves.
 - [Contact Command Center](#contact-command-center)
 - [Integrity Tracker](#integrity-tracker)
 - [Use My Saved Time](#use-my-saved-time)
+- [GOALL Lead Intelligence](#goall-lead-intelligence)
 - [Voice mode](#voice-mode)
 - [Documents and uploads](#documents-and-uploads)
 - [Detailed reference](#detailed-reference)
@@ -41,7 +47,10 @@ Use VAL when you need to:
 - keep promises visible until they are closed
 - turn conversations into tasks, notes, and next steps
 - review the people who need attention now
+- see which relationships are gaining momentum or cooling off
+- find forgotten commitments and hidden opportunities
 - draft messages, proposals, scopes, and recap notes
+- check whether Gmail, Calendar, transcripts, tasks, and drafts are connected
 - stay ahead of your calendar instead of reacting to it
 - use saved time for higher-leverage work
 
@@ -64,6 +73,14 @@ Upload helpful documents if you have them:
 - operating principles
 
 Why it matters: VAL gets sharper when it understands how you think, what matters to you, and how your relationships create value.
+
+### Run Relationship Review
+
+Click **Relationship Review** when you want VAL to review your network like a chief of staff.
+
+VAL looks at recent emails, meetings, tasks, notes, opportunities, transcripts, and memory to show who deserves attention, why they matter, what may be cooling off, what is gaining momentum, which commitments are still open, and where hidden opportunities may exist.
+
+Why it matters: this is where VAL stops being a reminder tool and starts becoming a relationship intelligence system.
 
 ### Use Relationship Radar
 
@@ -116,6 +133,118 @@ Try asking:
 - "Who am I at risk of dropping?"
 - "Which relationships need attention today?"
 - "Who should I follow up with before the week gets away from me?"
+
+### Relationship Review
+
+What you can do with it: get a full review of the relationships that matter most right now.
+
+How this helps: VAL scores meaningful contacts, explains the evidence, shows which relationships are warming up or cooling off, finds forgotten commitments, suggests introductions, and gives you a specific next move for each person.
+
+Use it when you want to know:
+
+- who deserves attention today
+- who is becoming more important
+- who you have not contacted recently
+- where revenue, referrals, or partnership potential may be hiding
+- what you promised and have not closed yet
+- who VAL thinks could benefit from an introduction
+
+Relationship cards include:
+
+- relationship score
+- reason VAL surfaced them
+- last meaningful interaction
+- recommended action
+- source evidence
+- draft message
+- create task
+- brainstorm
+- mark VIP
+- snooze
+- not important
+- view profile
+
+Try asking:
+
+- "Run Relationship Review."
+- "Who matters most right now?"
+- "Which relationships are cooling off?"
+- "What hidden opportunities are in my network?"
+- "Who should I introduce to each other?"
+
+### Email Intelligence
+
+What you can do with it: review important emails, needed replies, waiting-on-response items, forwarding suggestions, and low-priority messages.
+
+How this helps: VAL turns email into decisions instead of another inbox to manage. It can draft replies, create tasks, track follow-up, and suggest rules after you confirm them.
+
+Use it for:
+
+- important unread messages
+- emails that need a reply
+- conversations where you are waiting on someone
+- low-priority or repetitive senders
+- draft replies that should go to the Approval Queue
+- safe automation rules for repeated email patterns
+
+If Gmail is not connected or does not have the right permissions, VAL will now show that clearly instead of silently returning nothing.
+
+### Integration Status
+
+What you can do with it: check whether VAL's key data pipes are working.
+
+How this helps: you can quickly see whether Google, Gmail, Calendar, transcripts, tasks, and drafts are connected and producing data.
+
+Use it when:
+
+- Calendar looks empty
+- Gmail does not appear in Email Intelligence
+- meeting prep feels thin
+- transcripts are not creating tasks
+- drafts are not appearing
+- a client says something feels disconnected
+
+The status view shows connection state, missing scopes, recent Gmail counts, recent Calendar counts, transcript counts, matched meeting transcripts, and whether task/draft creation is available.
+
+### Transcript Webhook
+
+What you can do with it: copy the webhook URL that sends transcripts into this specific VAL dashboard.
+
+How this helps: every user has their own VAL deployment, so each user needs the correct transcript URL for their own dashboard. Jessa, Ed, Mark, and future clients should each copy the URL from inside their own VAL.
+
+Where to find it:
+
+1. Open the dashboard.
+2. Click **Integration Status**.
+3. Find **Transcript Webhook URL**.
+4. Click **Copy URL**.
+5. Paste it into Make.com, your transcription app, or any tool sending completed transcripts to VAL.
+
+You can also copy:
+
+- the webhook token
+- the sample JSON payload
+
+Use this when you want meeting transcripts to become VAL memory, tasks, summaries, open loops, meeting context, and follow-up drafts.
+
+### Register Your Keys
+
+What you can do with it: securely add or update client-owned API keys from inside VAL.
+
+How this helps: each client can register their own OpenAI, GoHighLevel, Outscraper, RocketReach, Google, or Microsoft connection without changing Railway variables every time.
+
+Use it for:
+
+- OpenAI key and preferred model
+- GoHighLevel key or access token
+- GoHighLevel Location ID
+- GoHighLevel MCP URL if used
+- Google OAuth connection
+- Microsoft OAuth connection
+- Outscraper key
+- RocketReach key
+
+Saved keys are encrypted. VAL never shows the full key again after saving.
 
 ### Meeting Prep
 
@@ -234,12 +363,6 @@ Good uploads include:
 - strategy docs
 - meeting transcripts
 
-### Opportunity Creation From Meetings
-
-What you can do with it: new calendar attendees can be added to GoHighLevel as contacts and given an open opportunity. If the value is unknown, VAL uses $7,500.
-
-How this helps: new relationship momentum gets captured automatically instead of waiting for manual CRM cleanup.
-
 ## Detailed Reference
 
 The sections below document the app in more detail for users who want a fuller walkthrough.
@@ -254,7 +377,7 @@ VAL is not meant to behave like a blank chatbot. It is designed to act as a priv
 - helps decide what should happen next
 - drafts messages, proposals, scopes, agreements, and social posts
 - converts meetings into notes, tasks, decisions, and follow-up actions
-- connects with GoHighLevel, Google Calendar, Gmail, Make.com, and the VAL memory store
+- connects with GoHighLevel, Make.com, and the VAL memory store
 
 VAL's current durable memory layer is the app database. Pinecone is legacy context from the original architecture and is no longer required for the main chat, task, transcript, or file-memory flows.
 
@@ -274,6 +397,14 @@ Users can use it to:
 - see proposals in draft, sent, viewed, or signed states
 - start a focused command with VAL
 - jump into chat, meeting mode, posting, or document creation
+
+### Mark View
+
+The GOALL dashboard has two identity buttons at the top:
+
+- Mark Bierman executive view
+
+Choose the person using VAL before reviewing meetings, leads, pipeline, or follow-ups. GHL still assigns the actual lead ownership. VAL uses this choice to make the dashboard and recommendations read from the right person's perspective.
 
 ### Workspace Sidebar
 
@@ -485,7 +616,7 @@ What happens:
 Examples:
 
 - "Search memory for DISC"
-- "Find in memory the notes about Ed"
+- "Find in memory the notes about the proposal"
 - "What do you remember about this client?"
 - "Search the document vault"
 - "What did we decide last time?"
@@ -575,7 +706,7 @@ For each task, VAL can:
 
 ### Calendar Summary
 
-The calendar panel shows upcoming Google Calendar events.
+The calendar panel shows upcoming GOALL GHL calendar events.
 
 Users can:
 
@@ -608,7 +739,6 @@ For upcoming meetings, VAL can provide:
 - attendee intelligence from calendar attendees, RocketReach, and Outscraper when configured
 - recent LinkedIn post context when available
 - connection count and mutual connection context when available from the data provider
-- GoHighLevel opportunity status for new attendees in Jessa VAL
 - suggested agenda
 - risks or open loops
 - questions to ask
@@ -622,15 +752,15 @@ For past meetings, VAL can provide:
 - commitments
 - unresolved loops
 
-### Google Calendar Connection
+### GHL Calendar Connection
 
-Google Calendar uses OAuth. The backend stores refresh tokens so the user should not need to reconnect repeatedly.
+GOALL uses the GHL calendar, not Google Calendar.
 
-If the app says Google is disconnected:
+If meetings do not appear:
 
-- use the Connect Google button
-- complete the Google OAuth screen
-- confirm `/auth/status` shows connected
+- confirm the Railway variable `GHL_CALENDAR_ID` is set to the GOALL calendar
+- confirm GHL appointments are on that calendar
+- click the Calendar button in VAL to refresh the dashboard
 - check that the production environment has `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and the correct redirect URI
 
 ## 8. Voice and Meeting Mode
@@ -714,8 +844,8 @@ Search works best when the user includes:
 
 Examples:
 
-- "Search memory for Westwood pricing."
-- "What did Ed decide about the proposal?"
+- "Search memory for proposal pricing."
+- "What did the client decide about the proposal?"
 - "Find the DISC notes about my communication style."
 
 ## 10. File Uploads and Knowledge Documents
@@ -890,7 +1020,29 @@ VAL can help answer:
 - which viewed proposals should be acted on now
 - which signed proposals require onboarding or next steps
 
-## 16. Social Post Tool
+## 16. GOALL Lead Intelligence
+
+The Leads button opens GOALL's GOALL lead intelligence workflow.
+
+Use it when you want VAL to research a charity, foundation, or nonprofit as a potential GOALL partner, structure what is verifiable, and prepare clean CRM-ready fields.
+
+Users can:
+
+- enter an organization name and location
+- ask VAL to find the official website, donation page, LinkedIn page, Google data, news, fundraising activity, and supporter-base signals
+- identify likely partnership decision-makers when the data is clear
+- evaluate fit based on mission, donor/supporter audience, fundraising activity, public presence, and activation potential
+- flag weak or unclear data instead of guessing
+- send the structured research into the mapped GHL custom fields when a contact ID is provided
+
+Best prompts:
+
+- "Research a lead"
+- "Run GOALL lead intelligence"
+- "Research St. Jude Children's Research Hospital"
+- "Research a youth foundation in Austin, Texas"
+
+## 17. Social Post Tool
 
 The Post button opens the social post tool.
 
@@ -912,7 +1064,7 @@ Available tones include:
 - Story-driven
 - Educational
 
-## 17. General Chat Modal
+## 18. General Chat Modal
 
 The Chat button opens a cleaner general chat window.
 
@@ -927,7 +1079,7 @@ Use it for:
 
 This chat is intentionally separate from the denser dashboard experience.
 
-## 18. Backend and Webhook Reference
+## 19. Backend and Webhook Reference
 
 This section is for admins, builders, and automation setup.
 
@@ -955,25 +1107,25 @@ Receives the Google OAuth callback and stores tokens.
 
 Returns whether Google is connected and whether a refresh token is available.
 
-### Google Data
+### Calendar Data
 
 `GET /api/google/calendar`
 
-Returns upcoming Google Calendar events.
+Legacy Google endpoint. Not used by the GOALL dashboard.
 
 `GET /api/google/gmail`
 
-Returns recent unread Gmail messages matched against GHL contacts where possible.
+Legacy Gmail endpoint. Not used by the GOALL dashboard.
 
 ### Dashboard Data
 
 `GET /api/meetings`
 
-Returns today's meetings from GHL and Google Calendar when connected.
+Returns today's meetings from the GOALL GHL calendar.
 
 `GET /api/calendar`
 
-Returns Google Calendar events for the upcoming date window used by the calendar panel.
+Returns GHL calendar events for the upcoming date window used by the calendar panel.
 
 `GET /api/tasks`
 
@@ -1194,7 +1346,7 @@ Supported GHL proxy areas include:
 
 These routes are intended for app integration and should be treated as admin/backend capabilities.
 
-## 19. Transcript Webhook Setup
+## 20. Transcript Webhook Setup
 
 Use this when sending transcripts from a transcription app or Make.com.
 
@@ -1228,7 +1380,7 @@ When `process` is true, VAL should return and/or save:
 - follow-up drafts
 - memory updates
 
-## 20. Admin Setup
+## 21. Admin Setup
 
 ### Required Environment Variables
 
@@ -1286,18 +1438,6 @@ The Outscraper endpoint VAL should call to retrieve LinkedIn posts for a profile
 
 Comma-separated owner emails to exclude from attendee enrichment.
 
-`MEETING_OPPORTUNITY_AMOUNT`
-
-Default dollar amount for opportunities VAL creates from new calendar attendees. Defaults to `7500`.
-
-`GHL_OPPORTUNITY_PIPELINE_ID`
-
-Optional pipeline ID for opportunities created from calendar attendees. If omitted, VAL uses the first available GHL pipeline.
-
-`GHL_OPPORTUNITY_STAGE_ID`
-
-Optional pipeline stage ID for opportunities created from calendar attendees. If omitted, VAL uses the first stage in the selected pipeline.
-
 `VAL_USER_ID`
 
 Sets the user scope for tasks, memory, transcripts, and conversations.
@@ -1326,7 +1466,7 @@ Controls document memory chunk size.
 
 Controls overlap between long document memory chunks.
 
-## 21. Troubleshooting
+## 22. Troubleshooting
 
 ### Task Disappears After Refresh
 
@@ -1348,16 +1488,15 @@ Check:
 - `/api/val/chat` exists in `server.js`
 - the app has restarted after deployment
 
-### Google Calendar Keeps Disconnecting
+### Calendar Events Do Not Appear
 
 Check:
 
-- `/auth/status`
-- Google OAuth redirect URI
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- database token storage
-- whether the Google app requested offline access and received a refresh token
+- `GHL_KEY`
+- `GHL_LOC`
+- `GHL_CALENDAR_ID`
+- whether appointments are assigned to the configured GHL calendar
+- Railway deployment logs for GHL API errors
 
 ### Uploaded File Does Not Appear in Memory
 
@@ -1379,7 +1518,7 @@ Check:
 - Make.com is sending JSON
 - Make.com content type is `application/json`
 
-## 22. Recommended User Workflows
+## 23. Recommended User Workflows
 
 ### Start of Day
 
@@ -1428,7 +1567,7 @@ VAL should review:
 5. Request revisions if needed.
 6. Approve or copy/send through the configured workflow.
 
-## 23. Data Boundaries
+## 24. Data Boundaries
 
 VAL stores operational memory so it can be useful over time. Users should treat it as a private business system.
 
@@ -1440,7 +1579,7 @@ Sensitive data should only be uploaded or sent if:
 - webhook URLs are not publicly shared
 - users understand what information is being stored
 
-## 24. Quick Reference
+## 25. Quick Reference
 
 Useful phrases:
 
