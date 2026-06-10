@@ -1167,14 +1167,24 @@ function transcriptWebhookInfo(req){
   const token=transcriptWebhookToken();
   return {
     ok:true,
+    live:true,
+    status:'live',
     clientName:CLIENT_CONFIG.clientName,
     clientSlug:CLIENT_CONFIG.clientSlug,
     method:'POST',
     url:`${base}/api/val/transcripts?token=${encodeURIComponent(token)}`,
+    headerUrl:`${base}/api/val/transcripts`,
+    pingUrl:`${base}/api/val/transcripts/ping?token=${encodeURIComponent(token)}`,
     headerName:'X-VAL-Transcript-Token',
     headerToken:token,
     contentType:'application/json',
     processDefault:true,
+    recent30DaysCount:0,
+    matchedToMeetings30DaysCount:0,
+    lastReceivedAt:null,
+    lastTranscriptTitle:'',
+    message:'Webhook is live. Send POST requests with JSON to this URL from a transcriber, Make.com, Zapier, or any tool that can call a webhook.',
+    acceptedTranscriptFields:['transcript','rawText','text'],
     samplePayload:{
       title:'Meeting with Contact Name',
       transcript:'Full transcript text here...',
@@ -1720,6 +1730,7 @@ function setPasswordHtml(){
 function isPublicPath(req){
   const p=req.path;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
+  if(p==='/api/val/transcripts/ping'&&req.method==='POST') return true;
   return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
@@ -1853,7 +1864,20 @@ app.use(requireAuth);
 app.get('/api/config',(req,res)=>res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI)}));
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
-app.get('/api/val/transcripts/webhook',(req,res)=>res.json(transcriptWebhookInfo(req)));
+app.get('/api/val/transcripts/webhook',async(req,res)=>{
+  try{
+    const [transcripts,matched]=await Promise.all([
+      recentTranscripts(30).catch(()=>[]),
+      countTranscriptMeetingLinks(30).catch(()=>0)
+    ]);
+    const latest=transcripts[0]||null;
+    res.json({...transcriptWebhookInfo(req),recent30DaysCount:transcripts.length,matchedToMeetings30DaysCount:matched,lastReceivedAt:latest?.createdAt||'',lastTranscriptTitle:latest?.title||latest?.type||'',lastTranscriptId:latest?.id||''});
+  }catch(e){res.status(500).json({ok:false,live:false,error:e.message});}
+});
+app.post('/api/val/transcripts/ping',(req,res)=>{
+  if(!isValidTranscriptWebhookReq(req)) return res.status(401).json({ok:false,live:false,error:'Invalid or missing transcript webhook token'});
+  res.json({ok:true,live:true,status:'live',clientName:CLIENT_CONFIG.clientName,clientSlug:CLIENT_CONFIG.clientSlug,receivedAt:new Date().toISOString(),message:'Transcript webhook is live. Use the transcript URL for real transcript payloads.'});
+});
 app.get('/api/integrations/credentials',async(req,res)=>{
   try{
     if(DEMO_MODE){
@@ -5188,14 +5212,14 @@ async function saveTranscript(payload){
     const state=requestContext.getStore()?.demoState;
     const id=payload.id||uuid('demo-tr');
     const type=payload.type||'transcript';
-    const rawText=payload.transcript||payload.rawText||'';
+    const rawText=payload.transcript||payload.rawText||payload.text||'';
     if(state) state.transcripts.unshift({id,type,title:payload.title||'',rawText,metadata:{...payload},createdAt:payload.timestamp||new Date().toISOString()});
     return {id,type};
   }
   await valDbReady;
   const id=payload.id||uuid('tr');
   const type=payload.type||'transcript';
-  const rawText=payload.transcript||payload.rawText||'';
+  const rawText=payload.transcript||payload.rawText||payload.text||'';
   const metadata={...payload};
   delete metadata.transcript; delete metadata.rawText;
   if(pgPool){
@@ -7503,8 +7527,8 @@ async function processTranscriptPayload(payload){
   console.log(`Transcript processed: title="${title}" actionItems=${taskItems.length} tasksCreated=${createdTasks.length} draftsCreated=${createdDrafts.length} meetingMatched=${!!meetingMatch}`);
   return {analysis:parsed,createdTasks,createdDrafts,meetingMatch,counts:{actionItemsExtracted:taskItems.length,tasksCreated:createdTasks.length,draftsCreated:createdDrafts.length,meetingMatched:meetingMatch?1:0}};
 }
-app.post('/api/val/transcripts',async(req,res)=>{try{console.log('Transcript received:',req.body?.title||req.body?.type||'untitled');const saved=await saveTranscript(req.body||{});const transcriptRecord={id:saved.id,title:req.body?.title||saved.type,rawText:req.body?.transcript||req.body?.rawText||'',metadata:req.body||{},createdAt:req.body?.timestamp||req.body?.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});if(req.body&&req.body.process!==false)return res.json({ok:true,...saved,...await processTranscriptPayload({...req.body,savedTranscriptId:saved.id,meetingMatch})});res.json({ok:true,...saved,meetingMatch});}catch(e){console.error('Transcript save/process error:',e.message);res.status(500).json({error:e.message});}});
-app.post('/api/val/transcripts/process',async(req,res)=>{try{const title=req.body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:req.body.transcript||req.body.rawText||'',metadata:{source:req.body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:req.body.transcript||req.body.rawText||'',metadata:req.body||{},createdAt:req.body.timestamp||req.body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...req.body,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';console.log('Transcript received:',body.title||body.type||'untitled');const saved=await saveTranscript({...body,transcript:transcriptText});const transcriptRecord={id:saved.id,title:body.title||saved.type,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});if(body&&body.process!==false)return res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,savedTranscriptId:saved.id,meetingMatch})});res.json({ok:true,...saved,meetingMatch});}catch(e){console.error('Transcript save/process error:',e.message);res.status(500).json({error:e.message});}});
+app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=req.body||{};const transcriptText=body.transcript||body.rawText||body.text||'';const title=body.title||'Processed transcript';const saved=await saveTranscript({type:'processed_transcript',title,transcript:transcriptText,metadata:{source:body.source||'manual_process'},importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(e=>{console.log('Transcript link failed:',e.message);return null;});res.json({ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/context/resolve-contact',async(req,res)=>{try{res.json(await resolveContactFromContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/val/context/resolve-meeting',async(req,res)=>{try{res.json(await resolveMeetingContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
