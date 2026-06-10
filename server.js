@@ -8,6 +8,7 @@ const {AsyncLocalStorage} = require('async_hooks');
 const multer  = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const {createGhlMcpService} = require('./services/ghlMcpService');
 const app     = express();
 
 app.use(cors());
@@ -64,6 +65,8 @@ const OPENAI_KEY = process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
+const APOLLO_API_KEY = process.env.APOLLO_API_KEY;
+const APOLLO_BASE_URL = process.env.APOLLO_BASE_URL || 'https://api.apollo.io/api/v1';
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
@@ -80,6 +83,9 @@ const MICROSOFT_SCOPES = String(process.env.MICROSOFT_SCOPES || 'offline_access 
 const GOALL_LEAD_SEARCH_MAX = Number(process.env.GOALL_LEAD_SEARCH_MAX) || 100;
 const GOALL_LEAD_RAW_SEARCH_MAX = Number(process.env.GOALL_LEAD_RAW_SEARCH_MAX) || Math.max(GOALL_LEAD_SEARCH_MAX*4,200);
 const GOALL_LEAD_SEARCH_CALLS_MAX = Number(process.env.GOALL_LEAD_SEARCH_CALLS_MAX) || 28;
+const GOALL_LEAD_DISCOVERY_TIMEOUT_MS = Number(process.env.GOALL_LEAD_DISCOVERY_TIMEOUT_MS) || 22000;
+const OUTSCRAPER_FETCH_TIMEOUT_MS = Number(process.env.OUTSCRAPER_FETCH_TIMEOUT_MS) || 14000;
+const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 12000;
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -404,7 +410,7 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   google_review_count:['google review count','google_review_count','review count'],
   google_rating:['google rating','google_rating'],
   google_reviews_snippet:['google reviews snippet','google_reviews_snippet','review snippet','reviews snippet'],
-  lead_score:['lead score','lead_score','goall lead score','goall score','score','priority score','lead priority','lead priority score','lead score 1-4','lead score 1 4','call priority score','call center score'],
+  lead_score:['lead score','lead_score','goall lead score','goall score','priority score','lead priority score','lead score 1-4','lead score 1 4','call priority score','call center score'],
   lead_score_reason:['lead score reason','lead_score_reason','goall lead score reason','goall score reason','score reason','priority score reason','lead priority reason','call priority reason','call center score reason'],
   lead_scored_at:['lead scored at','lead_scored_at'],
   lead_rejected_reason:['lead rejected reason','lead_rejected_reason','rejected reason'],
@@ -488,7 +494,7 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   suggested_new_automation_tag:['suggested new automation tag','suggested automation tag','suggestednewautomationtag']
 };
 function projectSystemPrompt(){
-  if(CLIENT_CONFIG.projectType!=='book_editor') return '';
+  if(!isBookEditorProject()) return '';
   const projectName = CLIENT_CONFIG.projectName || 'the book project';
   return `
 Specialized project mode: Book Editor
@@ -496,6 +502,8 @@ Specialized project mode: Book Editor
 You are Michele VAL, the editorial command center for ${CLIENT_CONFIG.clientName}'s memoir, ${projectName}.
 
 You are not a generic assistant. You are a memoir editor, humor editor, psychology-aware reader advocate, IFS-informed prompt reviewer, structural book strategist, and launch thought partner.
+
+This VAL is not being used as a CRM or relationship-management dashboard. Do not default to pipeline, lead, sales, contact, or follow-up language unless the user explicitly asks for launch outreach or book-network support.
 
 The book is generally written and is now in the editing phase. Your job is to help refine the manuscript into a fluid, emotionally layered, page-turning memoir that uses humor, curiosity, compassion, and Internal Family Systems-informed reflection to help readers move through their own transformation.
 
@@ -511,8 +519,18 @@ Chapters must not feel like separate essays. They should feel like one fluid mem
 
 When manuscript content is missing, clearly label any examples as demo or sample and never pretend sample material is the actual manuscript.
 
-Your purpose is to protect the reader's experience and the integrity of the book.
+Your first responsibility is editorial continuity: know where Michele left off, what the next clean editorial move is, where the book needs stronger alignment, and what would most protect the reader's experience and the integrity of the book.
 `.trim();
+}
+function isBookEditorProject(){
+  const identity=[
+    CLIENT_CONFIG.projectType,
+    CLIENT_CONFIG.projectName,
+    CLIENT_CONFIG.clientName,
+    CLIENT_CONFIG.clientSlug,
+    CLIENT_CONFIG.brandName
+  ].join(' ').toLowerCase();
+  return identity.includes('book_editor') || identity.includes('the big trick') || identity.includes('michele');
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
@@ -527,6 +545,17 @@ const VAL_USER_ID = process.env.VAL_USER_ID || CLIENT_CONFIG.clientSlug || 'defa
 const MEMORY_CHUNK_SIZE = Number(process.env.MEMORY_CHUNK_SIZE) || 1800;
 const MEMORY_CHUNK_OVERLAP = Number(process.env.MEMORY_CHUNK_OVERLAP) || 250;
 let pgPool = null;
+const ghlMcp = createGhlMcpService({
+  baseUrl:BASE,
+  fallbackApiKey:GHL_KEY,
+  fallbackLocationId:GHL_LOC,
+  calendarIds:GHL_CALENDAR_IDS,
+  resolveSecret:resolveIntegrationSecret,
+  getCurrentUser:currentValUser,
+  getTenantId:tenantId,
+  inferOwner:inferValOwner,
+  logger:console
+});
 
 function inferValOwner(obj={}){
   const ids = [
@@ -842,8 +871,7 @@ if(process.env.DATABASE_URL){
 }
 
 async function gh(){
-  const key = await resolveIntegrationSecret('ghl','api_key',GHL_KEY);
-  return {'Authorization':`Bearer ${key||''}`,'Version':'2021-07-28','Content-Type':'application/json'};
+  return ghlMcp.headers();
 }
 function envNameForSlug(slug,suffix){
   return `GHL_ACCOUNT_${String(slug||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')}_${suffix}`;
@@ -885,65 +913,22 @@ async function resolvedGhlAccounts(){
   return apiKey&&locationId?[{slug:'default',label:process.env.GHL_ACCOUNT_LABEL||'GHL',apiKey,locationId,calendarIds:GHL_CALENDAR_IDS}]:[];
 }
 function ghlHeadersForAccount(account){
-  return {'Authorization':`Bearer ${account?.apiKey||''}`,'Version':'2021-07-28','Content-Type':'application/json'};
+  return ghlMcp.headersForCredentials(ghlMcp.credentialsFromAccount(account));
 }
 async function prepareGhlRequest(path,body){
-  const loc=await resolveGhlLocationId();
-  let nextPath=String(path||'');
-  if(loc){
-    const enc=encodeURIComponent(loc);
-    nextPath=nextPath
-      .replace(/locationId=(&|$)/g,`locationId=${enc}$1`)
-      .replace(/location_id=(&|$)/g,`location_id=${enc}$1`)
-      .replace(/\/location\/(?=\/|$)/g,`/location/${enc}`)
-      .replace(/\/locations\/(?=\/|$)/g,`/locations/${enc}/`);
-  }
-  let nextBody=body;
-  if(loc&&body&&typeof body==='object'&&!Array.isArray(body)){
-    nextBody={...body};
-    if('locationId' in nextBody&&!nextBody.locationId) nextBody.locationId=loc;
-    if('location_id' in nextBody&&!nextBody.location_id) nextBody.location_id=loc;
-  }
-  return {path:nextPath,body:nextBody};
+  return ghlMcp.prepare(path,body);
 }
 function prepareGhlRequestForAccount(path,body,account){
-  const loc=account?.locationId||'';
-  let nextPath=String(path||'');
-  if(loc){
-    const enc=encodeURIComponent(loc);
-    nextPath=nextPath
-      .replace(/locationId=(&|$)/g,`locationId=${enc}$1`)
-      .replace(/location_id=(&|$)/g,`location_id=${enc}$1`)
-      .replace(/\/location\/(?=\/|$)/g,`/location/${enc}`)
-      .replace(/\/locations\/(?=\/|$)/g,`/locations/${enc}/`);
-  }
-  let nextBody=body;
-  if(loc&&body&&typeof body==='object'&&!Array.isArray(body)){
-    nextBody={...body};
-    if('locationId' in nextBody&&!nextBody.locationId) nextBody.locationId=loc;
-    if('location_id' in nextBody&&!nextBody.location_id) nextBody.location_id=loc;
-  }
-  return {path:nextPath,body:nextBody};
+  return ghlMcp.prepareForAccount(path,body,account);
 }
 async function ghl(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  return r.json();
+  return ghlMcp.request(method,path,body);
 }
 async function ghlForAccount(account,method,path,body){
-  const prepared=prepareGhlRequestForAccount(path,body,account);
-  const r=await fetch(BASE+prepared.path,{method,headers:ghlHeadersForAccount(account),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  return r.json();
+  return ghlMcp.requestForAccount(account,method,path,body);
 }
 async function ghlStrict(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  const data=await readJsonResponse(r);
-  if(!r.ok){
-    const detail=data.message||data.error||data.errorMessage||data.raw||JSON.stringify(data).slice(0,500);
-    throw new Error(`GHL ${method} ${path} failed (${r.status}): ${detail}`);
-  }
-  return data;
+  return ghlMcp.requestStrict(method,path,body);
 }
 async function readJsonResponse(response){
   const text = await response.text();
@@ -951,17 +936,38 @@ async function readJsonResponse(response){
   catch(e){ return {raw:text}; }
 }
 
+async function fetchWithTimeout(url,options={},timeoutMs=10000,label='upstream request'){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    return await fetch(url,{...options,signal:controller.signal});
+  }catch(e){
+    if(e && e.name==='AbortError'){
+      throw new Error(`${label} timed out after ${Math.round(timeoutMs/1000)} seconds`);
+    }
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function withTimeout(promise,timeoutMs,message){
+  let timer;
+  const timeout=new Promise((_,reject)=>{
+    timer=setTimeout(()=>reject(new Error(message)),timeoutMs);
+  });
+  try{
+    return await Promise.race([promise,timeout]);
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 async function ghlTry(method,path,body){
-  const prepared=await prepareGhlRequest(path,body);
-  const r=await fetch(BASE+prepared.path,{method,headers:await gh(),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  const data=await readJsonResponse(r);
-  return {ok:r.ok,status:r.status,path,data};
+  return ghlMcp.requestTry(method,path,body);
 }
 async function ghlTryForAccount(account,method,path,body){
-  const prepared=prepareGhlRequestForAccount(path,body,account);
-  const r=await fetch(BASE+prepared.path,{method,headers:ghlHeadersForAccount(account),body:prepared.body?JSON.stringify(prepared.body):undefined});
-  const data=await readJsonResponse(r);
-  return {ok:r.ok,status:r.status,path:prepared.path,data,account};
+  return ghlMcp.requestTryForAccount(account,method,path,body);
 }
 
 function readJson(file,fallback){
@@ -1901,7 +1907,7 @@ app.get('/api/integrations/credentials',async(req,res)=>{
 app.post('/api/integrations/credentials',async(req,res)=>{
   try{
     const provider=String(req.body.provider||'').trim().toLowerCase();
-    const allowed=new Set(['openai','ghl','outscraper','rocketreach','google_oauth','microsoft_oauth']);
+    const allowed=new Set(['openai','ghl','outscraper','apollo','rocketreach','google_oauth','microsoft_oauth']);
     if(!allowed.has(provider)) return res.status(400).json({ok:false,error:'Unsupported provider'});
     if(DEMO_MODE) return res.json({ok:true,demo:true,credentials:[{id:`demo-${provider}`,provider,credentialType:'api_key',maskedValue:'...demo',status:'Connected',lastTestedAt:new Date().toISOString()}]});
     const fields=req.body.fields||{};
@@ -1926,6 +1932,8 @@ app.post('/api/integrations/credentials',async(req,res)=>{
       await save('location_id',fields.locationId);
       await save('mcp_url',fields.mcpUrl);
     }else if(provider==='outscraper'){
+      await save('api_key',fields.apiKey||fields.key);
+    }else if(provider==='apollo'){
       await save('api_key',fields.apiKey||fields.key);
     }else if(provider==='rocketreach'){
       await save('api_key',fields.apiKey||fields.key);
@@ -1965,6 +1973,9 @@ app.post('/api/integrations/test/:provider',async(req,res)=>{
     }else if(provider==='outscraper'){
       const key=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
       ok=!!key; message=ok?'Connected': 'Outscraper API key is missing';
+    }else if(provider==='apollo'){
+      const key=await resolveIntegrationSecret('apollo','api_key',APOLLO_API_KEY);
+      ok=!!key; message=ok?'Connected': 'Apollo API key is missing';
     }else if(provider==='rocketreach'){
       const key=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
       ok=!!key; message=ok?'Connected': 'RocketReach API key is missing';
@@ -2099,6 +2110,14 @@ app.get('/api/integrations/health',async(req,res)=>{
       lastSyncAt:new Date().toISOString(),
       errors:gmailErrors
     };
+    const docsMissingScopes=missingGoogleScopes(REQUIRED_GOOGLE_DOC_SCOPES);
+    const docsHealth={
+      connected:!!token&&docsMissingScopes.length===0,
+      hasDriveFileScope:!docsMissingScopes.includes('https://www.googleapis.com/auth/drive.file'),
+      hasDocumentsScope:!docsMissingScopes.includes('https://www.googleapis.com/auth/documents'),
+      missingScopes:docsMissingScopes,
+      error:docsMissingScopes.length?'Reconnect Google to grant Drive/Docs permissions.':''
+    };
     res.json({
       ok:!errors.length,
       gmail:gmailHealth,
@@ -2110,7 +2129,8 @@ app.get('/api/integrations/health',async(req,res)=>{
         tokenExpiresAt:googleTokenExpiresAt(),
         refreshTest,
         calendar:{enabled:!!token,past7DaysCount:pastCal.length,next7DaysCount:nextCal.length},
-        gmail:{enabled:gmailHealth.connected,hasReadScope:gmailHealth.hasReadScope,hasComposeScope:gmailHealth.hasComposeScope,unreadCount:gmailHealth.unreadCount,recent7DaysCount:gmailHealth.recentInboxCount,sent14DaysCount:gmailHealth.sentCount,lastSyncAt:gmailHealth.lastSyncAt,errors:gmailHealth.errors}
+        gmail:{enabled:gmailHealth.connected,hasReadScope:gmailHealth.hasReadScope,hasComposeScope:gmailHealth.hasComposeScope,unreadCount:gmailHealth.unreadCount,recent7DaysCount:gmailHealth.recentInboxCount,sent14DaysCount:gmailHealth.sentCount,lastSyncAt:gmailHealth.lastSyncAt,errors:gmailHealth.errors},
+        docs:{enabled:docsHealth.connected,hasDriveFileScope:docsHealth.hasDriveFileScope,hasDocumentsScope:docsHealth.hasDocumentsScope,missingScopes:docsHealth.missingScopes,error:docsHealth.error}
       },
       microsoft:{
         configured:microsoftConfigured,
@@ -2122,7 +2142,7 @@ app.get('/api/integrations/health',async(req,res)=>{
         calendar:{enabled:!!microsoftToken,past7DaysCount:outlookPastCal.length,next7DaysCount:outlookNextCal.length}
       },
       transcripts:{last7DaysCount:transcripts.length,matchedToMeetingsCount:matched},
-      actions:{canCreateTasks:true,canCreateDrafts:true},
+      actions:{canCreateTasks:true,canCreateDrafts:true,canCreateGoogleDocs:docsHealth.connected},
       errors
     });
   }catch(e){
@@ -2368,14 +2388,26 @@ const REDIRECT_URI         = process.env.GOOGLE_REDIRECT_URI || process.env.REDI
 const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.compose'
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/documents'
 ];
 const GOOGLE_SCOPES = String(process.env.GOOGLE_SCOPES||'').trim()
-  ? String(process.env.GOOGLE_SCOPES).split(/\s+/).map(s=>s.trim()).filter(Boolean)
+  ? Array.from(new Set(String(process.env.GOOGLE_SCOPES).split(/\s+/).map(s=>s.trim()).filter(Boolean).concat([
+      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/documents'
+    ])))
   : DEFAULT_GOOGLE_SCOPES;
 const REQUIRED_GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.compose'
+];
+const REQUIRED_GOOGLE_DOC_SCOPES = [
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/documents'
 ];
 let googleTokens = {}; // hot cache; durable copy lives in Postgres scoped by tenant/user.
 let googleTokensLoaded = false;
@@ -2572,7 +2604,7 @@ app.get('/auth/callback', async (req, res) => {
     lastGoogleAuthError = null;
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token, 'scope count:', googleScopeList().length);
-    res.send(`<h2 style="font-family:sans-serif;padding:2rem">✅ Google Calendar & Gmail connected to VAL!<br><br>You can close this tab.</h2>`);
+    res.send(`<h2 style="font-family:sans-serif;padding:2rem">Google Calendar, Gmail, Drive, and Docs connected to VAL.<br><br>You can close this tab.</h2>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
   }
@@ -3355,13 +3387,13 @@ async function resolveMeetingContext(input={}){
   if(!meeting) meeting={id:id||'',title:input.title||input.summary||'',summary:input.title||input.summary||'',source:input.source||'unknown',startTime:input.date||input.startTime||input.start||'',attendees:input.attendees||[]};
   const attendees=inferAttendeesFromEvent({...meeting,attendees:input.attendees||meeting.attendees||[]});
   const contactResolution=await resolveContactFromContext({name:input.name,email:input.email,company:input.company,calendarEvent:{...meeting,attendees},transcript:input.transcript||''});
-  const [transcripts,tasks,memory,gmail,outlook,ghlNotes]=await Promise.all([
+  const [transcripts,tasks,memory,gmail,outlook,ghlContext]=await Promise.all([
     matchingTranscriptContext(meeting,8).catch(()=>[]),
     matchingTaskContext({...meeting,attendees},15).catch(()=>[]),
     recentMemoryItems(180,220).catch(()=>[]),
     fetchGmailMessages({query:gmailMeetingQuery({...meeting,attendees}),maxResults:12}).catch(e=>({emails:[],error:e.message})),
     fetchUnifiedOutlookEmails(12).catch(e=>({emails:[],error:e.message})),
-    ghlContactNotesContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' '),{appointments:[meeting],contacts:[contactResolution.contact].filter(Boolean)}).catch(()=>'')
+    ghlPlatformContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' '),{appointments:[meeting],contacts:[contactResolution.contact].filter(Boolean)},{limit:6,opportunityLimit:12,taskLimit:8}).catch(()=>'')
   ]);
   const contact=contactResolution.contact||{};
   const relatedMemory=memory.filter(m=>itemMentionsContact(m,contact)||itemMentionsContact(m,meeting)).slice(0,12);
@@ -3370,10 +3402,10 @@ async function resolveMeetingContext(input={}){
     ...tasks.filter(t=>!t.completed).map(t=>({text:t.title,source:'task',sourceDate:t.createdAt||t.dueDate||'',contactName:t.contactName||contact.name||'',confidence:'high'})),
     ...transcripts.flatMap(t=>extractOpenLoopsFromText(t.summary||t.rawText||'',`transcript:${t.id}`,t.createdAt,contact)),
     ...relatedMemory.flatMap(m=>extractOpenLoopsFromText(m.rawText||m.summary,`memory:${m.id}`,m.createdAt,contact)),
-    ...ghlNotes.split('\n').flatMap(line=>extractOpenLoopsFromText(line,'ghl_note','',contact))
+    ...ghlContext.split('\n').flatMap(line=>extractOpenLoopsFromText(line,'ghl_platform','',contact))
   ].slice(0,16);
-  const sourcesChecked=[`Calendar events (${events.length})`,`Attendees (${attendees.length})`,`Linked/fuzzy transcripts (${transcripts.length})`,`Tasks (${tasks.length})`,`Memory items (${relatedMemory.length})`,`Gmail messages (${gmail.emails?.length||0})`,`Outlook messages (${outlook.emails?.length||0})`,`GHL notes (${ghlNotes?ghlNotes.split('\n').filter(Boolean).length:0})`];
-  return {ok:true,meeting:{...meeting,attendees},contactResolution,relationshipContext:{contact,attendees,relatedMemory,emailContext,ghlNotes},transcripts,tasks,openLoops,sourcesChecked,errors};
+  const sourcesChecked=[`Calendar events (${events.length})`,`Attendees (${attendees.length})`,`Linked/fuzzy transcripts (${transcripts.length})`,`Tasks (${tasks.length})`,`Memory items (${relatedMemory.length})`,`Gmail messages (${gmail.emails?.length||0})`,`Outlook messages (${outlook.emails?.length||0})`,`GHL platform context (${ghlContext?ghlContext.split('\n').filter(Boolean).length:0})`];
+  return {ok:true,meeting:{...meeting,attendees},contactResolution,relationshipContext:{contact,attendees,relatedMemory,emailContext,ghlNotes:ghlContext,ghlContext},transcripts,tasks,openLoops,sourcesChecked,errors};
 }
 async function buildContactTimeline(contactInput,limit=80){
   const contact=typeof contactInput==='object'?contactInput:(await resolveContactFromContext({name:contactInput,email:contactInput})).contact;
@@ -3661,7 +3693,13 @@ function firstEmailFrom(...values){
 function isLikelyPersonEmail(email){
   const local = String(email||'').split('@')[0].toLowerCase();
   if(!local) return false;
-  return !/^(info|hello|contact|support|admin|office|team|media|press|help|careers|jobs|webmaster|noreply|no-reply)$/.test(local);
+  if(/^(info|hello|contact|support|admin|office|team|media|press|help|careers|jobs|webmaster|noreply|no-reply|service|services|customerservice|sales|billing|accounts|dispatch|schedule|scheduling|quotes?|estimating|appointments?|mail|inquiries?)$/.test(local)) return false;
+  if(/^(owner|founder|ceo|president|director)$/.test(local)) return false;
+  const domain=String(email||'').split('@')[1]||'';
+  const freeDomain=/^(gmail|yahoo|outlook|hotmail|icloud|aol)\./i.test(domain);
+  if(freeDomain && /(electric|electrical|plumb|plumbing|hvac|heating|cooling|roof|roofing|contract|contractor|construction|service|services|llc|inc|az|phoenix|mesa|chandler|company|shop|repair|drain)/i.test(local)) return false;
+  if(/(electric|electrical|plumb|plumbing|hvac|roof|contractor|construction|service|services|llc|inc|company)/i.test(local) && !/[._-]/.test(local)) return false;
+  return true;
 }
 
 function classifyEmail(email){
@@ -3702,8 +3740,8 @@ function leadContactability(lead={}){
     initialEmailSent:hasEmail,
     email:hasEmail?String(rawEmail).trim():'',
     phone:hasPhone?String(rawPhone).trim():'',
-    importable:hasEmail||hasPhone,
-    rejectionReason:hasEmail||hasPhone?'':'missing_email_and_phone'
+    importable:true,
+    rejectionReason:''
   };
 }
 
@@ -3711,7 +3749,7 @@ function leadContactabilityNote(c){
   if(c.contactabilityStatus==='full_contactability') return 'Email and phone available. Lead eligible for automated email, SMS, AI calling, and manual outreach.';
   if(c.contactabilityStatus==='email_only') return 'Email available. No valid phone number found. Lead eligible for automated email and manual email outreach.';
   if(c.contactabilityStatus==='phone_only') return 'No email address found. Lead did not receive the initial automated email sequence. Lead should enter phone-first outreach workflows and is eligible for AI calling, SMS outreach, and manual calling.';
-  return 'Contact was not imported because no email or phone number was available.';
+  return 'No email or phone number was found. Lead imported for visibility, but it is not eligible for automated email, SMS, AI calling, or manual contact until a contact method is added.';
 }
 
 function normalizeRocketReachPerson(data){
@@ -3787,6 +3825,162 @@ async function lookupRocketReachDecisionMaker(company,lead={}){
     if(rr.data?.name || rr.data?.email || rr.data?.phone) return {...rr,matchTitle:title};
   }
   return {configured:!!(await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY).catch(()=>'')), error:'No decision-maker match found'};
+}
+
+function normalizeCompanyForMatch(value){
+  return String(value||'')
+    .toLowerCase()
+    .replace(/&/g,' and ')
+    .replace(/\b(inc|incorporated|llc|l\.l\.c|ltd|limited|corp|corporation|co|company|pllc|pc|pa|llp|lp)\b/g,' ')
+    .replace(/[^a-z0-9]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function isReliablePersonName(name){
+  const raw=String(name||'').replace(/\s+/g,' ').trim();
+  if(!raw) return false;
+  const words=raw.split(/\s+/).filter(Boolean);
+  if(words.length<2 || words.length>4) return false;
+  if(/^(and|or|of|for|to|the|who|what|when|where|why|how|about|with|from|in|on|by)\b/i.test(raw)) return false;
+  if(/\b(services?|company|contractors?|electric|electrical|plumbing|hvac|heating|cooling|roofing|insulation|field|supervisor|manager|office|team|staff|department|careers?|jobs?|review|reviews?|gets?|let|licensed|commercial|residential|phoenix|mesa|chandler|scottsdale|az|arizona)\b/i.test(raw)) return false;
+  if(/[0-9@/\\]/.test(raw)) return false;
+  return words.every(w=>/^[A-Z][A-Za-z.'’,-]*$/.test(w));
+}
+
+function sanitizeDecisionMaker(p={}){
+  const name=String(p.decisionMakerName||'').replace(/\s+/g,' ').trim();
+  if(!name) return p;
+  if(isReliablePersonName(name)) return p;
+  return {
+    ...p,
+    decisionMakerName:'',
+    decisionMakerTitle:'',
+    decisionMakerSource:'',
+    linkedinPersonalUrl:'',
+    linkedinMatchConfidence:'low',
+    linkedinMatchNotes:`Rejected unreliable decision-maker text: ${name}`
+  };
+}
+
+function apolloPersonTitles(){
+  return [
+    'Owner',
+    'Founder',
+    'CEO',
+    'President',
+    'Managing Partner',
+    'Partner',
+    'Principal',
+    'Practice Owner',
+    'Executive Director',
+    'General Manager',
+    'Operations Manager',
+    'Director of Operations',
+    'HR Director',
+    'Human Resources Director',
+    'Office Manager'
+  ];
+}
+
+function normalizeApolloPerson(person,lead={}){
+  const org=person.organization || person.account || person.current_organization || {};
+  const name=person.name || person.full_name || [person.first_name,person.last_name].filter(Boolean).join(' ');
+  return {
+    found:!!(name || person.linkedin_url || person.title),
+    id:person.id || person.person_id || '',
+    name:name||'',
+    title:person.title || person.current_title || person.headline || '',
+    company:org.name || person.organization_name || person.company || '',
+    companyDomain:org.primary_domain || org.website_url || org.domain || leadDomain(lead.website||''),
+    linkedinUrl:person.linkedin_url || person.linkedin || '',
+    city:person.city || '',
+    state:person.state || '',
+    country:person.country || '',
+    emailStatus:person.email_status || person.contact_email_status || '',
+    rawPreview:JSON.stringify(person).slice(0,1400)
+  };
+}
+
+function scoreApolloPerson(person,lead){
+  let score=0;
+  const title=String(person.title||'').toLowerCase();
+  if(/\b(owner|founder|ceo|chief executive|president)\b/.test(title)) score+=100;
+  else if(/\b(managing partner|partner|principal|practice owner|executive director)\b/.test(title)) score+=85;
+  else if(/\b(operations|general manager|office manager|human resources|hr director)\b/.test(title)) score+=60;
+  else if(/\b(manager|director)\b/.test(title)) score+=35;
+  const targetDomain=leadDomain(lead.website||'');
+  const personDomain=leadDomain(person.companyDomain||'');
+  if(targetDomain && personDomain && targetDomain===personDomain) score+=120;
+  const targetCompany=normalizeCompanyForMatch(lead.organizationName||lead.name||'');
+  const personCompany=normalizeCompanyForMatch(person.company||'');
+  if(targetCompany && personCompany){
+    if(targetCompany===personCompany) score+=90;
+    else if(targetCompany.includes(personCompany) || personCompany.includes(targetCompany)) score+=55;
+  }
+  if(person.linkedinUrl) score+=12;
+  if(person.name) score+=10;
+  return score;
+}
+
+async function lookupApolloDecisionMaker(lead={}){
+  const apolloKey=await resolveIntegrationSecret('apollo','api_key',APOLLO_API_KEY);
+  if(!apolloKey) return {configured:false,error:'APOLLO_API_KEY is not set'};
+  const domain=leadDomain(lead.website||'');
+  const company=lead.organizationName||lead.name||'';
+  const params=new URLSearchParams();
+  apolloPersonTitles().forEach(title=>params.append('person_titles[]',title));
+  ['owner','founder','c_suite','partner','vp','head','director','manager'].forEach(s=>params.append('person_seniorities[]',s));
+  if(domain) params.append('q_organization_domains_list[]',domain);
+  if(!domain && company) params.set('q_keywords',company);
+  if(lead.state) params.append('organization_locations[]',lead.state);
+  else if(lead.location) params.append('organization_locations[]',lead.location);
+  params.set('include_similar_titles','false');
+  params.set('page','1');
+  params.set('per_page','10');
+  const url=`${APOLLO_BASE_URL.replace(/\/$/,'')}/mixed_people/api_search?${params.toString()}`;
+  const response=await fetch(url,{
+    method:'POST',
+    headers:{
+      accept:'application/json',
+      'Content-Type':'application/json',
+      'x-api-key':apolloKey,
+      Authorization:`Bearer ${apolloKey}`
+    }
+  });
+  const data=await readJsonResponse(response);
+  if(!response.ok) return {configured:true,error:data.message || data.error || `Apollo ${response.status}`};
+  const rawPeople=[...(data.people||[]),...(data.contacts||[]),...(data.persons||[])];
+  const people=rawPeople.map(p=>normalizeApolloPerson(p,lead)).filter(p=>p.found);
+  const ranked=people
+    .map(p=>({...p,matchScore:scoreApolloPerson(p,lead)}))
+    .filter(p=>p.matchScore>=70 || (domain && leadDomain(p.companyDomain||'')===domain))
+    .sort((a,b)=>b.matchScore-a.matchScore);
+  if(!ranked.length) return {configured:true,error:'Apollo did not find a confident decision-maker match',rawCount:rawPeople.length};
+  return {configured:true,data:ranked[0],candidates:ranked.slice(0,3),rawCount:rawPeople.length};
+}
+
+async function enrichProspectWithApollo(p){
+  if(p.decisionMakerName || p.linkedinPersonalUrl) return p;
+  const apollo=await lookupApolloDecisionMaker(p).catch(e=>({configured:!!APOLLO_API_KEY,error:e.message}));
+  const data=apollo?.data||{};
+  if(!data.name && !data.linkedinUrl){
+    return {
+      ...p,
+      apollo,
+      apolloStatus:apollo?.error||'Apollo did not return a decision-maker'
+    };
+  }
+  return {
+    ...p,
+    decisionMakerName:p.decisionMakerName||data.name||'',
+    decisionMakerTitle:p.decisionMakerTitle||data.title||'',
+    linkedinPersonalUrl:p.linkedinPersonalUrl||data.linkedinUrl||'',
+    linkedinMatchConfidence:data.matchScore>=160?'high':'medium',
+    linkedinMatchNotes:`Apollo matched ${data.name||'a likely contact'}${data.title?' - '+data.title:''}${data.company?' at '+data.company:''}`,
+    apollo,
+    apolloStatus:`matched ${data.name||'likely decision-maker'}${data.title?' - '+data.title:''}`
+  };
 }
 
 async function lookupOutscraperLinkedIn(attendee, profile){
@@ -3868,38 +4062,10 @@ app.get('/api/meetings',async(req,res)=>{
 });
 
 async function fetchGhlOpportunities({status='open',limit=100}={}){
-  const account=(await resolvedGhlAccounts())[0];
-  if(!account) throw new Error('Missing GHL account configuration');
-  return fetchGhlOpportunitiesForAccount(account,{status,limit});
+  return ghlMcp.findOpenOpportunities({status,limit});
 }
 async function fetchGhlOpportunitiesForAccount(account,{status='open',limit=100}={}){
-  const encodedLoc=encodeURIComponent(account.locationId);
-  const encodedStatus=encodeURIComponent(status);
-  const attempts=[
-    `/opportunities/search?location_id=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
-    `/opportunities/search?locationId=${encodedLoc}&status=${encodedStatus}&limit=${limit}`,
-    `/opportunities/search?location_id=${encodedLoc}&limit=${limit}`,
-    `/opportunities/search?locationId=${encodedLoc}&limit=${limit}`
-  ];
-  const results=[];
-  for(const path of attempts){
-    const r=await ghlTryForAccount(account,'GET',path);
-    const opportunities=(r.data&&Array.isArray(r.data.opportunities))?r.data.opportunities:[];
-    results.push({path,status:r.status,ok:r.ok,count:opportunities.length,error:r.ok?'':(r.data?.message||r.data?.error||r.data?.raw||'')});
-    if(r.ok&&opportunities.length){
-      if(!path.includes('status=')){
-        const open=opportunities.filter(o=>String(o.status||'').toLowerCase()==='open');
-        if(open.length) r.data={...r.data,opportunities:open,meta:{...(r.data.meta||{}),total:open.length}};
-      }
-      return {path,data:r.data,attempts:results};
-    }
-  }
-  const firstOk=results.find(r=>r.ok);
-  if(firstOk){
-    const r=await ghlTryForAccount(account,'GET',firstOk.path);
-    return {path:firstOk.path,data:r.data||{},attempts:results};
-  }
-  throw new Error('GHL opportunities search failed: '+results.map(r=>`${r.status} ${r.path}`).join(' | '));
+  return ghlMcp.findOpenOpportunitiesForAccount(account,{status,limit});
 }
 
 async function fetchContactNotesForAccount(account,contactId,limit=25){
@@ -4007,6 +4173,21 @@ app.get('/api/debug/ghl-pipeline',async(req,res)=>{
     });
   }catch(e){
     res.json({configured:!!(GHL_KEY&&GHL_LOC),error:e.message});
+  }
+});
+
+app.get('/api/debug/ghl-mcp-context',async(req,res)=>{
+  try{
+    const query=String(req.query.query||req.query.q||'').trim()||'recent contacts opportunities tasks';
+    const context=await ghlMcp.buildContext(query,{
+      limit:Math.min(Number(req.query.limit)||5,12),
+      opportunityLimit:Math.min(Number(req.query.opportunityLimit)||10,25),
+      taskLimit:Math.min(Number(req.query.taskLimit)||5,15),
+      notesLimit:Math.min(Number(req.query.notesLimit)||3,10)
+    });
+    res.json({ok:true,configured:await ghlMcp.isConfigured(),query,...context});
+  }catch(e){
+    res.status(500).json({ok:false,configured:await ghlMcp.isConfigured().catch(()=>false),error:e.message});
   }
 });
 
@@ -4596,6 +4777,20 @@ app.post('/api/val/contacts/create',async(req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 
+app.post('/api/val/ghl/actions',async(req,res)=>{
+  try{
+    const result=await executeValGhlAction(req.body||{});
+    res.json(result);
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+
+app.post('/api/val/ghl/action',async(req,res)=>{
+  try{
+    const result=await executeValGhlAction(req.body||{});
+    res.json(result);
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+
 app.post('/api/val/leads/research',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -4640,8 +4835,12 @@ app.post('/api/val/leads/discover',async(req,res)=>{
       const discovered=demoLeadDiscovery(req.body||{});
       return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
     }
-    const discovered=await discoverHbsLeadProspects(req.body||{});
-    const content=leadPreviewText(discovered);
+    const discovered=await withTimeout(
+      discoverHbsLeadProspects(req.body||{}),
+      GOALL_LEAD_DISCOVERY_TIMEOUT_MS,
+      'lead scrape timed out before results returned'
+    );
+    const content=discovered.content||leadPreviewText(discovered);
     await saveMemoryItem({
       kind:'goall_prospect_discovery',
       summary:`Prospect discovery: ${discovered.criteria} in ${discovered.market}`,
@@ -4650,7 +4849,10 @@ app.post('/api/val/leads/discover',async(req,res)=>{
       metadata:{market:discovered.market,criteria:discovered.criteria,limit:discovered.report?.requestedViableLeads,report:discovered.report}
     }).catch(()=>{});
     res.json({...discovered,content});
-  }catch(e){res.status(500).json({error:e.message});}
+  }catch(e){
+    const fallback=leadDiscoveryErrorPayload(req.body||{},e);
+    res.json(fallback);
+  }
 });
 
 app.post('/api/val/leads/discover-create',async(req,res)=>{
@@ -4672,9 +4874,16 @@ app.post('/api/val/leads/discover-preview',async(req,res)=>{
       const discovered=demoLeadDiscovery(req.body||{});
       return res.json({...discovered,content:withDemoCta(leadPreviewText(discovered))});
     }
-    const discovered=await discoverHbsLeadProspects(req.body||{});
-    res.json({...discovered,content:leadPreviewText(discovered)});
-  }catch(e){res.status(500).json({error:e.message});}
+    const discovered=await withTimeout(
+      discoverHbsLeadProspects(req.body||{}),
+      GOALL_LEAD_DISCOVERY_TIMEOUT_MS,
+      'lead scrape timed out before results returned'
+    );
+    res.json({...discovered,content:discovered.content||leadPreviewText(discovered)});
+  }catch(e){
+    const fallback=leadDiscoveryErrorPayload(req.body||{},e);
+    res.json(fallback);
+  }
 });
 
 app.post('/api/val/leads/import-approved',async(req,res)=>{
@@ -4707,7 +4916,7 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
   try{
     const body=req.body||{};
     const leads=Array.isArray(body.leads)?body.leads:[];
-    if(!leads.length) throw new Error('No leads were provided for RocketReach enrichment.');
+    if(!leads.length) throw new Error('No leads were provided for Level 3 verification.');
     if(DEMO_MODE){
       const enriched=leads.map((p,i)=>({...p,email:p.email||`decisionmaker${i+1}@example.com`,decisionMakerName:p.decisionMakerName||['Dana Holt','Marcus Chen','Renee Wallace'][i%3],decisionMakerTitle:p.decisionMakerTitle||'Operations Leader',rocketReachStatus:'verified demo email'}));
       const discovered={...demoLeadDiscovery(body),leads:enriched,rocketReachMode:'review'};
@@ -4717,7 +4926,7 @@ app.post('/api/val/leads/rocketreach-enrich',async(req,res)=>{
     const discovered={
       ok:true,
       market:String(body.market||'United States'),
-      criteria:String(body.criteria||'RocketReach enrichment'),
+      criteria:String(body.criteria||'Level 3 verification'),
       organizationType:String(body.organizationType||'businesses'),
       employeeMinimum:donorValue(body.employeeMinimum)||300,
       tag:normalizeLeadTag(body.tag||body.organizationType),
@@ -5072,6 +5281,13 @@ async function saveTask(task){
     return;
   }
   const tasks=readTasks();
+  if(!task.completed){
+    const dupe=tasks.find(t=>t&&t.id!==task.id&&!t.completed&&String(t.title||'').toLowerCase()===String(task.title||'').toLowerCase()&&String(t.contactName||'').toLowerCase()===String(task.contactName||'').toLowerCase());
+    if(dupe){
+      task.id=dupe.id;
+      task.details=(Array.isArray(dupe.details)?dupe.details:[]).concat(task.details||[]);
+    }
+  }
   const idx=tasks.findIndex(t=>t.id===task.id);
   if(idx>=0)tasks[idx]=task; else tasks.push(task);
   writeTasks(tasks);
@@ -5101,6 +5317,90 @@ async function deleteTask(id){
   await valDbReady;
   if(pgPool){ await dbQuery('delete from val_tasks where user_id=$1 and id=$2',[VAL_USER_ID,id]); return; }
   writeTasks(readTasks().filter(t=>t.id!==id));
+}
+function cleanAutoTaskTitle(line){
+  return String(line||'')
+    .replace(/<[^>]*>/g,'')
+    .replace(/^\s*(?:[-*•]|\d+[\.)])\s*/,'')
+    .replace(/^\s*(?:to[- ]?do list|do now|next|later|blocked|task|tasks|todo|to-do|next step|action item|recommendation|priority)\s*[:\-]\s*/i,'')
+    .replace(/\*\*/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function splitAutoTaskText(text){
+  const source=String(text||'');
+  const match=source.match(/(?:^|\n)\s*(?:#{1,4}\s*)?(?:to[- ]?do list|to dos|todos|tasks|next steps|action items)\s*:?\s*\n([\s\S]*?)(?=\n\s*(?:#{1,4}\s*)?(?:done|completed|context|notes|why this matters|summary|chapter notes|draft|response|analysis)\s*:?\s*\n|$)/i);
+  const scoped=match&&match[1]?match[1]:source;
+  const normalized=scoped
+    .replace(/\r/g,'\n')
+    .replace(/(?:^|\s)(\d+[\.)])\s+/g,'\n$1 ')
+    .replace(/\s+[•*]\s+/g,'\n- ')
+    .replace(/\s+-\s+(?=[A-Z])/g,'\n- ');
+  const lines=[];
+  for(const raw of normalized.split(/\n+/)){
+    const line=String(raw||'').trim();
+    if(!line) continue;
+    const cleaned=cleanAutoTaskTitle(line);
+    if(!cleaned) continue;
+    const semiParts=cleaned.split(/\s*;\s+/).map(cleanAutoTaskTitle).filter(Boolean);
+    if(semiParts.length>1) lines.push(...semiParts);
+    else lines.push(cleaned);
+  }
+  return lines;
+}
+function extractAutoTasksFromValText(text){
+  const lines=splitAutoTaskText(text);
+  const actionVerb=/\b(send|draft|call|email|schedule|review|prep|prepare|create|update|follow|follow up|check|finish|decide|delegate|book|write|ask|confirm|share|add|research|organize|clean|summarize|reach out|upload|read|revise|rewrite|edit|map|align|cut|move|tighten|polish)\b/i;
+  const candidates=lines.filter(line=>{
+    if(line.length<8||line.length>180) return false;
+    if(/[?]$/.test(line)) return false;
+    if(/^(yes|no|done|source|rewrite|readable characters|google drive|google docs|here|sure|okay|because|why this matters)$/i.test(line)) return false;
+    return actionVerb.test(line) || /^[A-Z][^:]{2,70}:\s+\S/.test(line);
+  }).map(line=>line.replace(/^[A-Z][^:]{2,70}:\s*/,'').trim());
+  const seen=new Set();
+  return candidates.filter(line=>{
+    const key=line.toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0,8);
+}
+async function persistAutoTasksFromValResponse({content,userQuery='',action='chat',source='val_response'}={}){
+  if(!isBookEditorProject()) return [];
+  const existingOpen=(await loadTasks()).filter(t=>!t.completed).length;
+  if(existingOpen>=80) return [];
+  const titles=extractAutoTasksFromValText(content);
+  if(!titles.length) return [];
+  const created=[];
+  for(const title of titles){
+    const task={
+      id:uuid('task'),
+      title,
+      contactName:'',
+      dueDate:null,
+      notes:[
+        `Auto-created from VAL ${action} response.`,
+        userQuery?`User request: ${userQuery}`:'',
+        `Context:\n${String(content||'').slice(0,1800)}`
+      ].filter(Boolean).join('\n\n'),
+      details:[{
+        text:`Created from VAL response. Source: ${source}. ${userQuery?`User request: ${userQuery}`:''}`.trim(),
+        ts:new Date().toISOString()
+      }],
+      completed:false,
+      createdAt:new Date().toISOString()
+    };
+    await saveTask(task);
+    await saveMemoryItem({
+      kind:'task_backup',
+      summary:`Task backup: ${title}`,
+      rawText:JSON.stringify({task,source,action,userQuery}).slice(0,8000),
+      importance:3,
+      metadata:{source:'auto_task_capture',action,userQuery,title}
+    }).catch(()=>{});
+    created.push(task);
+  }
+  return created;
 }
 app.get('/api/val/tasks',async(req,res)=>{try{res.json(await loadTasks());}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/tasks',async(req,res)=>{try{const task=req.body;if(!task||!task.id)return res.status(400).json({error:'Missing task id'});await saveTask(task);res.json({ok:true,task});}catch(e){res.status(500).json({error:e.message});}});
@@ -5183,6 +5483,405 @@ app.post('/api/gmail/drafts',async(req,res)=>{
     const d=await readJsonResponse(r);
     if(!r.ok) throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
     res.json({ok:true,draftType:'gmail',gmailDraft:d});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+function googleDocIdFromInput(value){
+  const raw=String(value||'').trim();
+  if(!raw) return '';
+  const urlMatch=raw.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+  if(urlMatch) return urlMatch[1];
+  const paramMatch=raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if(paramMatch) return paramMatch[1];
+  const bare=raw.match(/^[a-zA-Z0-9_-]{20,}$/);
+  return bare?raw:'';
+}
+function googleDocUrl(id){
+  return id?`https://docs.google.com/document/d/${encodeURIComponent(id)}/edit`:'';
+}
+async function googleDocsToken(){
+  const status=await getGoogleConnectionStatus(REQUIRED_GOOGLE_DOC_SCOPES);
+  const token=await getGoogleToken();
+  if(!token) throw new Error(status.error||'Google auth required');
+  if(status.missingScopes.length) throw new Error('Reconnect Google to grant Docs/Drive scopes: '+status.missingScopes.join(', '));
+  return token;
+}
+async function googleApiJson(url,opts={}){
+  const r=await fetch(url,opts);
+  const d=await readJsonResponse(r);
+  if(!r.ok||d.error) throw new Error(d.error?.message||d.error_description||`Google API failed (${r.status})`);
+  return d;
+}
+function googleDocEndIndex(doc){
+  const content=doc?.body?.content||[];
+  const last=content[content.length-1]||{};
+  return Math.max(1,Number(last.endIndex||1)-1);
+}
+function googleDocInsertRequests(doc,text,mode){
+  const clean=String(text||'').replace(/\r\n/g,'\n').trim();
+  if(!clean) throw new Error('Missing document content');
+  const endIndex=googleDocEndIndex(doc);
+  const requests=[];
+  if(mode==='replace'&&endIndex>1){
+    requests.push({deleteContentRange:{range:{startIndex:1,endIndex}}});
+    requests.push({insertText:{location:{index:1},text:clean+'\n'}});
+  }else if(mode==='prepend'){
+    requests.push({insertText:{location:{index:1},text:clean+'\n\n'}});
+  }else{
+    requests.push({insertText:{location:{index:endIndex},text:(endIndex>1?'\n\n':'')+clean+'\n'}});
+  }
+  return requests;
+}
+async function createGoogleDoc({title,content,folderId}){
+  const token=await googleDocsToken();
+  const metadata={name:String(title||'VAL Document').trim()||'VAL Document',mimeType:'application/vnd.google-apps.document'};
+  if(folderId) metadata.parents=[folderId];
+  const file=await googleApiJson('https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink,mimeType',{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify(metadata)
+  });
+  const doc=await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(file.id)}`,{headers:{Authorization:`Bearer ${token}`}});
+  await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(file.id)}:batchUpdate`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify({requests:googleDocInsertRequests(doc,content,'replace')})
+  });
+  return {id:file.id,title:file.name||metadata.name,url:file.webViewLink||googleDocUrl(file.id)};
+}
+async function updateGoogleDoc({documentId,content,mode}){
+  const token=await googleDocsToken();
+  const id=googleDocIdFromInput(documentId);
+  if(!id) throw new Error('Paste a Google Docs URL or document ID.');
+  const doc=await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}});
+  await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}:batchUpdate`,{
+    method:'POST',
+    headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+    body:JSON.stringify({requests:googleDocInsertRequests(doc,content,mode||'append')})
+  });
+  return {id,title:doc.title||'Google Doc',url:googleDocUrl(id),mode:mode||'append'};
+}
+function googleDriveQueryEscape(value){
+  return String(value||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+function googleDocTextFromStructuralElements(elements=[]){
+  let out='';
+  for(const el of elements||[]){
+    if(el.paragraph){
+      for(const part of el.paragraph.elements||[]) out+=part.textRun?.content||'';
+    }
+    if(el.table){
+      for(const row of el.table.tableRows||[]){
+        for(const cell of row.tableCells||[]) out+=googleDocTextFromStructuralElements(cell.content||[]);
+        out+='\n';
+      }
+    }
+    if(el.tableOfContents) out+=googleDocTextFromStructuralElements(el.tableOfContents.content||[]);
+  }
+  return out;
+}
+function likelyGoogleDocSearches(query){
+  const raw=String(query||'').trim();
+  const searches=[];
+  const chapter=raw.match(/\bchapter\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i);
+  if(chapter) searches.push(('Chapter '+chapter[1]).replace(/\b\w/g,c=>c.toUpperCase()));
+  const quoted=raw.match(/["“]([^"”]{3,120})["”]/);
+  if(quoted) searches.push(quoted[1]);
+  const cleaned=raw
+    .replace(/\b(can you|please|could you|read|review|open|find|pull up|look at|the|my|our|doc|docs|document|google|drive|chapter|memoir)\b/ig,' ')
+    .replace(/[^a-z0-9\s_-]/ig,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+  if(cleaned.length>=3) searches.push(cleaned);
+  const projectTerms=[CLIENT_CONFIG.projectName,CLIENT_CONFIG.brandName].map(s=>String(s||'').trim()).filter(Boolean);
+  for(const projectTerm of projectTerms){
+    searches.push(projectTerm);
+    if(chapter) searches.push(projectTerm+' Chapter '+chapter[1]);
+    else if(cleaned) searches.push(projectTerm+' '+cleaned);
+  }
+  return [...new Set(searches.map(s=>String(s||'').trim()).filter(Boolean))].slice(0,5);
+}
+async function searchGoogleDocs(query,limit=8){
+  const token=await googleDocsToken();
+  const searches=likelyGoogleDocSearches(query);
+  const seen=new Set(), files=[];
+  for(const search of searches.length?searches:[query]){
+    const safe=googleDriveQueryEscape(search);
+    const q=[
+      "mimeType = 'application/vnd.google-apps.document'",
+      "trashed = false",
+      `(name contains '${safe}' or fullText contains '${safe}')`
+    ].join(' and ');
+    const url='https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({
+      q,
+      fields:'files(id,name,modifiedTime,webViewLink,mimeType)',
+      orderBy:'modifiedTime desc',
+      pageSize:String(limit)
+    }).toString();
+    const d=await googleApiJson(url,{headers:{Authorization:`Bearer ${token}`}});
+    for(const f of d.files||[]){
+      if(!seen.has(f.id)){seen.add(f.id);files.push(f);}
+    }
+    if(files.length>=limit) break;
+  }
+  return files.slice(0,limit);
+}
+async function readGoogleDoc({documentId,query}){
+  const token=await googleDocsToken();
+  let id=googleDocIdFromInput(documentId||query||'');
+  let match=null, matches=[];
+  if(!id){
+    matches=await searchGoogleDocs(query||'',8);
+    match=matches[0]||null;
+    id=match?.id||'';
+  }
+  if(!id) throw new Error('No matching Google Doc found. Try the exact document title or paste the Google Doc URL.');
+  const doc=await googleApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(id)}`,{headers:{Authorization:`Bearer ${token}`}});
+  const text=googleDocTextFromStructuralElements(doc.body?.content||[]).trim();
+  return {id,title:doc.title||match?.name||'Google Doc',url:googleDocUrl(id),text,match,otherMatches:matches.slice(1,5)};
+}
+async function googleDocsContextForQuery(query){
+  if(!/\b(read|review|open|find|pull up|look at|chapter|manuscript|memoir|document|doc|google doc|drive)\b/i.test(String(query||''))) return '';
+  try{
+    const doc=await readGoogleDoc({query});
+    if(!doc.text) return `Google Doc found but no readable text was returned.\nTitle: ${doc.title}\nURL: ${doc.url}`;
+    await saveMemoryItem({kind:'google_doc_read',summary:`Read Google Doc: ${doc.title}`,rawText:doc.text.slice(0,12000),importance:4,metadata:{source:'google_docs',documentId:doc.id,url:doc.url,title:doc.title}});
+    return [
+      `Google Doc source found for the user's request.`,
+      `Title: ${doc.title}`,
+      `URL: ${doc.url}`,
+      doc.otherMatches?.length?`Other possible matches: ${doc.otherMatches.map(f=>f.name).join(', ')}`:'',
+      `Document text:\n${doc.text.slice(0,45000)}`
+    ].filter(Boolean).join('\n\n');
+  }catch(e){
+    if(/auth|required|scope|reconnect/i.test(e.message)) return `Google Docs are not readable yet: ${e.message}. Tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.`;
+    return `Google Docs lookup did not find a readable matching document: ${e.message}`;
+  }
+}
+function isGoogleDocRewriteRequest(query){
+  const text=String(query||'').toLowerCase();
+  return /\b(rewrite|revise|redraft|rework|polish|line edit|developmental edit|edit)\b/.test(text)
+    && /\b(chapter|manuscript|memoir|book|google doc|document|doc|draft)\b/.test(text);
+}
+function isWholeDocumentRewriteRequest(query){
+  return /\b(entire|whole|full|all of|complete)\b/i.test(String(query||''))
+    && /\b(document|doc|google doc|manuscript|memoir|book|draft)\b/i.test(String(query||''));
+}
+function googleDocRewriteTitle(sourceTitle,query,scope){
+  const chapter=String(query||'').match(/\bchapter\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i);
+  const label=scope==='chapter'&&chapter?`Chapter ${chapter[1]} Rewrite`:'Full Document Rewrite';
+  const base=String(sourceTitle||label).replace(/\s+/g,' ').trim();
+  return `${label} - ${base} - ${new Date().toISOString().slice(0,10)}`;
+}
+function splitChapterText(text,maxChars=18000){
+  const clean=String(text||'').replace(/\r\n/g,'\n').trim();
+  if(clean.length<=maxChars) return clean?[clean]:[];
+  const paras=clean.split(/\n{2,}/);
+  const chunks=[];
+  let current='';
+  for(const para of paras){
+    const next=current ? current+'\n\n'+para : para;
+    if(next.length<=maxChars){current=next;continue;}
+    if(current){chunks.push(current);current='';}
+    if(para.length<=maxChars){current=para;continue;}
+    for(let i=0;i<para.length;i+=maxChars) chunks.push(para.slice(i,i+maxChars));
+  }
+  if(current) chunks.push(current);
+  return chunks;
+}
+const CHAPTER_WORD_NUMBERS = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20};
+function requestedChapterNumber(query){
+  const m=String(query||'').match(/\bchapter\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i);
+  if(!m) return null;
+  const raw=m[1].toLowerCase();
+  return /^\d+$/.test(raw)?Number(raw):CHAPTER_WORD_NUMBERS[raw]||null;
+}
+function extractRequestedChapterText(fullText,query){
+  const chapter=requestedChapterNumber(query);
+  const text=String(fullText||'').replace(/\r\n/g,'\n');
+  if(!chapter||!text) return '';
+  const word=Object.entries(CHAPTER_WORD_NUMBERS).find(([,n])=>n===chapter)?.[0]||'';
+  const headingRe=new RegExp(`^\\s*(chapter\\s+(${chapter}${word?'|'+word:''})\\b[^\\n]*|${chapter}[\\.)\\:-]\\s+[^\\n]{0,120})\\s*$`,'im');
+  const start=text.search(headingRe);
+  if(start<0) return '';
+  const rest=text.slice(start);
+  const nextRe=/^\s*(chapter\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b[^\n]*|\d+[\.)\:-]\s+[^\n]{0,120})\s*$/gim;
+  let next=-1, match;
+  while((match=nextRe.exec(rest))){
+    if(match.index===0) continue;
+    const raw=String(match[2]||match[1].match(/^\s*(\d+)/)?.[1]||'').toLowerCase();
+    const n=/^\d+$/.test(raw)?Number(raw):CHAPTER_WORD_NUMBERS[raw]||null;
+    if(!n||n>chapter){next=match.index;break;}
+  }
+  return (next>0?rest.slice(0,next):rest).trim();
+}
+function nestedRecordMetadata(record={}){
+  const meta=record.metadata||{};
+  return {...meta,...(meta.metadata||{})};
+}
+function valUploadedSourceTitle(record={}){
+  const meta=nestedRecordMetadata(record);
+  return meta.chapterTitle||meta.fileName||record.title||record.summary||'Uploaded VAL document';
+}
+function scoreValRewriteSource(record,query){
+  const meta=nestedRecordMetadata(record);
+  const text=String(record.rawText||record.raw_text||'').trim();
+  if(text.length<400) return 0;
+  const q=String(query||'').toLowerCase();
+  const hay=[record.type,record.kind,record.title,record.summary,meta.fileName,meta.docType,meta.project,meta.projectType,meta.source,meta.chapterTitle,CLIENT_CONFIG.projectName,CLIENT_CONFIG.brandName].join(' ').toLowerCase();
+  let score=0;
+  if(/\bknowledge_document|processed_transcript|transcript\b/.test(String(record.type||record.kind||''))) score+=2;
+  if(String(meta.source||'')==='val_file_upload') score+=7;
+  if(/\b(manuscript|memoir|book|chapter|draft|knowledge_document)\b/.test(hay)) score+=5;
+  if(isBookEditorProject()) score+=3;
+  if(CLIENT_CONFIG.projectName&&hay.includes(String(CLIENT_CONFIG.projectName).toLowerCase())) score+=4;
+  if(CLIENT_CONFIG.brandName&&hay.includes(String(CLIENT_CONFIG.brandName).toLowerCase())) score+=4;
+  const chapter=requestedChapterNumber(query);
+  if(chapter&&String(meta.chapterNumber||'')===String(chapter)) score+=8;
+  if(chapter&&new RegExp(`\\bchapter\\s*${chapter}\\b`,'i').test(hay)) score+=5;
+  if(isWholeDocumentRewriteRequest(query)&&/\b(manuscript|memoir|book)\b/.test(hay)) score+=7;
+  if(isWholeDocumentRewriteRequest(query)&&text.length>12000) score+=Math.min(8,Math.floor(text.length/12000));
+  const quoted=String(query||'').match(/["“]([^"”]{3,120})["”]/);
+  if(quoted&&hay.includes(quoted[1].toLowerCase())) score+=10;
+  const cleaned=q.replace(/\b(can you|please|could you|rewrite|revise|redraft|rework|polish|line edit|developmental edit|edit|entire|whole|full|all of|complete|the|my|our|doc|docs|document|google|drive|chapter|manuscript|memoir|book|draft)\b/g,' ').replace(/[^a-z0-9\s_-]/g,' ').replace(/\s+/g,' ').trim();
+  if(cleaned.length>=3&&hay.includes(cleaned)) score+=6;
+  return score;
+}
+async function readValUploadedRewriteSource({query,documentId}={}){
+  if(documentId) return null;
+  const [transcripts,memory]=await Promise.all([
+    recentTranscripts(3650).catch(()=>[]),
+    recentMemoryItems(3650,1000).catch(()=>[])
+  ]);
+  const fullRecords=(transcripts||[]).map(r=>({...r,sourceKind:'val_transcript'}));
+  const chunkGroups=new Map();
+  for(const item of memory||[]){
+    const meta=nestedRecordMetadata(item);
+    const transcriptId=meta.transcriptId||'';
+    if(!transcriptId||!meta.chunkCount) continue;
+    const existing=chunkGroups.get(transcriptId)||{...item,rawText:'',chunks:[],sourceKind:'val_memory_chunks'};
+    existing.chunks.push(item);
+    chunkGroups.set(transcriptId,existing);
+  }
+  const reconstructed=[...chunkGroups.values()].map(group=>{
+    const chunks=group.chunks.sort((a,b)=>Number(nestedRecordMetadata(a).chunkIndex||0)-Number(nestedRecordMetadata(b).chunkIndex||0));
+    return {...group,rawText:chunks.map(c=>c.rawText||c.raw_text||'').join('\n\n'),summary:chunks[0]?.summary||group.summary,metadata:chunks[0]?.metadata||group.metadata};
+  });
+  const candidates=[...fullRecords,...reconstructed]
+    .map(record=>({record,score:scoreValRewriteSource(record,query)}))
+    .filter(x=>x.score>0)
+    .sort((a,b)=>b.score-a.score || String(b.record.rawText||'').length-String(a.record.rawText||'').length);
+  const best=candidates[0]?.record;
+  if(!best) return null;
+  const text=String(best.rawText||best.raw_text||'').trim();
+  return {id:best.id||'',title:valUploadedSourceTitle(best),url:'VAL uploaded file',text,source:'val_upload',record:best};
+}
+async function uploadedValDocumentContextForQuery(query){
+  if(!/\b(read|review|open|find|pull up|look at|chapter|manuscript|memoir|document|doc|book|draft)\b/i.test(String(query||''))) return '';
+  const doc=await readValUploadedRewriteSource({query}).catch(()=>null);
+  if(!doc||!doc.text) return '';
+  const requestedChapterText=extractRequestedChapterText(doc.text,query);
+  const sourceText=requestedChapterText||doc.text;
+  const scope=requestedChapterText?'requested chapter':'uploaded document';
+  return [
+    `Uploaded VAL ${scope} source found.`,
+    `Title: ${doc.title}`,
+    `Source: VAL memory upload`,
+    `Readable characters available: ${doc.text.length}`,
+    requestedChapterText?`Using extracted chapter characters: ${requestedChapterText.length}`:'',
+    `Source text excerpt:\n${sourceText.slice(0,55000)}`
+  ].filter(Boolean).join('\n\n');
+}
+async function rewriteGoogleDocChapter({query,documentId,targetDocumentId,mode='create'}){
+  const doc=(await readValUploadedRewriteSource({query,documentId})) || await readGoogleDoc({documentId,query});
+  if(!doc.text) throw new Error('Source document was found, but it did not contain readable text.');
+  await googleDocsToken();
+  const shouldExtractChapter=!!requestedChapterNumber(query)&&!isWholeDocumentRewriteRequest(query);
+  const requestedChapterText=shouldExtractChapter?extractRequestedChapterText(doc.text,query):'';
+  const sourceText=requestedChapterText||doc.text;
+  const chunks=splitChapterText(sourceText,18000);
+  if(!chunks.length) throw new Error('No document text found to rewrite.');
+  const scope=requestedChapterText?'chapter':'document';
+  const system=[
+    VAL_SYSTEM_PROMPT,
+    'You are rewriting memoir material for Michele.',
+    'Rewrite the supplied source text fully, not a summary.',
+    scope==='document'?'Keep the full document complete across all sections.':'Keep the chapter complete.',
+    'Preserve the factual sequence, lived meaning, core scenes, and Michele voice.',
+    'Improve memoir flow, emotional pacing, humor and levity, reader recognition, IFS prompt quality, transitions, and alignment with the book.',
+    'Do not explain your edits. Return only rewritten prose for the supplied section.',
+    'If a passage needs a placeholder because the source has an unclear factual gap, mark it briefly in brackets instead of inventing facts.'
+  ].join('\n\n');
+  const rewritten=[];
+  for(let i=0;i<chunks.length;i++){
+    const user=[
+      `Source document: ${doc.title}`,
+      `User request: ${query||'Rewrite this document.'}`,
+      `Section ${i+1} of ${chunks.length}.`,
+      i>0?'Continue seamlessly from the previous rewritten section. Do not restart or summarize.':(scope==='document'?'Start the rewritten document.':'Start the rewritten chapter.'),
+      'Rewrite this source section fully:',
+      chunks[i]
+    ].filter(Boolean).join('\n\n');
+    const section=await callValModel({system,user,maxTokens:6500,temperature:0.45});
+    rewritten.push(String(section||'').trim());
+  }
+  const content=rewritten.filter(Boolean).join('\n\n').trim();
+  if(!content) throw new Error('The rewrite returned no content.');
+  const title=googleDocRewriteTitle(doc.title,query,scope);
+  const output=(mode==='replace'||mode==='append'||targetDocumentId)
+    ? await updateGoogleDoc({documentId:targetDocumentId||documentId||doc.id,content,mode:mode==='create'?'append':mode})
+    : await createGoogleDoc({title,content});
+  await saveMemoryItem({
+    kind:'document_rewrite',
+    summary:`Rewrote ${scope} from ${doc.source==='val_upload'?'VAL upload':'Google Doc'}: ${doc.title}`,
+    rawText:content.slice(0,12000),
+    importance:5,
+    metadata:{source:doc.source||'google_docs',scope,sourceDocumentId:doc.id,sourceUrl:doc.url,outputDocumentId:output.id,outputUrl:output.url,title:output.title,chunkCount:chunks.length}
+  });
+  return {source:{id:doc.id,title:doc.title,url:doc.url,kind:doc.source||'google_docs',textLength:sourceText.length,scope,extractedChapter:!!requestedChapterText},output,chunkCount:chunks.length,rewrittenLength:content.length};
+}
+app.get('/api/google/docs/status',async(req,res)=>{
+  try{
+    const status=await getGoogleConnectionStatus(REQUIRED_GOOGLE_DOC_SCOPES);
+    res.status(status.connected?200:400).json({ok:status.connected,connected:status.connected,hasRefreshToken:status.hasRefreshToken,scopes:status.scopes,missingScopes:status.missingScopes,error:status.error||''});
+  }catch(e){res.status(500).json({ok:false,connected:false,error:e.message});}
+});
+app.post('/api/google/docs/create',async(req,res)=>{
+  try{
+    const result=await createGoogleDoc({title:req.body.title,content:req.body.content||req.body.body||'',folderId:req.body.folderId||''});
+    await saveMemoryItem({kind:'google_doc_created',summary:`Created Google Doc: ${result.title}`,rawText:req.body.content||req.body.body||'',importance:3,metadata:{source:'google_docs',documentId:result.id,url:result.url,title:result.title}});
+    res.json({ok:true,document:result});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/google/docs/update',async(req,res)=>{
+  try{
+    const result=await updateGoogleDoc({documentId:req.body.documentId||req.body.url||req.body.docUrl,content:req.body.content||req.body.body||'',mode:req.body.mode||'append'});
+    await saveMemoryItem({kind:'google_doc_updated',summary:`Updated Google Doc: ${result.title}`,rawText:req.body.content||req.body.body||'',importance:3,metadata:{source:'google_docs',documentId:result.id,url:result.url,title:result.title,mode:result.mode}});
+    res.json({ok:true,document:result});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/google/docs/search',async(req,res)=>{
+  try{
+    const files=await searchGoogleDocs(req.query.q||req.query.query||'',Number(req.query.limit)||8);
+    res.json({ok:true,files});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/google/docs/read',async(req,res)=>{
+  try{
+    const doc=await readGoogleDoc({documentId:req.body.documentId||req.body.url||req.body.docUrl,query:req.body.query||''});
+    await saveMemoryItem({kind:'google_doc_read',summary:`Read Google Doc: ${doc.title}`,rawText:doc.text.slice(0,12000),importance:4,metadata:{source:'google_docs',documentId:doc.id,url:doc.url,title:doc.title}});
+    res.json({ok:true,document:{id:doc.id,title:doc.title,url:doc.url,text:doc.text,otherMatches:doc.otherMatches||[]}});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/google/docs/rewrite',async(req,res)=>{
+  try{
+    const result=await rewriteGoogleDocChapter({
+      query:req.body.query||'Rewrite this chapter.',
+      documentId:req.body.documentId||req.body.url||req.body.docUrl,
+      targetDocumentId:req.body.targetDocumentId||req.body.targetUrl||'',
+      mode:req.body.mode||'create'
+    });
+    res.json({ok:true,...result});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
@@ -5551,7 +6250,7 @@ async function ghlContactNotesContext(query,dashboard){
   for(const q of likelyContactQueries(query)){
     if(sections.length>=8)break;
     try{
-      const d=await ghl('GET',`/contacts/?locationId=${GHL_LOC}&query=${encodeURIComponent(q)}&limit=3`);
+      const d=await ghlMcp.searchContacts({query:q,limit:3});
       for(const c of (d.contacts||[])){
         const id=c.id||c.contactId;
         if(!id||seenIds.has(String(id)))continue;
@@ -5563,6 +6262,23 @@ async function ghlContactNotesContext(query,dashboard){
     }catch(e){}
   }
   return sections.length ? sections.join('\n\n') : '';
+}
+async function ghlPlatformContext(query,dashboard,opts={}){
+  if(!(await ghlMcp.isConfigured())) return '';
+  const [crm,notes]=await Promise.all([
+    ghlMcp.buildContext(query,{
+      limit:opts.limit||8,
+      opportunityLimit:opts.opportunityLimit||25,
+      conversationLimit:opts.conversationLimit||8,
+      notesLimit:opts.notesLimit||5,
+      taskLimit:opts.taskLimit||5
+    }).catch(e=>({text:'GHL platform context error: '+e.message})),
+    ghlContactNotesContext(query,dashboard).catch(()=>'')
+  ]);
+  return [
+    crm?.text||'',
+    notes?'Targeted GHL note and call transcript history:\n'+notes:''
+  ].filter(Boolean).join('\n\n');
 }
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
   return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
@@ -5651,20 +6367,22 @@ async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1
     max_output_tokens: maxTokens,
     temperature
   };
-  let r=await fetch('https://api.openai.com/v1/responses',{
+  let r=await fetchWithTimeout('https://api.openai.com/v1/responses',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
     body:JSON.stringify(body)
-  });
-  let d=await r.json();
+  },OPENAI_WEB_RESEARCH_TIMEOUT_MS,'OpenAI web research');
+  let d=await readJsonResponse(r);
+  if(!r.ok && !d.error) throw new Error(`OpenAI web research failed (${r.status}): ${d.raw||'upstream error'}`);
   if(d.error && /temperature/i.test(d.error.message||'')){
     delete body.temperature;
-    r=await fetch('https://api.openai.com/v1/responses',{
+    r=await fetchWithTimeout('https://api.openai.com/v1/responses',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify(body)
-    });
-    d=await r.json();
+    },OPENAI_WEB_RESEARCH_TIMEOUT_MS,'OpenAI web research');
+    d=await readJsonResponse(r);
+    if(!r.ok && !d.error) throw new Error(`OpenAI web research failed (${r.status}): ${d.raw||'upstream error'}`);
   }
   if(d.error) throw new Error(d.error.message);
   return responseText(d);
@@ -5732,7 +6450,7 @@ Lead scoring rules:
 - Include leadScore and leadScoreReason on every viable lead object.
 
 Every GOALL lead must also include automationTag, automationTagReason, normalizedIndustry, rawIndustry, tagConfidence, needsNewAutomation, and suggestedNewAutomationTag.
-Use only these automationTag values: education, Electrical, Home Services, Hospitality, HR, HVAC, Manufacturing, Recruiters, Roofing, Skilled Labor, Utilities - energy.
+Use only these automationTag values: Dentistry & Dental Practices, Education & Skilled Vocational Training, Electrical Contractors, HVAC, Hospitality / High-End Food Service, Information Technology / Professional Services, Manufacturing (Skilled Labor), Recruiters, Roofing & General Construction, Skilled Labor, Utilities & Energy Infrastructure, Home Services, Healthcare & Wellness Practices, Transportation & Logistics, Professional Services.
 Do not invent new GHL automation tags. If a better future automation is needed, keep the closest allowed automationTag and put the recommendation in suggestedNewAutomationTag.
 
 Score 1 when the company appears highly likely to benefit from GOALL: higher-income category, likely 10+ employees, recurring payroll need, likely benefit costs, commercial operation, active Google profile, professional website, usable contact info, and strong aligned industry.
@@ -5862,6 +6580,23 @@ function normalizeGhlFieldName(value){
   return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 }
 
+function ghlCustomFieldId(field={}){
+  return field.id||field._id||field.fieldId||field.customFieldId||'';
+}
+
+async function fetchGhlCustomFields(){
+  const data=await ghl('GET',`/locations/${GHL_LOC}/customFields`);
+  return data.customFields||data.fields||data.data||[];
+}
+
+function isSafeLeadScoreField(field={}){
+  const normalizedName=normalizeGhlFieldName(field.name||field.fieldName||'');
+  const normalizedKey=normalizeGhlFieldName(field.fieldKey||field.key||field.field_key||'');
+  const combined=`${normalizedName} ${normalizedKey}`;
+  if(/reason|why|notes?|date|time|at\b|created|updated|ingested|processed/.test(combined)) return false;
+  return /\blead score\b|\bgoall lead score\b|\bgoall score\b|\bpriority score\b|\blead priority score\b|lead_score/.test(combined);
+}
+
 function leadCustomFieldPayloads(ids,fields){
   return Object.entries(ids)
     .filter(([key,id])=>id && Object.prototype.hasOwnProperty.call(fields,key))
@@ -5916,9 +6651,8 @@ async function resolveLeadFieldIds(){
   if(leadFieldIdCache) return leadFieldIdCache;
   const resolved={...GHL_LEAD_FIELD_IDS};
   const missing=Object.entries(resolved).filter(([,id])=>!id);
-  if(missing.length){
-    const data=await ghl('GET',`/locations/${GHL_LOC}/customFields`);
-    const fields=data.customFields||data.fields||data.data||[];
+  if(missing.length || resolved.lead_score){
+    const fields=await fetchGhlCustomFields();
     for(const [key] of missing){
       const wantedKey=GHL_LEAD_FIELD_KEYS[key];
       const wantedName=key.replace(/_/g,' ').toLowerCase();
@@ -5929,7 +6663,7 @@ async function resolveLeadFieldIds(){
         const normalizedName=normalizeGhlFieldName(name);
         const normalizedWanted=normalizeGhlFieldName(wantedName);
         const normalizedKey=normalizeGhlFieldName(fieldKey);
-        if(key==='lead_score' && /reason|why|notes?/.test(normalizedName)) return false;
+        if(key==='lead_score' && !isSafeLeadScoreField(f)) return false;
         return fieldKey===wantedKey
           || fieldKey.endsWith('.'+key)
           || normalizedKey.endsWith(normalizeGhlFieldName(key))
@@ -5937,11 +6671,26 @@ async function resolveLeadFieldIds(){
           || aliases.includes(normalizedName)
           || aliases.some(alias=>alias && normalizedName.includes(alias));
       });
-      if(found) resolved[key]=found.id||found._id||found.fieldId||'';
+      if(found) resolved[key]=ghlCustomFieldId(found);
+    }
+    if(resolved.lead_score){
+      const scoreField=fields.find(f=>String(ghlCustomFieldId(f))===String(resolved.lead_score));
+      if(!scoreField || !isSafeLeadScoreField(scoreField)) resolved.lead_score='';
     }
   }
   leadFieldIdCache=resolved;
   return resolved;
+}
+
+async function assertGoallLeadScoreField(ids){
+  if(!ids?.lead_score) throw new Error('GOALL lead score custom field is not configured. Set GHL_FIELD_LEAD_SCORE to the exact GHL custom field id for Lead Score before importing GOALL leads.');
+  const fields=await fetchGhlCustomFields();
+  const field=fields.find(f=>String(ghlCustomFieldId(f))===String(ids.lead_score));
+  if(!field) throw new Error(`Configured GHL_FIELD_LEAD_SCORE ${ids.lead_score} was not found in GHL custom fields.`);
+  if(!isSafeLeadScoreField(field)){
+    throw new Error(`Configured GHL_FIELD_LEAD_SCORE points to "${field.name||field.fieldName||ids.lead_score}", which does not look like the Lead Score field. Set it to the exact GHL Lead Score custom field id.`);
+  }
+  return field;
 }
 
 function normalizeLeadTag(value){
@@ -5962,17 +6711,21 @@ function normalizeLeadTag(value){
 }
 
 const GOALL_AUTOMATION_TAGS = [
-  'education',
-  'Electrical',
-  'Home Services',
-  'Hospitality',
-  'HR',
+  'Dentistry & Dental Practices',
+  'Education & Skilled Vocational Training',
+  'Electrical Contractors',
   'HVAC',
-  'Manufacturing',
+  'Hospitality / High-End Food Service',
+  'Home Services',
+  'Healthcare & Wellness Practices',
+  'Information Technology / Professional Services',
+  'Manufacturing (Skilled Labor)',
+  'Professional Services',
   'Recruiters',
-  'Roofing',
+  'Roofing & General Construction',
   'Skilled Labor',
-  'Utilities - energy'
+  'Transportation & Logistics',
+  'Utilities & Energy Infrastructure'
 ];
 
 const GOALL_AUTOMATION_TAG_ORDER = new Map(GOALL_AUTOMATION_TAGS.map((tag,i)=>[tag,i]));
@@ -6024,54 +6777,73 @@ function mapGoallAutomationTag(p={}){
       }
     );
   }
+  const direct=normalizeLeadIndustryText([p.organizationType,p.aiExactIndustry,p.ai_exact_industry,p.industry,p.cause].filter(Boolean).join(' '));
+  if(/\bplumb/.test(direct)){
+    return goallAutomationResult('Home Services','high','Plumbing search or industry signal was found.',p,{normalizedIndustry:'plumbing services'});
+  }
+  if(/\bhvac|heating|cooling|air conditioning/.test(direct)){
+    return goallAutomationResult('HVAC','high','HVAC search or industry signal was found.',p,{normalizedIndustry:'HVAC services'});
+  }
+  if(/\belectric|electrical/.test(direct)){
+    return goallAutomationResult('Electrical Contractors','high','Electrical search or industry signal was found.',p,{normalizedIndustry:'electrical services'});
+  }
+  if(/\broof/.test(direct)){
+    return goallAutomationResult('Roofing & General Construction','high','Roofing search or industry signal was found.',p,{normalizedIndustry:'roofing services'});
+  }
   const text=goallAutomationText(p);
   if(!text) return goallAutomationResult('', 'low', 'No industry signal was available, so no automation tag could be assigned.', p, {needsNewAutomation:true, suggestedNewAutomationTag:'Manual Review'});
 
   if(/\b(electrician|electricians|electrical|electrical contractor|lighting|low voltage|generator|generators)\b/.test(text)){
-    return goallAutomationResult('Electrical','high','Electrical trade signals were found.',p,{normalizedIndustry:'electrical services'});
+    return goallAutomationResult('Electrical Contractors','high','Electrical trade signals were found.',p,{normalizedIndustry:'electrical services'});
   }
   if(/\b(hvac|heating|cooling|air conditioning|a\/c|ac repair|furnace|refrigeration|mechanical contractor|mechanical contractors)\b/.test(text)){
     return goallAutomationResult('HVAC','high','HVAC, heating, cooling, refrigeration, or mechanical contractor signals were found.',p,{normalizedIndustry:'HVAC services'});
   }
   if(/\b(roof|roofing|roofer|roof repair|gutter|gutters)\b/.test(text)){
-    return goallAutomationResult('Roofing','high','Roofing or adjacent gutter service signals were found.',p,{normalizedIndustry:'roofing services'});
+    return goallAutomationResult('Roofing & General Construction','high','Roofing or adjacent gutter service signals were found.',p,{normalizedIndustry:'roofing services'});
   }
   if(/\b(solar|energy|utility|utilities|power|renewable|battery|ev charging|electric vehicle charging)\b/.test(text)){
-    return goallAutomationResult('Utilities - energy','high','Energy, utility, renewable, battery, or EV charging signals were found.',p,{normalizedIndustry:'energy and utilities'});
+    return goallAutomationResult('Utilities & Energy Infrastructure','high','Energy, utility, renewable, battery, or EV charging signals were found.',p,{normalizedIndustry:'energy and utilities'});
   }
   if(/\b(manufactur\w*|industrial supplier|food production|packaging|metal manufacturing|production facilit\w*|assembly|factory)\b/.test(text)){
-    return goallAutomationResult('Manufacturing','high','Manufacturing, production, assembly, packaging, or industrial supplier signals were found.',p,{normalizedIndustry:'manufacturing'});
+    return goallAutomationResult('Manufacturing (Skilled Labor)','high','Manufacturing, production, assembly, packaging, or industrial supplier signals were found.',p,{normalizedIndustry:'manufacturing'});
   }
   if(/\b(staffing|recruiter|recruiting|employment agency|temp agency|temporary staffing|workforce placement|talent agency)\b/.test(text)){
     return goallAutomationResult('Recruiters','high','Staffing, recruiting, employment, or workforce placement signals were found.',p,{normalizedIndustry:'staffing and recruiting'});
   }
   if(/\b(hr consulting|human resources|payroll|benefits broker|benefits consultant|benefit consultant|peo\b|workforce consulting|organizational development|organisation development)\b/.test(text)){
-    return goallAutomationResult('HR','high','HR, payroll, benefits, PEO, or workforce consulting signals were found.',p,{normalizedIndustry:'HR and workforce services'});
+    return goallAutomationResult('Information Technology / Professional Services','high','HR, payroll, benefits, PEO, or workforce consulting signals were found.',p,{normalizedIndustry:'HR and workforce services'});
   }
   if(/\b(hotel|resort|restaurant|catering|event venue|hospitality|tourism|lodging)\b/.test(text)){
-    return goallAutomationResult('Hospitality','high','Hotel, restaurant, catering, event, lodging, tourism, or hospitality signals were found.',p,{normalizedIndustry:'hospitality'});
+    return goallAutomationResult('Hospitality / High-End Food Service','high','Hotel, restaurant, catering, event, lodging, tourism, or hospitality signals were found.',p,{normalizedIndustry:'hospitality'});
   }
   if(/\b(private school|school|training|tutoring|educational service|education service|childcare|child care|daycare|learning center|trade school)\b/.test(text)){
-    return goallAutomationResult('education','high','Private education, training, childcare, tutoring, learning center, or trade school signals were found.',p,{normalizedIndustry:'education'});
+    return goallAutomationResult('Education & Skilled Vocational Training','high','Private education, training, childcare, tutoring, learning center, or trade school signals were found.',p,{normalizedIndustry:'education'});
   }
   if(/\b(plumb\w*|landscap\w*|pest|garage door|restoration|flooring|painting|remodel\w*|appliance repair|pool service|cleaning|home repair|home service|home services|lawn care|janitorial|carpet clean\w*|window clean\w*)\b/.test(text)){
     return goallAutomationResult('Home Services','high','Home service signals were found.',p,{normalizedIndustry:'home services'});
   }
   if(/\b(welding|fabrication|concrete|excavat|general contractor|construction|machine shop|heavy equipment|diesel|auto repair|fleet maintenance|towing|moving|delivery|trade business|trades business|mechanic|body shop|collision|masonry|warehouse|logistics|freight|courier|trucking|transportation)\b/.test(text)){
     const logistics=/\b(trucking|logistics|freight|courier|transportation)\b/.test(text);
-    return goallAutomationResult('Skilled Labor',logistics?'medium':'high',logistics?'Transportation or logistics signals map to Skilled Labor for now.':'Skilled trade, construction, repair, equipment, or field service signals were found.',p,{
+    return goallAutomationResult(logistics?'Transportation & Logistics':'Skilled Labor',logistics?'high':'high',logistics?'Transportation or logistics signals were found.':'Skilled trade, construction, repair, equipment, or field service signals were found.',p,{
       normalizedIndustry:logistics?'transportation and logistics':'skilled labor',
-      needsNewAutomation:logistics,
-      suggestedNewAutomationTag:logistics?'Transportation / Logistics':''
+      needsNewAutomation:false,
+      suggestedNewAutomationTag:''
     });
   }
   if(/\b(chiropract\w*|medical|dental|dentist|optometry|physical therapy|pt clinic|med spa|spa|clinic|wellness|healthcare|health care)\b/.test(text)){
-    return goallAutomationResult('Home Services','low','Healthcare or wellness service signals do not have a dedicated automation yet, so this is routed to Home Services for now.',p,{normalizedIndustry:'healthcare and wellness',needsNewAutomation:true,suggestedNewAutomationTag:'Healthcare / Wellness'});
+    if(/\b(dental|dentist|orthodont|periodont|endodont|oral surgery|prosthodont)\b/.test(text)){
+      return goallAutomationResult('Dentistry & Dental Practices','high','Dental practice signals were found.',p,{normalizedIndustry:'dentistry'});
+    }
+    return goallAutomationResult('Healthcare & Wellness Practices','high','Healthcare or wellness practice signals were found.',p,{normalizedIndustry:'healthcare and wellness'});
   }
   if(/\b(law office|law firm|lawyer|attorney|legal|accounting|cpa|financial advisor|financial advisory|insurance|real estate|mortgage|architecture|engineering|it service|managed service provider|msp\b|technology service)\b/.test(text)){
-    return goallAutomationResult('HR','low','Professional service signals do not have a dedicated automation yet, so this is routed to HR for now.',p,{normalizedIndustry:'professional services',needsNewAutomation:true,suggestedNewAutomationTag:'Professional Services'});
+    if(/\b(it service|managed service provider|msp\b|technology service)\b/.test(text)){
+      return goallAutomationResult('Information Technology / Professional Services','high','Information technology or managed service signals were found.',p,{normalizedIndustry:'information technology services'});
+    }
+    return goallAutomationResult('Professional Services','high','Professional service signals were found.',p,{normalizedIndustry:'professional services'});
   }
-  return goallAutomationResult('HR','low','No exact automation match was found, so this is routed to HR for review until a better automation exists.',p,{normalizedIndustry:rawGoallIndustry(p)||'unclear',needsNewAutomation:true,suggestedNewAutomationTag:'Manual Review'});
+  return goallAutomationResult('Professional Services','low','No exact automation match was found, so this is routed to Professional Services for review until a better automation exists.',p,{normalizedIndustry:rawGoallIndustry(p)||'unclear',needsNewAutomation:true,suggestedNewAutomationTag:'Manual Review'});
 }
 
 function applyGoallAutomationTag(p={}){
@@ -6147,7 +6919,7 @@ function normalizeLeadIndustryText(value){
 const GOALL_INDUSTRY_ALIASES = [
   [/truck|transport|freight|carrier|fleet/, 'trucking companies'],
   [/construction|builder|builders/, 'construction companies'],
-  [/general contractor|contractors?\b/, 'general contractors'],
+  [/\bgeneral contractors?\b/, 'general contractors'],
   [/electric|electrical/, 'electrical contractors'],
   [/plumb/, 'plumbing companies'],
   [/\bhvac\b|heating|air conditioning/, 'HVAC companies'],
@@ -6257,7 +7029,15 @@ function wantsAllGoallIndustries(text){
 
 function normalizeGoallMarket(value,criteria='',profile='goall'){
   const raw=String(value||'').trim();
+  const rawNorm=normalizeLeadIndustryText(raw);
+  if(raw){
+    const city=GOALL_ARIZONA_CITIES.find(c=>rawNorm.includes(normalizeLeadIndustryText(c)));
+    if(city) return /\baz\b|\barizona\b/i.test(raw) ? raw : `${city}, Arizona`;
+    if(/,/.test(raw)) return raw;
+  }
   const combined=normalizeLeadIndustryText(`${raw} ${criteria}`);
+  const combinedCity=GOALL_ARIZONA_CITIES.find(c=>combined.includes(normalizeLeadIndustryText(c)));
+  if(combinedCity) return `${combinedCity}, Arizona`;
   if(/\baz\b|\barizona\b/.test(combined)) return 'Arizona';
   if(/\bid\b|\bidaho\b/.test(combined)) return 'Idaho, US';
   return raw || (profile==='westwood'?'Idaho, US':'Arizona');
@@ -6347,33 +7127,39 @@ function scoreGoallFit(p={}){
 function leadScoreFromGoallFit(p={}){
   const fit=Number(p.goallFitScore||0);
   const c=leadContactability(p);
-  if(!c.importable) return {leadScore:4,leadScoreReason:'Lead is not viable because no email or phone number was available.'};
   const industryText=String([p.aiExactIndustry,p.industry,p.organizationType,p.primaryService,p.cause].filter(Boolean).join(' ')).toLowerCase();
   const signalText=String([p.operationalIndicators,p.donorEstimateBasis,p.employeeEstimateBasis,p.growthActivity,p.hiringActivity,p.careersPage,p.goallFitReason,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ')).toLowerCase();
   const highestIndustries=/trucking|hvac|plumbing|electrical|welding|construction|roofing|manufactur|law office|chiropractic|medical|dental|staffing|home care|logistics|commercial cleaning|security|fire protection/.test(industryText);
   const alignedIndustries=highestIndustries || /accounting|insurance|wealth|engineering|architecture|property management|auto repair|collision|equipment rental|physical therapy|behavioral health|veterinary/.test(industryText);
   const employeeSignals=/10\+|employees|staff|team|crew|fleet|dispatch|payroll|benefit|multiple locations|hiring|careers|warehouse|commercial|field teams|service teams/.test(signalText);
+  const decisionMakerFound=!!(p.decisionMakerName||p.linkedinPersonalUrl);
+  const strongContact=c.contactabilityStatus==='full_contactability';
+  const reachable=!!(c.hasEmail||c.hasPhone);
+  const strongActivity=employeeSignals || reviewCountFromLead(p)>=100 || /multiple locations|hiring|careers|commercial|fleet|dispatch|crew|team/.test(signalText);
   const weakSignals=/solo|sole proprietor|one person|very small|weak|unclear|missing website|no website|low-fit|low fit/.test(signalText);
   let leadScore=3;
-  let leadScoreReason='Score 3 because the business is contactable and may have employees, but there is limited evidence of payroll size or benefit need.';
-  if(highestIndustries && employeeSignals && fit>=75){
+  let leadScoreReason='Score 3 because the business appears relevant, but decision-maker, employee-size, or contact evidence is incomplete.';
+  if(highestIndustries && decisionMakerFound && strongContact && strongActivity && fit>=78){
     leadScore=1;
-    leadScoreReason='Score 1 because this is a higher-income GOALL-aligned business with likely employees, recurring payroll needs, strong fit signals, and usable contact information.';
-  }else if(highestIndustries && fit>=65){
-    leadScore=1;
-    leadScoreReason='Score 1 because the industry is strongly aligned with GOALL and the business appears active and contactable, even though some employee-size signals may need confirmation.';
-  }else if(alignedIndustries && fit>=58){
+    leadScoreReason='Score 1 because the business is strongly GOALL-aligned, has a verified decision-maker signal, full contactability, and meaningful activity or employee-size evidence.';
+  }else if(highestIndustries && reachable && fit>=65){
     leadScore=2;
-    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but employee size and benefit cost indicators are not fully verified.';
+    leadScoreReason='Score 2 because the business is strongly aligned and reachable, but decision-maker or employee-size evidence still needs confirmation.';
+  }else if(alignedIndustries && reachable && fit>=58){
+    leadScore=2;
+    leadScoreReason='Score 2 because the business is in an aligned industry and appears active, but full contactability, decision-maker, or employee-size evidence is not fully verified.';
   }else if(fit>=48 && !weakSignals){
     leadScore=3;
-    leadScoreReason='Score 3 because the business is contactable and may have employees, but there is limited evidence of payroll size or benefit need.';
+    leadScoreReason='Score 3 because the business may fit GOALL, but the current evidence is incomplete.';
   }else{
     leadScore=4;
     leadScoreReason='Score 4 because the business appears small or low-fit for GOALL based on limited evidence of employees or benefit needs.';
   }
   if(c.contactabilityStatus==='phone_only' && leadScore<=2){
-    leadScoreReason += ' It is phone-only, but lack of email does not lower the score because the business fit is strong.';
+    leadScoreReason += ' It is phone-only, so it should use phone-first outreach.';
+  }else if(c.contactabilityStatus==='not_contactable'){
+    leadScore=Math.max(leadScore,3);
+    leadScoreReason += ' No usable email or phone was found, so the lead is visible in CRM but not outreach-ready.';
   }
   return {leadScore,leadScoreReason};
 }
@@ -6465,12 +7251,13 @@ function sortGoallLeads(a,b){
 }
 
 function summarizeGoallDiscovery({requested,leads,rawCount,industries,cities,rejectedReasons}){
-  const counts={fullContactability:0,emailOnly:0,phoneOnly:0,rejected:0,score1Count:0,score2Count:0,score3Count:0,score4Count:0};
+  const counts={fullContactability:0,emailOnly:0,phoneOnly:0,noContact:0,rejected:0,score1Count:0,score2Count:0,score3Count:0,score4Count:0};
   for(const lead of leads||[]){
     const c=leadContactability(lead);
     if(c.contactabilityStatus==='full_contactability') counts.fullContactability+=1;
     else if(c.contactabilityStatus==='email_only') counts.emailOnly+=1;
     else if(c.contactabilityStatus==='phone_only') counts.phoneOnly+=1;
+    else counts.noContact+=1;
     const score=Number(lead.leadScore||lead.lead_score||0);
     if(score===1) counts.score1Count+=1;
     else if(score===2) counts.score2Count+=1;
@@ -6487,6 +7274,7 @@ function summarizeGoallDiscovery({requested,leads,rawCount,industries,cities,rej
     fullContactability:counts.fullContactability,
     emailOnly:counts.emailOnly,
     phoneOnly:counts.phoneOnly,
+    noContact:counts.noContact,
     score1Count:counts.score1Count,
     score2Count:counts.score2Count,
     score3Count:counts.score3Count,
@@ -6764,15 +7552,32 @@ function leadCustomFieldsFromProspect(p){
 }
 
 async function getOpportunityTarget(){
-  if(GHL_OPPORTUNITY_PIPELINE_ID&&GHL_OPPORTUNITY_STAGE_ID) return {pipelineId:GHL_OPPORTUNITY_PIPELINE_ID,stageId:GHL_OPPORTUNITY_STAGE_ID};
   const data=await ghl('GET',`/opportunities/pipelines?locationId=${GHL_LOC}`);
   const pipelines=data.pipelines||data.data||[];
+  if(GHL_OPPORTUNITY_PIPELINE_ID&&GHL_OPPORTUNITY_STAGE_ID){
+    const pipeline=pipelines.find(p=>String(p.id||p._id||'')===String(GHL_OPPORTUNITY_PIPELINE_ID));
+    if(!pipeline){
+      const available=pipelines.map(p=>`${p.name||p.title||'Unnamed'} (${p.id||p._id||'no id'})`).slice(0,12).join(' | ');
+      throw new Error(`Configured GHL_OPPORTUNITY_PIPELINE_ID ${GHL_OPPORTUNITY_PIPELINE_ID} was not found. Available pipelines: ${available||'none returned'}`);
+    }
+    const stages=pipeline.stages||pipeline.pipelineStages||[];
+    const stage=stages.find(s=>String(s.id||s._id||'')===String(GHL_OPPORTUNITY_STAGE_ID));
+    if(!stage){
+      const available=stages.map(s=>`${s.name||s.title||'Unnamed'} (${s.id||s._id||'no id'})`).slice(0,20).join(' | ');
+      throw new Error(`Configured GHL_OPPORTUNITY_STAGE_ID ${GHL_OPPORTUNITY_STAGE_ID} was not found in pipeline "${pipeline.name||pipeline.title||pipeline.id}". Available stages: ${available||'none returned'}`);
+    }
+    return {pipelineId:pipeline.id||pipeline._id,stageId:stage.id||stage._id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
+  }
   const wantPipeline=String(GHL_OPPORTUNITY_PIPELINE_NAME||'').toLowerCase();
   const wantStage=String(GHL_OPPORTUNITY_STAGE_NAME||'').toLowerCase();
   const pipeline=pipelines.find(p=>{
     const name=String(p.name||p.title||'').toLowerCase();
     return wantPipeline && (name===wantPipeline || name.includes(wantPipeline));
-  }) || pipelines[0] || {};
+  }) || {};
+  if(!pipeline.id){
+    const available=pipelines.map(p=>`${p.name||p.title||'Unnamed'} (${p.id||p._id||'no id'})`).slice(0,12).join(' | ');
+    throw new Error(`No GHL opportunity pipeline matched "${GHL_OPPORTUNITY_PIPELINE_NAME}". Set GHL_OPPORTUNITY_PIPELINE_ID to the exact pipeline id in Railway. Available pipelines: ${available||'none returned'}`);
+  }
   const stages=pipeline.stages||pipeline.pipelineStages||[];
   const stage=stages.find(s=>{
     const name=String(s.name||s.title||'').toLowerCase();
@@ -6780,8 +7585,11 @@ async function getOpportunityTarget(){
   }) || stages.find(s=>{
     const name=String(s.name||s.title||'').toLowerCase();
     return wantStage && name.includes(wantStage);
-  }) || stages[0] || {};
-  if(!pipeline.id||!stage.id) throw new Error(`No GHL opportunity pipeline/stage found for ${GHL_OPPORTUNITY_PIPELINE_NAME} / ${GHL_OPPORTUNITY_STAGE_NAME}. Set GHL_OPPORTUNITY_PIPELINE_ID and GHL_OPPORTUNITY_STAGE_ID in Railway.`);
+  }) || {};
+  if(!stage.id){
+    const available=stages.map(s=>`${s.name||s.title||'Unnamed'} (${s.id||s._id||'no id'})`).slice(0,20).join(' | ');
+    throw new Error(`No GHL opportunity stage matched "${GHL_OPPORTUNITY_STAGE_NAME}" in pipeline "${pipeline.name||pipeline.title||pipeline.id}". Set GHL_OPPORTUNITY_STAGE_ID to the exact stage id in Railway. Available stages: ${available||'none returned'}`);
+  }
   return {pipelineId:pipeline.id,stageId:stage.id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
 }
 
@@ -6814,7 +7622,7 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
     location:city,
     organizationType,
     partnerFit:'unclear',
-    approximateDonors:donorValue(row.approximateDonors)||employeeMinimum||0,
+    approximateDonors:donorValue(row.approximateDonors||row.employee_count||row.employees||row.employees_count||row.staff_count)||0,
     donorEstimateBasis:employeeSignals.join('; ') || 'Outscraper public listing signals',
     employeeEstimateBasis:employeeSignals.join('; ') || 'Outscraper public listing signals',
     evidenceSignals:employeeSignals,
@@ -6855,7 +7663,7 @@ async function discoverOutscraperProspects({organizationType,employeeMinimum,mar
   url.searchParams.set('query',query);
   url.searchParams.set('limit',String(limit||12));
   url.searchParams.set('async','false');
-  const response=await fetch(url.toString(),{headers:{'X-API-KEY':outscraperKey}});
+  const response=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_FETCH_TIMEOUT_MS,'Level 1 map/business search');
   const data=await readJsonResponse(response);
   if(!response.ok) return {configured:true, leads:[], error:data.errorMessage||data.message||`Outscraper ${response.status}`};
   const rows=(Array.isArray(data.data)?data.data:[data]).flat(4).filter(v=>v&&typeof v==='object');
@@ -6870,7 +7678,7 @@ function buildGoallSearchJobs(plan){
   const jobs=[];
   const industries=plan.industries.length?plan.industries:['businesses'];
   if(plan.fastSearch){
-    return industries.slice(0,6).map(industry=>({industry,market:plan.market}));
+    return industries.slice(0,3).map(industry=>({industry,market:plan.market}));
   }
   for(const industry of industries){
     jobs.push({industry,market:plan.market});
@@ -6898,8 +7706,7 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
   let rawCount=0;
   const duplicateKeys=new Set();
   const rejectedReasons={duplicate:0,missing_email_and_phone:0,bad_fit:0};
-  for(const job of jobs){
-    if(raw.length>=GOALL_LEAD_RAW_SEARCH_MAX) break;
+  const scrapeJob=async(job)=>{
     const scraped=await discoverOutscraperProspects({
       organizationType:job.industry,
       employeeMinimum:plan.employeeMinimum,
@@ -6907,11 +7714,14 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
       limit:perSearchLimit,
       leadProfile:plan.leadProfile
     }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+    return {job,scraped};
+  };
+  const mergeScraped=({job,scraped})=>{
     configured=!!scraped.configured;
-    if(!configured) return {configured:false,leads:[],rawCount,error:scraped.error};
     if(scraped.error) errors.push(`${job.industry} in ${job.market}: ${scraped.error}`);
     rawCount += scraped.rawCount || (scraped.leads||[]).length;
     for(const lead of scraped.leads||[]){
+      if(raw.length>=GOALL_LEAD_RAW_SEARCH_MAX) break;
       const enrichedIndustry=lead.aiExactIndustry||lead.industry||job.industry;
       const next={...lead,organizationType:job.industry,industry:enrichedIndustry,aiExactIndustry:enrichedIndustry,searchMarket:job.market,leadProfile:plan.leadProfile};
       const key=goallLeadKey(next);
@@ -6922,29 +7732,31 @@ async function discoverGoallProspectsWithOutscraper(plan,rocketReachMode){
       duplicateKeys.add(key);
       raw.push(next);
     }
-    const rawViable=raw.filter(p=>leadContactability(p).importable).length;
-    if(rawViable>=requested && raw.length>=requested*2) break;
+  };
+  if(plan.fastSearch){
+    const scrapeResults=await Promise.all(jobs.map(scrapeJob));
+    const missing=scrapeResults.find(result=>!result.scraped.configured);
+    if(missing) return {configured:false,leads:[],rawCount,error:missing.scraped.error};
+    scrapeResults.forEach(mergeScraped);
+  }else{
+    for(const job of jobs){
+      if(raw.length>=GOALL_LEAD_RAW_SEARCH_MAX) break;
+      const result=await scrapeJob(job);
+      if(!result.scraped.configured) return {configured:false,leads:[],rawCount,error:result.scraped.error};
+      mergeScraped(result);
+      if(raw.length>=requested && raw.length>=requested*2) break;
+    }
   }
   const enriched=[];
   const enrichLimit=Math.min(raw.length,GOALL_LEAD_RAW_SEARCH_MAX);
   for(const prospect of raw.slice(0,enrichLimit)){
-    const next=await enrichProspect(prospect,{rocketReachMode}).catch(e=>({...prospect,rocketReachStatus:e.message}));
+    const next=await enrichProspect(prospect,{rocketReachMode,fastPreview:plan.fastSearch}).catch(e=>({...prospect,rocketReachStatus:e.message}));
     const exactIndustry=next.aiExactIndustry||next.industry||next.organizationType||prospect.organizationType||'unclear';
     enriched.push(applyLeadScoring({...next,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile}));
-    const viable=enriched.filter(p=>leadContactability(p).importable);
-    if(viable.length>=requested && enriched.length>=requested) break;
+    if(enriched.length>=requested) break;
   }
   const viable=[];
   for(const lead of enriched){
-    const c=leadContactability(lead);
-    if(!c.importable){
-      rejectedReasons.missing_email_and_phone+=1;
-      continue;
-    }
-    if(Number(lead.goallFitScore||0)<35){
-      rejectedReasons.bad_fit+=1;
-      continue;
-    }
     viable.push(lead);
   }
   viable.sort(sortGoallLeads);
@@ -6988,6 +7800,13 @@ function candidateContactUrls(website){
       new URL('/team',origin).href,
       new URL('/staff',origin).href,
       new URL('/leadership',origin).href,
+      new URL('/our-team',origin).href,
+      new URL('/meet-the-team',origin).href,
+      new URL('/management',origin).href,
+      new URL('/leadership-team',origin).href,
+      new URL('/about/team',origin).href,
+      new URL('/team-members',origin).href,
+      new URL('/staff-directory',origin).href,
       new URL('/careers',origin).href,
       new URL('/jobs',origin).href,
       new URL('/services',origin).href,
@@ -7009,13 +7828,54 @@ function bestEmail(candidates){
 
 function extractLeadership(text){
   const clean=String(text||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
-  const titles='Chief Executive Officer|CEO|Founder|Owner|President|Operations Manager|Director of Operations|Chief Operating Officer|COO|HR Director|Human Resources Director|Benefits Manager|Sales Director|VP Sales|Partnerships Director|General Manager';
-  const titleFirst=new RegExp(`\\b(${titles})\\b\\s*[:\\-–]?\\s*([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})`,'i');
-  const nameFirst=new RegExp(`\\b([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})\\s*[,\\-–|]+\\s*(${titles})\\b`,'i');
-  let m=clean.match(titleFirst);
-  if(m) return {name:m[2].trim(),title:m[1].trim()};
-  m=clean.match(nameFirst);
-  if(m) return {name:m[1].trim(),title:m[2].trim()};
+  const titles=[
+    'Chief Executive Officer','CEO','Founder','Co-Founder','Owner','President',
+    'Managing Partner','Partner','Principal','Practice Owner','Office Manager',
+    'Executive Director','Administrator','Clinic Director','Managing Director',
+    'General Manager','Operations Manager','Director of Operations',
+    'Chief Operating Officer','COO','HR Director','Human Resources Director',
+    'Benefits Manager','Sales Director','VP Sales','Vice President of Sales',
+    'Partnerships Director','Director','Controller'
+  ];
+  const titlePattern=titles.map(t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|');
+  const namePattern="([A-Z][A-Za-z.'’\\-]+(?:\\s+[A-Z][A-Za-z.'’\\-]+){1,3})";
+  const candidates=[];
+  const addCandidate=(name,title,index)=>{
+    const cleanedName=String(name||'').replace(/\s+/g,' ').trim();
+    const cleanedTitle=String(title||'').replace(/\s+/g,' ').trim();
+    if(!cleanedName || !cleanedTitle) return;
+    if(/\b(Contact|About|Services|Careers|Team|Leadership|Office|Phone|Email|Fax|Address|Click|Learn|Read|More|Home)\b/i.test(cleanedName)) return;
+    const words=cleanedName.split(/\s+/);
+    if(words.length<2 || words.length>4) return;
+    const titleScore={
+      'CEO':100,
+      'Chief Executive Officer':100,
+      'Owner':95,
+      'Founder':95,
+      'Co-Founder':92,
+      'President':90,
+      'Managing Partner':88,
+      'Partner':80,
+      'Principal':78,
+      'Practice Owner':78,
+      'Executive Director':75,
+      'Managing Director':72,
+      'Director of Operations':70,
+      'Chief Operating Officer':70,
+      'COO':70,
+      'General Manager':65,
+      'Office Manager':55,
+      'Administrator':50
+    }[cleanedTitle] || 40;
+    candidates.push({name:cleanedName,title:cleanedTitle,score:titleScore-(index/10000)});
+  };
+  const titleFirst=new RegExp(`\\b(${titlePattern})\\b\\s*(?:[:\\-–|,]|\\s+for\\s+)?\\s*${namePattern}`,'gi');
+  const nameFirst=new RegExp(`\\b${namePattern}\\s*(?:[,\\-–|]+|\\s+-\\s+|\\s+is\\s+(?:the\\s+)?)\\s*(${titlePattern})\\b`,'gi');
+  let m;
+  while((m=titleFirst.exec(clean)) && candidates.length<20) addCandidate(m[2],m[1],m.index);
+  while((m=nameFirst.exec(clean)) && candidates.length<40) addCandidate(m[1],m[2],m.index);
+  candidates.sort((a,b)=>b.score-a.score);
+  if(candidates[0]) return {name:candidates[0].name,title:candidates[0].title};
   return {name:'',title:''};
 }
 
@@ -7060,45 +7920,58 @@ async function discoverHbsLeadProspects(body={}){
   const limit=plan.requestedViableLeads;
   const rocketReachMode=String(body.rocketReachMode||body.rocketreachMode||'').trim() || (limit<=25?'auto':'defer');
   const scraped=await discoverGoallProspectsWithOutscraper(plan,rocketReachMode).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message,rejectedReasons:{}}));
-  if(!scraped.configured) throw new Error(scraped.error || 'Outscraper is not configured');
+  if(!scraped.configured){
+    return {ok:false,market,criteria,organizationType,employeeMinimum,tag,leads:[],scraped,raw:'',rocketReachMode,searchPlan:plan,report:{requestedViableLeads:limit,viableLeads:0,rawCount:0},error:scraped.error||'Outscraper is not configured',content:leadDiscoveryFailureText({plan,scraped})};
+  }
   let leads=scraped.leads||[];
   let raw='';
+  let webError='';
   if(!leads.length){
-    const brand=plan.leadBrand||'GOALL';
-    const system=[
-      GOALL_LEADS_SYSTEM_PROMPT,
-      `Discovery mode: find potential ${brand} business leads and return machine-readable JSON only.`,
-      'Find companies with visible evidence of employee size, hiring, growth, operational complexity, and reachable decision-makers.',
-      'A viable lead must have a valid email OR a valid phone number. Email is preferred, but phone-only leads are viable.',
-      `Search across the requested industry set. If the user asked for broad ${brand} leads, use the matching ${brand} priority industries.`,
-      brand==='Westwood'?'Use RocketReach for enrichment. Do not use Apollo. Exclude government, municipal, public department, and clearly public-school results unless explicitly requested.':'',
-      'Do not invent exact employee counts. approximateDonors is being used as the legacy numeric field for approximate employees and must be a conservative integer estimate from public signals.',
-      'Return ONLY valid JSON. No markdown. No commentary.'
-    ].filter(Boolean).join('\n\n');
-    const user=[
-      `Find ${limit} viable business prospects for ${brand}.`,
-      `Market: ${market}`,
-      `Industries: ${plan.industries.join(', ')}`,
-      `Minimum employees: ${employeeMinimum}`,
-      `Criteria: ${criteria}`,
-      'Only count prospects with a valid email or valid phone as viable.',
-      '',
-      'Return JSON with this exact shape:',
-      '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
-    ].join('\n');
-    raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
-    leads=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
-    leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||employeeMinimum},{rocketReachMode}));
-    leads=leads
-      .map(p=>{
-        const exactIndustry=p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear';
-        return applyLeadScoring({...p,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile});
-      })
-      .filter(p=>leadContactability(p).importable)
-      .sort(sortGoallLeads)
-      .slice(0,limit);
+    const allowWebFallback=!plan.fastSearch || /^(1|true|yes)$/i.test(String(body.allowWebFallback||body.allow_web_fallback||''));
+    if(!allowWebFallback){
+      webError='';
+    }else{
+      const brand=plan.leadBrand||'GOALL';
+      const system=[
+        GOALL_LEADS_SYSTEM_PROMPT,
+        `Discovery mode: find potential ${brand} business leads and return machine-readable JSON only.`,
+        'Find companies with visible evidence of employee size, hiring, growth, operational complexity, and reachable decision-makers.',
+        'A viable lead is a non-duplicate business that matches the requested profile. Email and phone are preferred but not required for import.',
+        `Search across the requested industry set. If the user asked for broad ${brand} leads, use the matching ${brand} priority industries.`,
+        brand==='Westwood'?'Use RocketReach for enrichment. Do not use Apollo. Exclude government, municipal, public department, and clearly public-school results unless explicitly requested.':'',
+        'Do not invent exact employee counts. approximateDonors is being used as the legacy numeric field for approximate employees and must be a conservative integer estimate from public signals.',
+        'Return ONLY valid JSON. No markdown. No commentary.'
+      ].filter(Boolean).join('\n\n');
+      const user=[
+        `Find ${limit} viable business prospects for ${brand}.`,
+        `Market: ${market}`,
+        `Industries: ${plan.industries.join(', ')}`,
+        `Minimum employees: ${employeeMinimum}`,
+        `Criteria: ${criteria}`,
+        'Do not reject a prospect solely because email, phone, or decision-maker name is missing.',
+        '',
+        'Return JSON with this exact shape:',
+        '{"leads":[{"organizationName":"","website":"","industry":"","aiExactIndustry":"","leadScore":1,"leadScoreReason":"","automationTag":"","automationTagReason":"","normalizedIndustry":"","rawIndustry":"","tagConfidence":"","needsNewAutomation":false,"suggestedNewAutomationTag":"","primaryService":"","location":"","city":"","state":"","organizationType":"","partnerFit":"","approximateDonors":0,"donorEstimateBasis":"","evidenceSignals":[""],"decisionMakerName":"","decisionMakerTitle":"","email":"","phone":"","linkedinPersonalUrl":"","linkedinCompanyUrl":"","hiringActivity":"","careersPage":"","growthActivity":"","operationalActivity":"","socialActivity":"","operationalIndicators":"","weakFitConcerns":"","googleRaw":"","newsRaw":"","nextOutreachAngle":"","confidence":""}]}'
+      ].join('\n');
+      try{
+        raw=await callOpenAIWebResearch({system,user,maxTokens:6000,temperature:0.15});
+        leads=extractJsonArray(raw).slice(0,GOALL_LEAD_RAW_SEARCH_MAX);
+        leads=await mapWithConcurrency(leads,5,p=>enrichProspect({...p,organizationType:p.organizationType||organizationType,approximateDonors:p.approximateDonors||0},{rocketReachMode}));
+        leads=leads
+          .map(p=>{
+            const exactIndustry=p.aiExactIndustry||p.ai_exact_industry||p.industry||p.organizationType||'unclear';
+            return applyLeadScoring({...p,aiExactIndustry:exactIndustry,leadProfile:plan.leadProfile});
+          })
+          .sort(sortGoallLeads)
+          .slice(0,limit);
+      }catch(e){
+        webError=e.message||'upstream error';
+      }
+    }
   }
-  if(!leads.length) throw new Error('No leads were found. Try a more specific organization type or market.');
+  if(!leads.length){
+    return {ok:false,market,criteria,organizationType,employeeMinimum,tag,leads:[],scraped,raw,rocketReachMode,searchPlan:plan,report:{requestedViableLeads:limit,viableLeads:0,rawCount:scraped.rawCount||0},error:webError||scraped.error||'No leads were found',content:leadDiscoveryFailureText({plan,scraped,webError})};
+  }
   const rejectedReasons=scraped.rejectedReasons||{};
   const report=summarizeGoallDiscovery({
     requested:limit,
@@ -7111,8 +7984,63 @@ async function discoverHbsLeadProspects(body={}){
   return {ok:true,market,criteria,organizationType,employeeMinimum,tag,leads,scraped,raw,rocketReachMode,searchPlan:plan,report};
 }
 
+function cleanLeadLevelText(value){
+  return String(value||'')
+    .replace(/ROCKETREACH_API_KEY|OUTSCRAPER_API_KEY|APOLLO_API_KEY/gi,'integration connection')
+    .replace(/Outscraper/gi,'Level 1')
+    .replace(/Apollo/gi,'Level 2')
+    .replace(/RocketReach/gi,'Level 3')
+    .replace(/api[_ -]?key/gi,'connection');
+}
+
+function leadDiscoveryFailureText({plan,scraped,webError}={}){
+  const brand=plan?.leadBrand||'GOALL';
+  return [
+    `Lead scrape could not complete for ${brand}.`,
+    '',
+    `Search: ${plan?.organizationType||plan?.criteria||'requested lead profile'} | ${plan?.employeeMinimum||10}+ employees | ${plan?.market||'selected market'}`,
+    '',
+    'What happened:',
+    scraped?.error?`- Level 1 map/business search returned: ${cleanLeadLevelText(scraped.error)}`:'',
+    Array.isArray(scraped?.errors)&&scraped.errors.length?`- Search notes: ${scraped.errors.slice(0,3).map(cleanLeadLevelText).join(' | ')}`:'',
+    webError?`- Web research fallback returned: ${cleanLeadLevelText(webError)}`:'',
+    '',
+    'Try this next:',
+    '- Run a smaller test batch, like 12 leads.',
+    '- Use one specific industry and city, for example "HVAC companies in Phoenix".',
+    '- Open Register Your Keys and test Outscraper and OpenAI if this happens on every search.'
+  ].filter(Boolean).join('\n');
+}
+
+function leadDiscoveryErrorPayload(body,error){
+  let plan=null;
+  try{ plan=resolveGoallLeadSearchPlan(body||{}); }catch(_){}
+  const scraped={configured:true,leads:[],rawCount:0,error:error?.message||String(error||'upstream error')};
+  const market=plan?.market||body?.market||'selected market';
+  const criteria=plan?.criteria||body?.criteria||body?.organizationType||'requested lead profile';
+  const organizationType=plan?.organizationType||body?.organizationType||criteria;
+  const employeeMinimum=plan?.employeeMinimum||body?.employeeMinimum||10;
+  const tag=plan?.tag||body?.tag||'';
+  return {
+    ok:false,
+    market,
+    criteria,
+    organizationType,
+    employeeMinimum,
+    tag,
+    leads:[],
+    scraped,
+    raw:'',
+    rocketReachMode:body?.rocketReachMode||body?.rocketreachMode||'auto',
+    searchPlan:plan||{criteria,market,organizationType,employeeMinimum,leadBrand:body?.leadProfile==='westwood'?'Westwood':'GOALL'},
+    report:{requestedViableLeads:Number(body?.limit)||12,viableLeads:0,rawCount:0},
+    error:scraped.error,
+    content:leadDiscoveryFailureText({plan:plan||{criteria,market,organizationType,employeeMinimum,leadBrand:body?.leadProfile==='westwood'?'Westwood':'GOALL'},scraped,webError:scraped.error})
+  };
+}
+
 function leadPreviewText(discovered){
-  const leads=(discovered.leads||[]).map(applyLeadScoring).sort(sortGoallLeads);
+  const leads=(discovered.leads||[]).map(sanitizeDecisionMaker).map(applyLeadScoring).sort(sortGoallLeads);
   const brand=discovered.searchPlan?.leadBrand || (discovered.leadProfile==='westwood'?'Westwood':'GOALL');
   const automationSummary=brand==='GOALL'?summarizeGoallAutomationTags(leads):null;
   const automationLines=automationSummary?Object.entries(automationSummary.tagCounts).filter(([,count])=>count>0).map(([tag,count])=>`${tag}: ${count}`):[];
@@ -7125,11 +8053,29 @@ function leadPreviewText(discovered){
     cities:discovered.searchPlan?.cities||[],
     rejectedReasons:discovered.scraped?.rejectedReasons||{}
   });
+  const level1Status=p=>{
+    const hasBusiness=!!(p.organizationName||p.name);
+    const hasWebsite=!!p.website;
+    return hasBusiness ? `business matched${hasWebsite?' with website':' with public listing'}` : 'business match unclear';
+  };
+  const level2Status=p=>{
+    if(p.decisionMakerName) return `decision-maker matched${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}`;
+    if(p.apolloStatus) return cleanLeadLevelText(p.apolloStatus);
+    return 'decision-maker not confirmed yet';
+  };
+  const level3Status=p=>{
+    const c=leadContactability(p);
+    if(c.contactabilityStatus==='full_contactability') return 'email and phone verified or available';
+    if(c.contactabilityStatus==='email_only') return 'email available, phone not confirmed';
+    if(c.contactabilityStatus==='phone_only') return 'phone available, email not confirmed';
+    if(p.rocketReachStatus) return cleanLeadLevelText(p.rocketReachStatus);
+    return 'contact method not confirmed';
+  };
   return [
     `Found and enriched ${leads.length} viable ${brand} lead${leads.length===1?'':'s'}.`,
     `Search: ${discovered.organizationType} | ${discovered.employeeMinimum}+ employees | ${discovered.market}`,
     `Requested viable leads: ${report.requestedViableLeads}`,
-    `Viable found: ${report.viableLeadsFound} | Full: ${report.fullContactability} | Email only: ${report.emailOnly} | Phone only: ${report.phoneOnly}`,
+    `Viable found: ${report.viableLeadsFound} | Full: ${report.fullContactability} | Email only: ${report.emailOnly} | Phone only: ${report.phoneOnly} | No contact method: ${report.noContact||0}`,
     brand==='GOALL'?`Pipeline volume standard: ${report.viableLeadsFound}/${GOALL_PIPELINE_MINIMUM} people/prospects found in this batch. ${report.pipelineVolumeStatus==='sufficient'?'Minimum met.':'Not enough yet.'}`:'',
     brand==='GOALL'&&report.pipelineVolumeWarning?report.pipelineVolumeWarning:'',
     'Lead Score Breakdown:',
@@ -7143,14 +8089,14 @@ function leadPreviewText(discovered){
     brand==='GOALL'?'Automation tags are assigned per lead and control which GHL automation should run.':`Recommended tag: ${discovered.tag}`,
     automationLines.length?'Automation Tag Breakdown:\n'+automationLines.join('\n'):'',
     suggestedAutomationLines.length?'Suggested New Automations:\n'+suggestedAutomationLines.join('\n'):'',
-    discovered.rocketReachMode==='defer'?'RocketReach: deferred for this broad scrape. Use it after review on the leads that need person-level verification.':'',
-    discovered.scraped?.error?`Outscraper note: ${discovered.scraped.error}`:'',
-    discovered.scraped?.errors?.length?`Search notes: ${discovered.scraped.errors.slice(0,3).join(' | ')}`:'',
+    discovered.rocketReachMode==='defer'?'Level 3: deferred for this broad scrape. Use it after review on the leads that need person-level verification.':'',
+    discovered.scraped?.error?`Level 1 note: ${cleanLeadLevelText(discovered.scraped.error)}`:'',
+    discovered.scraped?.errors?.length?`Search notes: ${discovered.scraped.errors.slice(0,3).map(cleanLeadLevelText).join(' | ')}`:'',
     '',
     leads.map((p,i)=>{
       p=applyLeadScoring(p);
       const automation=brand==='GOALL'?mapGoallAutomationTag(p):{};
-      const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount)||discovered.employeeMinimum;
+      const donorCount=donorValue(p.approximateDonors||p.estimatedDonors||p.donorCount);
       const contactability=leadContactability(p);
       return [
         `${i+1}. ${p.organizationName||p.name||'Unnamed organization'}`,
@@ -7171,7 +8117,9 @@ function leadPreviewText(discovered){
         `   Employee estimate: ${donorCount||'unclear'}`,
         `   ${brand} fit: ${p.goallFitScore||'unclear'}${p.goallFitReason?' - '+p.goallFitReason:''}`,
         `   Evidence: ${Array.isArray(p.evidenceSignals)?p.evidenceSignals.slice(0,4).join('; '):(p.evidenceSignals||p.donorEstimateBasis||'unclear')}`,
-        `   RocketReach: ${p.rocketReachStatus||'not available'}`
+        `   Level 1: ${level1Status(p)}`,
+        `   Level 2: ${level2Status(p)}`,
+        `   Level 3: ${level3Status(p)}`
       ].join('\n');
     }).join('\n\n'),
     '',
@@ -7179,10 +8127,107 @@ function leadPreviewText(discovered){
   ].filter(Boolean).join('\n');
 }
 
+function ghlContactMatchText(contact={}){
+  return [
+    contact.id,
+    contact.email,
+    contact.phone,
+    contact.name,
+    contact.contactName,
+    contact.firstName,
+    contact.lastName,
+    contact.companyName,
+    contact.businessName,
+    contact.website
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function leadDuplicateNeedles(p={}){
+  return [
+    validEmail(p.email)?String(p.email).toLowerCase().trim():'',
+    validPhone(p.phone)?String(p.phone).replace(/\D/g,''):'',
+    leadDomain(p.website||''),
+    normalizeCompanyForMatch(p.organizationName||p.name||'')
+  ].filter(Boolean);
+}
+
+async function findExistingGhlLeadDuplicate(p={}){
+  const queries=[
+    validEmail(p.email)?String(p.email).trim():'',
+    validPhone(p.phone)?String(p.phone).trim():'',
+    leadDomain(p.website||''),
+    p.organizationName||p.name||''
+  ].filter(Boolean);
+  const needles=leadDuplicateNeedles(p);
+  if(!queries.length || !needles.length) return null;
+  const locationId=await resolveGhlLocationId();
+  for(const q of queries.slice(0,3)){
+    const data=await ghlStrict('GET',`/contacts/?locationId=${encodeURIComponent(locationId||GHL_LOC||'')}&query=${encodeURIComponent(q)}&limit=10`).catch(()=>null);
+    const contacts=data?.contacts||data?.data||[];
+    for(const contact of contacts){
+      const hay=ghlContactMatchText(contact);
+      const hayPhone=String(contact.phone||'').replace(/\D/g,'');
+      const matched=needles.some(needle=>{
+        if(!needle) return false;
+        if(/^\d{7,}$/.test(needle)) return hayPhone && hayPhone===needle;
+        return hay.includes(String(needle).toLowerCase());
+      });
+      if(matched) return {id:contact.id,name:contact.contactName||contact.name||[contact.firstName,contact.lastName].filter(Boolean).join(' ')||contact.companyName||q,match:q};
+    }
+  }
+  return null;
+}
+
+function opportunityContactId(o={}){
+  return String(o.contactId||o.contact_id||o.contact?.id||o.contact?.contactId||o.contact?._id||'');
+}
+
+async function findOpenOpportunityForContact(contactId){
+  const id=String(contactId||'').trim();
+  if(!id) return null;
+  const data=await fetchGhlOpportunities({status:'open',limit:100}).catch(()=>({opportunities:[]}));
+  const opportunities=data.data?.opportunities||data.opportunities||[];
+  return opportunities.find(o=>opportunityContactId(o)===id)||null;
+}
+
+async function ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,automation={}){
+  const contactId=duplicate?.id;
+  if(!contactId) return {created:false, reason:'duplicate contact id missing'};
+  const isGoall=(discovered.searchPlan?.leadBrand==='GOALL'||discovered.leadProfile==='goall');
+  if(isGoall){
+    const leadFields=leadCustomFieldsFromProspect({...lead,...automation});
+    const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+    await assertGoallLeadScoreField(leadFieldIds);
+    await updateGhlLeadFields(contactId,leadFields);
+  }
+  const existing=await findOpenOpportunityForContact(contactId);
+  if(existing) return {created:false, existing:true, opportunity:existing, contactId};
+  const target=await getOpportunityTarget();
+  const donorCount=donorValue(lead.approximateDonors||lead.estimatedDonors||lead.donorCount);
+  const source=(lead.leadProfile||'').toLowerCase()==='westwood'?'Grace Intelligence Limitless Leads':'LimitLess Leads';
+  const name=lead.organizationName||lead.name||duplicate.name||'Existing business lead';
+  const opportunityPayload={
+    locationId:GHL_LOC,
+    pipelineId:target.pipelineId,
+    pipelineStageId:target.stageId,
+    name,
+    status:'open',
+    contactId,
+    monetaryValue:donorCount||0,
+    source
+  };
+  const opportunityData=await createGhlOpportunity(opportunityPayload);
+  const tags=isGoall
+    ? [automation.automationTag,'GOALL Lead','Limitless Leads'].filter(Boolean)
+    : [discovered.tag||'limitless_enrich'].filter(Boolean);
+  if(tags.length) await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  return {created:true, contactId, opportunity:opportunityData.opportunity||opportunityData,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||''};
+}
+
 async function importApprovedHbsLeads(discovered){
   const {market,criteria,organizationType,employeeMinimum,tag,scraped}=discovered;
   const brand=discovered.searchPlan?.leadBrand || (discovered.leadProfile==='westwood'?'Westwood':'GOALL');
-  const leads=Array.isArray(discovered.leads)?discovered.leads.map(applyLeadScoring).sort(sortGoallLeads):[];
+  const leads=Array.isArray(discovered.leads)?discovered.leads.map(sanitizeDecisionMaker).map(applyLeadScoring).sort(sortGoallLeads):[];
   if(!leads.length) throw new Error('No importable leads returned. Try a more specific market or criteria.');
   const created=[];
   const failed=[];
@@ -7193,13 +8238,22 @@ async function importApprovedHbsLeads(discovered){
       skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:'missing_automation_tag'});
       continue;
     }
-    const contactability=leadContactability(lead);
-    if(!contactability.importable){
-      skipped.push({name:lead.organizationName||lead.name||'Unknown lead',reason:contactability.rejectionReason||'missing_email_and_phone'});
-      continue;
-    }
     try{
-      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||employeeMinimum},{tag}));
+      const duplicate=await findExistingGhlLeadDuplicate(lead);
+      if(duplicate){
+        const repaired=await ensureGhlOpportunityForExistingLead(lead,duplicate,discovered,automation).catch(e=>({created:false,error:e.message}));
+        skipped.push({
+          name:lead.organizationName||lead.name||'Unknown lead',
+          reason:'duplicate',
+          contactId:duplicate.id,
+          matched:duplicate.match,
+          opportunityCreated:!!repaired.created,
+          opportunityExisting:!!repaired.existing,
+          opportunityError:repaired.error||''
+        });
+        continue;
+      }
+      created.push(await createGhlLeadFromProspect({...lead,...automation,tag,organizationType:lead.organizationType||organizationType,approximateDonors:lead.approximateDonors||0},{tag}));
     }catch(e){
       failed.push({name:lead.organizationName||lead.name||'Unknown lead',error:e.message});
     }
@@ -7207,22 +8261,29 @@ async function importApprovedHbsLeads(discovered){
   const automationSummary=brand==='GOALL'?summarizeGoallAutomationTags(leads):null;
   const automationLines=automationSummary?Object.entries(automationSummary.tagCounts).filter(([,count])=>count>0).map(([automationTag,count])=>`${automationTag}: ${count}`):[];
   const suggestedAutomationLines=automationSummary?Object.entries(automationSummary.suggestedCounts).filter(([,count])=>count>0).map(([automationTag,count])=>`${automationTag}: ${count}`):[];
+  const duplicateCount=skipped.filter(s=>s.reason==='duplicate').length;
+  const repairedOpportunityCount=skipped.filter(s=>s.opportunityCreated).length;
+  const existingOpportunityCount=skipped.filter(s=>s.opportunityExisting).length;
+  const pipelineProgress=created.length+repairedOpportunityCount+existingOpportunityCount;
   const summary=[
-    `Imported ${created.length} ${brand} business lead${created.length===1?'':'s'} to GHL.`,
+    `Imported ${created.length} new ${brand} business lead${created.length===1?'':'s'} to GHL.`,
     `Search: ${organizationType} | ${employeeMinimum}+ employees | ${market}`,
     brand==='GOALL'?'Tags applied: per-lead automation tag + GOALL Lead + Limitless Leads':`Tag applied: ${tag}`,
-    brand==='GOALL'?`Pipeline volume standard: ${created.length}/${GOALL_PIPELINE_MINIMUM} people/prospects imported in this batch. ${created.length>=GOALL_PIPELINE_MINIMUM?'Minimum met.':'Not enough yet.'}`:'',
-    brand==='GOALL'&&created.length<GOALL_PIPELINE_MINIMUM?`GOALL pipeline volume is insufficient. Fewer than ${GOALL_PIPELINE_MINIMUM} people/prospects is not enough; keep running focused batches until the pipeline reaches the minimum.`:'',
+    duplicateCount?`Already in GHL: ${duplicateCount} matching contact${duplicateCount===1?'':'s'} found, so those were not duplicated.`:'',
+    repairedOpportunityCount?`Repaired opportunities: ${repairedOpportunityCount} missing opportunit${repairedOpportunityCount===1?'y was':'ies were'} created for existing contact${repairedOpportunityCount===1?'':'s'}.`:'',
+    existingOpportunityCount?`Existing opportunities: ${existingOpportunityCount} contact${existingOpportunityCount===1?' already has':'s already have'} an open opportunity.`:'',
+    brand==='GOALL'?`Pipeline volume standard: ${pipelineProgress}/${GOALL_PIPELINE_MINIMUM} people/prospects represented in this batch (${created.length} new + ${repairedOpportunityCount} repaired + ${existingOpportunityCount} already open). ${pipelineProgress>=GOALL_PIPELINE_MINIMUM?'Minimum met.':'Not enough yet.'}`:'',
+    brand==='GOALL'&&pipelineProgress<GOALL_PIPELINE_MINIMUM?`GOALL pipeline volume is insufficient. Fewer than ${GOALL_PIPELINE_MINIMUM} people/prospects is not enough; keep running focused batches until the pipeline reaches the minimum.`:'',
     automationLines.length?'Automation Tag Breakdown:\n'+automationLines.join('\n'):'',
     suggestedAutomationLines.length?'Suggested New Automations:\n'+suggestedAutomationLines.join('\n'):'',
-    discovered.report?`Contactability: full ${discovered.report.fullContactability||0} | email only ${discovered.report.emailOnly||0} | phone only ${discovered.report.phoneOnly||0}`:'',
+    discovered.report?`Contactability: full ${discovered.report.fullContactability||0} | email only ${discovered.report.emailOnly||0} | phone only ${discovered.report.phoneOnly||0} | no contact method ${discovered.report.noContact||0}`:'',
     discovered.report?`Lead Score Breakdown: 1 - Highest Priority: ${discovered.report.score1Count||0} | 2 - Strong Fit: ${discovered.report.score2Count||0} | 3 - Possible Fit: ${discovered.report.score3Count||0} | 4 - Low Fit: ${discovered.report.score4Count||0}`:'',
-    scraped?.error?`Outscraper note: ${scraped.error}`:'',
-    skipped.length?`Rejected/incomplete: ${skipped.length}`:'',
+    scraped?.error?`Level 1 note: ${cleanLeadLevelText(scraped.error)}`:'',
+    skipped.length?`Skipped: ${skipped.length}`:'',
     failed.length?`Failed: ${failed.length}`:'',
     '',
-    created.map(c=>`- ${c.name} | Lead Score: ${c.leadScore} | Contactability: ${c.contactabilityStatus}${c.contactabilityStatus==='phone_only'?' | Imported contact with phone only. No email was found, so the initial automated email sequence was not sent.':''} | Exact industry: ${c.aiExactIndustry||'unclear'}${c.automationTag?' | Automation: '+c.automationTag+' ('+c.tagConfidence+')':''} | Tags: ${(c.tags||[]).join(', ')} | Contact: ${c.contactId} | Opportunity value: $${c.value}${c.pipelineName||c.stageName?' | '+[c.pipelineName,c.stageName].filter(Boolean).join(' / '):''}${c.customFieldUpdate?.updated?'':' | Custom field warning: '+(c.customFieldUpdate?.reason||c.customFieldUpdate?.error||'not updated')}`).join('\n'),
-    skipped.length?'\nRejected/incomplete leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':'Contact was not imported because no email or phone number was available.'} Rejection reason: ${s.reason}`).join('\n'):'',
+    created.map(c=>`- ${c.name} | Lead Score: ${c.leadScore} | Contactability: ${c.contactabilityStatus}${c.contactabilityStatus==='phone_only'?' | Imported contact with phone only. No email was found, so the initial automated email sequence was not sent.':''} | Exact industry: ${c.aiExactIndustry||'unclear'}${c.automationTag?' | Automation: '+c.automationTag+' ('+c.tagConfidence+')':''} | Tags: ${(c.tags||[]).join(', ')} | Contact: ${c.contactId} | Opportunity value: $${c.value}${c.pipelineName||c.stageName?' | '+[c.pipelineName,c.stageName].filter(Boolean).join(' / '):''}${c.pipelineId?' | Pipeline ID: '+c.pipelineId:''}${c.stageId?' | Stage ID: '+c.stageId:''}${c.customFieldUpdate?.updated?'':' | Custom field warning: '+(c.customFieldUpdate?.reason||c.customFieldUpdate?.error||'not updated')}`).join('\n'),
+    skipped.length?'\nSkipped / repaired leads:\n'+skipped.map(s=>`- ${s.name}: ${s.reason==='duplicate'?(s.opportunityCreated?'Matching GHL contact already existed; missing opportunity was created.':s.opportunityExisting?'Matching GHL contact already has an open opportunity.':'Skipped because a matching GHL contact already exists.'):s.reason==='missing_automation_tag'?'Contact was not imported because no GOALL automation tag could be assigned.':'Skipped before import.'} Reason: ${s.reason}${s.contactId?' | Existing contact: '+s.contactId:''}${s.opportunityError?' | Opportunity repair failed: '+s.opportunityError:''}`).join('\n'):'',
     failed.length?'\nFailed imports:\n'+failed.map(f=>`- ${f.name}: ${f.error}`).join('\n'):''
   ].filter(Boolean).join('\n');
   await saveMemoryItem({
@@ -7268,6 +8329,13 @@ async function enrichProspect(p,opts={}){
   let next = {...p};
   const mode=opts.rocketReachMode||'auto';
   if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
+  if(opts.fastPreview){
+    return sanitizeDecisionMaker({
+      ...next,
+      apolloStatus:'deferred until review',
+      rocketReachStatus:'deferred until review'
+    });
+  }
   if(next.website){
     const publicContact = await findPublicWebsiteContactData(next.website);
     if(publicContact.email && (!next.email || classifyEmail(publicContact.email)==='person' || (next.emailQuality==='general' && publicContact.quality==='high-value role'))){
@@ -7282,12 +8350,28 @@ async function enrichProspect(p,opts={}){
     }
   }
   if(mode==='defer'){
+    next = await enrichProspectWithApollo(next);
     next.rocketReachStatus = 'deferred until review';
   }else{
+    next = await enrichProspectWithApollo(next);
     next = await enrichProspectWithRocketReach(next);
   }
   if(next.email && !next.emailQuality) next.emailQuality=classifyEmail(next.email);
-  return next;
+  return sanitizeDecisionMaker(next);
+}
+
+function enrichmentLevelSummaryLines(p,contactability=leadContactability(p)){
+  const level1Ok=!!(p.organizationName||p.name);
+  const level2Ok=!!(p.decisionMakerName||p.linkedinPersonalUrl);
+  const rrStatus=String(p.rocketReachStatus||p.rocketReach?.error||'').toLowerCase();
+  const rrData=p.rocketReach?.data||{};
+  const level3Ok=!!(rrData.email||rrData.phone||rrData.name||rrData.linkedinUrl)
+    || (contactability.importable && !/(no data|not available|not set|not found|did not|rate|error|failed|deferred|skipped)/i.test(rrStatus));
+  return [
+    `Enrichment Level 1 - ${level1Ok?'success':'no data found'}`,
+    `Enrichment Level 2 - ${level2Ok?'success':'no data found'}`,
+    `Enrichment Level 3 - ${level3Ok?'success':'no data found'}`
+  ];
 }
 
 async function createGhlLeadFromProspect(p,opts={}){
@@ -7302,13 +8386,12 @@ async function createGhlLeadFromProspect(p,opts={}){
   const source=isWestwood?'Grace Intelligence Limitless Leads':'LimitLess Leads';
   const country=normalizeCountryCode(p.country);
   const contactability=leadContactability(p);
-  if(!contactability.importable) throw new Error('missing_email_and_phone');
   const leadFields=leadCustomFieldsFromProspect(p);
   const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
-  if(!isWestwood) assertRequiredLeadFieldIds(leadFieldIds,['lead_score']);
+  if(!isWestwood) await assertGoallLeadScoreField(leadFieldIds);
   const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
   const tags=isWestwood?[tag]:[automation.automationTag,'GOALL Lead','Limitless Leads'];
-  if(!contactability.hasEmail) tags.push('no email');
+  if(!contactability.hasEmail) tags.push('No Email');
   const decisionName=String(p.decisionMakerName||'').trim();
   const nameParts=decisionName.split(/\s+/).filter(Boolean);
   const contactPayload={
@@ -7332,7 +8415,9 @@ async function createGhlLeadFromProspect(p,opts={}){
     contactPayload.lastName=nameParts.slice(1).join(' ')||undefined;
     contactPayload.name=decisionName;
   }else{
-    contactPayload.name=name;
+    contactPayload.firstName='unknown';
+    contactPayload.lastName='unknown';
+    contactPayload.name='unknown unknown';
   }
   const contactData=await ghlStrict('POST','/contacts',contactPayload);
   const contact=contactData.contact||contactData;
@@ -7341,17 +8426,20 @@ async function createGhlLeadFromProspect(p,opts={}){
   const customFieldUpdate=await updateGhlLeadFields(contactId,leadFields).catch(e=>({updated:false,error:e.message,fields:leadFields}));
   if(!customFieldUpdate.updated) console.log('Lead custom fields not fully updated',{contactId,name,reason:customFieldUpdate.reason||customFieldUpdate.error||'unknown'});
   if(!isWestwood){
-    const scoreVerification=await verifyGhlLeadScoreField(contactId,leadFields.lead_score,leadFieldIds);
-    customFieldUpdate.leadScoreVerification=scoreVerification;
+    const scoreVerification=await verifyGhlLeadScoreField(contactId,leadFields.lead_score,leadFieldIds)
+      .catch(e=>({verified:false,warning:true,reason:e.message,expected:leadFields.lead_score,received:''}));
+    customFieldUpdate.leadScoreVerification={...scoreVerification,warning:!scoreVerification.verified};
     if(!scoreVerification.verified){
-      throw new Error(`lead_score_not_updated: ${scoreVerification.reason}. Expected ${scoreVerification.expected||leadFields.lead_score}, received ${scoreVerification.received||'blank'}.`);
+      console.log('Lead score verification warning',{contactId,name,expected:scoreVerification.expected||leadFields.lead_score,received:scoreVerification.received||'',reason:scoreVerification.reason});
     }
   }
   await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
   const note=[
+    ...enrichmentLevelSummaryLines(p,contactability),
+    '',
     p.decisionMakerName
       ? `Decision maker verified: ${p.decisionMakerName}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''}.`
-      : 'Decision maker not verified. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
+      : 'Public data did not return a reliable name for the decision maker. First and last name were set to unknown. Do not treat the company name as a person. Review or enrich before person-specific outreach.',
     leadContactabilityNote(contactability),
     !isWestwood && automation.automationTag?`Automation tag: ${automation.automationTag}`:'',
     !isWestwood && automation.automationTagReason?`Automation reason: ${automation.automationTagReason}`:'',
@@ -7371,7 +8459,403 @@ async function createGhlLeadFromProspect(p,opts={}){
     source
   };
   const opportunityData=await createGhlOpportunity(opportunityPayload);
-  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note};
+  return {name,contactId,opportunity:opportunityData.opportunity||opportunityData,donorCount,value:donorCount||0,tag,tags,pipelineId:target.pipelineId,stageId:target.stageId,pipelineName:target.pipelineName||'',stageName:target.stageName||'',customFieldUpdate,aiExactIndustry:leadFields.ai_exact_industry,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason,automationTag:automation.automationTag||'',automationTagReason:automation.automationTagReason||'',normalizedIndustry:automation.normalizedIndustry||'',rawIndustry:automation.rawIndustry||'',tagConfidence:automation.tagConfidence||'',needsNewAutomation:!!automation.needsNewAutomation,suggestedNewAutomationTag:automation.suggestedNewAutomationTag||'',...contactability,contactabilityNote:note};
+}
+
+function isGoallTestContactRequest(text=''){
+  const q=String(text||'').toLowerCase();
+  return /\b(add|create|load|put|make)\b/.test(q)
+    && /\btest\b/.test(q)
+    && /\bcontact\b/.test(q)
+    && /\b(ghl|go high level|gohighlevel|crm)\b/.test(q)
+    && /miken@goallprogram\.com/.test(q);
+}
+
+function goallTestContactProspect(){
+  const now=new Date().toISOString();
+  return {
+    leadProfile:'goall',
+    organizationName:'TEST TESTERTON HVAC',
+    name:'TEST TESTERTON HVAC',
+    organizationType:'HVAC company',
+    industry:'HVAC',
+    aiExactIndustry:'Residential and light commercial HVAC services',
+    primaryService:'Heating, cooling, air conditioning repair, installation, and maintenance',
+    businessCategorySecondary:'Home Services',
+    location:'Arizona',
+    city:'Phoenix',
+    state:'AZ',
+    country:'US',
+    timeZone:'America/Phoenix',
+    decisionMakerName:'TEST TESTERTON',
+    decisionMakerTitle:'Owner / Operator',
+    email:'miken@goallprogram.com',
+    phone:'4805550135',
+    website:'https://example.com/test-testerton-hvac',
+    approximateDonors:35,
+    employeeCount:35,
+    employees:35,
+    scrapedNumberOfEmployees:35,
+    scrapedAnnualRevenue:'Demo estimate: $6.5M annual revenue',
+    partnerFit:'Strong',
+    confidence:'high',
+    leadScore:2,
+    leadScoreReason:'Demo qualified employer profile: fictional Arizona HVAC company with 35 employees. Test record only, not a real prospect.',
+    leadScoredAt:now,
+    leadIngestedAt:now,
+    leadLastProcessedAt:now,
+    leadMonitoringEnabled:true,
+    painpoint:'Employee retention and loyalty.',
+    operationalActivity:'Demo HVAC contractor with residential and light commercial service, field technicians, dispatch, and recurring maintenance work.',
+    operationalIndicators:'Demo profile: 35 employees, Arizona market, owner-led HVAC contractor, employee support and retention-program interest.',
+    hiringActivity:'Demo signal: employee retention and support are active concerns.',
+    careersPage:'Demo careers profile only.',
+    growthActivity:'Demo signal: stable 35-employee Arizona HVAC company.',
+    evidenceSignals:[
+      '35-employee HVAC operator',
+      'Arizona home-services market',
+      'Employee retention and loyalty pain point',
+      'Interested in employee support and retention programs',
+      'Company size category: 25 to 50 employees',
+      'Owner/operator decision-maker profile'
+    ],
+    googleRaw:JSON.stringify({
+      demo:true,
+      business:'TEST TESTERTON HVAC',
+      category:'HVAC contractor',
+      location:'Phoenix, Arizona',
+      summary:'Internal TEST demo record; no real Google profile'
+    }),
+    googleReviewCount:'',
+    googleRating:'',
+    googleReviewsSnippet:'Internal TEST record only. Do not treat as a real public review profile.',
+    googleMapsUrl:'',
+    linkedinPersonalUrl:'https://www.linkedin.com/in/test-testerton-demo',
+    linkedinCompanyUrl:'https://www.linkedin.com/company/test-testerton-hvac-demo',
+    linkedinEmployeeCount:35,
+    linkedinCompanySizeBand:'11-50 employees',
+    linkedinCompanyDescription:'Demo HVAC contractor record for testing GOALL/GHL custom fields.',
+    linkedinCompanyLocation:'Phoenix, Arizona, United States',
+    linkedinCompanyFoundedYear:'2014',
+    linkedinMatchConfidence:'demo',
+    linkedinMatchNotes:'Demo LinkedIn data for TEST TESTERTON and Testerton Air & Climate LLC.',
+    linkedinCurrentTitle:'Owner / Operator',
+    linkedinProfileLocation:'Arizona, United States',
+    nextOutreachAngle:'Internal TEST. Do not automate outreach.',
+    recommendedOutreachAngle:'Demo contact for testing GHL custom fields and HVAC workflow. Do not treat as a real prospect.',
+    callScriptAngle:'Internal TEST only. Do not call, email, or automate.',
+    accountPriorityLevel:'test record',
+    accountIntelligenceSummary:'TEST TESTERTON is a demo contact pretending to own an Arizona HVAC company with 35 employees. Used only for CRM testing.',
+    latestIndicatorUpdate:'Demo HVAC test record created by VAL chat request.',
+    rawCompanySignals:'Internal TEST demo logic: HVAC contractor, Arizona, 35 employees, owner TEST TESTERTON, employee retention and loyalty pain point, benefits interest.',
+    rawCompanyContextNotes:'Demo contact for testing GHL custom fields and HVAC workflow. Test record, not a real prospect.',
+    rawWebSignalsJson:JSON.stringify({demo:true,industry:'HVAC',state:'AZ',employees:35,status:'Test record, not a real prospect'}),
+    newsRawLast60Days:'Internal TEST only. No real news source.',
+    newsCountLast60Days:0,
+    signalConfidence:'high',
+    rocketReachStatus:'demo contact; no external enrichment needed',
+    emailQuality:'person',
+    leadSourceSystem:'Internal TEST',
+    source:'Internal TEST',
+    enrichmentStatus:'demo_test_record',
+    leadEnrichmentStatus:'demo_test_record',
+    qualificationStatus:'Demo qualified employer profile',
+    salesStatus:'Test record, not a real prospect'
+  };
+}
+
+function goallTestContactNote(){
+  return 'TEST/demo contact. TEST TESTERTON is a fictional HVAC company owner in Arizona with 35 employees. Use this record only to test GHL custom fields, tags, workflows, pipeline behavior, and CRM display. Do not treat as a real prospect unless manually approved. Email address used: miken@goallprogram.com. Tag requested: HVAC.';
+}
+
+function goallTestContactTags(){
+  return ['HVAC','TEST - DO NOT AUTOMATE'];
+}
+
+async function createOrUpdateGoallTestContact(){
+  const prospect=goallTestContactProspect();
+  const automation=mapGoallAutomationTag(prospect);
+  const lead={...prospect,...automation};
+  const duplicate=await findExistingGhlLeadDuplicate(lead).catch(()=>null);
+  const leadFields=leadCustomFieldsFromProspect(lead);
+  const leadFieldIds=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  await assertGoallLeadScoreField(leadFieldIds);
+  const leadCustomFields=leadCustomFieldPayloads(leadFieldIds,leadFields);
+  const configuredFieldCount=leadCustomFields.length;
+  const tags=goallTestContactTags();
+  const contactPayload={
+    locationId:GHL_LOC,
+    firstName:'TEST',
+    lastName:'TESTERTON',
+    name:'TEST TESTERTON',
+    companyName:lead.organizationName,
+    email:lead.email,
+    phone:lead.phone,
+    website:lead.website,
+    city:lead.city,
+    state:lead.state,
+    country:normalizeCountryCode(lead.country),
+    timezone:lead.timeZone,
+    source:'Internal TEST',
+    tags,
+    customFields:leadCustomFields.length?leadCustomFields:undefined
+  };
+  if(duplicate?.id){
+    await ghlStrict('PUT',`/contacts/${duplicate.id}`,contactPayload);
+    const customFieldUpdate=await updateGhlLeadFields(duplicate.id,leadFields);
+    await ghlStrict('POST',`/contacts/${duplicate.id}/tags`,{tags}).catch(()=>{});
+    await ghlStrict('POST',`/contacts/${duplicate.id}/notes`,{body:goallTestContactNote()}).catch(()=>{});
+    return {created:false,updated:true,name:'TEST TESTERTON',company:lead.organizationName,contactId:duplicate.id,matched:duplicate.match,tags,configuredFieldCount,customFieldUpdate,noteAdded:true};
+  }
+  const contactData=await ghlStrict('POST','/contacts',contactPayload);
+  const contact=contactData.contact||contactData;
+  const contactId=contact.id||contact.contact?.id;
+  if(!contactId) throw new Error('GHL contact created without contact id for TEST TESTERTON');
+  const customFieldUpdate=await updateGhlLeadFields(contactId,leadFields);
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:goallTestContactNote()}).catch(()=>{});
+  return {created:true,updated:false,name:'TEST TESTERTON',company:lead.organizationName,contactId,tags,configuredFieldCount,customFieldUpdate,noteAdded:true};
+}
+
+function goallTestContactSummary(result){
+  const action=result.created?'Created':'Updated existing';
+  const fieldsUpdated=result.customFieldUpdate?.fieldsUpdated ?? result.configuredFieldCount ?? 0;
+  return [
+    `${action} GHL test contact: TEST TESTERTON.`,
+    `Email: miken@goallprogram.com`,
+    `Company: ${result.company}`,
+    `Tags applied: ${(result.tags||[]).join(', ')}`,
+    `Contact ID: ${result.contactId}`,
+    `Custom fields populated: ${fieldsUpdated}`,
+    result.noteAdded?'Contact note added: TEST/demo safeguard note':'',
+    result.matched?`Matched existing contact by: ${result.matched}`:''
+  ].filter(Boolean).join('\n');
+}
+
+function compactObject(obj){
+  return Object.fromEntries(Object.entries(obj||{}).filter(([,v])=>v!==undefined&&v!==null&&v!==''));
+}
+
+function extractJsonObject(text){
+  const raw=String(text||'').trim();
+  try{
+    const parsed=JSON.parse(raw);
+    return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+  }catch(_){}
+  const match=raw.match(/\{[\s\S]*\}/);
+  if(!match) return {};
+  try{
+    const parsed=JSON.parse(match[0]);
+    return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+  }catch(_){return {};}
+}
+
+function ghlActionEnabled(){
+  return process.env.VAL_GHL_CHAT_ACTIONS !== 'false';
+}
+
+function normalizeGhlActionRequest(input={}){
+  const rawAction=String(input.action||input.type||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  const params=input.params&&typeof input.params==='object'?input.params:input;
+  const actionAliases={
+    create_contact:'contact.create',
+    add_contact:'contact.create',
+    new_contact:'contact.create',
+    upsert_contact:'contact.upsert',
+    update_contact:'contact.update',
+    edit_contact:'contact.update',
+    search_contacts:'contact.search',
+    find_contact:'contact.search',
+    get_contact:'contact.get',
+    add_note:'contact.note.create',
+    create_note:'contact.note.create',
+    add_contact_note:'contact.note.create',
+    create_task:'contact.task.create',
+    add_task:'contact.task.create',
+    add_tags:'contact.tags.add',
+    tag_contact:'contact.tags.add',
+    remove_tags:'contact.tags.remove',
+    create_opportunity:'opportunity.create',
+    update_opportunity:'opportunity.update',
+    list_pipelines:'pipeline.list',
+    list_custom_fields:'custom_fields.list'
+  };
+  return {action:actionAliases[rawAction]||rawAction.replace(/_/g,'.'),params};
+}
+
+async function ensureGhlActionConfigured(){
+  const [key,loc]=await Promise.all([
+    resolveIntegrationSecret('ghl','api_key',GHL_KEY),
+    resolveGhlLocationId()
+  ]);
+  if(!key||!loc) throw new Error('GHL is not connected for this VAL user. Add the GHL API key and Location ID in Integration Status first.');
+  return {key,loc};
+}
+
+function contactPayloadFromParams(params={},opts={}){
+  const name=String(params.name||params.fullName||[params.firstName,params.lastName].filter(Boolean).join(' ')||'').trim();
+  const parts=name.split(/\s+/).filter(Boolean);
+  const tagInput=Array.isArray(params.tags)?params.tags:String(params.tags||params.tag||'').split(',');
+  const tags=tagInput.map(v=>String(v).trim()).filter(Boolean);
+  return compactObject({
+    locationId:'',
+    firstName:params.firstName||parts[0],
+    lastName:params.lastName||parts.slice(1).join(' '),
+    name:name||undefined,
+    companyName:params.companyName||params.company||params.businessName,
+    email:params.email,
+    phone:params.phone,
+    website:params.website,
+    address1:params.address1||params.address,
+    city:params.city,
+    state:params.state,
+    country:normalizeCountryCode(params.country),
+    postalCode:params.postalCode||params.zip,
+    timezone:params.timezone||params.timeZone,
+    source:params.source||opts.source,
+    tags:tags.length?tags:undefined,
+    customFields:Array.isArray(params.customFields)?params.customFields:undefined
+  });
+}
+
+function compactContactResult(contact){
+  const c=contact?.contact||contact||{};
+  return {
+    id:c.id||c.contactId||'',
+    name:c.contactName||c.name||[c.firstName,c.lastName].filter(Boolean).join(' '),
+    email:c.email||'',
+    phone:c.phone||'',
+    company:c.companyName||c.company||''
+  };
+}
+
+async function executeValGhlAction(input={}){
+  if(!ghlActionEnabled()) throw new Error('GHL chat actions are disabled for this VAL deployment.');
+  await ensureGhlActionConfigured();
+  const {action,params}=normalizeGhlActionRequest(input);
+  const p=params||{};
+  if(action==='contact.search'){
+    const q=String(p.query||p.q||p.email||p.phone||p.name||'').trim();
+    if(!q) throw new Error('Contact search requires a query, email, phone, or name.');
+    const limit=Math.min(Math.max(Number(p.limit)||10,1),50);
+    const data=await ghlStrict('GET',`/contacts/?locationId=&query=${encodeURIComponent(q)}&limit=${limit}`);
+    const contacts=(data.contacts||data.data||[]).map(compactContactResult);
+    return {ok:true,action,query:q,contacts,content:`Found ${contacts.length} GHL contact${contacts.length===1?'':'s'} for "${q}".`};
+  }
+  if(action==='contact.get'){
+    const contactId=String(p.contactId||p.id||'').trim();
+    if(!contactId) throw new Error('Getting a contact requires contactId.');
+    const data=await ghlStrict('GET',`/contacts/${encodeURIComponent(contactId)}`);
+    return {ok:true,action,contact:compactContactResult(data),raw:data,content:`Loaded GHL contact ${contactId}.`};
+  }
+  if(action==='contact.create'||action==='contact.upsert'){
+    const payload=contactPayloadFromParams(p,{source:'VAL'});
+    if(!payload.email&&!payload.phone&&!payload.name) throw new Error('Creating a contact requires at least a name, email, or phone.');
+    const method=action==='contact.upsert'?'POST':'POST';
+    const path=action==='contact.upsert'?'/contacts/upsert':'/contacts';
+    const data=await ghlStrict(method,path,payload);
+    const contact=compactContactResult(data.contact||data);
+    const contactId=contact.id||data.contact?.id||data.id;
+    const tags=Array.isArray(payload.tags)?payload.tags:[];
+    if(contactId&&tags.length) await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+    if(contactId&&p.note) await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:String(p.note)}).catch(()=>{});
+    return {ok:true,action,created:action==='contact.create',contactId,contact,tags,content:`${action==='contact.upsert'?'Upserted':'Created'} GHL contact${contact.name?' '+contact.name:''}${contactId?` (${contactId})`:''}.`};
+  }
+  if(action==='contact.update'){
+    const contactId=String(p.contactId||p.id||'').trim();
+    if(!contactId) throw new Error('Updating a contact requires contactId.');
+    const data=await ghlStrict('PUT',`/contacts/${encodeURIComponent(contactId)}`,contactPayloadFromParams(p,{source:p.source}));
+    return {ok:true,action,contactId,contact:compactContactResult(data),content:`Updated GHL contact ${contactId}.`};
+  }
+  if(action==='contact.tags.add'||action==='contact.tags.remove'){
+    const contactId=String(p.contactId||p.id||'').trim();
+    const tagInput=Array.isArray(p.tags)?p.tags:String(p.tags||p.tag||'').split(',');
+    const tags=tagInput.map(v=>String(v).trim()).filter(Boolean);
+    if(!contactId) throw new Error('Tagging a contact requires contactId.');
+    if(!tags.length) throw new Error('Tagging a contact requires at least one tag.');
+    const method=action==='contact.tags.remove'?'DELETE':'POST';
+    const data=await ghlStrict(method,`/contacts/${encodeURIComponent(contactId)}/tags`,{tags});
+    return {ok:true,action,contactId,tags,result:data,content:`${method==='DELETE'?'Removed':'Added'} tag${tags.length===1?'':'s'} ${tags.join(', ')} ${method==='DELETE'?'from':'to'} GHL contact ${contactId}.`};
+  }
+  if(action==='contact.note.create'){
+    const contactId=String(p.contactId||p.id||'').trim();
+    const body=String(p.body||p.note||p.text||'').trim();
+    if(!contactId) throw new Error('Adding a contact note requires contactId.');
+    if(!body) throw new Error('Adding a contact note requires note text.');
+    const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body});
+    return {ok:true,action,contactId,note:data.note||data,content:`Added note to GHL contact ${contactId}.`};
+  }
+  if(action==='contact.task.create'){
+    const contactId=String(p.contactId||p.id||'').trim();
+    const title=String(p.title||p.task||'').trim();
+    if(!contactId) throw new Error('Creating a contact task requires contactId.');
+    if(!title) throw new Error('Creating a contact task requires a title.');
+    const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/tasks`,compactObject({title,body:p.body||p.notes,dueDate:p.dueDate,assignedTo:p.assignedTo}));
+    return {ok:true,action,contactId,task:data.task||data,content:`Created task for GHL contact ${contactId}: ${title}.`};
+  }
+  if(action==='opportunity.create'){
+    const contactId=String(p.contactId||'').trim();
+    if(!contactId) throw new Error('Creating an opportunity requires contactId.');
+    const target=(p.pipelineId&&p.pipelineStageId||p.stageId)?{pipelineId:p.pipelineId,stageId:p.pipelineStageId||p.stageId}:await getOpportunityTarget();
+    const payload=compactObject({
+      locationId:'',
+      pipelineId:target.pipelineId,
+      pipelineStageId:target.stageId,
+      name:p.name||p.title||'VAL Opportunity',
+      status:p.status||'open',
+      contactId,
+      monetaryValue:p.monetaryValue||p.value,
+      source:p.source||'VAL'
+    });
+    const data=await createGhlOpportunity(payload);
+    return {ok:true,action,opportunity:data.opportunity||data,content:`Created GHL opportunity "${payload.name}" for contact ${contactId}.`};
+  }
+  if(action==='opportunity.update'){
+    const opportunityId=String(p.opportunityId||p.id||'').trim();
+    if(!opportunityId) throw new Error('Updating an opportunity requires opportunityId.');
+    const data=await ghlStrict('PUT',`/opportunities/${encodeURIComponent(opportunityId)}`,compactObject({
+      name:p.name||p.title,
+      status:p.status,
+      pipelineId:p.pipelineId,
+      pipelineStageId:p.pipelineStageId||p.stageId,
+      monetaryValue:p.monetaryValue||p.value
+    }));
+    return {ok:true,action,opportunityId,opportunity:data.opportunity||data,content:`Updated GHL opportunity ${opportunityId}.`};
+  }
+  if(action==='pipeline.list'){
+    const data=await ghlStrict('GET','/opportunities/pipelines?locationId=');
+    return {ok:true,action,pipelines:data.pipelines||data.data||[],content:'Loaded GHL pipelines.'};
+  }
+  if(action==='custom_fields.list'){
+    const loc=await resolveGhlLocationId();
+    const data=await ghlStrict('GET',`/locations/${encodeURIComponent(loc)}/customFields`);
+    return {ok:true,action,customFields:data.customFields||data.fields||data.data||[],content:'Loaded GHL custom fields.'};
+  }
+  throw new Error(`Unsupported GHL action: ${action||'missing action'}`);
+}
+
+function likelyGhlMutationRequest(text=''){
+  const q=String(text||'').toLowerCase();
+  if(!/\b(ghl|go high level|gohighlevel|crm|contact|opportunit|pipeline|tag|note|task)\b/.test(q)) return false;
+  return /\b(create|add|update|edit|change|tag|untag|remove tag|note|task|upsert|find|search|look up|load|show)\b/.test(q);
+}
+
+async function inferGhlActionFromChat(text){
+  if(!likelyGhlMutationRequest(text)) return null;
+  const system=[
+    'Return strict JSON only.',
+    'Classify whether the user is asking VAL to perform a GHL CRM action.',
+    'Allowed actions: contact.create, contact.upsert, contact.update, contact.search, contact.get, contact.tags.add, contact.tags.remove, contact.note.create, contact.task.create, opportunity.create, opportunity.update, pipeline.list, custom_fields.list.',
+    'Return {"shouldExecute":false} unless the user is clearly asking to execute or retrieve a CRM action.',
+    'Do not infer sending email, triggering workflows, deleting contacts, or changing automation settings.',
+    'For contact.create/contact.upsert params may include firstName,lastName,name,email,phone,companyName,source,tags,note,city,state,country,website,customFields.',
+    'For updates/tags/notes/tasks/opportunities include the needed IDs when supplied. If an ID is missing but an email/name is supplied for tagging/note/task/update, return contact.search instead.'
+  ].join('\n');
+  const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true}).catch(()=>null);
+  if(!raw) return null;
+  const parsed=extractJsonObject(raw);
+  if(!parsed.shouldExecute) return null;
+  return parsed;
 }
 
 async function createGhlOpportunity(payload){
@@ -7452,10 +8936,13 @@ function actionPrompt(action){
     executive_review:'Run an executive review in this exact order. First: review Email Intelligence, including important unread emails, emails needing reply, waiting-on-response items, forwarding suggestions, rule suggestions, ignored email count, and appointment recap drafts. Second: include Relationship Intelligence: highest leverage relationship, top 3 relationship priorities, one cooling relationship, one forgotten commitment, one suggested introduction, and one hidden opportunity. Third: draft all follow-ups that should go out now and indicate which ones belong in the Approval Queue. Fourth: prep the next meeting with attendees, likely objective, context, risks, and 3 opening talking points. Fifth: clean up the task list by grouping tasks into do now, delegate, defer, delete candidate, and needs clarification. Do not delete tasks. End with one question only: "Do you want me to approve follow-ups, prep the meeting deeper, or clean the task list first?" Keep this concise and action-oriented. Do not create a broad report.',
     document_vault:'Answer from saved documents/memory. Name the most relevant documents or chunks and summarize what matters.',
     lead_intelligence:'Use the GOALL Agency lead intelligence standard for business lead research. Qualify the company by employee base, growth signals, operational complexity, public presence, decision-maker clarity, and sales opportunity. Structure verifiable prospect data and recommend the next practical outreach step. Do not guess.',
+    book_where_left_off:'Use manuscript, chapter, outline, transcript, launch-note, and task memory to tell Michele where she left off. Include the last known working area, what changed or was decided, what remains unresolved, the next clean editorial move, and one question only if the next step is genuinely ambiguous. Do not discuss CRM, pipeline, or relationship management.',
+    book_next_steps:'Return only a compact priority card for the memoir. Format exactly: "Priority: ..." then "Why: ..." then "To-do list:" with exactly 3 bullets maximum. Do not mention manuscript upload/readability status unless the user asked. Do not include markdown headings, chapter maps, broad strategy, or the full task board. Keep it under 120 words.',
     book_overview:'Create a clear book overview for the project. Include title, phase, genre, current editorial focus, what is working, what needs attention, and the next editorial move. If no manuscript is uploaded, label the overview as sample/demo.',
     chapter_map:'Create or update a chapter map. For each chapter include number, title, short summary, emotional role, humor level, introspection level, IFS prompt status, transition strength, recommended edits, and status.',
     review_chapter_order:'Review the memoir chapter order. Analyze timeline, emotional progression, reader readiness, heavy content pacing, humor placement, introspection depth, IFS/action progression, and whether each chapter prepares the next. Output current order, suggested order, reason for moves, too early/late chapters, missing bridge chapters, repeated themes, and emotional pacing risks.',
     review_chapter_transitions:'Review chapter transitions. Check endings, openings, abrupt jumps, emotional whiplash, bridges, repeated openings, and whether endings invite the next chapter. Suggest final paragraph revisions, opening paragraph revisions, bridge sentences, transition themes, and emotional handoffs.',
+    book_alignment_review:'Review where the memoir needs better alignment. Check book promise, chapter order, emotional arc, humor placement, reader transformation, IFS/action progression, repeated themes, missing bridges, tonal mismatches, and launch/podcast alignment only where relevant. End with the three highest-leverage fixes.',
     emotional_arc_review:'Review the book emotional arc through levity, recognition, introspection, self-reflection, compassion, and action/IFS integration. Identify where humor is missing, where it gets too heavy too fast, where introspection is unearned, and where reader safety needs more care.',
     humor_pass:'Run a humor and levity pass. Preserve voice and emotional depth. Identify where humor works, where sections are too serious, where levity could open the reader, and offer line-level or scene-level additions without cheap jokes or flattening the memoir.',
     ifs_prompt_review:'Review chapter prompts through an IFS-informed lens. Make prompts warm, invitational, clear, and action-oriented. Flag anything clinical, generic, bossy, performative, or too homework-like. Rewrite weak prompts in soft, deep, and direct versions.',
@@ -7464,7 +8951,7 @@ function actionPrompt(action){
     whole_book_review:'Run a whole-book editorial review. Include Big Picture Editorial Summary, Book Promise, Reader Transformation, Chapter Order Assessment, Timeline Assessment, Repeated Themes, Missing Bridges, Humor Balance, Heavy Content Pacing, IFS Prompt Progression, Strongest Chapters, Weakest Chapters, Chapters Needing Reorder, Chapters Needing Deep Edit, and Final Editorial Roadmap.',
     podcast_strategy:'Create podcast and launch strategy that supports the book rather than distracting from it. Include podcast concept, episode ideas, book talking points, guest ideas, launch calendar, episode-to-chapter map, audience growth, email/social prompts, interview prep, and follow-up drafts.',
     book_network_review:'Review the book promotion network. Identify relationships for early copies, podcast guests, hosts, interviews, introductions, launch support, outreach tasks, and follow-up drafts. Keep it practical and relationship-sensitive.',
-    editorial_next_steps:'Create editorial next-step tasks by category: manuscript upload, chapter order, chapter transitions, humor pass, IFS prompt pass, launch strategy, podcast planning, networking follow-up, and final polish. Tie tasks to chapters where possible.'
+    editorial_next_steps:'Create only the highest-priority editorial next-step tasks. Use no more than 5 total tasks, tie them to chapters where possible, and do not repeat the full task board.'
   };
   return prompts[action]||prompts.what_now;
 }
@@ -7575,6 +9062,107 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length},calendarErrors:calendar.errors||[],sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+function bookDocTypeLabel(type){
+  const labels={manuscript:'Manuscript',chapter:'Chapter',outline:'Outline',transcript:'Transcript notes',launch_notes:'Launch notes',prompt_notes:'Prompt notes',knowledge_document:'Knowledge document'};
+  return labels[type]||String(type||'Book memory').replace(/_/g,' ');
+}
+function bookMemoryRecordTitle(record){
+  const meta=nestedRecordMetadata(record);
+  return meta.chapterTitle||meta.fileName||record.title||record.summary||bookDocTypeLabel(meta.docType||record.type||record.kind);
+}
+function bookMemoryRecordText(record){
+  return String(record.rawText||record.raw_text||record.summary||'').replace(/\s+/g,' ').trim();
+}
+function inferBookDocTypeFromName(value, fallback='knowledge_document'){
+  const text=String(value||'').toLowerCase();
+  if(/\b(manuscript|memoir|complete book|full book|chapters?\s*1\s*[-–]\s*\d+|chapters?\s*one\s*[-–]\s*\w+)\b/.test(text)) return 'manuscript';
+  if(/\bchapter\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/.test(text)) return 'chapter';
+  if(/\boutline\b/.test(text)) return 'outline';
+  if(/\bprompt|ifs\b/.test(text)) return 'prompt_notes';
+  if(/\blaunch|podcast\b/.test(text)) return 'launch_notes';
+  return fallback;
+}
+function uniqueBookDocRecords(records){
+  const seen=new Set(), out=[];
+  for(const record of records){
+    const meta=nestedRecordMetadata(record);
+    const sourceKey=meta.transcriptId||meta.fileName||'';
+    const key=(sourceKey
+      ? [sourceKey,meta.docType||record.type||record.kind||''].join('|')
+      : [record.id||'',meta.chapterNumber||'',meta.chapterTitle||'',meta.docType||record.type||record.kind||'',record.title||record.summary||''].join('|')
+    ).toLowerCase();
+    if(seen.has(key)) continue;
+    seen.add(key);
+    out.push(record);
+  }
+  return out;
+}
+function buildBookState({tasks,transcripts,memory,drafts}){
+  const project=CLIENT_CONFIG.projectName||CLIENT_CONFIG.brandName||'the book';
+  const bookRecords=uniqueBookDocRecords([...(transcripts||[]),...(memory||[])].filter(item=>{
+    const meta=nestedRecordMetadata(item);
+    const type=String(meta.docType||item.type||item.kind||'').toLowerCase();
+    const haystack=[meta.project,meta.projectType,meta.fileName,item.title,item.summary,type].join(' ').toLowerCase();
+    return isBookEditorProject() && (
+      haystack.includes('book_editor') ||
+      haystack.includes(String(project).toLowerCase()) ||
+      ['manuscript','chapter','outline','transcript','launch_notes','prompt_notes','knowledge_document'].includes(type)
+    );
+  }));
+  const openTasks=(tasks||[]).filter(t=>!t.completed);
+  const recent=bookRecords[0]||null;
+  const chapters=bookRecords.filter(r=>String(nestedRecordMetadata(r).docType||r.type||r.kind||'').toLowerCase()==='chapter');
+  const manuscripts=bookRecords.filter(r=>String(nestedRecordMetadata(r).docType||r.type||r.kind||'').toLowerCase()==='manuscript');
+  const outlines=bookRecords.filter(r=>String(nestedRecordMetadata(r).docType||r.type||r.kind||'').toLowerCase()==='outline');
+  const promptNotes=bookRecords.filter(r=>String(nestedRecordMetadata(r).docType||r.type||r.kind||'').toLowerCase()==='prompt_notes');
+  const launchNotes=bookRecords.filter(r=>String(nestedRecordMetadata(r).docType||r.type||r.kind||'').toLowerCase()==='launch_notes');
+  const chapterNumbers=[...new Set(chapters.map(r=>nestedRecordMetadata(r).chapterNumber).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
+  const nextSteps=openTasks.slice(0,5).map(t=>t.title).filter(Boolean);
+  if(!nextSteps.length){
+    if(!bookRecords.length) nextSteps.push('Upload the manuscript, chapter drafts, outline, or latest editorial notes.');
+    nextSteps.push('Ask Michele VAL where you left off and what the next clean editorial move should be.');
+    nextSteps.push('Run an alignment review across chapter order, humor, emotional arc, and IFS prompts.');
+  }
+  const alignmentSignals=[
+    !outlines.length?'No outline or chapter map found yet.':'Chapter map or outline is available.',
+    manuscripts.length||chapters.length?'Manuscript/chapter material is available.':'No manuscript or chapter file found yet.',
+    promptNotes.length?'Prompt notes are available for IFS review.':'IFS prompts have not been isolated in memory yet.',
+    launchNotes.length?'Launch/podcast notes are available.':'Launch and podcast notes are not loaded yet.'
+  ];
+  return {
+    ok:true,
+    project,
+    phase:bookRecords.length?'Editing continuity':'Needs manuscript context',
+    lastWorkedOn:recent?{
+      title:bookMemoryRecordTitle(recent),
+      type:bookDocTypeLabel(nestedRecordMetadata(recent).docType||recent.type||recent.kind),
+      createdAt:recent.createdAt||recent.created_at||'',
+      excerpt:bookMemoryRecordText(recent).slice(0,240)
+    }:null,
+    counts:{documents:bookRecords.length,chapters:chapterNumbers.length||chapters.length,openTasks:openTasks.length,drafts:(drafts||[]).length},
+    chapterNumbers,
+    nextSteps,
+    alignmentSignals,
+    feedItems:[
+      {color:'gold',type:'book_state',text:recent?`Last worked on: ${bookMemoryRecordTitle(recent)}`:`Upload ${project} manuscript or notes to establish continuity.`,time:'Book state'},
+      {color:'navy',type:'next_step',text:nextSteps[0]||'Ask what to work on next.',time:'Next move'},
+      {color:'green',type:'alignment',text:'Check chapter flow, humor, emotional arc, IFS prompts, and reader transformation together.',time:'Alignment'},
+      {color:'amber',type:'memory',text:`${bookRecords.length} book memory item${bookRecords.length===1?'':'s'} available.`,time:'Memory'}
+    ]
+  };
+}
+app.get('/api/val/book-state',async(req,res)=>{
+  try{
+    if(!isBookEditorProject()) return res.status(404).json({ok:false,error:'Book editor mode is not enabled.'});
+    const [tasks,transcripts,memory,drafts]=await Promise.all([
+      loadTasks().catch(()=>[]),
+      recentTranscripts(365).catch(()=>[]),
+      recentMemoryItems(365,500).catch(()=>[]),
+      listDrafts().catch(()=>[])
+    ]);
+    res.json(buildBookState({tasks,transcripts,memory,drafts}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.get('/api/val/conversations',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const rows=[...(state.savedConversations||[]),{id:'demo-chat-1',title:'Morning Relationship Briefing',source:'chat',metadata:{demo:true},created_at:demoIso(0,8,0),updated_at:demoIso(0,8,12)},{id:'demo-chat-2',title:'Pipeline Priorities Review',source:'chat',metadata:{demo:true},created_at:demoIso(-1,15,30),updated_at:demoIso(-1,15,48)},{id:'demo-chat-3',title:'Meeting Follow-Up Drafts',source:'chat',metadata:{demo:true},created_at:demoIso(-2,10,0),updated_at:demoIso(-2,10,25)}];return res.json(rows.slice(0,Number(req.query.limit)||25));}await valDbReady;if(pgPool){const r=await dbQuery('select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 order by updated_at desc limit $2',[VAL_USER_ID,Number(req.query.limit)||25]);return res.json(r.rows);}res.json(valStore().conversations.slice(0,Number(req.query.limit)||25));}catch(e){res.status(500).json({error:e.message});}});
 app.get('/api/val/conversations/:id/messages',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const sets={'demo-chat-1':[{role:'user',content:'What needs my attention today?',created_at:demoIso(0,8,0)},{role:'assistant',content:withDemoCta('Marcus needs the pilot memo before the 2 PM demo. Elena needs the scope revision. Jordan has a warm intro offer that should not sit.'),created_at:demoIso(0,8,1)}],'demo-chat-2':[{role:'user',content:'Show me pipeline risk.',created_at:demoIso(-1,15,30)},{role:'assistant',content:withDemoCta('HealthBridge is the risk. The expansion is not blocked by value. It is blocked by sponsor fatigue and implementation load.'),created_at:demoIso(-1,15,31)}],'demo-chat-3':[{role:'user',content:'Draft the follow-ups.',created_at:demoIso(-2,10,0)},{role:'assistant',content:withDemoCta('I would queue three drafts: Marcus pilot memo, Elena revised scope, and Jordan one-paragraph intro ask.'),created_at:demoIso(-2,10,1)}]};return res.json(state.savedConversationMessages?.[req.params.id]||sets[req.params.id]||[]);}await valDbReady;if(pgPool){const r=await dbQuery('select role,content,metadata,created_at from val_messages where conversation_id=$1 order by created_at asc',[req.params.id]);return res.json(r.rows);}res.json(valStore().messages.filter(m=>m.conversationId===req.params.id));}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/meeting-briefing',async(req,res)=>{
@@ -7669,8 +9257,81 @@ app.post('/api/relationships/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported action'});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/intelligence',async(req,res)=>{try{const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];if(DEMO_MODE){const s=demoState(req,res);return res.json({ok:true,action,content:demoIntelligenceResponse(action,query,s),demo:true});}const memory=await recentMemoryContext(`${action} ${query}`),ghlNotes=await ghlContactNotesContext(`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use saved memory, dashboard data, GHL contact notes, task state, and the requested action. Be specific, practical, and decisive.',memory?'Relevant saved memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const user=['Requested VAL action: '+action,'Instruction: '+actionPrompt(action),query?'User query: '+query:'','Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)].filter(Boolean).join('\n\n');res.json({ok:true,action,content:await callValModel({system,user,maxTokens:1800,temperature:0.35})});}catch(e){res.status(500).json({error:e.message});}});
-app.post('/api/val/chat',async(req,res)=>{try{const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}const memory=await recentMemoryContext(lastUser+'\n'+memoryQuery),ghlNotes=await ghlContactNotesContext(lastUser+'\n'+memoryQuery,dashboard);const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, GHL contact notes, and saved memory when relevant. Do not pretend to know facts that are not present.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant GHL contact notes and call transcripts are present, use them as current contact/caller source context.',memory?'Recent saved VAL memory:\n'+memory:'',ghlNotes?'Relevant GHL contact notes and call transcripts:\n'+ghlNotes:''].filter(Boolean).join('\n\n');const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});res.json({message:{role:'assistant',content:content||'I could not process that.'}});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/intelligence',async(req,res)=>{
+  try{
+    const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
+    if(DEMO_MODE){const s=demoState(req,res);return res.json({ok:true,action,content:demoIntelligenceResponse(action,query,s),demo:true});}
+    const uploadedDocs=await uploadedValDocumentContextForQuery(`${action} ${query}`).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
+    const [memory,ghlContext,googleDocs]=await Promise.all([
+      recentMemoryContext(`${action} ${query}`),
+      ghlPlatformContext(`${action} ${query} ${JSON.stringify(dashboard).slice(0,2500)}`,dashboard),
+      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(`${action} ${query}`).catch(e=>`Google Docs lookup failed: ${e.message}`)
+    ]);
+    const system=[VAL_SYSTEM_PROMPT,'Use uploaded VAL document source text, saved memory, Google Docs source text, dashboard data, platform-wide GHL MCP context, task state, and the requested action. Be specific, practical, and decisive. If uploaded VAL document source text is present, treat it as visible source material and do not ask for Drive, Docs, or pasted chunks. Do not begin with source/upload/readability status unless the user explicitly asks whether you can read or access the manuscript.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.',memory?'Relevant saved memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const user=['Requested VAL action: '+action,'Instruction: '+actionPrompt(action),query?'User query: '+query:'','Dashboard JSON: '+JSON.stringify(dashboard).slice(0,9000),'Tasks JSON: '+JSON.stringify(tasks).slice(0,9000)].filter(Boolean).join('\n\n');
+    const actionMaxTokens=/^(book_next_steps|editorial_next_steps)$/i.test(action)?650:1800;
+    const content=await callValModel({system,user,maxTokens:actionMaxTokens,temperature:0.35});
+    const createdTasks=await persistAutoTasksFromValResponse({content,userQuery:query||action,action,source:'val_intelligence'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
+    res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext});
+  }catch(e){res.status(500).json({error:e.message});}
+});
+app.post('/api/val/chat',async(req,res)=>{
+  try{
+    const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
+    if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}
+    if(isGoallTestContactRequest(lastUser)){
+      const result=await createOrUpdateGoallTestContact();
+      return res.json({message:{role:'assistant',content:goallTestContactSummary(result)},ghlContact:result});
+    }
+    const inferredGhlAction=await inferGhlActionFromChat(lastUser);
+    if(inferredGhlAction){
+      const result=await executeValGhlAction(inferredGhlAction);
+      return res.json({message:{role:'assistant',content:result.content||'Done.'},ghlAction:result});
+    }
+    if(isGoogleDocRewriteRequest(lastUser)){
+      try{
+        const result=await rewriteGoogleDocChapter({query:lastUser,mode:'create'});
+        const scopeLabel=result.source.scope==='chapter'?'chapter':'document';
+        const content=[
+          `Done. I rewrote the full ${scopeLabel} from ${result.source.title} as a new Google Doc.`,
+          '',
+          `Source: ${result.source.url}`,
+          `Rewrite: ${result.output.url}`,
+          '',
+          `I kept the full rewrite out of chat so you can review and edit it in Docs.`
+        ].join('\n');
+        return res.json({message:{role:'assistant',content},googleDocRewrite:result});
+      }catch(e){
+        if(/auth|required|scope|reconnect/i.test(e.message)){
+          return res.json({message:{role:'assistant',content:'I can use the memoir already uploaded into VAL as the source. Google only needs to be reconnected so I can create the rewritten Google Doc output. Open Integration Status, reconnect Google, and approve the Drive/Docs permissions.'}});
+        }
+        return res.json({message:{role:'assistant',content:`I tried to rewrite it from the uploaded VAL memoir or Google Docs, but I could not find a readable matching document yet: ${e.message}\n\nUse the exact uploaded file title, Google Doc title, or Google Doc URL, then ask me to rewrite it.`}});
+      }
+    }
+    const availabilityDoc=await readValUploadedRewriteSource({query:lastUser+'\n'+memoryQuery}).catch(()=>null);
+    if(availabilityDoc&&/\b(can you|could you|do you|are you able to)\b[\s\S]{0,80}\b(read|see|access|open)\b/i.test(lastUser)&&/\b(manuscript|memoir|book|document|doc|draft)\b/i.test(lastUser)){
+      return res.json({message:{role:'assistant',content:[
+        `Yes. I can read the manuscript already uploaded into VAL.`,
+        '',
+        `Source: ${availabilityDoc.title}`,
+        `Readable characters: ${availabilityDoc.text.length}`,
+        '',
+        `Google Drive is only needed if you want me to create or update a Google Doc output. For reading and editorial review, I can use the uploaded VAL manuscript.`
+      ].join('\n')}});
+    }
+    const uploadedDocs=await uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
+    const [memory,ghlContext,googleDocs]=await Promise.all([
+      recentMemoryContext(lastUser+'\n'+memoryQuery),
+      ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
+      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`)
+    ]);
+    const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
+    const finalContent=content||'I could not process that.';
+    const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
+    res.json({message:{role:'assistant',content:finalContent},createdTasks,ghlContextAvailable:!!ghlContext});
+  }catch(e){res.status(500).json({error:e.message});}
+});
 
 async function extractUploadedText(file){
   const name=file.originalname||'uploaded-file', mime=file.mimetype||'', ext=path.extname(name).toLowerCase();
@@ -7687,15 +9348,17 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
     for(const file of files.slice(0,10)){
       const text=(await extractUploadedText(file)).trim();
       if(!text) throw new Error(`No readable text found in ${file.originalname}`);
+      const inferredDocType=inferBookDocTypeFromName([req.body.title,file.originalname].filter(Boolean).join(' '),req.body.docType||'knowledge_document');
       const metadata={
         fileName:file.originalname,
         mimeType:file.mimetype,
         size:file.size,
-        project:req.body.project||CLIENT_CONFIG.projectName||'',
+        project:req.body.project||CLIENT_CONFIG.projectName||CLIENT_CONFIG.brandName||'',
         client:req.body.client||CLIENT_CONFIG.clientName||'',
-        docType:req.body.docType||'knowledge_document',
+        docType:inferredDocType,
         chapterNumber:req.body.chapterNumber||'',
         chapterTitle:req.body.chapterTitle||'',
+        canonicalManuscript:inferredDocType==='manuscript',
         projectType:CLIENT_CONFIG.projectType||''
       };
       const saved=await saveTranscript({
@@ -7704,7 +9367,7 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
         transcript:text,
         timestamp:new Date().toISOString(),
         source:'val_file_upload',
-        importance:CLIENT_CONFIG.projectType==='book_editor'?4:3,
+        importance:isBookEditorProject()?4:3,
         metadata
       });
       savedFiles.push({...saved,fileName:file.originalname,chars:text.length,metadata});
