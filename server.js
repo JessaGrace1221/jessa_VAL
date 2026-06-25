@@ -13003,6 +13003,30 @@ function transcriptSupportingQuote(transcript,requested=''){
   const sentences=text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
   return (sentences.find(s=>/\b(will|need to|follow up|send|schedule|review|update|introduce|decided|agreed)\b/i.test(s))||sentences[0]||text.slice(0,500)).slice(0,800);
 }
+function regexEscape(value){return String(value||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function transcriptTaskFieldsFromActionItem(item,transcript){
+  const rawText=transcript.transcriptText||transcript.rawTranscript||'';
+  const sourceQuote=transcriptSupportingQuote(rawText,typeof item==='string'?item:item?.sourceQuote||item?.evidence||item?.text||item?.title||'');
+  const rawTitle=typeof item==='string'?item:(item?.taskTitle||item?.title||item?.text||item?.action||item?.nextAction||'');
+  const title=cleanTaskTitle(rawTitle).replace(/^[-•\s]+/,'');
+  if(!title||title.length<8)return null;
+  const genericTitle=new RegExp('^(follow up on|review|task for)\\s+'+regexEscape(String(transcript.title||transcript.meetingTitle||'').trim()),'i');
+  if(genericTitle.test(title)&&!sourceQuote)return null;
+  const description=typeof item==='object'&&item
+    ? cleanTaskTitle(item.taskDescription||item.description||item.notes||item.context||'')
+    : '';
+  return {
+    title,
+    description:description||[
+      `Created from transcript: ${transcript.title||transcript.meetingTitle||'Untitled Transcript'}`,
+      sourceQuote?`Supporting quote: “${sourceQuote}”`:''
+    ].filter(Boolean).join('\n\n'),
+    dueDate:typeof item==='object'&&item?(item.dueDate||item.due||item.deadline||null):null,
+    priority:typeof item==='object'&&item?(item.priority||'medium'):'medium',
+    assignedToName:typeof item==='object'&&item?(item.assignedToName||item.assignedPerson||item.person||item.contactName||transcript.contactName||''):(transcript.contactName||''),
+    sourceQuote
+  };
+}
 function transcriptIdentityInputs(payload,transcript){
   const attendees=[...(Array.isArray(payload.attendees)?payload.attendees:[]),...(Array.isArray(payload.metadata?.attendees)?payload.metadata.attendees:[]),...inferAttendeesFromEvent(payload.meetingMatch||payload.calendarEvent||{})];
   const speakers=[...String(transcript).matchAll(/^\s*([^:\n]{2,80}):\s*.+$/gm)].map(match=>match[1].trim()).filter(name=>!/^https?|meeting|transcript$/i.test(name));
@@ -13109,10 +13133,13 @@ app.get('/api/val/transcripts',async(req,res)=>{
   try{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
+    const indexed=data.transcripts.map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});
+    const indexedIds=new Set(indexed.map(t=>String(t.id||t.transcriptId||'')));
+    const legacy=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record)).filter(t=>!indexedIds.has(String(t.id||'')));
+    const transcripts=indexed.concat(legacy).sort((a,b)=>new Date(b.createdAt||b.receivedAt||0)-new Date(a.createdAt||a.receivedAt||0)).slice(0,limit);
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withTasks:transcripts.filter(t=>Number(t.taskCount||t.openActionCount||0)>0).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -13170,13 +13197,26 @@ app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)
 });
 app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
-    const id=decodeURIComponent(req.params.transcriptId),record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-    if(!record)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=transcriptUiRecord(record,{includeText:true}),action=String(req.body.action||'');
+    const id=decodeURIComponent(req.params.transcriptId);
+    const data=await transcriptIndexData(id);
+    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
+    if(!transcript){
+      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      if(record)transcript=transcriptUiRecord(record,{includeText:true});
+    }
+    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
+    const action=String(req.body.action||'');
     if(action==='create_task'){
+      const existing=(transcript.tasks||[]).find(task=>String(task.taskId||'')===String(req.body.taskId||'')||(!req.body.taskId&&task.status!=='created'));
+      if(existing){
+        if(existing.needsApproval)return res.status(409).json({ok:false,error:'This transcript task needs review before it can be created. Open the Transcript Review Queue.'});
+        const task=existing.status==='created'?existing:await promoteTranscriptTask(existing);
+        return res.json({ok:true,task});
+      }
       const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
-      const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
+      const fields=transcriptTaskFieldsFromActionItem(req.body.title?{...first,title:req.body.title,sourceQuote:req.body.sourceQuote}:first,transcript);
+      if(!fields)return res.status(422).json({ok:false,error:'I could not find a clear action item in this transcript. Open the transcript detail to review the summary or ask VAL about it first.'});
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:fields.assignedToName||'',taskTitle:contextualTaskTitle(transcript.title,fields.title),taskDescription:fields.description,dueDate:req.body.dueDate||fields.dueDate||null,priority:req.body.priority||fields.priority||'medium',confidence:0.8,status:'staged',needsApproval:false,sourceQuote:fields.sourceQuote,calendarEventId:transcript.meetingId||transcript.calendarEventId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
     if(action==='draft_followup'){

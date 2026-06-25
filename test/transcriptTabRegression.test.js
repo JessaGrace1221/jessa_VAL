@@ -34,7 +34,7 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
 test('retrieval returns required fields and accurate counters',()=>{
   for(const field of ['receivedAt','reviewStatus','openActionCount','sourcePayloadMetadata','company','contactName'])assert.ok(server.includes(field));
   assert.match(server,/\['new','unreviewed','needs_review'\]\.includes\(t\.reviewStatus\)/);
-  assert.match(server,/t\.openActionCount>0/);
+  assert.match(server,/Number\(t\.openActionCount\|\|t\.taskCount\|\|0\)>0/);
   assert.match(server,/\[transcripts\] retrieval requested/);
   assert.match(server,/\[transcripts\] retrieval failed/);
 });

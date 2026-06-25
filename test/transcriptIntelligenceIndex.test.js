@@ -33,6 +33,20 @@ test('requires evidence, confidence, review state, and action traceability',()=>
   assert.match(server,/Ambiguous match:/);
 });
 
+test('transcript inbox merges indexed and legacy transcript records',()=>{
+  assert.match(server,/const indexed=data\.transcripts\.map/);
+  assert.match(server,/const legacy=\(await transcriptArchiveRecords\(days,limit\)\)/);
+  assert.match(server,/indexedIds\.has\(String\(t\.id/);
+  assert.match(server,/indexed\.concat\(legacy\)/);
+});
+
+test('manual transcript task creation uses evidence instead of hollow meeting titles',()=>{
+  assert.match(server,/function transcriptTaskFieldsFromActionItem/);
+  assert.match(server,/existing\.needsApproval/);
+  assert.match(server,/I could not find a clear action item in this transcript/);
+  assert.doesNotMatch(server,/taskDescription:`User-created from transcript:/);
+});
+
 test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
