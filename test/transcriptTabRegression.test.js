@@ -51,7 +51,20 @@ test('refresh reloads the full durable archive and updates counts',()=>{
   assert.match(ui,/api\/val\/transcripts\?days=3650&limit=250/);
   assert.match(ui,/onclick="loadTranscripts\(true\)\.catch/);
   assert.match(ui,/transcriptState\.counts=data\.counts/);
+  assert.match(ui,/updateCommandCenterBadges/);
   assert.match(ui,/lastLoadedAt=new Date\(\)\.toISOString/);
+});
+
+test('left navigation exposes live transcript, task, and draft badges',()=>{
+  assert.match(ui,/function navBadge/);
+  assert.match(ui,/data-badge-view/);
+  assert.match(ui,/function pendingDraftCount/);
+  assert.match(ui,/function openTaskCount/);
+  assert.match(ui,/function transcriptAttentionCount/);
+  assert.match(ui,/window\.syncCommandCenterDrafts/);
+  assert.match(css,/\.val-nav-badge\{/);
+  assert.match(css,/\.val-nav-badge\.empty\{display:none\}/);
+  assert.match(css,/\.val-nav-label/);
 });
 
 test('every transcript card exposes the four required actions',()=>{

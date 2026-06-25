@@ -1806,6 +1806,7 @@ function openDraftsPage(){
 function loadBackendDrafts(){
   apiFetch(PROXY+'/api/val/drafts').then(function(d){
     var drafts=(d.drafts||[]).concat((window.valDocs||[]).filter(function(doc){return doc.status==='draft';}).map(function(doc){return {id:doc.id,draftType:doc.type||'document',status:doc.status||'draft',subject:doc.title||'Untitled draft',body:doc.body||'',createdAt:doc.createdAt,sourceContext:{source:'browser_draft',recipient:doc.recipient||'',recipientEmail:doc.recipientEmail||''}};}));
+    if(typeof syncCommandCenterDrafts==='function')syncCommandCenterDrafts(drafts);
     var body=document.getElementById('draftsWorkspaceBody');if(!body)return;
     body.innerHTML='<div class="exec-workspace-grid">'+(drafts.length?drafts.map(function(dr){
       var ctx=dr.sourceContext||{},created=dr.createdAt?new Date(dr.createdAt).toLocaleString():'';
@@ -2905,6 +2906,8 @@ function refreshTaskUI(){
   dashData.tasks=open;
   renderTaskBoardIfOpen();
   if(typeof updateWsSidebar==='function')updateWsSidebar();
+  if(typeof updateCommandCenterBadges==='function')updateCommandCenterBadges();
+  if(typeof buildCommandCenter==='function')buildCommandCenter();
   updateDynamicSuggestions();
 }
 
