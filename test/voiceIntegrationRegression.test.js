@@ -23,6 +23,7 @@ test('voice status exposes safe diagnostics without leaking the Deepgram key',()
   assert.match(server,/app\.get\('\/api\/val\/voice\/status'/);
   assert.match(server,/ttsConfigured:!!DEEPGRAM_API_KEY/);
   assert.match(server,/ttsModel:deepgramTtsModel\(\)/);
+  assert.match(server,/voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE/);
   assert.doesNotMatch(server,/apiKey:DEEPGRAM_API_KEY/);
 });
 
@@ -32,4 +33,10 @@ test('voice failures are visible and cadence is tightened',()=>{
   assert.match(dashboard,/endpointing=800/);
   assert.match(executive,/Deepgram voice failed, using temporary browser voice/);
   assert.match(executive,/endpointing=800/);
+});
+
+test('Jessa voice defaults to Deepgram Aura 2 Cora with warmer voice-mode response temperature',()=>{
+  assert.match(server,/aura-2-cora-en/);
+  assert.match(server,/const VAL_VOICE_RESPONSE_TEMPERATURE = Math\.min\(Math\.max\(Number\(process\.env\.VAL_VOICE_RESPONSE_TEMPERATURE\)\|\|0\.6/);
+  assert.match(server,/temperature:selectedMode==='interview'\?VAL_VOICE_RESPONSE_TEMPERATURE:0\.28/);
 });

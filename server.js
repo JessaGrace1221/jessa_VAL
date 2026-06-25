@@ -72,9 +72,10 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
-const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-arcas-en';
+const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
 const DEEPGRAM_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || 'nova-2';
 const DEEPGRAM_STT_ENDPOINTING_MS = Math.min(Math.max(Number(process.env.DEEPGRAM_STT_ENDPOINTING_MS)||800,250),2000);
+const VAL_VOICE_RESPONSE_TEMPERATURE = Math.min(Math.max(Number(process.env.VAL_VOICE_RESPONSE_TEMPERATURE)||0.6,0),2);
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
 const ROCKETREACH_REQUEST_TIMEOUT_MS = Number(process.env.ROCKETREACH_REQUEST_TIMEOUT_MS) || 15000;
@@ -6055,7 +6056,7 @@ function deepgramModelName(value){
   return String(value||'').trim().replace(/[^a-zA-Z0-9_.:-]/g,'').slice(0,120);
 }
 function deepgramTtsModel(){
-  return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-arcas-en';
+  return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-cora-en';
 }
 app.get('/api/val/voice/status',(req,res)=>{
   res.json({
@@ -6063,6 +6064,7 @@ app.get('/api/val/voice/status',(req,res)=>{
     provider:'deepgram',
     ttsConfigured:!!DEEPGRAM_API_KEY,
     ttsModel:deepgramTtsModel(),
+    voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,
     sttModel:DEEPGRAM_STT_MODEL,
     sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,
     ttsProxy:true
@@ -8893,7 +8895,7 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
   const selectedMode=micheleEditorialMode(userMessage,mode);
   const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter});
   try{
-    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.55:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
+    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?VAL_VOICE_RESPONSE_TEMPERATURE:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
       VAL_SYSTEM_PROMPT,
       'You are Michele Julian’s manuscript editor and conversational writing partner inside VAL.',
       'You are speaking directly to Michele. Michele is the author. Use “you,” never “Michele may want.”',
