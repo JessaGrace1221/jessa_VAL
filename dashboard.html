@@ -5381,6 +5381,7 @@ function runLeadResearch(state){
 var teachValOnboarding=null;
 var teachValActiveCategory='current_projects';
 var teachValSpeechRec=null;
+var teachValVoiceStatus=null;
 function teachValCardStatus(label,status){
   var good=/Imported|Reviewed|Sent|Tested|complete/i.test(status||''),wait=/Waiting|Started|Ready|In Progress/i.test(status||'');
   return '<div class="rule-row"><strong>'+docSafe(label)+'</strong><div>'+docSafe(status||'Not Started')+'</div><span class="email-pill" style="background:'+(good?'rgba(34,197,94,.16)':wait?'rgba(245,158,11,.18)':'rgba(148,163,184,.16)')+';color:'+(good?'#14532d':wait?'#78350f':'#334155')+'">'+docSafe(status||'Not Started')+'</span></div>';
@@ -5393,9 +5394,10 @@ function openTeachValOnboarding(){
     id:'teachValOnboardingWorkspace',
     title:'Teach VAL About You',
     body:'<div id="teachValOnboardingBody"><div class="task-empty">Loading Teach VAL About You...</div></div>',
-    footer:'<button class="alert-btn primary" onclick="teachValStart()">Start / Resume</button><button class="alert-btn" onclick="teachValLoad()">Refresh</button><button class="alert-btn" onclick="teachValCommit(true)">Test Send</button><button class="alert-btn primary" onclick="teachValCommit(false)">Send to VAL</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
+    footer:'<button class="alert-btn primary" onclick="teachValStart()">Start / Resume</button><button class="alert-btn" onclick="teachValStartUpdate()">Update VAL</button><button class="alert-btn" onclick="teachValStartOver()">Start Over</button><button class="alert-btn primary" onclick="teachValCommit(false)">Send to VAL</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
   });
   teachValLoad();
+  teachValLoadVoiceStatus();
 }
 function startOnboardingProfile(){openTeachValOnboarding();}
 function teachValLoad(){
@@ -5404,7 +5406,15 @@ function teachValLoad(){
   });
 }
 function teachValStart(){
-  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:true,testMode:true,mode:'onboarding'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL could not start: '+e.message);});
+}
+function teachValStartUpdate(){
+  apiFetch(PROXY+'/api/teach-val/onboarding/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resume:false,testMode:true,mode:'update'})}).then(function(data){teachValOnboarding=data;teachValRender();}).catch(function(e){addSys('Teach VAL update could not start: '+e.message);});
+}
+function teachValStartOver(){
+  if(!teachValOnboarding||!teachValOnboarding.session){teachValStart();return;}
+  if(!confirm('Start over with a fresh Teach VAL session? The old session will be archived.'))return;
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'onboarding',testMode:true})}).then(function(data){teachValOnboarding=data;teachValActiveCategory='current_projects';teachValRender();}).catch(function(e){addSys('Teach VAL could not start over: '+e.message);});
 }
 function teachValSetStage(stage){
   if(!teachValOnboarding||!teachValOnboarding.session)return;
@@ -5412,14 +5422,31 @@ function teachValSetStage(stage){
 }
 function teachValProgressHtml(){
   var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, p=s.progress||{};
-  var cards=(teachValOnboarding&&teachValOnboarding.cards)||[];
-  var rows=[teachValCardStatus('Welcome',p.welcome),teachValCardStatus('Voice Interview',p.voice_interview)]
-    .concat(cards.map(function(c){return teachValCardStatus(c.title,p[c.category]);}))
-    .concat([teachValCardStatus('Review',p.review),teachValCardStatus('Send to VAL',p.send_to_val)]);
-  return '<section class="exec-card"><h3>Progress</h3><p>These are status markers. Use the main panel on the right to take each step.</p><div class="val-mini-list">'+rows.join('')+'</div></section>';
+  var imported=((teachValOnboarding&&teachValOnboarding.imports)||[]).filter(function(i){return i.category!=='voice_interview';}).length;
+  var steps=[
+    ['Welcome',p.welcome],
+    ['Voice Interview',p.voice_interview],
+    ['Prompts for Previous AI Tools',imported?imported+' saved':'Not Started'],
+    ['Review Memory',p.review],
+    ['Send to VAL',p.send_to_val]
+  ];
+  return '<section class="exec-card"><h3>30-Minute Setup</h3><p>This is meant to feel relieving, not like homework. Most people should be able to finish the first pass in about 30 minutes.</p><div class="val-mini-list">'+steps.map(function(step,i){var done=/Complete|Imported|Reviewed|Sent|Tested|saved/i.test(step[1]||''),active=/Ready|In Progress|Waiting|Started/i.test(step[1]||'');return '<div class="rule-row" style="cursor:default"><strong>'+(done?'✓ ':active?'• ':'○ ')+docSafe(step[0])+'</strong><div>'+docSafe(step[1]||'Not Started')+'</div></div>';}).join('')+'</div><div class="email-actions"><button onclick="teachValStartOver()">Start Over</button><button onclick="teachValStartUpdate()">Update VAL Later</button></div></section>';
 }
 function teachValWelcomeHtml(){
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>Before VAL Can Support You Well</h3><p>VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. You do not need to fill out a long form. VAL will guide you through this one step at a time.</p><div class="email-reason">Take your time. You can ramble. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start</button></div></section>';
+  var mode=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state&&teachValOnboarding.session.state.mode)||'onboarding';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>'+(mode==='update'?'Update What VAL Knows':'Before VAL Can Support You Well')+'</h3><p>'+(mode==='update'?'Use this anytime your priorities, projects, relationships, or preferences change. You do not need to repeat the whole onboarding flow.':'VAL needs to understand how you think, what you are building, who matters, and what kind of help you actually want. This should feel liberating: a 30-minute transfer of context, not a long intake form.')+'</p><div class="email-reason">Take your time. You can ramble. Nothing is final until you review it.</div><div class="email-actions"><button class="primary" onclick="teachValStart()">Start Voice Interview</button><button onclick="teachValStartUpdate()">I Am Updating VAL</button></div></section>';
+}
+function teachValLoadVoiceStatus(){
+  apiFetch(PROXY+'/api/val/voice/status').then(function(data){teachValVoiceStatus=data;teachValRender();}).catch(function(){teachValVoiceStatus={ok:false,ttsConfigured:false,error:'Voice status unavailable'};teachValRender();});
+}
+function teachValVoiceStatusHtml(){
+  var s=teachValVoiceStatus||{};
+  var label=s.ttsConfigured?'Deepgram voice connected':'Deepgram voice not connected';
+  var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
+  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail)+'</div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
+}
+function teachValTestVoice(){
+  if(typeof speak==='function')speak('This is the voice VAL will use for onboarding. If this does not sound right, check the Deepgram voice settings in Railway.');
 }
 function teachValVoiceTurnsHtml(turns){
   turns=turns||[];
@@ -5430,7 +5457,7 @@ function teachValVoiceTurnsHtml(turns){
 }
 function teachValVoiceHtml(){
   var s=(teachValOnboarding&&teachValOnboarding.session&&teachValOnboarding.session.state)||{}, v=s.voiceInterview||{};
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p><div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
+  return '<section class="exec-card" style="grid-column:1/-1"><h3>Voice Interview</h3><p>Interview with VAL right here. VAL will speak through the dashboard voice system, using the Deepgram voice configured for this deployment when it is available.</p>'+teachValVoiceStatusHtml()+'<div class="email-reason">Nothing should open behind this window. If voice is not available in the browser, type the answer in the same box.</div>'+teachValVoiceTurnsHtml(v.turns||[])+'<div class="email-actions"><button class="primary" onclick="teachValStartVoiceInterview()">Start Voice Interview</button><button onclick="teachValRecordVoiceAnswer()">Record Answer</button><button onclick="teachValStopVoiceAnswer()">Stop Recording</button></div><textarea id="teachValVoiceAnswer" rows="4" placeholder="Speak or type your answer here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827"></textarea><div class="email-actions"><button class="primary" onclick="teachValSendVoiceAnswer()">Send Answer To VAL</button><span id="teachValVoiceStatus" class="email-reason">'+docSafe(v.status||'Ready')+'</span></div><textarea id="teachValInterviewTranscript" rows="8" placeholder="The interview transcript will build here. You can edit it before saving..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe(v.transcript||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveInterview()">Save Interview Summary</button><span id="teachValInterviewStatus" class="email-reason">'+docSafe(v.status||'Not Started')+'</span></div></section>';
 }
 function teachValVoiceTurn(payload){
   if(!teachValOnboarding||!teachValOnboarding.session)return Promise.reject(new Error('Open Teach VAL About You first.'));

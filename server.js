@@ -2647,6 +2647,7 @@ function teachValDefaultState(){
     stage:'welcome',
     progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
     voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started',turns:[]},
+    mode:'onboarding',
     testMode:true,
     lastError:'',
     webhookAttempts:[]
@@ -2853,6 +2854,7 @@ function teachValCompiledPayload({session,imports,items,testMode=false}){
     user_id:currentUserId(),
     created_at:new Date().toISOString(),
     test_mode:!!testMode,
+    onboarding_mode:session.state.mode||'onboarding',
     voice_interview:{transcript:voice.transcript||'',summary:voice.summary||{},duration:voice.duration||null},
     external_ai_imports:imports.map(i=>({category:i.category,prompt_used:i.promptUsed,raw_response:i.rawResponse,structured_summary:i.structuredSummary,reviewed:!!i.reviewed})),
     knowledge_cards:{
@@ -3848,13 +3850,28 @@ app.get('/api/teach-val/onboarding',async(req,res)=>{
 app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
     const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
-    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    const requestedMode=req.body.mode==='update'?'update':'onboarding';
+    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     const state=normalizeTeachValState(session.state);
+    state.mode=requestedMode;
     state.stage=state.stage==='welcome'?'voice_interview':state.stage;
     state.progress.welcome='Complete';
     state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Ready':state.progress.voice_interview;
     session.state=state;
     await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
+  try{
+    const old=await getTeachValSession(req.params.id);
+    if(old){
+      old.status='archived';
+      old.state=normalizeTeachValState({...old.state,lastError:'Started over '+new Date().toISOString()});
+      await saveTeachValSession(old);
+    }
+    const mode=req.body.mode==='update'?'update':'onboarding';
+    const session=await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'welcome',mode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
@@ -3913,7 +3930,7 @@ app.post('/api/teach-val/onboarding/:id/interview',async(req,res)=>{
     if(!transcript)return res.status(400).json({ok:false,error:'Add the voice interview transcript before saving this stage.'});
     const summary=req.body.summary&&typeof req.body.summary==='object'?req.body.summary:await summarizeTeachValInterview(transcript);
     const state=normalizeTeachValState(session.state);
-    state.voiceInterview={transcript,summary,duration:req.body.duration||null,status:'Imported'};
+    state.voiceInterview={...state.voiceInterview,transcript,summary,duration:req.body.duration||null,status:'Imported'};
     state.progress.voice_interview='Imported';
     state.stage='current_projects';
     session.state=state;
