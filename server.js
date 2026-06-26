@@ -2646,7 +2646,7 @@ function teachValDefaultState(){
   return {
     stage:'welcome',
     progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
-    voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started'},
+    voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started',turns:[]},
     testMode:true,
     lastError:'',
     webhookAttempts:[]
@@ -3851,11 +3851,47 @@ app.post('/api/teach-val/onboarding/start',async(req,res)=>{
     const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     const state=normalizeTeachValState(session.state);
     state.stage=state.stage==='welcome'?'voice_interview':state.stage;
-    state.progress.welcome='Reviewed';
-    state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Waiting for Paste':state.progress.voice_interview;
+    state.progress.welcome='Complete';
+    state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Ready':state.progress.voice_interview;
     session.state=state;
     await saveTeachValSession(session);
     res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/voice-turn',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const state=normalizeTeachValState(session.state);
+    const voice={...state.voiceInterview,turns:Array.isArray(state.voiceInterview.turns)?state.voiceInterview.turns:[]};
+    const now=new Date().toISOString();
+    const userMessage=String(req.body.message||'').trim();
+    if(userMessage)voice.turns.push({role:'user',content:userMessage,createdAt:now});
+    let reply='';
+    if(req.body.start||!voice.turns.length){
+      reply='I am here with you. To start, tell me who you are, what you are building or carrying right now, and what you most want VAL to understand about you.';
+      if(!voice.turns.some(t=>t.role==='assistant'&&t.content===reply))voice.turns.push({role:'assistant',content:reply,createdAt:now});
+    }else{
+      const recent=voice.turns.slice(-12).map(t=>(t.role==='user'?'Owner':'VAL')+': '+t.content).join('\n\n');
+      const system=[
+        TEACH_VAL_VOICE_PROMPT,
+        'Continue the onboarding interview inside the dashboard.',
+        'Reply in under 90 words.',
+        'Briefly reflect what you heard, then ask exactly one warm follow-up question.',
+        'Do not sound like a survey. Do not mention saving or setup unless the user asks.'
+      ].join('\n\n');
+      reply=await callValModel({system,user:recent,maxTokens:360,temperature:0.45}).catch(()=>'That helps. What feels most important for VAL to remember or help with first?');
+      reply=String(reply||'That helps. What should VAL remember next?').trim();
+      voice.turns.push({role:'assistant',content:reply,createdAt:now});
+    }
+    voice.transcript=voice.turns.map(t=>(t.role==='user'?'You':'VAL')+': '+t.content).join('\n\n');
+    voice.status='In Progress';
+    state.voiceInterview=voice;
+    state.stage='voice_interview';
+    state.progress.voice_interview='In Progress';
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({...await teachValStateResponse(session.id),reply});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.patch('/api/teach-val/onboarding/:id',async(req,res)=>{
