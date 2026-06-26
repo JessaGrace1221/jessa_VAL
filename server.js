@@ -6749,35 +6749,74 @@ function deepgramModelName(value){
 function deepgramTtsModel(){
   return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-cora-en';
 }
+function deepgramTtsModelSource(){
+  if(process.env.DEEPGRAM_TTS_MODEL) return 'DEEPGRAM_TTS_MODEL';
+  if(process.env.VAL_TTS_VOICE) return 'VAL_TTS_VOICE';
+  if(process.env.DEEPGRAM_VOICE_MODEL) return 'DEEPGRAM_VOICE_MODEL';
+  return 'default';
+}
+function deepgramKeySource(){
+  if(process.env.DEEPGRAM_API_KEY) return 'DEEPGRAM_API_KEY';
+  if(process.env.DG_KEY) return 'DG_KEY';
+  return '';
+}
+let lastDeepgramTtsDiagnostic=null;
+async function requestDeepgramTts(text){
+  if(!DEEPGRAM_API_KEY){
+    const err=new Error('Deepgram voice is not configured. Add DEEPGRAM_API_KEY in Railway.');
+    err.statusCode=503;
+    throw err;
+  }
+  const model=deepgramTtsModel();
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),20000);
+  let dg;
+  try{
+    dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
+  }finally{clearTimeout(timer);}
+  const contentType=dg.headers.get('content-type')||'audio/mpeg';
+  const buffer=Buffer.from(await dg.arrayBuffer());
+  if(!dg.ok){
+    let detail=buffer.toString('utf8').slice(0,500);
+    try{const parsed=JSON.parse(detail);detail=parsed.err_msg||parsed.message||parsed.error||detail;}catch(_){}
+    const err=new Error(`Deepgram TTS failed (${dg.status})`);
+    err.statusCode=dg.status;
+    err.detail=detail;
+    throw err;
+  }
+  return {buffer,contentType,model};
+}
 app.get('/api/val/voice/status',(req,res)=>{
-  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsModel:deepgramTtsModel(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true});
+  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsKeySource:deepgramKeySource(),ttsModel:deepgramTtsModel(),ttsModelSource:deepgramTtsModelSource(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true,lastTtsDiagnostic:lastDeepgramTtsDiagnostic});
+});
+app.post('/api/val/voice/test',async(req,res)=>{
+  const text=String(req.body?.text||'This is the Deepgram voice VAL will use.').replace(/\s+/g,' ').trim().slice(0,500);
+  const started=Date.now();
+  try{
+    const result=await requestDeepgramTts(text||'This is the Deepgram voice VAL will use.');
+    lastDeepgramTtsDiagnostic={ok:true,checkedAt:new Date().toISOString(),provider:'deepgram',model:result.model,modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),contentType:result.contentType,bytes:result.buffer.length,latencyMs:Date.now()-started};
+    res.json(lastDeepgramTtsDiagnostic);
+  }catch(e){
+    const aborted=e.name==='AbortError';
+    lastDeepgramTtsDiagnostic={ok:false,checkedAt:new Date().toISOString(),provider:'deepgram',model:deepgramTtsModel(),modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),statusCode:e.statusCode||(aborted?504:500),error:aborted?'Deepgram TTS timed out.':e.message,detail:e.detail||''};
+    console.warn('[voice] Deepgram voice test failed',lastDeepgramTtsDiagnostic.statusCode,lastDeepgramTtsDiagnostic.detail||lastDeepgramTtsDiagnostic.error);
+    res.status(lastDeepgramTtsDiagnostic.statusCode).json(lastDeepgramTtsDiagnostic);
+  }
 });
 app.post('/api/val/tts',async(req,res)=>{
   try{
     const text=String(req.body?.text||'').replace(/\s+/g,' ').trim().slice(0,4000);
     if(!text) return res.status(400).json({ok:false,error:'No text supplied for voice playback.'});
-    if(!DEEPGRAM_API_KEY) return res.status(503).json({ok:false,error:'Deepgram voice is not configured. Add DEEPGRAM_API_KEY in Railway.'});
-    const model=deepgramTtsModel();
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),20000);
-    let dg;
-    try{
-      dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
-    }finally{clearTimeout(timer);}
-    const contentType=dg.headers.get('content-type')||'audio/mpeg';
-    const buffer=Buffer.from(await dg.arrayBuffer());
-    if(!dg.ok){
-      let detail=buffer.toString('utf8').slice(0,500);
-      try{const parsed=JSON.parse(detail);detail=parsed.err_msg||parsed.message||parsed.error||detail;}catch(_){}
-      console.warn('[voice] Deepgram TTS failed',dg.status,detail);
-      return res.status(dg.status).json({ok:false,error:`Deepgram TTS failed (${dg.status})`,detail});
-    }
-    res.set({'Content-Type':contentType.includes('audio/')?contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':model});
-    res.send(buffer);
+    const result=await requestDeepgramTts(text);
+    lastDeepgramTtsDiagnostic={ok:true,checkedAt:new Date().toISOString(),provider:'deepgram',model:result.model,modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),contentType:result.contentType,bytes:result.buffer.length};
+    res.set({'Content-Type':result.contentType.includes('audio/')?result.contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':result.model});
+    res.send(result.buffer);
   }catch(e){
     const aborted=e.name==='AbortError';
-    console.warn('[voice] TTS proxy failed',e.message);
-    res.status(aborted?504:500).json({ok:false,error:aborted?'Deepgram TTS timed out.':e.message});
+    const status=e.statusCode||(aborted?504:500);
+    lastDeepgramTtsDiagnostic={ok:false,checkedAt:new Date().toISOString(),provider:'deepgram',model:deepgramTtsModel(),modelSource:deepgramTtsModelSource(),keySource:deepgramKeySource(),statusCode:status,error:aborted?'Deepgram TTS timed out.':e.message,detail:e.detail||''};
+    console.warn('[voice] TTS proxy failed',status,lastDeepgramTtsDiagnostic.detail||lastDeepgramTtsDiagnostic.error);
+    res.status(status).json({ok:false,error:lastDeepgramTtsDiagnostic.error,detail:lastDeepgramTtsDiagnostic.detail,model:lastDeepgramTtsDiagnostic.model,modelSource:lastDeepgramTtsDiagnostic.modelSource,keySource:lastDeepgramTtsDiagnostic.keySource});
   }
 });
 

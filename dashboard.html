@@ -5469,20 +5469,26 @@ function teachValLoadVoiceStatus(){
 function teachValVoiceStatusHtml(){
   var s=teachValVoiceStatus||{};
   var label=s.ttsConfigured?'Deepgram voice connected':'Deepgram voice not connected';
-  var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
-  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail)+'<br><span id="teachValDeepgramTestStatus">Run Test VAL Voice to confirm the exact voice.</span></div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
+  var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')+' | source: '+(s.ttsModelSource||'unknown')+' | key: '+(s.ttsKeySource||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
+  var last=s.lastTtsDiagnostic&&s.lastTtsDiagnostic.error?(' Last TTS error: '+s.lastTtsDiagnostic.error+(s.lastTtsDiagnostic.detail?' - '+s.lastTtsDiagnostic.detail:'')):'';
+  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail+last)+'<br><span id="teachValDeepgramTestStatus">Run Test VAL Voice to confirm the exact voice.</span></div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
 }
 function teachValTestVoice(){
   var status=document.getElementById('teachValDeepgramTestStatus');
   if(status)status.textContent='Testing Deepgram voice...';
-  fetchDeepgramTtsBlob('This is the Deepgram voice VAL will use for onboarding.')
-    .then(function(blob){
+  apiFetch(PROXY+'/api/val/voice/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'This is the Deepgram voice VAL will use for onboarding.'})})
+    .then(function(diag){
+      if(status)status.textContent='Deepgram server test passed: '+(diag.model||'configured model')+' via '+(diag.keySource||'configured key')+'. Playing audio now...';
+      return fetchDeepgramTtsBlob('This is the Deepgram voice VAL will use for onboarding.').then(function(blob){return {blob:blob,diag:diag};});
+    })
+    .then(function(result){
+      var blob=result.blob;
       var url=URL.createObjectURL(blob), audio=new Audio(url);
-      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram voice played successfully.';};
+      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram voice played successfully: '+((result.diag&&result.diag.model)||'configured model')+'.';};
       audio.onerror=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram returned audio, but the browser could not play it.';};
       return audio.play().catch(function(e){URL.revokeObjectURL(url);throw new Error('Browser blocked Deepgram playback: '+(e.message||e));});
     })
-    .catch(function(e){if(status)status.textContent=e.message||'Deepgram voice test failed.';});
+    .catch(function(e){if(status)status.textContent=(e.detail||e.message||'Deepgram voice test failed.');teachValLoadVoiceStatus();});
 }
 function teachValVoiceTurnsHtml(turns){
   turns=turns||[];
