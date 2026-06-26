@@ -69,7 +69,7 @@ const GHL_KEY = process.env.GHL_KEY || process.env.GHL_API_KEY;
 const GHL_LOC = process.env.GHL_LOC || process.env.GHL_LOCATION_ID;
 const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',').map(v=>v.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const OPENAI_KEY = process.env.OPENAI_KEY;
+const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
 const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
@@ -1261,6 +1261,14 @@ function tenantApiKeyProvider(provider){
 function tenantApiKeyPreview(value){
   return maskSecret(value).replace('...','••••••');
 }
+function tenantApiKeyLooksValid(provider,value){
+  const key=String(value||'').trim();
+  const p=String(provider||'').toLowerCase();
+  if(!key) return false;
+  if(p==='openai') return /^sk-[A-Za-z0-9_\-]{20,}$/.test(key);
+  if(p==='anthropic') return /^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key);
+  return key.length>=8 && /^[\x20-\x7E]+$/.test(key);
+}
 function dashboardStudioPolicyMatch(lower,patterns){
   return patterns.find(p=>p.test(lower))||null;
 }
@@ -2053,7 +2061,7 @@ async function getIntegrationCredential(provider,credentialType,userId=currentVa
 }
 async function resolveIntegrationSecret(provider,credentialType,fallback=''){
   if(String(credentialType||'')==='api_key'&&tenantApiKeyProvider(provider)){
-    return resolveTenantApiKey(provider,{fallback,sourceLabel:'resolveIntegrationSecret'});
+    return resolveTenantApiKey(provider,{fallback,allowPlatformFallback:platformKeyFallbackAllowed(provider),sourceLabel:'resolveIntegrationSecret'});
   }
   const row=await getIntegrationCredential(provider,credentialType);
   if(row?.encrypted_value||row?.encryptedValue){
@@ -2157,6 +2165,7 @@ async function saveTenantApiKey(req,{provider,apiKey,metadata={}}){
   if(!encryptionConfigured()) throw new Error('ENCRYPTION_KEY is required to save tenant API keys.');
   const secret=String(apiKey||'').trim();
   if(!secret) throw new Error(`Your ${p.displayName} key is not connected yet. Add it in API Keys & Connections to use this feature.`);
+  if(!tenantApiKeyLooksValid(p.providerId,secret)) throw new Error(`That does not look like a valid ${p.displayName} API key. It was not saved.`);
   const tenant=tenantId(), userId=currentUserId(), encrypted=encryptSecret(secret), preview=tenantApiKeyPreview(secret);
   const row={id:uuid('tenantkey'),tenantId:tenant,provider:p.providerId,encryptedSecret:encrypted,keyPreview:preview,status:'saved',lastTestedAt:null,lastUpdatedAt:new Date().toISOString(),createdByUserId:userId,updatedByUserId:userId,metadata:{...metadata,displayName:p.displayName},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   await valDbReady;
@@ -2234,16 +2243,25 @@ async function testTenantApiKey(req,provider){
     throw e;
   }
 }
-function platformKeyFallbackAllowed(){
-  return DEMO_MODE || /^(1|true|yes)$/i.test(String(process.env.VAL_ALLOW_PLATFORM_KEY_FALLBACK||process.env.VAL_ADMIN_ALLOW_PLATFORM_KEY_FALLBACK||''));
+function platformKeyFallbackAllowed(provider=''){
+  const explicit=String(process.env.VAL_ALLOW_PLATFORM_KEY_FALLBACK||process.env.VAL_ADMIN_ALLOW_PLATFORM_KEY_FALLBACK||'').trim();
+  if(DEMO_MODE || /^(1|true|yes)$/i.test(explicit)) return true;
+  if(/^(0|false|no)$/i.test(explicit)) return false;
+  const p=String(provider||'').toLowerCase();
+  if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
+  return false;
 }
 async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
   const p=tenantApiKeyProvider(provider);
   if(!p) return fallback||'';
   const tenantKey=await getTenantApiKeySecret(p.providerId).catch(e=>{console.error(`Tenant API key read failed for ${p.providerId}:`,e.message);return '';});
-  if(tenantKey){console.log(`[tenant-key] ${sourceLabel} using tenant vault key for ${p.providerId}`);return tenantKey;}
+  if(tenantKey&&tenantApiKeyLooksValid(p.providerId,tenantKey)){console.log(`[tenant-key] ${sourceLabel} using tenant vault key for ${p.providerId}`);return tenantKey;}
+  if(tenantKey&&!tenantApiKeyLooksValid(p.providerId,tenantKey)){
+    console.warn(`[tenant-key] ${sourceLabel} ignoring invalid tenant vault key for ${p.providerId}`);
+    await updateTenantApiKeyStatus(p.providerId,'invalid',{errorMessage:'Stored key does not match expected provider key format.'}).catch(()=>{});
+  }
   const legacy=await (async()=>{const row=await getIntegrationCredential(p.providerId,'api_key');const encrypted=row?.encrypted_value||row?.encryptedValue;return encrypted?decryptSecret(encrypted):'';})().catch(e=>{console.error(`Legacy integration credential read failed for ${p.providerId}:`,e.message);return '';});
-  if(legacy){console.log(`[tenant-key] ${sourceLabel} using legacy tenant credential for ${p.providerId}`);return legacy;}
+  if(legacy&&tenantApiKeyLooksValid(p.providerId,legacy)){console.log(`[tenant-key] ${sourceLabel} using legacy tenant credential for ${p.providerId}`);return legacy;}
   if(allowPlatformFallback&&fallback){console.log(`[tenant-key] ${sourceLabel} using platform/demo fallback for ${p.providerId}`);return fallback;}
   return '';
 }
@@ -2518,6 +2536,390 @@ async function dbQuery(sql,params){
     return {rows:[],rowCount:0};
   }
 }
+function railwayFix(variableName, redeploy=true){
+  return `Railway → Your Baby VAL project → Variables → Add ${variableName}${redeploy?' → Redeploy':''}`;
+}
+function envStatus({name,present,misconfigured=false,controls,fix}){
+  return {
+    name,
+    status:present?(misconfigured?'Misconfigured':'Connected'):'Missing',
+    controls,
+    howToFix:fix || railwayFix(name),
+    redeployRequired:true
+  };
+}
+function missingEnvNames(names){
+  return names.filter(name=>!process.env[name]);
+}
+function setupHealthPayload(){
+  const googleMissing=missingEnvNames(['GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','GOOGLE_REDIRECT_URI']);
+  const microsoftMissing=missingEnvNames(['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET','MICROSOFT_REDIRECT_URI']);
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    items:[
+      envStatus({name:'DATABASE_URL',present:!!process.env.DATABASE_URL,controls:'Postgres storage for chats, Dashboard Studio settings, OAuth tokens, tasks, transcripts, and memory.',fix:'Railway → Your Baby VAL project → Add or attach Postgres → confirm DATABASE_URL exists in Variables → Redeploy'}),
+      envStatus({name:'OPENAI_API_KEY',present:!!OPENAI_KEY,controls:'Baby VAL chat and AI responses.',fix:'Railway → Your Baby VAL project → Variables → Add OPENAI_API_KEY → Redeploy Baby VAL'}),
+      envStatus({name:'GOOGLE_CLIENT_ID',present:!!GOOGLE_CLIENT_ID,misconfigured:!!GOOGLE_CLIENT_ID&&!validGoogleClientId(),controls:'Google OAuth for Gmail and Google Calendar.',fix:'Railway → Your Baby VAL project → Variables → Add GOOGLE_CLIENT_ID → Redeploy'}),
+      envStatus({name:'GOOGLE_CLIENT_SECRET',present:!!GOOGLE_CLIENT_SECRET,controls:'Google OAuth secret for Gmail and Google Calendar.',fix:railwayFix('GOOGLE_CLIENT_SECRET')}),
+      envStatus({name:'GOOGLE_REDIRECT_URI',present:!!CONFIGURED_GOOGLE_REDIRECT_URI,controls:'Google OAuth callback URL. Use https://your-app.up.railway.app/auth/callback.',fix:railwayFix('GOOGLE_REDIRECT_URI')}),
+      envStatus({name:'MICROSOFT_CLIENT_ID',present:!!MICROSOFT_CLIENT_ID,controls:'Microsoft OAuth for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_ID')}),
+      envStatus({name:'MICROSOFT_CLIENT_SECRET',present:!!MICROSOFT_CLIENT_SECRET,controls:'Microsoft OAuth secret for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_SECRET')}),
+      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')})
+    ],
+    google:{
+      connected:false,
+      configured:googleMissing.length===0,
+      missingVariables:googleMissing,
+      setupMessage:googleMissing.length?`Google cannot connect yet because these Railway variables are missing: ${googleMissing.join(', ')}. Add them in Railway → Variables, then redeploy.`:'Google is configured. Use Connect Google or Reconnect Google to authorize Gmail and Google Calendar.'
+    },
+    microsoft:{
+      connected:false,
+      configured:microsoftMissing.length===0,
+      missingVariables:microsoftMissing,
+      setupMessage:microsoftMissing.length?`Microsoft cannot connect yet because these Railway variables are missing: ${microsoftMissing.join(', ')}. Add them in Railway → Variables, then redeploy.`:'Microsoft is configured. Use Connect Microsoft or Reconnect Microsoft to authorize Outlook Mail and Outlook Calendar.'
+    }
+  };
+}
+const DEFAULT_BABY_STUDIO_SETTINGS = {
+  babyValName:'',
+  welcomeMessage:'',
+  accentColor:'#C4963A',
+  aboutMe:'',
+  preferredTone:'',
+  importantLinks:[],
+  shownCards:['today','chat','calendar','tasks','integrations'],
+  simpleInstructions:''
+};
+const TEACH_VAL_VOICE_PROMPT = `You are VAL, a warm, intelligent Executive AI and Chief of Staff.
+
+This is your first conversation with your owner.
+
+Your job is not just to collect information. Your job is to begin understanding how this person thinks.
+
+Be warm, thoughtful, encouraging, and organized.
+
+Let the user ramble. Do not rush them. Do not interrupt long answers. If they tell a story, listen for the meaning behind the story.
+
+When they share something important, acknowledge it naturally and summarize what you heard.
+
+Use phrases like:
+- That is helpful context.
+- I can tell this matters to you.
+- Let me make sure I understood that.
+- That sounds like an important lesson.
+- I will make sure this is remembered.
+- Tell me more about that.
+
+Avoid exaggerated praise.
+Avoid therapy language.
+Avoid corporate hype.
+Avoid sounding like a questionnaire.
+
+You are helping this person teach VAL who they are, what they are building, who matters, what lessons they have learned, how they prefer to work, and where they need support.
+
+Move through these topics naturally:
+1. Who they are
+2. What they do
+3. Their company or work
+4. Their current projects
+5. Their most important people
+6. Lessons learned
+7. Frustrations and blockers
+8. Preferences and working style
+9. Missing processes or messy areas
+10. What they want VAL to help with first
+
+After each major topic, briefly summarize what you heard and ask if you understood correctly.
+
+At the end, thank them and explain that the next step is bringing in context from their existing ChatGPT or Claude account.`;
+const TEACH_VAL_KNOWLEDGE_CARDS = [
+  {category:'current_projects',title:'Current Projects',prompt:'Based on everything you know from our conversations, list my current active projects. For each project, include what it is, why it matters, current status, key people involved, open loops, frustrations, and what seems most important next.'},
+  {category:'important_people',title:'Important People',prompt:'Based on everything you know from our conversations, list the people, clients, partners, collaborators, mentors, team members, and important relationships I talk about most often. For each person, include who they are, how they are connected to me, what matters about the relationship, any opportunities, any concerns, and what a future executive assistant should remember.'},
+  {category:'lessons_learned',title:'Lessons Learned',prompt:'Based on everything you know from our conversations, list the lessons I have learned the hard way. Include the story or situation behind each lesson, what I learned, and what rule or reminder my future AI should remember.'},
+  {category:'work_preferences',title:'Work Preferences',prompt:'Based on everything you know from our conversations, describe how I prefer to work, communicate, make decisions, manage time, receive reminders, handle meetings, write, delegate, and use AI.'},
+  {category:'frustrations',title:'Frustrations and Repeated Problems',prompt:'Based on everything you know from our conversations, list the frustrations, blockers, messy processes, repeated problems, or operational gaps I bring up most often. Include what appears to cause them and what kind of support would help.'},
+  {category:'opportunities',title:'Opportunities',prompt:'Based on everything you know from our conversations, list the business opportunities, ideas, offers, partnerships, products, services, or strategies that still seem relevant. Include why each one matters and what the next step might be.'},
+  {category:'things_to_remember',title:'Things To Never Forget',prompt:'Based on everything you know from our conversations, what should a personal executive AI remember about me forever? Include values, preferences, context, important stories, priorities, relationships, and anything that would help it support me well.'}
+];
+function teachValDefaultState(){
+  return {
+    stage:'welcome',
+    progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
+    voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started'},
+    testMode:true,
+    lastError:'',
+    webhookAttempts:[]
+  };
+}
+function normalizeTeachValState(state={}){
+  return {...teachValDefaultState(),...(state||{}),progress:{...teachValDefaultState().progress,...((state||{}).progress||{})},voiceInterview:{...teachValDefaultState().voiceInterview,...((state||{}).voiceInterview||{})}};
+}
+function teachValCardFor(category){
+  return TEACH_VAL_KNOWLEDGE_CARDS.find(c=>c.category===category)||null;
+}
+function teachValStoreArray(name){
+  const store=valStore();
+  store[name]=Array.isArray(store[name])?store[name]:[];
+  return {store,rows:store[name]};
+}
+function teachValSessionRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    status:row.status||'draft',
+    state:normalizeTeachValState(row.state_json||row.stateJson||row.state||{}),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
+  };
+}
+function teachValImportRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    category:row.category,
+    promptUsed:row.prompt_used||row.promptUsed||'',
+    rawResponse:row.raw_response||row.rawResponse||'',
+    structuredSummary:row.structured_json||row.structuredSummary||{},
+    extractedItems:row.items_json||row.extractedItems||[],
+    reviewed:!!row.reviewed,
+    status:row.status||'Waiting for Paste',
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
+  };
+}
+function teachValMemoryRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    category:row.category,
+    title:row.title||'',
+    summary:row.summary||'',
+    source:row.source||'teach_val_onboarding',
+    confidence:Number(row.confidence||0.72),
+    data:row.data_json||row.data||{},
+    createdAt:row.created_at||row.createdAt||new Date().toISOString()
+  };
+}
+async function getTeachValSession(id=''){
+  await valDbReady;
+  if(pgPool){
+    const args=[tenantId(),currentUserId()];
+    let where='tenant_id=$1 and user_id=$2';
+    if(id){args.push(id);where+=' and id=$3';}
+    const r=await dbQuery(`select * from teach_val_onboarding_sessions where ${where} order by updated_at desc limit 1`,args);
+    return teachValSessionRow(r.rows[0]);
+  }
+  const {rows}=teachValStoreArray('teachValOnboardingSessions');
+  const found=rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&(!id||r.id===id)).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
+  return teachValSessionRow(found);
+}
+async function saveTeachValSession(session){
+  await valDbReady;
+  const clean=teachValSessionRow(session);
+  clean.updatedAt=new Date().toISOString();
+  if(pgPool){
+    await dbQuery(`insert into teach_val_onboarding_sessions (id,tenant_id,user_id,status,state_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()),now())
+      on conflict (id) do update set status=excluded.status,state_json=excluded.state_json,updated_at=now()`,[clean.id,clean.tenantId,clean.userId,clean.status,JSON.stringify(clean.state),clean.createdAt]);
+    return getTeachValSession(clean.id);
+  }
+  const {store,rows}=teachValStoreArray('teachValOnboardingSessions');
+  const idx=rows.findIndex(r=>r.id===clean.id);
+  const row={id:clean.id,tenantId:clean.tenantId,userId:clean.userId,status:clean.status,state:clean.state,createdAt:clean.createdAt,updatedAt:clean.updatedAt};
+  if(idx>=0)rows[idx]=row;else rows.unshift(row);
+  saveValStore(store);
+  return teachValSessionRow(row);
+}
+async function listTeachValImports(sessionId){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from teach_val_imports where tenant_id=$1 and user_id=$2 and session_id=$3 order by created_at asc',[tenantId(),currentUserId(),sessionId]);
+    return r.rows.map(teachValImportRow);
+  }
+  const {rows}=teachValStoreArray('teachValImports');
+  return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValImportRow);
+}
+async function saveTeachValImport(record){
+  await valDbReady;
+  const row=teachValImportRow({...record,id:record.id||uuid('tvi'),tenantId:tenantId(),userId:currentUserId(),updatedAt:new Date().toISOString()});
+  if(pgPool){
+    await dbQuery(`insert into teach_val_imports (id,session_id,tenant_id,user_id,category,prompt_used,raw_response,structured_json,items_json,reviewed,status,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,coalesce($12::timestamptz,now()),now())
+      on conflict (id) do update set prompt_used=excluded.prompt_used,raw_response=excluded.raw_response,structured_json=excluded.structured_json,items_json=excluded.items_json,reviewed=excluded.reviewed,status=excluded.status,updated_at=now()`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.promptUsed,row.rawResponse,JSON.stringify(row.structuredSummary||{}),JSON.stringify(row.extractedItems||[]),row.reviewed,row.status,row.createdAt]);
+    return teachValImportRow((await dbQuery('select * from teach_val_imports where id=$1',[row.id])).rows[0]);
+  }
+  const {store,rows}=teachValStoreArray('teachValImports');
+  const idx=rows.findIndex(r=>r.id===row.id);
+  const stored={id:row.id,sessionId:row.sessionId,tenantId:row.tenantId,userId:row.userId,category:row.category,promptUsed:row.promptUsed,rawResponse:row.rawResponse,structuredSummary:row.structuredSummary,extractedItems:row.extractedItems,reviewed:row.reviewed,status:row.status,createdAt:row.createdAt,updatedAt:row.updatedAt};
+  if(idx>=0)rows[idx]=stored;else rows.push(stored);
+  saveValStore(store);
+  return teachValImportRow(stored);
+}
+async function listTeachValMemory(sessionId){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from teach_val_memory_items where tenant_id=$1 and user_id=$2 and session_id=$3 order by created_at desc',[tenantId(),currentUserId(),sessionId]);
+    return r.rows.map(teachValMemoryRow);
+  }
+  const {rows}=teachValStoreArray('teachValMemoryItems');
+  return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValMemoryRow);
+}
+async function insertTeachValMemoryItems(items){
+  await valDbReady;
+  const saved=[];
+  for(const item of items){
+    const row=teachValMemoryRow({...item,id:item.id||uuid('tvm'),tenantId:tenantId(),userId:currentUserId(),createdAt:new Date().toISOString()});
+    if(pgPool){
+      await dbQuery(`insert into teach_val_memory_items (id,session_id,tenant_id,user_id,category,title,summary,source,confidence,data_json,created_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+        on conflict (id) do nothing`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.title,row.summary,row.source,row.confidence,JSON.stringify(row.data||{})]);
+    }else{
+      const {store,rows}=teachValStoreArray('teachValMemoryItems');
+      rows.push({id:row.id,sessionId:row.sessionId,tenantId:row.tenantId,userId:row.userId,category:row.category,title:row.title,summary:row.summary,source:row.source,confidence:row.confidence,data:row.data,createdAt:row.createdAt});
+      saveValStore(store);
+    }
+    saved.push(row);
+  }
+  return saved;
+}
+async function teachValStateResponse(sessionId=''){
+  let session=await getTeachValSession(sessionId);
+  if(!session){
+    session=await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:teachValDefaultState(),createdAt:new Date().toISOString()});
+  }
+  const imports=await listTeachValImports(session.id);
+  const memory=await listTeachValMemory(session.id);
+  return {ok:true,session,cards:TEACH_VAL_KNOWLEDGE_CARDS,imports,memory,voicePrompt:TEACH_VAL_VOICE_PROMPT};
+}
+function normalizeTeachValItems(category,items=[]){
+  return (Array.isArray(items)?items:[]).map((item,idx)=>{
+    const title=String(item.title||item.name||item.projectName||item.personName||item.lessonTitle||item.preferenceType||`${category} ${idx+1}`).trim();
+    const summary=String(item.summary||item.lesson||item.ruleGoingForward||item.howValShouldUseThis||item.nextStep||'').trim();
+    return {
+      id:item.id||uuid('tvi_item'),
+      title:title||`${category} ${idx+1}`,
+      summary:summary||String(JSON.stringify(item)).slice(0,260),
+      category:item.category||category,
+      source:item.source||'external_ai_import',
+      confidence:Number(item.confidence||0.72),
+      include_in_val:item.include_in_val!==false,
+      data:item
+    };
+  }).slice(0,40);
+}
+async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
+  const card=teachValCardFor(category)||{};
+  if(!String(rawResponse||'').trim()) throw new Error('Paste the response from ChatGPT or Claude before saving this card.');
+  const system=[
+    'Extract calm, useful onboarding memory for an executive AI.',
+    'Return strict JSON only.',
+    'Do not invent facts. Use short summaries. Preserve source attribution.',
+    'Required JSON shape: {"summary":{}, "items":[{"title":"","summary":"","category":"","source":"external_ai_import","confidence":0.0,"include_in_val":true,"data":{}}]}',
+    'Categories should stay close to: projects, relationships, lessons, preferences, frustrations, process_gaps, opportunities, things_to_remember.'
+  ].join('\n');
+  const user=`Knowledge card: ${card.title||category}\nPrompt used:\n${promptUsed||card.prompt||''}\n\nRaw response:\n${String(rawResponse).slice(0,30000)}`;
+  const raw=await callValModel({system,user,maxTokens:2600,temperature:0.1,json:true}).catch(()=>null);
+  let parsed=null;
+  try{parsed=raw?JSON.parse(raw):null;}catch(e){}
+  if(!parsed){
+    const chunks=String(rawResponse).split(/\n{2,}|(?:^|\n)\s*[-*]\s+/).map(x=>x.trim()).filter(Boolean).slice(0,12);
+    parsed={summary:{fallback:true,card:card.title||category},items:chunks.map(x=>({title:x.split(/[.:]/)[0].slice(0,90)||card.title||category,summary:x.slice(0,500),category,source:'external_ai_import',confidence:0.48,include_in_val:true,data:{text:x}}))};
+  }
+  parsed.items=normalizeTeachValItems(category,parsed.items);
+  return parsed;
+}
+async function summarizeTeachValInterview(transcript){
+  const clean=String(transcript||'').trim();
+  if(!clean) throw new Error('Add the voice interview transcript before saving this stage.');
+  const system='Summarize a Teach VAL About You onboarding interview. Return strict JSON with keys: executive_profile, company_context, current_projects, important_relationships, lessons_learned, frustrations, preferences, process_gaps, priorities, raw_transcript.';
+  const raw=await callValModel({system,user:clean.slice(0,32000),maxTokens:2400,temperature:0.12,json:true}).catch(()=>null);
+  try{return raw?JSON.parse(raw):{raw_transcript:clean};}catch(e){return {executive_profile:{summary:clean.slice(0,800)},raw_transcript:clean};}
+}
+function teachValCompiledPayload({session,imports,items,testMode=false}){
+  const voice=session.state.voiceInterview||{};
+  const by=(name)=>items.filter(i=>i.category===name||i.data?.category===name);
+  return {
+    source:'teach_val_onboarding',
+    client_id:tenantId(),
+    user_id:currentUserId(),
+    created_at:new Date().toISOString(),
+    test_mode:!!testMode,
+    voice_interview:{transcript:voice.transcript||'',summary:voice.summary||{},duration:voice.duration||null},
+    external_ai_imports:imports.map(i=>({category:i.category,prompt_used:i.promptUsed,raw_response:i.rawResponse,structured_summary:i.structuredSummary,reviewed:!!i.reviewed})),
+    knowledge_cards:{
+      executive_profile:voice.summary?.executive_profile||{},
+      company_context:voice.summary?.company_context||{},
+      projects:by('current_projects').concat(by('projects')),
+      relationships:by('important_people').concat(by('relationships')),
+      lessons:by('lessons_learned').concat(by('lessons')),
+      preferences:by('work_preferences').concat(by('preferences')),
+      frustrations:by('frustrations'),
+      process_gaps:by('process_gaps'),
+      opportunities:by('opportunities'),
+      things_to_remember:by('things_to_remember')
+    }
+  };
+}
+function normalizeBabyStudioSettings(input={}){
+  const links=Array.isArray(input.importantLinks)?input.importantLinks:String(input.importantLinks||'').split('\n').map(line=>{
+    const parts=line.split('|');
+    return {label:String(parts[0]||'').trim(),url:String(parts[1]||parts[0]||'').trim()};
+  });
+  const shownCards=Array.isArray(input.shownCards)?input.shownCards:String(input.shownCards||'').split(',');
+  return {
+    babyValName:String(input.babyValName||input.name||'').trim().slice(0,120),
+    welcomeMessage:String(input.welcomeMessage||'').trim().slice(0,500),
+    accentColor:String(input.accentColor||'#C4963A').trim().slice(0,40),
+    aboutMe:String(input.aboutMe||'').trim().slice(0,4000),
+    preferredTone:String(input.preferredTone||'').trim().slice(0,1000),
+    importantLinks:links.filter(l=>l.label||l.url).slice(0,12),
+    shownCards:shownCards.map(x=>String(x||'').trim()).filter(Boolean).slice(0,20),
+    simpleInstructions:String(input.simpleInstructions||'').trim().slice(0,4000)
+  };
+}
+async function getBabyStudioSettings(){
+  const fallback={...DEFAULT_BABY_STUDIO_SETTINGS,babyValName:CLIENT_CONFIG.brandName,welcomeMessage:`Welcome back, ${CLIENT_CONFIG.clientName}.`};
+  if(DEMO_MODE) return fallback;
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select settings_json from baby_val_studio_settings where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),currentUserId()]);
+    return {...fallback,...(r.rows[0]?.settings_json||{})};
+  }
+  const store=valStore();
+  return {...fallback,...(store.babyValStudioSettings||{})};
+}
+async function saveBabyStudioSettings(input){
+  const settings=normalizeBabyStudioSettings(input);
+  if(!settings.babyValName) throw new Error('Could not save because required field is missing: Baby VAL name.');
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into baby_val_studio_settings (tenant_id,user_id,settings_json,updated_at)
+      values ($1,$2,$3,now())
+      on conflict (tenant_id,user_id) do update set settings_json=excluded.settings_json,updated_at=now()`,[tenantId(),currentUserId(),JSON.stringify(settings)]);
+    return settings;
+  }
+  if(process.env.DATABASE_URL) throw new Error('Could not save because Postgres is unavailable. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
+  const store=valStore();store.babyValStudioSettings=settings;saveValStore(store);return settings;
+}
+async function babyStudioPromptContext(){
+  const s=await getBabyStudioSettings().catch(()=>null);
+  if(!s) return '';
+  return [
+    `Baby VAL name: ${s.babyValName||CLIENT_CONFIG.brandName}`,
+    s.aboutMe?`About the user: ${s.aboutMe}`:'',
+    s.preferredTone?`Preferred tone: ${s.preferredTone}`:'',
+    s.simpleInstructions?`Simple instructions for how Baby VAL should help: ${s.simpleInstructions}`:''
+  ].filter(Boolean).join('\n');
+}
 async function initValDb(){
   if(!pgPool) return;
   await dbQuery(`
@@ -2645,6 +3047,51 @@ async function initValDb(){
       raw_text text not null,
       importance integer not null default 1,
       metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
+    create table if not exists baby_val_studio_settings (
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      settings_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id)
+    );
+    create table if not exists teach_val_onboarding_sessions (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      status text not null default 'draft',
+      state_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists teach_val_imports (
+      id text primary key,
+      session_id text not null references teach_val_onboarding_sessions(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      category text not null,
+      prompt_used text,
+      raw_response text,
+      structured_json jsonb not null default '{}',
+      items_json jsonb not null default '[]',
+      reviewed boolean not null default false,
+      status text not null default 'Waiting for Paste',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists teach_val_memory_items (
+      id text primary key,
+      session_id text not null references teach_val_onboarding_sessions(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      category text not null,
+      title text,
+      summary text,
+      source text not null default 'teach_val_onboarding',
+      confidence numeric not null default 0.72,
+      data_json jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
     create table if not exists val_oauth_tokens (
@@ -3021,11 +3468,45 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       completed_at timestamptz
     );
+    create table if not exists book_conversation_sessions (
+      id text primary key,
+      book_project_id text not null references book_projects(id) on delete cascade,
+      chapter_id text references book_chapters(id) on delete set null,
+      user_id text not null default 'default',
+      tenant_id text not null default 'default',
+      status text not null default 'active',
+      mode text not null default 'interview',
+      current_goal text,
+      last_question text,
+      questions_asked jsonb not null default '[]',
+      story_beats jsonb not null default '[]',
+      emotional_threads jsonb not null default '[]',
+      scene_details jsonb not null default '[]',
+      humor_threads jsonb not null default '[]',
+      reader_takeaways jsonb not null default '[]',
+      rewrite_direction text,
+      readiness_score integer not null default 0,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists book_conversation_turns (
+      id text primary key,
+      session_id text not null references book_conversation_sessions(id) on delete cascade,
+      role text not null,
+      content text not null,
+      input_type text not null default 'text',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists tenant_feature_flags_tenant_idx on tenant_feature_flags(tenant_id,feature_key);
     create index if not exists dashboard_change_requests_tenant_idx on dashboard_change_requests(tenant_id,created_at desc);
     create index if not exists tenant_dashboard_studio_overrides_tenant_idx on tenant_dashboard_studio_overrides(tenant_id,active_deployment_id);
+    create index if not exists teach_val_sessions_lookup_idx on teach_val_onboarding_sessions(tenant_id,user_id,updated_at desc);
+    create index if not exists teach_val_imports_lookup_idx on teach_val_imports(tenant_id,user_id,session_id,category);
+    create index if not exists teach_val_memory_lookup_idx on teach_val_memory_items(tenant_id,user_id,category,created_at desc);
     create index if not exists tenant_api_keys_lookup_idx on tenant_api_keys(tenant_id,provider,status);
     create index if not exists tenant_provider_approvals_lookup_idx on tenant_provider_approvals(tenant_id,provider,status);
     create index if not exists val_transcripts_user_created_idx on val_transcripts(user_id,created_at desc);
@@ -3044,6 +3525,8 @@ async function initValDb(){
     create index if not exists book_chapters_project_idx on book_chapters(book_project_id,chapter_number);
     create index if not exists chapter_versions_chapter_idx on chapter_versions(chapter_id,version_number desc);
     create index if not exists rewrite_jobs_chapter_idx on rewrite_jobs(chapter_id,created_at desc);
+    create index if not exists book_conversation_sessions_lookup_idx on book_conversation_sessions(tenant_id,user_id,book_project_id,chapter_id,status,updated_at desc);
+    create index if not exists book_conversation_turns_session_idx on book_conversation_turns(session_id,created_at);
     create index if not exists drafts_lookup_idx on drafts(tenant_id,user_id,status,created_at desc);
     create index if not exists val_templates_lookup_idx on val_templates(tenant_id,user_id,template_key,is_active);
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
@@ -3229,6 +3712,8 @@ function statusPayload(){
       ghlConfigured:!!(GHL_KEY&&GHL_LOC),
       ghlMissing:[GHL_KEY?'':'GHL_KEY/GHL_API_KEY',GHL_LOC?'':'GHL_LOC/GHL_LOCATION_ID'].filter(Boolean),
       openAiConfigured:!!OPENAI_KEY,
+      openAiRuntimeFallbackAllowed:platformKeyFallbackAllowed('openai'),
+      openAiTenantKeyRequired:/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||'')),
       databaseConfigured:!!process.env.DATABASE_URL,
       googleConfigured:!!(GOOGLE_CLIENT_ID&&GOOGLE_CLIENT_SECRET),
       microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),
@@ -3331,9 +3816,161 @@ app.get('/api/auth/me',async(req,res)=>{
 app.use(requireAuth);
 app.get('/api/config',async(req,res)=>{
   const studioOverride=await getTenantDashboardStudioOverride().catch(()=>null);
-  res.json({...CLIENT_CONFIG,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
+  const babyStudio=await getBabyStudioSettings().catch(()=>null);
+  const configuredName=babyStudio?.babyValName||CLIENT_CONFIG.brandName;
+  res.json({...CLIENT_CONFIG,brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
 });
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
+app.get('/api/setup-health',async(req,res)=>{
+  const payload=setupHealthPayload();
+  const [google,microsoft]=await Promise.all([
+    getGoogleConnectionStatus(GOOGLE_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:GOOGLE_SCOPES})),
+    loadOAuthTokens('microsoft').catch(()=>null)
+  ]);
+  payload.google.connected=!!google.connected;
+  payload.google.error=google.error||'';
+  payload.google.missingScopes=google.missingScopes||[];
+  payload.microsoft.connected=!!microsoft?.refresh_token;
+  res.json(payload);
+});
+app.get('/api/baby-val-studio/settings',async(req,res)=>{
+  try{res.json({ok:true,settings:await getBabyStudioSettings()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/baby-val-studio/settings',async(req,res)=>{
+  try{res.json({ok:true,settings:await saveBabyStudioSettings(req.body||{}),message:'Saved'});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/teach-val/onboarding',async(req,res)=>{
+  try{res.json(await teachValStateResponse(req.query.sessionId||''));}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/start',async(req,res)=>{
+  try{
+    const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
+    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'voice_interview',testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    const state=normalizeTeachValState(session.state);
+    state.stage=state.stage==='welcome'?'voice_interview':state.stage;
+    state.progress.welcome='Reviewed';
+    state.progress.voice_interview=state.progress.voice_interview==='Not Started'?'Waiting for Paste':state.progress.voice_interview;
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/teach-val/onboarding/:id',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    session.state=normalizeTeachValState({...session.state,...(req.body.state||{})});
+    if(req.body.stage)session.state.stage=String(req.body.stage);
+    if(req.body.testMode!==undefined)session.state.testMode=!!req.body.testMode;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/interview',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const transcript=String(req.body.transcript||'').trim();
+    if(!transcript)return res.status(400).json({ok:false,error:'Add the voice interview transcript before saving this stage.'});
+    const summary=req.body.summary&&typeof req.body.summary==='object'?req.body.summary:await summarizeTeachValInterview(transcript);
+    const state=normalizeTeachValState(session.state);
+    state.voiceInterview={transcript,summary,duration:req.body.duration||null,status:'Imported'};
+    state.progress.voice_interview='Imported';
+    state.stage='current_projects';
+    session.state=state;
+    await saveTeachValSession(session);
+    await saveTeachValImport({sessionId:session.id,category:'voice_interview',promptUsed:TEACH_VAL_VOICE_PROMPT,rawResponse:transcript,structuredSummary:summary,extractedItems:[],reviewed:true,status:'Imported'});
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const category=String(req.params.category||'').trim();
+    const card=teachValCardFor(category);
+    if(!card)return res.status(404).json({ok:false,error:'Knowledge Card not found.'});
+    const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
+    if(!rawResponse)return res.status(400).json({ok:false,error:'Paste the response from ChatGPT or Claude before saving this card.'});
+    const promptUsed=String(req.body.promptUsed||card.prompt);
+    const structured=await extractTeachValKnowledge({category,rawResponse,promptUsed});
+    const existing=(await listTeachValImports(session.id)).find(i=>i.category===category);
+    await saveTeachValImport({id:existing?.id,sessionId:session.id,category,promptUsed,rawResponse,structuredSummary:structured.summary||{},extractedItems:structured.items||[],reviewed:false,status:'Imported'});
+    const state=normalizeTeachValState(session.state);
+    state.progress[category]='Imported';
+    state.stage=category;
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const target=(await listTeachValImports(session.id)).find(i=>i.id===req.params.importId);
+    if(!target)return res.status(404).json({ok:false,error:'Knowledge Card import not found.'});
+    target.extractedItems=(target.extractedItems||[]).map(item=>String(item.id)===String(req.params.itemId)?{...item,include_in_val:req.body.include_in_val!==false}:item);
+    target.reviewed=true;
+    target.status='Reviewed';
+    await saveTeachValImport(target);
+    const state=normalizeTeachValState(session.state);
+    state.progress[target.category]='Reviewed';
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const imports=await listTeachValImports(session.id);
+    const included=imports.flatMap(i=>(i.extractedItems||[]).filter(item=>item.include_in_val!==false).map(item=>({
+      sessionId:session.id,
+      category:item.category||i.category,
+      title:item.title||item.name||i.category,
+      summary:item.summary||'',
+      source:item.source||'teach_val_onboarding',
+      confidence:Number(item.confidence||0.72),
+      data:{...item.data,itemId:item.id,importId:i.id,promptUsed:i.promptUsed,sourceCategory:i.category}
+    })));
+    const testMode=req.body.testMode!==undefined?!!req.body.testMode:!!session.state.testMode;
+    const payload=teachValCompiledPayload({session,imports,items:included,testMode});
+    const state=normalizeTeachValState(session.state);
+    let webhook={status:testMode?'test_mode':'not_configured',message:testMode?'Test mode: payload built but not sent to production memory.':'No external onboarding webhook configured. Stored in local VAL onboarding memory.'};
+    if(!testMode){
+      await insertTeachValMemoryItems(included);
+      const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
+      if(url){
+        try{
+          const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+          const body=await readJsonResponse(r).catch(()=>({}));
+          webhook={status:r.ok?'sent':'failed',statusCode:r.status,message:r.ok?'Webhook sent successfully.':(body.error||body.message||`Webhook failed with status ${r.status}`)};
+          if(!r.ok) throw new Error(webhook.message);
+        }catch(e){
+          webhook={status:'failed',message:e.message};
+          state.lastError='Webhook failed: '+e.message;
+          state.webhookAttempts=(state.webhookAttempts||[]).concat({at:new Date().toISOString(),status:'failed',message:e.message});
+          session.state=state;await saveTeachValSession(session);
+          return res.status(502).json({ok:false,error:'Teach VAL could not send the onboarding webhook. '+e.message,payload,webhook});
+        }
+      }
+    }
+    state.stage='complete';
+    state.progress.review='Reviewed';
+    state.progress.send_to_val=testMode?'Tested':'Sent to VAL';
+    state.webhookAttempts=(state.webhookAttempts||[]).concat({at:new Date().toISOString(),...webhook});
+    session.status=testMode?'test_completed':'committed';
+    session.state=state;
+    await saveTeachValSession(session);
+    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status},success:webhook.status!=='failed'}).catch(()=>{});
+    res.json({ok:true,payload,webhook,memory:testMode?[]:await listTeachValMemory(session.id),state});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
 app.get('/api/dashboard-studio',requireDashboardStudioAccess,async(req,res)=>{
   try{
@@ -4226,7 +4863,7 @@ app.post('/api/analyze-image',async(req,res)=>{
     const {base64,mediaType,prompt}=req.body;
     if(!base64||!mediaType) return res.status(400).json({error:'Missing base64 or mediaType'});
     const openAiKey=await resolveOpenAIKey();
-    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    if(!openAiKey) return res.status(500).json({error:'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'});
     const r=await fetch('https://api.openai.com/v1/chat/completions',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -4257,7 +4894,7 @@ app.post('/api/generate-image',async(req,res)=>{
     const {prompt,size,quality}=req.body;
     if(!prompt) return res.status(400).json({error:'Missing prompt'});
     const openAiKey=await resolveOpenAIKey();
-    if(!openAiKey) return res.status(500).json({error:'OPENAI_KEY not configured'});
+    if(!openAiKey) return res.status(500).json({error:'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'});
     const r=await fetch('https://api.openai.com/v1/images/generations',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
@@ -4461,7 +5098,8 @@ app.get('/api/google/calendar', async (req, res) => {
 });
 
 app.get('/auth/microsoft',(req,res)=>{
-  if(!MICROSOFT_CLIENT_ID||!MICROSOFT_REDIRECT_URI) return res.status(500).send('Microsoft OAuth is not configured.');
+  const missing=missingEnvNames(['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET','MICROSOFT_REDIRECT_URI']);
+  if(missing.length) return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Microsoft cannot connect yet</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>Microsoft cannot connect yet because these Railway variables are missing: ${missing.map(escapeHtml).join(', ')}.</p><p>Add them in Railway → Variables, then redeploy.</p><p><strong>Redirect URI should be:</strong><br><code>${escapeHtml((CLIENT_CONFIG.publicBaseUrl||baseUrl(req)).replace(/\/$/,'')+'/auth/microsoft/callback')}</code></p></div>`);
   const url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize?'+new URLSearchParams({
     client_id:MICROSOFT_CLIENT_ID,
     response_type:'code',
@@ -6059,16 +6697,7 @@ function deepgramTtsModel(){
   return deepgramModelName(DEEPGRAM_TTS_MODEL)||'aura-2-cora-en';
 }
 app.get('/api/val/voice/status',(req,res)=>{
-  res.json({
-    ok:true,
-    provider:'deepgram',
-    ttsConfigured:!!DEEPGRAM_API_KEY,
-    ttsModel:deepgramTtsModel(),
-    voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,
-    sttModel:DEEPGRAM_STT_MODEL,
-    sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,
-    ttsProxy:true
-  });
+  res.json({ok:true,provider:'deepgram',ttsConfigured:!!DEEPGRAM_API_KEY,ttsModel:deepgramTtsModel(),voiceResponseTemperature:VAL_VOICE_RESPONSE_TEMPERATURE,sttModel:DEEPGRAM_STT_MODEL,sttEndpointingMs:DEEPGRAM_STT_ENDPOINTING_MS,ttsProxy:true});
 });
 app.post('/api/val/tts',async(req,res)=>{
   try{
@@ -6080,15 +6709,8 @@ app.post('/api/val/tts',async(req,res)=>{
     const timer=setTimeout(()=>controller.abort(),20000);
     let dg;
     try{
-      dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{
-        method:'POST',
-        headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},
-        body:JSON.stringify({text}),
-        signal:controller.signal
-      });
-    }finally{
-      clearTimeout(timer);
-    }
+      dg=await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(model)}`,{method:'POST',headers:{'Authorization':`Token ${DEEPGRAM_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal});
+    }finally{clearTimeout(timer);}
     const contentType=dg.headers.get('content-type')||'audio/mpeg';
     const buffer=Buffer.from(await dg.arrayBuffer());
     if(!dg.ok){
@@ -6097,12 +6719,7 @@ app.post('/api/val/tts',async(req,res)=>{
       console.warn('[voice] Deepgram TTS failed',dg.status,detail);
       return res.status(dg.status).json({ok:false,error:`Deepgram TTS failed (${dg.status})`,detail});
     }
-    res.set({
-      'Content-Type':contentType.includes('audio/')?contentType:'audio/mpeg',
-      'Cache-Control':'no-store, max-age=0',
-      'X-VAL-TTS-Provider':'deepgram',
-      'X-VAL-TTS-Model':model
-    });
+    res.set({'Content-Type':contentType.includes('audio/')?contentType:'audio/mpeg','Cache-Control':'no-store, max-age=0','X-VAL-TTS-Provider':'deepgram','X-VAL-TTS-Model':model});
     res.send(buffer);
   }catch(e){
     const aborted=e.name==='AbortError';
@@ -8399,6 +9016,7 @@ function micheleBookConfig(){
 function gentleBookError(error){
   console.error('[michele-book]',error);
   const msg=String(error&&error.message||error||'');
+  if(/OPENAI_KEY not configured/i.test(msg)) return 'VAL’s writing brain is not connected yet. Please ask Jessa to check the OpenAI connection in Settings → API Keys & Connections or Railway.';
   if(/This edit would greatly increase|Selected chapter was not found|looks like notes or a chat transcript|Reading\/output doc matches|MICHELE_READING_COPY_DOC_ID/i.test(msg)) return msg;
   return 'I need one small setup fix before I can continue the book. Jessa can see the details in the admin panel.';
 }
@@ -8416,13 +9034,45 @@ function isMicheleChapterHeading(el){
   return /^\s*Chapter\s*#?\s*\d+\s*:/i.test(text)&&text.length<=220;
 }
 function parseMicheleChapterHeading(text){
-  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  const raw=String(text||'').trim();
+  const clean=raw.replace(/\s+/g,' ').trim();
   if(/^\s*Prologue\b/i.test(clean)){
-    const title=clean.replace(/^\s*Prologue\s*:?\s*/i,'').trim();
-    return {number:0,title:title||'Prologue',heading:clean,label:title?`Prologue: ${title}`:'Prologue'};
+    const split=splitMicheleHeadingTitleAndBody(clean.replace(/^\s*Prologue\s*:?\s*/i,''),'Prologue');
+    const title=split.title||'Prologue';
+    return {number:0,title,heading:title,label:title?`Prologue: ${title}`:'Prologue',bodyRemainder:split.bodyRemainder};
   }
   const m=clean.match(/^Chapter\s*#?\s*(\d+)\s*:?\s*(.*)$/i);
-  return {number:m?Number(m[1]):0,title:m?(m[2]||clean).trim():clean,heading:clean,label:m?`Chapter ${Number(m[1])}${m[2]?`: ${m[2].trim()}`:''}`:clean};
+  const number=m?Number(m[1]):0;
+  const split=splitMicheleHeadingTitleAndBody(m?(m[2]||clean):clean,number);
+  const title=split.title;
+  const heading=m?`Chapter #${number}${title?`: ${title}`:''}`:title;
+  return {number,title:title||`Chapter ${number}`,heading,label:m?`Chapter ${number}${title?`: ${title}`:''}`:title,bodyRemainder:split.bodyRemainder};
+}
+function splitMicheleHeadingTitleAndBody(value,number=''){
+  let text=String(value||'').replace(/\s+/g,' ').trim();
+  text=text.replace(/^[:\-–—\s]+/,'').trim();
+  let bodyRemainder='';
+  const bodyMarkers=[
+    /\s+(There[’']?s|There is|There are)\s+/i,
+    /\s+(You can[’']?t|I was|I remember|At that point|The intake process|Instead, I said|A few weeks later)\s+/i,
+    /\s+(Chapter\s+#?\d+\s*:)\s+/i
+  ];
+  for(const re of bodyMarkers){
+    const m=text.match(re);
+    if(m&&m.index>18){bodyRemainder=text.slice(m.index).trim();text=text.slice(0,m.index).trim();break;}
+  }
+  if(text.length>120){
+    const sentence=text.match(/^(.{35,120}?)(?:[.!?]\s|$)/);
+    const titleEnd=(sentence&&sentence[1]?sentence[1]:text.slice(0,110)).trim();
+    bodyRemainder=[text.slice(titleEnd.length).trim(),bodyRemainder].filter(Boolean).join(' ').trim();
+    text=titleEnd;
+  }
+  text=text.replace(/\(\s+/g,'(').replace(/\s+\)/g,')').replace(/\s{2,}/g,' ').trim();
+  if(!text&&Number(number)===0) text='Prologue';
+  return {title:text,bodyRemainder};
+}
+function sanitizeMicheleChapterTitle(value,number=''){
+  return splitMicheleHeadingTitleAndBody(value,number).title;
 }
 function googleDocTextBetweenElements(elements,startIndex,endIndex){
   return (elements||[])
@@ -8440,7 +9090,9 @@ function parseMicheleDocChapters(doc){
     const startIndex=Number(h.el.startIndex||1);
     const bodyStartIndex=Number(h.el.endIndex||startIndex+1);
     const endIndex=next?Number(next.startIndex||googleDocEndIndex(doc)):googleDocEndIndex(doc);
-    return {chapterNumber:h.number,chapterTitle:h.title||h.heading,googleDocSectionMarker:h.heading,startIndex,bodyStartIndex,endIndex,currentText:googleDocTextBetweenElements(elements,bodyStartIndex,endIndex),status:i===0?'in_progress':'draft'};
+    const bodyText=googleDocTextBetweenElements(elements,bodyStartIndex,endIndex);
+    const currentText=[h.bodyRemainder,bodyText].filter(Boolean).join('\n\n').trim();
+    return {chapterNumber:h.number,chapterTitle:h.title||h.heading,googleDocSectionMarker:h.heading,startIndex,bodyStartIndex,endIndex,currentText,status:i===0?'in_progress':'draft'};
   });
 }
 async function readGoogleDocRaw(documentId){
@@ -8588,7 +9240,277 @@ async function importMicheleMasterEdits({project,chapters,text,sourceTitle='Mast
   return {imported:true,count,sourceTitle};
 }
 function normalizeBookChapter(row){
-  return {id:row.id,bookProjectId:row.book_project_id||row.bookProjectId,chapterNumber:row.chapter_number??row.chapterNumber,chapterTitle:row.chapter_title||row.chapterTitle,googleDocSectionMarker:row.google_doc_section_marker||row.googleDocSectionMarker,currentText:row.current_text||row.currentText||'',status:row.status||'draft',lastSyncedAt:row.last_synced_at?row.last_synced_at.toISOString?.()||row.last_synced_at:row.lastSyncedAt||'',startIndex:row.start_index??row.startIndex,bodyStartIndex:row.body_start_index??row.bodyStartIndex,endIndex:row.end_index??row.endIndex};
+  const chapterNumber=row.chapter_number??row.chapterNumber;
+  const marker=row.google_doc_section_marker||row.googleDocSectionMarker;
+  const rawTitle=row.chapter_title||row.chapterTitle||'';
+  const title=sanitizeMicheleChapterTitle(rawTitle,chapterNumber)||sanitizeMicheleChapterTitle(String(marker||'').replace(/^\s*Chapter\s*#?\s*\d+\s*:?\s*/i,''),chapterNumber)||rawTitle;
+  return {id:row.id,bookProjectId:row.book_project_id||row.bookProjectId,chapterNumber,chapterTitle:title,googleDocSectionMarker:marker,currentText:row.current_text||row.currentText||'',status:row.status||'draft',lastSyncedAt:row.last_synced_at?row.last_synced_at.toISOString?.()||row.last_synced_at:row.lastSyncedAt||'',startIndex:row.start_index??row.startIndex,bodyStartIndex:row.body_start_index??row.bodyStartIndex,endIndex:row.end_index??row.endIndex};
+}
+function parseBookConversationJson(value,fallback){
+  if(value===undefined||value===null) return fallback;
+  if(Array.isArray(value)||typeof value==='object') return value;
+  try{return JSON.parse(String(value));}catch(_){return fallback;}
+}
+function normalizeBookConversationSession(row){
+  if(!row) return null;
+  const obj={
+    id:row.id,
+    bookProjectId:row.book_project_id||row.bookProjectId,
+    chapterId:row.chapter_id||row.chapterId||'',
+    userId:row.user_id||row.userId||'default',
+    tenantId:row.tenant_id||row.tenantId||'default',
+    status:row.status||'active',
+    mode:row.mode||'interview',
+    currentGoal:row.current_goal||row.currentGoal||'',
+    lastQuestion:row.last_question||row.lastQuestion||'',
+    questionsAsked:parseBookConversationJson(row.questions_asked??row.questionsAsked,[]),
+    storyBeats:parseBookConversationJson(row.story_beats??row.storyBeats,[]),
+    emotionalThreads:parseBookConversationJson(row.emotional_threads??row.emotionalThreads,[]),
+    sceneDetails:parseBookConversationJson(row.scene_details??row.sceneDetails,[]),
+    humorThreads:parseBookConversationJson(row.humor_threads??row.humorThreads,[]),
+    readerTakeaways:parseBookConversationJson(row.reader_takeaways??row.readerTakeaways,[]),
+    rewriteDirection:row.rewrite_direction||row.rewriteDirection||'',
+    readinessScore:Number((row.readiness_score??row.readinessScore)||0),
+    metadata:parseBookConversationJson(row.metadata_json??row.metadata,{})
+  };
+  obj.createdAt=row.created_at?row.created_at.toISOString?.()||row.created_at:row.createdAt||'';
+  obj.updatedAt=row.updated_at?row.updated_at.toISOString?.()||row.updated_at:row.updatedAt||'';
+  return obj;
+}
+function normalizeBookConversationTurn(row){
+  if(!row) return null;
+  return {
+    id:row.id,
+    sessionId:row.session_id||row.sessionId,
+    role:row.role,
+    content:row.content||'',
+    inputType:row.input_type||row.inputType||'text',
+    metadata:parseBookConversationJson(row.metadata_json??row.metadata,{}),
+    createdAt:row.created_at?row.created_at.toISOString?.()||row.created_at:row.createdAt||''
+  };
+}
+function publicBookConversationSession(session,turns=[]){
+  const s=normalizeBookConversationSession(session)||{};
+  return {
+    id:s.id,
+    chapterId:s.chapterId,
+    mode:s.mode,
+    lastQuestion:s.lastQuestion,
+    rewriteDirection:s.rewriteDirection,
+    readinessScore:s.readinessScore||0,
+    editorialMove:(s.metadata&&s.metadata.editorialMove)||'',
+    storyBeats:s.storyBeats||[],
+    emotionalThreads:s.emotionalThreads||[],
+    sceneDetails:s.sceneDetails||[],
+    humorThreads:s.humorThreads||[],
+    readerTakeaways:s.readerTakeaways||[],
+    turns:(turns||[]).map(normalizeBookConversationTurn).filter(Boolean).map(t=>({role:t.role,content:t.content,inputType:t.inputType,createdAt:t.createdAt})).slice(-12)
+  };
+}
+async function getOrCreateMicheleBookSession({project,chapter,mode='interview'}){
+  await valDbReady;
+  const projectId=bookProjectId(project);
+  const chapterId=chapter?.id||'';
+  const userId=currentUserId(),tenant=tenantId();
+  if(pgPool){
+    const existing=await dbQuery("select * from book_conversation_sessions where tenant_id=$1 and user_id=$2 and book_project_id=$3 and chapter_id=$4 and status='active' order by updated_at desc limit 1",[tenant,userId,projectId,chapterId]);
+    if(existing.rows[0]){
+      if(mode&&existing.rows[0].mode!==mode) await dbQuery('update book_conversation_sessions set mode=$1,updated_at=now() where id=$2',[mode,existing.rows[0].id]);
+      return normalizeBookConversationSession({...existing.rows[0],mode:mode||existing.rows[0].mode});
+    }
+    const id=uuid('bookchat');
+    await dbQuery('insert into book_conversation_sessions (id,book_project_id,chapter_id,user_id,tenant_id,mode,current_goal,metadata_json) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[id,projectId,chapterId,userId,tenant,mode||'interview','understand chapter direction before rewriting',JSON.stringify({chapterLabel:micheleChapterLabel(chapter)})]);
+    const created=await dbQuery('select * from book_conversation_sessions where id=$1',[id]);
+    return normalizeBookConversationSession(created.rows[0]);
+  }
+  const store=valStore(),rows=nextStoreArray(store,'bookConversationSessions');
+  let row=rows.filter(r=>r.tenantId===tenant&&r.userId===userId&&r.bookProjectId===projectId&&r.chapterId===chapterId&&r.status==='active').sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0];
+  if(!row){
+    row={id:uuid('bookchat'),bookProjectId:projectId,chapterId,userId,tenantId:tenant,status:'active',mode:mode||'interview',currentGoal:'understand chapter direction before rewriting',lastQuestion:'',questionsAsked:[],storyBeats:[],emotionalThreads:[],sceneDetails:[],humorThreads:[],readerTakeaways:[],rewriteDirection:'',readinessScore:0,metadata:{chapterLabel:micheleChapterLabel(chapter)},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    rows.push(row);
+  }else if(mode){row.mode=mode;row.updatedAt=new Date().toISOString();}
+  saveValStore(store);
+  return normalizeBookConversationSession(row);
+}
+async function listMicheleBookSessionTurns(sessionId,limit=24){
+  await valDbReady;
+  if(!sessionId) return [];
+  if(pgPool){
+    const r=await dbQuery('select * from book_conversation_turns where session_id=$1 order by created_at asc',[sessionId]);
+    return r.rows.map(normalizeBookConversationTurn).slice(-Math.max(1,limit));
+  }
+  return (valStore().bookConversationTurns||[]).filter(t=>t.sessionId===sessionId).sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||''))).map(normalizeBookConversationTurn).slice(-Math.max(1,limit));
+}
+async function appendMicheleBookTurn({sessionId,role,content,inputType='text',metadata={}}){
+  const text=String(content||'').trim();
+  if(!sessionId||!role||!text) return null;
+  const row={id:uuid('bookturn'),sessionId,role,content:text,inputType,metadata,createdAt:new Date().toISOString()};
+  if(pgPool) await dbQuery('insert into book_conversation_turns (id,session_id,role,content,input_type,metadata_json,created_at) values ($1,$2,$3,$4,$5,$6::jsonb,now())',[row.id,sessionId,role,text,inputType,JSON.stringify(metadata||{})]);
+  else{const store=valStore();nextStoreArray(store,'bookConversationTurns').push(row);saveValStore(store);}
+  return normalizeBookConversationTurn(row);
+}
+function mergeUniqueShort(existing=[],incoming=[],limit=12){
+  const out=[];
+  [...(Array.isArray(existing)?existing:[]),...(Array.isArray(incoming)?incoming:[])].forEach(v=>{
+    const text=String(v||'').replace(/\s+/g,' ').trim();
+    if(text&&!out.some(x=>x.toLowerCase()===text.toLowerCase())) out.push(text.length>260?text.slice(0,257).trim()+'…':text);
+  });
+  return out.slice(-limit);
+}
+async function updateMicheleBookSessionState(session,updates={}){
+  const current=normalizeBookConversationSession(session);
+  if(!current?.id) return current;
+  const next={
+    mode:updates.mode||current.mode||'interview',
+    currentGoal:updates.currentGoal??current.currentGoal,
+    lastQuestion:updates.lastQuestion??current.lastQuestion,
+    questionsAsked:mergeUniqueShort(current.questionsAsked,updates.questionsAsked||[],18),
+    storyBeats:mergeUniqueShort(current.storyBeats,updates.storyBeats||[],18),
+    emotionalThreads:mergeUniqueShort(current.emotionalThreads,updates.emotionalThreads||[],14),
+    sceneDetails:mergeUniqueShort(current.sceneDetails,updates.sceneDetails||[],14),
+    humorThreads:mergeUniqueShort(current.humorThreads,updates.humorThreads||[],12),
+    readerTakeaways:mergeUniqueShort(current.readerTakeaways,updates.readerTakeaways||[],12),
+    rewriteDirection:String((updates.rewriteDirection??current.rewriteDirection)||'').trim().slice(0,9000),
+    readinessScore:Math.max(0,Math.min(100,Number((updates.readinessScore??current.readinessScore)||0))),
+    metadata:Object.assign({},current.metadata||{},updates.metadata||{})
+  };
+  if(pgPool){
+    await dbQuery('update book_conversation_sessions set mode=$1,current_goal=$2,last_question=$3,questions_asked=$4::jsonb,story_beats=$5::jsonb,emotional_threads=$6::jsonb,scene_details=$7::jsonb,humor_threads=$8::jsonb,reader_takeaways=$9::jsonb,rewrite_direction=$10,readiness_score=$11,metadata_json=$12::jsonb,updated_at=now() where id=$13',[next.mode,next.currentGoal,next.lastQuestion,JSON.stringify(next.questionsAsked),JSON.stringify(next.storyBeats),JSON.stringify(next.emotionalThreads),JSON.stringify(next.sceneDetails),JSON.stringify(next.humorThreads),JSON.stringify(next.readerTakeaways),next.rewriteDirection,next.readinessScore,JSON.stringify(next.metadata),current.id]);
+  }else{
+    const store=valStore(),row=nextStoreArray(store,'bookConversationSessions').find(r=>r.id===current.id);
+    if(row) Object.assign(row,next,{updatedAt:new Date().toISOString()});
+    saveValStore(store);
+  }
+  return normalizeBookConversationSession(Object.assign({},current,next,{updatedAt:new Date().toISOString()}));
+}
+function micheleConversationStateInstruction(session,turns=[]){
+  const s=normalizeBookConversationSession(session)||{};
+  const recent=(turns||[]).slice(-12).map(t=>(t.role==='user'?'Michele':'VAL')+': '+String(t.content||'')).join('\n');
+  return [
+    s.rewriteDirection?`Accumulated rewrite direction:\n${s.rewriteDirection}`:'',
+    s.storyBeats?.length?`Story beats Michele surfaced:\n- ${s.storyBeats.join('\n- ')}`:'',
+    s.emotionalThreads?.length?`Emotional threads:\n- ${s.emotionalThreads.join('\n- ')}`:'',
+    s.sceneDetails?.length?`Scene details:\n- ${s.sceneDetails.join('\n- ')}`:'',
+    s.humorThreads?.length?`Humor threads:\n- ${s.humorThreads.join('\n- ')}`:'',
+    s.readerTakeaways?.length?`Reader takeaways:\n- ${s.readerTakeaways.join('\n- ')}`:'',
+    recent?`Recent conversation:\n${recent}`:''
+  ].filter(Boolean).join('\n\n');
+}
+function micheleConversationPlannerFallback({chapter,userMessage,session,turns=[]}){
+  const asked=(session?.questionsAsked||[]).concat((turns||[]).filter(t=>t.role==='assistant').map(t=>t.content));
+  const userTurns=(turns||[]).filter(t=>t.role==='user').length;
+  const readiness=Math.min(92,35+(userTurns*15));
+  const editorialMove=readiness>=78?'write':(userTurns===0?'reflect':'explore');
+  const question=micheleNextFallbackQuestion(chapter,userMessage,asked.map(content=>({role:'assistant',content})));
+  return {
+    reply:editorialMove==='write'?'I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.':question,
+    readyToRewrite:editorialMove==='write',
+    readinessScore:readiness,
+    editorialMove,
+    storyBeats:[userMessage],
+    emotionalThreads:[],
+    sceneDetails:[],
+    humorThreads:[],
+    readerTakeaways:[],
+    currentGoal:'continue gathering chapter-specific rewrite direction',
+    rewriteDirection:[session?.rewriteDirection||'',`Michele added: ${userMessage}`].filter(Boolean).join('\n'),
+    mode:'interview'
+  };
+}
+async function michelePlanBookConversationTurn({chapter,userMessage,session,turns=[],lastCompletedChapter=null,mode='interview',voiceMode=false,notes=[],voiceProfile=null}){
+  const selectedMode=micheleEditorialMode(userMessage,mode||session?.mode||'interview');
+  const fallback=micheleConversationPlannerFallback({chapter,userMessage,session,turns});
+  const asksForAnswer=micheleMessageRequestsEditorialAnswer(userMessage);
+  const priorUserTurns=(turns||[]).filter(t=>t.role==='user').length;
+  const sessionReadiness=Number(session?.readinessScore||0);
+  const likelyReady=sessionReadiness>=78||priorUserTurns>=4||/\b(write it|write this|rewrite|i'?m ready|go ahead|do it|create revision|all of the above)\b/i.test(userMessage);
+  try{
+    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.62:0.35,maxTokens:selectedMode==='interview'?900:1800,system:[
+      VAL_SYSTEM_PROMPT,
+      'You are the Conversation Layer for Michele Julian’s VAL book editor. You are not the Google Doc writer.',
+      'Michele is the person speaking. Be warm, intuitive, concrete, and conversational like an expert memoir coach.',
+      'You are not a question sequence. Choose one editorial move each turn: reflect, challenge, explore, or write.',
+      'Reflect means: start with a specific observation from the chapter or Michele’s last answer, then briefly test whether you are reading it correctly.',
+      'Challenge means: gently name where the scene, paragraph, emotional turn, or reader experience may not be landing yet.',
+      'Explore means: ask for one missing concrete detail, emotional truth, or reader-facing meaning from the exact thread Michele just raised.',
+      'Write means: stop asking and say you have enough to shape the revision. Invite only a final protection note, not another interview question.',
+      'The ideal style is: VAL notices something real; Michele responds; VAL follows that thread. No generic writing-class prompts.',
+      'Do not read the chapter aloud. Do not paste chapter text. Do not rewrite manuscript prose in this route.',
+      'Do not say “I hear you,” “Direction captured,” “Use this as rewrite direction,” or “Nothing has changed.”',
+      'If Michele asks for your thoughts, answer her thought first in 1-3 sentences, then ask one natural follow-up question.',
+      'If Michele answers a prior question, absorb her answer and decide whether to reflect, challenge, explore, or write. Do not automatically ask another question.',
+      'When Michele gives an answer, do not jump straight to the next question. First give one grounded sentence naming why her answer is useful.',
+      'Then give one grounded sentence naming how that answer will shape the edit: scene, humor, vulnerability, pacing, transition, reader understanding, or emotional center.',
+      'Then, only if editorialMove is reflect/challenge/explore, ask one next question. This should feel like live editorial feedback, not a quiz.',
+      'Good pattern: “That helps because ____. I can use that to ____. What I still want to understand is ____?”',
+      'Never ask Michele to choose between humor, scene, emotional truth, transitions, or reader takeaway. Assume all of those layers are needed.',
+      'If Michele says “all of the above,” treat that as permission to layer all relevant editorial improvements and ask for the next missing detail.',
+      'If Michele asks what chapter to work on, mention last completed and current chapter briefly, then ask whether to continue the current chapter, move to the next, or work on transitions/book-wide threads.',
+      'Begin each new chapter conversation with an observation, not a bare question: “I noticed…” or “I think the center may be…” then ask if that reading is right.',
+      'Do not over-interview. If readiness is 75 or higher, prefer editorialMove=write unless there is a serious missing fact.',
+      'If likelyReady is true, choose editorialMove=write unless Michele explicitly asks to keep talking.',
+      'Ask only one question when editorialMove is reflect, challenge, or explore. Ask no new substantive question when editorialMove is write.',
+      'Return strict JSON with keys: reply, editorialMove, readyToRewrite, readinessScore, currentGoal, storyBeats, emotionalThreads, sceneDetails, humorThreads, readerTakeaways, rewriteDirection.',
+      'reply must be under 115 words in voice mode and under 190 words otherwise. It must not include manuscript prose.',
+      'editorialMove must be one of reflect, challenge, explore, write.',
+      'rewriteDirection should accumulate the actual editing instruction for the eventual chapter rewrite.'
+    ].join('\n'),user:JSON.stringify({
+      mode:selectedMode,
+      voiceMode:!!voiceMode,
+      asksForEditorialAnswer:asksForAnswer,
+      likelyReady,
+      currentReadinessScore:sessionReadiness,
+      priorUserTurnCount:priorUserTurns,
+      currentChapter:{label:micheleChapterLabel(chapter),chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle,contextSummary:micheleChapterContextSummary(chapter),safeSignals:micheleWordSignals(chapter,12),excerpt:String(chapter.currentText||'').slice(0,9000)},
+      lastCompletedChapter:lastCompletedChapter?{chapterNumber:lastCompletedChapter.chapterNumber,chapterTitle:lastCompletedChapter.chapterTitle}:null,
+      session:{
+        lastQuestion:session?.lastQuestion||'',
+        questionsAsked:session?.questionsAsked||[],
+        storyBeats:session?.storyBeats||[],
+        emotionalThreads:session?.emotionalThreads||[],
+        sceneDetails:session?.sceneDetails||[],
+        humorThreads:session?.humorThreads||[],
+        readerTakeaways:session?.readerTakeaways||[],
+        rewriteDirection:session?.rewriteDirection||''
+      },
+      recentTurns:(turns||[]).slice(-10).map(t=>({role:t.role,content:String(t.content||'').slice(0,900)})),
+      micheleLatestMessage:userMessage,
+      editorNotes:(notes||[]).map(n=>String(n.note_text||n.noteText||'').slice(0,1600)).slice(0,3),
+      authorVoiceProfile:voiceProfile||null
+    })}),10000);
+    const parsed=JSON.parse(raw);
+    let reply=sanitizeMicheleEditorReply(parsed.reply||'').trim();
+    const priorTurns=(turns||[]).map(t=>({role:t.role,content:t.content}));
+    if(!reply||micheleConversationTextLooksLikeManuscript(reply,chapter)||micheleReplyRepeatsPriorQuestion(reply,priorTurns)){
+      reply=fallback.reply;
+    }
+    let editorialMove=String(parsed.editorialMove||fallback.editorialMove||'explore').toLowerCase().trim();
+    if(!['reflect','challenge','explore','write'].includes(editorialMove)) editorialMove=fallback.editorialMove||'explore';
+    let readinessScore=Math.max(0,Math.min(100,Number(parsed.readinessScore||fallback.readinessScore||0)));
+    if(likelyReady&&readinessScore<78) readinessScore=82;
+    const readyToRewrite=!!parsed.readyToRewrite || readinessScore>=78 || editorialMove==='write';
+    if(readyToRewrite&&editorialMove!=='write') editorialMove='write';
+    if(readyToRewrite&&/\?\s*$/.test(reply)&&!asksForAnswer){
+      reply='I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.';
+    }
+    if(voiceMode) reply=micheleVoiceSizedReply(reply);
+    return {
+      reply,
+      editorialMove,
+      readyToRewrite,
+      readinessScore,
+      currentGoal:String(parsed.currentGoal||fallback.currentGoal||'continue the chapter conversation').slice(0,300),
+      storyBeats:compactMicheleBullets(parsed.storyBeats||fallback.storyBeats),
+      emotionalThreads:compactMicheleBullets(parsed.emotionalThreads||fallback.emotionalThreads),
+      sceneDetails:compactMicheleBullets(parsed.sceneDetails||fallback.sceneDetails),
+      humorThreads:compactMicheleBullets(parsed.humorThreads||fallback.humorThreads),
+      readerTakeaways:compactMicheleBullets(parsed.readerTakeaways||fallback.readerTakeaways),
+      rewriteDirection:String(parsed.rewriteDirection||fallback.rewriteDirection||userMessage).trim(),
+      mode:selectedMode
+    };
+  }catch(e){
+    return fallback;
+  }
 }
 async function upsertMicheleChapters(project,chapters){
   const projectId=bookProjectId(project);
@@ -8752,11 +9674,113 @@ async function updateMicheleChapterText(chapter,afterText){
 }
 function compactMicheleBullets(value){
   const arr=Array.isArray(value)?value:String(value||'').split(/\n+/);
-  return arr.map(x=>String(x||'').replace(/^[-*•\d.\s]+/,'').trim()).filter(Boolean).slice(0,3);
+  return arr.map(x=>String(x||'').replace(/^[-*•\d.\s]+/,'').replace(/\s+/g,' ').trim()).filter(Boolean).map(x=>x.length>210?x.slice(0,207).trim()+'…':x).slice(0,3);
+}
+function safeMicheleChapter(chapter){
+  if(!chapter) return null;
+  return {id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:sanitizeMicheleChapterTitle(chapter.chapterTitle,chapter.chapterNumber),status:chapter.status,lastSyncedAt:chapter.lastSyncedAt};
+}
+function micheleWordSignals(chapter,limit=5){
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'');
+  const text=String(chapter?.currentText||'');
+  const stop=new Set('about after again all also and are because been before being between chapter could does every from have into just like more much only other over really should some that their there these they this through under very what when where which while with without would your you were was the then than its her she his him not but for'.split(' '));
+  const counts=new Map();
+  const titleWords=new Set(title.toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[]);
+  for(const word of (title+' '+text).toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[]){
+    const clean=word.replace(/^'+|'+$/g,'');
+    if(clean.length<4||stop.has(clean)) continue;
+    counts.set(clean,(counts.get(clean)||0)+(titleWords.has(clean)?8:1));
+  }
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([word])=>word);
+}
+function micheleChapterSpecificSignals(chapter,limit=8){
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const title=sanitizeMicheleChapterTitle(chapter?.chapterTitle||chapter?.chapter_title||'',chapter?.chapterNumber||chapter?.chapter_number);
+  const candidates=[];
+  (text.match(/[“"][^”"]{4,70}[”"]/g)||[]).forEach(q=>candidates.push(q.replace(/[“”"]/g,'').trim()));
+  const phrasePatterns=[
+    /\belite dating service\b/i,
+    /\bpolished website\b/i,
+    /\bglowing testimonials\b/i,
+    /\bprofessional matchmaker\b/i,
+    /\bresume of heartbreaks\b/i,
+    /\bgrown-up fairy tale\b/i,
+    /\bintake process\b/i,
+    /\bnoisy bars\b/i,
+    /\bwatered-down cocktails\b/i,
+    /\bmetaphorical\b[^.]{0,45}\bhorse\b/i,
+    /\bback of their\b[^.]{0,45}\bhorse\b/i,
+    /\bcommitment\b/i,
+    /\bsoulmates?\b/i
+  ];
+  phrasePatterns.forEach(re=>{const m=text.match(re);if(m)candidates.push(m[0]);});
+  const titleWords=title.toLowerCase().match(/[a-z][a-z'-]{3,}/g)||[];
+  if(titleWords.length)candidates.push(title);
+  micheleWordSignals(chapter,10).forEach(w=>candidates.push(w));
+  const out=[];
+  candidates.forEach(v=>{
+    const clean=String(v||'').replace(/\s+/g,' ').trim();
+    if(clean.length>=4&&!out.some(x=>x.toLowerCase()===clean.toLowerCase())) out.push(clean);
+  });
+  return out.slice(0,limit);
+}
+function micheleQuestionSafeSignal(value){
+  let text=String(value||'').replace(/[“”"]/g,'').replace(/\s+/g,' ').trim();
+  if(!text) return '';
+  if(/[.!?]/.test(text)){
+    const parts=text.split(/[.!?]/).map(p=>p.trim()).filter(Boolean);
+    text=parts.sort((a,b)=>b.length-a.length)[0]||text;
+  }
+  text=text.replace(/^(we|i|you|they)\s+/i,'').trim();
+  if(text.length>42) text=text.slice(0,42).replace(/\s+\S*$/,'').trim();
+  return text;
+}
+function micheleChapterEditorialSnapshot(chapter){
+  const label=micheleChapterLabel(chapter);
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const words=text.split(/\s+/).filter(Boolean).length;
+  const title=sanitizeMicheleChapterTitle(chapter?.chapterTitle||chapter?.chapter_title||'this chapter',chapter?.chapterNumber||chapter?.chapter_number);
+  const signals=micheleChapterSpecificSignals(chapter,8);
+  const main=signals[0]||title||'the central scene';
+  const second=signals[1]||signals[2]||'the emotional turn';
+  const questionMain=micheleQuestionSafeSignal(main)||'this moment';
+  const hasHumor=/\b(funny|laugh|shit|ridiculous|absurd|joke|trick|wild|you can.t make this|universe)\b/i.test(text+' '+title);
+  const hasBody=/\b(body|pain|knee|thigh|heart|breath|floor|ice|shoe|sneaker|scarf|doctor|hospital)\b/i.test(text+' '+title);
+  const hasSpiritual=/\b(god|universe|faith|miracle|spirit|perfectly timed|divine)\b/i.test(text+' '+title);
+  const hasDialogue=/["“”]/.test(text)||/\b(said|asked|told|called)\b/i.test(text);
+  const chapterSummary=`${label} is circling the promise of ${main}${second&&second!==main?` and the deeper ache underneath ${second}`:''}. The edit should keep the scene funny and specific while clarifying what Michele was really hoping would be solved.`;
+  const strengths=[
+    `The ${main} setup gives the reader a clear, memorable doorway into the chapter.`,
+    hasHumor?`Lines around ${second} give Michele room to be funny before the vulnerability appears.`:`The voice can stay conversational and self-aware without becoming over-polished.`,
+    hasDialogue?'The quoted language gives the scene texture and lets the reader hear the promise being sold.':`The chapter has a clear emotional thread VAL can deepen around ${second}.`
+  ];
+  const opportunities=[
+    hasDialogue?`Use the service’s own language, especially ${second}, to sharpen what Michele wanted to believe.`:`Add one or two grounded beats around ${main} so the reader can see the moment before reflection.`,
+    `Clarify the turn from ${main} to the private longing underneath it so the emotional meaning feels earned.`,
+    words>2500?'Break the revision into cleaner scene-to-reflection movements so the chapter does not feel overstuffed.':`Strengthen the transition from the fairy-tale promise into what Michele now understands.`
+  ];
+  const question=hasBody
+    ? `What did your body know in this moment before your mind caught up?`
+    : hasSpiritual
+      ? `Where should the reader feel the ${questionMain} mystery without being told what to believe?`
+      : `What did the promise of ${questionMain} make you want to believe was finally possible?`;
+  return {chapterSummary, strengths, opportunities, recommends:[
+    `Preserve Michele’s natural voice while making ${main} feel more immediate on the page.`,
+    `Layer humor, scene, emotional truth, reader understanding, and transitions together instead of choosing only one lane.`,
+    `Use Michele’s answer to sharpen the chapter’s emotional movement without over-polishing it.`
+  ], question};
+}
+function micheleChapterShortSummary(chapter){
+  return micheleChapterEditorialSnapshot(chapter).chapterSummary;
+}
+function micheleDefaultStrengths(chapter){
+  return micheleChapterEditorialSnapshot(chapter).strengths;
+}
+function micheleDefaultOpportunities(chapter){
+  return micheleChapterEditorialSnapshot(chapter).opportunities;
 }
 function micheleChapterSpecificQuestion(chapter){
-  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
-  return `I’m going to help “${title}” do five things at once: make the reader laugh, place them inside the scene, reveal the emotional truth underneath it, make the insight clear without preaching, and smooth the bridge from story to meaning. What detail from this moment still feels impossible to forget?`;
+  return micheleNextFallbackQuestion(chapter,'',[]);
 }
 function micheleLayeredEditorialFrameworkText(){
   return [
@@ -8770,9 +9794,9 @@ function micheleLayeredEditorialFrameworkText(){
 }
 function micheleChapterContextSummary(chapter){
   const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
-  const firstSentence=(text.match(/^[^.!?]{30,260}[.!?]/)||[text.slice(0,220)])[0]||'';
   const title=String(chapter?.chapterTitle||chapter?.chapter_title||'this chapter').trim();
-  return `VAL has read “${title}.” The chapter already has lived-scene material to work from${firstSentence?`, beginning with: “${firstSentence.slice(0,220)}”`:'.'} The next conversation should deepen the existing material instead of asking Michele to explain what is already on the page.`;
+  const words=text.split(/\s+/).filter(Boolean).length;
+  return `VAL has read “${title}”${words?` (${words} words)`:''}. Refer to the chapter briefly, then ask one useful question. Do not quote or read the manuscript aloud before the conversation begins.`;
 }
 function micheleInformedChapterQuestion(chapter,userMessage=''){
   const msg=String(userMessage||'').toLowerCase();
@@ -8809,13 +9833,13 @@ function micheleFindChapterForMessage(message,chapters=[],fallbackChapter=null){
   return fallbackChapter||list[0]||null;
 }
 function micheleEditorialMode(message,explicitMode=''){
-  const mode=String(explicitMode||'').toLowerCase().trim();
-  if(['interview','editor','proofreading','proofread','overview'].includes(mode)) return mode==='proofread'?'proofreading':mode;
   const msg=String(message||'').toLowerCase();
   if(/\b(proofread|spell|spelling|grammar|punctuation|typo|technical)\b/.test(msg)) return 'proofreading';
   if(/\b(overview|summary|summarize|recap|what happens|key takeaways)\b/.test(msg)) return 'overview';
+  if(/\b(read|thoughts?|what do you think|your take|reaction|review|edit|editor|developmental|confusing|flow|arc|strengths|opportunities)\b/.test(msg)) return 'editor';
   if(/\b(ask me|questions|question me|interview|voice conversation|draw out|pull out)\b/.test(msg)) return 'interview';
-  if(/\b(read|thoughts|review|edit|editor|developmental|confusing|flow|arc|strengths|opportunities)\b/.test(msg)) return 'editor';
+  const mode=String(explicitMode||'').toLowerCase().trim();
+  if(['interview','editor','proofreading','proofread','overview'].includes(mode)) return mode==='proofread'?'proofreading':mode;
   return 'interview';
 }
 function micheleModeSections(mode){
@@ -8844,7 +9868,24 @@ function sanitizeMicheleEditorReply(text){
     .replace(/\n{3,}/g,'\n\n');
   return out.trim();
 }
-function micheleFastConversationReply(chapter,userMessage,{mode='interview',lastCompletedChapter=null}={}){
+function micheleChapterExcerpt(text,offset=0,len=260){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(!clean) return '';
+  const start=Math.max(0,Math.min(clean.length,offset));
+  const chunk=clean.slice(start,start+len);
+  return chunk.replace(/^\S{0,30}\s/,'').trim();
+}
+function micheleDeterministicChapterThoughts(chapter,userMessage=''){
+  const label=micheleChapterLabel(chapter);
+  const text=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  const asksProof=/proofread|spell|grammar|punctuation|typo/i.test(userMessage);
+  if(asksProof){
+    return `${label}\n\nProofreading notes\nI would preserve your conversational rhythm first, then clean only what distracts the reader: repeated filler, accidental tense shifts, punctuation that makes a sentence hard to follow, and any line breaks that chop up the joke or emotion.\n\nWhat I would not do\nI would not over-polish this into formal memoir voice. The power is in how spoken and alive it feels.\n\nNext useful question\nIs there any sentence in this chapter that still sounds like “writer voice” instead of you talking?`;
+  }
+  const lengthNote=text.length>9000?'There is enough material here that I would work in sections, not try to solve the whole chapter in one sweep.':'There is enough material here to make a meaningful pass without making you explain the whole story again.';
+  return `${label}\n\nMy thoughts\nThis chapter should not be treated like raw material anymore. It already has a living pulse. The job now is to make the reader feel guided through it without sanding off your humor, bite, or emotional edge.\n\nWhat is working\nThe chapter has lived-scene energy. I would keep the reader close to the physical moment first, then let the deeper meaning arrive after they are already inside it.\n\nWhere I would deepen it\nI would look for the places where the story moves quickly past the body-level truth: what you knew, what you ignored, what felt funny at the time, and what it cost later.\n\nThe editorial move\nLayer humor, scene, emotional truth, reader understanding, and transitions at the same time. The reader should laugh or lean in first, then realize the deeper truth has been landing the whole time.\n\nWhat I would watch\n${lengthNote}\n\nNext useful question\nWhat is the part of this chapter you most want the reader to still be thinking about after they close the book?`;
+}
+function micheleFastConversationReply(chapter,userMessage,{mode='interview',lastCompletedChapter=null,conversation=[]}={}){
   const msg=String(userMessage||'').toLowerCase();
   const label=micheleChapterLabel(chapter);
   const lastLabel=lastCompletedChapter?micheleChapterLabel(lastCompletedChapter):'No chapter has been completed in this workflow yet';
@@ -8859,10 +9900,24 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
   const unsure=/not sure|unsure|don't know|confused|stuck|maybe/.test(msg);
   const ready=/ready|go ahead|rewrite|do it|yes|that feels right/.test(msg)&&!unsure;
   if(mode==='overview'||(asksRead&&/overview|summary|thoughts|read/.test(msg))){
+    if(/thoughts|what do you think|your take|reaction|review|edit/.test(msg)){
+      return {
+        reply:micheleDeterministicChapterThoughts(chapter,userMessage),
+        readyToRewrite:false,
+        suggestedInstruction:`Use the editor's chapter thoughts for ${label}: preserve Michele’s voice while strengthening scene, emotional truth, reader clarity, humor, and transitions.`
+      };
+    }
     return {
       reply:`${label}\n\nOverview\nThis chapter is ready for a focused read. I can give you the story summary, emotional arc, themes, lessons, and places where the reader may need more grounding.\n\nNext question\nDo you want the overview to stay big-picture, or should I also point out where the chapter may need more scene, humor, or connective tissue?`,
       readyToRewrite:false,
       suggestedInstruction:`Review ${label} for story overview, emotional arc, reader clarity, and proofreading issues before rewriting.`
+    };
+  }
+  if(mode==='editor'||/thoughts|what do you think|your take|reaction|review|edit/.test(msg)){
+    return {
+      reply:micheleDeterministicChapterThoughts(chapter,userMessage),
+      readyToRewrite:false,
+      suggestedInstruction:`Use the editor's chapter thoughts for ${label}: preserve Michele’s voice while strengthening scene, emotional truth, reader clarity, humor, and transitions.`
     };
   }
   if(mode==='proofreading'){
@@ -8873,9 +9928,9 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
     };
   }
   let focus='layer humor, scene building, emotional truth, reader understanding, and transitions together while protecting Michele’s voice';
-  let question=micheleInformedChapterQuestion(chapter,userMessage);
-  if(wantsAll||wantsWarm||wantsEmotion||wantsStructure||wantsHumor){focus='apply all five editorial layers together: humor, scene building, emotional truth, reader understanding, and transitions';question=micheleInformedChapterQuestion(chapter,userMessage);}
-  else if(asksQuestions){focus='interview Michele from the actual chapter content, one useful question at a time, while applying all five editorial layers by default';question=micheleInformedChapterQuestion(chapter,userMessage);}
+  let question=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+  if(wantsAll||wantsWarm||wantsEmotion||wantsStructure||wantsHumor){focus='apply all five editorial layers together: humor, scene building, emotional truth, reader understanding, and transitions';question=micheleNextFallbackQuestion(chapter,userMessage,conversation);}
+  else if(asksQuestions){focus='interview Michele from the actual chapter content, one useful question at a time, while applying all five editorial layers by default';question=micheleNextFallbackQuestion(chapter,userMessage,conversation);}
   else if(asksNext){focus='help you choose the next editorial target from the current chapter context';question=`${lastLabel}. We are currently on ${label}. What part of the book do you want to work on next: this chapter, the next chapter, chapter transitions, voice consistency, emotional arc, humor/levity, or another thread?`;}
   else if(unsure){focus='use the chapter itself to find the smallest useful next question without making Michele choose an editorial lane';question=micheleInformedChapterQuestion(chapter,userMessage);}
   return {
@@ -8884,6 +9939,89 @@ function micheleFastConversationReply(chapter,userMessage,{mode='interview',last
     suggestedInstruction:`Rewrite ${label} to ${focus}. Preserve Michele’s memoir voice, humor, directness, and factual sequence. Do not sound generic or overly polished.`
   };
 }
+function micheleFallbackQuestionBank(chapter,userMessage=''){
+  const text=String(chapter?.currentText||'').toLowerCase();
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'').toLowerCase();
+  const num=Number(chapter?.chapterNumber??chapter?.chapter_number);
+  const msg=String(userMessage||'').toLowerCase();
+  let bank=[
+    'What detail from that moment still feels impossible to forget?',
+    'What did you know in your body before you were ready to admit it in your mind?',
+    'What part of this scene should feel funny before it starts to hurt?',
+    'What does the reader need to understand here that you never understood then?',
+    'Where does this chapter need more of your real voice, not the cleaned-up version?',
+    'What sentence or moment in this chapter still feels too polite?',
+    'What happened right before this scene that would help the reader feel more grounded?',
+    'What happened right after this moment that the reader needs to feel the cost of it?',
+    'What is the line you would say out loud to a friend if you were telling this story over coffee?'
+  ];
+  const chapterSpecific=[];
+  if(num===0||/\bprologue\b/.test(title)) chapterSpecific.push('What promise should the prologue make to the reader about the kind of story they are entering?');
+  if(/sneaker|shoe|universe|trick/.test(title+text)) chapterSpecific.push('What tiny physical detail from that moment makes the whole thing feel real again?');
+  if(/scarf|ice|accident/.test(title+text)) chapterSpecific.push('Where should the reader first feel that something is off, even before you say it plainly?');
+  if(/mother|mom|father|dad|family|child|girl/.test(title+text)) chapterSpecific.push('What did younger you need someone in that scene to understand?');
+  if(/hospital|doctor|body|pain|sick|diagnos|surgery/.test(title+text)) chapterSpecific.push('What did your body understand before the room caught up?');
+  if(/love|date|marriage|husband|boyfriend|relationship/.test(title+text)) chapterSpecific.push('What part of the relationship should feel charming before the truth underneath it appears?');
+  if(/god|universe|faith|miracle|spirit/.test(title+text)) chapterSpecific.push('Where should the reader feel the mystery without being told what to believe?');
+  if(chapterSpecific.length){
+    const seed=Math.abs(String(title||num||text.slice(0,40)).split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0));
+    const rotated=chapterSpecific.slice(seed%chapterSpecific.length).concat(chapterSpecific.slice(0,seed%chapterSpecific.length));
+    bank=rotated.concat(bank);
+  }else{
+    const seed=Math.abs(String(title||num||text.slice(0,40)).split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0));
+    bank=bank.slice(seed%bank.length).concat(bank.slice(0,seed%bank.length));
+  }
+  if(/body|felt|feel|feeling|emotion|heart|truth/.test(msg)) return [bank[1],bank[4],bank[7],...bank];
+  if(/funny|humor|laugh|joke/.test(msg)) return [bank[2],bank[8],bank[5],...bank];
+  if(/reader|lesson|understand|meaning/.test(msg)) return [bank[3],bank[7],bank[0],...bank];
+  if(/detail|scene|sensory|see|remember/.test(msg)||/floor|shoe|sneaker|scarf|ice|accident|universe/.test(text)) return [bank[0],bank[6],bank[1],...bank];
+  return bank;
+}
+function micheleNextFallbackQuestion(chapter,userMessage='',conversation=[]){
+  const used=(Array.isArray(conversation)?conversation:[])
+    .map(t=>String(t?.content||'').replace(/\s+/g,' ').trim().toLowerCase())
+    .filter(Boolean);
+  const questions=micheleFallbackQuestionBank(chapter,userMessage);
+  return questions.find(q=>!used.some(u=>u.includes(q.toLowerCase()))) || 'What is the next thing this chapter needs to tell the truth more cleanly?';
+}
+function micheleMessageRequestsEditorialAnswer(message=''){
+  return /\b(read|thoughts?|what do you think|your take|reaction|overview|summary|summarize|review|proofread|spell|grammar|edit|editor|developmental|confusing|flow|arc|strengths|opportunities|what next|next chapter|work on next|which chapter|chapter transitions|transition)\b/i.test(String(message||''));
+}
+function micheleConversationTextLooksLikeManuscript(reply,chapter){
+  const clean=String(reply||'').replace(/\s+/g,' ').trim();
+  if(clean.length>1800) return true;
+  const chapterText=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  if(!chapterText||clean.length<500) return false;
+  const sample=clean.slice(0,260);
+  return sample.length>120&&chapterText.includes(sample);
+}
+function micheleSummaryFieldUnsafe(value,chapter){
+  const text=String(Array.isArray(value)?value.join(' '):value||'').replace(/\s+/g,' ').trim();
+  if(!text) return true;
+  if(text.length>700) return true;
+  if(micheleConversationTextLooksLikeManuscript(text,chapter)) return true;
+  const chapterText=String(chapter?.currentText||'').replace(/\s+/g,' ').trim();
+  if(chapterText&&text.length>80&&chapterText.includes(text.slice(0,80))) return true;
+  return false;
+}
+function micheleBulletsAreSpecific(items,chapter){
+  const list=compactMicheleBullets(items);
+  if(list.length!==3) return false;
+  const signals=micheleChapterSpecificSignals(chapter,10).map(s=>String(s).toLowerCase());
+  const joined=list.join(' ').toLowerCase();
+  const generic=/\b(story material|emotional truth|reader understanding|scene building|transitions|voice|meaning|body-level|body moment|physical details|concrete anchor)\b/g;
+  const genericHits=(joined.match(generic)||[]).length;
+  const signalHits=signals.filter(s=>s&&joined.includes(s)).length;
+  return signalHits>0 && genericHits<5;
+}
+function micheleReplyRepeatsPriorQuestion(reply,conversation=[]){
+  const clean=String(reply||'').replace(/\s+/g,' ').trim().toLowerCase();
+  if(!clean) return false;
+  return (Array.isArray(conversation)?conversation:[])
+    .filter(t=>t&&t.role==='assistant')
+    .map(t=>String(t.content||'').replace(/\s+/g,' ').trim().toLowerCase())
+    .some(prev=>prev && (prev===clean || prev.includes(clean) || clean.includes(prev)));
+}
 function micheleConversationTurns(conversation=[]){
   return (Array.isArray(conversation)?conversation:[])
     .filter(t=>t&&['user','assistant'].includes(t.role)&&String(t.content||'').trim())
@@ -8891,11 +10029,26 @@ function micheleConversationTurns(conversation=[]){
     .slice(-10)
     .map(t=>({role:t.role,content:String(t.content||'').slice(0,1200)}));
 }
-async function micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter=null,mode='interview',notes=[],voiceProfile=null}){
+function micheleVoiceSizedReply(text){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(clean.length<=360) return clean;
+  const sentences=clean.match(/[^.!?]+[.!?]+/g)||[];
+  return (sentences.slice(0,2).join(' ')||clean.slice(0,340)).trim();
+}
+async function micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter=null,mode='interview',notes=[],voiceProfile=null,voiceMode=false}){
   const selectedMode=micheleEditorialMode(userMessage,mode);
-  const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter});
+  const fallback=micheleFastConversationReply(chapter,userMessage,{mode:selectedMode,lastCompletedChapter,conversation});
+  if(selectedMode==='interview'&&!micheleMessageRequestsEditorialAnswer(userMessage)){
+    const question=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    return {
+      reply:question,
+      readyToRewrite:false,
+      suggestedInstruction:`Michele answered: ${String(userMessage||'').trim()}. Use this answer as rewrite direction for ${micheleChapterLabel(chapter)} while preserving her voice and applying humor, scene, emotional truth, reader clarity, and transitions together.`,
+      mode:selectedMode
+    };
+  }
   try{
-    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?VAL_VOICE_RESPONSE_TEMPERATURE:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
+    const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.55:0.28,maxTokens:selectedMode==='interview'?1100:2200,system:[
       VAL_SYSTEM_PROMPT,
       'You are Michele Julian’s manuscript editor and conversational writing partner inside VAL.',
       'You are speaking directly to Michele. Michele is the author. Use “you,” never “Michele may want.”',
@@ -8908,6 +10061,7 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
       'Before asking Michele a question, use the selected chapter content. Do not ask a question already answered by the chapter.',
       'If mode is Interview, ask one strong chapter-specific question at a time. No list of homework. Voice-first, conversational.',
       'In Interview mode, reply with ONLY the next question or a very short chapter-choice question. Do not include chapter labels, status updates, “Direction captured,” “Use this as the rewrite direction,” or “Nothing has changed.”',
+      'Never return rewritten manuscript prose in this conversation route. Rewriting happens only through the separate write-chapter action.',
       'If mode is Editor, return sections: Overview, Strengths, Opportunities, Emotional Impact, Reader Confusion Risks, Editorial Recommendations, Proofreading Notes.',
       'If mode is Proofreading, return sections: Spelling Errors, Grammar Issues, Punctuation Issues, Repetition, Awkward Phrasing, Suggested Corrections.',
       'If mode is Overview, return sections: Summary, Major Events, Emotional Arc, Themes, Lessons, Key Takeaways. Do not give editing suggestions unless Michele asked for thoughts or edits.',
@@ -8929,10 +10083,16 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
       authorVoiceProfile:voiceProfile||null
     })}),selectedMode==='interview'?10000:18000);
     const parsed=JSON.parse(raw);
-    const reply=sanitizeMicheleEditorReply(parsed.reply||'');
+    let reply=sanitizeMicheleEditorReply(parsed.reply||'');
+    if(micheleReplyRepeatsPriorQuestion(reply,conversation)){
+      reply=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    }
+    if(micheleConversationTextLooksLikeManuscript(reply,chapter)){
+      reply=micheleNextFallbackQuestion(chapter,userMessage,conversation);
+    }
     if(!reply) return fallback;
     return {
-      reply,
+      reply:voiceMode?micheleVoiceSizedReply(reply):reply,
       readyToRewrite:!!parsed.readyToRewrite,
       suggestedInstruction:String(parsed.suggestedInstruction||fallback.suggestedInstruction||userMessage).trim(),
       mode:selectedMode
@@ -8942,35 +10102,43 @@ async function micheleConversationReply({chapter,userMessage,conversation,lastCo
   }
 }
 async function micheleGentleSummary({chapter,notes,voiceProfile}){
-  const fallback={
-    noticed:[
-      micheleChapterContextSummary(chapter),
-      `The next pass should layer humor, scene building, emotional truth, reader understanding, and transitions together instead of making Michele choose one lane.`,
-      `VAL should ask from the page itself, not from a generic writing prompt.`
-    ],
-    recommends:[
-      `Use the chapter’s existing material as the starting point and deepen what is already alive on the page.`,
-      `When Michele answers, create a revised draft that preserves her edge, humor, and voice while making the scene easier to inhabit.`,
-      `Show the revised version for approval before writing to the fresh manuscript.`
-    ],
-    question:micheleChapterSpecificQuestion(chapter)
-  };
+  const fallback=micheleChapterEditorialSnapshot(chapter);
   try{
     const raw=await callValModel({json:true,temperature:0.25,maxTokens:1100,system:[VAL_SYSTEM_PROMPT,[
-      'Return strict JSON only with keys noticed, recommends, question.',
+      'Return strict JSON only with keys chapterSummary, strengths, opportunities, recommends, question.',
       'This is Michele’s calm book companion. It should feel emotionally intelligent, specific, and useful — not generic.',
-      'noticed must contain 2-3 substantial but gentle bullets, each 18-40 words, about what the chapter/editor notes reveal.',
+      'chapterSummary must be 1-2 short sentences, under 45 words. Do not quote the manuscript. Do not include full paragraphs from the chapter.',
+      'strengths must contain exactly 3 bullets, each 8-24 words, naming what is already working.',
+      'opportunities must contain exactly 3 bullets, each 8-24 words, naming what could be improved.',
       'recommends must contain 2-3 concrete rewrite directions, each 18-40 words, focused on applying humor, scene building, emotional truth, reader understanding, and transitions together.',
       'question must be one specific, easy-to-answer question tied to this chapter. Do not use the vague phrase "What feels right to you?" by itself.',
+      'question must be 8-28 words. It must not quote manuscript text. It must not summarize or read the chapter aloud.',
+      'Never return the whole chapter text in any field. Never quote more than 10 words from the chapter.',
+      'For voice startup, do not begin by reading the chapter. Say only one intuitive question.',
       'Do not ask Michele to choose between humor, sensory scene building, emotional truth, transitions, or reader takeaway. Assume the chapter needs all of them.',
       'Ask one informed question from the actual chapter content. Do not ask Michele to explain what the chapter already says.',
       'Do not overwhelm Michele. Do not give homework. Do not merely suggest; prepare for VAL to rewrite after Michele answers.',
       micheleLayeredEditorialFrameworkText(),
       'If Master Edits 1 notes are present, weave in the most applicable point without naming a long process.'
-    ].join('\n')].join('\n'),user:[`Chapter: ${chapter.chapterTitle}`,`Current text excerpt:\n${String(chapter.currentText||'').slice(0,9000)}`,notes.length?`Editor notes:\n${notes.map(n=>n.note_text||n.noteText).join('\n')}`:'',voiceProfile?`Author voice profile:\n${JSON.stringify(voiceProfile).slice(0,4000)}`:''].filter(Boolean).join('\n\n')});
+    ].join('\n')].join('\n'),user:[
+      `Chapter: ${chapter.chapterTitle}`,
+      `Safe chapter signals: ${micheleWordSignals(chapter,10).join(', ')}`,
+      `Structural context: ${micheleChapterContextSummary(chapter)}`,
+      notes.length?`Editor notes:\n${notes.map(n=>n.note_text||n.noteText).join('\n')}`:'',
+      voiceProfile?`Author voice profile:\n${JSON.stringify(voiceProfile).slice(0,3000)}`:''
+    ].filter(Boolean).join('\n\n')});
     const parsed=JSON.parse(raw);
     const question=String(parsed.question||'').trim();
-    return {noticed:compactMicheleBullets(parsed.noticed),recommends:compactMicheleBullets(parsed.recommends),question:/what feels right to you\??$/i.test(question)?micheleChapterSpecificQuestion(chapter):(question||micheleChapterSpecificQuestion(chapter))};
+    const chapterSummary=String(parsed.chapterSummary||'').replace(/\s+/g,' ').trim();
+    const strengths=compactMicheleBullets(parsed.strengths);
+    const opportunities=compactMicheleBullets(parsed.opportunities);
+    return {
+      chapterSummary:!micheleSummaryFieldUnsafe(chapterSummary,chapter)?chapterSummary:fallback.chapterSummary,
+      strengths:micheleBulletsAreSpecific(strengths,chapter)?strengths:fallback.strengths,
+      opportunities:micheleBulletsAreSpecific(opportunities,chapter)?opportunities:fallback.opportunities,
+      recommends:compactMicheleBullets(parsed.recommends),
+      question:/what feels right to you\??$/i.test(question)||micheleSummaryFieldUnsafe(question,chapter)?fallback.question:(question||fallback.question)
+    };
   }catch(e){return fallback;}
 }
 async function rewriteMicheleChapter({chapter,response,notes,voiceProfile}){
@@ -9023,6 +10191,28 @@ function micheleChapterHeadingText(chapter){
     return title&&title!=='Prologue'?`Prologue: ${title}`:'Prologue';
   }
   return String(chapter?.googleDocSectionMarker||`Chapter #${chapter?.chapterNumber}: ${chapter?.chapterTitle||''}`).trim();
+}
+function normalizeMicheleVerificationText(value){
+  return String(value||'')
+    .replace(/\u00a0/g,' ')
+    .replace(/[“”]/g,'"')
+    .replace(/[‘’]/g,"'")
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function micheleOutputHeadingCandidates(chapter){
+  const num=Number(chapter?.chapterNumber);
+  const title=String(chapter?.chapterTitle||chapter?.chapter_title||'').trim();
+  const marker=String(chapter?.googleDocSectionMarker||chapter?.google_doc_section_marker||'').trim();
+  const candidates=[
+    micheleChapterHeadingText(chapter),
+    marker,
+    num===0?'Prologue':'',
+    num===0&&title&&title!=='Prologue'?`Prologue: ${title}`:'',
+    Number.isFinite(num)&&num>0?`Chapter #${num}${title?`: ${title}`:''}`:'',
+    Number.isFinite(num)&&num>0?`Chapter ${num}${title?`: ${title}`:''}`:''
+  ];
+  return [...new Set(candidates.map(normalizeMicheleVerificationText).filter(Boolean))];
 }
 function micheleForbiddenManuscriptContent(text){
   const body=String(text||'');
@@ -9104,15 +10294,25 @@ async function replaceMicheleOutputChapterOnly({documentId,chapter,fullText,plac
   return {mode:writeMode,currentDocWords,previousChapterWords:micheleWordCount(previousChapterText),editedChapterWords:proposedWords,expectedDocWords:expectedWords};
 }
 async function verifyMicheleOutputWrite({documentId,chapter,fullText}){
-  const doc=await readGoogleDocRaw(documentId);
-  const outputText=googleDocExtractedText(doc);
-  const heading=String(chapter.googleDocSectionMarker||`Chapter #${chapter.chapterNumber}: ${chapter.chapterTitle||''}`).trim();
-  const sample=String(fullText||'').replace(/\s+/g,' ').trim().slice(0,180);
-  const haystack=outputText.replace(/\s+/g,' ');
-  if(!haystack.includes(heading.replace(/\s+/g,' ')) || (sample&& !haystack.includes(sample))){
-    throw new Error('The rewritten chapter was not confirmed in the fresh output document. Original manuscript was not edited.');
+  const headingCandidates=micheleOutputHeadingCandidates(chapter);
+  const sample=normalizeMicheleVerificationText(fullText).slice(0,120);
+  let lastDoc=null,lastHeadingFound=false,lastSampleFound=false;
+  for(let attempt=0;attempt<3;attempt++){
+    const doc=await readGoogleDocRaw(documentId);
+    lastDoc=doc;
+    const outputText=googleDocExtractedText(doc);
+    const haystack=normalizeMicheleVerificationText(outputText);
+    lastHeadingFound=headingCandidates.some(heading=>heading&&haystack.includes(heading));
+    lastSampleFound=!sample || haystack.includes(sample);
+    if(lastHeadingFound&&lastSampleFound){
+      return {title:doc.title||'Fresh manuscript output',textLength:outputText.length,headingVerified:true,contentVerified:true};
+    }
+    await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)));
   }
-  return {title:doc.title||'Fresh manuscript output',textLength:outputText.length};
+  if(!lastHeadingFound || !lastSampleFound){
+    throw new Error(`The rewritten chapter was not confirmed in the fresh output document. Original manuscript was not edited. Verification details: heading ${lastHeadingFound?'found':'missing'}, content sample ${lastSampleFound?'found':'missing'}.`);
+  }
+  return {title:lastDoc?.title||'Fresh manuscript output',textLength:googleDocExtractedText(lastDoc).length};
 }
 async function writeMicheleChapterResult({synced,chapter,fullText,placement=''}){
   const readingId=bookProjectReadingDocId(synced.project);
@@ -9147,7 +10347,9 @@ async function micheleBookContinueState(){
   const lastCompleted=await latestMicheleCompletedChapter(synced.project,synced.chapters);
   const [notes,voiceProfile]=await Promise.all([listMicheleEditorNotes(chapter.id,chapter),getMicheleVoiceProfile(projectId)]);
   const gentle=await micheleGentleSummary({chapter,notes,voiceProfile});
-  return {ok:true,project:{id:projectId,title:synced.project.title||synced.project.title,masterDocId:bookProjectMasterDocId(synced.project),readingCopyDocId:bookProjectReadingDocId(synced.project)},chapter,lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null,chapters:synced.chapters.map(ch=>({id:ch.id,chapterNumber:ch.chapterNumber,chapterTitle:ch.chapterTitle,status:ch.status,lastSyncedAt:ch.lastSyncedAt})),summary:gentle,question:'What would you like to work on next?'};
+  const session=await getOrCreateMicheleBookSession({project:synced.project,chapter,mode:'interview'});
+  const turns=await listMicheleBookSessionTurns(session.id,16);
+  return {ok:true,project:{id:projectId,title:synced.project.title||synced.project.title,masterDocId:bookProjectMasterDocId(synced.project),readingCopyDocId:bookProjectReadingDocId(synced.project)},chapter:safeMicheleChapter(chapter),lastCompletedChapter:lastCompleted?safeMicheleChapter(lastCompleted):null,chapters:synced.chapters.map(safeMicheleChapter),summary:gentle,question:'What would you like to work on next?',session:publicBookConversationSession(session,turns)};
 }
 async function getMicheleStoredChapterForConversation(chapterId=''){
   await valDbReady;
@@ -9177,7 +10379,7 @@ async function listMicheleStoredChaptersForConversation(project){
   }
   return (valStore().bookChapters||[]).filter(ch=>ch.bookProjectId===projectId).sort((a,b)=>Number(a.chapterNumber||999)-Number(b.chapterNumber||999)).map(normalizeBookChapter);
 }
-async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
+async function micheleBookConverse({chapterId,message,conversation=[],mode='',voiceMode=false}){
   const userMessage=String(message||'').trim();
   if(!userMessage) throw new Error('Missing Michele message.');
   const project=await ensureMicheleBookProject().catch(()=>null);
@@ -9190,7 +10392,7 @@ async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
     listMicheleEditorNotes(chapter.id,chapter).catch(()=>[]),
     getMicheleVoiceProfile(bookProjectId(project)).catch(()=>null)
   ]):[[],null];
-  const parsed=await micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter:lastCompleted,mode,notes,voiceProfile});
+  const parsed=await micheleConversationReply({chapter,userMessage,conversation,lastCompletedChapter:lastCompleted,mode,notes,voiceProfile,voiceMode});
   await saveMemoryItem({kind:'michele_chapter_analysis',summary:`${parsed.mode||micheleEditorialMode(userMessage,mode)} conversation for ${micheleChapterLabel(chapter)}`,rawText:String(parsed.reply||'').slice(0,6000),importance:3,metadata:{source:'michele_book_converse',chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode:parsed.mode||micheleEditorialMode(userMessage,mode)}}).catch(()=>{});
   return {
     ok:true,
@@ -9200,6 +10402,60 @@ async function micheleBookConverse({chapterId,message,conversation=[],mode=''}){
     mode:parsed.mode||micheleEditorialMode(userMessage,mode),
     chapter:{id:chapter.id,chapterNumber:chapter.chapterNumber,chapterTitle:chapter.chapterTitle},
     lastCompletedChapter:lastCompleted?{id:lastCompleted.id,chapterNumber:lastCompleted.chapterNumber,chapterTitle:lastCompleted.chapterTitle}:null
+  };
+}
+async function micheleBookSessionTurn({sessionId='',chapterId='',message='',mode='interview',voiceMode=false,inputType='text'}){
+  const userMessage=String(message||'').trim();
+  if(!userMessage) throw new Error('Missing Michele message.');
+  const project=await ensureMicheleBookProject();
+  let storedChapters=await listMicheleStoredChaptersForConversation(project).catch(()=>[]);
+  if(!storedChapters.length) storedChapters=(await syncMicheleBookFromDocs()).chapters;
+  const fallbackChapter=await getMicheleStoredChapterForConversation(chapterId);
+  const chapter=micheleFindChapterForMessage(userMessage,storedChapters,fallbackChapter)||fallbackChapter||storedChapters[0];
+  if(!chapter) throw new Error('No current chapter found.');
+  const lastCompleted=await latestMicheleCompletedChapter(project,storedChapters).catch(()=>null);
+  let session=null;
+  if(sessionId){
+    if(pgPool){const r=await dbQuery("select * from book_conversation_sessions where id=$1 and tenant_id=$2 and user_id=$3 and status='active' limit 1",[sessionId,tenantId(),currentUserId()]);session=normalizeBookConversationSession(r.rows[0]);}
+    else session=normalizeBookConversationSession((valStore().bookConversationSessions||[]).find(s=>s.id===sessionId&&s.tenantId===tenantId()&&s.userId===currentUserId()&&s.status==='active'));
+  }
+  if(!session||session.chapterId!==chapter.id) session=await getOrCreateMicheleBookSession({project,chapter,mode:mode||'interview'});
+  await appendMicheleBookTurn({sessionId:session.id,role:'user',content:userMessage,inputType:inputType||(voiceMode?'voice':'text'),metadata:{chapterId:chapter.id,mode}});
+  const turnsBeforeAssistant=await listMicheleBookSessionTurns(session.id,24);
+  const [notes,voiceProfile]=await Promise.all([
+    listMicheleEditorNotes(chapter.id,chapter).catch(()=>[]),
+    getMicheleVoiceProfile(bookProjectId(project)).catch(()=>null)
+  ]);
+  const planned=await michelePlanBookConversationTurn({chapter,userMessage,session,turns:turnsBeforeAssistant,lastCompletedChapter:lastCompleted,mode:mode||session.mode,voiceMode,notes,voiceProfile});
+  const nextSession=await updateMicheleBookSessionState(session,{
+    mode:planned.mode||mode||session.mode,
+    currentGoal:planned.currentGoal,
+    lastQuestion:/\?\s*$/.test(planned.reply)?planned.reply:session.lastQuestion,
+    questionsAsked:/\?\s*$/.test(planned.reply)?[planned.reply]:[],
+    storyBeats:planned.storyBeats,
+    emotionalThreads:planned.emotionalThreads,
+    sceneDetails:planned.sceneDetails,
+    humorThreads:planned.humorThreads,
+    readerTakeaways:planned.readerTakeaways,
+    rewriteDirection:planned.rewriteDirection,
+    readinessScore:planned.readinessScore,
+    metadata:{editorialMove:planned.editorialMove||'',readyToRewrite:!!planned.readyToRewrite}
+  });
+  await appendMicheleBookTurn({sessionId:session.id,role:'assistant',content:planned.reply,inputType:'val_voice_or_text',metadata:{chapterId:chapter.id,mode:planned.mode,readinessScore:planned.readinessScore,editorialMove:planned.editorialMove||''}});
+  const turns=await listMicheleBookSessionTurns(session.id,24);
+  await saveMemoryItem({kind:'michele_book_conversation_turn',summary:`Conversation turn for ${micheleChapterLabel(chapter)}`,rawText:`Michele: ${userMessage}\nVAL: ${planned.reply}`.slice(0,6000),importance:3,metadata:{source:'michele_book_session_turn',sessionId:session.id,chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode:planned.mode}}).catch(()=>{});
+  return {
+    ok:true,
+    sessionId:session.id,
+    reply:planned.reply,
+    readyToRewrite:!!planned.readyToRewrite,
+    readyToWrite:!!planned.readyToRewrite,
+    editorialMove:planned.editorialMove||'',
+    suggestedInstruction:nextSession.rewriteDirection||planned.rewriteDirection||userMessage,
+    mode:planned.mode||mode,
+    chapter:safeMicheleChapter(chapter),
+    lastCompletedChapter:lastCompleted?safeMicheleChapter(lastCompleted):null,
+    session:publicBookConversationSession(nextSession,turns)
   };
 }
 async function micheleBookDraftResponse({chapterId,response}){
@@ -9221,7 +10477,14 @@ async function micheleBookDraftResponse({chapterId,response}){
     throw e;
   }
 }
-async function micheleBookApplyResponse({chapterId,response,placement='',rewriteJobId=''}){
+async function micheleBookApplyResponse({chapterId,response,placement='',rewriteJobId='',sessionId=''}){
+  if(!String(response||'').trim()&&!rewriteJobId&&sessionId){
+    const session=pgPool
+      ? normalizeBookConversationSession((await dbQuery('select * from book_conversation_sessions where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[sessionId,tenantId(),currentUserId()])).rows[0])
+      : normalizeBookConversationSession((valStore().bookConversationSessions||[]).find(s=>s.id===sessionId&&s.tenantId===tenantId()&&s.userId===currentUserId()));
+    const turns=session?await listMicheleBookSessionTurns(session.id,20):[];
+    response=micheleConversationStateInstruction(session,turns);
+  }
   if(!String(response||'').trim()&&!rewriteJobId) throw new Error('Missing Michele response.');
   const synced=await syncMicheleBookFromDocs();
   const projectId=bookProjectId(synced.project);
@@ -9357,15 +10620,19 @@ app.get('/api/michele/book/continue',async(req,res)=>{
   catch(e){await auditLog({req,action:'michele_book_continue_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/converse',async(req,res)=>{
-  try{res.json(await micheleBookConverse({chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',conversation:req.body.conversation||[],mode:req.body.mode||''}));}
+  try{res.json(await micheleBookConverse({chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',conversation:req.body.conversation||[],mode:req.body.mode||'',voiceMode:!!req.body.voiceMode}));}
   catch(e){await auditLog({req,action:'michele_book_conversation_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/session/turn',async(req,res)=>{
+  try{res.json(await micheleBookSessionTurn({sessionId:req.body.sessionId||'',chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',mode:req.body.mode||'',voiceMode:!!req.body.voiceMode,inputType:req.body.inputType||''}));}
+  catch(e){await auditLog({req,action:'michele_book_session_turn_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/draft',async(req,res)=>{
   try{res.json(await micheleBookDraftResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||''}));}
   catch(e){await auditLog({req,action:'michele_book_draft_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/respond',async(req,res)=>{
-  try{res.json(await micheleBookApplyResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||'',placement:req.body.placement||'',rewriteJobId:req.body.rewriteJobId||''}));}
+  try{res.json(await micheleBookApplyResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||'',placement:req.body.placement||'',rewriteJobId:req.body.rewriteJobId||'',sessionId:req.body.sessionId||''}));}
   catch(e){await auditLog({req,action:'michele_book_rewrite_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 async function latestMicheleSnapshot(chapterId=''){
@@ -9387,8 +10654,9 @@ async function micheleAdminState(){
   catch(e){chapterSyncError=e.message||String(e);}
   const latest=await latestMicheleSnapshot();
   const google=await getGoogleConnectionStatus(REQUIRED_GOOGLE_DOC_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:REQUIRED_GOOGLE_DOC_SCOPES}));
+  const openAiRuntimeConfigured=!!(await resolveOpenAIKey().catch(()=>''));
   const cfg={...micheleBookConfig(),masterDocId:bookProjectMasterDocId(project),readingCopyDocId:bookProjectReadingDocId(project)};
-  return {ok:true,config:cfg,project:{id:bookProjectId(project),title:project.title||cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,masterDocUrl:googleDocUrl(cfg.masterDocId),readingCopyDocUrl:googleDocUrl(cfg.readingCopyDocId)},googleDocs:{connected:!!google.connected,missingScopes:google.missingScopes||[],error:google.error||'',chapterSyncError},chapters,latestSnapshot:latest};
+  return {ok:true,config:cfg,project:{id:bookProjectId(project),title:project.title||cfg.title,masterDocId:cfg.masterDocId,readingCopyDocId:cfg.readingCopyDocId,masterDocUrl:googleDocUrl(cfg.masterDocId),readingCopyDocUrl:googleDocUrl(cfg.readingCopyDocId)},googleDocs:{connected:!!google.connected,missingScopes:google.missingScopes||[],error:google.error||'',chapterSyncError},ai:{openAiRuntimeConfigured,platformFallbackAllowed:platformKeyFallbackAllowed('openai'),tenantOpenAiKeyRequired:/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))},chapters,latestSnapshot:latest};
 }
 app.get('/api/michele/book/admin',requirePermission('settings:manage'),async(req,res)=>{try{res.json(await micheleAdminState());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/michele/book/admin/config',requirePermission('settings:manage'),async(req,res)=>{
@@ -10080,7 +11348,7 @@ function responseText(payload){
 async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
-  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
+  if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const body = {
     model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
@@ -10114,7 +11382,7 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
 async function callOpenAIWebResearch({system,user,maxTokens=2200,temperature=0.1}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
-  if(!openAiKey) throw new Error('OPENAI_KEY not configured');
+  if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
   const body = {
     model: openAiModel,
     input: [
@@ -13067,30 +14335,6 @@ function transcriptSupportingQuote(transcript,requested=''){
   const sentences=text.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean);
   return (sentences.find(s=>/\b(will|need to|follow up|send|schedule|review|update|introduce|decided|agreed)\b/i.test(s))||sentences[0]||text.slice(0,500)).slice(0,800);
 }
-function regexEscape(value){return String(value||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
-function transcriptTaskFieldsFromActionItem(item,transcript){
-  const rawText=transcript.transcriptText||transcript.rawTranscript||'';
-  const sourceQuote=transcriptSupportingQuote(rawText,typeof item==='string'?item:item?.sourceQuote||item?.evidence||item?.text||item?.title||'');
-  const rawTitle=typeof item==='string'?item:(item?.taskTitle||item?.title||item?.text||item?.action||item?.nextAction||'');
-  const title=cleanTaskTitle(rawTitle).replace(/^[-•\s]+/,'');
-  if(!title||title.length<8)return null;
-  const genericTitle=new RegExp('^(follow up on|review|task for)\\s+'+regexEscape(String(transcript.title||transcript.meetingTitle||'').trim()),'i');
-  if(genericTitle.test(title)&&!sourceQuote)return null;
-  const description=typeof item==='object'&&item
-    ? cleanTaskTitle(item.taskDescription||item.description||item.notes||item.context||'')
-    : '';
-  return {
-    title,
-    description:description||[
-      `Created from transcript: ${transcript.title||transcript.meetingTitle||'Untitled Transcript'}`,
-      sourceQuote?`Supporting quote: “${sourceQuote}”`:''
-    ].filter(Boolean).join('\n\n'),
-    dueDate:typeof item==='object'&&item?(item.dueDate||item.due||item.deadline||null):null,
-    priority:typeof item==='object'&&item?(item.priority||'medium'):'medium',
-    assignedToName:typeof item==='object'&&item?(item.assignedToName||item.assignedPerson||item.person||item.contactName||transcript.contactName||''):(transcript.contactName||''),
-    sourceQuote
-  };
-}
 function transcriptIdentityInputs(payload,transcript){
   const attendees=[...(Array.isArray(payload.attendees)?payload.attendees:[]),...(Array.isArray(payload.metadata?.attendees)?payload.metadata.attendees:[]),...inferAttendeesFromEvent(payload.meetingMatch||payload.calendarEvent||{})];
   const speakers=[...String(transcript).matchAll(/^\s*([^:\n]{2,80}):\s*.+$/gm)].map(match=>match[1].trim()).filter(name=>!/^https?|meeting|transcript$/i.test(name));
@@ -13197,13 +14441,10 @@ app.get('/api/val/transcripts',async(req,res)=>{
   try{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    const indexed=data.transcripts.map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});
-    const indexedIds=new Set(indexed.map(t=>String(t.id||t.transcriptId||'')));
-    const legacy=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record)).filter(t=>!indexedIds.has(String(t.id||'')));
-    const transcripts=indexed.concat(legacy).sort((a,b)=>new Date(b.createdAt||b.receivedAt||0)-new Date(a.createdAt||a.receivedAt||0)).slice(0,limit);
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withTasks:transcripts.filter(t=>Number(t.taskCount||t.openActionCount||0)>0).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
+    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -13261,26 +14502,13 @@ app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)
 });
 app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
-    const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);
-    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
-    if(!transcript){
-      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-      if(record)transcript=transcriptUiRecord(record,{includeText:true});
-    }
-    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const action=String(req.body.action||'');
+    const id=decodeURIComponent(req.params.transcriptId),record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+    if(!record)return res.status(404).json({ok:false,error:'Transcript not found'});
+    const transcript=transcriptUiRecord(record,{includeText:true}),action=String(req.body.action||'');
     if(action==='create_task'){
-      const existing=(transcript.tasks||[]).find(task=>String(task.taskId||'')===String(req.body.taskId||'')||(!req.body.taskId&&task.status!=='created'));
-      if(existing){
-        if(existing.needsApproval)return res.status(409).json({ok:false,error:'This transcript task needs review before it can be created. Open the Transcript Review Queue.'});
-        const task=existing.status==='created'?existing:await promoteTranscriptTask(existing);
-        return res.json({ok:true,task});
-      }
       const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
-      const fields=transcriptTaskFieldsFromActionItem(req.body.title?{...first,title:req.body.title,sourceQuote:req.body.sourceQuote}:first,transcript);
-      if(!fields)return res.status(422).json({ok:false,error:'I could not find a clear action item in this transcript. Open the transcript detail to review the summary or ask VAL about it first.'});
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:fields.assignedToName||'',taskTitle:contextualTaskTitle(transcript.title,fields.title),taskDescription:fields.description,dueDate:req.body.dueDate||fields.dueDate||null,priority:req.body.priority||fields.priority||'medium',confidence:0.8,status:'staged',needsApproval:false,sourceQuote:fields.sourceQuote,calendarEventId:transcript.meetingId||transcript.calendarEventId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
+      const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
     if(action==='draft_followup'){
@@ -13595,33 +14823,46 @@ app.post('/api/val/intelligence',async(req,res)=>{
 app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
-    if(DEMO_MODE){const s=demoState(req,res);return res.json({message:{role:'assistant',content:demoChatResponse(lastUser,s)},demo:true});}
+    const conversationId=String(req.body.conversationId||'').trim()||uuid('chat');
+    const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
+    async function sendChat(content,extra={}){
+      let saved=null,saveWarning='';
+      const fullMessages=messages.concat({role:'assistant',content});
+      try{
+        if(!DEMO_MODE&&process.env.DATABASE_URL&&!pgPool) throw new Error('Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
+        saved=await saveConversation({id:conversationId,title:conversationTitle,source:req.body.channel||'chat',messages:fullMessages,metadata:{channel:req.body.channel||'chat',savedBy:'chat_route'}});
+      }catch(saveError){
+        saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
+      }
+      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
+    }
+    if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
     if(/\b(show|list|find)\b[\s\S]{0,40}\bunscheduled tasks|open loops\b/i.test(lastUser)){
       const loops=await openLoopsSummary();
       const lines=(loops.unscheduled||[]).slice(0,10).map((t,i)=>`${i+1}. ${t.title}${t.dueDate?` — due ${new Date(t.dueDate).toLocaleDateString()}`:''}`).join('\n')||'No unscheduled open tasks found.';
-      return res.json({message:{role:'assistant',content:`Open loops: ${loops.openCount} open, ${loops.unscheduledCount} unscheduled, ${loops.overdueCount} overdue.\n\n${lines}`},openLoops:loops});
+      return sendChat(`Open loops: ${loops.openCount} open, ${loops.unscheduledCount} unscheduled, ${loops.overdueCount} overdue.\n\n${lines}`,{openLoops:loops});
     }
     if(/\b(calendarize|schedule time|put .*calendar|block time)\b/i.test(lastUser)&&/\btask|tasks|open loops|follow[- ]?up/i.test(lastUser)){
       const loops=await openLoopsSummary();
       const task=(loops.unscheduled||[])[0];
-      if(!task)return res.json({message:{role:'assistant',content:'I do not see any unscheduled open tasks right now.'},openLoops:loops});
+      if(!task)return sendChat('I do not see any unscheduled open tasks right now.',{openLoops:loops});
       const suggestedSlots=await suggestTaskSlots(task).catch(()=>[]);
       const slotLines=suggestedSlots.slice(0,3).map((s,i)=>`${i+1}. ${s.label}`).join('\n');
-      return res.json({message:{role:'assistant',content:`I found the next unscheduled task: ${task.title}.\n\nSuggested protected work blocks:\n${slotLines||'No safe slot found yet.'}\n\nOpen Tasks and press Calendarize to confirm a private busy block with no attendees or meeting link.`},taskScheduling:{task,suggestedSlots}});
+      return sendChat(`I found the next unscheduled task: ${task.title}.\n\nSuggested protected work blocks:\n${slotLines||'No safe slot found yet.'}\n\nOpen Tasks and press Calendarize to confirm a private busy block with no attendees or meeting link.`,{taskScheduling:{task,suggestedSlots}});
     }
     if(inboxCommandIntent(lastUser)){
       const inbox=await runInboxCommand(lastUser,{maxResults:5});
       const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
-      return res.json({message:{role:'assistant',content:[inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n')},inboxCommand:inbox});
+      return sendChat([inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n'),{inboxCommand:inbox});
     }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();
-      return res.json({message:{role:'assistant',content:goallTestContactSummary(result)},ghlContact:result});
+      return sendChat(goallTestContactSummary(result),{ghlContact:result});
     }
     const inferredGhlAction=await inferGhlActionFromChat(lastUser);
     if(inferredGhlAction){
       const result=await executeValGhlAction(inferredGhlAction);
-      return res.json({message:{role:'assistant',content:result.content||'Done.'},ghlAction:result});
+      return sendChat(result.content||'Done.',{ghlAction:result});
     }
     if(isGoogleDocRewriteRequest(lastUser)){
       try{
@@ -13635,24 +14876,24 @@ app.post('/api/val/chat',async(req,res)=>{
           '',
           `I kept the full rewrite out of chat so you can review and edit it in Docs.`
         ].join('\n');
-        return res.json({message:{role:'assistant',content},googleDocRewrite:result});
+        return sendChat(content,{googleDocRewrite:result});
       }catch(e){
         if(/auth|required|scope|reconnect/i.test(e.message)){
-          return res.json({message:{role:'assistant',content:'I can use the memoir already uploaded into VAL as the source. Google only needs to be reconnected so I can create the rewritten Google Doc output. Open Integration Status, reconnect Google, and approve the Drive/Docs permissions.'}});
+          return sendChat('I can use the memoir already uploaded into VAL as the source. Google only needs to be reconnected so I can create the rewritten Google Doc output. Open Integration Status, reconnect Google, and approve the Drive/Docs permissions.');
         }
-        return res.json({message:{role:'assistant',content:`I tried to rewrite it from the uploaded VAL memoir or Google Docs, but I could not find a readable matching document yet: ${e.message}\n\nUse the exact uploaded file title, Google Doc title, or Google Doc URL, then ask me to rewrite it.`}});
+        return sendChat(`I tried to rewrite it from the uploaded VAL memoir or Google Docs, but I could not find a readable matching document yet: ${e.message}\n\nUse the exact uploaded file title, Google Doc title, or Google Doc URL, then ask me to rewrite it.`);
       }
     }
     const availabilityDoc=await readValUploadedRewriteSource({query:lastUser+'\n'+memoryQuery}).catch(()=>null);
     if(availabilityDoc&&/\b(can you|could you|do you|are you able to)\b[\s\S]{0,80}\b(read|see|access|open)\b/i.test(lastUser)&&/\b(manuscript|memoir|book|document|doc|draft)\b/i.test(lastUser)){
-      return res.json({message:{role:'assistant',content:[
+      return sendChat([
         `Yes. I can read the manuscript already uploaded into VAL.`,
         '',
         `Source: ${availabilityDoc.title}`,
         `Readable characters: ${availabilityDoc.text.length}`,
         '',
         `Google Drive is only needed if you want me to create or update a Google Doc output. For reading and editorial review, I can use the uploaded VAL manuscript.`
-      ].join('\n')}});
+      ].join('\n'));
     }
     const uploadedDocs=await uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
     const [memory,ghlContext,googleDocs]=await Promise.all([
@@ -13660,12 +14901,19 @@ app.post('/api/val/chat',async(req,res)=>{
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
       uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`)
     ]);
-    const system=[VAL_SYSTEM_PROMPT,'Use dashboard context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const babyStudioContext=await babyStudioPromptContext();
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'','Use dashboard context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
-    res.json({message:{role:'assistant',content:finalContent},createdTasks,ghlContextAvailable:!!ghlContext});
-  }catch(e){res.status(500).json({error:e.message});}
+    return sendChat(finalContent,{createdTasks,ghlContextAvailable:!!ghlContext});
+  }catch(e){
+    const raw=e.message||'';
+    const message=/OPENAI_KEY not configured|OPENAI_API_KEY|api key/i.test(raw)
+      ? 'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'
+      : raw;
+    res.status(500).json({error:message});
+  }
 });
 
 async function extractUploadedText(file){
