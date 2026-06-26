@@ -5443,10 +5443,19 @@ function teachValVoiceStatusHtml(){
   var s=teachValVoiceStatus||{};
   var label=s.ttsConfigured?'Deepgram voice connected':'Deepgram voice not connected';
   var detail=s.ttsConfigured?('Voice model: '+(s.ttsModel||'configured')):'VAL will use browser fallback until DEEPGRAM_API_KEY and the chosen voice model are configured in Railway.';
-  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail)+'</div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
+  return '<div class="email-reason"><strong>'+docSafe(label)+'</strong><br>'+docSafe(detail)+'<br><span id="teachValDeepgramTestStatus">Run Test VAL Voice to confirm the exact voice.</span></div><div class="email-actions"><button onclick="teachValTestVoice()">Test VAL Voice</button><button onclick="teachValLoadVoiceStatus()">Refresh Voice Status</button></div>';
 }
 function teachValTestVoice(){
-  if(typeof speak==='function')speak('This is the voice VAL will use for onboarding. If this does not sound right, check the Deepgram voice settings in Railway.');
+  var status=document.getElementById('teachValDeepgramTestStatus');
+  if(status)status.textContent='Testing Deepgram voice...';
+  fetchDeepgramTtsBlob('This is the Deepgram voice VAL will use for onboarding.')
+    .then(function(blob){
+      var url=URL.createObjectURL(blob), audio=new Audio(url);
+      audio.onended=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram voice played successfully.';};
+      audio.onerror=function(){URL.revokeObjectURL(url);if(status)status.textContent='Deepgram returned audio, but the browser could not play it.';};
+      return audio.play().catch(function(e){URL.revokeObjectURL(url);throw new Error('Browser blocked Deepgram playback: '+(e.message||e));});
+    })
+    .catch(function(e){if(status)status.textContent=e.message||'Deepgram voice test failed.';});
 }
 function teachValVoiceTurnsHtml(turns){
   turns=turns||[];
@@ -5557,7 +5566,8 @@ function teachValRender(){
   var el=document.getElementById('teachValOnboardingBody');if(!el||!teachValOnboarding)return;
   var session=teachValOnboarding.session||{}, state=session.state||{}, stage=state.stage||'welcome';
   if(stage==='current_projects'||stage==='important_people'||stage==='lessons_learned'||stage==='work_preferences'||stage==='frustrations'||stage==='opportunities'||stage==='things_to_remember')teachValActiveCategory=stage;
-  var main=stage==='welcome'?teachValWelcomeHtml():(stage==='review'||stage==='complete'?teachValReviewHtml():teachValVoiceHtml()+teachValCardsNavHtml()+teachValKnowledgeCardHtml());
+  var promptTools=teachValCardsNavHtml()+teachValKnowledgeCardHtml();
+  var main=stage==='review'||stage==='complete'?teachValReviewHtml()+promptTools:(stage==='welcome'?teachValWelcomeHtml()+teachValVoiceHtml()+promptTools:teachValVoiceHtml()+promptTools);
   el.innerHTML='<div class="exec-workspace-grid">'+teachValProgressHtml()+main+'<section class="exec-card" style="grid-column:1/-1"><h3>Finish</h3><p>Use Test Send first if you want to validate the onboarding package without committing production memory.</p><div class="email-actions"><button onclick="teachValSetStage(\'welcome\')">Back To Welcome</button><button onclick="teachValSetStage(\'voice_interview\')">Back To Interview</button><button onclick="teachValReview()">Review Extracted Memory</button><button onclick="teachValCommit(true)">Test Send</button><button class="primary" onclick="teachValCommit(false)">Send to VAL Memory</button></div><div class="email-reason">'+docSafe((state.webhookAttempts||[]).slice(-1)[0]?.message||'No send attempt yet.')+'</div></section></div>';
 }
 
