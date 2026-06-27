@@ -6609,6 +6609,182 @@ async function buildRelationshipReview({windowDays=7}={}){
   };
 }
 
+function relationshipContactFromStoredProfile(profile={}){
+  const openLoops=(profile.openLoops||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const opportunities=(profile.opportunities||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const risks=(profile.risks||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const signals=(profile.relationshipSignals||[]).map(x=>x.content||x.summary||x.text||String(x)).filter(Boolean);
+  const score=Math.min(100,Math.round(
+    Math.min(35,Number(profile.openLoopCount||0)*9)+
+    Math.min(25,Number(profile.opportunityCount||0)*8)+
+    Math.min(25,Number(profile.riskCount||0)*8)+
+    Math.min(15,Number(profile.observationCount||0)*2)
+  ));
+  const lastEvidenceSummary=openLoops[0]||opportunities[0]||risks[0]||signals[0]||profile.summary||'Stored relationship observation.';
+  const contact={
+    key:profile.profileKey,
+    id:profile.personId||profile.id,
+    contactId:profile.personId||'',
+    name:profile.displayName||'Relationship',
+    email:'',
+    company:'',
+    score,
+    scoreBreakdown:{
+      total:score,
+      strategicImportance:Math.min(25,Number(profile.observationCount||0)*3),
+      opportunityPotential:Math.min(20,Number(profile.opportunityCount||0)*7),
+      relationshipActivity:Math.min(15,Number(profile.observationCount||0)*2),
+      driftRisk:Math.min(15,Number(profile.riskCount||0)*6),
+      openLoopsCommitments:Math.min(15,Number(profile.openLoopCount||0)*5),
+      reciprocityBalance:0
+    },
+    relationshipType:profile.opportunityCount?'Opportunity':profile.riskCount?'Risk':profile.openLoopCount?'Open Loop':'Observed',
+    lastInteractionAt:profile.lastObservedAt||profile.updatedAt||'',
+    lastInteractionDays:daysSince(profile.lastObservedAt||profile.updatedAt),
+    lastEvidenceSummary,
+    openLoops,
+    opportunitySignals:opportunities,
+    riskSignals:risks,
+    topics:signals.slice(0,6),
+    tags:['Relationship Engine'],
+    evidence:[{type:'relationship_engine',summary:lastEvidenceSummary,date:profile.lastObservedAt||profile.updatedAt,confidence:profile.confidence>=0.75?'high':'medium',sourceId:profile.id}],
+    reason:profile.summary||`VAL has ${profile.observationCount||0} observation${Number(profile.observationCount||0)===1?'':'s'} connected to this relationship.`,
+    recommendedAction:openLoops[0]?`Close the open loop: ${openLoops[0]}`:risks[0]?`Review the risk: ${risks[0]}`:opportunities[0]?`Move the opportunity forward: ${opportunities[0]}`:'Review the relationship history and choose one useful next move.'
+  };
+  contact.draftOutreach=draftRelationshipOutreach(contact);
+  contact.profile=relationshipProfile(contact);
+  return contact;
+}
+async function relationshipReviewFromStoredProfiles({windowDays=7}={}){
+  const profiles=(await listRelationshipProfiles({limit:120})).filter(p=>p.profileType==='person');
+  const contacts=profiles.map(relationshipContactFromStoredProfile).filter(c=>c.name&&c.name!=='Unknown').sort((a,b)=>b.score-a.score);
+  const topRelationshipPriorities=contacts.slice(0,10);
+  const highestLeverageRelationships=contacts.filter(c=>c.score>=35||c.openLoops.length||c.opportunitySignals.length||c.riskSignals.length).slice(0,8);
+  const coolingRelationships=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14&&c.score>=20).slice(0,8);
+  const momentumRelationships=contacts.filter(c=>c.opportunitySignals.length||c.topics.length).slice(0,8);
+  const peopleNotContactedRecently=contacts.filter(c=>c.lastInteractionDays!==null&&c.lastInteractionDays>=14).slice(0,10);
+  const forgottenCommitments=contacts.flatMap(c=>c.openLoops.map(loop=>({contact:c.name,score:c.score,commitment:loop,sourceEvidence:c.evidence[0],recommendedAction:`Close the loop with ${c.name}.`}))).slice(0,12);
+  const hiddenOpportunities=contacts.filter(c=>c.opportunitySignals.length).slice(0,10).map(c=>({contact:c.name,score:c.score,opportunity:c.opportunitySignals[0],evidence:c.evidence,recommendedAction:c.recommendedAction}));
+  return {
+    ok:true,windowDays,generatedAt:new Date().toISOString(),source:'relationship_profiles',errors:[],
+    relationshipProfiles:contacts.map(c=>c.profile),
+    topRelationshipPriorities,
+    highestLeverageRelationships,
+    coolingRelationships,
+    momentumRelationships,
+    peopleNotContactedRecently,
+    forgottenCommitments,
+    hiddenOpportunities,
+    suggestedIntroductions:[],
+    relationshipTaskPriorities:topRelationshipPriorities.map(c=>({contact:c.name,priority:c.score>=70?'High':c.score>=45?'Medium':'Low',tasks:c.openLoops||[],suggestedNextTask:c.recommendedAction,recommendedOutreach:c.draftOutreach})),
+    draftCommunications:topRelationshipPriorities.slice(0,8).map(c=>({contact:c.name,score:c.score,draft:c.draftOutreach,evidence:c.evidence.slice(0,2)})),
+    priorityReviewIntegration:{highestLeverageRelationship:highestLeverageRelationships[0]||null,top3RelationshipPriorities:topRelationshipPriorities.slice(0,3),oneCoolingRelationship:coolingRelationships[0]||null,oneForgottenCommitment:forgottenCommitments[0]||null,oneSuggestedIntroduction:null,oneHiddenOpportunity:hiddenOpportunities[0]||null},
+    askForAssistance:{question:'Would you like me to help with any of these relationships?',options:['Draft outreach','Create tasks','Brainstorm opportunities','Prepare for upcoming meeting','Review relationship history']}
+  };
+}
+
+function transcriptBackfillParticipants(record={},detail={}){
+  const fromDetail=(detail.participants||[]).map(p=>({
+    role:'participant',
+    name:p.matchedContactName||p.speakerNameRaw||'',
+    email:p.matchedEmail||'',
+    matchedContactId:p.matchedContactId||'',
+    matchedCompany:p.matchedCompany||''
+  })).filter(p=>p.name||p.email||p.matchedContactId);
+  if(fromDetail.length)return fromDetail;
+  return splitPeopleFromText([record.title,record.rawText,JSON.stringify(record.metadata||{})].join(' ')).slice(0,12).map(p=>({role:'mentioned',name:p.name||'',email:p.email||'',confidence:p.confidence||'low'}));
+}
+function transcriptBackfillCandidates(record={},participants=[]){
+  const text=String(record.rawText||'');
+  const candidates=[];
+  extractOpenLoopsFromText(text,'transcript',record.createdAt||record.metadata?.timestamp||'').forEach(loop=>{
+    candidates.push({observationType:/follow up|circle back|waiting on/i.test(loop.text)?'follow_up':'task',content:loop.text,exactQuote:transcriptSupportingQuote(text,loop.text),confidence:loop.confidence==='high'?0.82:0.65,status:'open'});
+  });
+  if(/\b(price|pricing|cost|budget|proposal|contract)\b/i.test(text))candidates.push({observationType:'pricing_question',content:`${record.title||'Transcript'} includes pricing, proposal, budget, or contract language.`,exactQuote:transcriptSupportingQuote(text,'pricing'),confidence:0.68,status:'needs_review'});
+  if(/\b(risk|concern|worried|blocked|stuck|drift|confused|not working)\b/i.test(text))candidates.push({observationType:'risk',content:`${record.title||'Transcript'} includes possible risk, concern, blocker, or drift language.`,exactQuote:transcriptSupportingQuote(text,'risk'),confidence:0.62,status:'needs_review'});
+  if(/\b(opportunity|intro|introduction|referral|partner|lead|client|deal)\b/i.test(text))candidates.push({observationType:'opportunity',content:`${record.title||'Transcript'} includes possible opportunity, introduction, referral, partnership, lead, client, or deal language.`,exactQuote:transcriptSupportingQuote(text,'opportunity'),confidence:0.66,status:'needs_review'});
+  if(!candidates.length&&participants.length)candidates.push({observationType:'relationship_signal',content:`${record.title||'Transcript'} contains relationship context that should be available to VAL.`,exactQuote:transcriptSupportingQuote(text,record.title||''),confidence:0.55,status:'observed'});
+  return candidates.slice(0,30);
+}
+async function backfillTranscriptEvidence({days=3650,limit=250}={}){
+  const [records,index]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))]);
+  let processed=0,observations=0,relationshipEvents=0,agencyMoves=0,errors=[];
+  for(const record of records){
+    try{
+      const detailRow=(index.transcripts||[]).find(t=>String(t.transcriptId)===String(record.id));
+      const detail=detailRow?transcriptDetailFromIndex(index,detailRow):{};
+      const title=detail.title||record.title||'Recovered transcript';
+      const rawText=detail.transcriptText||record.rawText||'';
+      if(!rawText.trim())continue;
+      const participants=transcriptBackfillParticipants(record,detail);
+      const summary=detail.summary||{};
+      const parsed={
+        keyDecisions:summary.keyDecisions||[],
+        openQuestions:summary.openQuestions||[],
+        relationshipUpdates:summary.relationshipUpdates||[],
+        tasks:(detail.tasks||[]).map(t=>({taskTitle:t.taskTitle,content:t.taskTitle,sourceQuote:t.sourceQuote,assignedToName:t.assignedToName,dueDate:t.dueDate,confidence:t.confidence,status:t.status||'open'})),
+        contactUpdates:detail.contactUpdates||[],
+        actionItems:[]
+      };
+      await saveEvidenceItem({sourceType:'transcript',sourceId:record.id,occurredAt:detail.meetingDatetime||record.metadata?.timestamp||record.createdAt||null,capturedAt:record.createdAt||new Date().toISOString(),title,rawText,summary:summary.executiveSummary||record.metadata?.summary||'',participantsJson:participants,entitiesJson:{source:'backfill',legacyTranscriptId:record.id,participantCount:participants.length},confidence:0.72,status:'backfilled',metadataJson:{source:'backfill',type:record.type||'',recoveredFrom:record.metadata?.recoveredFrom||''}});
+      let saved=[];
+      if((parsed.keyDecisions.length||parsed.openQuestions.length||parsed.relationshipUpdates.length||parsed.tasks.length||parsed.contactUpdates.length)){
+        saved=await saveTranscriptEvidenceObservations({sourceId:record.id,title,transcript:rawText,parsed,participants,summary});
+      }else{
+        const evidence=await evidenceItemForSource('transcript',record.id);
+        const result=await runObservationEngine(evidence,{candidates:transcriptBackfillCandidates({...record,title,rawText},participants),replace:true});
+        saved=result.observations||[];
+        relationshipEvents+=result.relationshipEngine?.events?.length||0;
+        agencyMoves+=result.agencyEngine?.moves?.length||0;
+      }
+      processed++;
+      observations+=saved.length;
+    }catch(e){errors.push({sourceId:record.id,title:record.title||'',error:e.message});}
+  }
+  return {processed,observations,relationshipEvents,agencyMoves,errors};
+}
+function uniqueEmailsByMessageId(results=[]){
+  const seen=new Set(),emails=[];
+  for(const result of results){
+    for(const email of (result&&result.emails)||[]){
+      const key=[email.provider||'',email.messageId||email.id||'',email.threadId||''].join(':');
+      if(!email.messageId||seen.has(key))continue;
+      seen.add(key);emails.push(email);
+    }
+  }
+  return emails;
+}
+async function backfillEmailEvidence({days=90,limit=100}={}){
+  const gmailRecent=`newer_than:${Math.max(1,Math.min(365,Number(days)||90))}d`;
+  const [rules,recent,unread,sent,outlook]=await Promise.all([
+    listEmailRules(currentUserId()).catch(()=>[]),
+    fetchGmailMessages({query:gmailRecent,maxResults:limit,includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchGmailMessages({query:'is:unread',maxResults:Math.min(limit,100),includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchGmailMessages({query:`in:sent newer_than:${Math.max(1,Math.min(365,Number(days)||90))}d`,maxResults:Math.min(limit,100),includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'})),
+    fetchUnifiedOutlookEmails(Math.min(limit,100)).catch(e=>({emails:[],error:e.message,provider:'outlook'}))
+  ]);
+  const providerErrors=[recent,unread,sent,outlook].filter(r=>r&&r.error).map(r=>({provider:r.provider||'email',error:r.error}));
+  const emails=uniqueEmailsByMessageId([recent,unread,sent,outlook]).map(email=>({...email,...classifyEmail(email,rules)}));
+  const saved=await saveEmailEvidenceBatch(emails);
+  return {processed:emails.length,saved:saved.filter(Boolean).length,providerErrors};
+}
+async function backfillValIntelligence(options={}){
+  if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
+  const days=Math.max(1,Math.min(3650,Number(options.days)||3650));
+  const transcriptLimit=Math.max(1,Math.min(500,Number(options.transcriptLimit)||250));
+  const emailLimit=Math.max(1,Math.min(100,Number(options.emailLimit)||100));
+  const [transcripts,email]=await Promise.all([
+    options.skipTranscripts?Promise.resolve({processed:0,observations:0,relationshipEvents:0,agencyMoves:0,errors:[]}):backfillTranscriptEvidence({days,limit:transcriptLimit}),
+    options.skipEmail?Promise.resolve({processed:0,saved:0,providerErrors:[]}):backfillEmailEvidence({days:Math.min(days,365),limit:emailLimit})
+  ]);
+  const [counts,briefing,storedRelationships]=await Promise.all([
+    executiveBriefingCounts(),
+    buildExecutiveBriefing().catch(()=>null),
+    relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
+  ]);
+  return {ok:true,generatedAt:new Date().toISOString(),days,transcripts,email,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+}
+
 function mapGoogleEvent(ev){
   return {
     id:ev.id, summary:ev.summary||'(No title)',
@@ -15850,8 +16026,21 @@ app.get('/api/relationships/review',async(req,res)=>{
       return res.json(demoRelationshipReview(demoState(req,res),Number(req.query.windowDays)||7));
     }
     const windowDays=Math.min(Math.max(Number(req.query.windowDays)||7,1),90);
-    res.json(await buildRelationshipReview({windowDays}));
+    const review=await buildRelationshipReview({windowDays});
+    if((review.relationshipProfiles||[]).length)return res.json(review);
+    const stored=await relationshipReviewFromStoredProfiles({windowDays}).catch(()=>null);
+    res.json(stored&&(stored.relationshipProfiles||[]).length?{...stored,providerReviewErrors:review.errors||[]}:review);
   }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/intelligence/backfill',async(req,res)=>{
+  try{
+    const result=await backfillValIntelligence(req.body||{});
+    await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'val_intelligence_backfill_failed',resourceType:'intelligence',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });
