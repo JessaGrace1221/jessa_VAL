@@ -11383,6 +11383,22 @@ function valTitleCandidate(value){
   if(/^(transcript|meeting|call|zoom|recording)\s*#?\d*$/i.test(title))return '';
   return title.slice(0,180);
 }
+function transcriptTopicTitleFromText(rawText=''){
+  const text=String(rawText||'').replace(/\s+/g,' ').trim();
+  if(!text)return '';
+  const patterns=[
+    /\b(?:about|regarding|re:|for)\s+([A-Z][A-Za-z0-9&' -]{2,70})(?:[.?!,;:]|\s+(?:with|because|today|tomorrow|next|using)\b)/,
+    /\b([A-Z][A-Za-z0-9&' -]{2,70})\s+(?:project|proposal|meeting|call|launch|rollout|renewal|follow-up|follow up)\b/i
+  ];
+  for(const pattern of patterns){
+    const match=text.match(pattern);
+    const candidate=valTitleCandidate(match&&match[1]);
+    if(candidate&&!/^(this|that|upcoming|attendee|meeting|conversation|transcript)$/i.test(candidate))return candidate.split(/\s+/).slice(0,8).join(' ');
+  }
+  const words=(text.match(/\b[A-Z][A-Za-z0-9&']{2,}\b/g)||[]).filter(w=>!/^(VAL|URL|API|GHL|CRM|Google|Zoom|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/i.test(w));
+  const unique=[...new Set(words)].slice(0,4);
+  return unique.length>=2?unique.join(' '):'';
+}
 function transcriptDateLabel(value){
   const d=value?new Date(value):null;
   if(!d||isNaN(d.getTime()))return '';
@@ -11405,7 +11421,9 @@ function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const company=valTitleCandidate(payload.companyName||payload.company||meta.companyName||meta.company||sourceMeta.companyName||sourceMeta.company);
   const date=transcriptDateLabel(payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||payload.receivedAt||meta.timestamp||meta.createdAt);
   if(contact||company)return [contact||company,contact&&company?company:'',date].filter(Boolean).join(' · ');
-  const speakers=[...String(rawText||payload.transcript||'').matchAll(/^\s*([^:\n]{2,50}):\s*.+$/gm)].map(m=>m[1].trim()).filter(n=>!/^https?|meeting|transcript|speaker$/i.test(n));
+  const topic=transcriptTopicTitleFromText(rawText||payload.transcript||'');
+  if(topic)return topic+(date?' · '+date:'');
+  const speakers=[...String(rawText||payload.transcript||'').matchAll(/^\s*([^:\n]{2,50}):\s*.+$/gm)].map(m=>m[1].trim()).filter(n=>!/^https?|meeting|transcript|speaker|user|time|date|summary|system|assistant$/i.test(n));
   const unique=[...new Set(speakers)].slice(0,3);
   if(unique.length)return unique.join('/')+(date?' · '+date:'');
   return 'Untitled Transcript';
@@ -11711,26 +11729,58 @@ function agencyScoreDue(dueAt){
   if(days<=7)return 10;
   return 3;
 }
+function agencyContentSubject(content='',fallback=''){
+  const text=String(content||'').replace(/\s+/g,' ').trim();
+  const clean=text
+    .replace(/^(A\s+)?(risk|opportunity|question|need|task|promise|commitment|deadline|follow.?up|relationship signal|emotional context)\s+(signal\s+)?(was\s+)?(observed|noticed|learned)\s*:\s*/i,'')
+    .replace(/\bincludes possible risk, concern, blocker, or drift language\.?$/i,'')
+    .replace(/\bincludes possible opportunity, introduction, referral, partnership, lead, client, or deal language\.?$/i,'')
+    .trim();
+  const source=clean||fallback||text;
+  return source.length>95?source.slice(0,92).replace(/\s+\S*$/,'')+'...':source;
+}
+function agencyMoveTitleForObservation(type,content,evidenceItem={}){
+  const subject=agencyContentSubject(content,evidenceItem.title||evidenceItem.summary||'this evidence');
+  const prefix={
+    risk:'Review risk',
+    opportunity:'Prepare opportunity move',
+    question:'Prepare answer',
+    need:'Support the need',
+    pricing_question:'Prepare pricing answer',
+    meeting_request:'Prepare scheduling response',
+    document_request:'Prepare document follow-up',
+    reply_needed:'Draft reply',
+    preference:'Remember preference',
+    decision:'Update project memory',
+    relationship_signal:'Nurture relationship',
+    emotional_context:'Notice emotional context',
+    idea:'Hold idea'
+  }[type]||'Review signal';
+  if(['promise','commitment','task','deadline','follow_up'].includes(type))return `Close loop: ${subject}`;
+  if(type==='spam'||type==='newsletter'||type==='receipt')return `Ignore ${type}`;
+  return `${prefix}: ${subject}`;
+}
 function agencyMovePlanForObservation(observation={},evidenceItem={}){
   const type=String(observation.observationType||observation.observation_type||'').toLowerCase();
   const content=String(observation.content||'').replace(/\s+/g,' ').trim();
   const confidence=Math.max(0,Math.min(1,Number(observation.confidence)||0));
   const dueAt=observation.dueAt||observation.due_at||null;
   const sourceTitle=evidenceItem.title||evidenceItem.summary||'the evidence';
-  const base={moveType:'wait',title:'Watch for whether this needs action',why:`VAL noticed: ${content}`,confidence,agencyLevel:1,status:'candidate',priorityBand:'watching',urgencyScore:agencyScoreDue(dueAt),leverageScore:0,riskScore:0,relationshipScore:0,whatChanged:content,ifIgnored:'This may simply remain context unless more evidence appears.'};
-  if(['spam','newsletter','receipt'].includes(type))return {...base,moveType:'ignore',title:'Ignore low-value inbox noise',why:`VAL classified this as ${type} from ${sourceTitle}.`,confidence:Math.max(confidence,0.85),status:'ignored',priorityBand:'ignored',ifIgnored:'No user attention is needed.'};
-  if(['promise','commitment','task','deadline','follow_up'].includes(type))return {...base,moveType:'close_open_loop',title:'Close the open loop',why:`A ${type} was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:22,relationshipScore:16,ifIgnored:'Trust or momentum may degrade because the loop remains open.'};
-  if(type==='reply_needed')return {...base,moveType:'draft_reply',title:'Prepare a reply draft',why:`The evidence suggests a reply is needed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:18,relationshipScore:18,ifIgnored:'The conversation may stall or the other person may feel ignored.'};
-  if(type==='pricing_question')return {...base,moveType:'answer_question',title:'Prepare pricing answer',why:`Pricing or proposal language was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:25,relationshipScore:14,ifIgnored:'A revenue or decision moment may lose momentum.'};
-  if(type==='meeting_request')return {...base,moveType:'schedule_meeting',title:'Prepare scheduling response',why:`Scheduling or meeting language was observed: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:14,relationshipScore:16,ifIgnored:'The meeting path may remain unclear.'};
-  if(type==='document_request')return {...base,moveType:'send_document',title:'Prepare requested document follow-up',why:`A document or attachment need was observed: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:18,relationshipScore:14,ifIgnored:'The other person may not receive what they need to move forward.'};
-  if(type==='risk')return {...base,moveType:'review_risk',title:'Review relationship or project risk',why:`A risk signal was observed: ${content}`,agencyLevel:2,priorityBand:'top_recommended',riskScore:30,relationshipScore:18,ifIgnored:'The risk may grow quietly because no one is watching it.'};
-  if(type==='opportunity')return {...base,moveType:'prepare',title:'Prepare the next opportunity move',why:`An opportunity signal was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:28,relationshipScore:16,ifIgnored:'A valuable opening may cool before the user acts.'};
-  if(type==='question'||type==='need')return {...base,moveType:'answer_question',title:type==='need'?'Capture and prepare around the need':'Prepare an answer',why:`VAL observed a ${type}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:15,relationshipScore:12,ifIgnored:'The person may still need clarity or support.'};
-  if(type==='preference')return {...base,moveType:'capture_preference',title:'Capture preference quietly',why:`VAL learned a preference: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:10,ifIgnored:'Future help may be less personalized.'};
-  if(type==='relationship_signal'||type==='emotional_context')return {...base,moveType:'nurture_relationship',title:'Notice relationship context',why:`VAL noticed relationship context: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:16,ifIgnored:'This should mostly enrich the relationship profile unless the pattern repeats.'};
-  if(type==='decision')return {...base,moveType:'update_project',title:'Update project context quietly',why:`A decision was observed: ${content}`,agencyLevel:1,priorityBand:'quiet',leverageScore:10,ifIgnored:'Project memory may become less accurate.'};
-  if(type==='idea')return {...base,moveType:'wait',title:'Hold idea for later',why:`An idea was observed, but not every idea deserves action: ${content}`,agencyLevel:1,priorityBand:'watching',ifIgnored:'No immediate cost unless more evidence raises its importance.'};
+  const title=agencyMoveTitleForObservation(type,content,evidenceItem);
+  const base={moveType:'wait',title,why:`VAL noticed from ${sourceTitle}: ${content}`,confidence,agencyLevel:1,status:'candidate',priorityBand:'watching',urgencyScore:agencyScoreDue(dueAt),leverageScore:0,riskScore:0,relationshipScore:0,whatChanged:content,ifIgnored:'This may simply remain context unless more evidence appears.'};
+  if(['spam','newsletter','receipt'].includes(type))return {...base,moveType:'ignore',title,why:`VAL classified this as ${type} from ${sourceTitle}.`,confidence:Math.max(confidence,0.85),status:'ignored',priorityBand:'ignored',ifIgnored:'No user attention is needed.'};
+  if(['promise','commitment','task','deadline','follow_up'].includes(type))return {...base,moveType:'close_open_loop',title,why:`A ${type} was observed from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:22,relationshipScore:16,ifIgnored:'Trust or momentum may degrade because the loop remains open.'};
+  if(type==='reply_needed')return {...base,moveType:'draft_reply',title,why:`The evidence suggests a reply is needed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:18,relationshipScore:18,ifIgnored:'The conversation may stall or the other person may feel ignored.'};
+  if(type==='pricing_question')return {...base,moveType:'answer_question',title,why:`Pricing or proposal language was observed from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:25,relationshipScore:14,ifIgnored:'A revenue or decision moment may lose momentum.'};
+  if(type==='meeting_request')return {...base,moveType:'schedule_meeting',title,why:`Scheduling or meeting language was observed from ${sourceTitle}: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:14,relationshipScore:16,ifIgnored:'The meeting path may remain unclear.'};
+  if(type==='document_request')return {...base,moveType:'send_document',title,why:`A document or attachment need was observed from ${sourceTitle}: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:18,relationshipScore:14,ifIgnored:'The other person may not receive what they need to move forward.'};
+  if(type==='risk')return {...base,moveType:'review_risk',title,why:`Risk signal from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'top_recommended',riskScore:30,relationshipScore:18,ifIgnored:'The risk may grow quietly because no one is watching it.'};
+  if(type==='opportunity')return {...base,moveType:'prepare',title,why:`Opportunity signal from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:28,relationshipScore:16,ifIgnored:'A valuable opening may cool before the user acts.'};
+  if(type==='question'||type==='need')return {...base,moveType:'answer_question',title,why:`VAL observed a ${type} from ${sourceTitle}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:15,relationshipScore:12,ifIgnored:'The person may still need clarity or support.'};
+  if(type==='preference')return {...base,moveType:'capture_preference',title,why:`VAL learned a preference from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:10,ifIgnored:'Future help may be less personalized.'};
+  if(type==='relationship_signal'||type==='emotional_context')return {...base,moveType:'nurture_relationship',title,why:`VAL noticed relationship context from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:16,ifIgnored:'This should mostly enrich the relationship profile unless the pattern repeats.'};
+  if(type==='decision')return {...base,moveType:'update_project',title,why:`A decision was observed from ${sourceTitle}: ${content}`,agencyLevel:1,priorityBand:'quiet',leverageScore:10,ifIgnored:'Project memory may become less accurate.'};
+  if(type==='idea')return {...base,moveType:'wait',title,why:`An idea was observed from ${sourceTitle}, but not every idea deserves action: ${content}`,agencyLevel:1,priorityBand:'watching',ifIgnored:'No immediate cost unless more evidence raises its importance.'};
   return base;
 }
 function agencyImportance(plan={}){

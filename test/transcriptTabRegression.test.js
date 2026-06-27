@@ -31,6 +31,13 @@ test('retrieval merges dedicated transcript storage with legacy durable memory',
   assert.match(server,/legacyGroups/);
 });
 
+test('transcript titles reject command labels and prefer real topics',()=>{
+  assert.match(server,/function transcriptTopicTitleFromText/);
+  assert.match(server,/prepare me for\|summarize this past meeting\|meeting prep/);
+  assert.match(server,/speaker\|user\|time\|date\|summary\|system\|assistant/);
+  assert.match(server,/const topic=transcriptTopicTitleFromText/);
+});
+
 test('retrieval returns required fields and accurate counters',()=>{
   for(const field of ['receivedAt','reviewStatus','openActionCount','sourcePayloadMetadata','company','contactName'])assert.ok(server.includes(field));
   assert.match(server,/\['new','unreviewed','needs_review'\]\.includes\(t\.reviewStatus\)/);

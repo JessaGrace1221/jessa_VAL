@@ -87,6 +87,9 @@ test('agency engine ranks discerning moves without turning observations into tas
   }
   assert.match(server,/async function runAgencyEngineForObservations/);
   assert.match(server,/function agencyMovePlanForObservation/);
+  assert.match(server,/function agencyMoveTitleForObservation/);
+  assert.match(server,/function agencyContentSubject/);
+  assert.doesNotMatch(server,/title:'Review relationship or project risk'/);
   assert.match(server,/function agencyImportance/);
   assert.match(server,/function agencyPriorityBand/);
   assert.match(server,/async function saveAgencyMove/);
