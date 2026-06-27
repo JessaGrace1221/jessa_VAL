@@ -3041,6 +3041,151 @@ async function initValDb(){
       error_message text,
       created_at timestamptz not null default now()
     );
+    create table if not exists evidence_items (
+      id text primary key,
+      tenant_id text not null default 'default',
+      source_type text not null,
+      source_id text not null,
+      source_url text,
+      occurred_at timestamptz,
+      captured_at timestamptz not null default now(),
+      title text,
+      raw_text text,
+      summary text,
+      participants_json jsonb not null default '[]',
+      entities_json jsonb not null default '{}',
+      confidence numeric not null default 0,
+      status text not null default 'captured',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists evidence_observations (
+      id text primary key,
+      tenant_id text not null default 'default',
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_type text not null,
+      person_id text,
+      organization_id text,
+      project_id text,
+      content text not null,
+      exact_quote text,
+      confidence numeric not null default 0,
+      status text not null default 'observed',
+      due_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint evidence_observation_type_check check (observation_type in ('promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'))
+    );
+    create table if not exists relationship_profiles (
+      id text primary key,
+      tenant_id text not null default 'default',
+      profile_type text not null,
+      profile_key text not null,
+      person_id text,
+      organization_id text,
+      project_id text,
+      display_name text not null default '',
+      summary text not null default '',
+      relationship_status text not null default 'observed',
+      confidence numeric not null default 0,
+      last_observed_at timestamptz,
+      observation_count integer not null default 0,
+      open_loop_count integer not null default 0,
+      promise_count integer not null default 0,
+      risk_count integer not null default 0,
+      opportunity_count integer not null default 0,
+      preference_count integer not null default 0,
+      emotional_context_json jsonb not null default '[]',
+      relationship_signals_json jsonb not null default '[]',
+      risks_json jsonb not null default '[]',
+      opportunities_json jsonb not null default '[]',
+      preferences_json jsonb not null default '[]',
+      open_loops_json jsonb not null default '[]',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint relationship_profile_type_check check (profile_type in ('person','organization','project')),
+      unique (tenant_id,profile_type,profile_key)
+    );
+    create table if not exists relationship_timeline_events (
+      id text primary key,
+      tenant_id text not null default 'default',
+      profile_type text not null,
+      profile_key text not null,
+      profile_id text,
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_id text not null references evidence_observations(id) on delete cascade,
+      observation_type text not null,
+      content text not null,
+      exact_quote text,
+      confidence numeric not null default 0,
+      status text not null default 'observed',
+      occurred_at timestamptz,
+      due_at timestamptz,
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      constraint relationship_timeline_profile_type_check check (profile_type in ('person','organization','project')),
+      unique (tenant_id,profile_type,profile_key,evidence_item_id,observation_type,content)
+    );
+    create table if not exists agency_moves (
+      id text primary key,
+      tenant_id text not null default 'default',
+      move_type text not null,
+      title text not null,
+      why text not null,
+      confidence numeric not null default 0,
+      importance_score numeric not null default 0,
+      urgency_score numeric not null default 0,
+      leverage_score numeric not null default 0,
+      risk_score numeric not null default 0,
+      relationship_score numeric not null default 0,
+      agency_level integer not null default 1,
+      priority_band text not null default 'quiet',
+      status text not null default 'candidate',
+      person_id text,
+      organization_id text,
+      project_id text,
+      due_at timestamptz,
+      source_observation_ids jsonb not null default '[]',
+      source_evidence_ids jsonb not null default '[]',
+      what_changed text,
+      if_ignored text,
+      prepared_payload_json jsonb not null default '{}',
+      metadata_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint agency_move_type_check check (move_type in ('draft_reply','send_follow_up','schedule_meeting','prepare_meeting','send_document','answer_question','review_risk','capture_preference','nurture_relationship','close_open_loop','wait','ignore','escalate','prepare','update_project','protect_relationship')),
+      constraint agency_move_status_check check (status in ('candidate','prepared','needs_approval','active','superseded','resolved_by_reality','dismissed','snoozed','ignored')),
+      constraint agency_move_priority_band_check check (priority_band in ('top_recommended','also_important','quiet','watching','ignored')),
+      constraint agency_move_level_check check (agency_level in (1,2,3))
+    );
+    create table if not exists agency_move_sources (
+      id text primary key,
+      tenant_id text not null default 'default',
+      agency_move_id text not null references agency_moves(id) on delete cascade,
+      evidence_item_id text not null references evidence_items(id) on delete cascade,
+      observation_id text not null references evidence_observations(id) on delete cascade,
+      source_role text not null default 'supports',
+      created_at timestamptz not null default now(),
+      unique (tenant_id,agency_move_id,evidence_item_id,observation_id,source_role)
+    );
+    create table if not exists val_evidence_links (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      source_type text not null,
+      source_id text not null,
+      source_label text,
+      target_type text not null,
+      target_id text not null,
+      relationship text not null default 'supports',
+      summary text,
+      quote text,
+      confidence numeric not null default 0,
+      metadata jsonb not null default '{}',
+      created_at timestamptz not null default now()
+    );
     create table if not exists val_memory_items (
       id text primary key,
       user_id text not null default 'default',
@@ -3553,6 +3698,26 @@ async function initValDb(){
   await dbQuery('alter table val_sessions add column if not exists ip_address text');
   await dbQuery('alter table val_sessions add column if not exists user_agent text');
   await dbQuery('alter table val_sessions add column if not exists last_active_at timestamptz not null default now()');
+  await dbQuery(`alter table evidence_observations drop constraint if exists evidence_observation_type_check`);
+  await dbQuery(`alter table evidence_observations add constraint evidence_observation_type_check check (observation_type in ('promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'))`);
+  await dbQuery('create unique index if not exists evidence_items_source_idx on evidence_items(tenant_id,source_type,source_id)');
+  await dbQuery('create index if not exists evidence_items_status_idx on evidence_items(tenant_id,status,captured_at desc)');
+  await dbQuery('create index if not exists evidence_observations_item_idx on evidence_observations(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists evidence_observations_type_idx on evidence_observations(tenant_id,observation_type,status,due_at)');
+  await dbQuery('create index if not exists evidence_observations_person_idx on evidence_observations(tenant_id,person_id,observation_type) where person_id is not null');
+  await dbQuery('create unique index if not exists relationship_profiles_key_idx on relationship_profiles(tenant_id,profile_type,profile_key)');
+  await dbQuery('create index if not exists relationship_profiles_observed_idx on relationship_profiles(tenant_id,profile_type,last_observed_at desc)');
+  await dbQuery('create index if not exists relationship_timeline_profile_idx on relationship_timeline_events(tenant_id,profile_type,profile_key,occurred_at desc)');
+  await dbQuery('create index if not exists relationship_timeline_evidence_idx on relationship_timeline_events(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists relationship_timeline_observation_idx on relationship_timeline_events(tenant_id,observation_id)');
+  await dbQuery('create index if not exists agency_moves_priority_idx on agency_moves(tenant_id,priority_band,status,importance_score desc,confidence desc)');
+  await dbQuery('create index if not exists agency_moves_due_idx on agency_moves(tenant_id,status,due_at)');
+  await dbQuery('create index if not exists agency_moves_person_idx on agency_moves(tenant_id,person_id,status) where person_id is not null');
+  await dbQuery('create index if not exists agency_moves_project_idx on agency_moves(tenant_id,project_id,status) where project_id is not null');
+  await dbQuery('create index if not exists agency_move_sources_evidence_idx on agency_move_sources(tenant_id,evidence_item_id)');
+  await dbQuery('create index if not exists agency_move_sources_observation_idx on agency_move_sources(tenant_id,observation_id)');
+  await dbQuery('create index if not exists val_evidence_links_source_idx on val_evidence_links(tenant_id,user_id,source_type,source_id)');
+  await dbQuery('create index if not exists val_evidence_links_target_idx on val_evidence_links(tenant_id,user_id,target_type,target_id)');
   await seedAdminUser();
   console.log('VAL Postgres store ready');
 }
@@ -4485,6 +4650,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       const c=classifyEmail(email,rules);
       return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
+    const evidenceResults=await saveEmailEvidenceBatch(emails);
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed').length;
@@ -4503,10 +4669,10 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length},
       rules
     };
   }catch(e){
@@ -5584,6 +5750,59 @@ function classifyEmail(email,rules=[]){
     return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
   }
   return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
+}
+function emailEvidenceStatus(email){
+  const classification=String(email.classification||'').toLowerCase();
+  if(['ignored','low_priority','solicitation','spam_like'].includes(classification))return 'ignored';
+  if(['needs_attention','needs_reply','waiting_on_response','forward_to_team','appointment_recap_needed'].includes(classification))return 'action_suggested';
+  return 'parsed';
+}
+function emailConfidenceNumber(confidence){
+  const c=String(confidence||'medium').toLowerCase();
+  if(c==='high')return 0.9;
+  if(c==='low')return 0.45;
+  return 0.65;
+}
+function emailParticipantsJson(email){
+  return [
+    email.from?{role:'from',name:email.from.name||'',email:email.from.email||''}:null,
+    ...(email.to||[]).map(p=>({role:'to',name:p.name||'',email:p.email||''})),
+    ...(email.cc||[]).map(p=>({role:'cc',name:p.name||'',email:p.email||''}))
+  ].filter(p=>p&&(p.name||p.email));
+}
+function emailSourceText(email){
+  return [email.subject,email.bodyText,email.bodyPreview,email.snippet].filter(Boolean).join('\n\n').trim();
+}
+function emailObservationCandidates(email){
+  const text=emailSourceText(email), lower=text.toLowerCase(), candidates=[];
+  const add=(observationType,content,exactQuote='',confidence=emailConfidenceNumber(email.confidence),status='observed')=>{
+    if(content)candidates.push({observationType,content,exactQuote:exactQuote||transcriptSupportingQuote(text,content),confidence,status});
+  };
+  if(/\b(unsubscribe|newsletter|digest|roundup)\b/i.test(lower))add('newsletter','Email appears to be a newsletter or bulk update.',email.snippet||email.subject,0.85,'ignored');
+  if(/\b(receipt|order confirmation|payment received|invoice paid|your order|transaction)\b/i.test(lower))add('receipt','Email appears to be a receipt or transactional record.',email.snippet||email.subject,0.85,'ignored');
+  if(/\b(seo|special offer|limited time|cold email|sponsor|advertis|book a call|unsubscribe)\b/i.test(lower))add('spam','Email appears promotional, unsolicited, or low relationship value.',email.snippet||email.subject,0.75,'ignored');
+  if(email.classification==='needs_reply')add('reply_needed',email.reason||'Email asks for a response or decision.',email.snippet||email.bodyPreview,emailConfidenceNumber(email.confidence),'needs_review');
+  if(email.classification==='waiting_on_response')add('follow_up',email.reason||'Thread appears to be waiting on a response.',email.snippet||email.bodyPreview,emailConfidenceNumber(email.confidence),'action_suggested');
+  if(/\b(price|pricing|cost|quote|estimate|budget|how much|starting at|proposal)\b/i.test(lower))add('pricing_question','Email includes pricing, cost, quote, estimate, budget, or proposal language.',email.snippet||email.bodyPreview,0.8,'needs_review');
+  if(/\b(available|availability|schedule|meeting|meet|call|zoom|google meet|calendar)\b/i.test(lower))add('meeting_request','Email includes scheduling or meeting language.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(send|share|attach|attachment|document|proposal|contract|agreement|worksheet|file|pdf|doc)\b/i.test(lower))add('document_request','Email may involve a document request or document follow-up.',email.snippet||email.bodyPreview,0.7,'needs_review');
+  if(/\b(intro|introduction|referral|partner|partnership|client|lead|opportunity|proposal)\b/i.test(lower))add('opportunity','Email may contain relationship or revenue opportunity signal.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(urgent|concern|issue|blocked|problem|risk|complaint|confused|not sure|worried)\b/i.test(lower))add('risk','Email may contain a risk, blocker, or relationship concern.',email.snippet||email.bodyPreview,0.75,'needs_review');
+  if(/\b(thank you|appreciate|excited|looking forward|great talking|good to meet|warm|referred)\b/i.test(lower))add('relationship_signal','Email contains relationship momentum or warmth.',email.snippet||email.bodyPreview,0.65,'observed');
+  if(!candidates.length&&email.classification&&!['low_priority','ignored','solicitation','spam_like'].includes(email.classification))add('relationship_signal',email.reason||'Email may be relationship-relevant.',email.snippet||email.bodyPreview,0.55,'observed');
+  return candidates;
+}
+async function saveEmailEvidence(email){
+  if(!email?.messageId)return null;
+  const sourceType=email.provider==='outlook'?'outlook_email':'gmail_email';
+  const status=emailEvidenceStatus(email);
+  const evidence=await saveEvidenceItem({sourceType,sourceId:email.messageId,sourceUrl:email.webLink||'',occurredAt:email.date||email.receivedAt||'',capturedAt:new Date().toISOString(),title:email.subject||'(No subject)',rawText:emailSourceText(email),summary:email.reason||email.snippet||email.bodyPreview||'',participantsJson:emailParticipantsJson(email),entitiesJson:{threadId:email.threadId||'',provider:email.provider||'',classification:email.classification||'',recommendedAction:email.recommendedAction||'',from:email.from||{},hasAttachments:!!email.hasAttachments},confidence:emailConfidenceNumber(email.confidence),status,metadataJson:{provider:email.provider||'',messageId:email.messageId||'',threadId:email.threadId||'',labels:email.labels||[],requiresApproval:!!email.requiresApproval,matchedRuleId:email.matchedRuleId||''}}).catch(()=>null);
+  if(!evidence?.id)return null;
+  await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(()=>null);
+  return evidence;
+}
+async function saveEmailEvidenceBatch(emails=[]){
+  return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
 }
 function emailNeedsResponseSignal(email){
   return /\b(proposal|contract|pricing|introduction|intro|please confirm|let me know|waiting on|can you review|next steps|following up|recap|circle back|review this|thoughts|approve|approval)\b/i.test([email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' '));
@@ -10844,6 +11063,94 @@ async function saveMemoryItem(payload){
 }
 const TRANSCRIPT_SAFE_MATCH_CONFIDENCE=0.82;
 const TRANSCRIPT_SAFE_ACTION_CONFIDENCE=0.82;
+const EVIDENCE_OBSERVATION_TYPES=['promise','commitment','task','decision','question','need','preference','risk','opportunity','relationship_signal','emotional_context','deadline','follow_up','idea','reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt'];
+const PRESENCE_MODE_CONTRACT={
+  coreRule:'VAL may be proactive with evidence-backed insight, but conservative with consequences.',
+  proactiveMaySay:[
+    'Careful, this sounds like scope drift.',
+    'You promised something similar last week.',
+    'This connects to an existing project.',
+    'You have a draft ready for this.',
+    'This person has not replied since the pricing conversation.'
+  ],
+  privateActionsWithoutConfirmation:['save_evidence','extract_observations','update_memory','update_relationship_timeline','create_draft','prepare_meeting_brief','suggest_task','classify_urgency','mark_possible_follow_up'],
+  confirmationRequired:['send_email','send_text','invite_attendee','book_meeting_with_attendee','delete_information','move_crm_stage','spend_money','publish_content','share_transcript','change_user_settings'],
+  handsFreeCommands:['send_email_about','draft_for_person','schedule_meeting_with_person','remind_me','make_task','add_to_project','what_am_i_missing','what_are_you_noticing','prepare_meeting','read_briefing','summarize_conversation','follow_up_next_week','remember_this','ignore_that'],
+  meetingWarnings:['scope_drift','unanswered_question','missed_buying_signal','repeated_objection','relationship_tension','decision_avoidance','timeline_risk','budget_risk','promise_made','unclear_owner','similar_past_project_warning','alignment_issue'],
+  evidenceFields:['raw_transcript','summary','participants','topics','projects_mentioned','people_mentioned','decisions','commitments','promises','questions','risks','ideas','emotional_context','follow_ups','ignored_noise_sections'],
+  actionRules:{
+    createWhen:['clear_owner','clear_desired_outcome','clear_next_step'],
+    draftWhen:['message_should_be_written','proposal_should_be_prepared','meeting_brief_needed','response_likely_needed'],
+    ignoreWhen:['rambling_with_no_intent','duplicate_item','low_confidence_extraction','already_completed','pure_emotional_release_without_reflection_request']
+  }
+};
+function presenceModeEnabledFromRequest(req){
+  const channel=String(req?.body?.channel||req?.body?.mode||req?.body?.presenceMode||'').toLowerCase();
+  return !!req?.body?.presenceMode||['voice','driving','meeting','presence','thinking_together'].includes(channel);
+}
+function presenceIntentAction(text){
+  const s=String(text||'').toLowerCase();
+  if(/\b(send|email|mail)\b/.test(s)&&/\b(email|mail|message|note)\b/.test(s))return 'send_email';
+  if(/\b(text|sms)\b/.test(s)&&/\b(send|message)\b/.test(s))return 'send_text';
+  if(/\b(invite|add)\b[\s\S]{0,40}\b(attendee|guest|them|him|her|greg|nick|michele)\b/.test(s))return 'invite_attendee';
+  if(/\b(book|schedule|set up)\b[\s\S]{0,70}\b(meeting|appointment|call)\b/.test(s)&&/\bwith\b/.test(s))return 'book_meeting_with_attendee';
+  if(/\b(delete|remove|erase)\b/.test(s))return 'delete_information';
+  if(/\b(move|advance|change)\b[\s\S]{0,45}\b(crm|pipeline|stage|opportunity)\b/.test(s))return 'move_crm_stage';
+  if(/\b(pay|buy|purchase|spend|charge)\b/.test(s))return 'spend_money';
+  if(/\b(publish|post|launch)\b/.test(s))return 'publish_content';
+  if(/\b(share|forward)\b[\s\S]{0,50}\b(transcript|recording|notes)\b/.test(s))return 'share_transcript';
+  if(/\b(change|update|turn on|enable|disable)\b[\s\S]{0,45}\b(setting|settings|trusted send|permission)\b/.test(s))return 'change_user_settings';
+  if(/\b(draft|write|compose)\b/.test(s))return 'create_draft';
+  if(/\b(remember this|save this|note this)\b/.test(s))return 'update_memory';
+  if(/\b(remind me|follow up|make this a task|add this to (the )?project|prepare me|summarize this|read me|what am i missing|what are you noticing)\b/.test(s))return 'prepare';
+  if(/\b(ignore that|never mind|disregard)\b/.test(s))return 'ignore';
+  if(/\b(scope drift|buying signal|unclear owner|timeline risk|budget risk|relationship tension|decision avoidance|objection)\b/.test(s))return 'notice';
+  return 'notice';
+}
+function classifyPresenceIntent(text,context={}){
+  const command=String(text||'').replace(/\s+/g,' ').trim();
+  const action=presenceIntentAction(command);
+  const requiresConfirmation=PRESENCE_MODE_CONTRACT.confirmationRequired.includes(action);
+  const privateAllowed=PRESENCE_MODE_CONTRACT.privateActionsWithoutConfirmation.includes(action)||['create_draft','prepare','notice','ignore','update_memory'].includes(action);
+  let intent='notice';
+  if(requiresConfirmation)intent='confirm_required';
+  else if(action==='ignore')intent='ignore';
+  else if(privateAllowed)intent='prepare';
+  const evidenceBacked=!!(context.evidenceItemId||context.sourceId||context.transcriptId||context.currentSession||command);
+  return {
+    ok:true,
+    mode:'presence',
+    intent,
+    action,
+    command,
+    evidenceBacked,
+    mayProactivelySay:intent==='notice'||intent==='prepare',
+    mayActWithoutConfirmation:privateAllowed&&!requiresConfirmation,
+    requiresConfirmation,
+    confirmationReason:requiresConfirmation?'This command could affect someone else, change external systems, or create an irreversible consequence. VAL can prepare it, but the human approves it.':'',
+    allowedPrivatePreparations:requiresConfirmation?['create_draft','prepare_meeting_brief','suggest_task','classify_urgency','mark_possible_follow_up']:[],
+    contractRule:PRESENCE_MODE_CONTRACT.coreRule
+  };
+}
+function presenceContractPrompt(){
+  return [
+    'Presence Mode Contract:',
+    PRESENCE_MODE_CONTRACT.coreRule,
+    'You may proactively mention useful, timely, evidence-backed observations. No vague coaching, generic encouragement, or fake insight.',
+    'You may perform only private preparation without approval: '+PRESENCE_MODE_CONTRACT.privateActionsWithoutConfirmation.join(', ')+'.',
+    'You must ask before external or risky actions: '+PRESENCE_MODE_CONTRACT.confirmationRequired.join(', ')+'.',
+    'Meeting warnings must be short and calm: '+PRESENCE_MODE_CONTRACT.meetingWarnings.join(', ')+'.'
+  ].join('\n');
+}
+function presenceSessionPayload(body={}){
+  const mode=String(body.mode||body.channel||body.presenceMode||'voice').toLowerCase().replace(/[^a-z0-9_ -]+/g,'_').replace(/\s+/g,'_')||'voice';
+  const transcript=String(body.rawTranscript||body.transcript||body.text||body.content||'').trim();
+  const id=String(body.id||body.sessionId||body.sourceId||uuid('presence'));
+  const title=valTitleCandidate(body.title)||`Presence Mode ${mode.replace(/_/g,' ')} session`;
+  const participants=Array.isArray(body.participants)?body.participants:Array.isArray(body.attendees)?body.attendees:[];
+  const metadata={...(body.metadata&&typeof body.metadata==='object'?body.metadata:{}),presenceMode:mode,contractVersion:'presence_mode_contract_v1',channel:body.channel||mode};
+  return {id,mode,transcript,title,participants,metadata,occurredAt:body.occurredAt||body.timestamp||body.createdAt||null,process:body.process!==false};
+}
 function transcriptFileArray(store,key){if(!Array.isArray(store[key]))store[key]=[];return store[key];}
 function transcriptDemoArray(key){const state=requestContext.getStore()?.demoState;if(!state)return null;if(!Array.isArray(state[key]))state[key]=[];return state[key];}
 function valTitleCandidate(value){
@@ -10896,10 +11203,11 @@ function contextualTaskTitle(contextTitle,taskTitle){
 async function saveTranscriptIndexRaw(payload,id){
   const rawTranscript=payload.transcript||payload.rawText||payload.text||'';
   const row={transcriptId:id,source:payload.source||payload.provider||'unknown',meetingTitle:transcriptDisplayTitleFromPayload(payload,rawTranscript),meetingDatetime:payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||null,calendarEventId:payload.calendarEventId||payload.calendar_event_id||payload.meetingId||payload.meeting_id||'',rawTranscript,processingStatus:'received',summaryStatus:'pending',createdAt:payload.timestamp||payload.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
-  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}return row;}
+  if(DEMO_MODE){const rows=transcriptDemoArray('transcriptIndex');if(rows){const i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);}await saveEvidenceItem({sourceType:'transcript',sourceId:id,sourceUrl:payload.sourceUrl||payload.url||'',occurredAt:row.meetingDatetime||row.createdAt,capturedAt:row.createdAt,title:row.meetingTitle,rawText:row.rawTranscript,summary:'',participantsJson:payload.attendees||payload.metadata?.attendees||[],entitiesJson:{calendarEventId:row.calendarEventId||'',meetingTitle:row.meetingTitle||''},confidence:1,status:'captured',metadataJson:{source:row.source,calendarEventId:row.calendarEventId||'',legacyTranscriptId:id}}).catch(()=>{});return row;}
   await valDbReady;
   if(pgPool){await dbQuery(`insert into transcripts (transcript_id,user_id,tenant_id,source,meeting_title,meeting_datetime,calendar_event_id,raw_transcript,processing_status,summary_status,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,'received','pending',coalesce($9::timestamptz,now()),now()) on conflict (transcript_id) do update set source=excluded.source,meeting_title=excluded.meeting_title,meeting_datetime=coalesce(excluded.meeting_datetime,transcripts.meeting_datetime),calendar_event_id=coalesce(nullif(excluded.calendar_event_id,''),transcripts.calendar_event_id),raw_transcript=excluded.raw_transcript,updated_at=now()`,[id,VAL_USER_ID,CLIENT_CONFIG.clientSlug||'default',row.source,row.meetingTitle,row.meetingDatetime,row.calendarEventId,row.rawTranscript,row.createdAt]);}
   else{const store=valStore(),rows=transcriptFileArray(store,'transcriptIndex'),i=rows.findIndex(x=>x.transcriptId===id);if(i>=0)rows[i]={...rows[i],...row};else rows.unshift(row);saveValStore(store);}
+  await saveEvidenceItem({sourceType:'transcript',sourceId:id,sourceUrl:payload.sourceUrl||payload.url||'',occurredAt:row.meetingDatetime||row.createdAt,capturedAt:row.createdAt,title:row.meetingTitle,rawText:row.rawTranscript,summary:'',participantsJson:payload.attendees||payload.metadata?.attendees||[],entitiesJson:{calendarEventId:row.calendarEventId||'',meetingTitle:row.meetingTitle||''},confidence:1,status:'captured',metadataJson:{source:row.source,calendarEventId:row.calendarEventId||'',legacyTranscriptId:id}}).catch(()=>{});
   return row;
 }
 async function updateTranscriptIndexStatus(id,updates={}){
@@ -10914,6 +11222,622 @@ async function logTranscriptAction(transcriptId,actionType,targetRecordId,status
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptActionLog');if(rows)rows.push(row);return row;}
   await valDbReady;if(pgPool)await dbQuery('insert into transcript_action_log (action_id,transcript_id,action_type,target_record_id,status,error_message,created_at) values ($1,$2,$3,$4,$5,$6,now())',[row.actionId,transcriptId,actionType,row.targetRecordId,status,row.errorMessage||null]);else{const store=valStore();transcriptFileArray(store,'transcriptActionLog').push(row);saveValStore(store);}return row;
 }
+function normalizeEvidenceObservationType(type){
+  const clean=String(type||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  return EVIDENCE_OBSERVATION_TYPES.includes(clean)?clean:'idea';
+}
+async function saveEvidenceItem(payload={}){
+  const row={
+    id:payload.id||uuid('evi'),
+    tenantId:payload.tenantId||tenantId(),
+    sourceType:String(payload.sourceType||payload.source_type||'unknown'),
+    sourceId:String(payload.sourceId||payload.source_id||''),
+    sourceUrl:String(payload.sourceUrl||payload.source_url||''),
+    occurredAt:payload.occurredAt||payload.occurred_at||null,
+    capturedAt:payload.capturedAt||payload.captured_at||new Date().toISOString(),
+    title:String(payload.title||''),
+    rawText:String(payload.rawText||payload.raw_text||''),
+    summary:String(payload.summary||''),
+    participantsJson:Array.isArray(payload.participantsJson)?payload.participantsJson:(Array.isArray(payload.participants_json)?payload.participants_json:[]),
+    entitiesJson:payload.entitiesJson&&typeof payload.entitiesJson==='object'?payload.entitiesJson:(payload.entities_json&&typeof payload.entities_json==='object'?payload.entities_json:{}),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    status:String(payload.status||'captured'),
+    metadataJson:payload.metadataJson&&typeof payload.metadataJson==='object'?payload.metadataJson:(payload.metadata_json&&typeof payload.metadata_json==='object'?payload.metadata_json:{}),
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.sourceId) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceItems');
+    if(rows){
+      const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId);
+      if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+      else rows.push(row);
+      return i>=0?rows[i]:row;
+    }
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into evidence_items (id,tenant_id,source_type,source_id,source_url,occurred_at,captured_at,title,raw_text,summary,participants_json,entities_json,confidence,status,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now(),now())
+      on conflict (tenant_id,source_type,source_id) do update set source_url=excluded.source_url, occurred_at=coalesce(excluded.occurred_at,evidence_items.occurred_at), captured_at=excluded.captured_at, title=excluded.title, raw_text=excluded.raw_text, summary=excluded.summary, participants_json=excluded.participants_json, entities_json=excluded.entities_json, confidence=excluded.confidence, status=excluded.status, metadata_json=excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.sourceType,row.sourceId,row.sourceUrl||null,row.occurredAt,row.capturedAt,row.title||null,row.rawText,row.summary||null,JSON.stringify(row.participantsJson),JSON.stringify(row.entitiesJson),row.confidence,row.status,JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore(),rows=transcriptFileArray(store,'evidenceItems'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.sourceType===row.sourceType&&x.sourceId===row.sourceId);
+  if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt,updatedAt:row.updatedAt};
+  else rows.push(row);
+  saveValStore(store);
+  return i>=0?rows[i]:row;
+}
+async function saveEvidenceObservation(payload={}){
+  const type=normalizeEvidenceObservationType(payload.observationType||payload.observation_type);
+  const row={
+    id:payload.id||uuid('obs'),
+    tenantId:payload.tenantId||tenantId(),
+    evidenceItemId:String(payload.evidenceItemId||payload.evidence_item_id||''),
+    observationType:type,
+    personId:String(payload.personId||payload.person_id||''),
+    organizationId:String(payload.organizationId||payload.organization_id||''),
+    projectId:String(payload.projectId||payload.project_id||''),
+    content:String(payload.content||'').trim(),
+    exactQuote:String(payload.exactQuote||payload.exact_quote||''),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    status:String(payload.status||'observed'),
+    dueAt:payload.dueAt||payload.due_at||null,
+    createdAt:new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!row.evidenceItemId||!row.content) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceObservations');
+    if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into evidence_observations (id,tenant_id,evidence_item_id,observation_type,person_id,organization_id,project_id,content,exact_quote,confidence,status,due_at,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())`,[row.id,row.tenantId,row.evidenceItemId,row.observationType,row.personId||null,row.organizationId||null,row.projectId||null,row.content,row.exactQuote||null,row.confidence,row.status,row.dueAt]);
+  }else{
+    const store=valStore();
+    transcriptFileArray(store,'evidenceObservations').push(row);
+    saveValStore(store);
+  }
+  return row;
+}
+async function clearEvidenceObservationsForItem(evidenceItemId){
+  if(!evidenceItemId) return;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceObservations')||[];
+    for(let i=rows.length-1;i>=0;i--)if(rows[i].evidenceItemId===evidenceItemId)rows.splice(i,1);
+    return;
+  }
+  await valDbReady;
+  if(pgPool){await dbQuery('delete from evidence_observations where tenant_id=$1 and evidence_item_id=$2',[tenantId(),evidenceItemId]);return;}
+  const store=valStore();store.evidenceObservations=transcriptFileArray(store,'evidenceObservations').filter(row=>row.evidenceItemId!==evidenceItemId);saveValStore(store);
+}
+async function evidenceItemForSource(sourceType,sourceId){
+  if(!sourceId)return null;
+  if(DEMO_MODE)return (transcriptDemoArray('evidenceItems')||[]).find(row=>row.tenantId===tenantId()&&row.sourceType===sourceType&&row.sourceId===sourceId)||null;
+  await valDbReady;
+  if(pgPool){const r=await dbQuery('select * from evidence_items where tenant_id=$1 and source_type=$2 and source_id=$3 limit 1',[tenantId(),sourceType,sourceId]);return transcriptPgRow(r.rows[0]);}
+  return transcriptFileArray(valStore(),'evidenceItems').find(row=>row.tenantId===tenantId()&&row.sourceType===sourceType&&row.sourceId===sourceId)||null;
+}
+function evidenceJsonValue(value,fallback){
+  if(value===null||value===undefined)return fallback;
+  if(typeof value==='string')try{return JSON.parse(value);}catch(e){return fallback;}
+  return value;
+}
+function relationshipObservationIsNoise(observation={}){
+  return ['spam','newsletter','receipt'].includes(String(observation.observationType||observation.observation_type||'').toLowerCase());
+}
+function relationshipProfileKeyForTarget(target={}){
+  if(target.profileType==='person')return target.personId?`person:${target.personId}`:personKey(target.displayName||target.name,target.email);
+  if(target.profileType==='organization')return target.organizationId?`organization:${target.organizationId}`:`organization:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
+  if(target.profileType==='project')return target.projectId?`project:${target.projectId}`:`project:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
+  return '';
+}
+function relationshipTargetsForObservation(evidenceItem={},observation={}){
+  if(relationshipObservationIsNoise(observation))return [];
+  const targets=[],seen=new Set(),owner=relationshipOwnerIdentity();
+  const participants=evidenceJsonValue(evidenceItem.participantsJson||evidenceItem.participants_json,[]);
+  const entities=evidenceJsonValue(evidenceItem.entitiesJson||evidenceItem.entities_json,{})||{};
+  const add=target=>{
+    const clean={...target,profileType:target.profileType||'person'};
+    clean.displayName=clean.displayName||clean.name||clean.email||clean.personId||clean.organizationId||clean.projectId||'Unknown';
+    clean.profileKey=relationshipProfileKeyForTarget(clean);
+    if(!clean.profileKey||seen.has(`${clean.profileType}:${clean.profileKey}`))return;
+    if(clean.profileType==='person'&&isOwnerRelationship({name:clean.displayName,email:clean.email},owner))return;
+    if(clean.profileType==='person'&&/^(no.?reply|notifications?|mailer-daemon)@/i.test(clean.email||''))return;
+    seen.add(`${clean.profileType}:${clean.profileKey}`);
+    targets.push(clean);
+  };
+  if(observation.personId||observation.person_id)add({profileType:'person',personId:observation.personId||observation.person_id,displayName:observation.personName||observation.person_name||observation.personId||observation.person_id});
+  if(observation.organizationId||observation.organization_id)add({profileType:'organization',organizationId:observation.organizationId||observation.organization_id,displayName:observation.organizationName||observation.organization_name||observation.organizationId||observation.organization_id});
+  if(observation.projectId||observation.project_id)add({profileType:'project',projectId:observation.projectId||observation.project_id,displayName:observation.projectName||observation.project_name||observation.projectId||observation.project_id});
+  for(const p of Array.isArray(participants)?participants:[]){
+    const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',p.email||p.matchedEmail||'');
+    const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
+    if(name||email)add({profileType:'person',personId:p.personId||p.contactId||p.matchedContactId||'',displayName:name||email,email,metadata:{participantRole:p.role||'',source:'evidence_participant'}});
+    const company=p.company||p.matchedCompany||p.organization||p.organizationName||'';
+    if(company)add({profileType:'organization',displayName:company,metadata:{source:'evidence_participant'}});
+  }
+  const org=entities.organization||entities.company||entities.organizationName||entities.companyName||entities.from?.company||'';
+  if(entities.organizationId||entities.organization_id||org)add({profileType:'organization',organizationId:entities.organizationId||entities.organization_id||'',displayName:org||entities.organizationId||entities.organization_id});
+  const project=entities.project||entities.projectName||entities.project_name||'';
+  if(entities.projectId||entities.project_id||project)add({profileType:'project',projectId:entities.projectId||entities.project_id||'',displayName:project||entities.projectId||entities.project_id});
+  return targets;
+}
+function relationshipObservationBucket(type){
+  if(['promise','commitment','task','deadline','follow_up','reply_needed','meeting_request','document_request','pricing_question'].includes(type))return 'openLoops';
+  if(type==='risk')return 'risks';
+  if(type==='opportunity')return 'opportunities';
+  if(type==='preference'||type==='need')return 'preferences';
+  if(type==='emotional_context')return 'emotionalContext';
+  if(type==='relationship_signal')return 'relationshipSignals';
+  return '';
+}
+async function saveRelationshipProfile(target={}){
+  const now=new Date().toISOString();
+  const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
+  if(!row.profileType||!row.profileKey)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles');if(!rows)return row;
+    const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
+    if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
+    else rows.push(row);
+    return i>=0?rows[i]:row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into relationship_profiles (id,tenant_id,profile_type,profile_key,person_id,organization_id,project_id,display_name,summary,relationship_status,confidence,last_observed_at,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
+      on conflict (tenant_id,profile_type,profile_key) do update set person_id=coalesce(nullif(excluded.person_id,''),relationship_profiles.person_id), organization_id=coalesce(nullif(excluded.organization_id,''),relationship_profiles.organization_id), project_id=coalesce(nullif(excluded.project_id,''),relationship_profiles.project_id), display_name=coalesce(nullif(excluded.display_name,''),relationship_profiles.display_name), metadata_json=relationship_profiles.metadata_json||excluded.metadata_json, updated_at=now()
+      returning *`,[row.id,row.tenantId,row.profileType,row.profileKey,row.personId,row.organizationId,row.projectId,row.displayName,row.summary,row.relationshipStatus,row.confidence,row.lastObservedAt,JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore(),rows=transcriptFileArray(store,'relationshipProfiles'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
+  if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
+  else rows.push(row);
+  saveValStore(store);
+  return i>=0?rows[i]:row;
+}
+async function relationshipTimelineRows(profileType,profileKey){
+  if(DEMO_MODE)return (transcriptDemoArray('relationshipTimelineEvents')||[]).filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from relationship_timeline_events where tenant_id=$1 and profile_type=$2 and profile_key=$3 order by coalesce(occurred_at,created_at) desc',[tenantId(),profileType,profileKey]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'relationshipTimelineEvents').filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
+}
+async function recalculateRelationshipProfile(profileType,profileKey){
+  const rows=(await relationshipTimelineRows(profileType,profileKey)).sort((a,b)=>interactionDate(b.occurredAt||b.createdAt)-interactionDate(a.occurredAt||a.createdAt));
+  const storeForProfile=(!DEMO_MODE&&!pgPool)?valStore():null;
+  const profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  const buckets={openLoops:[],risks:[],opportunities:[],preferences:[],emotionalContext:[],relationshipSignals:[]};
+  for(const event of rows){
+    const bucket=relationshipObservationBucket(event.observationType);
+    if(bucket)buckets[bucket].push({content:event.content,exactQuote:event.exactQuote||'',confidence:event.confidence||0,dueAt:event.dueAt||'',occurredAt:event.occurredAt||event.createdAt||'',observationType:event.observationType});
+  }
+  const payload={summary:rows[0]?.content?`Latest observation: ${String(rows[0].content).slice(0,220)}`:'',relationshipStatus:rows.length?'observed':'quiet',confidence:rows.reduce((m,r)=>Math.max(m,Number(r.confidence)||0),0),lastObservedAt:rows[0]?.occurredAt||rows[0]?.createdAt||null,observationCount:rows.length,openLoopCount:buckets.openLoops.length,promiseCount:rows.filter(r=>['promise','commitment'].includes(r.observationType)).length,riskCount:buckets.risks.length,opportunityCount:buckets.opportunities.length,preferenceCount:buckets.preferences.length,emotionalContextJson:buckets.emotionalContext.slice(0,12),relationshipSignalsJson:buckets.relationshipSignals.slice(0,12),risksJson:buckets.risks.slice(0,12),opportunitiesJson:buckets.opportunities.slice(0,12),preferencesJson:buckets.preferences.slice(0,12),openLoopsJson:buckets.openLoops.slice(0,12)};
+  if(DEMO_MODE||!pgPool){
+    if(profile)Object.assign(profile,payload,{updatedAt:new Date().toISOString()});
+    if(storeForProfile)saveValStore(storeForProfile);
+    return profile||payload;
+  }
+  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey]);
+  return transcriptPgRow(r.rows[0]);
+}
+async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
+  const profile=await saveRelationshipProfile({...target,confidence:observation.confidence||0,metadataJson:{source:'relationship_engine',targetMetadata:target.metadata||{}}});
+  if(!profile?.id)return null;
+  const row={id:uuid('reltime'),tenantId:tenantId(),profileType:target.profileType,profileKey:target.profileKey,profileId:profile.id,evidenceItemId:observation.evidenceItemId||observation.evidence_item_id||evidenceItem.id,observationId:observation.id,observationType:observation.observationType||observation.observation_type,content:observation.content||'',exactQuote:observation.exactQuote||observation.exact_quote||'',confidence:Math.max(0,Math.min(1,Number(observation.confidence)||0)),status:observation.status||'observed',occurredAt:evidenceItem.occurredAt||evidenceItem.occurred_at||evidenceItem.capturedAt||evidenceItem.captured_at||new Date().toISOString(),dueAt:observation.dueAt||observation.due_at||null,metadataJson:{sourceType:evidenceItem.sourceType||evidenceItem.source_type||'',sourceId:evidenceItem.sourceId||evidenceItem.source_id||'',evidenceTitle:evidenceItem.title||''}};
+  if(!row.observationId||!row.content)return null;
+  if(DEMO_MODE){const rows=transcriptDemoArray('relationshipTimelineEvents');if(rows&&!rows.some(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey&&x.evidenceItemId===row.evidenceItemId&&x.observationType===row.observationType&&x.content===row.content))rows.push(row);return row;}
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into relationship_timeline_events (id,tenant_id,profile_type,profile_key,profile_id,evidence_item_id,observation_id,observation_type,content,exact_quote,confidence,status,occurred_at,due_at,metadata_json,created_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+      on conflict (tenant_id,profile_type,profile_key,evidence_item_id,observation_type,content) do update set observation_id=excluded.observation_id, exact_quote=excluded.exact_quote, confidence=excluded.confidence, status=excluded.status, occurred_at=excluded.occurred_at, due_at=excluded.due_at, metadata_json=excluded.metadata_json`,[row.id,row.tenantId,row.profileType,row.profileKey,row.profileId,row.evidenceItemId,row.observationId,row.observationType,row.content,row.exactQuote||null,row.confidence,row.status,row.occurredAt,row.dueAt,JSON.stringify(row.metadataJson)]);
+  }else{
+    const store=valStore(),rows=transcriptFileArray(store,'relationshipTimelineEvents'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey&&x.evidenceItemId===row.evidenceItemId&&x.observationType===row.observationType&&x.content===row.content);
+    if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id};else rows.push(row);saveValStore(store);
+  }
+  return row;
+}
+async function clearRelationshipTimelineForEvidence(evidenceItemId){
+  if(!evidenceItemId)return [];
+  const touched=[];
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipTimelineEvents')||[];
+    for(let i=rows.length-1;i>=0;i--)if(rows[i].evidenceItemId===evidenceItemId){touched.push([rows[i].profileType,rows[i].profileKey]);rows.splice(i,1);}
+  }else{
+    await valDbReady;
+    if(pgPool){
+      const r=await dbQuery('delete from relationship_timeline_events where tenant_id=$1 and evidence_item_id=$2 returning profile_type,profile_key',[tenantId(),evidenceItemId]);
+      touched.push(...r.rows.map(row=>[row.profile_type,row.profile_key]));
+    }else{
+      const store=valStore(),rows=transcriptFileArray(store,'relationshipTimelineEvents');
+      store.relationshipTimelineEvents=rows.filter(row=>{if(row.evidenceItemId===evidenceItemId){touched.push([row.profileType,row.profileKey]);return false;}return true;});
+      saveValStore(store);
+    }
+  }
+  for(const [type,key] of Array.from(new Set(touched.map(x=>x.join('|')))).map(x=>x.split('|')))await recalculateRelationshipProfile(type,key).catch(()=>null);
+  return touched;
+}
+async function runRelationshipEngineForObservations(evidenceItem,observations=[]){
+  const touched=new Set(),events=[];
+  for(const observation of observations||[]){
+    for(const target of relationshipTargetsForObservation(evidenceItem,observation)){
+      const event=await saveRelationshipTimelineEvent({target,evidenceItem,observation}).catch(()=>null);
+      if(event){events.push(event);touched.add(`${target.profileType}|${target.profileKey}`);}
+    }
+  }
+  const profiles=[];
+  for(const key of touched){const [type,profileKey]=key.split('|');const profile=await recalculateRelationshipProfile(type,profileKey).catch(()=>null);if(profile)profiles.push(profile);}
+  return {ok:true,events,profiles,eventCount:events.length,profileCount:profiles.length};
+}
+const AGENCY_MOVE_TYPES=['draft_reply','send_follow_up','schedule_meeting','prepare_meeting','send_document','answer_question','review_risk','capture_preference','nurture_relationship','close_open_loop','wait','ignore','escalate','prepare','update_project','protect_relationship'];
+function normalizeAgencyMoveType(type){
+  const clean=String(type||'').trim().toLowerCase().replace(/[\s-]+/g,'_');
+  return AGENCY_MOVE_TYPES.includes(clean)?clean:'wait';
+}
+function agencyScoreDue(dueAt){
+  const t=interactionDate(dueAt);
+  if(!t)return 0;
+  const days=(t-Date.now())/(24*60*60*1000);
+  if(days<0)return 30;
+  if(days<=1)return 26;
+  if(days<=3)return 18;
+  if(days<=7)return 10;
+  return 3;
+}
+function agencyMovePlanForObservation(observation={},evidenceItem={}){
+  const type=String(observation.observationType||observation.observation_type||'').toLowerCase();
+  const content=String(observation.content||'').replace(/\s+/g,' ').trim();
+  const confidence=Math.max(0,Math.min(1,Number(observation.confidence)||0));
+  const dueAt=observation.dueAt||observation.due_at||null;
+  const sourceTitle=evidenceItem.title||evidenceItem.summary||'the evidence';
+  const base={moveType:'wait',title:'Watch for whether this needs action',why:`VAL noticed: ${content}`,confidence,agencyLevel:1,status:'candidate',priorityBand:'watching',urgencyScore:agencyScoreDue(dueAt),leverageScore:0,riskScore:0,relationshipScore:0,whatChanged:content,ifIgnored:'This may simply remain context unless more evidence appears.'};
+  if(['spam','newsletter','receipt'].includes(type))return {...base,moveType:'ignore',title:'Ignore low-value inbox noise',why:`VAL classified this as ${type} from ${sourceTitle}.`,confidence:Math.max(confidence,0.85),status:'ignored',priorityBand:'ignored',ifIgnored:'No user attention is needed.'};
+  if(['promise','commitment','task','deadline','follow_up'].includes(type))return {...base,moveType:'close_open_loop',title:'Close the open loop',why:`A ${type} was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:22,relationshipScore:16,ifIgnored:'Trust or momentum may degrade because the loop remains open.'};
+  if(type==='reply_needed')return {...base,moveType:'draft_reply',title:'Prepare a reply draft',why:`The evidence suggests a reply is needed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:18,relationshipScore:18,ifIgnored:'The conversation may stall or the other person may feel ignored.'};
+  if(type==='pricing_question')return {...base,moveType:'answer_question',title:'Prepare pricing answer',why:`Pricing or proposal language was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:25,relationshipScore:14,ifIgnored:'A revenue or decision moment may lose momentum.'};
+  if(type==='meeting_request')return {...base,moveType:'schedule_meeting',title:'Prepare scheduling response',why:`Scheduling or meeting language was observed: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:14,relationshipScore:16,ifIgnored:'The meeting path may remain unclear.'};
+  if(type==='document_request')return {...base,moveType:'send_document',title:'Prepare requested document follow-up',why:`A document or attachment need was observed: ${content}`,agencyLevel:3,priorityBand:'also_important',leverageScore:18,relationshipScore:14,ifIgnored:'The other person may not receive what they need to move forward.'};
+  if(type==='risk')return {...base,moveType:'review_risk',title:'Review relationship or project risk',why:`A risk signal was observed: ${content}`,agencyLevel:2,priorityBand:'top_recommended',riskScore:30,relationshipScore:18,ifIgnored:'The risk may grow quietly because no one is watching it.'};
+  if(type==='opportunity')return {...base,moveType:'prepare',title:'Prepare the next opportunity move',why:`An opportunity signal was observed: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:28,relationshipScore:16,ifIgnored:'A valuable opening may cool before the user acts.'};
+  if(type==='question'||type==='need')return {...base,moveType:'answer_question',title:type==='need'?'Capture and prepare around the need':'Prepare an answer',why:`VAL observed a ${type}: ${content}`,agencyLevel:2,priorityBand:'also_important',leverageScore:15,relationshipScore:12,ifIgnored:'The person may still need clarity or support.'};
+  if(type==='preference')return {...base,moveType:'capture_preference',title:'Capture preference quietly',why:`VAL learned a preference: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:10,ifIgnored:'Future help may be less personalized.'};
+  if(type==='relationship_signal'||type==='emotional_context')return {...base,moveType:'nurture_relationship',title:'Notice relationship context',why:`VAL noticed relationship context: ${content}`,agencyLevel:1,priorityBand:'quiet',relationshipScore:16,ifIgnored:'This should mostly enrich the relationship profile unless the pattern repeats.'};
+  if(type==='decision')return {...base,moveType:'update_project',title:'Update project context quietly',why:`A decision was observed: ${content}`,agencyLevel:1,priorityBand:'quiet',leverageScore:10,ifIgnored:'Project memory may become less accurate.'};
+  if(type==='idea')return {...base,moveType:'wait',title:'Hold idea for later',why:`An idea was observed, but not every idea deserves action: ${content}`,agencyLevel:1,priorityBand:'watching',ifIgnored:'No immediate cost unless more evidence raises its importance.'};
+  return base;
+}
+function agencyImportance(plan={}){
+  const confidence=Number(plan.confidence)||0;
+  const total=(confidence*35)+(Number(plan.urgencyScore)||0)+(Number(plan.leverageScore)||0)+(Number(plan.riskScore)||0)+(Number(plan.relationshipScore)||0);
+  return Math.max(0,Math.min(100,Math.round(total)));
+}
+function agencyPriorityBand(plan={}){
+  if(plan.moveType==='ignore'||plan.status==='ignored')return 'ignored';
+  const score=agencyImportance(plan);
+  if(score>=80)return 'top_recommended';
+  if(score>=55)return 'also_important';
+  if(plan.moveType==='wait')return 'watching';
+  return plan.priorityBand||'quiet';
+}
+async function saveAgencyMove(payload={}){
+  const moveType=normalizeAgencyMoveType(payload.moveType||payload.move_type);
+  const sourceObservationIds=Array.isArray(payload.sourceObservationIds)?payload.sourceObservationIds:(Array.isArray(payload.source_observation_ids)?payload.source_observation_ids:[]);
+  const sourceEvidenceIds=Array.isArray(payload.sourceEvidenceIds)?payload.sourceEvidenceIds:(Array.isArray(payload.source_evidence_ids)?payload.source_evidence_ids:[]);
+  const row={id:payload.id||uuid('agency'),tenantId:payload.tenantId||tenantId(),moveType,title:String(payload.title||'Agency move').slice(0,240),why:String(payload.why||'VAL noticed this may deserve agency.').slice(0,1600),confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),importanceScore:Math.max(0,Math.min(100,Number(payload.importanceScore)||0)),urgencyScore:Math.max(0,Math.min(100,Number(payload.urgencyScore)||0)),leverageScore:Math.max(0,Math.min(100,Number(payload.leverageScore)||0)),riskScore:Math.max(0,Math.min(100,Number(payload.riskScore)||0)),relationshipScore:Math.max(0,Math.min(100,Number(payload.relationshipScore)||0)),agencyLevel:Math.min(3,Math.max(1,Number(payload.agencyLevel)||1)),priorityBand:String(payload.priorityBand||'quiet'),status:String(payload.status||'candidate'),personId:String(payload.personId||payload.person_id||''),organizationId:String(payload.organizationId||payload.organization_id||''),projectId:String(payload.projectId||payload.project_id||''),dueAt:payload.dueAt||payload.due_at||null,sourceObservationIds,sourceEvidenceIds,whatChanged:String(payload.whatChanged||payload.what_changed||'').slice(0,1200),ifIgnored:String(payload.ifIgnored||payload.if_ignored||'').slice(0,1200),preparedPayloadJson:payload.preparedPayloadJson||payload.prepared_payload_json||{},metadataJson:payload.metadataJson||payload.metadata_json||payload.metadata||{},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  if(!row.title||!row.why)return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('agencyMoves');if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`insert into agency_moves (id,tenant_id,move_type,title,why,confidence,importance_score,urgency_score,leverage_score,risk_score,relationship_score,agency_level,priority_band,status,person_id,organization_id,project_id,due_at,source_observation_ids,source_evidence_ids,what_changed,if_ignored,prepared_payload_json,metadata_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now())
+      returning *`,[row.id,row.tenantId,row.moveType,row.title,row.why,row.confidence,row.importanceScore,row.urgencyScore,row.leverageScore,row.riskScore,row.relationshipScore,row.agencyLevel,row.priorityBand,row.status,row.personId||null,row.organizationId||null,row.projectId||null,row.dueAt,JSON.stringify(row.sourceObservationIds),JSON.stringify(row.sourceEvidenceIds),row.whatChanged||null,row.ifIgnored||null,JSON.stringify(row.preparedPayloadJson),JSON.stringify(row.metadataJson)]);
+    return transcriptPgRow(r.rows[0]);
+  }
+  const store=valStore();transcriptFileArray(store,'agencyMoves').push(row);saveValStore(store);return row;
+}
+async function saveAgencyMoveSource(payload={}){
+  const row={id:payload.id||uuid('agencysrc'),tenantId:payload.tenantId||tenantId(),agencyMoveId:String(payload.agencyMoveId||payload.agency_move_id||''),evidenceItemId:String(payload.evidenceItemId||payload.evidence_item_id||''),observationId:String(payload.observationId||payload.observation_id||''),sourceRole:String(payload.sourceRole||payload.source_role||'supports'),createdAt:new Date().toISOString()};
+  if(!row.agencyMoveId||!row.evidenceItemId||!row.observationId)return null;
+  if(DEMO_MODE){const rows=transcriptDemoArray('agencyMoveSources');if(rows)rows.push(row);return row;}
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into agency_move_sources (id,tenant_id,agency_move_id,evidence_item_id,observation_id,source_role,created_at)
+      values ($1,$2,$3,$4,$5,$6,now()) on conflict do nothing`,[row.id,row.tenantId,row.agencyMoveId,row.evidenceItemId,row.observationId,row.sourceRole]);
+  }else{const store=valStore();transcriptFileArray(store,'agencyMoveSources').push(row);saveValStore(store);}
+  return row;
+}
+async function clearAgencyMovesForEvidence(evidenceItemId){
+  if(!evidenceItemId)return;
+  if(DEMO_MODE){
+    const sources=transcriptDemoArray('agencyMoveSources')||[],moveIds=sources.filter(s=>s.evidenceItemId===evidenceItemId).map(s=>s.agencyMoveId);
+    const moves=transcriptDemoArray('agencyMoves')||[];
+    for(let i=sources.length-1;i>=0;i--)if(sources[i].evidenceItemId===evidenceItemId)sources.splice(i,1);
+    for(let i=moves.length-1;i>=0;i--)if(moveIds.includes(moves[i].id))moves.splice(i,1);
+    return;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select agency_move_id from agency_move_sources where tenant_id=$1 and evidence_item_id=$2',[tenantId(),evidenceItemId]);
+    const ids=r.rows.map(row=>row.agency_move_id).filter(Boolean);
+    if(ids.length)await dbQuery('delete from agency_moves where tenant_id=$1 and id=any($2::text[])',[tenantId(),ids]);
+    return;
+  }
+  const store=valStore(),sources=transcriptFileArray(store,'agencyMoveSources'),moveIds=sources.filter(s=>s.evidenceItemId===evidenceItemId).map(s=>s.agencyMoveId);
+  store.agencyMoveSources=sources.filter(s=>s.evidenceItemId!==evidenceItemId);
+  store.agencyMoves=transcriptFileArray(store,'agencyMoves').filter(m=>!moveIds.includes(m.id));
+  saveValStore(store);
+}
+async function runAgencyEngineForObservations(evidenceItem,observations=[]){
+  const planned=[];
+  for(const observation of observations||[]){
+    const plan=agencyMovePlanForObservation(observation,evidenceItem);
+    const importanceScore=agencyImportance(plan);
+    const priorityBand=agencyPriorityBand({...plan,importanceScore});
+    planned.push({observation,plan:{...plan,importanceScore,priorityBand}});
+  }
+  planned.sort((a,b)=>(Number(b.plan.importanceScore)||0)-(Number(a.plan.importanceScore)||0));
+  let topCount=0;
+  for(const item of planned){
+    if(item.plan.priorityBand==='top_recommended'){
+      topCount++;
+      if(topCount>3)item.plan.priorityBand='also_important';
+    }
+  }
+  const moves=[];
+  for(const {observation,plan} of planned){
+    const saved=await saveAgencyMove({...plan,personId:observation.personId||observation.person_id||'',organizationId:observation.organizationId||observation.organization_id||'',projectId:observation.projectId||observation.project_id||'',dueAt:observation.dueAt||observation.due_at||null,sourceObservationIds:[observation.id].filter(Boolean),sourceEvidenceIds:[evidenceItem.id].filter(Boolean),metadataJson:{source:'agency_engine',observationType:observation.observationType||observation.observation_type||'',sourceType:evidenceItem.sourceType||evidenceItem.source_type||'',sourceId:evidenceItem.sourceId||evidenceItem.source_id||'',notHidden:topCount>3&&plan.priorityBand==='also_important'}}).catch(()=>null);
+    if(saved?.id){
+      await saveAgencyMoveSource({agencyMoveId:saved.id,evidenceItemId:evidenceItem.id,observationId:observation.id,sourceRole:'primary'}).catch(()=>null);
+      moves.push(saved);
+    }
+  }
+  moves.sort((a,b)=>(Number(b.importanceScore)||0)-(Number(a.importanceScore)||0));
+  return {ok:true,moves,count:moves.length,topRecommended:moves.filter(m=>m.priorityBand==='top_recommended').length,alsoImportant:moves.filter(m=>m.priorityBand==='also_important').length,quiet:moves.filter(m=>m.priorityBand==='quiet').length,watching:moves.filter(m=>m.priorityBand==='watching').length,ignored:moves.filter(m=>m.priorityBand==='ignored').length};
+}
+function publicAgencyMove(row={}){
+  if(!row)return null;
+  return {
+    id:row.id,
+    moveType:row.moveType||row.move_type||'wait',
+    title:row.title||'Agency move',
+    why:row.why||'VAL noticed this may matter.',
+    confidence:Number(row.confidence||0),
+    importanceScore:Number(row.importanceScore||row.importance_score||0),
+    urgencyScore:Number(row.urgencyScore||row.urgency_score||0),
+    leverageScore:Number(row.leverageScore||row.leverage_score||0),
+    riskScore:Number(row.riskScore||row.risk_score||0),
+    relationshipScore:Number(row.relationshipScore||row.relationship_score||0),
+    agencyLevel:Number(row.agencyLevel||row.agency_level||1),
+    priorityBand:row.priorityBand||row.priority_band||'quiet',
+    status:row.status||'candidate',
+    personId:row.personId||row.person_id||'',
+    organizationId:row.organizationId||row.organization_id||'',
+    projectId:row.projectId||row.project_id||'',
+    dueAt:row.dueAt||row.due_at||'',
+    sourceObservationIds:evidenceJsonValue(row.sourceObservationIds||row.source_observation_ids,[]),
+    sourceEvidenceIds:evidenceJsonValue(row.sourceEvidenceIds||row.source_evidence_ids,[]),
+    whatChanged:row.whatChanged||row.what_changed||'',
+    ifIgnored:row.ifIgnored||row.if_ignored||'',
+    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    createdAt:row.createdAt||row.created_at||'',
+    updatedAt:row.updatedAt||row.updated_at||''
+  };
+}
+async function listAgencyMoves({limit=80}={}){
+  if(DEMO_MODE)return (transcriptDemoArray('agencyMoves')||[]).map(publicAgencyMove).filter(Boolean).sort((a,b)=>(b.importanceScore-a.importanceScore)||interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select * from agency_moves where tenant_id=$1 and status not in ('dismissed','superseded','resolved_by_reality') order by case priority_band when 'top_recommended' then 1 when 'also_important' then 2 when 'watching' then 3 when 'quiet' then 4 else 5 end, importance_score desc, confidence desc, created_at desc limit $2`,[tenantId(),limit]);
+    return r.rows.map(row=>publicAgencyMove(transcriptPgRow(row))).filter(Boolean);
+  }
+  return transcriptFileArray(valStore(),'agencyMoves').map(publicAgencyMove).filter(Boolean).sort((a,b)=>(b.importanceScore-a.importanceScore)||interactionDate(b.createdAt)-interactionDate(a.createdAt)).slice(0,limit);
+}
+function publicRelationshipProfile(row={}){
+  if(!row)return null;
+  return {
+    id:row.id,
+    profileType:row.profileType||row.profile_type||'person',
+    profileKey:row.profileKey||row.profile_key||'',
+    personId:row.personId||row.person_id||'',
+    organizationId:row.organizationId||row.organization_id||'',
+    projectId:row.projectId||row.project_id||'',
+    displayName:row.displayName||row.display_name||'Unknown',
+    summary:row.summary||'',
+    relationshipStatus:row.relationshipStatus||row.relationship_status||'observed',
+    confidence:Number(row.confidence||0),
+    lastObservedAt:row.lastObservedAt||row.last_observed_at||'',
+    observationCount:Number(row.observationCount||row.observation_count||0),
+    openLoopCount:Number(row.openLoopCount||row.open_loop_count||0),
+    promiseCount:Number(row.promiseCount||row.promise_count||0),
+    riskCount:Number(row.riskCount||row.risk_count||0),
+    opportunityCount:Number(row.opportunityCount||row.opportunity_count||0),
+    preferenceCount:Number(row.preferenceCount||row.preference_count||0),
+    emotionalContext:evidenceJsonValue(row.emotionalContextJson||row.emotional_context_json,[]),
+    relationshipSignals:evidenceJsonValue(row.relationshipSignalsJson||row.relationship_signals_json,[]),
+    risks:evidenceJsonValue(row.risksJson||row.risks_json,[]),
+    opportunities:evidenceJsonValue(row.opportunitiesJson||row.opportunities_json,[]),
+    preferences:evidenceJsonValue(row.preferencesJson||row.preferences_json,[]),
+    openLoops:evidenceJsonValue(row.openLoopsJson||row.open_loops_json,[]),
+    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    updatedAt:row.updatedAt||row.updated_at||''
+  };
+}
+async function listRelationshipProfiles({limit=80}={}){
+  if(DEMO_MODE)return (transcriptDemoArray('relationshipProfiles')||[]).map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select * from relationship_profiles where tenant_id=$1 order by (open_loop_count+risk_count+opportunity_count) desc, last_observed_at desc nulls last limit $2`,[tenantId(),limit]);
+    return r.rows.map(row=>publicRelationshipProfile(transcriptPgRow(row))).filter(Boolean);
+  }
+  return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
+}
+async function executiveBriefingCounts(){
+  if(DEMO_MODE){
+    const evidence=(transcriptDemoArray('evidenceItems')||[]).length,observations=(transcriptDemoArray('evidenceObservations')||[]).length,moves=(transcriptDemoArray('agencyMoves')||[]).length;
+    return {evidenceItems:evidence,observations,agencyMoves:moves};
+  }
+  await valDbReady;
+  if(pgPool){
+    const [e,o,a]=await Promise.all([
+      dbQuery('select count(*)::int as count from evidence_items where tenant_id=$1',[tenantId()]),
+      dbQuery('select count(*)::int as count from evidence_observations where tenant_id=$1',[tenantId()]),
+      dbQuery('select count(*)::int as count from agency_moves where tenant_id=$1',[tenantId()])
+    ]);
+    return {evidenceItems:e.rows[0]?.count||0,observations:o.rows[0]?.count||0,agencyMoves:a.rows[0]?.count||0};
+  }
+  const store=valStore();
+  return {evidenceItems:transcriptFileArray(store,'evidenceItems').length,observations:transcriptFileArray(store,'evidenceObservations').length,agencyMoves:transcriptFileArray(store,'agencyMoves').length};
+}
+function executiveThemeFromMoves(moves=[],profiles=[]){
+  const active=moves.filter(m=>!['ignored','quiet'].includes(m.priorityBand));
+  const close=active.filter(m=>['close_open_loop','send_follow_up','draft_reply','answer_question'].includes(m.moveType)).length;
+  const risk=active.filter(m=>m.moveType==='review_risk'||m.riskScore>=20).length;
+  const relationship=profiles.filter(p=>p.profileType==='person'&&(p.openLoopCount||p.riskCount||p.opportunityCount)).length;
+  const meetings=active.filter(m=>['schedule_meeting','prepare_meeting'].includes(m.moveType)).length;
+  if(close>=Math.max(risk,meetings,2))return {title:'Close Open Loops',why:`${close} relationship or commitment loops are asking for closure.`};
+  if(risk>0)return {title:'Protect Trust',why:`${risk} risk signal${risk===1?'':'s'} should be reviewed before they grow quietly.`};
+  if(relationship>0)return {title:'Relationship Velocity',why:`${relationship} people have relationship momentum, risk, or opportunity signals.`};
+  if(meetings>0)return {title:'Prepare Conversations',why:`${meetings} meeting-related move${meetings===1?'':'s'} are ready for preparation.`};
+  return {title:'Discern, Then Move',why:'VAL is watching the evidence and keeping noisy items out of your way.'};
+}
+function profileVelocity(profile={}){
+  if(profile.riskCount>0)return 'Momentum down';
+  if(profile.opportunityCount>0||profile.relationshipSignals?.length)return 'Momentum up';
+  if(profile.openLoopCount>0)return 'Waiting on closure';
+  return 'Observed';
+}
+async function buildExecutiveBriefing(){
+  const [moves,profiles,counts]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:80}),executiveBriefingCounts()]);
+  const top=moves.filter(m=>m.priorityBand==='top_recommended').slice(0,3);
+  const also=moves.filter(m=>m.priorityBand==='also_important').slice(0,8);
+  const watching=moves.filter(m=>m.priorityBand==='watching').slice(0,8);
+  const quiet=moves.filter(m=>m.priorityBand==='quiet').slice(0,8);
+  const ignored=moves.filter(m=>m.priorityBand==='ignored').slice(0,8);
+  const people=profiles.filter(p=>p.profileType==='person').slice(0,8).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoops:p.openLoops.slice(0,3),risks:p.risks.slice(0,2),opportunities:p.opportunities.slice(0,2),confidence:p.confidence,lastObservedAt:p.lastObservedAt}));
+  const projects=profiles.filter(p=>p.profileType==='project').slice(0,6).map(p=>({id:p.id,name:p.displayName,state:profileVelocity(p),summary:p.summary,openLoopCount:p.openLoopCount,riskCount:p.riskCount,opportunityCount:p.opportunityCount,lastObservedAt:p.lastObservedAt}));
+  const up=profiles.filter(p=>p.opportunityCount>0||p.relationshipSignals.length).slice(0,5).map(p=>p.displayName);
+  const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
+  const whatChanged=moves.slice(0,8).map(m=>({title:m.title,summary:m.whatChanged||m.why,priorityBand:m.priorityBand,confidence:m.confidence,createdAt:m.createdAt}));
+  const theme=executiveThemeFromMoves(moves,profiles);
+  const highest=top[0]||also[0]||watching[0]||null;
+  const valNoticed=[
+    people.length?`People are the leverage point: ${people.slice(0,3).map(p=>p.name).join(', ')} currently carry the most relationship signal.`:'',
+    down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
+    quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
+  ].filter(Boolean).slice(0,5);
+  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum:{up,down},valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored};
+}
+function executiveBriefingChatContext(briefing={}){
+  if(!briefing?.ok)return '';
+  return [
+    `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
+    briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
+    briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
+    briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
+    briefing.watching?.length?'Watching: '+briefing.watching.slice(0,5).map(m=>m.title).join('; '):''
+  ].filter(Boolean).join('\n');
+}
+function normalizeObservationCandidate(candidate={}){
+  const value=typeof candidate==='string'?{content:candidate}:candidate;
+  return {
+    observationType:normalizeEvidenceObservationType(value.observationType||value.observation_type||value.type),
+    personId:String(value.personId||value.person_id||''),
+    organizationId:String(value.organizationId||value.organization_id||''),
+    projectId:String(value.projectId||value.project_id||''),
+    content:String(value.content||value.text||value.summary||value.title||'').trim(),
+    exactQuote:String(value.exactQuote||value.exact_quote||value.quote||''),
+    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.65)),
+    status:String(value.status||'observed'),
+    dueAt:value.dueAt||value.due_at||value.dueDate||null
+  };
+}
+async function runObservationEngine(evidenceItem,options={}){
+  if(!evidenceItem?.id)return {ok:false,observations:[],count:0,error:'Missing evidence item'};
+  const replace=options.replace!==false;
+  const candidates=Array.isArray(options.candidates)?options.candidates:[];
+  if(replace){
+    await clearAgencyMovesForEvidence(evidenceItem.id).catch(()=>null);
+    await clearRelationshipTimelineForEvidence(evidenceItem.id).catch(()=>[]);
+    await clearEvidenceObservationsForItem(evidenceItem.id);
+  }
+  const observations=[];
+  for(const candidate of candidates){
+    const clean=normalizeObservationCandidate(candidate);
+    if(!clean.content)continue;
+    const saved=await saveEvidenceObservation({...clean,evidenceItemId:evidenceItem.id}).catch(()=>null);
+    if(saved)observations.push(saved);
+  }
+  const relationshipEngine=await runRelationshipEngineForObservations(evidenceItem,observations).catch(e=>({ok:false,error:e.message,events:[],profiles:[]}));
+  const agencyEngine=await runAgencyEngineForObservations(evidenceItem,observations).catch(e=>({ok:false,error:e.message,moves:[],count:0}));
+  return {ok:true,evidenceItemId:evidenceItem.id,sourceType:evidenceItem.sourceType||evidenceItem.source_type,sourceId:evidenceItem.sourceId||evidenceItem.source_id,observations,count:observations.length,relationshipEngine,agencyEngine};
+}
+async function saveEvidenceLink(payload={}){
+  const row={
+    id:payload.id||uuid('ev'),
+    tenantId:payload.tenantId||tenantId(),
+    userId:payload.userId||VAL_USER_ID,
+    sourceType:String(payload.sourceType||payload.source_type||'unknown'),
+    sourceId:String(payload.sourceId||payload.source_id||''),
+    sourceLabel:String(payload.sourceLabel||payload.source_label||''),
+    targetType:String(payload.targetType||payload.target_type||'unknown'),
+    targetId:String(payload.targetId||payload.target_id||''),
+    relationship:String(payload.relationship||'supports'),
+    summary:String(payload.summary||''),
+    quote:String(payload.quote||''),
+    confidence:Math.max(0,Math.min(1,Number(payload.confidence)||0)),
+    metadata:payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{},
+    createdAt:new Date().toISOString()
+  };
+  if(!row.sourceId||!row.targetId) return null;
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('evidenceLinks');
+    if(rows)rows.push(row);
+    return row;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into val_evidence_links (id,tenant_id,user_id,source_type,source_id,source_label,target_type,target_id,relationship,summary,quote,confidence,metadata,created_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now())`,[row.id,row.tenantId,row.userId,row.sourceType,row.sourceId,row.sourceLabel,row.targetType,row.targetId,row.relationship,row.summary,row.quote,row.confidence,JSON.stringify(row.metadata)]);
+  }else{
+    const store=valStore();
+    transcriptFileArray(store,'evidenceLinks').push(row);
+    saveValStore(store);
+  }
+  return row;
+}
+async function clearEvidenceLinksForTranscript(transcriptId){
+  if(!transcriptId) return;
+  if(DEMO_MODE){
+    const evidence=transcriptDemoArray('evidenceLinks')||[];
+    const taskIds=(transcriptDemoArray('transcriptTasks')||[]).filter(row=>row.transcriptId===transcriptId).map(row=>row.taskId);
+    for(let i=evidence.length-1;i>=0;i--){
+      const row=evidence[i];
+      if((row.sourceType==='transcript'&&row.sourceId===transcriptId)||(row.sourceType==='transcript_task'&&taskIds.includes(row.sourceId)))evidence.splice(i,1);
+    }
+    return;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`delete from val_evidence_links where tenant_id=$1 and user_id=$2 and ((source_type='transcript' and source_id=$3) or (source_type='transcript_task' and source_id in (select task_id from transcript_tasks where transcript_id=$3)))`,[tenantId(),VAL_USER_ID,transcriptId]);
+    return;
+  }
+  const store=valStore(),taskIds=transcriptFileArray(store,'transcriptTasks').filter(row=>row.transcriptId===transcriptId).map(row=>row.taskId);
+  store.evidenceLinks=transcriptFileArray(store,'evidenceLinks').filter(row=>!((row.sourceType==='transcript'&&row.sourceId===transcriptId)||(row.sourceType==='transcript_task'&&taskIds.includes(row.sourceId))));
+  saveValStore(store);
+}
 async function replaceTranscriptParticipants(transcriptId,participants){
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptParticipants');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(...participants);}return;}
   await valDbReady;if(pgPool){await dbQuery('delete from transcript_participants where transcript_id=$1',[transcriptId]);for(const p of participants)await dbQuery(`insert into transcript_participants (participant_id,transcript_id,speaker_name_raw,matched_contact_id,matched_contact_name,matched_email,matched_phone,matched_company,match_confidence,match_reason,needs_review,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,[p.participantId,transcriptId,p.speakerNameRaw,p.matchedContactId||null,p.matchedContactName||null,p.matchedEmail||null,p.matchedPhone||null,p.matchedCompany||null,p.matchConfidence||0,p.matchReason||'',!!p.needsReview]);}else{const store=valStore();store.transcriptParticipants=transcriptFileArray(store,'transcriptParticipants').filter(x=>x.transcriptId!==transcriptId);store.transcriptParticipants.push(...participants);saveValStore(store);}
@@ -10922,11 +11846,13 @@ async function saveTranscriptSummary(transcriptId,summary){
   const row={summaryId:uuid('tr_summary'),transcriptId,executiveSummary:summary.executiveSummary||summary.summary||'Summary unavailable.',clientSummary:summary.clientSummary||'',internalNotes:summary.internalNotes||'',keyDecisions:summary.keyDecisions||[],openQuestions:summary.openQuestions||[],relationshipUpdates:summary.relationshipUpdates||[],createdAt:new Date().toISOString()};
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptSummaries');if(rows){for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);rows.push(row);}}
   else{await valDbReady;if(pgPool){await dbQuery('delete from transcript_summaries where transcript_id=$1',[transcriptId]);await dbQuery(`insert into transcript_summaries (summary_id,transcript_id,executive_summary,client_summary,internal_notes,key_decisions,open_questions,relationship_updates,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,now())`,[row.summaryId,transcriptId,row.executiveSummary,row.clientSummary,row.internalNotes,JSON.stringify(row.keyDecisions),JSON.stringify(row.openQuestions),JSON.stringify(row.relationshipUpdates)]);}else{const store=valStore();store.transcriptSummaries=transcriptFileArray(store,'transcriptSummaries').filter(x=>x.transcriptId!==transcriptId);store.transcriptSummaries.push(row);saveValStore(store);}}
+  await saveEvidenceLink({sourceType:'transcript',sourceId:transcriptId,targetType:'transcript_summary',targetId:row.summaryId,relationship:'summarizes',summary:row.executiveSummary,confidence:1,metadata:{keyDecisionCount:row.keyDecisions.length,openQuestionCount:row.openQuestions.length,relationshipUpdateCount:row.relationshipUpdates.length}}).catch(()=>{});
   await logTranscriptAction(transcriptId,'summary_created',row.summaryId,'completed');return row;
 }
 async function saveStagedTranscriptTask(row){
   if(DEMO_MODE){const rows=transcriptDemoArray('transcriptTasks');if(rows)rows.push(row);}
   else{await valDbReady;if(pgPool)await dbQuery(`insert into transcript_tasks (task_id,transcript_id,assigned_to_contact_id,assigned_to_name,task_title,task_description,due_date,priority,confidence,status,needs_approval,source_quote,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now())`,[row.taskId,row.transcriptId,row.assignedToContactId||null,row.assignedToName||null,row.taskTitle,row.taskDescription||'',row.dueDate||null,row.priority||'medium',row.confidence||0,row.status||'staged',!!row.needsApproval,row.sourceQuote]);else{const store=valStore();transcriptFileArray(store,'transcriptTasks').push(row);saveValStore(store);}}
+  await saveEvidenceLink({sourceType:'transcript',sourceId:row.transcriptId,sourceLabel:row.calendarEventTitle||'',targetType:'transcript_task',targetId:row.taskId,relationship:'extracted_task',summary:row.taskTitle,quote:row.sourceQuote,confidence:row.confidence||0,metadata:{assignedToName:row.assignedToName||'',assignedToContactId:row.assignedToContactId||'',priority:row.priority||'',dueDate:row.dueDate||null,needsApproval:!!row.needsApproval}}).catch(()=>{});
   await logTranscriptAction(row.transcriptId,'task_extracted',row.taskId,'completed');return row;
 }
 async function updateStagedTranscriptTask(taskId,updates){
@@ -10968,6 +11894,13 @@ function transcriptDetailFromIndex(data,transcript){
   return {...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount};
 }
 async function clearTranscriptStaging(transcriptId){
+  await clearEvidenceLinksForTranscript(transcriptId);
+  const evidence=await evidenceItemForSource('transcript',transcriptId).catch(()=>null);
+  if(evidence?.id){
+    await clearAgencyMovesForEvidence(evidence.id).catch(()=>{});
+    await clearRelationshipTimelineForEvidence(evidence.id).catch(()=>{});
+    await clearEvidenceObservationsForItem(evidence.id).catch(()=>{});
+  }
   if(DEMO_MODE){for(const key of ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog']){const rows=transcriptDemoArray(key)||[];for(let i=rows.length-1;i>=0;i--)if(rows[i].transcriptId===transcriptId)rows.splice(i,1);}return;}
   await valDbReady;
   if(pgPool){for(const table of ['transcript_action_log','transcript_contact_updates','transcript_tasks','transcript_summaries','transcript_participants'])await dbQuery(`delete from ${table} where transcript_id=$1`,[transcriptId]);return;}
@@ -14455,7 +15388,44 @@ async function promoteTranscriptTask(staged){
   const transcript=data.transcripts?.[0]||{};
   const transcriptTitle=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:staged.calendarEventTitle},transcript.rawTranscript);
   const mainTask={id:uuid('task'),title:contextualTaskTitle(staged.calendarEventTitle||transcriptTitle,staged.taskTitle),notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,transcriptTitle?`Transcript title: ${transcriptTitle}`:'',`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,transcriptId:staged.transcriptId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
-  await saveTask(mainTask);await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
+  await saveTask(mainTask);
+  await saveEvidenceLink({sourceType:'transcript',sourceId:staged.transcriptId,sourceLabel:transcriptTitle,targetType:'task',targetId:mainTask.id,relationship:'created_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptTaskId:staged.taskId,assignedToName:staged.assignedToName||'',assignedToContactId:staged.assignedToContactId||'',calendarEventId:mainTask.calendarEventId||'',calendarEventTitle:mainTask.calendarEventTitle||''}}).catch(()=>{});
+  await saveEvidenceLink({sourceType:'transcript_task',sourceId:staged.taskId,sourceLabel:staged.taskTitle,targetType:'task',targetId:mainTask.id,relationship:'promoted_to_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptId:staged.transcriptId}}).catch(()=>{});
+  await updateStagedTranscriptTask(staged.taskId,{status:'created',needsApproval:false});await logTranscriptAction(staged.transcriptId,'task_created',mainTask.id,'completed');return mainTask;
+}
+function observationText(value){
+  if(!value)return '';
+  if(typeof value==='string')return value.trim();
+  return String(value.content||value.text||value.summary||value.title||value.taskTitle||value.question||value.decision||value.need||value.risk||value.opportunity||value.signal||value.update||'').trim();
+}
+function observationQuote(transcript,value){
+  if(!value||typeof value==='string')return transcriptSupportingQuote(transcript,value||'');
+  return transcriptSupportingQuote(transcript,value.sourceQuote||value.exactQuote||value.quote||value.evidence||value.content||value.text||value.taskTitle||'');
+}
+function transcriptParticipantForObservation(value,participants=[]){
+  if(!value||typeof value==='string')return null;
+  const name=value.assignedToName||value.assignedPerson||value.person||value.contactName||value.name||'';
+  const contactId=value.contactId||value.personId||value.assignedToContactId||'';
+  return participants.find(p=>(contactId&&p.matchedContactId===contactId)||(name&&(looseNameScore(name,p.speakerNameRaw)>=0.8||looseNameScore(name,p.matchedContactName)>=0.8)))||null;
+}
+async function saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}){
+  const evidence=await evidenceItemForSource('transcript',sourceId);
+  if(!evidence?.id)return [];
+  await saveEvidenceItem({id:evidence.id,sourceType:'transcript',sourceId,occurredAt:evidence.occurredAt||null,capturedAt:evidence.capturedAt||new Date().toISOString(),title,rawText:transcript,summary:summary?.executiveSummary||parsed.executiveSummary||parsed.summary||'',participantsJson:participants||[],entitiesJson:{participantCount:(participants||[]).length,taskCount:(parsed.tasks||parsed.actionItems||[]).length},confidence:summary?1:0.7,status:'processed',metadataJson:{legacyTranscriptId:sourceId,summaryId:summary?.summaryId||''}}).catch(()=>{});
+  const candidates=[];
+  const push=(type,value,extra={})=>{
+    const content=observationText(value);
+    if(!content)return;
+    const participant=transcriptParticipantForObservation(value,participants);
+    candidates.push({observationType:type,personId:participant?.matchedContactId||extra.personId||'',organizationId:extra.organizationId||'',projectId:extra.projectId||'',content,exactQuote:observationQuote(transcript,value),confidence:Math.max(0,Math.min(1,Number(value?.confidence)||extra.confidence||0.75)),status:extra.status||'observed',dueAt:value?.dueDate||value?.due_at||extra.dueAt||null});
+  };
+  for(const item of (Array.isArray(parsed.keyDecisions)?parsed.keyDecisions:[]).slice(0,20))push('decision',item,{confidence:0.8});
+  for(const item of (Array.isArray(parsed.openQuestions)?parsed.openQuestions:[]).slice(0,20))push('question',item,{confidence:0.8,status:'open'});
+  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item,{confidence:0.75});
+  for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,30))push(item?.observationType||item?.type||'task',item,{confidence:0.75,status:'open'});
+  for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item.reason||item.newValue||item,{confidence:Math.max(0.5,Number(item.confidence)||0.5)});
+  for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
+  return (await runObservationEngine(evidence,{candidates,replace:true})).observations;
 }
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
@@ -14472,6 +15442,7 @@ async function processTranscriptPayload(payload){
     parsed={executiveSummary:transcript.replace(/\s+/g,' ').slice(0,900),clientSummary:'',internalNotes:'Automated fallback summary; model processing needs review.',keyDecisions:decisions,openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),relationshipUpdates:[],tasks:fallbackTasks,contactUpdates:[],followupDrafts:[]};
   }
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
+  await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{}));
   if(modelFailed)await logTranscriptAction(sourceId,'failed_action','summary_model','failed',modelFailed);
   const stagedTasks=[],createdTasks=[],createdDrafts=[];
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,20)){
@@ -14485,8 +15456,8 @@ async function processTranscriptPayload(payload){
     await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
   const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
-  if(recapDraft){createdDrafts.push(recapDraft);await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
-  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote:transcriptSupportingQuote(transcript,draft.sourceQuote)}});createdDrafts.push(saved);await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
+  if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
+  for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){const body=draft.body||draft.message||'';if(!body.trim())continue;const sourceQuote=transcriptSupportingQuote(transcript,draft.sourceQuote);const saved=await saveInternalDraft({draftType:draft.draftType||draft.type||'follow_up',provider:'internal',subject:draft.subject||`Follow-up: ${title}`,body,status:'draft',sourceContext:{source:'transcript_intelligence',transcriptId:sourceId,transcriptTitle:title,draftKind:draft.draftType||draft.type||'follow_up',sourceQuote}});createdDrafts.push(saved);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:saved.id||'',relationship:'created_followup_draft',summary:saved.subject||draft.subject||`Follow-up: ${title}`,quote:sourceQuote,confidence:Math.max(0,Math.min(1,Number(draft.confidence)||0.75)),metadata:{draftType:draft.draftType||draft.type||'follow_up'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');}
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
   return {analysis:parsed,summary,participants,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
@@ -14534,9 +15505,9 @@ app.get('/api/val/transcripts',async(req,res)=>{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const data=await transcriptIndexData();
-    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>t.taskCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
+    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>t.openActionCount>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -14614,6 +15585,33 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/process',async(req,res)=>{try{const body=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=body.transcript||'',title=body.title||'Processed transcript';if(!transcriptText.trim())return res.status(400).json({ok:false,error:'Missing transcript'});const saved=await saveTranscript({...body,type:'processed_transcript',title,transcript:transcriptText,importance:3});const transcriptRecord={id:saved.id,title,rawText:transcriptText,metadata:body,createdAt:body.timestamp||body.createdAt||new Date().toISOString()};const meetingMatch=await linkTranscriptToBestMeeting(transcriptRecord).catch(()=>null);if(meetingMatch)await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||''}).catch(()=>{});const result={ok:true,...saved,...await processTranscriptPayload({...body,transcript:transcriptText,title,savedTranscriptId:saved.id,meetingMatch})};await auditLog({req,action:'transcript_processed',resourceType:'transcript',resourceId:saved.id,metadata:{title,source:body.source||''},success:true}).catch(()=>{});res.json(result);}catch(e){res.status(500).json({error:e.message});}});
+app.get('/api/presence/contract',(req,res)=>{
+  res.json({ok:true,contract:PRESENCE_MODE_CONTRACT,bookMode:isBookEditorProject(),message:isBookEditorProject()?'Michele book/editor voice remains on its separate workflow.':'Presence Mode protects bold noticing and careful action.'});
+});
+app.post('/api/presence/classify',(req,res)=>{
+  try{
+    const text=req.body.command||req.body.text||req.body.transcript||'';
+    res.json(classifyPresenceIntent(text,{sourceId:req.body.sourceId,evidenceItemId:req.body.evidenceItemId,currentSession:req.body.currentSession}));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/presence/session',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor voice remains on its separate workflow.'});
+    const session=presenceSessionPayload(req.body||{});
+    if(!session.transcript)return res.status(400).json({ok:false,error:'Presence session transcript text is required.'});
+    const classification=classifyPresenceIntent(session.transcript,{sourceId:session.id,currentSession:true});
+    const saved=await saveTranscript({id:session.id,source:`presence_mode:${session.mode}`,type:'voice_session',title:session.title,transcript:session.transcript,attendees:session.participants,timestamp:session.occurredAt,createdAt:session.occurredAt,metadata:session.metadata,reviewStatus:'needs_review'});
+    await saveEvidenceItem({sourceType:'voice_session',sourceId:saved.id,occurredAt:session.occurredAt,capturedAt:new Date().toISOString(),title:session.title,rawText:session.transcript,summary:'',participantsJson:session.participants,entitiesJson:{presenceMode:session.mode,contractVersion:'presence_mode_contract_v1'},confidence:1,status:'captured',metadataJson:session.metadata}).catch(()=>{});
+    let processed=null,processingError='';
+    if(session.process){
+      try{processed=await processTranscriptPayload({source:`presence_mode:${session.mode}`,title:session.title,transcript:session.transcript,savedTranscriptId:saved.id,attendees:session.participants,metadata:session.metadata,timestamp:session.occurredAt});}
+      catch(e){processingError=e.message;await updateTranscriptIndexStatus(saved.id,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});}
+    }
+    await saveMemoryItem({kind:'voice_session',summary:`Presence Mode ${session.mode} session: ${session.title}`,rawText:session.transcript,importance:3,metadata:{source:'presence_mode',mode:session.mode,transcriptId:saved.id,classification}}).catch(()=>{});
+    await auditLog({req,action:'presence_session_saved',resourceType:'transcript',resourceId:saved.id,metadata:{mode:session.mode,title:session.title,classification:classification.intent},success:true}).catch(()=>{});
+    res.status(201).json({ok:true,sessionId:saved.id,mode:session.mode,evidenceSourceType:'voice_session',transcriptSourceType:'transcript',classification,processed:!!processed,processingError,analysis:processed?.analysis||null,counts:processed?.counts||null});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/conversations',async(req,res)=>{try{res.json({ok:true,...await saveConversation(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
 app.post('/api/val/memory/condense',async(req,res)=>{try{res.json(await condenseOlderMemory());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.patch('/api/val/conversations/:id',async(req,res)=>{
@@ -14894,6 +15892,12 @@ app.post('/api/relationships/actions',async(req,res)=>{
     res.status(400).json({ok:false,error:'Unsupported action'});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.get('/api/executive-briefing',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Executive Briefing is not used for Michele book/editor mode.'});
+    res.json(await buildExecutiveBriefing());
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
@@ -14929,6 +15933,17 @@ app.post('/api/val/chat',async(req,res)=>{
       return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
+    const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
+    if(presenceIntent?.requiresConfirmation){
+      return sendChat([
+        'I can prepare that, but I need your approval before anything external happens.',
+        '',
+        `Detected action: ${presenceIntent.action.replace(/_/g,' ')}`,
+        presenceIntent.allowedPrivatePreparations.length?`I can do the private prep first: ${presenceIntent.allowedPrivatePreparations.join(', ').replace(/_/g,' ')}.`:'',
+        '',
+        'Say “draft it first” or “yes, send/book/share it now” when you want to approve the next step.'
+      ].filter(Boolean).join('\n'),{presenceIntent});
+    }
     if(/\b(show|list|find)\b[\s\S]{0,40}\bunscheduled tasks|open loops\b/i.test(lastUser)){
       const loops=await openLoopsSummary();
       const lines=(loops.unscheduled||[]).slice(0,10).map((t,i)=>`${i+1}. ${t.title}${t.dueDate?` — due ${new Date(t.dueDate).toLocaleDateString()}`:''}`).join('\n')||'No unscheduled open tasks found.';
@@ -14988,13 +16003,14 @@ app.post('/api/val/chat',async(req,res)=>{
       ].join('\n'));
     }
     const uploadedDocs=await uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
-    const [memory,ghlContext,googleDocs]=await Promise.all([
+    const [memory,ghlContext,googleDocs,executiveBriefing]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
-      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`)
+      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
+      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
     ]);
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'','Use dashboard context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present. When the user asks why, what matters, what changed, what VAL is worried about, or what VAL is excited about, ground the answer in Executive Briefing, agency moves, relationship velocity, and cited evidence/observations when present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
