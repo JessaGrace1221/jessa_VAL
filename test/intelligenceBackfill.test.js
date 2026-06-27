@@ -37,6 +37,18 @@ test('transcript migration merges old archive records with the processed transcr
   assert.doesNotMatch(body,/if\(data\.transcripts\.length\)/);
 });
 
+test('transcript migration fallback observations quote the evidence instead of vague titles',()=>{
+  const start=server.indexOf('function transcriptBackfillCandidates');
+  const end=server.indexOf('function transcriptMigrationRecordsFromIndex',start);
+  const body=server.slice(start,end);
+  assert.match(server,/function transcriptEvidenceSnippet/);
+  assert.match(server,/function transcriptFallbackObservationContent/);
+  assert.match(server,/Possible risk:/);
+  assert.match(server,/Possible opportunity:/);
+  assert.doesNotMatch(body,/includes possible risk, concern, blocker, or drift language/);
+  assert.doesNotMatch(body,/includes possible opportunity, introduction, referral, partnership, lead, client, or deal language/);
+});
+
 test('personal transcript migration can run without touching email or Michele book mode',()=>{
   const start=server.indexOf("app.post('/api/val/transcripts/migrate'");
   const end=server.indexOf("app.post('/api/relationships/actions'",start);

@@ -6694,15 +6694,33 @@ function transcriptBackfillParticipants(record={},detail={}){
   if(fromDetail.length)return fromDetail;
   return splitPeopleFromText([record.title,record.rawText,JSON.stringify(record.metadata||{})].join(' ')).slice(0,12).map(p=>({role:'mentioned',name:p.name||'',email:p.email||'',confidence:p.confidence||'low'}));
 }
+function transcriptEvidenceSnippet(text='',pattern){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(!clean)return '';
+  const sentences=clean.split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(Boolean);
+  const commandLike=/^(prepare me for|summarize this|good morning|here'?s your situation|daily briefing)\b/i;
+  const found=sentences.find(s=>pattern.test(s)&&!commandLike.test(s));
+  const snippet=found||sentences.find(s=>pattern.test(s))||'';
+  return snippet.length>220?snippet.slice(0,217).replace(/\s+\S*$/,'')+'...':snippet;
+}
+function transcriptFallbackObservationContent(type,record={},text='',pattern){
+  const snippet=transcriptEvidenceSnippet(text,pattern);
+  const subject=snippet||transcriptTopicTitleFromText(text)||valTitleCandidate(record.title)||'Transcript evidence';
+  if(type==='risk')return `Possible risk: ${subject}`;
+  if(type==='opportunity')return `Possible opportunity: ${subject}`;
+  if(type==='pricing_question')return `Pricing or proposal context: ${subject}`;
+  return subject;
+}
 function transcriptBackfillCandidates(record={},participants=[]){
   const text=String(record.rawText||'');
   const candidates=[];
   extractOpenLoopsFromText(text,'transcript',record.createdAt||record.metadata?.timestamp||'').forEach(loop=>{
     candidates.push({observationType:/follow up|circle back|waiting on/i.test(loop.text)?'follow_up':'task',content:loop.text,exactQuote:transcriptSupportingQuote(text,loop.text),confidence:loop.confidence==='high'?0.82:0.65,status:'open'});
   });
-  if(/\b(price|pricing|cost|budget|proposal|contract)\b/i.test(text))candidates.push({observationType:'pricing_question',content:`${record.title||'Transcript'} includes pricing, proposal, budget, or contract language.`,exactQuote:transcriptSupportingQuote(text,'pricing'),confidence:0.68,status:'needs_review'});
-  if(/\b(risk|concern|worried|blocked|stuck|drift|confused|not working)\b/i.test(text))candidates.push({observationType:'risk',content:`${record.title||'Transcript'} includes possible risk, concern, blocker, or drift language.`,exactQuote:transcriptSupportingQuote(text,'risk'),confidence:0.62,status:'needs_review'});
-  if(/\b(opportunity|intro|introduction|referral|partner|lead|client|deal)\b/i.test(text))candidates.push({observationType:'opportunity',content:`${record.title||'Transcript'} includes possible opportunity, introduction, referral, partnership, lead, client, or deal language.`,exactQuote:transcriptSupportingQuote(text,'opportunity'),confidence:0.66,status:'needs_review'});
+  const pricingPattern=/\b(price|pricing|cost|budget|proposal|contract)\b/i,riskPattern=/\b(risk|concern|worried|blocked|stuck|drift|confused|not working)\b/i,opportunityPattern=/\b(opportunity|intro|introduction|referral|partner|lead|client|deal)\b/i;
+  if(pricingPattern.test(text))candidates.push({observationType:'pricing_question',content:transcriptFallbackObservationContent('pricing_question',record,text,pricingPattern),exactQuote:transcriptSupportingQuote(text,'pricing'),confidence:0.68,status:'needs_review'});
+  if(riskPattern.test(text))candidates.push({observationType:'risk',content:transcriptFallbackObservationContent('risk',record,text,riskPattern),exactQuote:transcriptSupportingQuote(text,'risk'),confidence:0.62,status:'needs_review'});
+  if(opportunityPattern.test(text))candidates.push({observationType:'opportunity',content:transcriptFallbackObservationContent('opportunity',record,text,opportunityPattern),exactQuote:transcriptSupportingQuote(text,'opportunity'),confidence:0.66,status:'needs_review'});
   if(!candidates.length&&participants.length)candidates.push({observationType:'relationship_signal',content:`${record.title||'Transcript'} contains relationship context that should be available to VAL.`,exactQuote:transcriptSupportingQuote(text,record.title||''),confidence:0.55,status:'observed'});
   return candidates.slice(0,30);
 }
@@ -11379,7 +11397,7 @@ function valTitleCandidate(value){
     'zoom transcript','recording transcript','meeting notes','call notes','transcript notes'
   ];
   if(generic.includes(low))return '';
-  if(/^(prepare me for|summarize this past meeting|meeting prep|webhook|processed|untitled)(\b|:)/i.test(title))return '';
+  if(/^(prepare me for|summarize this past meeting|meeting prep|good morning|here'?s your situation|your situation for|daily briefing|webhook|processed|untitled)(\b|:)/i.test(title))return '';
   if(/^(transcript|meeting|call|zoom|recording)\s*#?\d*$/i.test(title))return '';
   return title.slice(0,180);
 }
@@ -11395,7 +11413,7 @@ function transcriptTopicTitleFromText(rawText=''){
     const candidate=valTitleCandidate(match&&match[1]);
     if(candidate&&!/^(this|that|upcoming|attendee|meeting|conversation|transcript)$/i.test(candidate))return candidate.split(/\s+/).slice(0,8).join(' ');
   }
-  const words=(text.match(/\b[A-Z][A-Za-z0-9&']{2,}\b/g)||[]).filter(w=>!/^(VAL|URL|API|GHL|CRM|Google|Zoom|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/i.test(w));
+  const words=(text.match(/\b[A-Z][A-Za-z0-9&']{2,}\b/g)||[]).filter(w=>!/^(VAL|URL|API|GHL|CRM|Google|Zoom|Good|Morning|Afternoon|Evening|Today|Tomorrow|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|January|February|March|April|May|June|July|August|September|October|November|December)$/i.test(w));
   const unique=[...new Set(words)].slice(0,4);
   return unique.length>=2?unique.join(' '):'';
 }
