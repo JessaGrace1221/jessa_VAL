@@ -16090,6 +16090,10 @@ app.post('/api/val/intelligence/backfill',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+app.get('/admin/transcript-migration',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VAL Transcript Migration</title><style>body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8f5ef;color:#10162f;margin:0;padding:40px}.wrap{max-width:720px;margin:auto;background:#fff;border:1px solid #e7dfd2;border-radius:8px;padding:28px;box-shadow:0 18px 60px rgba(16,22,47,.08)}h1{font-family:Georgia,serif;font-size:32px;margin:0 0 12px}p{font-size:16px;line-height:1.55;color:#313a55}button{border:0;border-radius:6px;background:#071b36;color:white;font-weight:700;padding:13px 18px;font-size:15px;cursor:pointer}.meta{font-size:13px;color:#697089;margin-top:18px}</style></head><body><main class="wrap"><h1>Transcript Migration</h1><p>This runs the transcript-only evidence migration for this signed-in VAL. It gathers existing transcripts, saves them as evidence, extracts observations, and lets the relationship and agency layers update from that evidence.</p><p>It does not send emails, texts, invites, or external actions.</p><form method="post" action="/api/val/transcripts/migrate"><button type="submit">Run Transcript Migration</button></form><div class="meta">Window: all available transcripts, up to 250 records. Michele book/editor VAL remains protected separately.</div></main></body></html>`);
+});
 app.post('/api/val/transcripts/migrate',async(req,res)=>{
   try{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
