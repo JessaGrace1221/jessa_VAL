@@ -6706,13 +6706,54 @@ function transcriptBackfillCandidates(record={},participants=[]){
   if(!candidates.length&&participants.length)candidates.push({observationType:'relationship_signal',content:`${record.title||'Transcript'} contains relationship context that should be available to VAL.`,exactQuote:transcriptSupportingQuote(text,record.title||''),confidence:0.55,status:'observed'});
   return candidates.slice(0,30);
 }
+function transcriptMigrationRecordsFromIndex(index={}){
+  return (index.transcripts||[]).map(row=>{
+    const detail=transcriptDetailFromIndex(index,row);
+    return {
+      id:detail.id||row.transcriptId,
+      type:'transcript',
+      title:detail.title||row.meetingTitle||'Recovered transcript',
+      rawText:detail.transcriptText||row.rawTranscript||'',
+      metadata:{
+        source:row.source||'transcript_index',
+        timestamp:row.meetingDatetime||row.createdAt||'',
+        calendarEventId:row.calendarEventId||'',
+        processingStatus:row.processingStatus||'',
+        summaryStatus:row.summaryStatus||'',
+        recoveredFrom:'transcript_index'
+      },
+      createdAt:row.meetingDatetime||row.createdAt||row.updatedAt||'',
+      detail
+    };
+  }).filter(record=>record.id&&String(record.rawText||'').trim());
+}
+function mergeTranscriptMigrationRecords(records=[],index={}){
+  const byId=new Map();
+  for(const record of transcriptMigrationRecordsFromIndex(index))byId.set(String(record.id),record);
+  for(const record of records||[]){
+    if(!record?.id)continue;
+    const id=String(record.id),existing=byId.get(id);
+    if(existing){
+      byId.set(id,{
+        ...record,
+        ...existing,
+        title:existing.title||record.title,
+        rawText:existing.rawText||record.rawText,
+        metadata:{...(record.metadata||{}),...(existing.metadata||{})},
+        createdAt:existing.createdAt||record.createdAt
+      });
+    }else byId.set(id,record);
+  }
+  return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt||b.metadata?.timestamp)-interactionDate(a.createdAt||a.metadata?.timestamp));
+}
 async function backfillTranscriptEvidence({days=3650,limit=250}={}){
   const [records,index]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))]);
-  let processed=0,observations=0,relationshipEvents=0,agencyMoves=0,errors=[];
-  for(const record of records){
+  const migrationRecords=mergeTranscriptMigrationRecords(records,index).slice(0,limit);
+  let processed=0,observations=0,relationshipEvents=0,agencyMoves=0,errors=[],found=migrationRecords.length;
+  for(const record of migrationRecords){
     try{
       const detailRow=(index.transcripts||[]).find(t=>String(t.transcriptId)===String(record.id));
-      const detail=detailRow?transcriptDetailFromIndex(index,detailRow):{};
+      const detail=record.detail||(detailRow?transcriptDetailFromIndex(index,detailRow):{});
       const title=detail.title||record.title||'Recovered transcript';
       const rawText=detail.transcriptText||record.rawText||'';
       if(!rawText.trim())continue;
@@ -6741,7 +6782,7 @@ async function backfillTranscriptEvidence({days=3650,limit=250}={}){
       observations+=saved.length;
     }catch(e){errors.push({sourceId:record.id,title:record.title||'',error:e.message});}
   }
-  return {processed,observations,relationshipEvents,agencyMoves,errors};
+  return {found,processed,observations,relationshipEvents,agencyMoves,errors};
 }
 function uniqueEmailsByMessageId(results=[]){
   const seen=new Set(),emails=[];
@@ -15680,10 +15721,14 @@ app.get('/api/val/transcripts',async(req,res)=>{
   try{
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    if(data.transcripts.length){const transcripts=data.transcripts.slice(0,limit).map(row=>{const detail=transcriptDetailFromIndex(data,row);delete detail.transcriptText;return detail;});return res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>t.reviewCount>0).length,withTasks:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});}
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365)),transcripts=(await transcriptArchiveRecords(days,limit)).map(record=>transcriptUiRecord(record));
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))).length}});
+    const archive=await transcriptArchiveRecords(days,limit);
+    const transcripts=mergeTranscriptMigrationRecords(archive,data).slice(0,limit).map(record=>{
+      if(record.detail){const detail={...record.detail};delete detail.transcriptText;return detail;}
+      return transcriptUiRecord(record);
+    });
+    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(t=>/fail|error/i.test(String(t.processingStatus||t.summaryStatus||t.status||''))||(t.actionLog||[]).some(a=>a.status==='failed'||a.actionType==='failed_action')).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -16036,11 +16081,32 @@ app.get('/api/relationships/review',async(req,res)=>{
 });
 app.post('/api/val/intelligence/backfill',async(req,res)=>{
   try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const result=await backfillValIntelligence(req.body||{});
     await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
     res.json(result);
   }catch(e){
     await auditLog({req,action:'val_intelligence_backfill_failed',resourceType:'intelligence',metadata:{error:e.message},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/transcripts/migrate',async(req,res)=>{
+  try{
+    if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
+    if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before migrating transcripts.');
+    const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
+    const limit=Math.max(1,Math.min(500,Number(req.body?.limit)||250));
+    const transcripts=await backfillTranscriptEvidence({days,limit});
+    const [counts,briefing,storedRelationships]=await Promise.all([
+      executiveBriefingCounts(),
+      buildExecutiveBriefing().catch(()=>null),
+      relationshipReviewFromStoredProfiles({windowDays:Math.min(days,90)}).catch(()=>null)
+    ]);
+    const result={ok:true,generatedAt:new Date().toISOString(),days,limit,transcripts,counts,relationshipProfiles:storedRelationships?.relationshipProfiles?.length||0,highestLeverageMove:briefing?.highestLeverageMove||null};
+    await auditLog({req,action:'val_transcripts_migrated',resourceType:'transcript_migration',metadata:{days,limit,found:transcripts.found||0,processed:transcripts.processed||0,observations:transcripts.observations||0,errors:transcripts.errors?.length||0},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'val_transcripts_migration_failed',resourceType:'transcript_migration',metadata:{error:e.message},success:false}).catch(()=>{});
     res.status(500).json({ok:false,error:e.message});
   }
 });

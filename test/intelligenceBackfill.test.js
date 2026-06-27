@@ -26,6 +26,28 @@ test('intelligence backfill rehydrates existing evidence before dashboard conclu
   assert.match(server,/buildExecutiveBriefing/);
 });
 
+test('transcript migration merges old archive records with the processed transcript index',()=>{
+  assert.match(server,/function mergeTranscriptMigrationRecords/);
+  assert.match(server,/transcriptMigrationRecordsFromIndex/);
+  const start=server.indexOf("app.get('/api/val/transcripts'");
+  const end=server.indexOf("app.get('/api/val/transcripts/review'",start);
+  const body=server.slice(start,end);
+  assert.match(body,/transcriptArchiveRecords\(days,limit\)/);
+  assert.match(body,/mergeTranscriptMigrationRecords\(archive,data\)/);
+  assert.doesNotMatch(body,/if\(data\.transcripts\.length\)/);
+});
+
+test('personal transcript migration can run without touching email or Michele book mode',()=>{
+  const start=server.indexOf("app.post('/api/val/transcripts/migrate'");
+  const end=server.indexOf("app.post('/api/relationships/actions'",start);
+  const body=server.slice(start,end);
+  assert.match(body,/isBookEditorProject\(\)/);
+  assert.match(body,/backfillTranscriptEvidence/);
+  assert.match(body,/executiveBriefingCounts/);
+  assert.doesNotMatch(body,/backfillEmailEvidence/);
+  assert.doesNotMatch(body,/saveTask\(/);
+});
+
 test('email backfill keeps the evidence-first rule',()=>{
   const start=server.indexOf('async function backfillEmailEvidence');
   const end=server.indexOf('async function backfillValIntelligence',start);
