@@ -79,7 +79,7 @@ test('canonical transcript pipeline preserves conversations, identities, and dec
   assert.match(server,/status:'needs_review'/);
   assert.match(server,/clearValDecisionsForSource\('transcript',transcriptId\)/);
   assert.match(server,/transcript\.canonical=await valCanonicalForTranscript\(transcript\.id\)/);
-  assert.match(server,/decisions:await valDecisionReviewQueue\(\)/);
+  assert.match(server,/const decisions=\(await valDecisionReviewQueue\(\)\)\.filter/);
   assert.match(ui,/Canonical structure/);
   assert.match(ui,/reviewValDecision/);
   const processStart=server.indexOf('async function processTranscriptPayload(payload)');
@@ -141,10 +141,22 @@ test('agency engine ranks discerning moves without turning observations into tas
 test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
-  assert.match(ui,/Saved conversations/);
+  assert.match(ui,/Only real transcript records appear here/);
+  assert.match(ui,/No real transcripts are available yet/);
   assert.match(ui,/Chat About This Transcript/);
   assert.match(ui,/Processing details/);
   assert.match(ui,/Approve & Create/);
+});
+
+test('hides planning artifacts from transcript inbox and review queue',()=>{
+  assert.match(server,/function isNonTranscriptArtifact/);
+  assert.match(server,/This task is really about/);
+  assert.match(server,/Ask or document the current version of these steps/);
+  assert.match(server,/function transcriptReviewParticipantIsUseful/);
+  assert.match(server,/function transcriptReviewData/);
+  assert.match(server,/validIds\.has\(String\(row\.transcriptId/);
+  assert.match(server,/row\.meetingTitle\|\|row\.meeting_title/);
+  assert.match(ui,/only uncertain items from real transcripts appear here/);
 });
 
 test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
