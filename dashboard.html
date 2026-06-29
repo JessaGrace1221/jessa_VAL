@@ -325,11 +325,21 @@ html,body{height:100%;width:100%;overflow:hidden;background:var(--navy-3);font-f
 .teach-val-stage h2{font-family:var(--serif);font-size:2rem;line-height:1.05;color:var(--val-white)}
 .teach-val-stage p{color:var(--val-muted-white);line-height:1.58}
 .teach-val-action-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
-.teach-val-prompt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
-.teach-val-prompt-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--val-white);border-radius:8px;padding:11px;text-align:left;font-weight:800;cursor:pointer}
+.teach-val-prompt-grid{display:flex;flex-wrap:wrap;gap:12px 14px;align-items:center}
+.teach-val-prompt-btn{min-height:52px;width:180px;display:inline-flex;align-items:center;justify-content:flex-start;gap:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:var(--val-white);border-radius:8px;padding:12px 16px;text-align:left;font-weight:800;cursor:pointer}
 .teach-val-prompt-btn.active{background:var(--gold);border-color:var(--gold);color:#111d30}
-.teach-val-prompt-btn span{display:block;font-size:.68rem;font-weight:600;opacity:.72;margin-top:3px}
+.teach-val-prompt-icon{width:18px;height:18px;display:inline-grid;place-items:center;flex:0 0 18px;color:currentColor}
+.teach-val-prompt-icon svg{width:18px;height:18px;stroke:currentColor}
+.teach-val-prompt-label{display:block;font-size:.84rem;line-height:1.18}
+.teach-val-prompt-status{display:block;font-size:.64rem;font-weight:700;opacity:.7;margin-top:2px}
 .teach-val-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px}
+.teach-val-card-title{display:flex;align-items:center;gap:10px}
+.teach-val-card-title .teach-val-prompt-icon{color:var(--gold)}
+.teach-val-prompt-box{border:1px solid rgba(16,22,51,.12);border-radius:8px;padding:14px;background:linear-gradient(135deg,rgba(196,150,58,.08),rgba(255,255,255,.9));font-size:.88rem;line-height:1.55;color:var(--navy);white-space:pre-wrap}
+.teach-val-response-box{width:100%;min-height:306px;border:1px solid #cbd5e1;border-radius:8px;padding:14px;background:#fff;color:#111827;font:500 .86rem/1.55 var(--mono);resize:vertical}
+.teach-val-card-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.teach-val-copy-status{display:flex;align-items:center;gap:10px;border:1px solid rgba(16,22,51,.1);border-radius:8px;background:#fff;padding:12px 14px;margin-top:14px;color:var(--text-2);line-height:1.35}
+.teach-val-status-pill{display:inline-flex;align-items:center;gap:8px;min-height:38px;border:1px solid rgba(34,197,94,.24);border-radius:8px;background:rgba(34,197,94,.08);padding:0 14px;color:#166534;font-weight:800}
 .teach-val-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
 .teach-val-summary-card{background:#fff;border:1px solid #dfe4e9;border-radius:8px;padding:13px;color:#111827;text-align:center}
 .teach-val-summary-card strong{display:block;font:800 1.5rem var(--serif);color:#172740}
@@ -1306,8 +1316,14 @@ html,body{background:var(--cream)!important;color:var(--navy)!important;font-fam
 .teach-val-hero{gap:18px!important}
 .teach-val-stage h2{font-size:1.8rem!important;color:var(--navy)!important}
 .teach-val-orb,.michele-voice-orb{background:radial-gradient(circle at 35% 30%,#ffffff,#27314f 48%,#101633 100%)!important;box-shadow:0 0 0 8px rgba(16,22,51,0.08),0 18px 48px rgba(16,22,51,0.16)!important}
+.teach-val-prompt-grid{gap:12px 14px!important}
 .teach-val-prompt-btn{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important;box-shadow:var(--shadow-xs)!important}
-.teach-val-prompt-btn.active{background:var(--gold)!important;border-color:var(--gold)!important;color:var(--navy)!important}
+.teach-val-prompt-btn.active{background:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important;box-shadow:0 12px 24px rgba(109,40,217,.18)!important}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active{background-color:#6d28d9!important;background-image:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active *{color:#fff!important}
+.teach-val-prompt-btn:hover{border-color:rgba(109,40,217,.35)!important;box-shadow:0 12px 28px rgba(16,22,51,.08)!important}
+.teach-val-copy-status{background:#fff!important;border-color:rgba(16,22,51,.1)!important}
+.teach-val-status-pill{color:#166534!important}
 .teach-val-summary-card,.task-card,.exec-workspace-modal .task-card{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
 .teach-val-voice-room{background:#fff!important;border:1px solid rgba(16,22,51,.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important}
 .teach-val-agent-bubble,.teach-val-agent-bubble *{color:inherit!important}
@@ -1399,7 +1415,6 @@ html body .ws-new-session,
 html body .social-plat.sel,
 html body .email-tabs button.active,
 html body .exec-workspace-modal .email-tabs button.active,
-html body .teach-val-prompt-btn.active,
 html body .task-card.done .task-check,
 html body .exec-workspace-modal .task-card.done .task-check{
   background:#101633!important;border-color:#101633!important;color:#fff!important;
@@ -1407,7 +1422,6 @@ html body .exec-workspace-modal .task-card.done .task-check{
 html body .send-btn svg,
 html body .ws-new-session svg,
 html body .ws-new-session span,
-html body .teach-val-prompt-btn.active *,
 html body .email-tabs button.active *,
 html body .exec-workspace-modal .email-tabs button.active *{
   color:#fff!important;
@@ -6288,6 +6302,18 @@ function teachValCategoryLabel(category){
   var card=((teachValOnboarding&&teachValOnboarding.cards)||[]).find(function(c){return c.category===category;});
   return card?card.title:String(category||'').replace(/_/g,' ');
 }
+function teachValCategoryIcon(category){
+  var icons={
+    current_projects:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 7.5h6l2 2h8v9H4z"/><path d="M4 7.5v-2h6l2 2"/></svg>',
+    people:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M16 19v-1.5a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4V19"/><circle cx="10" cy="7" r="3"/><path d="M20 19v-1.5a4 4 0 0 0-3-3.9"/><path d="M16 4.2a3 3 0 0 1 0 5.6"/></svg>',
+    lessons:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M4 5.5V21"/><path d="M8 7h8"/></svg>',
+    preferences:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M9 7V5h6v2"/><path d="M4 12h16"/></svg>',
+    frustrations:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m12 4 9 16H3z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+    opportunities:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8.5 14.5a6 6 0 1 1 7 0c-.8.6-1.2 1.4-1.4 2.5H9.9c-.2-1.1-.6-1.9-1.4-2.5z"/></svg>',
+    things_to_remember:'<svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M6 4h12v17l-6-3-6 3z"/></svg>'
+  };
+  return '<span class="teach-val-prompt-icon" aria-hidden="true">'+(icons[category]||icons.things_to_remember)+'</span>';
+}
 function teachValPromptCategories(){
   return ((teachValOnboarding&&teachValOnboarding.cards)||[]).map(function(c){return c.category;});
 }
@@ -6314,9 +6340,10 @@ function teachValWelcomeStageHtml(){
 function teachValPromptStageHtml(){
   var cards=(teachValOnboarding&&teachValOnboarding.cards)||[], card=cards.find(function(c){return c.category===teachValActiveCategory;})||cards[0], imp=card?teachValImportFor(card.category):null;
   if(!card)return '<main class="teach-val-stage"><h2>ChatGPT Context Transfer</h2><p>No import areas are configured yet.</p></main>';
-  var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+docSafe(c.title)+'<span>'+(imported?'Imported':'Not started')+'</span></button>';}).join('')+'</div>';
+  if(!teachValActiveCategory)teachValActiveCategory=card.category;
+  var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+teachValCategoryIcon(c.category)+'<span><span class="teach-val-prompt-label">'+docSafe(c.title)+'</span><span class="teach-val-prompt-status">'+(imported?'Imported':'Not started')+'</span></span></button>';}).join('')+'</div>';
   var extracted=imp&&imp.extractedItems&&imp.extractedItems.length?'<div class="exec-card"><h3>Imported & Extracted</h3><p>VAL found '+imp.extractedItems.length+' item'+(imp.extractedItems.length===1?'':'s')+' from this response.</p>'+teachValExtractedItemsHtml(imp)+'<div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValReview()">Review Extracted Memory</button></div></div>':'';
-  return '<main class="teach-val-stage"><div><h2>ChatGPT Context Transfer</h2><p>Use these guided prompts with ChatGPT or Claude, then paste the answer back here. VAL will organize the response into memory cards you can review before saving.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3>'+docSafe(card.title)+'</h3><p>Copy this prompt into the AI that already knows you.</p><div class="email-reason">'+docSafe(card.prompt||'')+'</div><div class="email-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button><span id="teachValPromptCopyStatus" class="email-reason">Ready to copy.</span></div></div><div class="exec-card"><h3>Paste Response</h3><p>VAL will extract useful memory from the answer. You can edit or exclude anything later.</p><textarea id="teachValRawResponse" rows="12" placeholder="Paste the response from ChatGPT or Claude here..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#fff;color:#111827">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="email-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="email-reason">'+docSafe((imp&&imp.status)||'Ready when you are')+'</span></div></div></div>'+teachValTranscriptUploadHtml()+extracted+'</main>';
+  return '<main class="teach-val-stage"><div><h2>ChatGPT Context Transfer</h2><p>Use these guided prompts with ChatGPT or Claude, then paste the answer back here. VAL will organize the response into memory cards you can review before saving.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon(card.category)+'<span>'+docSafe(card.title)+'</span></h3><p>Copy this prompt into the AI that already knows you.</p><div class="teach-val-prompt-box">'+docSafe(card.prompt||'')+'</div><div class="teach-val-card-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><div id="teachValPromptCopyStatus" class="teach-val-copy-status">'+teachValCategoryIcon('things_to_remember')+'<span>Ready to copy.</span></div></div><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon('opportunities')+'<span>Paste Response</span></h3><p>VAL will extract useful memory from the answer. You can edit or exclude anything later.</p><textarea id="teachValRawResponse" class="teach-val-response-box" placeholder="Paste the response from ChatGPT or Claude here...">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="teach-val-card-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="teach-val-status-pill">'+docSafe((imp&&imp.status)||'Ready')+'</span></div></div></div>'+teachValTranscriptUploadHtml()+extracted+'</main>';
 }
 function teachValReviewStageHtml(){
   var st=teachValStepState(), imports=(teachValOnboarding&&teachValOnboarding.imports)||[], categoryCounts={};

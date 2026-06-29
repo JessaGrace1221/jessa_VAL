@@ -42,6 +42,12 @@ test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',
   assert.match(dashboard,/Copied\. Paste it into ChatGPT or Claude\./);
   assert.match(dashboard,/Prompt copied\./);
   assert.match(dashboard,/Paste Response/);
+  assert.match(dashboard,/teach-val-prompt-icon/);
+  assert.match(dashboard,/teach-val-prompt-label/);
+  assert.match(dashboard,/teach-val-prompt-btn\.active\{background:linear-gradient\(135deg,#5b21d6,#6d28d9\)!important/);
+  assert.match(dashboard,/html body \.exec-workspace-modal \.teach-val-stage \.teach-val-prompt-btn\.active/);
+  assert.match(dashboard,/teach-val-copy-status/);
+  assert.match(dashboard,/teach-val-status-pill/);
   assert.match(dashboard,/footer:'<button class="alert-btn" onclick="closeExecutiveWorkspace/);
   assert.doesNotMatch(dashboard,/Start Voice Interview/);
   assert.doesNotMatch(dashboard,/teachValVoiceStageHtml/);
