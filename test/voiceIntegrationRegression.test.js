@@ -50,3 +50,9 @@ test('dashboard exposes obvious voice chat and meeting mode entry points',()=>{
   assert.match(dashboard,/gchatStartPlatformTour/);
   assert.doesNotMatch(dashboard,/document\.getElementById\('voiceBtn'\)\.classList/);
 });
+
+test('voice waits for Deepgram before falling back to browser speech',()=>{
+  assert.match(dashboard,/controller\.abort\(\);\}catch\(e\)\{\}\},6500\)/);
+  assert.doesNotMatch(dashboard,/fallbackTimer=setTimeout\(fallbackOnce,900\)/);
+  assert.match(dashboard,/curAudio\.onerror=function\(\)\{URL\.revokeObjectURL\(url\);curAudio=null;fallbackOnce\(\);\}/);
+});

@@ -54,6 +54,42 @@ test('requires evidence, confidence, review state, and action traceability',()=>
   assert.match(server,/Ambiguous match:/);
 });
 
+test('canonical transcript pipeline preserves conversations, identities, and decisions',()=>{
+  for(const table of ['identity_links','val_decisions']){
+    assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
+  }
+  for(const column of ['entity_type','entity_id','normalized_value','conversation_id','evidence_ids_json','relationship_ids_json','project_ids_json']){
+    assert.match(server,new RegExp(`${column} `));
+  }
+  assert.match(server,/async function saveIdentityLink/);
+  assert.match(server,/async function saveValDecision/);
+  assert.match(server,/async function valCanonicalForTranscript/);
+  assert.match(server,/async function attachCanonicalTranscriptDetail/);
+  assert.match(server,/async function valDecisionReviewQueue/);
+  assert.match(server,/app\.post\('\/api\/val\/decisions\/:decisionId\/review'/);
+  assert.match(server,/async function saveTranscriptCanonicalPipeline/);
+  assert.match(server,/canonicalType:'conversation'/);
+  assert.match(server,/relationship:'captured_as_conversation'/);
+  assert.match(server,/relationship:participant\.needsReview\?'candidate_identity':'matched_identity'/);
+  assert.match(server,/relationship:'extracted_decision'/);
+  assert.match(server,/decisionType:'draft_intent'/);
+  assert.match(server,/source:'transcript_decision'/);
+  assert.match(server,/decisionId:draftIntent\?\.id/);
+  assert.match(server,/relationship:'prepared_draft'/);
+  assert.match(server,/status:'needs_review'/);
+  assert.match(server,/clearValDecisionsForSource\('transcript',transcriptId\)/);
+  assert.match(server,/transcript\.canonical=await valCanonicalForTranscript\(transcript\.id\)/);
+  assert.match(server,/decisions:await valDecisionReviewQueue\(\)/);
+  assert.match(ui,/Canonical structure/);
+  assert.match(ui,/reviewValDecision/);
+  const processStart=server.indexOf('async function processTranscriptPayload(payload)');
+  const observations=server.indexOf('saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary})',processStart);
+  const canonical=server.indexOf('saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations})',processStart);
+  const drafts=server.indexOf('saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript})',processStart);
+  assert.ok(observations>processStart&&canonical>observations,'canonical pipeline should run after evidence observations');
+  assert.ok(drafts>canonical,'draft creation should happen after canonical conversation and decision capture');
+});
+
 test('relationship engine builds living profiles from observations without creating tasks',()=>{
   for(const table of ['relationship_profiles','relationship_timeline_events']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
