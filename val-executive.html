@@ -2620,7 +2620,7 @@ function speak(text,btn){
     var warnNow=Date.now();
     if(warnNow-voiceTtsWarnedAt>60000){
       voiceTtsWarnedAt=warnNow;
-      if(typeof addSys==='function')addSys('Deepgram voice failed, using temporary browser voice: '+(e.message||e));
+      if(typeof addSys==='function')addSys('VAL voice is using temporary browser audio for this turn.);
     }
     fallbackSpeak(clean);
   });
