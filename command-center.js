@@ -12,7 +12,7 @@ var navItems=[
   {id:'transcripts',icon:'document',label:'Transcripts',group:'core'},
   {id:'calendar',icon:'calendar',label:'Calendar',group:'core'},
   {id:'documents',icon:'document',label:'Documents',group:'core'},
-  {id:'email_intelligence',icon:'mail',label:'Email Intelligence',group:'growth'},
+  {id:'email_intelligence',icon:'mail',label:'Executive Inbox',group:'growth'},
   {id:'leads_employers',icon:'search',label:'Scrape Employers',group:'growth'},
   {id:'leads_partners',icon:'search',label:'Scrape Partners',group:'growth'},
   {id:'tasks',icon:'check',label:'Actions',group:'growth'},
@@ -194,7 +194,7 @@ function projectRows(b){
   if(!projects.length)projects=[
     {name:'VAL Platform',summary:'Evidence and briefing system',state:'Momentum'},
     {name:'Relationship Engine',summary:'People create velocity',state:'Momentum'},
-    {name:'Email Intelligence',summary:'Evidence before actions',state:'Watching'}
+    {name:'Executive Inbox',summary:'Decisions before email management',state:'Watching'}
   ];
   return projects.map(function(p){
     var cls=/risk|slow|stall|watch/i.test(String(p.state||''))?'risk':'up';
