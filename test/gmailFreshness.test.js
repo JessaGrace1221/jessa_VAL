@@ -46,6 +46,16 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
 });
 
+test('executive inbox shows session recovery instead of a dead pane',()=>{
+  assert.match(dashboard,/function renderInboxAuthRecovery/);
+  assert.match(dashboard,/Refresh Your VAL Session/);
+  assert.match(dashboard,/Reconnecting Gmail will not fix this specific message/);
+  assert.match(dashboard,/window\.location\.reload\(\)/);
+  assert.match(dashboard,/Open Login Directly/);
+  assert.match(dashboard,/isAuthExpiredError\(e\)/);
+  assert.match(dashboard,/Session refresh needed before Inbox Command can search protected email/);
+});
+
 test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{
   assert.match(server,/function emailShouldPrepareDraft/);
   assert.match(server,/function buildEmailReplyDraft/);

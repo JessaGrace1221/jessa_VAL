@@ -2939,6 +2939,21 @@ function connectMicrosoft(){
   window.open(PROXY+'/auth/microsoft','_blank','noopener');
   addSys('Opening Outlook connection. Choose the Microsoft account, approve Outlook permissions, then return here and check Integration Status.');
 }
+function isAuthExpiredError(e){
+  return /session expired|sign back in|log back in|authentication required/i.test(String((e&&e.message)||e||''));
+}
+function inboxAuthRecoveryHtml(){
+  var next=encodeURIComponent(location.pathname+location.search);
+  return '<div class="email-card"><h3>Refresh Your VAL Session</h3><div class="email-reason">Executive Inbox is connected to protected email data, so VAL needs a fresh dashboard session before it can load Gmail or Outlook. Reconnecting Gmail will not fix this specific message.</div><div class="email-actions"><button class="primary" onclick="window.location.reload()">Refresh Session</button><button onclick="window.location.href=\'/login?next='+next+'\'">Open Login Directly</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+}
+function renderInboxAuthRecovery(message){
+  emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
+  var status=document.getElementById('emailSyncStatus'), tabs=document.getElementById('emailTabs'), list=document.getElementById('emailList'), detail=document.getElementById('emailDetail');
+  if(status)status.innerHTML='<strong>Session refresh needed</strong><div style="font-size:12px;line-height:1.55;color:#334155;margin-top:4px">'+docSafe(message||'Please refresh your VAL session before loading protected email data.')+'</div>';
+  if(tabs)tabs.innerHTML='';
+  if(list)list.innerHTML='<div class="email-item active"><div class="email-item-subject">Session refresh needed</div><div class="email-item-meta">'+docSafe(message||'Please sign back in, then reopen Executive Inbox.')+'</div></div>';
+  if(detail)detail.innerHTML=inboxAuthRecoveryHtml();
+}
 function loadEmailIntelligence(force){
   var status=document.getElementById('emailSyncStatus');
   if(status)status.innerHTML=force?'Refreshing active conversations from the last 14 days...':'Loading Executive Inbox...';
@@ -2958,7 +2973,10 @@ function loadEmailIntelligence(force){
     renderEmailSyncStatus(d);
     if(force)addSys('Gmail refreshed: '+((d.providers&&d.providers.gmail&&d.providers.gmail.fetchedCount)||0)+' fetched, '+((d.providers&&d.providers.gmail&&d.providers.gmail.analyzedCount)||emailIntel.emails.length)+' analyzed.');
     renderEmailIntelligence();
-  }).catch(function(e){document.getElementById('emailList').innerHTML='<div class="email-item">Email intelligence failed: '+docSafe(e.message)+'</div>';});
+  }).catch(function(e){
+    if(isAuthExpiredError(e)){renderInboxAuthRecovery(e.message);return;}
+    document.getElementById('emailList').innerHTML='<div class="email-item">Email intelligence failed: '+docSafe(e.message)+'</div>';
+  });
 }
 function refreshGmailNow(){loadEmailIntelligence(true);}
 function renderEmailSyncStatus(data){
@@ -2982,7 +3000,10 @@ function runInboxCommand(){
   apiFetch(PROXY+'/api/email/inbox-command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,maxResults:8})}).then(function(d){
     emailIntel.inbox={query:q,results:d.results||[],selected:(d.results||[])[0]||null,answer:d.answer||''};
     renderInboxCommandResults(d);
-  }).catch(function(e){if(status)status.textContent='Inbox Command failed: '+e.message;});
+  }).catch(function(e){
+    if(isAuthExpiredError(e)){if(status)status.textContent='Session refresh needed before Inbox Command can search protected email.';renderInboxAuthRecovery(e.message);return;}
+    if(status)status.textContent='Inbox Command failed: '+e.message;
+  });
 }
 function renderInboxCommandResults(data){
   var status=document.getElementById('inboxCommandStatus'),box=document.getElementById('inboxCommandResults');
