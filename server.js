@@ -13654,12 +13654,32 @@ function cleanTranscriptSummaryForUi(summary,rawText=''){
   let clean=dashboardCleanText(executive);
   const valConversation=valConversationSummaryFromText(rawText);
   if(valConversation&&(!clean||/^User:\s*/i.test(clean)||transcriptLooksLikeProcessingPrompt(clean)))clean=valConversation;
+  if(transcriptSummaryLooksLikeExcerpt(clean,rawText))clean='';
   if(!clean||transcriptLooksLikeProcessingPrompt(clean)){
     const lines=String(rawText||'').split(/\n+/).map(x=>dashboardCleanText(x)).filter(Boolean);
-    const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40)||lines.find(line=>line.length>20)||'Transcript saved. Open it to review the conversation.';
-    clean=dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360);
+    const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40&&!transcriptSummaryLooksLikeExcerpt(line,rawText));
+    clean=useful?dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360):transcriptPendingSummary(rawText);
   }
+  if(transcriptSummaryLooksLikeExcerpt(clean,rawText))clean=transcriptPendingSummary(rawText);
   return dashboardShortText(clean,'Transcript saved. Open it to review the conversation.',420);
+}
+function transcriptUtteranceText(line=''){
+  return dashboardCleanText(String(line||'')
+    .replace(/^\s*[^|\n]{1,90}\|\s*(?:\d{1,2}:)?\d{2}(?::\d{2})?\s*/,'')
+    .replace(/^\s*[^:\n]{1,90}:\s*/,''));
+}
+function transcriptSummaryLooksLikeExcerpt(summary='',rawText=''){
+  const clean=dashboardCleanText(summary);
+  if(!clean||clean.length>260)return false;
+  const utterances=String(rawText||'').split(/\n+/).map(transcriptUtteranceText).filter(Boolean).slice(0,14);
+  return utterances.some(line=>line.length>=12&&(clean===line||clean.includes(line)||line.includes(clean)));
+}
+function transcriptPendingSummary(rawText=''){
+  const speakers=[...new Set(String(rawText||'').split(/\n+/).map(line=>{
+    const m=String(line||'').match(/^\s*([^|\n:]{2,90})\s*(?:\||:)/);
+    return m?dashboardCleanText(m[1]).replace(/\s*\d+$/,''):'';
+  }).filter(name=>name&&!/^\d|speaker|participant$/i.test(name)).slice(0,4))];
+  return 'Transcript captured'+(speakers.length?' with '+speakers.join(', '):'')+'. The full summary is still processing, so VAL is showing the raw transcript instead of pretending a transcript line is a summary.';
 }
 function valConversationSummaryFromText(rawText=''){
   const raw=String(rawText||'');

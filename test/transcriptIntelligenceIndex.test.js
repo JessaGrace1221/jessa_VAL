@@ -118,6 +118,13 @@ test('generated action summaries are filtered out of transcript archive',()=>{
   assert.match(server,/purgeJessaTranscriptArtifacts\(\)\.catch/);
 });
 
+test('raw transcript excerpts are not presented as completed summaries',()=>{
+  assert.match(server,/function transcriptSummaryLooksLikeExcerpt/);
+  assert.match(server,/function transcriptPendingSummary/);
+  assert.match(server,/transcriptSummaryLooksLikeExcerpt\(clean,rawText\)/);
+  assert.match(server,/instead of pretending a transcript line is a summary/);
+});
+
 test('agency engine ranks discerning moves without turning observations into tasks',()=>{
   for(const table of ['agency_moves','agency_move_sources']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
