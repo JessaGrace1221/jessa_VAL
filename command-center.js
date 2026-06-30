@@ -409,6 +409,12 @@ function transcriptShortText(value,fallback,limit){
   limit=limit||260;
   return clean.length>limit?clean.slice(0,limit-1).trim()+'…':clean;
 }
+function transcriptIsUsableAction(x){
+  var text=[x&&x.taskTitle,x&&x.taskDescription,x&&x.sourceQuote].filter(Boolean).join(' ');
+  if(/deterministic fallback processor/i.test(text))return false;
+  if(/_transcript\.txt|review_transcript|transcript captured/i.test(text))return false;
+  return !!transcriptCleanText(x&&x.taskTitle,'');
+}
 function transcriptSidebarHtml(activeId){
   var rows=(transcriptState.items||[]).map(function(t){
     var isActive=String(t.id)===String(activeId||'');
@@ -420,11 +426,14 @@ function transcriptSidebarHtml(activeId){
 function transcriptNotesHtml(t,s,tasks,createdTasks,debug){
   var decisions=detailList(s.keyDecisions,'No decisions extracted yet.');
   var keyPoints=detailList([s.clientSummary,s.internalNotes].concat(s.relationshipUpdates||[]).filter(Boolean),'No key points extracted yet.');
-  var actionItems=(t.tasks||[]).length?(t.tasks||[]).map(function(x){
+  var usableActions=(t.tasks||[]).filter(transcriptIsUsableAction);
+  var hiddenActions=(t.tasks||[]).length-usableActions.length;
+  var actionItems=usableActions.length?usableActions.map(function(x){
     var created=String(x.status||'').toLowerCase()==='created';
     return '<article class="val-action-note"><div><strong>'+safe(x.taskTitle||'Action item')+'</strong><p>'+safe(x.taskDescription||x.sourceQuote||'Transcript action item.')+'</p>'+(x.sourceQuote?'<small>Evidence: '+safe(x.sourceQuote)+'</small>':'')+'</div><span class="val-status '+(created?'ok':'review')+'">'+(created?'Added to Actions':'Needs approval')+'</span>'+(created?'':'<button class="val-ui-btn primary" onclick="approveTranscriptTask(\''+safe(x.taskId)+'\')">Add to Actions</button>')+'</article>';
-  }).join(''):'<p>No action items extracted yet.</p>';
-  return '<div class="val-transcript-notes"><section class="val-detail-card val-overview-card"><h3>Overview</h3><p>'+safe(transcriptShortText(s.executiveSummary||s.clientSummary||'Summary pending.','Summary pending.',900))+'</p></section><section class="val-detail-card"><h3>Action Items</h3><div class="val-action-note-list">'+actionItems+'</div></section><section class="val-detail-card"><h3>Decisions</h3>'+decisions+'</section><section class="val-detail-card"><h3>Key Points</h3>'+keyPoints+'</section>'+debug+'</div>';
+  }).join(''):'<p class="val-note-empty">No clear action items yet. VAL kept lower-confidence transcript fragments out of this list so they do not look more certain than they are.</p>';
+  var hiddenNote=hiddenActions>0?'<p class="val-note-hint">'+hiddenActions+' lower-confidence extraction'+(hiddenActions===1?' is':'s are')+' kept in Processing details for review.</p>':'';
+  return '<div class="val-transcript-notes"><section class="val-detail-card val-overview-card"><h3>Overview</h3><p>'+safe(transcriptShortText(s.executiveSummary||s.clientSummary||'Summary pending.','Summary pending.',900))+'</p></section><section class="val-detail-card"><h3>Suggested Actions</h3><div class="val-action-note-list">'+actionItems+'</div>'+hiddenNote+'</section><section class="val-detail-card"><h3>Decisions</h3>'+decisions+'</section><section class="val-detail-card"><h3>Key Points</h3>'+keyPoints+'</section>'+debug+'</div>';
 }
 window.setTranscriptTab=function(tab){
   var view=document.getElementById('valTranscriptView');if(!view)return;
