@@ -50,10 +50,13 @@ test('executive inbox shows session recovery instead of a dead pane',()=>{
   assert.match(dashboard,/function renderInboxAuthRecovery/);
   assert.match(dashboard,/Refresh Your VAL Session/);
   assert.match(dashboard,/Reconnecting Gmail will not fix this specific message/);
-  assert.match(dashboard,/window\.location\.reload\(\)/);
+  assert.match(dashboard,/\/dashboard\?view=email_intelligence&session_refresh=1/);
+  assert.match(dashboard,/\/dashboard\?view=integration_status/);
+  assert.match(dashboard,/opts\.credentials=opts\.credentials\|\|'include'/);
   assert.match(dashboard,/Open Login Directly/);
   assert.match(dashboard,/isAuthExpiredError\(e\)/);
   assert.match(dashboard,/Session refresh needed before Inbox Command can search protected email/);
+  assert.match(dashboard,/\.email-overlay\{position:fixed;inset:0;background:rgba\(7,17,29,\.62\);backdrop-filter:blur\(6px\);z-index:2600/);
 });
 
 test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{

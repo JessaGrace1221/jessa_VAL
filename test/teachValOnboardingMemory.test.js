@@ -52,12 +52,16 @@ test('Teach VAL UI exposes connected inbox and calendar observations for review'
   assert.match(dashboard,/function teachValImportSourceInsights/);
   assert.match(dashboard,/function teachValUpdateSourceInsight/);
   assert.match(dashboard,/function teachValSaveItemEdit/);
+  assert.match(dashboard,/function teachValCleanReviewTitle/);
   assert.match(dashboard,/Connected Source Insights/);
   assert.match(dashboard,/Scan Email & Calendar/);
   assert.match(dashboard,/Import Approved\/Tweaked To Review/);
   assert.match(dashboard,/Approve/);
   assert.match(dashboard,/Save Tweak/);
   assert.match(dashboard,/Reject/);
+  assert.match(dashboard,/teach-val-review-card/);
+  assert.match(dashboard,/teach-val-fields/);
+  assert.match(dashboard,/Approve this if it should become part of VAL/);
   assert.match(dashboard,/sent checked/);
   assert.match(dashboard,/Source coverage:/);
   assert.match(dashboard,/Observation only\. VAL will not send, archive, delete, invite, reschedule, or change behavior from this scan\./);

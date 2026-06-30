@@ -76,6 +76,8 @@ test('login session bridge recovers blocked cookies without exposing browser-sid
   assert.match(server,/session_bridge:\$\{payload\}/);
   assert.match(server,/app\.get\('\/auth\/session-bridge'/);
   assert.match(server,/sessionBridgeUrl/);
+  assert.match(server,/safeInternalRedirect\(req\.query\.next\|\|'\/dashboard'\)/);
+  assert.match(server,/const next=safeInternalRedirect\(req\.body\.next\|\|'\/dashboard'\)/);
   assert.match(server,/Opening VAL directly to keep your secure session/);
   assert.match(server,/Referrer-Policy','no-referrer'/);
   assert.doesNotMatch(server,/localStorage\.setItem/);

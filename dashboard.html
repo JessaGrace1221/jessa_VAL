@@ -830,7 +830,7 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
   display:flex;flex-direction:column;overflow:hidden;
   animation:popIn 0.28s var(--spring);
 }
-.keys-overlay{position:fixed;inset:0;background:rgba(7,17,29,.62);backdrop-filter:blur(6px);z-index:600;display:flex;align-items:center;justify-content:center;padding:22px}
+.keys-overlay{position:fixed;inset:0;background:rgba(7,17,29,.62);backdrop-filter:blur(6px);z-index:2600;display:flex;align-items:center;justify-content:center;padding:22px}
 .keys-modal{width:min(980px,100%);max-height:min(780px,92dvh);overflow:hidden;background:var(--cream);border:1px solid rgba(255,255,255,.18);border-radius:14px;box-shadow:0 28px 90px rgba(0,0,0,.32);display:flex;flex-direction:column}
 .keys-head{height:58px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px;border-bottom:1px solid var(--border);background:white}
 .keys-title{font-family:var(--serif);font-size:1.45rem;color:var(--navy);line-height:1}
@@ -851,7 +851,7 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .key-actions button.danger{color:var(--red)}
 .keys-note{grid-column:1/-1;font-size:.72rem;color:var(--text-3);line-height:1.55;background:white;border:1px solid var(--border);border-radius:10px;padding:12px}
 @media(max-width:760px){.keys-overlay{align-items:stretch;padding:10px}.keys-body{grid-template-columns:1fr}.keys-modal{max-height:calc(100dvh - 20px)}}
-.email-overlay{position:fixed;inset:0;background:rgba(7,17,29,.62);backdrop-filter:blur(6px);z-index:610;display:flex;align-items:center;justify-content:center;padding:22px}
+.email-overlay{position:fixed;inset:0;background:rgba(7,17,29,.62);backdrop-filter:blur(6px);z-index:2600;display:flex;align-items:center;justify-content:center;padding:22px}
 .email-modal{width:min(1120px,100%);height:min(820px,92dvh);background:var(--cream);border-radius:14px;box-shadow:0 28px 90px rgba(0,0,0,.32);display:flex;flex-direction:column;overflow:hidden}
 .email-head{height:60px;background:white;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 18px}
 .email-title{font-family:var(--serif);font-size:1.45rem;color:var(--navy)}.email-sub{font-size:.7rem;color:#3E5070;margin-top:3px}
@@ -1865,6 +1865,91 @@ html body .exec-workspace-modal .teach-val-stage .teach-val-source-card h3{
   font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;
   font-size:1.72rem!important;
   font-weight:700!important;
+}
+html body .exec-workspace-modal .teach-val-review-card{
+  background:linear-gradient(135deg,#fffdf8 0%,#fff5d8 100%)!important;
+  border:1px solid rgba(201,154,61,.34)!important;
+  border-radius:8px!important;
+  box-shadow:0 10px 28px rgba(7,24,45,.06)!important;
+  padding:18px!important;
+}
+html body .exec-workspace-modal .teach-val-review-card.is-rejected{
+  background:#f8fafc!important;
+  opacity:.76!important;
+}
+html body .exec-workspace-modal .teach-val-review-head{
+  display:flex!important;
+  justify-content:space-between!important;
+  gap:14px!important;
+  align-items:flex-start!important;
+  margin-bottom:12px!important;
+}
+html body .exec-workspace-modal .teach-val-review-head h3{
+  font-size:1.38rem!important;
+  line-height:1.12!important;
+  margin:0!important;
+}
+html body .exec-workspace-modal .teach-val-include{
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  white-space:nowrap!important;
+  font-weight:700!important;
+}
+html body .exec-workspace-modal .teach-val-fields{
+  display:grid!important;
+  grid-template-columns:minmax(160px,.75fr) minmax(240px,1.25fr)!important;
+  gap:12px!important;
+}
+html body .exec-workspace-modal .teach-val-fields label{
+  display:grid!important;
+  gap:6px!important;
+  margin:0!important;
+  font-size:.72rem!important;
+  font-weight:800!important;
+  letter-spacing:.04em!important;
+  text-transform:uppercase!important;
+  color:#516071!important;
+}
+html body .exec-workspace-modal .teach-val-fields label:last-child{
+  grid-column:1/-1!important;
+}
+html body .exec-workspace-modal .teach-val-fields input,
+html body .exec-workspace-modal .teach-val-fields textarea{
+  width:100%!important;
+  min-height:42px!important;
+  resize:vertical!important;
+  font-size:.92rem!important;
+  line-height:1.35!important;
+  padding:10px 11px!important;
+}
+html body .exec-workspace-modal .teach-val-actions .primary,
+html body .exec-workspace-modal .email-actions .primary,
+html body .exec-workspace-modal .alert-btn.primary,
+html body .email-overlay .email-actions .primary,
+html body .email-overlay .alert-btn.primary{
+  background:var(--val-deep-navy)!important;
+  border-color:var(--val-deep-navy)!important;
+  color:#fff!important;
+  border-radius:5px!important;
+  box-shadow:0 8px 18px rgba(7,24,45,.18)!important;
+}
+html body .exec-workspace-modal .teach-val-actions .primary *,
+html body .exec-workspace-modal .email-actions .primary *,
+html body .exec-workspace-modal .alert-btn.primary *,
+html body .email-overlay .email-actions .primary *,
+html body .email-overlay .alert-btn.primary *{
+  color:#fff!important;
+}
+html body .exec-workspace-modal .teach-val-actions button,
+html body .exec-workspace-modal .email-actions button,
+html body .email-overlay .email-actions button{
+  border-radius:5px!important;
+  min-height:36px!important;
+}
+@media(max-width:720px){
+  html body .exec-workspace-modal .teach-val-fields{grid-template-columns:1fr!important}
+  html body .exec-workspace-modal .teach-val-review-head{display:grid!important}
 }
 html body input,
 html body textarea,
@@ -2943,8 +3028,8 @@ function isAuthExpiredError(e){
   return /session expired|sign back in|log back in|authentication required/i.test(String((e&&e.message)||e||''));
 }
 function inboxAuthRecoveryHtml(){
-  var next=encodeURIComponent(location.pathname+location.search);
-  return '<div class="email-card"><h3>Refresh Your VAL Session</h3><div class="email-reason">Executive Inbox is connected to protected email data, so VAL needs a fresh dashboard session before it can load Gmail or Outlook. Reconnecting Gmail will not fix this specific message.</div><div class="email-actions"><button class="primary" onclick="window.location.reload()">Refresh Session</button><button onclick="window.location.href=\'/login?next='+next+'\'">Open Login Directly</button><button onclick="openIntegrationStatus()">Integration Status</button></div></div>';
+  var inboxNext=encodeURIComponent('/dashboard?view=email_intelligence');
+  return '<div class="email-card"><h3>Refresh Your VAL Session</h3><div class="email-reason">Executive Inbox is connected to protected email data, so VAL needs a fresh dashboard session before it can load Gmail or Outlook. Reconnecting Gmail will not fix this specific message.</div><div class="email-actions"><button class="primary" onclick="window.location.href=\'/dashboard?view=email_intelligence&session_refresh=1\'">Reopen Executive Inbox</button><button onclick="window.location.href=\'/login?next='+inboxNext+'\'">Open Login Directly</button><button onclick="window.location.href=\'/dashboard?view=integration_status\'">Integration Status</button></div></div>';
 }
 function renderInboxAuthRecovery(message){
   emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
@@ -5227,12 +5312,12 @@ function apiTextOrJson(r){
 }
 function apiFetch(url,opts){
   opts=opts||{};
-  opts.credentials=opts.credentials||'same-origin';
+  opts.credentials=opts.credentials||'include';
   return fetch(url,opts).then(apiTextOrJson);
 }
 async function fetchJSON(url){
   try{
-    var r=await fetch(url,{credentials:'same-origin'});
+    var r=await fetch(url,{credentials:'include'});
     if(r.status===401){handleAuthExpired();return null;}
     if(!r.ok)return null;
     var t=await r.text();
@@ -6545,6 +6630,11 @@ function teachValSourceInsightStatus(item){
   if(d==='edited')return 'Tweaked';
   return 'Needs review';
 }
+function teachValCleanReviewTitle(value,fallback){
+  var text=String(value||'').trim().replace(/^[-—_\s]+$/,'').replace(/^#+\s*/,'');
+  if(!text||text.length<2)return fallback||'Review this memory';
+  return text.slice(0,140);
+}
 function teachValSourceInsightGroup(type){
   var list=(teachValSourceInsights&&teachValSourceInsights.insights)||[];
   return list.map(function(item,index){return {item:item,index:index};}).filter(function(row){
@@ -6574,7 +6664,8 @@ function teachValInsightListHtml(items){
     var item=row.item||row, index=row.index!==undefined?row.index:localIndex;
     var evidence=((item.data&&item.data.evidence)||[]).slice(0,3).map(function(ev){return docSafe(teachValInsightEvidenceLine(ev));}).join('<br>');
     var rule=item.data&&item.data.ruleDraft?'<div class="email-reason"><strong>Suggested behavior:</strong> Approval required before this changes how VAL acts.</div>':'';
-    return '<div class="email-card teach-val-reviewable-insight '+(item.include_in_val===false?'is-rejected':'')+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3>'+docSafe(item.title||'VAL insight')+'</h3><span class="email-pill">'+docSafe(teachValSourceInsightStatus(item))+' · '+Math.round(Number(item.confidence||0)*100)+'%</span></div><label>What VAL thinks<input id="teachValInsightTitle'+index+'" value="'+docSafe(item.title||'VAL insight')+'"></label><label>What this means<textarea id="teachValInsightSummary'+index+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Your correction<textarea id="teachValInsightNote'+index+'" rows="2" placeholder="Optional: fix a name, school, priority, relationship, or what VAL misunderstood.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label>'+(item.data&&item.data.recommendation?'<div class="email-reason"><strong>Suggestion:</strong> '+docSafe(item.data.recommendation)+'</div>':'')+(evidence?'<div class="email-reason"><strong>Evidence:</strong><br>'+evidence+'</div>':'')+rule+'<div class="email-actions"><button class="primary" onclick="teachValUpdateSourceInsight('+index+',\'approved\')">Approve</button><button onclick="teachValUpdateSourceInsight('+index+',\'edited\')">Save Tweak</button><button onclick="teachValUpdateSourceInsight('+index+',\'rejected\')">Reject</button></div></div>';
+    var title=teachValCleanReviewTitle(item.title,'VAL insight');
+    return '<div class="email-card teach-val-review-card teach-val-reviewable-insight '+(item.include_in_val===false?'is-rejected':'')+'"><div class="teach-val-review-head"><h3>'+docSafe(title)+'</h3><span class="email-pill">'+docSafe(teachValSourceInsightStatus(item))+' · '+Math.round(Number(item.confidence||0)*100)+'%</span></div><p>Approve this if it is true enough for VAL to remember. Tweak it if a name, relationship, priority, or detail is off. Reject it if VAL should ignore it.</p><div class="teach-val-fields"><label>Title<input id="teachValInsightTitle'+index+'" value="'+docSafe(title)+'"></label><label>Summary<textarea id="teachValInsightSummary'+index+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Correction for VAL<textarea id="teachValInsightNote'+index+'" rows="2" placeholder="Optional: fix what VAL misunderstood.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label></div>'+(item.data&&item.data.recommendation?'<div class="email-reason"><strong>Suggestion:</strong> '+docSafe(item.data.recommendation)+'</div>':'')+(evidence?'<div class="email-reason"><strong>Evidence:</strong><br>'+evidence+'</div>':'')+rule+'<div class="email-actions teach-val-actions"><button class="primary" onclick="teachValUpdateSourceInsight('+index+',\'approved\')">Approve</button><button onclick="teachValUpdateSourceInsight('+index+',\'edited\')">Save Tweak</button><button onclick="teachValUpdateSourceInsight('+index+',\'rejected\')">Reject</button></div></div>';
   }).join('')+'</div>';
 }
 function teachValSourceInsightsHtml(){
@@ -6839,7 +6930,8 @@ function teachValExtractedItemsHtml(imp){
   if(!imp||!(imp.extractedItems||[]).length)return '<div class="task-empty">No extracted items yet.</div>';
   return '<div class="dashboard-studio-history">'+(imp.extractedItems||[]).map(function(item){
     var key=String(imp.id||'')+'_'+String(item.id||'').replace(/[^a-z0-9_-]/gi,'');
-    return '<div class="email-card '+(item.include_in_val===false?'is-rejected':'')+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3>'+docSafe(item.title||'Memory item')+'</h3><label style="white-space:nowrap"><input type="checkbox" '+(item.include_in_val!==false?'checked':'')+' onchange="teachValToggleItem(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',this.checked)"> Include</label></div><label>Title<input id="teachValReviewTitle'+docSafe(key)+'" value="'+docSafe(item.title||'Memory item')+'"></label><label>Summary<textarea id="teachValReviewSummary'+docSafe(key)+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Note for VAL<textarea id="teachValReviewNote'+docSafe(key)+'" rows="2" placeholder="Optional correction or context.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label><div class="email-reason">Category: '+docSafe(item.category||imp.category)+' · Confidence: '+docSafe(item.confidence||'')+' · Source: '+docSafe(item.source||'external_ai_import')+'</div><div class="email-actions"><button class="primary" onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Approve</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Save Tweak</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',false)">Reject</button></div></div>';
+    var title=teachValCleanReviewTitle(item.title,'Review this memory');
+    return '<div class="email-card teach-val-review-card '+(item.include_in_val===false?'is-rejected':'')+'"><div class="teach-val-review-head"><h3>'+docSafe(title)+'</h3><label class="teach-val-include"><input type="checkbox" '+(item.include_in_val!==false?'checked':'')+' onchange="teachValToggleItem(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',this.checked)"> Include</label></div><p>Approve this if it should become part of VAL’s understanding. Edit the title or summary if the meaning is close but not quite right. Add a correction if VAL needs extra context.</p><div class="teach-val-fields"><label>Title<input id="teachValReviewTitle'+docSafe(key)+'" value="'+docSafe(title)+'"></label><label>Summary<textarea id="teachValReviewSummary'+docSafe(key)+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Correction for VAL<textarea id="teachValReviewNote'+docSafe(key)+'" rows="2" placeholder="Optional correction or context.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label></div><div class="email-reason">Category: '+docSafe(item.category||imp.category)+' · Confidence: '+docSafe(item.confidence||'')+' · Source: '+docSafe(item.source||'external_ai_import')+'</div><div class="email-actions teach-val-actions"><button class="primary" onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Approve</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Save Tweak</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',false)">Reject</button></div></div>';
   }).join('')+'</div>';
 }
 function teachValToggleItem(importId,itemId,include){

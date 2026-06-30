@@ -4242,7 +4242,8 @@ function loginHtml(){
   document.getElementById('loginForm').addEventListener('submit',async function(e){
     e.preventDefault();loginError.textContent='';
     try{
-      const r=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailInput.value,password:passwordInput.value})});
+      const next=new URLSearchParams(location.search).get('next')||'/dashboard';
+      const r=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailInput.value,password:passwordInput.value,next:next})});
       const d=await r.json().catch(()=>({}));
       console.log('[auth-ui] login response',{status:r.status,ok:r.ok,requiresPasswordSetup:!!d.requiresPasswordSetup});
       if(r.ok&&d.ok){
@@ -4328,7 +4329,8 @@ async function requireAuth(req,res,next){
   const user=await getSessionUser(req);
   if(user){req.valUser=user;return requestContext.run({user},()=>next());}
   if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
-  return res.redirect('/login');
+  const redirectNext=safeInternalRedirect(req.originalUrl||req.url||'/dashboard');
+  return res.redirect('/login?next='+encodeURIComponent(redirectNext));
 }
 
 // ── HEALTH ───────────────────────────────────────────────
@@ -4391,7 +4393,7 @@ app.get('/login',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
   await valDbReady;
   const user=await getSessionUser(req);
-  if(user) return res.redirect('/dashboard');
+  if(user) return res.redirect(safeInternalRedirect(req.query.next||'/dashboard'));
   res.type('html').send(loginHtml());
 });
 app.get('/set-password',(req,res)=>{
@@ -4439,7 +4441,8 @@ app.post('/api/auth/login',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('login succeeded',{email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email},success:true}).catch(()=>{});
-  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard',sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,'/dashboard'))});
+  const next=safeInternalRedirect(req.body.next||'/dashboard');
+  res.json({ok:true,user:publicUser(user),redirectUrl:next,sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,next))});
 });
 app.post('/api/auth/request-password-setup',async(req,res)=>{
   await valDbReady;
@@ -4473,7 +4476,8 @@ app.post('/api/auth/set-password',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('set password succeeded',{email:user.email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{method:'set_password'},success:true}).catch(()=>{});
-  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard',sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,'/dashboard'))});
+  const next=safeInternalRedirect(req.body.next||'/dashboard');
+  res.json({ok:true,user:publicUser(user),redirectUrl:next,sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,next))});
 });
 app.post('/api/auth/logout',async(req,res)=>{
   await auditLog({req,action:'logout',resourceType:'session',resourceId:verifySignedSession(parseCookies(req)[SESSION_COOKIE])||'',success:true}).catch(()=>{});
