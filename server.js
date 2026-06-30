@@ -6442,6 +6442,9 @@ function emailCleanSentence(value){
 function emailSnippetSummary(email){
   return emailCleanSentence(email.bodyPreview||email.snippet||email.bodyText||email.reason||'');
 }
+function emailIsCalendarConfirmation(text){
+  return /\b(rsvp|you'?re\s+(?:so\s+)?glad|we'?re\s+(?:so\s+)?glad|joining us|zoom link|join the zoom|calendar invite|invitation|confirmed|thank you for your rsvp)\b/i.test(String(text||''));
+}
 function emailSignoff(email,standards){
   return normalizeDraftStandards(standards).defaultSignoff||'Best,';
 }
@@ -6467,6 +6470,21 @@ function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff,stan
   const proposed=(text.match(/\b(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^.?!]*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i)||[])[0];
   const disclose=draftStandardsDiscloseVal(standards);
   const target=emailAssistantTarget(standards);
+  const calendarConfirmation=emailIsCalendarConfirmation(text);
+  if(calendarConfirmation&&!conflict&&!proposed){
+    return {
+      subject,
+      body:emailDraftBody([
+        emailDraftGreeting(email),
+        '',
+        emailValIntro(standards),
+        '',
+        disclose?`Thanks for sending this over. I'll make sure this is in ${target}'s calendar.`:"Thanks for sending this over. I'll make sure this is in my calendar.",
+        '',
+        emailValSignoff(standards)
+      ])
+    };
+  }
   if(conflict||proposed){
     return {
       subject,

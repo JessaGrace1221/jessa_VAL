@@ -71,6 +71,7 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/function buildQuestionReplyDraft/);
   assert.match(server,/function buildWaitingFollowupDraft/);
   assert.match(server,/function emailSnippetSummary/);
+  assert.match(server,/function emailIsCalendarConfirmation/);
   assert.match(server,/function emailValIntro/);
   assert.match(server,/function emailValSignoff/);
   assert.match(server,/function normalizeDraftStandards/);
@@ -87,6 +88,8 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/I'll get this question in front of \$\{target\} right away/);
   assert.match(server,/review list/);
   assert.match(server,/calendar context/);
+  assert.match(server,/I'll make sure this is in \$\{target\}'s calendar/);
+  assert.doesNotMatch(server,/calendar context for Thank You for Your RSVP/);
   assert.match(server,/I'm bringing this back to the top of the thread for Jessa/);
   assert.doesNotMatch(server,/Thank you for your note\. I wanted to respond thoughtfully/);
   assert.doesNotMatch(server,/I saw this needs a clear reply/);
