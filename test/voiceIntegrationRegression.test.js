@@ -6,6 +6,7 @@ const path=require('node:path');
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
+const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const commandCss=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 
 test('voice playback uses server-side Deepgram TTS proxy instead of browser-side token calls',()=>{
@@ -58,11 +59,17 @@ test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
   assert.match(commandCss,/\.week-scroll\{[^}]*overflow:auto!important/);
   assert.match(dashboard,/el\.className='gchat-overlay'/);
   assert.match(dashboard,/\.gchat-overlay\{[^}]*position:fixed/);
+  assert.match(dashboard,/\.gchat-modal\{[^}]*width:min\(1180px/);
+  assert.match(dashboard,/\.gchat-modal\{[^}]*background:#fbfaf7/);
+  assert.match(dashboard,/\.gchat-sidebar\{[^}]*linear-gradient/);
   assert.match(dashboard,/class="gchat-modal"/);
   assert.match(dashboard,/class="gchat-sidebar"/);
   assert.match(dashboard,/class="gchat-input-row"/);
   assert.match(dashboard,/class="gchat-send"/);
-  assert.match(dashboard,/\.val-talk-button\{[^}]*min-width:142px/);
+  assert.match(dashboard,/class="val-face"/);
+  assert.match(commandCenter,/class="val-face"/);
+  assert.match(dashboard,/@keyframes valFaceFloat/);
+  assert.match(dashboard,/\.val-talk-button\{[^}]*linear-gradient\(145deg,#f8d98b/);
   assert.match(dashboard,/\.val-home-send\{[^}]*background:#07182d/);
   assert.doesNotMatch(dashboard,/id='gchatOverlay';\s*el\.style\.cssText=/);
 });
