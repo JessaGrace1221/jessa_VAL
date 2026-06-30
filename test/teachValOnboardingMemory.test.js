@@ -63,6 +63,8 @@ test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
   assert.match(server,/function updateValOsExternalActionPacket/);
   assert.match(server,/function approveValOsExternalActionPacket/);
   assert.match(server,/not\\s\+in\\s\+ghl/);
+  assert.match(server,/add\\s\+a\\s\+ghl\\s\+not\(\?:e\)\?\\s\+to/);
+  assert.match(server,/saying\|with\\s\+the\\s\+note/);
   assert.match(server,/Adding a contact note by name requires exactly one GHL contact match/);
   assert.match(server,/externalActionPacket/);
   assert.match(server,/I prepared the GHL action and need one approval/);

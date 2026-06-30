@@ -16745,6 +16745,7 @@ function deterministicGhlActionFromText(text=''){
   const raw=String(text||'').trim();
   const note=raw.match(/\badd\s+a\s+not(?:e)?\s+in\s+ghl\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
     || raw.match(/\badd\s+a\s+ghl\s+not(?:e)?\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
+    || raw.match(/\badd\s+a\s+ghl\s+not(?:e)?\s+to\s+(.+?)\s+(?:that\s+says|saying|with\s+the\s+note)\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
     || raw.match(/\badd\s+a\s+not(?:e)?\s+to\s+ghl\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i);
   if(note){
     return {
