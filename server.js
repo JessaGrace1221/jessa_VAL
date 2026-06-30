@@ -729,7 +729,58 @@ function demoTemplate(){
     {id:'demo-memory-1',kind:'capacity_signal',summary:'Capacity drift detected from open loops expanding faster than closure.',rawText:'Five relationship loops, three revenue conversations, two strategic obligations, and several small follow-up promises are active at once. Close Marcus, Elena, and Jordan before opening anything new.',importance:4,createdAt:demoIso(0,8,50),metadata:{source:'demo'}},
     {id:'demo-memory-2',kind:'operating_preference',summary:'Avery works best with direct recommendations and short approval queues.',rawText:'The user prefers VAL to draft or queue next actions instead of explaining every option. They need clear, calm pressure without overload.',importance:4,createdAt:demoIso(-5,9,0),metadata:{source:'demo'}}
   ];
-  return {tasks,calendarEvents,opportunities,conversations,messages,drafts,emails,transcripts,relationships,memoryItems,createdAt:new Date().toISOString()};
+  const evidenceItems=[
+    {id:'demo-evi-marcus-email',tenantId:CLIENT_CONFIG.clientSlug,sourceType:'email',sourceId:'demo-email-1',occurredAt:demoIso(0,8,42),capturedAt:demoIso(0,8,43),title:'Pilot memo before 2 PM',rawText:'Marcus asked for the pilot memo before the 2 PM demo and raised procurement/onboarding concerns.',summary:'Marcus needs a pilot memo before today’s demo, with procurement owner clarified.',participantsJson:[{name:'Marcus Chen',email:'marcus@atlasops.com',contactId:'demo-contact-1'}],entitiesJson:{project:'Atlas Operations Pilot',opportunityId:'demo-opp-1'},confidence:0.96,status:'processed',metadataJson:{source:'demo'}},
+    {id:'demo-evi-elena-transcript',tenantId:CLIENT_CONFIG.clientSlug,sourceType:'transcript',sourceId:'demo-tr-2',occurredAt:demoIso(-1,11,20),capturedAt:demoIso(-1,11,25),title:'Investor Prep With Elena',rawText:transcripts.find(t=>t.id==='demo-tr-2')?.rawText||'',summary:'Elena requested clearer first-30-days scope and mentioned two possible portfolio referrals.',participantsJson:[{name:'Elena Brooks',email:'elena@northstarcapital.com',contactId:'demo-contact-2'}],entitiesJson:{project:'Northstar Capital Advisory',opportunityId:'demo-opp-2'},confidence:0.94,status:'processed',metadataJson:{source:'demo'}},
+    {id:'demo-evi-jordan-transcript',tenantId:CLIENT_CONFIG.clientSlug,sourceType:'transcript',sourceId:'demo-tr-1',occurredAt:demoIso(-1,17,0),capturedAt:demoIso(-1,17,4),title:'Retro Partnership Notes',rawText:transcripts.find(t=>t.id==='demo-tr-1')?.rawText||'',summary:'Jordan offered three operating partner introductions if Avery sends a concise one-paragraph ask.',participantsJson:[{name:'Jordan Lee',email:'jordan@fieldstone.co',contactId:'demo-contact-4'}],entitiesJson:{project:'Fieldstone Partner Channel',opportunityId:'demo-opp-4'},confidence:0.93,status:'processed',metadataJson:{source:'demo'}},
+    {id:'demo-evi-healthbridge-risk',tenantId:CLIENT_CONFIG.clientSlug,sourceType:'transcript',sourceId:'demo-tr-4',occurredAt:demoIso(-2,15,10),capturedAt:demoIso(-2,15,12),title:'HealthBridge Renewal Review',rawText:transcripts.find(t=>t.id==='demo-tr-4')?.rawText||'',summary:'HealthBridge renewal risk is implementation fatigue, not lack of belief.',participantsJson:[{name:'Priya Raman',email:'priya@healthbridge.org',contactId:'demo-contact-3'}],entitiesJson:{project:'HealthBridge Expansion',opportunityId:'demo-opp-3'},confidence:0.91,status:'processed',metadataJson:{source:'demo'}},
+    {id:'demo-evi-capacity',tenantId:CLIENT_CONFIG.clientSlug,sourceType:'memory',sourceId:'demo-memory-1',occurredAt:demoIso(0,8,50),capturedAt:demoIso(0,8,50),title:'Morning Operating Review',rawText:memoryItems[0].rawText,summary:'Capacity drift detected: open relationship loops are expanding faster than closure.',participantsJson:[],entitiesJson:{project:'VAL Operating Rhythm'},confidence:0.88,status:'processed',metadataJson:{source:'demo'}}
+  ];
+  const evidenceObservations=[
+    {id:'demo-obs-marcus-risk',tenantId:CLIENT_CONFIG.clientSlug,evidenceItemId:'demo-evi-marcus-email',observationType:'risk',personId:'demo-contact-1',projectId:'atlas-operations-pilot',content:'The Atlas pilot may stall if procurement owner is not clarified before the 2 PM demo.',confidence:0.92,status:'observed',dueAt:demoIso(0,13,15),createdAt:demoIso(0,8,45)},
+    {id:'demo-obs-elena-opportunity',tenantId:CLIENT_CONFIG.clientSlug,evidenceItemId:'demo-evi-elena-transcript',observationType:'opportunity',personId:'demo-contact-2',projectId:'northstar-capital-advisory',content:'Elena can become both a client and referral channel if the first-30-days scope is tightened.',confidence:0.88,status:'observed',dueAt:demoIso(0,16,0),createdAt:demoIso(-1,11,25)},
+    {id:'demo-obs-jordan-followup',tenantId:CLIENT_CONFIG.clientSlug,evidenceItemId:'demo-evi-jordan-transcript',observationType:'follow_up',personId:'demo-contact-4',projectId:'fieldstone-partner-channel',content:'Jordan needs a concise one-paragraph referral ask while the warm intro offer is fresh.',confidence:0.9,status:'observed',dueAt:demoIso(0,17,0),createdAt:demoIso(-1,17,5)},
+    {id:'demo-obs-priya-risk',tenantId:CLIENT_CONFIG.clientSlug,evidenceItemId:'demo-evi-healthbridge-risk',observationType:'risk',personId:'demo-contact-3',projectId:'healthbridge-expansion',content:'Do not push expansion until HealthBridge implementation fatigue is acknowledged.',confidence:0.86,status:'observed',dueAt:demoIso(1,11,0),createdAt:demoIso(-2,15,12)},
+    {id:'demo-obs-capacity',tenantId:CLIENT_CONFIG.clientSlug,evidenceItemId:'demo-evi-capacity',observationType:'risk',projectId:'val-operating-rhythm',content:'Close Marcus, Elena, and Jordan before starting a new initiative.',confidence:0.84,status:'observed',dueAt:demoIso(0,18,0),createdAt:demoIso(0,8,50)}
+  ];
+  const relationshipProfiles=relationships.slice(0,5).map((r,i)=>({
+    id:`demo-rel-${i+1}`,
+    tenantId:CLIENT_CONFIG.clientSlug,
+    profileType:'person',
+    profileKey:personKey(r.name,r.email),
+    personId:r.email==='marcus@atlasops.com'?'demo-contact-1':r.email==='elena@northstarcapital.com'?'demo-contact-2':r.email==='priya@healthbridge.org'?'demo-contact-3':r.email==='jordan@fieldstone.co'?'demo-contact-4':`demo-contact-${i+1}`,
+    displayName:r.name,
+    summary:r.profile?.summary||r.reason,
+    relationshipStatus:r.priority==='high'?'active_attention':(r.priority==='watch'?'watch':'observed'),
+    confidence:0.86,
+    lastObservedAt:r.lastInteractionAt||r.lastInteraction,
+    observationCount:(r.evidence||[]).length,
+    openLoopCount:(r.openLoops||[]).length,
+    promiseCount:(r.openLoops||[]).length,
+    riskCount:r.profile?.riskPattern?1:0,
+    opportunityCount:(r.opportunitySignals||[]).length,
+    preferenceCount:0,
+    emotionalContextJson:[],
+    relationshipSignalsJson:(r.tags||[]).map(tag=>({content:tag})),
+    risksJson:r.profile?.riskPattern?[{content:r.profile.riskPattern}]:[],
+    opportunitiesJson:(r.opportunitySignals||[]).map(content=>({content})),
+    preferencesJson:[],
+    openLoopsJson:(r.openLoops||[]).map(content=>({content})),
+    metadataJson:{source:'demo',recommendedAction:r.recommendedAction},
+    updatedAt:demoIso(0,9,0)
+  }));
+  const relationshipProfilesProjects=[
+    {id:'demo-project-atlas',profileType:'project',profileKey:'project:atlas-operations-pilot',projectId:'atlas-operations-pilot',displayName:'Atlas Operations Pilot',summary:'Active pilot at proposal review; procurement owner and onboarding load are the main blockers.',relationshipStatus:'active',confidence:0.9,lastObservedAt:demoIso(0,8,44),observationCount:3,openLoopCount:2,promiseCount:1,riskCount:1,opportunityCount:1,preferenceCount:0,emotionalContextJson:[],relationshipSignalsJson:[{content:'2 PM demo today'}],risksJson:[{content:'Procurement owner not yet named.'}],opportunitiesJson:[{content:'48K pilot in proposal review.'}],preferencesJson:[],openLoopsJson:[{content:'Send pilot memo.'},{content:'Ask who owns vendor approval.'}],metadataJson:{source:'demo'},updatedAt:demoIso(0,8,50)},
+    {id:'demo-project-northstar',profileType:'project',profileKey:'project:northstar-capital-advisory',projectId:'northstar-capital-advisory',displayName:'Northstar Capital Advisory',summary:'Scope is close; revised first-30-days narrative could unlock two portfolio referrals.',relationshipStatus:'active',confidence:0.87,lastObservedAt:demoIso(0,7,58),observationCount:3,openLoopCount:2,promiseCount:1,riskCount:0,opportunityCount:2,preferenceCount:0,emotionalContextJson:[],relationshipSignalsJson:[{content:'Portfolio referral path active.'}],risksJson:[],opportunitiesJson:[{content:'85K advisory opportunity.'},{content:'Two possible founder introductions.'}],preferencesJson:[],openLoopsJson:[{content:'Send revised scope.'},{content:'Track founder referral timing.'}],metadataJson:{source:'demo'},updatedAt:demoIso(0,8,25)},
+    {id:'demo-project-healthbridge',profileType:'project',profileKey:'project:healthbridge-expansion',projectId:'healthbridge-expansion',displayName:'HealthBridge Expansion',summary:'Expansion is valuable but stalled until implementation fatigue is acknowledged.',relationshipStatus:'at_risk',confidence:0.84,lastObservedAt:demoIso(-2,15,10),observationCount:2,openLoopCount:2,promiseCount:1,riskCount:2,opportunityCount:1,preferenceCount:0,emotionalContextJson:[],relationshipSignalsJson:[{content:'Sponsor still values VAL.'}],risksJson:[{content:'Implementation fatigue could weaken renewal trust.'},{content:'Expansion conversation should wait.'}],opportunitiesJson:[{content:'32K expansion possible after stabilization.'}],preferencesJson:[],openLoopsJson:[{content:'Send care-first renewal check-in.'},{content:'Revisit expansion after support stabilizes.'}],metadataJson:{source:'demo'},updatedAt:demoIso(-2,15,12)}
+  ].map(row=>({tenantId:CLIENT_CONFIG.clientSlug,...row}));
+  const agencyMoves=[
+    {id:'demo-agency-top',tenantId:CLIENT_CONFIG.clientSlug,moveType:'draft_reply',title:'Draft reply: Marcus pilot memo before 2 PM',why:'Marcus directly asked for the pilot memo before today’s demo, and procurement ownership is still unclear.',confidence:0.94,importanceScore:91,urgencyScore:28,leverageScore:30,riskScore:20,relationshipScore:22,agencyLevel:2,priorityBand:'top_recommended',status:'candidate',personId:'demo-contact-1',projectId:'atlas-operations-pilot',dueAt:demoIso(0,13,15),sourceObservationIds:['demo-obs-marcus-risk'],sourceEvidenceIds:['demo-evi-marcus-email'],whatChanged:'Marcus asked for the pilot memo before the 2 PM demo and raised procurement/onboarding concerns.',ifIgnored:'The Atlas opportunity may stall after the demo because the buying owner stays unclear.',metadataJson:{source:'demo',observationType:'reply_needed'},createdAt:demoIso(0,8,45),updatedAt:demoIso(0,8,45)},
+    {id:'demo-agency-elena',tenantId:CLIENT_CONFIG.clientSlug,moveType:'send_follow_up',title:'Close loop: Elena revised first-30-days scope',why:'Elena asked for a clearer first 30 days and the revised scope could unlock portfolio referrals.',confidence:0.88,importanceScore:74,urgencyScore:20,leverageScore:24,riskScore:6,relationshipScore:18,agencyLevel:2,priorityBand:'also_important',status:'candidate',personId:'demo-contact-2',projectId:'northstar-capital-advisory',dueAt:demoIso(0,16,0),sourceObservationIds:['demo-obs-elena-opportunity'],sourceEvidenceIds:['demo-evi-elena-transcript'],whatChanged:'Elena asked for the first 30 days to be clearer and mentioned two possible portfolio referrals.',ifIgnored:'The scope may stay fuzzy and the referral window may cool.',metadataJson:{source:'demo',observationType:'opportunity'},createdAt:demoIso(-1,11,25),updatedAt:demoIso(-1,11,25)},
+    {id:'demo-agency-jordan',tenantId:CLIENT_CONFIG.clientSlug,moveType:'send_follow_up',title:'Close loop: Jordan one-paragraph intro ask',why:'Jordan offered warm introductions, but the ask needs to stay concise while momentum is fresh.',confidence:0.9,importanceScore:72,urgencyScore:18,leverageScore:28,riskScore:8,relationshipScore:20,agencyLevel:2,priorityBand:'also_important',status:'candidate',personId:'demo-contact-4',projectId:'fieldstone-partner-channel',dueAt:demoIso(0,17,0),sourceObservationIds:['demo-obs-jordan-followup'],sourceEvidenceIds:['demo-evi-jordan-transcript'],whatChanged:'Jordan offered three operating partner introductions if Avery sends a concise ask.',ifIgnored:'The warm intro may turn into a forgotten good idea.',metadataJson:{source:'demo',observationType:'follow_up'},createdAt:demoIso(-1,17,5),updatedAt:demoIso(-1,17,5)},
+    {id:'demo-agency-priya',tenantId:CLIENT_CONFIG.clientSlug,moveType:'review_risk',title:'Review risk: HealthBridge renewal fatigue',why:'Priya still values VAL, but her team is tired. Expansion should wait until support load is acknowledged.',confidence:0.86,importanceScore:69,urgencyScore:16,leverageScore:16,riskScore:26,relationshipScore:17,agencyLevel:2,priorityBand:'also_important',status:'candidate',personId:'demo-contact-3',projectId:'healthbridge-expansion',dueAt:demoIso(1,11,0),sourceObservationIds:['demo-obs-priya-risk'],sourceEvidenceIds:['demo-evi-healthbridge-risk'],whatChanged:'HealthBridge renewal risk is implementation fatigue, not lack of belief.',ifIgnored:'Pushing expansion too early may reduce trust with Priya and her team.',metadataJson:{source:'demo',observationType:'risk'},createdAt:demoIso(-2,15,12),updatedAt:demoIso(-2,15,12)}
+  ];
+  return {tasks,calendarEvents,opportunities,conversations,messages,drafts,emails,transcripts,relationships,memoryItems,evidenceItems,evidenceObservations,relationshipProfiles:relationshipProfiles.concat(relationshipProfilesProjects),agencyMoves,agencyMoveSources:[],createdAt:new Date().toISOString()};
 }
 function demoSessionId(req,res){
   const existing=parseCookies(req).val_demo_session;
@@ -13189,6 +13240,63 @@ function dashboardReadyDraft(draft={}){
   const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
   return {id:draft.id,title:dashboardShortText(label,'Draft ready',80),summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),view:'drafts',target:{type:'draft',id:draft.id},draftType:draft.draftType,status:draft.status,quality};
 }
+function dashboardCardEvidenceFromMove(move={}){
+  const items=[];
+  for(const id of Array.isArray(move.sourceEvidenceIds)?move.sourceEvidenceIds:[])items.push({id,sourceType:'evidence',title:'Evidence record',summary:'Stored evidence linked to this signal.'});
+  for(const id of Array.isArray(move.sourceObservationIds)?move.sourceObservationIds:[])items.push({id,sourceType:'observation',title:'Observation record',summary:'Stored observation linked to this signal.'});
+  return items.slice(0,8);
+}
+function dashboardCardActionSet(kind,item={}){
+  const targetType=item?.target?.type||item?.entityType||'';
+  if(kind==='what_changed')return ['review_evidence','create_task','draft_email','add_to_project','update_contact','ignore','snooze'];
+  if(kind==='highest_leverage')return ['do_it_now','draft_response','create_task','schedule_time','update_contact','add_to_project','snooze','dismiss','not_important'];
+  if(kind==='people')return ['draft_email','create_follow_up_task','schedule_meeting','add_contact_note','mark_vip','snooze','resolve_loop','correct_association'];
+  if(kind==='projects')return ['create_task','draft_update','schedule_work_block','attach_evidence','summarize_project','create_client_update','watch_project','archive_project'];
+  if(kind==='momentum')return targetType==='project'?['create_task','draft_update','update_project_status','snooze','mark_signal_wrong']:['follow_up','draft_email','create_task','schedule_meeting','snooze','mark_signal_wrong'];
+  if(kind==='ready_for_you')return ['approve','edit_before_approving','reject','send_email','save_draft','create_task','add_to_memory','attach_to_contact','attach_to_project','snooze','not_useful'];
+  return ['review','create_task','snooze','dismiss'];
+}
+function dashboardNormalizeCardItem(kind,item={},fallback={}){
+  const target=item.target||fallback.target||{type:kind,id:item.id||fallback.id||''};
+  const evidence=Array.isArray(item.evidence)?item.evidence:dashboardCardEvidenceFromMove(item);
+  const sourceIds=[
+    item.source_id||item.sourceId||item.id||fallback.id||'',
+    ...(Array.isArray(item.evidenceIds)?item.evidenceIds:[]),
+    ...(Array.isArray(item.observationIds)?item.observationIds:[])
+  ].filter(Boolean);
+  const createdAt=item.createdAt||item.created_at||item.lastObservedAt||item.occurredAt||item.capturedAt||fallback.createdAt||'';
+  return {
+    ...item,
+    id:item.id||fallback.id||uuid('card_item'),
+    cardType:kind,
+    source_type:item.source_type||item.sourceType||item.type||target.type||kind,
+    source_id:sourceIds[0]||'',
+    source_ids:[...new Set(sourceIds)],
+    created_at:createdAt,
+    createdAt,
+    title:dashboardShortText(item.title||item.name||fallback.title||'VAL signal','VAL signal',120),
+    summary:dashboardShortText(item.summary||item.detail||item.why||fallback.summary||'', '', 220),
+    reason_it_matters:dashboardShortText(item.reason_it_matters||item.reasonItMatters||item.why||item.reason||item.summary||fallback.reason_it_matters||'', '', 240),
+    confidence:item.confidence!=null?Number(item.confidence):null,
+    evidence,
+    evidence_count:evidence.length+(Array.isArray(item.evidenceIds)?item.evidenceIds.length:0)+(Array.isArray(item.observationIds)?item.observationIds.length:0),
+    available_actions:Array.isArray(item.available_actions)?item.available_actions:dashboardCardActionSet(kind,item),
+    target
+  };
+}
+function dashboardNormalizeCardCollection(kind,items=[]){
+  return (Array.isArray(items)?items:[]).filter(Boolean).map(item=>dashboardNormalizeCardItem(kind,item));
+}
+function dashboardDedupeCardItems(items=[]){
+  const seen=new Set(),out=[];
+  for(const item of Array.isArray(items)?items:[]){
+    const key=String(item?.target?.id||item?.source_id||item?.sourceId||item?.id||item?.title||'').toLowerCase();
+    if(key&&seen.has(key))continue;
+    if(key)seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
 function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[]}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
@@ -13198,19 +13306,22 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
   const people=dashboardMergeEntityRows([...(onboarding?.people||[]),...profilePeople,...dashboardPeopleFromEvidence(evidenceItems)],{type:'person',limit:12});
   const projects=dashboardMergeEntityRows([...(onboarding?.projects||[]),...profileProjects,...dashboardProjectsFromEvidence(evidenceItems)],{type:'project',limit:10});
   const top=conclusions.find(m=>m.priorityBand==='top_recommended')||conclusions.find(m=>m.priorityBand==='also_important')||onboarding?.recommendedMove||conclusions[0]||null;
-  const changed=conclusions.filter(m=>!['ignored','quiet'].includes(m.priorityBand)).slice(0,8).map(m=>({id:m.id,title:m.title,summary:m.summary,type:m.metadata?.observationType||m.moveType,target:m.target,evidenceIds:m.evidenceIds,confidence:m.confidence,createdAt:m.createdAt}));
-  const whatChanged=[...(onboarding?.whatChanged||[]),...changed].slice(0,8);
+  const changed=conclusions.filter(m=>!['ignored','quiet'].includes(m.priorityBand)).slice(0,8).map(m=>({id:m.id,title:m.title,summary:m.summary,reason_it_matters:m.why||m.ifIgnored||m.summary,type:m.metadata?.observationType||m.moveType,target:m.target,evidenceIds:m.evidenceIds,observationIds:m.observationIds,confidence:m.confidence,createdAt:m.createdAt,sourceType:m.moveType,sourceId:m.id}));
+  const whatChanged=dashboardDedupeCardItems(dashboardNormalizeCardCollection('what_changed',[...(onboarding?.whatChanged||[]),...changed].slice(0,8)));
   const momentum=people.concat(projects).filter(e=>e.name).slice(0,8).map(e=>{
     const hasRisk=(e.risks||[]).length||/down|risk|waiting|slow/i.test(e.state||'');
     const hasUp=(e.opportunities||[]).length||/up|momentum|front|observed/i.test(e.state||'');
     const state=hasRisk&&hasUp?'mixed':hasRisk?'risk':hasUp?'up':'watch';
     const title=state==='mixed'?`${e.name}: warm relationship, watch the open loop`:state==='risk'?`${e.name}: needs attention`:`${e.name}: momentum signal`;
     const detail=dashboardShortText((e.risks||[])[0]||(e.opportunities||[])[0]||e.summary||e.state,'Evidence-backed momentum signal.',120);
-    return {id:e.id,title,detail,state,target:e.target||{type:'entity',id:e.id}};
+    return dashboardNormalizeCardItem('momentum',{id:e.id,title,summary:detail,detail,state,entity_type:e.target?.type||e.profileType||'entity',entity_id:e.id,momentum_direction:state,reason:detail,evidence:e.evidence||[],target:e.target||{type:'entity',id:e.id},createdAt:e.lastObservedAt});
   }).slice(0,4);
   const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
-  const ready=[...(onboarding?.ready||[]),...readyDrafts].slice(0,5);
-  return {people,projects,whatChanged,highestLeverageMove:top,momentum,readyForYou:ready,alsoImportant:conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8),watching:conclusions.filter(m=>m.priorityBand==='watching').slice(0,8),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people,projects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:top}};
+  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[...(onboarding?.ready||[]),...readyDrafts].slice(0,8))).slice(0,5);
+  const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
+  const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
+  const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
+  return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest}};
 }
 function teachValOnboardingReflection(items=[]){
   const memories=Array.isArray(items)?items:[];
@@ -18845,6 +18956,105 @@ app.get('/api/executive-briefing',async(req,res)=>{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Executive Briefing is not used for Michele book/editor mode.'});
     res.json(await buildExecutiveBriefing());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/homepage-cards/action',async(req,res)=>{
+  try{
+    const action=String(req.body.action||'').trim();
+    const cardType=String(req.body.cardType||req.body.card_type||'homepage_card').trim();
+    const item=req.body.item||{};
+    if(!action)return res.status(400).json({ok:false,error:'Missing action'});
+    const title=dashboardCleanText(req.body.title||item.title||item.name||'Homepage card action');
+    const summary=dashboardCleanText(req.body.summary||item.summary||item.reason_it_matters||item.why||'');
+    const sourceContext={source:'homepage_card',cardType,action,item:{id:item.id||'',source_type:item.source_type||item.sourceType||'',source_id:item.source_id||item.sourceId||'',target:item.target||null,title,summary}};
+    let result={ok:true,action,cardType,status:'logged'};
+    const taskActions=['create_task','create_follow_up_task','do_it_now','schedule_time','schedule_meeting','schedule_work_block','follow_up'];
+    const draftActions=['draft_email','draft_response','draft_update','create_client_update','save_draft','edit_before_approving','summarize_project'];
+    const decisionActions=['snooze','dismiss','ignore','not_important','not_useful','mark_signal_wrong','reject','approve','send_email','add_to_memory','mark_vip','watch_project','archive_project','resolve_loop','correct_association','attach_to_contact','attach_to_project','attach_evidence','add_to_project','update_contact','add_contact_note','update_project_status','move_opportunity','review_evidence'];
+    const decisionStatus={
+      snooze:'snoozed',
+      dismiss:'dismissed',
+      ignore:'ignored',
+      not_important:'preference_logged',
+      not_useful:'feedback_logged',
+      mark_signal_wrong:'correction_logged',
+      reject:'rejected_logged',
+      approve:'approved_logged',
+      send_email:'approval_required',
+      add_to_memory:'memory_requested',
+      mark_vip:'vip_logged',
+      watch_project:'watch_logged',
+      archive_project:'archive_requested',
+      resolve_loop:'loop_resolution_logged',
+      correct_association:'correction_logged',
+      attach_to_contact:'attachment_requested',
+      attach_to_project:'attachment_requested',
+      attach_evidence:'attachment_requested',
+      add_to_project:'attachment_requested',
+      update_contact:'update_requested',
+      add_contact_note:'note_requested',
+      update_project_status:'update_requested',
+      move_opportunity:'opportunity_update_requested',
+      review_evidence:'evidence_review_logged'
+    };
+    const statusMessage={
+      task_created:'Task created and linked to this card signal.',
+      draft_created:'Draft prepared for review. Nothing was sent.',
+      snoozed:'Snoozed. VAL will keep the source history.',
+      dismissed:'Dismissed and logged.',
+      ignored:'Ignored and logged.',
+      preference_logged:'Preference logged. VAL will use it when ranking future cards.',
+      feedback_logged:'Feedback logged. VAL will avoid treating similar items as useful without stronger evidence.',
+      correction_logged:'Correction logged for review. VAL did not change source records automatically.',
+      rejected_logged:'Rejection logged.',
+      approved_logged:'Approval logged. External actions still require their dedicated approval flow.',
+      approval_required:'Final send approval is required. Nothing was sent.',
+      memory_requested:'Memory add request logged for review.',
+      vip_logged:'VIP preference logged.',
+      watch_logged:'Project watch preference logged.',
+      archive_requested:'Archive request logged for review.',
+      loop_resolution_logged:'Loop resolution logged for review.',
+      attachment_requested:'Attachment request logged for review.',
+      update_requested:'Update request logged for review.',
+      note_requested:'Contact note request logged for review.',
+      opportunity_update_requested:'Opportunity movement request logged for review.',
+      evidence_review_logged:'Evidence review logged.'
+    };
+    if(taskActions.includes(action)){
+      const dueDate=req.body.dueDate||new Date(Date.now()+2*24*60*60*1000).toISOString();
+      const defaultTitle=action==='schedule_meeting'?`Schedule meeting: ${title}`:action==='schedule_work_block'||action==='schedule_time'?`Schedule time: ${title}`:action==='follow_up'||action==='create_follow_up_task'?`Follow up: ${title}`:title||'Review VAL signal';
+      const task={id:uuid('task'),title:req.body.taskTitle||defaultTitle,contactName:item.name||'',contactId:item.contact_id||item.contactId||'',dueDate,priority:req.body.priority||(/highest|risk|urgent|important/i.test(String(item.impact||item.priorityBand||summary))?'high':'medium'),notes:req.body.notes||[summary,item.reason_it_matters?`Why it matters: ${item.reason_it_matters}`:'',`Created from ${cardType}. Action: ${action}.`].filter(Boolean).join('\n\n'),details:[{text:`Created from ${cardType}: ${action}`,ts:new Date().toISOString(),sourceContext}],completed:false,createdAt:new Date().toISOString(),source:'homepage_card',sourceCardType:cardType,sourceItemId:item.id||item.source_id||''};
+      await saveTask(task);
+      result={...result,status:'task_created',message:statusMessage.task_created,task};
+    }else if(draftActions.includes(action)){
+      const subject=req.body.subject||(
+        action==='summarize_project'?`Project summary: ${title}`:
+        action==='create_client_update'?`Client update: ${title}`:
+        action==='draft_response'?`Response draft: ${title}`:
+        title||'VAL prepared draft'
+      );
+      const body=req.body.body||[
+        action==='summarize_project'?'Project summary draft from VAL signal:':'Draft from VAL signal:',
+        '',
+        summary||title,
+        item.reason_it_matters?`\nWhy it matters: ${item.reason_it_matters}`:'',
+        '\nPrepared for human review. Nothing has been sent.'
+      ].filter(Boolean).join('\n');
+      const draft=await saveInternalDraft({draftType:'homepage_card_action',provider:'internal',subject,body,sourceContext});
+      result={...result,status:'draft_created',message:statusMessage.draft_created,draft};
+    }else if(decisionActions.includes(action)){
+      const until=action==='snooze'?(req.body.until||new Date(Date.now()+7*24*60*60*1000).toISOString()):'';
+      await saveMemoryItem({kind:'homepage_card_decision',summary:`${action}: ${title}`,rawText:JSON.stringify({action,cardType,item,until,note:req.body.note||''}),importance:/approve|mark_vip|watch_project|add_to_memory/i.test(action)?3:1,metadata:{source:'homepage_card',cardType,action,until,itemId:item.id||'',sourceType:item.source_type||item.sourceType||'',sourceId:item.source_id||item.sourceId||''}});
+      const status=decisionStatus[action]||'decision_logged';
+      result={...result,status,message:statusMessage[status]||'Decision logged.',until};
+    }else{
+      return res.status(400).json({ok:false,error:'Unsupported homepage card action',action});
+    }
+    await auditLog({req,action:'homepage_card_action',resourceType:cardType,resourceId:item.id||item.source_id||'',metadata:{action,status:result.status,title},success:true}).catch(()=>{});
+    res.json(result);
+  }catch(e){
+    await auditLog({req,action:'homepage_card_action_failed',resourceType:'homepage_card',metadata:{error:e.message,body:req.body},success:false}).catch(()=>{});
+    res.status(500).json({ok:false,error:e.message});
+  }
 });
 app.post('/api/val/intelligence',async(req,res)=>{
   try{

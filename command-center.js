@@ -131,6 +131,240 @@ function firstMoveTitle(move,fallback){return compactText(move&&move.title,fallb
 function firstMoveCopy(move,fallback){return compactText(move&&(move.why||move.whatChanged||move.content),fallback);}
 function cardLink(label,view){return '<button class="val-card-link" onclick="commandCenterNavigate(\''+view+'\')">'+safe(label)+'</button>';}
 function jsString(value){return String(value==null?'':value).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' ');}
+function cardItemKey(item){return String((item&&item.id)||(item&&item.source_id)||(item&&item.sourceId)||(item&&item.name)||(item&&item.title)||'');}
+function cardSpec(type){
+  return {
+    what_changed:{title:'What Changed',empty:'Nothing new has changed since your last review.',view:'evidence',intro:'I am only showing changes backed by stored records.'},
+    highest_leverage:{title:'Highest Leverage',empty:'No major move needs your judgment right now.',view:'tasks',intro:'This is the single move with the strongest current evidence.'},
+    people:{title:'People',empty:'No relationship needs extra attention right now.',view:'relationships',intro:'These are relationships with evidence-backed attention signals.'},
+    projects:{title:'Projects',empty:'No project is asking for intervention right now.',view:'projects',intro:'These projects are showing movement, risk, or a needed next action.'},
+    momentum:{title:'Momentum',empty:'Quiet morning. I am still watching the patterns.',view:'relationships',intro:'Momentum is based on observable changes, not vibes.'},
+    ready_for_you:{title:'Ready for You',empty:'Nothing is waiting on you right now.',view:'tasks',intro:'These are items VAL prepared and is waiting for you to review.'}
+  }[type]||{title:'VAL Card',empty:'Nothing needs review right now.',view:'dashboard',intro:'This card is grounded in stored VAL context.'};
+}
+function homepageCardItems(type){
+  var b=executiveBriefingState.data||{},entities=b.dashboardEntities||{};
+  if(type==='what_changed')return Array.isArray(b.whatChanged)?b.whatChanged:[];
+  if(type==='highest_leverage')return b.highestLeverageMove?[b.highestLeverageMove]:[];
+  if(type==='people')return Array.isArray(b.people)?b.people:(entities.people||[]);
+  if(type==='projects')return Array.isArray(b.projects)?b.projects:(entities.projects||[]);
+  if(type==='momentum')return Array.isArray(b.momentum)?b.momentum:(entities.momentum||[]);
+  if(type==='ready_for_you')return Array.isArray(b.readyForYou)?b.readyForYou:(entities.readyForYou||[]);
+  return [];
+}
+function homepageCardFind(type,id){
+  return homepageCardItems(type).find(function(item){return cardItemKey(item)===String(id);})||homepageCardItems(type)[0]||null;
+}
+function actionLabel(action){
+  return String(action||'review').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+}
+function actionClass(action){
+  return /approve|do_it_now|create|draft|send|schedule|follow_up/.test(String(action))?'primary':'';
+}
+function cardActionButtons(type,item,limit){
+  var actions=Array.isArray(item&&item.available_actions)?item.available_actions:[];
+  if(!actions.length)actions=['review','create_task','snooze'];
+  return actions.slice(0,limit||8).map(function(action){
+    return '<button class="val-card-action-btn '+actionClass(action)+'" onclick="homepageCardAction(\''+jsString(type)+'\',\''+jsString(cardItemKey(item))+'\',\''+jsString(action)+'\')">'+safe(actionLabel(action))+'</button>';
+  }).join('');
+}
+function cardMetric(value,fallback){return safe(value==null||value===''?fallback:value);}
+function cardDate(value){if(!value)return 'Stored';var d=new Date(value);return isNaN(d)?String(value):d.toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}
+function cardRiskLabel(item){
+  var raw=String((item&&item.risk_level)||(item&&item.riskLevel)||(item&&item.priorityBand)||(item&&item.impact)||'').toLowerCase();
+  if(/high|risk|urgent|highest/.test(raw))return 'High';
+  if(/important|medium|also/.test(raw))return 'Medium';
+  if(/quiet|low|watch/.test(raw))return 'Low';
+  return item&&item.confidence!=null?'Review':'Normal';
+}
+function cardImpactLabel(item){
+  return (item&&item.impact)||(item&&item.priorityBand)||(cardRiskLabel(item)==='High'?'High':'Important');
+}
+function cardTaskSource(item){
+  var target=item&&item.target||{};
+  return (target.type&&target.id)?target.type+': '+target.id:(item&&item.source_type?item.source_type:'stored record');
+}
+function cardEvidenceList(item){
+  var evidence=Array.isArray(item&&item.evidence)?item.evidence:[];
+  var ids=[].concat(item&&item.evidenceIds||[],item&&item.observationIds||[],item&&item.source_ids||[]).filter(Boolean);
+  if(!evidence.length&&ids.length)evidence=ids.map(function(id){return{id:id,title:'Stored source',summary:'Source ID: '+id,sourceType:'record'};});
+  if(!evidence.length)return '<div class="val-card-empty">No display evidence attached yet. VAL still has source IDs for this item when available.</div>';
+  return evidence.slice(0,10).map(function(e){
+    return '<div class="val-card-evidence-row"><span>'+safe((e.sourceType||e.type||'record').slice(0,1).toUpperCase())+'</span><div><strong>'+safe(e.title||e.type||'Evidence')+'</strong><small>'+safe(e.summary||e.id||'Stored evidence record')+'</small></div><em>'+safe(e.occurredAt||e.createdAt||'')+'</em></div>';
+  }).join('');
+}
+function cardChatPanel(type,item,activeId,chips){
+  var spec=cardSpec(type);
+  chips=chips&&chips.length?chips:[
+    {label:'Why this?',prompt:'Explain why this matters using only this card evidence.'},
+    {label:'Show evidence',prompt:'Show me the evidence behind this card.'},
+    {label:'Next move',prompt:'What should I do next from this card?'}
+  ];
+  return '<section class="exec-card val-card-chat-panel"><h3>Chat With VAL</h3><div id="valCardChatLog"><div class="val-card-chat">'+safe(spec.intro)+' What would you like to do next?</div></div><div class="val-card-chip-row">'+chips.map(function(ch){return '<button onclick="homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\',\''+jsString(ch.prompt)+'\')">'+safe(ch.label)+'</button>';}).join('')+'</div><div class="val-card-chat-input"><input id="valCardChatInput" placeholder="Ask about this card..." onkeydown="if(event.key===\'Enter\')homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\')"><button onclick="homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\')">Send</button></div></section>';
+}
+function readyWorkspaceHtml(type,item,activeId){
+  var reviewType=item.review_type||item.reviewType||item.draftType||item.source_type||'review';
+  var recommended=item.recommended_action||item.recommendedAction||'Review and decide';
+  var risk=cardRiskLabel(item);
+  var chips=[
+    {label:'Review this',prompt:'Walk me through this pending review item and what decision it needs.'},
+    {label:'What is risky?',prompt:'What risk should I notice before approving or rejecting this?'},
+    {label:'Prepare edit',prompt:'Help me edit this before approving it.'}
+  ];
+  return '<section class="val-card-callout ready-mode"><strong>'+safe(item.title||'Ready for You')+'</strong><p>'+safe(item.summary||'VAL prepared this and needs your review before it moves forward.')+'</p></section>'
+    +'<div class="val-card-decision-strip"><div><span>Review type</span><strong>'+safe(actionLabel(reviewType))+'</strong></div><div><span>Recommended</span><strong>'+safe(recommended)+'</strong></div><div><span>Risk</span><strong>'+safe(risk)+'</strong></div><div><span>Created</span><strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></div></div>'
+    +'<div class="val-card-two-col ready-layout"><section class="exec-card"><h3>Decision Needed</h3><p>'+safe(item.reason_it_matters||item.summary||'This is waiting for human approval, correction, or dismissal.')+'</p><div class="val-card-review-flow"><span>Prepared</span><span class="active">Review</span><span>Approve or edit</span><span>Logged</span></div></section><section class="exec-card"><h3>Approval Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,11)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Source and Evidence</h3><div class="val-card-source-line"><strong>'+safe(cardTaskSource(item))+'</strong><span>'+safe(item.source_id||item.sourceId||'Source record attached when available')+'</span></div>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function highestWorkspaceHtml(type,item,activeId){
+  var confidence=item.confidence!=null?pct(item.confidence):'--';
+  var urgency=cardMetric(item.urgencyScore||item.urgency_score,'--');
+  var impact=cardImpactLabel(item);
+  var risk=cardMetric(item.riskScore||item.risk_score,cardRiskLabel(item));
+  var relationship=cardMetric(item.relationshipScore||item.relationship_score,'--');
+  var chips=[
+    {label:'Why this move?',prompt:'Explain why this is the highest leverage move and what evidence made it win.'},
+    {label:'If ignored?',prompt:'What happens if I ignore this move?'},
+    {label:'Do it now',prompt:'Walk me through doing this now, step by step.'}
+  ];
+  return '<section class="val-card-callout highest-mode"><strong>'+safe(item.title||'Highest Leverage Move')+'</strong><p>'+safe(item.why||item.reason_it_matters||item.summary||'This is the strongest move VAL sees right now.')+'</p></section>'
+    +'<div class="val-card-scoreboard"><div><span>Impact</span><strong>'+safe(impact)+'</strong></div><div><span>Confidence</span><strong>'+safe(confidence)+'</strong></div><div><span>Urgency</span><strong>'+safe(urgency)+'</strong></div><div><span>Risk</span><strong>'+safe(risk)+'</strong></div><div><span>Relationship</span><strong>'+safe(relationship)+'</strong></div></div>'
+    +'<div class="val-card-two-col highest-layout"><section class="exec-card"><h3>Why This Move Won</h3><p>'+safe(item.reason_it_matters||item.why||item.summary||'VAL selected this because it has the strongest combination of urgency, impact, risk, and confidence.')+'</p><h3>If Ignored</h3><p>'+safe(item.ifIgnored||item.if_ignored||'This may stay unresolved or lose momentum if it is not reviewed.')+'</p></section><section class="exec-card"><h3>Move Options</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,9)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Evidence Snapshot</h3>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function whatChangedWorkspaceHtml(type,item,activeId){
+  var changeType=item.source_type||item.sourceType||item.type||'record';
+  var chips=[
+    {label:'Explain change',prompt:'Explain what changed in plain English and why it matters.'},
+    {label:'Show evidence',prompt:'Show the evidence behind this change.'},
+    {label:'Act on it',prompt:'What are my best action options for this change?'}
+  ];
+  return '<section class="val-card-callout changed-mode"><strong>'+safe(item.title||'What changed')+'</strong><p>'+safe(item.summary||item.reason_it_matters||'VAL detected a source-backed change.')+'</p></section>'
+    +'<div class="val-card-decision-strip"><div><span>Change type</span><strong>'+safe(actionLabel(changeType))+'</strong></div><div><span>Source</span><strong>'+safe(item.source_id||item.sourceId||'Attached')+'</strong></div><div><span>Created</span><strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></div><div><span>Evidence</span><strong>'+safe(item.evidence_count||((item.evidence||[]).length)||'Source IDs')+'</strong></div></div>'
+    +'<div class="val-card-two-col changed-layout"><section class="exec-card"><h3>Why This Matters</h3><p>'+safe(item.reason_it_matters||item.summary||'This may update memory, context, a relationship, a project, or an action queue.')+'</p></section><section class="exec-card"><h3>Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,8)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Evidence Behind the Change</h3><div class="val-card-source-line"><strong>'+safe(cardTaskSource(item))+'</strong><span>'+safe(item.source_id||item.sourceId||'Stored source attached')+'</span></div>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function peopleWorkspaceHtml(type,item,activeId){
+  var loops=Array.isArray(item.open_loops)?item.open_loops:(item.openLoops||[]);
+  var risks=item.risks||[],opps=item.opportunities||[];
+  var momentum=item.momentum_direction||item.momentumDirection||item.state||'stable';
+  var chips=[
+    {label:'Why this person?',prompt:'Explain why this person is showing up and what needs attention.'},
+    {label:'Open loops',prompt:'Summarize the open loops for this relationship.'},
+    {label:'Draft follow-up',prompt:'Help me draft the best follow-up for this person.'}
+  ];
+  function miniList(items,empty){return (items&&items.length)?'<ul>'+items.slice(0,5).map(function(x){return '<li>'+safe(x.content||x.summary||x)+'</li>';}).join('')+'</ul>':'<p>'+safe(empty)+'</p>';}
+  return '<section class="val-card-callout people-mode"><strong>'+safe(item.name||item.title||'Relationship')+'</strong><p>'+safe(item.reason_shown||item.summary||'This relationship has an evidence-backed attention signal.')+'</p></section>'
+    +'<div class="val-card-decision-strip"><div><span>Status</span><strong>'+safe(item.relationship_status||item.state||'Observed')+'</strong></div><div><span>Momentum</span><strong>'+safe(actionLabel(momentum))+'</strong></div><div><span>Last interaction</span><strong>'+safe(cardDate(item.last_interaction||item.lastObservedAt))+'</strong></div><div><span>Open loops</span><strong>'+safe(loops.length||0)+'</strong></div></div>'
+    +'<div class="val-card-two-col people-layout"><section class="exec-card"><h3>Open Loops</h3>'+miniList(loops,'No explicit open loop is attached yet.')+'<h3>Relationship Risk</h3>'+miniList(risks,'No explicit risk is attached. VAL is watching the evidence trail.')+'</section><section class="exec-card"><h3>Relationship Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,8)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Opportunity and Evidence</h3>'+miniList(opps,'No explicit opportunity is attached yet.')+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function projectsWorkspaceHtml(type,item,activeId){
+  var stalled=item.stalled_items||item.stalledItems||item.risks||[];
+  var taskCount=item.open_tasks_count||item.openTasksCount||((item.openLoops||[]).length)||0;
+  var chips=[
+    {label:'Project status',prompt:'Explain what is happening with this project and why it is showing up.'},
+    {label:'Blockers',prompt:'Identify blockers, stalled items, and unfinished commitments for this project.'},
+    {label:'Draft update',prompt:'Draft a short project update from this evidence.'}
+  ];
+  function miniList(items,empty){return (items&&items.length)?'<ul>'+items.slice(0,5).map(function(x){return '<li>'+safe(x.content||x.summary||x)+'</li>';}).join('')+'</ul>':'<p>'+safe(empty)+'</p>';}
+  return '<section class="val-card-callout project-mode"><strong>'+safe(item.project_name||item.name||item.title||'Project')+'</strong><p>'+safe(item.reason_shown||item.summary||'This project has activity, risk, or a needed next action.')+'</p></section>'
+    +'<div class="val-card-decision-strip"><div><span>Status</span><strong>'+safe(item.status||item.state||'Watched')+'</strong></div><div><span>Open tasks</span><strong>'+safe(taskCount)+'</strong></div><div><span>Stalled</span><strong>'+safe(stalled.length||0)+'</strong></div><div><span>Project ID</span><strong>'+safe(item.project_id||item.id||'Stored')+'</strong></div></div>'
+    +'<div class="val-card-two-col project-layout"><section class="exec-card"><h3>Next Suggested Action</h3><p>'+safe(item.next_suggested_action||item.summary||'Review recent evidence and choose the next operational step.')+'</p><h3>Stalled Items</h3>'+miniList(stalled,'No stalled item is attached yet.')+'</section><section class="exec-card"><h3>Project Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,9)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Latest Evidence</h3>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function momentumWorkspaceHtml(type,item,activeId){
+  var direction=item.momentum_direction||item.momentumDirection||item.state||'watch';
+  var entityType=item.entity_type||item.entityType||(item.target&&item.target.type)||'entity';
+  var chips=[
+    {label:'Explain signal',prompt:'Explain this momentum signal and what changed.'},
+    {label:'People vs projects',prompt:'Tell me whether this is a people or project momentum signal and what action fits.'},
+    {label:'Mark wrong?',prompt:'What happens if I mark this momentum signal wrong?'}
+  ];
+  return '<section class="val-card-callout momentum-mode"><strong>'+safe(item.title||'Momentum Signal')+'</strong><p>'+safe(item.reason||item.detail||item.summary||'VAL detected an evidence-backed momentum change.')+'</p></section>'
+    +'<div class="val-card-decision-strip"><div><span>Entity</span><strong>'+safe(actionLabel(entityType))+'</strong></div><div><span>Direction</span><strong>'+safe(actionLabel(direction))+'</strong></div><div><span>Evidence</span><strong>'+safe(item.evidence_count||((item.evidence||[]).length)||'Source IDs')+'</strong></div><div><span>Created</span><strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></div></div>'
+    +'<div class="val-card-two-col momentum-layout"><section class="exec-card"><h3>What Changed</h3><p>'+safe(item.reason||item.detail||item.summary||'This signal needs evidence review before action.')+'</p><h3>Suggested Action</h3><p>'+safe(item.suggested_action||item.suggestedAction||'Review the signal, then follow up, create a task, or snooze it.')+'</p></section><section class="exec-card"><h3>Momentum Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,8)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Evidence Snapshot</h3>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId,chips);
+}
+function defaultWorkspaceHtml(type,item,activeId){
+  var spec=cardSpec(type),confidence=item&&item.confidence!=null?pct(item.confidence):'--';
+  return '<section class="val-card-callout"><strong>Here’s what I’m seeing</strong><p>'+safe(item.summary||item.reason_it_matters||spec.intro)+'</p></section>'
+    +'<div class="val-card-two-col"><section class="exec-card"><h3>Why This Matters</h3><p>'+safe(item.reason_it_matters||item.why||item.summary||spec.intro)+'</p><div class="val-card-meta"><span>Source <strong>'+safe(item.source_type||item.sourceType||'record')+'</strong></span><span>Confidence <strong>'+safe(confidence)+'</strong></span><span>Created <strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></span></div></section><section class="exec-card"><h3>Suggested Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,10)+'</div></section></div>'
+    +'<section class="exec-card"><h3>Evidence Snapshot</h3>'+cardEvidenceList(item)+'</section>'
+    +cardChatPanel(type,item,activeId);
+}
+function emptyWorkspaceHtml(type,activeId){
+  var spec=cardSpec(type);
+  var chips=[
+    {label:'Why empty?',prompt:'Explain why this card is empty and what source records would make it populate.'},
+    {label:'Check sources',prompt:'What data sources does this card use and what should I connect or review?'},
+    {label:'Refresh logic',prompt:'Tell me how this card decides what deserves attention.'}
+  ];
+  return '<section class="val-card-callout empty-mode"><strong>'+safe(spec.empty)+'</strong><p>That is usually a good sign. I will keep watching your source records and surface this only when something deserves your attention.</p></section>'
+    +'<div class="val-empty-state-scene" aria-hidden="true"><div class="val-empty-sun"></div><div class="val-empty-hill one"></div><div class="val-empty-hill two"></div><div class="val-empty-plant"><span></span><i></i><b></b></div><div class="val-empty-mug">VAL</div></div>'
+    +'<div class="val-card-two-col empty-layout"><section class="exec-card"><h3>What I am watching for</h3><ul><li>New risks, blockers, or open loops</li><li>Relationship shifts or capacity changes</li><li>Project movement or decisions</li><li>Opportunities needing your attention</li></ul></section><section class="exec-card val-stay-loop"><h3>Stay in the loop</h3><p>I will tell you when something deserves your attention.</p><div class="val-card-action-grid"><button class="val-card-action-btn primary" onclick="loadExecutiveBriefing(true)">Check again</button><button class="val-card-action-btn" onclick="commandCenterNavigate(\''+jsString(spec.view)+'\')">Open source view</button></div></section></div>'
+    +cardChatPanel(type,{},activeId,chips);
+}
+function cardWorkspaceContent(type,item,activeId){
+  if(type==='what_changed')return whatChangedWorkspaceHtml(type,item,activeId);
+  if(type==='ready_for_you')return readyWorkspaceHtml(type,item,activeId);
+  if(type==='highest_leverage')return highestWorkspaceHtml(type,item,activeId);
+  if(type==='people')return peopleWorkspaceHtml(type,item,activeId);
+  if(type==='projects')return projectsWorkspaceHtml(type,item,activeId);
+  if(type==='momentum')return momentumWorkspaceHtml(type,item,activeId);
+  return defaultWorkspaceHtml(type,item,activeId);
+}
+function cardRowsForWorkspace(type,activeId){
+  var items=homepageCardItems(type),spec=cardSpec(type);
+  if(!items.length)return '<div class="val-card-empty">'+safe(spec.empty)+'</div>';
+  return items.slice(0,12).map(function(item){
+    var id=cardItemKey(item),active=String(id)===String(activeId);
+    return '<button class="val-card-side-item '+(active?'active':'')+'" onclick="openHomepageCard(\''+jsString(type)+'\',\''+jsString(id)+'\')"><strong>'+safe(item.title||item.name||'VAL signal')+'</strong><small>'+safe(item.summary||item.reason_it_matters||item.state||'Evidence-backed item')+'</small></button>';
+  }).join('');
+}
+window.homepageCardAction=function(type,id,action){
+  var item=homepageCardFind(type,id)||{};
+  var out=document.getElementById('valCardChatLog');
+  if(out)out.innerHTML+='<div class="val-card-chat user">'+safe(actionLabel(action))+'</div><div class="val-card-chat">Working on that...</div>';
+  apiFetch((window.PROXY||'')+'/api/homepage-cards/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardType:type,action:action,item:item})}).then(function(data){
+    if(out){out.lastChild.textContent=data.message||(data.status==='task_created'?'Task created and linked to this signal.':(data.status==='draft_created'?'Draft created for review.':(data.status==='approval_required'?'I logged that this needs final send approval. Nothing was sent.':'Decision logged.')));}
+    loadExecutiveBriefing(false);
+    if(typeof valTasksLoad==='function'&&data.task)valTasksLoad();
+  }).catch(function(e){if(out)out.lastChild.textContent='Action failed: '+(e.message||e);});
+};
+window.homepageCardAsk=function(type,id,prompt){
+  var item=homepageCardFind(type,id)||{},input=document.getElementById('valCardChatInput'),out=document.getElementById('valCardChatLog');
+  var msg=prompt||(input&&input.value.trim())||'Walk me through this.';
+  var scoped='Card-scoped request. Card: '+cardSpec(type).title+'. Stay inside this card item, its evidence, and its available actions unless the user explicitly asks broader context. User request: '+msg;
+  if(input)input.value='';
+  if(out)out.innerHTML+='<div class="val-card-chat user">'+safe(msg)+'</div><div class="val-card-chat">Reading the evidence...</div>';
+  apiFetch((window.PROXY||'')+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:scoped}],dashboard:Object.assign({},executiveBriefingState.data||{},{homepageCard:{type:type,item:item}}),channel:'homepage_card',title:cardSpec(type).title})}).then(function(data){
+    var text=((data.message&&data.message.content)||data.content||data.text||'').trim()||'I could not generate a response for this card.';
+    if(out)out.lastChild.innerHTML='<p>'+safe(text).replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')+'</p>';
+  }).catch(function(e){if(out)out.lastChild.textContent='Chat failed: '+(e.message||e);});
+};
+window.openHomepageCard=function(type,id){
+  var spec=cardSpec(type),items=homepageCardItems(type),item=homepageCardFind(type,id);
+  if(!item&&items.length)item=items[0];
+  var activeId=cardItemKey(item||{});
+  var title=item?(item.title||item.name||spec.title):spec.empty;
+  var confidence=item&&item.confidence!=null?pct(item.confidence):'--';
+  var evidenceCount=Number((item&&item.evidence_count)||((item&&item.evidence)||[]).length||0);
+  var body='<div class="val-card-workspace">'
+    +'<aside class="val-card-side"><div class="val-card-side-head"><strong>'+safe(spec.title)+'</strong><button onclick="loadExecutiveBriefing(true)">Refresh</button></div>'+cardRowsForWorkspace(type,activeId)+'</aside>'
+    +'<main class="val-card-main">'
+      +'<nav class="val-card-tabs"><span class="active">Overview</span><span>Evidence '+(evidenceCount?'('+evidenceCount+')':'')+'</span><span>Actions</span><span>History</span></nav>'
+      +(item?cardWorkspaceContent(type,item,activeId)
+      :emptyWorkspaceHtml(type,activeId))
+    +'</main></div>';
+  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'homepageCardWorkspace',title:spec.title,kicker:'Executive Workspace',mode:'drawer',body:body,footer:'<button class="alert-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button><button class="alert-btn" onclick="commandCenterNavigate(\''+spec.view+'\')">Open Source View</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'homepageCardWorkspace\')">Close</button>'});
+};
 function dashboardTargetAction(target,fallback){
   target=target||{};
   var type=target.type||'',id=target.id||'';
@@ -167,60 +401,52 @@ window.openDashboardTarget=function(type,id){
 };
 function whatChangedRows(b){
   var items=(b&&Array.isArray(b.whatChanged)?b.whatChanged:[]).slice(0,4);
-  if(!items.length)items=(b&&Array.isArray(b.valNoticed)?b.valNoticed:[]).slice(0,4).map(function(n){return{title:n,type:'relationship_signal'};});
-  if(!items.length)items=[
-    {title:'VAL is watching for new evidence.',type:'relationship_signal'},
-    {title:'Emails and transcripts will appear here after sync.',type:'decision'},
-    {title:'No urgent risk has surfaced yet.',type:'risk'},
-    {title:'Calendar shifts will be noticed here.',type:'deadline'}
-  ];
+  if(!items.length)return '<div class="val-card-empty">No meaningful changes yet.</div>';
   return items.map(function(item){
     var title=typeof item==='string'?item:(item.title||item.content||item.summary||'Something changed');
     var type=typeof item==='string'?'default':(item.type||item.observationType||'default');
-    return '<button class="val-dash-row" onclick="'+dashboardTargetAction(item.target,'evidence')+'"><span class="val-row-icon '+safe(type)+'">'+safe(lineIcon(type))+'</span><span>'+compactText(title)+'</span></button>';
+    return '<button class="val-dash-row" onclick="openHomepageCard(\'what_changed\',\''+jsString(cardItemKey(item))+'\')"><span class="val-row-icon '+safe(type)+'">'+safe(lineIcon(type))+'</span><span>'+compactText(title)+'</span></button>';
   }).join('');
 }
 function peopleRows(b){
   var people=(b&&Array.isArray(b.people)?b.people:[]).slice(0,4);
-  if(!people.length)people=[{name:'Relationships',state:'Waiting for evidence',trend:'steady'}];
+  if(!people.length)return '<div class="val-card-empty">No relationships need review yet.</div>';
   return people.map(function(p){
     var trend=String(p.trend||p.state||'steady').toLowerCase();
     var cls=/risk|waiting|needs|cool|slow/.test(trend)?'risk':(/warm|momentum|increas|build/.test(trend)?'up':'steady');
-    return '<button class="val-person-row" onclick="'+dashboardTargetAction(p.target||{type:'person',id:p.id||p.profileKey||p.email||p.name},'relationships')+'"><span class="val-person-avatar">'+safe((p.name||'R').slice(0,1).toUpperCase())+'</span><span><strong>'+safe(p.name||'Relationship')+'</strong><small class="'+cls+'">'+safe(p.state||p.summary||'Observed')+'</small></span><em class="'+cls+'">'+(cls==='risk'?'↘':(cls==='up'?'↗':'→'))+'</em></button>';
+    return '<button class="val-person-row" onclick="openHomepageCard(\'people\',\''+jsString(cardItemKey(p))+'\')"><span class="val-person-avatar">'+safe((p.name||p.title||'R').slice(0,1).toUpperCase())+'</span><span><strong>'+safe(p.name||p.title||'Relationship')+'</strong><small class="'+cls+'">'+safe(p.state||p.summary||'Observed')+'</small></span><em class="'+cls+'">'+(cls==='risk'?'↘':(cls==='up'?'↗':'→'))+'</em></button>';
   }).join('');
 }
 function projectRows(b){
   var projects=(b&&Array.isArray(b.projects)?b.projects:[]).slice(0,3);
-  if(!projects.length)projects=[
-    {name:'VAL Platform',summary:'Evidence and briefing system',state:'Momentum'},
-    {name:'Relationship Engine',summary:'People create velocity',state:'Momentum'},
-    {name:'Executive Inbox',summary:'Decisions before email management',state:'Watching'}
-  ];
+  if(!projects.length)return '<div class="val-card-empty">No active project signals yet.</div>';
   return projects.map(function(p){
     var cls=/risk|slow|stall|watch/i.test(String(p.state||''))?'risk':'up';
-    return '<button class="val-project-row" onclick="'+dashboardTargetAction(p.target||{type:'project',id:p.id||p.profileKey||p.name},'projects')+'"><span class="val-project-icon '+cls+'">↗</span><span><strong>'+safe(p.name||p.title||'Project')+'</strong><small>'+safe(p.summary||p.description||'Current priority')+'</small></span><em class="'+cls+'">'+safe(p.state||'Momentum')+'</em></button>';
+    return '<button class="val-project-row" onclick="openHomepageCard(\'projects\',\''+jsString(cardItemKey(p))+'\')"><span class="val-project-icon '+cls+'">↗</span><span><strong>'+safe(p.name||p.title||'Project')+'</strong><small>'+safe(p.summary||p.description||'Current priority')+'</small></span><em class="'+cls+'">'+safe(p.state||p.status||'Watched')+'</em></button>';
   }).join('');
 }
 function momentumRows(b){
   var momentum=(b&&Array.isArray(b.momentum)?b.momentum:[]).slice(0,4);
-  if(!momentum.length)momentum=[
-    {title:'Momentum Increasing',detail:'Evidence spine, relationship engine, executive briefing',state:'up'},
-    {title:'Momentum Slowing',detail:'Inbox visibility depends on email sync depth',state:'watch'},
-    {title:'Momentum At Risk',detail:'Too many suggested actions would reduce trust',state:'risk'},
-    {title:'Momentum Recovering',detail:'Dashboard now shows judgment instead of raw data',state:'recovering'}
-  ];
+  if(!momentum.length)return '<div class="val-card-empty">No momentum signal yet.</div>';
   return momentum.map(function(m){
     var cls=/risk|at risk/i.test(String(m.state||m.title||''))?'risk':(/slow|watch/i.test(String(m.state||m.title||''))?'watch':(/recover/i.test(String(m.state||m.title||''))?'recover':'up'));
-    return '<button class="val-momentum-row '+cls+'" onclick="'+dashboardTargetAction(m.target,'relationships')+'"><span>'+safe(cls==='risk'?'↓':(cls==='watch'?'↘':(cls==='recover'?'↻':'↗')))+'</span><div><strong>'+safe(m.title||'Momentum signal')+'</strong><small>'+safe(m.detail||m.summary||'VAL is watching the pattern.')+'</small></div></button>';
+    return '<button class="val-momentum-row '+cls+'" onclick="openHomepageCard(\'momentum\',\''+jsString(cardItemKey(m))+'\')"><span>'+safe(cls==='risk'?'↓':(cls==='watch'?'↘':(cls==='recover'?'↻':'↗')))+'</span><div><strong>'+safe(m.title||'Momentum signal')+'</strong><small>'+safe(m.detail||m.summary||'VAL is watching the pattern.')+'</small></div></button>';
   }).join('');
 }
 function readyRows(b){
-  var ready=[];
-  (b&&Array.isArray(b.readyForYou)?b.readyForYou:[]).slice(0,3).forEach(function(r){ready.push({title:r.title||'VAL is ready',view:r.view||'teach_val',target:r.target});});
-  (draftSignalState.drafts||[]).filter(function(d){return !d.dashboardQuality||d.dashboardQuality.ready!==false;}).slice(0,3).forEach(function(d){ready.push({title:d.subject||'Draft prepared',view:'drafts',target:{type:'draft',id:d.id}});});
-  (b&&Array.isArray(b.alsoImportant)?b.alsoImportant:[]).slice(0,3).forEach(function(m){ready.push({title:m.title||'Suggested move ready',view:'tasks'});});
-  if(!ready.length)ready=[{title:'VAL is not forcing action yet',view:'tasks'},{title:'Evidence pipeline is ready',view:'evidence'},{title:'Relationship signals will surface here',view:'relationships'}];
-  return ready.slice(0,5).map(function(r){return '<div class="val-ready-row"><span>✓</span><strong>'+safe(r.title)+'</strong><button class="val-card-link" onclick="'+dashboardTargetAction(r.target,r.view||'tasks')+'">View</button></div>';}).join('');
+  var ready=[],seen={};
+  function pushReady(r){
+    if(!r)return;
+    var key=String((r.target&&r.target.id)||r.id||r.title||'').toLowerCase();
+    if(key&&seen[key])return;
+    if(key)seen[key]=true;
+    ready.push(r);
+  }
+  (b&&Array.isArray(b.readyForYou)?b.readyForYou:[]).slice(0,5).forEach(function(r){pushReady({id:r.id,title:r.title||'VAL is ready',view:r.view||'teach_val',target:r.target});});
+  (draftSignalState.drafts||[]).filter(function(d){return !d.dashboardQuality||d.dashboardQuality.ready!==false;}).slice(0,5).forEach(function(d){pushReady({id:d.id,title:d.subject||'Draft prepared',view:'drafts',target:{type:'draft',id:d.id}});});
+  (b&&Array.isArray(b.alsoImportant)?b.alsoImportant:[]).slice(0,3).forEach(function(m){pushReady({id:m.id,title:m.title||'Suggested move ready',view:'tasks',target:m.target});});
+  if(!ready.length)return '<div class="val-card-empty">No pending review items yet.</div>';
+  return ready.slice(0,5).map(function(r){return '<div class="val-ready-row"><span>✓</span><strong>'+safe(r.title)+'</strong><button class="val-card-link" onclick="openHomepageCard(\'ready_for_you\',\''+jsString(cardItemKey(r))+'\')">View</button></div>';}).join('');
 }
 function executiveBriefingHtml(bookMode){
   if(bookMode)return '';
@@ -229,12 +455,12 @@ function executiveBriefingHtml(bookMode){
   var b=executiveBriefingState.data;if(!b||b.bookMode)return '';
   var highest=b.highestLeverageMove||{};
   return '<div class="val-briefing-contract" aria-hidden="true">People Create Velocity · Highest Leverage Move · Also Important · Quietly Handled · VAL Noticed</div><section class="val-dashboard-grid">'
-    +'<article class="val-dash-card what-changed"><div class="val-card-title"><span class="val-card-symbol">⌾</span><h2>What Changed</h2>'+cardLink('View all','evidence')+'</div><div class="val-row-list">'+whatChangedRows(b)+'</div></article>'
-    +'<article class="val-dash-card highest"><div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2><button class="val-card-link" onclick="'+dashboardTargetAction(highest.target,'tasks')+'">Why this?</button></div><h3>'+firstMoveTitle(highest,'No major move is ready yet')+'</h3><p>'+firstMoveCopy(highest,'VAL is watching without forcing action.')+'</p><div class="val-leverage-meta"><span>Estimated impact <strong>'+safe(highest.impact||highest.priorityBand||'Quiet')+'</strong></span><span>Confidence <strong>'+safe(highest.confidence!=null?pct(highest.confidence):'--')+'</strong></span></div><button class="val-primary-action" onclick="'+dashboardTargetAction(highest.target,'tasks')+'">'+safe(highest.title?'Review Move':'Keep Watching')+'</button></article>'
-    +'<article class="val-dash-card people"><div class="val-card-title"><span class="val-card-symbol">♙</span><h2>People</h2>'+cardLink('View all','relationships')+'</div><div class="val-people-list">'+peopleRows(b)+'</div></article>'
-    +'<article class="val-dash-card projects"><div class="val-card-title"><span class="val-card-symbol">□</span><h2>Projects</h2>'+cardLink('View all','projects')+'</div><div class="val-project-list">'+projectRows(b)+'</div></article>'
-    +'<article class="val-dash-card momentum"><div class="val-card-title"><span class="val-card-symbol">◷</span><h2>Momentum</h2>'+cardLink('View analysis','relationships')+'</div><div class="val-momentum-list">'+momentumRows(b)+'</div></article>'
-    +'<article class="val-dash-card ready"><div class="val-card-title"><span class="val-card-symbol">✧</span><h2>Ready for You</h2></div><div class="val-ready-list">'+readyRows(b)+'</div></article>'
+    +'<article class="val-dash-card what-changed" onclick="openHomepageCard(\'what_changed\')"><div class="val-card-title"><span class="val-card-symbol">⌾</span><h2>What Changed</h2><button class="val-card-link" onclick="event.stopPropagation();loadExecutiveBriefing(true)">Refresh</button></div><div class="val-row-list">'+whatChangedRows(b)+'</div></article>'
+    +'<article class="val-dash-card highest" onclick="openHomepageCard(\'highest_leverage\')"><div class="val-card-title"><span class="val-card-symbol gold">☆</span><h2>Highest Leverage</h2><button class="val-card-link" onclick="event.stopPropagation();openHomepageCard(\'highest_leverage\')">Why this?</button></div><h3>'+firstMoveTitle(highest,'No major move is ready yet')+'</h3><p>'+firstMoveCopy(highest,'VAL is watching without forcing action.')+'</p><div class="val-leverage-meta"><span>Estimated impact <strong>'+safe(highest.impact||highest.priorityBand||'Quiet')+'</strong></span><span>Confidence <strong>'+safe(highest.confidence!=null?pct(highest.confidence):'--')+'</strong></span></div><button class="val-primary-action" onclick="event.stopPropagation();openHomepageCard(\'highest_leverage\')">'+safe(highest.title?'Review Move':'Keep Watching')+'</button></article>'
+    +'<article class="val-dash-card people" onclick="openHomepageCard(\'people\')"><div class="val-card-title"><span class="val-card-symbol">♙</span><h2>People</h2><button class="val-card-link" onclick="event.stopPropagation();commandCenterNavigate(\'relationships\')">View all</button></div><div class="val-people-list">'+peopleRows(b)+'</div></article>'
+    +'<article class="val-dash-card projects" onclick="openHomepageCard(\'projects\')"><div class="val-card-title"><span class="val-card-symbol">□</span><h2>Projects</h2><button class="val-card-link" onclick="event.stopPropagation();commandCenterNavigate(\'projects\')">View all</button></div><div class="val-project-list">'+projectRows(b)+'</div></article>'
+    +'<article class="val-dash-card momentum" onclick="openHomepageCard(\'momentum\')"><div class="val-card-title"><span class="val-card-symbol">◷</span><h2>Momentum</h2><button class="val-card-link" onclick="event.stopPropagation();openHomepageCard(\'momentum\')">View analysis</button></div><div class="val-momentum-list">'+momentumRows(b)+'</div></article>'
+    +'<article class="val-dash-card ready" onclick="openHomepageCard(\'ready_for_you\')"><div class="val-card-title"><span class="val-card-symbol">✧</span><h2>Ready for You</h2></div><div class="val-ready-list">'+readyRows(b)+'</div></article>'
   +'</section>';
 }
 function buildCommandCenter(){
