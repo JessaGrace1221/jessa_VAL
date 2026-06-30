@@ -7,6 +7,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
+const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -145,6 +146,8 @@ test('left navigation exposes live transcript, task, and draft badges',()=>{
   assert.match(ui,/function transcriptAttentionCount/);
   assert.match(ui,/window\.syncCommandCenterDrafts/);
   assert.match(ui,/navBadge/);
+  assert.doesNotMatch(ui,/\{id:'calendar',icon:'calendar',label:'Calendar',group:'core'\}/);
+  assert.match(dashboard,/\.val-nav-item\.active\{background:linear-gradient\(135deg,#fff8e8 0%,#f2cf89 48%,#c4963a 100%\)!important/);
 });
 
 test('every transcript card exposes the simple user-facing actions',()=>{

@@ -108,6 +108,16 @@ test('relationship engine builds living profiles from observations without creat
   assert.doesNotMatch(server,/runRelationshipEngineForObservations[\s\S]{0,1200}saveTask/);
 });
 
+test('generated action summaries are filtered out of transcript archive',()=>{
+  assert.match(server,/const markdownActionSummary=/);
+  assert.match(server,/Action Items\|Key Points\|Decisions\|Summary/);
+  assert.match(server,/markdownActionSummary\|\|generatedMeetingNotes/);
+  assert.match(server,/const generatedMeetingNotes=/);
+  assert.match(server,/async function purgeJessaTranscriptArtifacts/);
+  assert.match(server,/purgedTranscriptArtifacts/);
+  assert.match(server,/purgeJessaTranscriptArtifacts\(\)\.catch/);
+});
+
 test('agency engine ranks discerning moves without turning observations into tasks',()=>{
   for(const table of ['agency_moves','agency_move_sources']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));

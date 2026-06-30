@@ -13843,9 +13843,16 @@ function isNonTranscriptArtifact(record={}){
   const title=String(record.title||record.meetingTitle||record.metadata?.title||'');
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
   const combined=`${title}\n${raw}`;
+  const markdownActionSummary=/^\s*##\s*(Action Items|Key Points|Decisions|Summary)\b/im.test(raw)
+    && /(?:^|\n)\s*-\s*\[\s*\]\s+.+/m.test(raw)
+    && !/^\s*([^:\n]{2,80})\s*(?:\||:)\s*(?:\d{1,2}:)?\d{2}\b/m.test(raw);
+  const generatedMeetingNotes=/^\s*(Action Items|Key Points|Decisions|Summary)\s*:?\s*$/im.test(raw)
+    && /\b(Jessa|VAL|Ashley|client|user)\s+(?:to|will|should|needs?|wants?)\b/i.test(raw)
+    && !/^\s*([^:\n]{2,80})\s*(?:\||:)\s*(?:\d{1,2}:)?\d{2}\b/m.test(raw);
   if(['chat_memory','document_sent','planning','task','task_plan','draft','email_draft','relationship_memory','transcript_insight'].includes(type))return true;
   if(/\[(chat|relationship)_memory\]/i.test(combined))return true;
   if(/^\s*(planning|task)\s*:/i.test(title))return true;
+  if(markdownActionSummary||generatedMeetingNotes)return true;
   if(/\bHelp me brainstorm and plan this task\b/i.test(combined))return true;
   if(/\bThis task is really about\b/i.test(combined))return true;
   if(/\bGoal of this task\b/i.test(combined)&&/\bFor each step\b/i.test(combined))return true;
@@ -13977,6 +13984,45 @@ async function purgeJessaRecoveredNonKrispTranscripts(){
   const store=valStore();
   const archive=(store.transcripts||[]).filter(recoveredTranscriptWithoutKrisp);
   const index=transcriptFileArray(store,'transcriptIndex').filter(recoveredTranscriptWithoutKrisp);
+  ids=[...new Set([...archive.map(r=>r.id),...index.map(r=>r.transcriptId)].filter(Boolean))];
+  if(ids.length){
+    store.transcripts=(store.transcripts||[]).filter(row=>!ids.includes(row.id));
+    store.transcriptIndex=transcriptFileArray(store,'transcriptIndex').filter(row=>!ids.includes(row.transcriptId));
+    ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{store[key]=transcriptFileArray(store,key).filter(row=>!ids.includes(row.transcriptId));});
+    store.meetingTranscriptLinks=(store.meetingTranscriptLinks||[]).filter(row=>!ids.includes(row.transcriptId));
+    store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType==='transcript'&&ids.includes(row.sourceId)));
+    store.memoryItems=(store.memoryItems||[]).filter(row=>!ids.includes(row.metadata?.transcriptId));
+    saveValStore(store);
+  }
+  return {deleted:ids.length,ids};
+}
+async function purgeJessaTranscriptArtifacts(){
+  if(!jessaRequiresKrispTranscripts())return {deleted:0,ids:[]};
+  await valDbReady;
+  let ids=[];
+  if(pgPool){
+    const indexed=(await dbQuery('select transcript_id,meeting_title,raw_transcript,source from transcripts where user_id=$1 order by created_at desc limit 500',[VAL_USER_ID])).rows;
+    const archived=(await dbQuery('select id,title,raw_text,metadata,type from val_transcripts where user_id=$1 order by created_at desc limit 500',[VAL_USER_ID])).rows;
+    ids=[...indexed.filter(row=>isNonTranscriptArtifact({type:'transcript',title:row.meeting_title,rawText:row.raw_transcript,metadata:{source:row.source}})).map(row=>row.transcript_id),...archived.filter(row=>isNonTranscriptArtifact({type:row.type,title:row.title,rawText:row.raw_text,metadata:row.metadata})).map(row=>row.id)];
+    ids=[...new Set(ids.filter(Boolean))];
+    if(ids.length){
+      await dbQuery('delete from transcript_action_log where transcript_id=any($1::text[])',[ids]).catch(()=>{});
+      await dbQuery('delete from transcript_contact_updates where transcript_id=any($1::text[])',[ids]).catch(()=>{});
+      await dbQuery('delete from transcript_tasks where transcript_id=any($1::text[])',[ids]).catch(()=>{});
+      await dbQuery('delete from transcript_summaries where transcript_id=any($1::text[])',[ids]).catch(()=>{});
+      await dbQuery('delete from transcript_participants where transcript_id=any($1::text[])',[ids]).catch(()=>{});
+      await dbQuery('delete from meeting_transcript_links where transcript_id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
+      await dbQuery("delete from val_decisions where source_type='transcript' and source_id=any($1::text[]) and user_id=$2",[ids,VAL_USER_ID]).catch(()=>{});
+      await dbQuery("delete from val_evidence_links where (source_type='transcript' and source_id=any($1::text[])) or (target_type like 'transcript%' and target_id=any($1::text[]))",[ids]).catch(()=>{});
+      await dbQuery("delete from val_memory_items where user_id=$2 and (metadata->>'transcriptId')=any($1::text[])",[ids,VAL_USER_ID]).catch(()=>{});
+      await dbQuery('delete from transcripts where transcript_id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
+      await dbQuery('delete from val_transcripts where id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
+    }
+    return {deleted:ids.length,ids};
+  }
+  const store=valStore();
+  const archive=(store.transcripts||[]).filter(row=>isNonTranscriptArtifact(row));
+  const index=transcriptFileArray(store,'transcriptIndex').filter(row=>isNonTranscriptArtifact({type:'transcript',title:row.meetingTitle,rawText:row.rawTranscript,metadata:{source:row.source}}));
   ids=[...new Set([...archive.map(r=>r.id),...index.map(r=>r.transcriptId)].filter(Boolean))];
   if(ids.length){
     store.transcripts=(store.transcripts||[]).filter(row=>!ids.includes(row.id));
@@ -18006,6 +18052,7 @@ function normalizedTranscriptWebhookPayload(body={}){
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    await purgeJessaTranscriptArtifacts().catch(e=>console.error('[transcripts] artifact purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
@@ -18021,6 +18068,7 @@ app.get('/api/val/transcripts',async(req,res)=>{
 app.get('/api/val/transcripts/review',async(req,res)=>{
   try{
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    await purgeJessaTranscriptArtifacts().catch(e=>console.error('[transcripts] artifact purge failed',e.message));
     const data=await transcriptIndexData();
     const review=transcriptReviewData(data);
     const validIds=new Set((data.transcripts||[]).filter(isUsableTranscriptIndexRow).map(row=>String(row.transcriptId)));
@@ -18034,6 +18082,7 @@ app.get('/api/val/transcripts/review',async(req,res)=>{
 app.get('/api/val/transcripts/intake-status',async(req,res)=>{
   try{
     const purge=await purgeJessaRecoveredNonKrispTranscripts().catch(e=>({deleted:0,error:e.message}));
+    const artifactPurge=await purgeJessaTranscriptArtifacts().catch(e=>({deleted:0,error:e.message}));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||3650));
     const [visibleData,rawIndex,legacyRows,memoryRows,auditRows,meetingLinks]=await Promise.all([
       transcriptIndexData().catch(()=>({transcripts:[]})),
@@ -18067,7 +18116,8 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
         webhookAcceptedWithoutTranscriptText:noTextWebhookAudit.length,
         krispLinkedRows:krispLinkedRows.length,
         meetingLinks,
-        purgedRecoveredTrash:purge.deleted||0
+        purgedRecoveredTrash:purge.deleted||0,
+        purgedTranscriptArtifacts:artifactPurge.deleted||0
       },
       latestRawTranscript:latestRaw?{id:latestRaw.transcriptId||latestRaw.id||'',title:latestRaw.meetingTitle||latestRaw.title||'',source:latestRaw.source||latestRaw.type||'',createdAt:latestRaw.createdAt||latestRaw.created_at||'',characters:String(latestRaw.rawTranscript||latestRaw.raw_transcript||latestRaw.rawText||'').length}:null,
       hiddenSamples:hiddenIndex.concat(hiddenLegacy).slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.title||'',source:row.source||row.type||'',reason:isNonTranscriptArtifact({title:row.meetingTitle||row.title||'',rawText:row.rawTranscript||row.raw_transcript||row.rawText||'',type:row.type||'transcript'})?'filtered as prompt/artifact':'filtered as unusable transcript',createdAt:row.createdAt||row.created_at||''})),
@@ -18081,6 +18131,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
 app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
   try{
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    await purgeJessaTranscriptArtifacts().catch(e=>console.error('[transcripts] artifact purge failed',e.message));
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
     const limit=Math.max(1,Math.min(25,Number(req.body?.limit)||20));
@@ -18108,6 +18159,7 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    await purgeJessaTranscriptArtifacts().catch(e=>console.error('[transcripts] artifact purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=await attachCanonicalTranscriptDetail(transcriptDetailFromIndex(data,data.transcripts[0]));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
