@@ -3042,7 +3042,7 @@ function renderInboxAuthRecovery(message){
 function loadEmailIntelligence(force){
   var status=document.getElementById('emailSyncStatus');
   if(status)status.innerHTML=force?'Refreshing active conversations from the last 14 days...':'Loading Executive Inbox...';
-  apiFetch(PROXY+(force?'/api/email/gmail/refresh':'/api/email/intelligence?limit=60'),force?{method:'POST'}:undefined).then(function(d){
+  apiFetch(PROXY+(force?'/api/email/gmail/refresh':'/api/email/intelligence?limit=25'),force?{method:'POST'}:undefined).then(function(d){
     if(!d.ok){
       emailIntel.emails=[];emailIntel.rules=[];emailIntel.summary={};
       var msg=(d.errors&&d.errors.length?d.errors.join('<br>'):(d.error||'Connect Gmail to activate Executive Inbox.'));
@@ -8737,7 +8737,8 @@ setTimeout(valSignalInit,0);
       if(opened)return;
       if(view==='dashboard'){opened=true;return;}
       if(view==='transcripts'&&typeof window.openTranscripts==='function'){opened=true;window.openTranscripts();return;}
-      if(typeof window.commandCenterNavigate==='function'&&['relationships','meetings','email_intelligence','tasks','drafts','chat','intelligence'].includes(view)){opened=true;window.commandCenterNavigate(view);return;}
+      if((view==='email_intelligence'||view==='integration_status')&&direct[view]&&typeof window[direct[view]]==='function'){opened=true;window[direct[view]]();return;}
+      if(typeof window.commandCenterNavigate==='function'&&['relationships','meetings','tasks','drafts','chat','intelligence'].includes(view)){opened=true;window.commandCenterNavigate(view);return;}
       var fn=direct[view]&&window[direct[view]];
       if(typeof fn==='function'){opened=true;fn();return;}
     }

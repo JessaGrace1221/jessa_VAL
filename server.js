@@ -5195,7 +5195,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     gmailSyncStatus.lastAttemptAt=new Date().toISOString();
     gmailSyncStatus.lastError='';
     const rules=await listEmailRules(req.valUser.id);
-    const limit=Number(req.query.limit)||30;
+    const limit=Math.min(Math.max(Number(req.query.limit)||25,5),50);
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     if(!gmailStatus.connected){
@@ -5211,9 +5211,9 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const recentQuery=force?'in:inbox newer_than:14d':'in:inbox newer_than:14d';
     const unreadQuery='in:inbox is:unread newer_than:14d';
     const [recentGmail,unreadGmail,sentGmail,outlook,outlookSent]=await Promise.all([
-      fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
-      fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
-      fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:recentQuery,maxResults:limit,includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
+      fetchGmailMessages({query:unreadQuery,maxResults:limit,includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
+      fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.min(limit,35),includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
       fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'})),
       fetchUnifiedOutlookSentEmails(Math.min(Math.max(limit,50),100)).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
@@ -6592,9 +6592,10 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
   catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};}
   const messages=d.messages||[];
   const details=await mapWithConcurrency(messages.slice(0,limit),5,async m=>{
-    const format=includeBody?'full':'full';
+    const format=includeBody?'full':'metadata';
     try{
-      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
+      const metadataHeaders='&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date';
+      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}${includeBody?'':metadataHeaders}`,{},'Gmail message detail');
       return normalizeGmailMessage(md);
     }catch(e){return null;}
   });

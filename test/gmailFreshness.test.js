@@ -12,6 +12,8 @@ test('gmail fetch uses a 14-day active inbox window and sorts newest first',()=>
   assert.match(server,/const recentQuery=force\?'in:inbox newer_than:14d':'in:inbox newer_than:14d'/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
+  assert.match(server,/const format=includeBody\?'full':'metadata'/);
+  assert.match(server,/metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date/);
 });
 
 test('gmail refresh retries rejected access tokens and exposes sync status',()=>{
@@ -44,6 +46,8 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/Last successful sync/);
   assert.match(dashboard,/Evidence:/);
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
+  assert.match(dashboard,/\/api\/email\/intelligence\?limit=25/);
+  assert.match(server,/const limit=Math\.min\(Math\.max\(Number\(req\.query\.limit\)\|\|25,5\),50\)/);
 });
 
 test('executive inbox shows session recovery instead of a dead pane',()=>{
@@ -53,6 +57,7 @@ test('executive inbox shows session recovery instead of a dead pane',()=>{
   assert.match(dashboard,/\/dashboard\?view=email_intelligence&session_refresh=1/);
   assert.match(dashboard,/\/dashboard\?view=integration_status/);
   assert.match(dashboard,/opts\.credentials=opts\.credentials\|\|'include'/);
+  assert.match(dashboard,/view==='email_intelligence'\|\|view==='integration_status'/);
   assert.match(dashboard,/Open Login Directly/);
   assert.match(dashboard,/isAuthExpiredError\(e\)/);
   assert.match(dashboard,/Session refresh needed before Inbox Command can search protected email/);
