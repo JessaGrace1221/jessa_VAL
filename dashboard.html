@@ -7244,8 +7244,8 @@ function chatSilent(msg){
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
 
-function renderExternalActionPacket(packet){
-  var c=document.getElementById('chatScroll');if(!c||!packet)return;
+function renderExternalActionPacket(packet,containerId){
+  var c=document.getElementById(containerId||'chatScroll');if(!c||!packet)return;
   var id=docSafe(packet.id||'');
   var willNot=(packet.willNotDo||[]).map(function(x){return '• '+docSafe(x);}).join('<br>');
   var editFields=externalActionEditFieldsHtml(packet,id);
@@ -7650,6 +7650,7 @@ function gchatSend(){
     if(d.conversationId)gchatConversationId=d.conversationId;
     gchatHistory.push({role:'assistant',content:text});
     gchatBubble(text,false);
+    if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket,'gchatMessages');
     if(d.saveWarning)gchatBubble(d.saveWarning,false);
     if(!gchatConversationTitle||gchatConversationTitle==='New conversation')gchatConversationTitle=msg.slice(0,70);
     var title=document.getElementById('gchatTitle');if(title)title.textContent=gchatConversationTitle;

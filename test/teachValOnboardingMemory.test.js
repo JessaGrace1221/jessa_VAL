@@ -69,6 +69,8 @@ test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
   assert.match(server,/external_action_packet_updated/);
   assert.match(server,/external_action_packet_executed/);
   assert.match(dashboard,/function renderExternalActionPacket/);
+  assert.match(dashboard,/renderExternalActionPacket\(d\.externalActionPacket,'gchatMessages'\)/);
+  assert.match(dashboard,/function renderExternalActionPacket\(packet,containerId\)/);
   assert.match(dashboard,/function saveExternalActionPacketTweaks/);
   assert.match(dashboard,/External Action Approval/);
   assert.match(dashboard,/One approval required/);
