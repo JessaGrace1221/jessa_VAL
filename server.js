@@ -13695,8 +13695,14 @@ function valConversationSummaryFromText(rawText=''){
 function cleanTranscriptForUi(t={}){
   const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
   const title=cleanTranscriptTitleForUi(t.title||t.meetingTitle||'',raw,t.createdAt||t.meetingDatetime||'');
-  const cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
-  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
+  const deterministic=deterministicTranscriptNotes(raw);
+  let cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
+  if((transcriptSummaryLooksLikeExcerpt(cleanSummary,raw)||transcriptSmallTalk(cleanSummary))&&deterministic.executiveSummary)cleanSummary=dashboardShortText(deterministic.executiveSummary,'',420);
+  const summaryObj={...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary};
+  if((!summaryObj.relationshipUpdates||!summaryObj.relationshipUpdates.length)&&deterministic.keyPoints.length)summaryObj.relationshipUpdates=deterministic.keyPoints;
+  let tasks=Array.isArray(t.tasks)?t.tasks:[];
+  if(!tasks.length&&deterministic.tasks.length)tasks=deterministic.tasks.map((task,i)=>({...task,taskId:`suggested_${i}`,status:'suggested',needsApproval:true,virtual:true}));
+  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:summaryObj,tasks,taskCount:tasks.length||t.taskCount||0};
 }
 function isHardTranscriptProcessingFailure(t={}){
   const processing=String(t.processingStatus||t.status||'').toLowerCase();
@@ -17871,17 +17877,72 @@ function fallbackTranscriptSummary(transcript,notes='Processing fallback summary
   const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
   const usefulLines=lines.filter(line=>!transcriptLooksLikeProcessingPrompt(line));
   const text=(usefulLines.join(' ')||raw).replace(/\s+/g,' ').trim();
+  const deterministic=deterministicTranscriptNotes(raw);
   return {
-    executiveSummary:dashboardShortText(text,'Summary unavailable.',900),
+    executiveSummary:deterministic.executiveSummary||dashboardShortText(text,'Summary unavailable.',900),
     clientSummary:'',
     internalNotes:notes,
     keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
     openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),
-    relationshipUpdates:[],
-    tasks:lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
+    relationshipUpdates:deterministic.keyPoints,
+    tasks:deterministic.tasks,
     contactUpdates:[],
     followupDrafts:[]
   };
+}
+function transcriptTimedSegments(raw=''){
+  const lines=String(raw||'').split(/\n+/),segments=[];let current=null;
+  const flush=()=>{if(current&&current.text.trim())segments.push({...current,text:dashboardCleanText(current.text)});current=null;};
+  for(const line of lines){
+    const clean=String(line||'').trim();if(!clean)continue;
+    const m=clean.match(/^\s*([^|\n]{2,90})\s*\|\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s*(.*)$/);
+    if(m){flush();current={speaker:dashboardCleanText(m[1]),time:m[2],text:m[3]||''};continue;}
+    if(current)current.text+=' '+clean;else segments.push({speaker:'',time:'',text:dashboardCleanText(clean)});
+  }
+  flush();
+  return segments.filter(s=>s.text&&!transcriptLooksLikeProcessingPrompt(s.text));
+}
+function transcriptBusinessSignal(text=''){
+  return /\b(ghl|go\s*high\s*level|deliverability|delivery|email|rsvp|meeting reminder|reminder email|warm(?:ing)?|spam|opened?|sent|statistics|stats|snapshot|button|text jessa|following morning|diagnos|workflow|contacts?|attendance|opportunity|risk|agreed|confirmed|decided|review|check|send|write|create|add|evaluate)\b/i.test(String(text||''));
+}
+function transcriptSmallTalk(text=''){
+  return /\b(good morning|how are you|weather|heat wave|storm|brown|blue|violet|beautiful|purple|sweaty|grossness|parking|mouse pad|i'm working|where are you|waiting for you|pop up|not here yet|get up)\b/i.test(String(text||''));
+}
+function deterministicTranscriptNotes(raw=''){
+  const segments=transcriptTimedSegments(raw),business=segments.filter(s=>transcriptBusinessSignal(s.text)&&!transcriptSmallTalk(s.text));
+  const full=segments.map(s=>`${s.speaker?`${s.speaker} `:''}${s.time?`${s.time} `:''}${s.text}`).join(' ');
+  const explicitTasks=[];
+  const explicitRe=/\b([A-Z][a-z]+)\s+to\s+([^.\n]{12,180})(?:\.|\n|$)/g;
+  let match;
+  while((match=explicitRe.exec(full))&&explicitTasks.length<12){
+    const owner=match[1],body=dashboardCleanText(match[2]);
+    if(transcriptBusinessSignal(body))explicitTasks.push({taskTitle:`${owner} to ${body}`,taskDescription:'Commitment extracted from transcript notes.',assignedToName:owner,dueDate:null,priority:'medium',confidence:0.82,sourceQuote:`${owner} to ${body}`});
+  }
+  for(const seg of business){
+    if(explicitTasks.length>=12)break;
+    const text=seg.text;
+    const action=text.match(/\b(?:I|we|you|Ashley|Jessa)\s+(?:will|need to|needs to|should|can|could|want to|wants to|agreed to|confirmed|offered to)\s+([^.!?]{12,180})/i)||text.match(/\b(send|write|create|add|review|check|evaluate|text|draft)\s+([^.!?]{12,180})/i);
+    if(!action)continue;
+    const phrase=dashboardCleanText(action[1]&&action[2]?`${action[1]} ${action[2]}`:action[1]);
+    if(!phrase||transcriptSmallTalk(phrase)||!transcriptBusinessSignal(phrase))continue;
+    const owner=/ashley/i.test(text)?'Ashley':(/jessa/i.test(text)||/^\s*i\b/i.test(text)?(seg.speaker||'Jessa'):'');
+    const sourceQuote=dashboardShortText(`${seg.time?seg.time+' ':''}${text}`,'',240);
+    if(explicitTasks.some(t=>looseNameScore(t.sourceQuote,sourceQuote)>0.7||t.taskTitle.toLowerCase().includes(phrase.slice(0,28).toLowerCase())))continue;
+    explicitTasks.push({taskTitle:cleanTaskTitle(`${owner?owner+' to ':''}${phrase}`),taskDescription:'Commitment extracted from transcript context.',assignedToName:owner,dueDate:null,priority:'medium',confidence:0.72,sourceQuote});
+  }
+  const keyPoints=business.map(seg=>dashboardShortText(`${seg.text}${seg.time?' '+seg.time:''}`,'',240)).filter((v,i,a)=>v&&a.findIndex(x=>x.slice(0,80)===v.slice(0,80))===i).slice(0,8);
+  const executiveSummary=keyPoints.length?dashboardShortText(keyPoints.slice(0,3).join(' '),'',700):'';
+  return {executiveSummary,keyPoints,tasks:explicitTasks};
+}
+function mergeTranscriptDeterministicNotes(parsed={},raw=''){
+  const deterministic=deterministicTranscriptNotes(raw);
+  const out={...parsed};
+  const existingTasks=Array.isArray(out.tasks)?out.tasks:(Array.isArray(out.actionItems)?out.actionItems:[]);
+  const existingPoints=[...(Array.isArray(out.relationshipUpdates)?out.relationshipUpdates:[]),out.clientSummary,out.internalNotes].filter(Boolean);
+  if((existingTasks.length<1||existingTasks.every(t=>/deterministic fallback processor|transcript fragment/i.test([t.taskDescription,t.taskTitle].filter(Boolean).join(' '))))&&deterministic.tasks.length)out.tasks=deterministic.tasks;
+  if(existingPoints.length<2&&deterministic.keyPoints.length)out.relationshipUpdates=deterministic.keyPoints;
+  if((!out.executiveSummary||transcriptSummaryLooksLikeExcerpt(out.executiveSummary,raw)||transcriptSmallTalk(out.executiveSummary))&&deterministic.executiveSummary)out.executiveSummary=deterministic.executiveSummary;
+  return out;
 }
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
@@ -17890,12 +17951,13 @@ async function processTranscriptPayload(payload){
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe the substantive meeting outcome, not the first transcript lines.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','relationshipUpdates should contain concise key points with timestamps when visible.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript. Preserve owner names such as Jessa or Ashley when stated.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
   try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
+  parsed=mergeTranscriptDeterministicNotes(parsed,transcript);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});

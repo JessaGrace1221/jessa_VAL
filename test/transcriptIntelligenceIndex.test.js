@@ -266,6 +266,10 @@ test('transcript detail defaults to notes, transcript, and transcript-specific c
   assert.match(server,/Do not say you need an email, document, Gmail, Drive, or external source/);
   assert.match(server,/function cleanTranscriptForUi/);
   assert.match(server,/function cleanTranscriptSummaryForUi/);
+  assert.match(server,/function deterministicTranscriptNotes/);
+  assert.match(server,/function mergeTranscriptDeterministicNotes/);
+  assert.match(server,/Ignore greetings, weather, audio checks, small talk/);
+  assert.match(server,/relationshipUpdates should contain concise key points with timestamps/);
   assert.match(server,/function cleanTranscriptTitleForUi/);
   assert.match(server,/transcript\.drafts=\(await listDrafts\(\)\)\.filter/);
   assert.match(server,/req\.query\.transcriptId/);

@@ -158,6 +158,8 @@ test('transcript library opens as a quiet selector before detail review',()=>{
   assert.match(ui,/Choose a transcript from the left/);
   assert.match(ui,/data-transcript-tab="notes"/);
   assert.match(ui,/data-transcript-tab="transcript"/);
+  assert.match(ui,/window\.openTranscriptChat=function/);
+  assert.match(ui,/valTranscriptChatOverlay/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
@@ -171,6 +173,8 @@ test('transcript cards and errors have readable responsive styling',()=>{
   assert.match(css,/\.val-transcript-tabs button\.active\{background:#07182d/);
   assert.match(css,/\.val-action-note\{display:grid/);
   assert.match(css,/\.val-transcript-blank\{min-height:430px/);
+  assert.match(css,/\.val-transcript-chat-launch\{min-height:44px/);
+  assert.match(css,/\.val-transcript-chat-modal\{grid-template-columns:minmax\(0,1fr\)!important/);
   assert.match(css,/\.val-transcript-row\{[^}]*color:#17243a/);
   assert.match(css,/@media\(max-width:900px\)[\s\S]*\.val-transcript-workspace\{grid-template-columns:1fr\}/);
 });
