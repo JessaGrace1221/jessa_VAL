@@ -57,6 +57,9 @@ test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
   assert.match(commandCss,/grid-template-columns:minmax\(0,1fr\) var\(--val-cal-w\)/);
   assert.match(commandCss,/\.rpanel\{display:flex!important;flex-direction:column!important/);
   assert.match(commandCss,/\.week-scroll\{[^}]*overflow:auto!important/);
+  assert.match(dashboard,/html body \.body\{[^}]*grid-template-columns:minmax\(0,1fr\) 330px!important/);
+  assert.match(dashboard,/html body \.rpanel\{display:flex!important;flex-direction:column!important/);
+  assert.doesNotMatch(dashboard,/\.topbar,html body \.statbar,html body \.lpanel,html body \.rpanel\{display:none!important\}/);
   assert.match(dashboard,/el\.className='gchat-overlay'/);
   assert.match(dashboard,/\.gchat-overlay\{[^}]*position:fixed/);
   assert.match(dashboard,/\.gchat-modal\{[^}]*width:min\(1260px/);
@@ -74,6 +77,10 @@ test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
   assert.match(dashboard,/\.val-talk-button\{[^}]*linear-gradient\(145deg,#f8d98b/);
   assert.match(dashboard,/\.val-home-send\{[^}]*background:#07182d/);
   assert.match(dashboard,/history\.replaceState\(\{\},document\.title,cleanUrl\)/);
+  assert.match(dashboard,/document\.body\.classList\.add\('val-detail-chat-open'\)/);
+  assert.match(dashboard,/document\.body\.classList\.remove\('val-detail-chat-open'\)/);
+  assert.match(dashboard,/html body\.val-detail-chat-open \.center-detail\.on\{[^}]*position:fixed!important/);
+  assert.match(dashboard,/closeExecutiveWorkspace\('leadWorkspace'\);\s*if\(shouldAutoRunGoallLeadScrape/);
   assert.match(server,/externalKeys:\{/);
   assert.match(server,/resolveIntegrationSecret\('outscraper','api_key',OUTSCRAPER_API_KEY\)/);
   assert.match(server,/resolveIntegrationSecret\('rocketreach','api_key',ROCKETREACH_API_KEY\)/);
