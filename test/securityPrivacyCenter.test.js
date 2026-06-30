@@ -67,3 +67,17 @@ test('sensitive actions create audit events',()=>{
   assert.match(server,/oauth_account_connected/);
   assert.match(server,/oauth_account_disconnected/);
 });
+
+test('login session bridge recovers blocked cookies without exposing browser-side session storage',()=>{
+  assert.match(server,/function sessionBridgeToken/);
+  assert.match(server,/function verifySessionBridgeToken/);
+  assert.match(server,/function safeInternalRedirect/);
+  assert.match(server,/Date\.now\(\)\+2\*60\*1000/);
+  assert.match(server,/session_bridge:\$\{payload\}/);
+  assert.match(server,/app\.get\('\/auth\/session-bridge'/);
+  assert.match(server,/sessionBridgeUrl/);
+  assert.match(server,/Opening VAL directly to keep your secure session/);
+  assert.match(server,/Referrer-Policy','no-referrer'/);
+  assert.doesNotMatch(server,/localStorage\.setItem/);
+  assert.doesNotMatch(server,/document\.cookie/);
+});

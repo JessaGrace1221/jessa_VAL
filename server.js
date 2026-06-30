@@ -1094,6 +1094,31 @@ function signValue(value){
 function signedSessionValue(sessionId){
   return `${sessionId}.${signValue(sessionId)}`;
 }
+function sessionBridgeToken(sessionId,next='/dashboard'){
+  const payload=Buffer.from(JSON.stringify({
+    sessionId:String(sessionId||''),
+    next:safeInternalRedirect(next),
+    exp:Date.now()+2*60*1000
+  })).toString('base64url');
+  return `${payload}.${signValue(`session_bridge:${payload}`)}`;
+}
+function verifySessionBridgeToken(token=''){
+  const [payload,sig]=String(token||'').split('.');
+  if(!payload||!sig)return null;
+  const expected=signValue(`session_bridge:${payload}`);
+  try{
+    if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null;
+    const data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
+    if(!data.sessionId||Number(data.exp||0)<Date.now())return null;
+    return {sessionId:String(data.sessionId),next:safeInternalRedirect(data.next||'/dashboard')};
+  }catch(e){return null;}
+}
+function safeInternalRedirect(value){
+  const next=String(value||'/dashboard');
+  if(!next.startsWith('/')||next.startsWith('//'))return '/dashboard';
+  if(next.startsWith('/api/'))return '/dashboard';
+  return next.slice(0,300);
+}
 function verifySignedSession(value){
   const [sessionId,sig]=String(value||'').split('.');
   if(!sessionId||!sig) return '';
@@ -3988,8 +4013,16 @@ function loginHtml(){
           setTimeout(function(){window.location.href=d.redirectUrl||'/dashboard';},450);
           return;
         }
+        if(d.sessionBridgeUrl){
+          loginError.style.color='rgba(244,239,229,.78)';
+          loginError.textContent='Password accepted. Opening VAL directly to keep your secure session...';
+          const bridgeUrl=window.location.origin+d.sessionBridgeUrl;
+          try{window.top.location.assign(bridgeUrl);}catch(_){window.location.assign(bridgeUrl);}
+          setTimeout(function(){window.location.href=bridgeUrl;},450);
+          return;
+        }
         loginError.style.color='#ffb4a8';
-        loginError.textContent='Password accepted, but the browser did not keep the login session. Refresh and try again. If VAL is embedded in another page, open the dashboard URL directly.';
+        loginError.textContent='Password accepted, but this browser did not keep the login session. Open the dashboard URL directly and try again.';
         return;
       }
       if(d.requiresPasswordSetup){loginError.textContent=d.message||'Password setup required';showSetupBox();return;}
@@ -4039,7 +4072,7 @@ function isPublicPath(req){
   const p=req.path;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
-  return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
+  return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/auth/session-bridge'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
   if(isPublicPath(req)) return next();
@@ -4122,6 +4155,14 @@ app.get('/login',async(req,res)=>{
 app.get('/set-password',(req,res)=>{
   res.type('html').send(setPasswordHtml());
 });
+app.get('/auth/session-bridge',(req,res)=>{
+  const bridge=verifySessionBridgeToken(req.query.token||'');
+  res.set('Cache-Control','no-store, max-age=0');
+  res.set('Referrer-Policy','no-referrer');
+  if(!bridge) return res.redirect('/login');
+  setSessionCookie(res,bridge.sessionId);
+  return res.redirect(bridge.next||'/dashboard');
+});
 app.post('/api/auth/login',async(req,res)=>{
   await valDbReady;
   const email=String(req.body.email||'').trim().toLowerCase();
@@ -4156,7 +4197,7 @@ app.post('/api/auth/login',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('login succeeded',{email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email},success:true}).catch(()=>{});
-  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
+  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard',sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,'/dashboard'))});
 });
 app.post('/api/auth/request-password-setup',async(req,res)=>{
   await valDbReady;
@@ -4190,7 +4231,7 @@ app.post('/api/auth/set-password',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('set password succeeded',{email:user.email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{method:'set_password'},success:true}).catch(()=>{});
-  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
+  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard',sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,'/dashboard'))});
 });
 app.post('/api/auth/logout',async(req,res)=>{
   await auditLog({req,action:'logout',resourceType:'session',resourceId:verifySignedSession(parseCookies(req)[SESSION_COOKIE])||'',success:true}).catch(()=>{});
