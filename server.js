@@ -6375,12 +6375,12 @@ function emailSnippetSummary(email){
   return emailCleanSentence(email.bodyPreview||email.snippet||email.bodyText||email.reason||'');
 }
 function emailSignoff(email){
-  const fromName=String(email.from?.name||email.from?.email||'').toLowerCase();
-  if(/michele|julian|friend|personal|family/.test(fromName))return 'Warmly,';
   return 'Best,';
 }
+function emailValIntro(){return 'VAL here.';}
+function emailValSignoff(){return ['Best,','VAL',"Jessa's AI Chief of Staff"];}
 function emailDraftBody(lines){
-  return lines.filter(line=>line!==null&&line!==undefined).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+  return lines.flat().filter(line=>line!==null&&line!==undefined).join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
 function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
   const conflict=/conflict|can't|cannot|unavailable|reschedul|move|instead|another time|emergency/i.test(text);
@@ -6391,14 +6391,15 @@ function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
       body:emailDraftBody([
         emailDraftGreeting(email),
         '',
+        emailValIntro(),
+        '',
         proposed
-          ? `Thanks for the heads up. ${name||'I'} can make ${emailCleanSentence(proposed)} work if that still fits on your end.`
-          : 'Thanks for the heads up. I can adjust on my end.',
+          ? `Thanks for letting me know. I'll make sure ${emailCleanSentence(proposed)} is reflected for Jessa if that still works on your end.`
+          : snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it for Jessa.`:"Thanks for letting me know. I'll make a note of this for Jessa.",
         '',
-        'If anything changes before then, just send it over and I’ll keep an eye on the calendar.',
+        "If anything changes before then, send it over and I'll keep the calendar context clean.",
         '',
-        signoff,
-        'Jessa'
+        emailValSignoff()
       ])
     };
   }
@@ -6407,13 +6408,11 @@ function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      'Thanks for sending this over. I’m good with the meeting time.',
-      snippet?`I saw the note about ${snippet.toLowerCase()}.`:'',
+      emailValIntro(),
       '',
-      'Looking forward to it.',
+      snippet?`Thanks for sending this over. I'll make sure Jessa has the calendar context for ${snippet}.`:"Thanks for sending this over. I'll make sure this gets in front of Jessa with the calendar context.",
       '',
-      signoff,
-      'Jessa'
+      emailValSignoff()
     ])
   };
 }
@@ -6426,24 +6425,25 @@ function buildQuestionReplyDraft(email,{subject,text,snippet,signoff}){
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
+      emailValIntro(),
+      '',
       asksForAvailability
-        ? 'Thanks for checking. I’m looking at the calendar and want to give you a clean answer rather than toss out a time that may move.'
+        ? "Thanks for checking. I'll get this in front of Jessa and make sure the calendar answer is clean before we confirm."
         : asksForReview
-          ? 'Thanks for sending this over. I want to review it with enough attention to give you something useful.'
+          ? "Thanks for sending this over. I'll put it on Jessa's review list so she can give it the right attention."
           : asksForInfo
-            ? 'Thanks for the note. I saw what you’re asking for and I want to answer it clearly.'
-            : 'Thanks for reaching out. I saw the question and want to give you a useful answer.',
+            ? "Thanks for the note. I'll get this question in front of Jessa right away."
+            : "Thanks for reaching out. I'll make sure Jessa sees the question and can respond clearly.",
       '',
-      snippet?`The piece I’m tracking is: ${snippet}`:'',
+      snippet?`I noted this context: ${snippet}`:'',
       '',
       asksForAvailability
-        ? 'I’ll confirm the best option shortly.'
+        ? "I'll follow up once I have the best option from her calendar."
         : asksForReview
-          ? 'I’ll take a closer look and send back the clearest next step.'
-          : 'I’ll follow up with the right details shortly.',
+          ? "I'll follow up with the clearest next step once she has reviewed it."
+          : "I'll follow up with the right details shortly.",
       '',
-      signoff,
-      'Jessa'
+      emailValSignoff()
     ])
   };
 }
@@ -6453,13 +6453,14 @@ function buildWaitingFollowupDraft(email,{subject,snippet,signoff}){
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      'I wanted to gently bring this back to the top of the thread.',
-      snippet?`The open piece on my end is: ${snippet}`:'',
+      emailValIntro(),
+      '',
+      "I'm bringing this back to the top of the thread for Jessa.",
+      snippet?`The open piece I'm tracking is: ${snippet}`:'',
       '',
       'When you have a moment, can you send me the latest so I know whether to move this forward, adjust, or close the loop?',
       '',
-      signoff,
-      'Jessa'
+      emailValSignoff()
     ])
   };
 }
@@ -6473,8 +6474,10 @@ function buildEmailReplyDraft(email){
   if(intro){
     return {
       subject,
-      body:[
+      body:emailDraftBody([
         `Hi ${name},`.replace(/\s+,/,','),
+        '',
+        emailValIntro(),
         '',
         'Thank you. I really appreciate the introduction.',
         '',
@@ -6484,9 +6487,8 @@ function buildEmailReplyDraft(email){
         '',
         'Grateful for you making the connection.',
         '',
-        signoff,
-        'Jessa'
-      ].join('\n')
+        emailValSignoff()
+      ])
     };
   }
   if(/\b(invitation|calendar|meeting|zoom|reschedule|available|availability|appointment|event)\b/i.test(text)){
@@ -6503,12 +6505,13 @@ function buildEmailReplyDraft(email){
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      snippet?`I saw your note about ${snippet.toLowerCase()}.`:'I saw your note and wanted to acknowledge it directly.',
+      emailValIntro(),
       '',
-      email.recommendedAction&&!/draft|reply/i.test(email.recommendedAction)?emailCleanSentence(email.recommendedAction):'I’ll take the next clean step and follow up with you shortly.',
+      snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it for Jessa.`:"Thanks for reaching out. I'll make sure this gets in front of Jessa.",
       '',
-      signoff,
-      'Jessa'
+      email.recommendedAction&&!/draft|reply/i.test(email.recommendedAction)?emailCleanSentence(email.recommendedAction):"I'll take the next clean step and follow up shortly.",
+      '',
+      emailValSignoff()
     ])
   };
 }
