@@ -2760,6 +2760,8 @@ const TEACH_VAL_KNOWLEDGE_CARDS = [
   {category:'opportunities',title:'Opportunities',prompt:'Based on everything you know from our conversations, list the business opportunities, ideas, offers, partnerships, products, services, or strategies that still seem relevant. Include why each one matters and what the next step might be.'},
   {category:'things_to_remember',title:'Things To Never Forget',prompt:'Based on everything you know from our conversations, what should a personal executive AI remember about me forever? Include values, preferences, context, important stories, priorities, relationships, and anything that would help it support me well.'}
 ];
+const VAL_OS_FUNCTIONS = ['email','calendar','tasks','crm','relationships','voice','documents','transcripts','memory'];
+const VAL_OS_LAYERS = ['observation','understanding','recommendation','approved_behavior','execution','reflection'];
 function teachValDefaultState(){
   return {
     stage:'welcome',
@@ -3028,6 +3030,219 @@ function teachValEvidenceCandidates(items=[]){
     confidence:Math.max(0.35,Math.min(1,Number(item.confidence)||0.72)),
     status:'observed'
   })).filter(x=>x.content);
+}
+function valOsInsightItem({layer='observation',type='belief',source='val',title='',summary='',confidence=0.7,evidence=[],recommendation='',ruleDraft=null,impact='',kind='teach_val_connected_insight'}={}){
+  return {
+    id:uuid('vos'),
+    layer,
+    type,
+    source:'val_os_observation_engine',
+    title:String(title||'VAL insight').trim().slice(0,160),
+    summary:String(summary||'').trim().slice(0,900),
+    category:'connected_source_insights',
+    confidence:Math.max(0.25,Math.min(1,Number(confidence)||0.7)),
+    include_in_val:true,
+    data:{kind,osLayer:layer,insightType:type,connectedSource:source,evidence:Array.isArray(evidence)?evidence.slice(0,8):[],recommendation,ruleDraft,impact}
+  };
+}
+function valOsSourceSummary(items=[],label='item'){
+  return `${items.length} ${label}${items.length===1?'':'s'}`;
+}
+function senderKey(email={}){
+  const from=email.from||{};
+  return String(from.email||from.name||'unknown').toLowerCase();
+}
+function senderLabel(email={}){
+  const from=email.from||{};
+  return from.name&&from.email?`${from.name} <${from.email}>`:(from.name||from.email||'Unknown sender');
+}
+function topCounts(rows=[],keyFn){
+  const map=new Map();
+  for(const row of rows){
+    const key=keyFn(row);
+    if(!key||key==='unknown')continue;
+    const current=map.get(key)||{key,count:0,sample:row};
+    current.count++;
+    map.set(key,current);
+  }
+  return Array.from(map.values()).sort((a,b)=>b.count-a.count);
+}
+function weekdayName(index){
+  return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][index]||'Unknown';
+}
+function eventStartDate(event={}){
+  const d=new Date(event.startTime||event.start||event.date||0);
+  return isNaN(d.getTime())?null:d;
+}
+function connectedSourceInsightPayload({email={},calendar={}}={}){
+  const emails=Array.isArray(email.emails)?email.emails:[];
+  const events=Array.isArray(calendar.calendarEvents)?calendar.calendarEvents:(Array.isArray(calendar.events)?calendar.events:[]);
+  const insights=[];
+  const classifications=topCounts(emails,e=>e.classification||'unclassified');
+  const senders=topCounts(emails,senderKey).filter(x=>senderLabel(x.sample)!=='Unknown sender');
+  const importantEmails=emails.filter(e=>['needs_attention','needs_reply','waiting_on_response','forward_to_team'].includes(e.classification));
+  const lowEmails=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification));
+  if(emails.length){
+    insights.push(valOsInsightItem({
+      layer:'observation',
+      type:'fact',
+      source:'email',
+      title:'Inbox scan completed',
+      summary:`VAL reviewed ${valOsSourceSummary(emails,'recent email')} across connected inbox sources. ${importantEmails.length} appear to need judgment, reply, follow-up, or forwarding attention.`,
+      confidence:0.9,
+      evidence:emails.slice(0,5).map(e=>({subject:e.subject,from:senderLabel(e),classification:e.classification,date:e.date||e.receivedAt}))
+    }));
+  }
+  senders.slice(0,5).forEach(row=>{
+    if(row.count<2)return;
+    const sample=row.sample;
+    insights.push(valOsInsightItem({
+      layer:'understanding',
+      type:'belief',
+      source:'email',
+      title:`${senderLabel(sample)} may be a core relationship`,
+      summary:`This sender appears ${row.count} times in the scanned inbox window. VAL should keep watching whether this person belongs in relationship memory or VIP handling.`,
+      confidence:Math.min(0.96,0.58+(row.count*0.08)),
+      evidence:emails.filter(e=>senderKey(e)===row.key).slice(0,4).map(e=>({subject:e.subject,classification:e.classification,date:e.date||e.receivedAt})),
+      recommendation:'Review this person in relationship memory.',
+      ruleDraft:{scope:'relationships',ruleType:'relationship_watch',trigger:{sender:sample.from||{}},actions:{surface_in_briefing:true,track_open_loops:true},requiresApproval:true}
+    }));
+  });
+  classifications.slice(0,4).forEach(row=>{
+    if(row.count<2)return;
+    const label=String(row.key||'').replace(/_/g,' ');
+    insights.push(valOsInsightItem({
+      layer:'observation',
+      type:'pattern',
+      source:'email',
+      title:`Email pattern: ${label}`,
+      summary:`VAL saw ${row.count} recent email${row.count===1?'':'s'} classified as ${label}. This is a candidate for future behavior only after approval.`,
+      confidence:Math.min(0.9,0.5+(row.count*0.06)),
+      evidence:emails.filter(e=>e.classification===row.key).slice(0,4).map(e=>({subject:e.subject,from:senderLabel(e),reason:e.reason})),
+      recommendation:['low_priority','solicitation','ignored'].includes(row.key)?'Consider a reviewed archive or low-priority rule for repeat senders.':'Consider drafting, follow-up, or priority rules only for specific repeatable senders.',
+      ruleDraft:{scope:'email',ruleType:row.key,trigger:{classification:row.key},actions:{review_before_execution:true},requiresApproval:true}
+    }));
+  });
+  if(lowEmails.length>=3){
+    insights.push(valOsInsightItem({
+      layer:'recommendation',
+      type:'behavior',
+      source:'email',
+      title:'Low-priority inbox handling is ready for rules',
+      summary:`${lowEmails.length} recent emails look low-priority, promotional, ignored, or newsletter-like. VAL can propose sender-specific archive rules instead of asking you about each one.`,
+      confidence:0.78,
+      evidence:lowEmails.slice(0,5).map(e=>({subject:e.subject,from:senderLabel(e),classification:e.classification})),
+      recommendation:'Approve sender-specific low-priority rules after reviewing the evidence.',
+      ruleDraft:{scope:'email',ruleType:'low_priority_sender_review',trigger:{senders:topCounts(lowEmails,senderKey).slice(0,6).map(x=>senderLabel(x.sample))},actions:{move_to_low_priority:true,never_delete:true},requiresApproval:true},
+      impact:'Reduces inbox noise without hiding important relationships.'
+    }));
+  }
+  if(importantEmails.length>=2){
+    insights.push(valOsInsightItem({
+      layer:'recommendation',
+      type:'behavior',
+      source:'email',
+      title:'Reply and follow-up support should stay approval-first',
+      summary:`${importantEmails.length} recent emails appear to need replies, decisions, or follow-up. VAL can draft and task these, but sending and external actions should remain reviewable.`,
+      confidence:0.86,
+      evidence:importantEmails.slice(0,5).map(e=>({subject:e.subject,from:senderLabel(e),classification:e.classification,reason:e.reason})),
+      recommendation:'Let VAL prepare drafts and tasks, then require approval before anything is sent or archived.',
+      ruleDraft:{scope:'email',ruleType:'draft_and_task_review',trigger:{classifications:['needs_attention','needs_reply','waiting_on_response']},actions:{prepare_draft:true,create_follow_up_task:true,require_user_approval:true},requiresApproval:true},
+      impact:'Protects business relationships while reducing coordination work.'
+    }));
+  }
+  if(events.length){
+    const dated=events.map(e=>({event:e,date:eventStartDate(e)})).filter(x=>x.date);
+    const byDay=topCounts(dated,x=>String(x.date.getDay()));
+    const byHour=topCounts(dated,x=>String(x.date.getHours()));
+    const attendeeEvents=events.filter(e=>(e.attendees||[]).length);
+    insights.push(valOsInsightItem({
+      layer:'observation',
+      type:'fact',
+      source:'calendar',
+      title:'Calendar scan completed',
+      summary:`VAL reviewed ${valOsSourceSummary(events,'calendar event')} from connected calendar sources. ${attendeeEvents.length} include attendees and can inform relationship prep.`,
+      confidence:0.9,
+      evidence:events.slice(0,5).map(e=>({title:e.title||e.summary,start:e.startTime,source:e.source,attendees:(e.attendees||[]).length}))
+    }));
+    if(byDay[0]){
+      insights.push(valOsInsightItem({
+        layer:'understanding',
+        type:'belief',
+        source:'calendar',
+        title:`${weekdayName(Number(byDay[0].key))} appears to be a meeting-heavy day`,
+        summary:`${byDay[0].count} scanned event${byDay[0].count===1?'':'s'} fall on ${weekdayName(Number(byDay[0].key))}. VAL can use this as a scheduling preference candidate, not a rule yet.`,
+        confidence:Math.min(0.88,0.52+(byDay[0].count*0.07)),
+        evidence:dated.filter(x=>String(x.date.getDay())===byDay[0].key).slice(0,4).map(x=>({title:x.event.title||x.event.summary,start:x.event.startTime,source:x.event.source})),
+        recommendation:'Ask before treating this as a durable scheduling preference.',
+        ruleDraft:{scope:'calendar',ruleType:'preferred_meeting_day_candidate',trigger:{weekday:Number(byDay[0].key)},actions:{suggest_this_day_first:true},requiresApproval:true}
+      }));
+    }
+    if(byHour[0]){
+      const hour=Number(byHour[0].key);
+      insights.push(valOsInsightItem({
+        layer:'understanding',
+        type:'belief',
+        source:'calendar',
+        title:`${hour}:00 is a common meeting hour`,
+        summary:`${byHour[0].count} scanned event${byHour[0].count===1?'':'s'} begin around ${hour}:00. VAL can use this as a scheduling hypothesis and keep measuring it.`,
+        confidence:Math.min(0.84,0.5+(byHour[0].count*0.06)),
+        evidence:dated.filter(x=>String(x.date.getHours())===byHour[0].key).slice(0,4).map(x=>({title:x.event.title||x.event.summary,start:x.event.startTime})),
+        recommendation:'Use as a soft scheduling preference until the user approves a rule.',
+        ruleDraft:{scope:'calendar',ruleType:'preferred_meeting_time_candidate',trigger:{hour},actions:{suggest_nearby_times_first:true},requiresApproval:true}
+      }));
+    }
+    if(attendeeEvents.length>=2){
+      insights.push(valOsInsightItem({
+        layer:'recommendation',
+        type:'skill',
+        source:'calendar',
+        title:'Meeting prep should become a reusable skill',
+        summary:`VAL found ${attendeeEvents.length} events with attendees. For these, it can prepare relationship context, open loops, recent emails, tasks, transcripts, and suggested follow-ups before the meeting.`,
+        confidence:0.82,
+        evidence:attendeeEvents.slice(0,5).map(e=>({title:e.title||e.summary,start:e.startTime,attendees:(e.attendees||[]).map(a=>a.name||a.email).filter(Boolean).slice(0,4)})),
+        recommendation:'Create a reusable Prepare for Meeting skill across calendar, email, tasks, transcripts, CRM, and memory.',
+        ruleDraft:{scope:'skills',ruleType:'prepare_for_meeting',trigger:{event_has_attendees:true},actions:{gather_email_context:true,gather_tasks:true,gather_memory:true,gather_transcripts:true,draft_follow_up_after:true},requiresApproval:true},
+        impact:'Turns calendar events into proactive executive support.'
+      }));
+    }
+  }
+  if(!insights.length){
+    insights.push(valOsInsightItem({
+      layer:'observation',
+      type:'fact',
+      source:'connected_sources',
+      title:'No connected source patterns yet',
+      summary:'VAL could not find enough connected email or calendar evidence to make useful recommendations. Connect Gmail, Outlook, Google Calendar, or Microsoft Calendar, then run the scan again.',
+      confidence:0.6,
+      recommendation:'Connect sources or widen the scan window.'
+    }));
+  }
+  const rulesReady=insights.filter(i=>i.data?.ruleDraft).length;
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    architecture:{functions:VAL_OS_FUNCTIONS,layers:VAL_OS_LAYERS,principle:'Observe first, recommend second, require approval before behavior changes.'},
+    summary:{emailCount:emails.length,calendarEventCount:events.length,insightCount:insights.length,rulesReady},
+    facts:insights.filter(i=>i.type==='fact'),
+    beliefs:insights.filter(i=>i.type==='belief'||i.type==='pattern'),
+    behaviors:insights.filter(i=>i.type==='behavior'),
+    skills:insights.filter(i=>i.type==='skill'),
+    insights
+  };
+}
+async function buildTeachValConnectedSourceInsights(req,{force=false}={}){
+  let email={ok:false,emails:[],errors:[]};
+  let calendar={calendarEvents:[],errors:[]};
+  try{email=await emailIntelligencePayload(req,{force});}catch(e){email={ok:false,emails:[],errors:[e.message]};}
+  try{
+    const start=new Date();start.setDate(start.getDate()-30);
+    const end=new Date();end.setDate(end.getDate()+30);
+    const loaded=await loadContextCalendarEvents(start,end);
+    calendar={calendarEvents:loaded.events||[],errors:loaded.errors||[]};
+  }catch(e){calendar={calendarEvents:[],errors:[e.message]};}
+  const payload=connectedSourceInsightPayload({email,calendar});
+  return {...payload,providers:{email:email.providers||{},calendarErrors:calendar.errors||[],emailErrors:email.errors||[]}};
 }
 async function promoteTeachValOnboardingToCoreMemory({session,imports,items,payload}){
   const included=Array.isArray(items)?items:[];
@@ -4286,6 +4501,13 @@ app.get('/api/teach-val/onboarding',async(req,res)=>{
   try{res.json(await teachValStateResponse(req.query.sessionId||''));}
   catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.get('/api/teach-val/source-insights',async(req,res)=>{
+  try{
+    const payload=await buildTeachValConnectedSourceInsights(req,{force:req.query.force==='1'||req.query.refresh==='1'});
+    await auditLog({req,action:'teach_val_source_insights_generated',resourceType:'teach_val_onboarding',metadata:{insightCount:payload.summary?.insightCount||0,emailCount:payload.summary?.emailCount||0,calendarEventCount:payload.summary?.calendarEventCount||0,externalActionTaken:false,observationOnly:true},success:true}).catch(()=>{});
+    res.json(payload);
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
     const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
@@ -4414,6 +4636,40 @@ app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(
     state.progress[target.category]='Reviewed';
     session.state=state;
     await saveTeachValSession(session);
+    res.json(await teachValStateResponse(session.id));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const payload=req.body&&Array.isArray(req.body.insights)?req.body:await buildTeachValConnectedSourceInsights(req,{force:!!req.body?.force});
+    const insights=(payload.insights||[]).map(item=>({
+      ...item,
+      id:item.id||uuid('vos'),
+      category:'connected_source_insights',
+      source:'val_os_observation_engine',
+      include_in_val:item.include_in_val!==false,
+      data:{...(item.data||{}),architecture:payload.architecture||{},generatedAt:payload.generatedAt||new Date().toISOString()}
+    })).slice(0,40);
+    const existing=(await listTeachValImports(session.id)).find(i=>i.category==='connected_source_insights');
+    await saveTeachValImport({
+      id:existing?.id,
+      sessionId:session.id,
+      category:'connected_source_insights',
+      promptUsed:'VAL connected source scan: inbox and calendar observation only.',
+      rawResponse:JSON.stringify({summary:payload.summary,architecture:payload.architecture,providers:payload.providers},null,2),
+      structuredSummary:{summary:payload.summary||{},architecture:payload.architecture||{}},
+      extractedItems:insights,
+      reviewed:false,
+      status:'Imported'
+    });
+    const state=normalizeTeachValState(session.state);
+    state.progress.connected_source_insights='Imported';
+    state.stage='review';
+    session.state=state;
+    await saveTeachValSession(session);
+    await auditLog({req,action:'teach_val_source_insights_imported',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{insightCount:insights.length,externalActionTaken:false,reviewRequired:true},success:true}).catch(()=>{});
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });

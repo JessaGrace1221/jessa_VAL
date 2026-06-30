@@ -28,6 +28,31 @@ test('Teach VAL onboarding categories map into universal observation types',()=>
   assert.match(server,/function teachValMemoryImportance/);
 });
 
+test('Teach VAL can observe connected inbox and calendar before behavior changes',()=>{
+  assert.match(server,/const VAL_OS_FUNCTIONS = \['email','calendar','tasks','crm','relationships','voice','documents','transcripts','memory'\]/);
+  assert.match(server,/const VAL_OS_LAYERS = \['observation','understanding','recommendation','approved_behavior','execution','reflection'\]/);
+  assert.match(server,/function connectedSourceInsightPayload/);
+  assert.match(server,/async function buildTeachValConnectedSourceInsights/);
+  assert.match(server,/app\.get\('\/api\/teach-val\/source-insights'/);
+  assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/source-insights'/);
+  assert.match(server,/category:'connected_source_insights'/);
+  assert.match(server,/requiresApproval:true/);
+  assert.match(server,/Observe first, recommend second, require approval before behavior changes\./);
+  assert.match(server,/externalActionTaken:false,observationOnly:true/);
+});
+
+test('Teach VAL UI exposes connected inbox and calendar observations for review',()=>{
+  assert.match(dashboard,/var teachValSourceInsights=null/);
+  assert.match(dashboard,/function teachValScanSources/);
+  assert.match(dashboard,/function teachValSourceInsightsHtml/);
+  assert.match(dashboard,/function teachValImportSourceInsights/);
+  assert.match(dashboard,/Connected Source Insights/);
+  assert.match(dashboard,/Scan Email & Calendar/);
+  assert.match(dashboard,/Import To Teach VAL Review/);
+  assert.match(dashboard,/Observation only\. VAL will not send, archive, delete, invite, reschedule, or change behavior from this scan\./);
+  assert.match(dashboard,/Observe, suggest, approve, then learn/);
+});
+
 test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',()=>{
   assert.match(server,/function teachValPublicCard/);
   assert.match(server,/function teachValPublicImport/);
