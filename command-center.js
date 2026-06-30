@@ -394,7 +394,13 @@ window.renderTranscriptIntakeStatus=function(){
 };
 function renderTranscriptError(message){var view=document.getElementById('valTranscriptView');if(view)view.innerHTML=transcriptHeader('Transcript archive unavailable')+'<div class="val-empty val-transcript-error"><strong>Unable to load transcripts.</strong><br>Check the transcript retrieval endpoint or server logs.<br><small>'+safe(message)+'</small></div>';}
 function renderTranscriptAuthExpired(){var view=document.getElementById('valTranscriptView'),next=encodeURIComponent(location.pathname+location.search);if(view)view.innerHTML=transcriptHeader('Session expired')+'<div class="val-empty val-transcript-error"><strong>Please sign back in.</strong><br>VAL kept you on this page instead of redirecting during recovery.<br><button class="val-ui-btn primary" onclick="window.location.href=\'/login?next='+next+'\'">Open Login</button></div>';}
-function normalizeList(items){return (Array.isArray(items)?items:[]).map(function(x){return typeof x==='string'?x:(x.title||x.text||x.summary||x.name||x.email||JSON.stringify(x));}).filter(Boolean);}
+function transcriptObjectLabel(x){
+  if(!x||typeof x==='string')return x||'';
+  var head=[x.category,x.title||x.decision||x.question||x.summary||x.text].filter(Boolean).join(': ');
+  var meta=[x.owner?'Owner: '+x.owner:'',x.timestamp?'Time: '+x.timestamp:'',x.relatedProject?'Project: '+x.relatedProject:'',x.confidence?'Confidence: '+Math.round(Number(x.confidence||0)*100)+'%':''].filter(Boolean).join(' · ');
+  return [head,meta,x.sourceQuote?'Evidence: '+x.sourceQuote:''].filter(Boolean).join(' — ');
+}
+function normalizeList(items){return (Array.isArray(items)?items:[]).map(function(x){return typeof x==='string'?x:transcriptObjectLabel(x)||(x.title||x.text||x.summary||x.name||x.email||JSON.stringify(x));}).filter(Boolean);}
 function transcriptCleanText(value,fallback){
   var text=String(value||'').replace(/\[(?:relationship|chat)_memory\]/gi,'').replace(/\*\*/g,'').replace(/#{1,6}\s*/g,'').replace(/\bUser\/Time\/Date\b/gi,'').replace(/\b(?:Attendee intelligence|Saved memory|dashboard context|user profile context):?/gi,'').replace(/\s+/g,' ').trim();
   if(!text||/^(unknown|user|time|date)$/i.test(text))return fallback||'';
@@ -421,7 +427,9 @@ function transcriptSidebarHtml(activeId){
 }
 function transcriptNotesHtml(t,s,tasks,createdTasks,debug){
   var decisions=detailList(s.keyDecisions,'No decisions extracted yet.');
-  var keyPoints=detailList([s.clientSummary,s.internalNotes].concat(s.relationshipUpdates||[]).filter(Boolean),'No key points extracted yet.');
+  var openQuestions=detailList(s.openQuestions,'No open questions or decision needs extracted yet.');
+  var risks=detailList((s.relationshipUpdates||[]).filter(function(x){return /risk|dependency/i.test(String((x&&x.category)||''));}),'No risks or dependencies extracted yet.');
+  var intelligence=detailList([s.clientSummary,s.internalNotes].concat((s.relationshipUpdates||[]).filter(function(x){return !/risk|dependency/i.test(String((x&&x.category)||''));})).filter(Boolean),'No meeting intelligence objects extracted yet.');
   var usableActions=(t.tasks||[]).filter(transcriptIsUsableAction);
   var hiddenActions=(t.tasks||[]).length-usableActions.length;
   var actionItems=usableActions.length?usableActions.map(function(x){
@@ -429,7 +437,7 @@ function transcriptNotesHtml(t,s,tasks,createdTasks,debug){
     return '<article class="val-action-note"><div><strong>'+safe(x.taskTitle||'Action item')+'</strong><p>'+safe(x.taskDescription||x.sourceQuote||'Transcript action item.')+'</p>'+(x.sourceQuote?'<small>Evidence: '+safe(x.sourceQuote)+'</small>':'')+'</div><span class="val-status '+(created?'ok':'review')+'">'+(created?'Added to Actions':(virtual?'Suggested':'Needs approval'))+'</span>'+(created||virtual?'':'<button class="val-ui-btn primary" onclick="approveTranscriptTask(\''+safe(x.taskId)+'\')">Add to Actions</button>')+'</article>';
   }).join(''):'<p class="val-note-empty">No clear action items yet. VAL kept lower-confidence transcript fragments out of this list so they do not look more certain than they are.</p>';
   var hiddenNote=hiddenActions>0?'<p class="val-note-hint">'+hiddenActions+' lower-confidence extraction'+(hiddenActions===1?' is':'s are')+' kept in Processing details for review.</p>':'';
-  return '<div class="val-transcript-notes"><section class="val-detail-card val-overview-card"><h3>Overview</h3><p>'+safe(transcriptShortText(s.executiveSummary||s.clientSummary||'Summary pending.','Summary pending.',900))+'</p></section><section class="val-detail-card"><h3>Suggested Actions</h3><div class="val-action-note-list">'+actionItems+'</div>'+hiddenNote+'</section><section class="val-detail-card"><h3>Decisions</h3>'+decisions+'</section><section class="val-detail-card"><h3>Key Points</h3>'+keyPoints+'</section>'+debug+'</div>';
+  return '<div class="val-transcript-notes"><section class="val-detail-card val-overview-card"><h3>What Changed</h3><p>'+safe(transcriptShortText(s.executiveSummary||s.clientSummary||'Summary pending.','Summary pending.',900))+'</p></section><section class="val-detail-card"><h3>Action Items</h3><div class="val-action-note-list">'+actionItems+'</div>'+hiddenNote+'</section><section class="val-detail-card"><h3>Decisions</h3>'+decisions+'</section><section class="val-detail-card"><h3>Open Questions</h3>'+openQuestions+'</section><section class="val-detail-card"><h3>Risks & Dependencies</h3>'+risks+'</section><section class="val-detail-card"><h3>Meeting Intelligence</h3>'+intelligence+'</section>'+debug+'</div>';
 }
 window.setTranscriptTab=function(tab){
   var view=document.getElementById('valTranscriptView');if(!view)return;

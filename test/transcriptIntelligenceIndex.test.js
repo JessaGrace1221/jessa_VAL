@@ -90,6 +90,25 @@ test('canonical transcript pipeline preserves conversations, identities, and dec
   assert.ok(drafts>canonical,'draft creation should happen after canonical conversation and decision capture');
 });
 
+test('transcript intelligence classifies structured meeting objects instead of loose summaries',()=>{
+  assert.match(server,/Do not summarize the transcript as prose/);
+  assert.match(server,/Classify direct evidence into structured meeting objects/);
+  assert.match(server,/could another employee complete it without hearing the meeting/);
+  for(const key of ['meetingGoals','decisions','decisionNeeded','risks','ideas','relationshipInsights','personalPreferences','projectUpdates','importantFacts','taskDependencies','contactInformation','timelines','futureMeetings']){
+    assert.match(server,new RegExp(key));
+  }
+  assert.match(server,/function normalizeTranscriptAnalysis/);
+  assert.match(server,/function normalizeTranscriptObject/);
+  assert.match(server,/function transcriptActionIsSpecific/);
+  assert.match(server,/send something/);
+  assert.match(server,/structuredObjects/);
+  assert.match(server,/observationTypeForObject/);
+  assert.match(ui,/What Changed/);
+  assert.match(ui,/Risks & Dependencies/);
+  assert.match(ui,/Meeting Intelligence/);
+  assert.match(ui,/transcriptObjectLabel/);
+});
+
 test('relationship engine builds living profiles from observations without creating tasks',()=>{
   for(const table of ['relationship_profiles','relationship_timeline_events']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
@@ -252,7 +271,7 @@ test('fallback summaries are not counted as hard processing failures',()=>{
 });
 
 test('transcript detail defaults to notes, transcript, and transcript-specific chat',()=>{
-  for(const label of ['Notes','Transcript','Overview','Action Items','Chat About This Transcript','Processing details']){
+  for(const label of ['Notes','Transcript','What Changed','Action Items','Open Questions','Meeting Intelligence','Chat About This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
   assert.match(ui,/function transcriptSidebarHtml/);
@@ -269,7 +288,7 @@ test('transcript detail defaults to notes, transcript, and transcript-specific c
   assert.match(server,/function deterministicTranscriptNotes/);
   assert.match(server,/function mergeTranscriptDeterministicNotes/);
   assert.match(server,/Ignore greetings, weather, audio checks, small talk/);
-  assert.match(server,/relationshipUpdates should contain concise key points with timestamps/);
+  assert.match(server,/Every object must include/);
   assert.match(server,/function cleanTranscriptTitleForUi/);
   assert.match(server,/transcript\.drafts=\(await listDrafts\(\)\)\.filter/);
   assert.match(server,/req\.query\.transcriptId/);

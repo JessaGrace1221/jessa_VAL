@@ -17799,7 +17799,17 @@ async function saveTranscriptEvidenceObservations({sourceId,title,transcript,par
   };
   for(const item of (Array.isArray(parsed.keyDecisions)?parsed.keyDecisions:[]).slice(0,20))push('decision',item,{confidence:0.8});
   for(const item of (Array.isArray(parsed.openQuestions)?parsed.openQuestions:[]).slice(0,20))push('question',item,{confidence:0.8,status:'open'});
-  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item,{confidence:0.75});
+  const observationTypeForObject=item=>{
+    const category=String(item?.category||item?.type||'').toLowerCase();
+    if(/risk/.test(category))return 'risk';
+    if(/opportunity/.test(category))return 'opportunity';
+    if(/preference/.test(category))return 'preference';
+    if(/deadline|timeline|future meeting/.test(category))return 'deadline';
+    if(/idea/.test(category))return 'idea';
+    if(/project|fact|relationship|contact|dependency|goal/.test(category))return 'relationship_signal';
+    return item?.observationType||item?.type||'relationship_signal';
+  };
+  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,40))push(observationTypeForObject(item),item,{confidence:0.75});
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,30))push(item?.observationType||item?.type||'task',item,{confidence:0.75,status:'open'});
   for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item.reason||item.newValue||item,{confidence:Math.max(0.5,Number(item.confidence)||0.5)});
   for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
@@ -17934,6 +17944,82 @@ function deterministicTranscriptNotes(raw=''){
   const executiveSummary=keyPoints.length?dashboardShortText(keyPoints.slice(0,3).join(' '),'',700):'';
   return {executiveSummary,keyPoints,tasks:explicitTasks};
 }
+const TRANSCRIPT_OBJECT_TYPES=['Meeting Goal','Decision','Decision Needed','Action Item','Risk','Idea','Question','Relationship Insight','Personal Preference','Project Update','Important Fact','Task Dependency','Contact Information','Timeline','Future Meeting'];
+function transcriptObjectText(value){
+  if(!value)return '';
+  if(typeof value==='string')return dashboardCleanText(value);
+  return dashboardCleanText(value.title||value.summary||value.decision||value.question||value.action||value.fact||value.update||value.risk||value.idea||value.preference||value.dependency||value.timeline||value.meeting||value.content||value.text||'');
+}
+function normalizeTranscriptObject(category,value={}){
+  const text=transcriptObjectText(value);
+  if(!text)return null;
+  const quote=value.sourceQuote||value.supportingQuote||value.quote||value.evidence||'';
+  return {
+    category,
+    title:dashboardShortText(value.title||value.decision||value.question||value.action||text,'',180),
+    summary:dashboardShortText(value.summary||value.reason||value.discussion||value.context||text,'',520),
+    owner:value.owner||value.assignedToName||value.person||value.contactName||null,
+    speaker:value.speaker||value.speakerName||null,
+    timestamp:value.timestamp||value.time||value.timecode||null,
+    relatedPeople:Array.isArray(value.relatedPeople)?value.relatedPeople:(value.relatedPerson?[value.relatedPerson]:[]),
+    relatedProject:value.relatedProject||value.project||null,
+    relatedCompany:value.relatedCompany||value.company||null,
+    status:value.status||null,
+    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.72)),
+    sourceQuote:quote
+  };
+}
+function transcriptActionIsSpecific(item={}){
+  const title=dashboardCleanText(item.taskTitle||item.title||item.action||'');
+  const description=dashboardCleanText(item.taskDescription||item.description||item.summary||'');
+  const quote=dashboardCleanText(item.sourceQuote||item.supportingQuote||item.quote||'');
+  const text=[title,description,quote].filter(Boolean).join(' ');
+  if(title.length<18)return false;
+  if(/\b(check that|send something|send it|send from high level|do that|follow up on that|look into it|handle this|circle back)\b/i.test(title))return false;
+  if(!/\b(send|draft|write|create|add|check|review|confirm|schedule|update|monitor|ask|prepare|share|verify|call|email|text)\b/i.test(title))return false;
+  if(!/\b(email|reminder|GoHighLevel|GHL|RSVP|recipient|list|deliverability|meeting|draft|document|statistics|stats|task|project|contact|Ashley|Jessa|Greg|Westwood|HopeMakers)\b/i.test(text))return false;
+  return true;
+}
+function normalizeTranscriptTask(item={}){
+  const title=cleanTaskTitle(item.taskTitle||item.title||item.action||item.nextAction||'');
+  const task={...item,taskTitle:title,taskDescription:item.taskDescription||item.description||item.summary||item.reason||'',assignedToName:item.assignedToName||item.owner||item.person||item.contactName||'',dueDate:item.dueDate||item.deadline||item.due_at||null,priority:item.priority||'medium',confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.72)),sourceQuote:item.sourceQuote||item.supportingQuote||item.quote||item.evidence||''};
+  return transcriptActionIsSpecific(task)?task:null;
+}
+function normalizeTranscriptAnalysis(parsed={},raw=''){
+  const out={...parsed};
+  const objectGroups=[
+    ['Meeting Goal',(out.meetingGoals||out.meetingGoal)?[].concat(out.meetingGoals||out.meetingGoal):[]],
+    ['Decision',out.decisions||out.keyDecisions||[]],
+    ['Decision Needed',out.decisionNeeded||out.decisionsNeeded||[]],
+    ['Question',out.openQuestions||out.questions||[]],
+    ['Risk',out.risks||[]],
+    ['Idea',out.ideas||[]],
+    ['Relationship Insight',out.relationshipInsights||out.relationshipUpdates||[]],
+    ['Personal Preference',out.personalPreferences||[]],
+    ['Project Update',out.projectUpdates||out.projectsUpdated||[]],
+    ['Important Fact',out.importantFacts||out.facts||[]],
+    ['Task Dependency',out.taskDependencies||[]],
+    ['Contact Information',out.contactInformation||out.contactUpdates||[]],
+    ['Timeline',out.timelines||out.timeline||[]],
+    ['Future Meeting',out.futureMeetings||[]]
+  ];
+  const objects=[];
+  for(const [category,items] of objectGroups){
+    for(const item of (Array.isArray(items)?items:[items]).filter(Boolean)){
+      const normalized=normalizeTranscriptObject(category,item);
+      if(normalized)objects.push(normalized);
+    }
+  }
+  out.keyDecisions=objects.filter(o=>o.category==='Decision');
+  out.openQuestions=objects.filter(o=>o.category==='Decision Needed'||o.category==='Question');
+  out.relationshipUpdates=objects.filter(o=>!['Decision','Decision Needed','Question'].includes(o.category));
+  const taskItems=[...(Array.isArray(out.tasks)?out.tasks:[]),...(Array.isArray(out.actionItems)?out.actionItems:[])];
+  out.tasks=taskItems.map(normalizeTranscriptTask).filter(Boolean).slice(0,20);
+  out.structuredObjects=objects;
+  if(!out.clientSummary&&out.whatChanged)out.clientSummary=out.whatChanged;
+  if(!out.internalNotes&&objects.length)out.internalNotes=`Extracted ${objects.length} structured meeting object${objects.length===1?'':'s'} from direct transcript evidence.`;
+  return mergeTranscriptDeterministicNotes(out,raw);
+}
 function mergeTranscriptDeterministicNotes(parsed={},raw=''){
   const deterministic=deterministicTranscriptNotes(raw);
   const out={...parsed};
@@ -17951,13 +18037,13 @@ async function processTranscriptPayload(payload){
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe the substantive meeting outcome, not the first transcript lines.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','relationshipUpdates should contain concise key points with timestamps when visible.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript. Preserve owner names such as Jessa or Ashley when stated.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Do not summarize the transcript as prose. Classify direct evidence into structured meeting objects that another employee could act on without hearing the meeting.','Allowed object types: '+TRANSCRIPT_OBJECT_TYPES.join(', ')+'.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe what changed because of the meeting.','Required keys: executiveSummary, clientSummary, internalNotes, meetingGoals, decisions, decisionNeeded, openQuestions, risks, ideas, relationshipInsights, personalPreferences, projectUpdates, importantFacts, taskDependencies, contactInformation, timelines, futureMeetings, tasks, contactUpdates, followupDrafts.','Every object must include: title, summary, speaker, timestamp, owner, relatedPeople, relatedProject, relatedCompany, confidence (0-1), sourceQuote copied exactly from the transcript. Use null or [] when unknown.','tasks are only true action items. They must include taskTitle, taskDescription, assignedToName, dueDate, priority, confidence, sourceQuote. A task must pass this test: could another employee complete it without hearing the meeting? If not, omit it.','Rewrite transcript fragments into complete actions using only direct evidence. Example: do not output "send something out"; output "Ashley will send the meeting reminder email through GoHighLevel before today’s meeting" only if the transcript supports Ashley, the reminder email, GoHighLevel, and timing.','Never guess identity, owner, project, company, deadline, or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
   try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
-  parsed=mergeTranscriptDeterministicNotes(parsed,transcript);
+  parsed=normalizeTranscriptAnalysis(parsed,transcript);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
