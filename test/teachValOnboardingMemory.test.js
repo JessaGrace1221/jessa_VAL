@@ -58,6 +58,8 @@ test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
   assert.match(server,/app\.post\('\/api\/val\/os\/external-action-packets\/:id\/update'/);
   assert.match(server,/app\.post\('\/api\/val\/os\/external-action-packets\/:id\/approve'/);
   assert.match(server,/function buildGhlExternalActionPacket/);
+  assert.match(server,/function deterministicGhlActionFromText/);
+  assert.match(server,/deterministicGhlActionFromText\(lastUser\)\|\|await inferGhlActionFromChat\(lastUser\)/);
   assert.match(server,/function updateValOsExternalActionPacket/);
   assert.match(server,/function approveValOsExternalActionPacket/);
   assert.match(server,/not\\s\+in\\s\+ghl/);

@@ -16725,6 +16725,24 @@ function likelyGhlMutationRequest(text=''){
   if(!/\b(ghl|go high level|gohighlevel|crm|contact|opportunit|pipeline|tag|note|task)\b/.test(q)) return false;
   return /\b(create|add|update|edit|change|tag|untag|remove tag|note|not\s+in\s+ghl|task|upsert|find|search|look up|load|show)\b/.test(q);
 }
+function deterministicGhlActionFromText(text=''){
+  const raw=String(text||'').trim();
+  const note=raw.match(/\badd\s+a\s+not(?:e)?\s+in\s+ghl\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
+    || raw.match(/\badd\s+a\s+ghl\s+not(?:e)?\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
+    || raw.match(/\badd\s+a\s+not(?:e)?\s+to\s+ghl\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i);
+  if(note){
+    return {
+      shouldExecute:true,
+      action:'contact.note.create',
+      params:{
+        contactName:String(note[1]||'').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g,''),
+        body:String(note[2]||'').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g,'')
+      },
+      deterministic:true
+    };
+  }
+  return null;
+}
 function valOsExternalActionPacketRows(){
   const store=valStore();
   store.valOsExternalActionPackets=store.valOsExternalActionPackets||[];
@@ -18036,7 +18054,7 @@ app.post('/api/val/chat',async(req,res)=>{
       const result=await createOrUpdateGoallTestContact();
       return sendChat(goallTestContactSummary(result),{ghlContact:result});
     }
-    const inferredGhlAction=await inferGhlActionFromChat(lastUser);
+    const inferredGhlAction=deterministicGhlActionFromText(lastUser)||await inferGhlActionFromChat(lastUser);
     if(inferredGhlAction){
       const packet=saveValOsExternalActionPacket(buildGhlExternalActionPacket(inferredGhlAction,lastUser));
       return sendChat([
