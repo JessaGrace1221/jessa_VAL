@@ -35,10 +35,14 @@ test('Teach VAL can observe connected inbox and calendar before behavior changes
   assert.match(server,/async function buildTeachValConnectedSourceInsights/);
   assert.match(server,/app\.get\('\/api\/teach-val\/source-insights'/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/source-insights'/);
+  assert.match(server,/fetchUnifiedOutlookSentEmails/);
+  assert.match(server,/Sent mail follow-up window checked/);
+  assert.match(server,/sentCount/);
   assert.match(server,/category:'connected_source_insights'/);
   assert.match(server,/requiresApproval:true/);
   assert.match(server,/Observe first, recommend second, require approval before behavior changes\./);
   assert.match(server,/externalActionTaken:false,observationOnly:true/);
+  assert.match(server,/review_decision/);
 });
 
 test('Teach VAL UI exposes connected inbox and calendar observations for review',()=>{
@@ -46,11 +50,19 @@ test('Teach VAL UI exposes connected inbox and calendar observations for review'
   assert.match(dashboard,/function teachValScanSources/);
   assert.match(dashboard,/function teachValSourceInsightsHtml/);
   assert.match(dashboard,/function teachValImportSourceInsights/);
+  assert.match(dashboard,/function teachValUpdateSourceInsight/);
+  assert.match(dashboard,/function teachValSaveItemEdit/);
   assert.match(dashboard,/Connected Source Insights/);
   assert.match(dashboard,/Scan Email & Calendar/);
-  assert.match(dashboard,/Import To Teach VAL Review/);
+  assert.match(dashboard,/Import Approved\/Tweaked To Review/);
+  assert.match(dashboard,/Approve/);
+  assert.match(dashboard,/Save Tweak/);
+  assert.match(dashboard,/Reject/);
+  assert.match(dashboard,/sent checked/);
+  assert.match(dashboard,/Source coverage:/);
   assert.match(dashboard,/Observation only\. VAL will not send, archive, delete, invite, reschedule, or change behavior from this scan\./);
-  assert.match(dashboard,/Observe, suggest, approve, then learn/);
+  assert.match(dashboard,/Observe, edit, approve, reject, then learn/);
+  assert.match(dashboard,/teachValSourceInsightsHtml\(\)\+'<div><h2>ChatGPT Context Transfer/);
 });
 
 test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',()=>{
@@ -69,8 +81,9 @@ test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',
   assert.match(dashboard,/Paste Response/);
   assert.match(dashboard,/teach-val-prompt-icon/);
   assert.match(dashboard,/teach-val-prompt-label/);
-  assert.match(dashboard,/teach-val-prompt-btn\.active\{background:linear-gradient\(135deg,#5b21d6,#6d28d9\)!important/);
+  assert.match(dashboard,/teach-val-prompt-btn\.active\{\s*background:#fff7e8!important/);
   assert.match(dashboard,/html body \.exec-workspace-modal \.teach-val-stage \.teach-val-prompt-btn\.active/);
+  assert.doesNotMatch(dashboard,/teach-val-prompt-btn\.active\{background:linear-gradient\(135deg,#5b21d6,#6d28d9\)!important/);
   assert.match(dashboard,/teach-val-copy-status/);
   assert.match(dashboard,/teach-val-status-pill/);
   assert.match(dashboard,/footer:'<button class="alert-btn" onclick="closeExecutiveWorkspace/);

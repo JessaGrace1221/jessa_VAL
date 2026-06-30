@@ -3078,8 +3078,13 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
   const emails=Array.isArray(email.emails)?email.emails:[];
   const events=Array.isArray(calendar.calendarEvents)?calendar.calendarEvents:(Array.isArray(calendar.events)?calendar.events:[]);
   const insights=[];
+  const gmailProvider=email.providers?.gmail||{};
+  const outlookProvider=email.providers?.outlook||{};
+  const sentCount=Number(gmailProvider.sentCount||0)+Number(outlookProvider.sentCount||0);
+  const inboxCount=Number(gmailProvider.recentInboxCount||0)+Number(gmailProvider.unreadCount||0)+Number(outlookProvider.inboxCount||0);
   const classifications=topCounts(emails,e=>e.classification||'unclassified');
   const senders=topCounts(emails,senderKey).filter(x=>senderLabel(x.sample)!=='Unknown sender');
+  const sentEmails=emails.filter(e=>String(e.labels||[]).includes('SENT')||e.mailbox==='sent'||e.folder==='sent');
   const importantEmails=emails.filter(e=>['needs_attention','needs_reply','waiting_on_response','forward_to_team'].includes(e.classification));
   const lowEmails=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification));
   if(emails.length){
@@ -3091,6 +3096,19 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
       summary:`VAL reviewed ${valOsSourceSummary(emails,'recent email')} across connected inbox sources. ${importantEmails.length} appear to need judgment, reply, follow-up, or forwarding attention.`,
       confidence:0.9,
       evidence:emails.slice(0,5).map(e=>({subject:e.subject,from:senderLabel(e),classification:e.classification,date:e.date||e.receivedAt}))
+    }));
+  }
+  if(sentCount||sentEmails.length){
+    insights.push(valOsInsightItem({
+      layer:'observation',
+      type:'fact',
+      source:'email_sent',
+      title:'Sent mail follow-up window checked',
+      summary:`VAL checked ${sentCount||sentEmails.length} sent email${(sentCount||sentEmails.length)===1?'':'s'} where the provider made Sent available. Sent mail is used only to find possible open loops and response patterns, not to send or change anything.`,
+      confidence:0.88,
+      evidence:sentEmails.slice(0,5).map(e=>({subject:e.subject,to:(e.to||[]).map(t=>t.name||t.email).filter(Boolean).slice(0,3).join(', '),date:e.date||e.receivedAt,classification:e.classification})),
+      recommendation:'Use Sent as evidence for how the user actually follows up, but require user approval before treating it as a durable behavior.',
+      ruleDraft:{scope:'email',ruleType:'sent_follow_up_observation',trigger:{mailbox:'sent',older_than_business_days:3},actions:{suggest_follow_up_task:true,prepare_follow_up_draft:true,require_user_approval:true},requiresApproval:true}
     }));
   }
   senders.slice(0,5).forEach(row=>{
@@ -3223,7 +3241,7 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
     ok:true,
     generatedAt:new Date().toISOString(),
     architecture:{functions:VAL_OS_FUNCTIONS,layers:VAL_OS_LAYERS,principle:'Observe first, recommend second, require approval before behavior changes.'},
-    summary:{emailCount:emails.length,calendarEventCount:events.length,insightCount:insights.length,rulesReady},
+    summary:{emailCount:emails.length,calendarEventCount:events.length,insightCount:insights.length,rulesReady,sentCount,inboxCount,sourceBreakdown:{gmail:{inboxCount:gmailProvider.recentInboxCount||0,unreadCount:gmailProvider.unreadCount||0,sentCount:gmailProvider.sentCount||0},outlook:{inboxCount:outlookProvider.inboxCount||0,sentCount:outlookProvider.sentCount||0}}},
     facts:insights.filter(i=>i.type==='fact'),
     beliefs:insights.filter(i=>i.type==='belief'||i.type==='pattern'),
     behaviors:insights.filter(i=>i.type==='behavior'),
@@ -4628,7 +4646,19 @@ app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(
     if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
     const target=(await listTeachValImports(session.id)).find(i=>i.id===req.params.importId);
     if(!target)return res.status(404).json({ok:false,error:'Knowledge Card import not found.'});
-    target.extractedItems=(target.extractedItems||[]).map(item=>String(item.id)===String(req.params.itemId)?{...item,include_in_val:req.body.include_in_val!==false}:item);
+    target.extractedItems=(target.extractedItems||[]).map(item=>{
+      if(String(item.id)!==String(req.params.itemId))return item;
+      const next={...item};
+      if(req.body.include_in_val!==undefined)next.include_in_val=req.body.include_in_val!==false;
+      if(req.body.title!==undefined)next.title=String(req.body.title||'').slice(0,220);
+      if(req.body.summary!==undefined)next.summary=String(req.body.summary||'').slice(0,1500);
+      if(req.body.category!==undefined)next.category=String(req.body.category||'').slice(0,120);
+      next.data={...(next.data||{})};
+      if(req.body.user_note!==undefined)next.data.user_note=String(req.body.user_note||'').slice(0,1000);
+      if(req.body.review_decision!==undefined)next.data.reviewDecision=String(req.body.review_decision||'').slice(0,40);
+      next.data.reviewedAt=new Date().toISOString();
+      return next;
+    });
     target.reviewed=true;
     target.status='Reviewed';
     await saveTeachValImport(target);
@@ -5176,16 +5206,18 @@ async function emailIntelligencePayload(req,{force=false}={}){
     }
     const recentQuery=force?'in:inbox newer_than:14d':'in:inbox newer_than:14d';
     const unreadQuery='in:inbox is:unread newer_than:14d';
-    const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
+    const [recentGmail,unreadGmail,sentGmail,outlook,outlookSent]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
       fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
-      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'})),
+      fetchUnifiedOutlookSentEmails(Math.min(Math.max(limit,50),100)).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
     const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),3);
-    const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
+    const outlookWaiting=waitingOnResponseFromSent(outlookSent.emails||[],outlook.emails||[],3);
+    const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[]),...outlookWaiting]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
       const c=classifyEmail(email,rules);
       return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
@@ -5203,6 +5235,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)).length;
     const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error].filter(Boolean);
+    const outlookErrors=[outlook.error,outlookSent.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
     return {
@@ -5214,8 +5247,8 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
-      errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!(outlook.needsAuth||outlookSent.needsAuth),error:outlookErrors.join('; '),status:(outlook.needsAuth&&outlookSent.needsAuth)?'not_connected':'connected',inboxCount:(outlook.emails||[]).length,sentCount:(outlookSent.emails||[]).length}},
+      errors:[...gmailErrors,...outlookErrors,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeWindow:'14-day active conversations plus unresolved sent follow-ups'},
       rules
@@ -6600,6 +6633,15 @@ async function fetchUnifiedOutlookEmails(limit=20){
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
   return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
+}
+async function fetchUnifiedOutlookSentEmails(limit=20){
+  const token=await getMicrosoftToken();
+  if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
+  const url=`https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages?$top=${encodeURIComponent(limit)}&$orderby=sentDateTime desc&$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead`;
+  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+  const d=await readJsonResponse(r);
+  if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
+  return {emails:(d.value||[]).map(m=>({...normalizeOutlookMessage(m),mailbox:'sent',folder:'sent',labels:['SENT']})),needsAuth:false,provider:'outlook'};
 }
 
 function inboxCommandIntent(text=''){

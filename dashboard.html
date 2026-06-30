@@ -1318,10 +1318,8 @@ html,body{background:var(--cream)!important;color:var(--navy)!important;font-fam
 .teach-val-orb,.michele-voice-orb{background:radial-gradient(circle at 35% 30%,#ffffff,#27314f 48%,#101633 100%)!important;box-shadow:0 0 0 8px rgba(16,22,51,0.08),0 18px 48px rgba(16,22,51,0.16)!important}
 .teach-val-prompt-grid{gap:12px 14px!important}
 .teach-val-prompt-btn{background:#fff!important;border-color:rgba(16,22,51,0.12)!important;color:var(--navy)!important;border-radius:8px!important;box-shadow:var(--shadow-xs)!important}
-.teach-val-prompt-btn.active{background:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important;box-shadow:0 12px 24px rgba(109,40,217,.18)!important}
-html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active{background-color:#6d28d9!important;background-image:linear-gradient(135deg,#5b21d6,#6d28d9)!important;border-color:#6d28d9!important;color:#fff!important}
-html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active *{color:#fff!important}
-.teach-val-prompt-btn:hover{border-color:rgba(109,40,217,.35)!important;box-shadow:0 12px 28px rgba(16,22,51,.08)!important}
+.teach-val-prompt-btn.active{background:#fff7e8!important;border-color:var(--val-warm-border-strong)!important;color:var(--navy)!important;box-shadow:0 8px 20px rgba(16,22,51,.08)!important}
+.teach-val-prompt-btn:hover{border-color:var(--val-warm-border-strong)!important;box-shadow:0 12px 28px rgba(16,22,51,.08)!important}
 .teach-val-copy-status{background:#fff!important;border-color:rgba(16,22,51,.1)!important}
 .teach-val-status-pill{color:#166534!important}
 .teach-val-summary-card,.task-card,.exec-workspace-modal .task-card{background:#fff!important;border:1px solid rgba(16,22,51,0.1)!important;border-radius:8px!important;box-shadow:var(--shadow-sm)!important;color:var(--navy)!important}
@@ -1831,6 +1829,42 @@ html body .teach-val-prompt-btn:hover{
   background:#fff7e8!important;
   border-color:var(--val-warm-border-strong)!important;
   transform:none!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-grid{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr))!important;
+  gap:10px!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn{
+  width:100%!important;
+  min-height:58px!important;
+  background:#fff!important;
+  background-image:none!important;
+  border:1px solid rgba(7,24,45,.1)!important;
+  border-radius:8px!important;
+  box-shadow:0 1px 2px rgba(7,24,45,.04)!important;
+  color:var(--val-deep-navy)!important;
+  padding:10px 12px!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn *,
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active *{
+  color:var(--val-deep-navy)!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-prompt-btn.active{
+  background:#fff7e8!important;
+  background-image:none!important;
+  border-color:var(--val-warm-border-strong)!important;
+  color:var(--val-deep-navy)!important;
+  box-shadow:0 8px 20px rgba(7,24,45,.06)!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-source-card{
+  background:linear-gradient(135deg,#fffdf8,#fff3cf)!important;
+  border-color:rgba(201,154,61,.32)!important;
+}
+html body .exec-workspace-modal .teach-val-stage .teach-val-source-card h3{
+  font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;
+  font-size:1.72rem!important;
+  font-weight:700!important;
 }
 html body input,
 html body textarea,
@@ -6483,21 +6517,51 @@ function teachValScanSources(force){
 function teachValInsightEvidenceLine(ev){
   return String((ev&&ev.subject)||(ev&&ev.title)||(ev&&ev.from)||(ev&&ev.start)||(ev&&ev.date)||'Supporting evidence available.').slice(0,140);
 }
+function teachValSourceInsightStatus(item){
+  var d=item&&item.data&&item.data.reviewDecision;
+  if(item&&item.include_in_val===false)return 'Rejected';
+  if(d==='approved')return 'Approved';
+  if(d==='edited')return 'Tweaked';
+  return 'Needs review';
+}
+function teachValSourceInsightGroup(type){
+  var list=(teachValSourceInsights&&teachValSourceInsights.insights)||[];
+  return list.map(function(item,index){return {item:item,index:index};}).filter(function(row){
+    if(type==='fact')return row.item.type==='fact';
+    if(type==='belief')return row.item.type==='belief'||row.item.type==='pattern';
+    return row.item.type===type;
+  });
+}
+function teachValUpdateSourceInsight(index,decision){
+  if(!teachValSourceInsights||!teachValSourceInsights.insights||!teachValSourceInsights.insights[index])return;
+  var item=teachValSourceInsights.insights[index];
+  var title=document.getElementById('teachValInsightTitle'+index);
+  var summary=document.getElementById('teachValInsightSummary'+index);
+  var note=document.getElementById('teachValInsightNote'+index);
+  item.title=title?title.value:item.title;
+  item.summary=summary?summary.value:item.summary;
+  item.data=item.data||{};
+  if(note)item.data.user_note=note.value;
+  item.data.reviewDecision=decision;
+  item.include_in_val=decision!=='rejected';
+  teachValRender();
+}
 function teachValInsightListHtml(items){
   items=items||[];
   if(!items.length)return '<div class="task-empty">Nothing in this group yet.</div>';
-  return '<div class="dashboard-studio-history">'+items.slice(0,8).map(function(item){
+  return '<div class="dashboard-studio-history">'+items.slice(0,8).map(function(row,localIndex){
+    var item=row.item||row, index=row.index!==undefined?row.index:localIndex;
     var evidence=((item.data&&item.data.evidence)||[]).slice(0,3).map(function(ev){return docSafe(teachValInsightEvidenceLine(ev));}).join('<br>');
     var rule=item.data&&item.data.ruleDraft?'<div class="email-reason"><strong>Suggested behavior:</strong> Approval required before this changes how VAL acts.</div>':'';
-    return '<div class="email-card"><div style="display:flex;justify-content:space-between;gap:12px"><h3>'+docSafe(item.title||'VAL insight')+'</h3><span class="email-pill">'+Math.round(Number(item.confidence||0)*100)+'%</span></div><p>'+docSafe(item.summary||'')+'</p>'+(item.data&&item.data.recommendation?'<div class="email-reason"><strong>Suggestion:</strong> '+docSafe(item.data.recommendation)+'</div>':'')+(evidence?'<div class="email-reason"><strong>Evidence:</strong><br>'+evidence+'</div>':'')+rule+'</div>';
+    return '<div class="email-card teach-val-reviewable-insight '+(item.include_in_val===false?'is-rejected':'')+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3>'+docSafe(item.title||'VAL insight')+'</h3><span class="email-pill">'+docSafe(teachValSourceInsightStatus(item))+' · '+Math.round(Number(item.confidence||0)*100)+'%</span></div><label>What VAL thinks<input id="teachValInsightTitle'+index+'" value="'+docSafe(item.title||'VAL insight')+'"></label><label>What this means<textarea id="teachValInsightSummary'+index+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Your correction<textarea id="teachValInsightNote'+index+'" rows="2" placeholder="Optional: fix a name, school, priority, relationship, or what VAL misunderstood.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label>'+(item.data&&item.data.recommendation?'<div class="email-reason"><strong>Suggestion:</strong> '+docSafe(item.data.recommendation)+'</div>':'')+(evidence?'<div class="email-reason"><strong>Evidence:</strong><br>'+evidence+'</div>':'')+rule+'<div class="email-actions"><button class="primary" onclick="teachValUpdateSourceInsight('+index+',\'approved\')">Approve</button><button onclick="teachValUpdateSourceInsight('+index+',\'edited\')">Save Tweak</button><button onclick="teachValUpdateSourceInsight('+index+',\'rejected\')">Reject</button></div></div>';
   }).join('')+'</div>';
 }
 function teachValSourceInsightsHtml(){
   var d=teachValSourceInsights, summary=d&&d.summary||{};
   if(!d){
-    return '<section class="exec-card" style="grid-column:1/-1"><h3>Connected Source Insights</h3><p>Let VAL observe connected inbox and calendar sources, then show you Facts, Beliefs, Behaviors, and Skills before anything becomes memory or a rule.</p><div class="email-reason">Observation only. VAL will not send, archive, delete, invite, reschedule, or change behavior from this scan.</div><div class="email-actions"><button class="primary" onclick="teachValScanSources(true)">Scan Email & Calendar</button><span id="teachValSourceInsightStatus" class="email-reason">Ready to scan connected sources.</span></div></section>';
+    return '<section class="exec-card teach-val-source-card" style="grid-column:1/-1"><h3>Connected Source Insights</h3><p>Let VAL observe connected inbox and calendar sources, then show you Facts, Beliefs, Behaviors, and Skills before anything becomes memory or a rule.</p><div class="email-reason">Observation only. VAL will not send, archive, delete, invite, reschedule, or change behavior from this scan.</div><div class="email-actions"><button class="primary" onclick="teachValScanSources(true)">Scan Email & Calendar</button><span id="teachValSourceInsightStatus" class="email-reason">Ready to scan connected sources.</span></div></section>';
   }
-  return '<section class="exec-card" style="grid-column:1/-1"><h3>Connected Source Insights</h3><p>VAL scanned connected sources and separated observations from behavior. Behaviors still require your approval.</p><div class="teach-val-summary-grid"><div class="teach-val-summary-card"><strong>'+docSafe(summary.emailCount||0)+'</strong><span>emails</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.calendarEventCount||0)+'</strong><span>calendar events</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.insightCount||0)+'</strong><span>insights</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.rulesReady||0)+'</strong><span>suggestions</span></div></div><div class="email-actions"><button class="primary" onclick="teachValImportSourceInsights()">Import To Teach VAL Review</button><button onclick="teachValScanSources(true)">Rescan</button><span id="teachValSourceInsightStatus" class="email-reason">Observe, suggest, approve, then learn.</span></div><h3>Facts</h3>'+teachValInsightListHtml(d.facts)+'<h3>Beliefs</h3>'+teachValInsightListHtml(d.beliefs)+'<h3>Suggested Behaviors</h3>'+teachValInsightListHtml(d.behaviors)+'<h3>Skills</h3>'+teachValInsightListHtml(d.skills)+'</section>';
+  return '<section class="exec-card teach-val-source-card" style="grid-column:1/-1"><h3>Connected Source Insights</h3><p>VAL scanned connected sources and separated observations from behavior. Edit, approve, or reject each item before it becomes Teach VAL review memory.</p><div class="teach-val-summary-grid"><div class="teach-val-summary-card"><strong>'+docSafe(summary.emailCount||0)+'</strong><span>email signals</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.sentCount||0)+'</strong><span>sent checked</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.calendarEventCount||0)+'</strong><span>calendar events</span></div><div class="teach-val-summary-card"><strong>'+docSafe(summary.insightCount||0)+'</strong><span>insights</span></div></div><div class="email-reason"><strong>Source coverage:</strong> Inbox '+docSafe(summary.inboxCount||0)+' · Sent '+docSafe(summary.sentCount||0)+' · Calendar '+docSafe(summary.calendarEventCount||0)+'. Observation only; no email or calendar changes happen here.</div><div class="email-actions"><button class="primary" onclick="teachValImportSourceInsights()">Import Approved/Tweaked To Review</button><button onclick="teachValScanSources(true)">Rescan</button><span id="teachValSourceInsightStatus" class="email-reason">Observe, edit, approve, reject, then learn.</span></div><h3>Facts</h3>'+teachValInsightListHtml(teachValSourceInsightGroup('fact'))+'<h3>Beliefs</h3>'+teachValInsightListHtml(teachValSourceInsightGroup('belief'))+'<h3>Suggested Behaviors</h3>'+teachValInsightListHtml(teachValSourceInsightGroup('behavior'))+'<h3>Skills</h3>'+teachValInsightListHtml(teachValSourceInsightGroup('skill'))+'</section>';
 }
 function teachValImportSourceInsights(){
   if(!teachValOnboarding||!teachValOnboarding.session){addSys('Open Teach VAL About You first.');return;}
@@ -6753,13 +6817,22 @@ function teachValSaveKnowledgeCard(category){
 function teachValExtractedItemsHtml(imp){
   if(!imp||!(imp.extractedItems||[]).length)return '<div class="task-empty">No extracted items yet.</div>';
   return '<div class="dashboard-studio-history">'+(imp.extractedItems||[]).map(function(item){
-    return '<div class="email-card"><div style="display:flex;justify-content:space-between;gap:12px"><h3>'+docSafe(item.title||'Memory item')+'</h3><label style="white-space:nowrap"><input type="checkbox" '+(item.include_in_val!==false?'checked':'')+' onchange="teachValToggleItem(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',this.checked)"> Include</label></div><p>'+docSafe(item.summary||'')+'</p><div class="email-reason">Category: '+docSafe(item.category||imp.category)+' · Confidence: '+docSafe(item.confidence||'')+' · Source: '+docSafe(item.source||'external_ai_import')+'</div></div>';
+    var key=String(imp.id||'')+'_'+String(item.id||'').replace(/[^a-z0-9_-]/gi,'');
+    return '<div class="email-card '+(item.include_in_val===false?'is-rejected':'')+'"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><h3>'+docSafe(item.title||'Memory item')+'</h3><label style="white-space:nowrap"><input type="checkbox" '+(item.include_in_val!==false?'checked':'')+' onchange="teachValToggleItem(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',this.checked)"> Include</label></div><label>Title<input id="teachValReviewTitle'+docSafe(key)+'" value="'+docSafe(item.title||'Memory item')+'"></label><label>Summary<textarea id="teachValReviewSummary'+docSafe(key)+'" rows="3">'+docSafe(item.summary||'')+'</textarea></label><label>Note for VAL<textarea id="teachValReviewNote'+docSafe(key)+'" rows="2" placeholder="Optional correction or context.">'+docSafe((item.data&&item.data.user_note)||'')+'</textarea></label><div class="email-reason">Category: '+docSafe(item.category||imp.category)+' · Confidence: '+docSafe(item.confidence||'')+' · Source: '+docSafe(item.source||'external_ai_import')+'</div><div class="email-actions"><button class="primary" onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Approve</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',true)">Save Tweak</button><button onclick="teachValSaveItemEdit(\''+docSafe(imp.id)+'\',\''+docSafe(item.id)+'\',\''+docSafe(key)+'\',false)">Reject</button></div></div>';
   }).join('')+'</div>';
 }
 function teachValToggleItem(importId,itemId,include){
   apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/imports/'+encodeURIComponent(importId)+'/items/'+encodeURIComponent(itemId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_in_val:!!include})})
     .then(function(data){teachValOnboarding=data;teachValRender();})
     .catch(function(e){addSys('Could not update onboarding card: '+e.message);});
+}
+function teachValSaveItemEdit(importId,itemId,key,include){
+  var title=document.getElementById('teachValReviewTitle'+key);
+  var summary=document.getElementById('teachValReviewSummary'+key);
+  var note=document.getElementById('teachValReviewNote'+key);
+  apiFetch(PROXY+'/api/teach-val/onboarding/'+encodeURIComponent(teachValOnboarding.session.id)+'/imports/'+encodeURIComponent(importId)+'/items/'+encodeURIComponent(itemId),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_in_val:!!include,title:title?title.value:'',summary:summary?summary.value:'',user_note:note?note.value:'',review_decision:include?'approved':'rejected'})})
+    .then(function(data){teachValOnboarding=data;teachValRender();})
+    .catch(function(e){addSys('Could not save Teach VAL correction: '+e.message);});
 }
 function teachValReview(){
   teachValSetStage('review');
@@ -6823,7 +6896,7 @@ function teachValPromptStageHtml(){
   if(!teachValActiveCategory)teachValActiveCategory=card.category;
   var nav='<div class="teach-val-prompt-grid">'+cards.map(function(c){var imported=teachValImportFor(c.category);return '<button class="teach-val-prompt-btn '+(teachValActiveCategory===c.category?'active':'')+'" onclick="teachValOpenPrompt(\''+docSafe(c.category)+'\')">'+teachValCategoryIcon(c.category)+'<span><span class="teach-val-prompt-label">'+docSafe(c.title)+'</span><span class="teach-val-prompt-status">'+(imported?'Imported':'Not started')+'</span></span></button>';}).join('')+'</div>';
   var extracted=imp&&imp.extractedItems&&imp.extractedItems.length?'<div class="exec-card"><h3>Imported & Extracted</h3><p>VAL found '+imp.extractedItems.length+' item'+(imp.extractedItems.length===1?'':'s')+' from this response.</p>'+teachValExtractedItemsHtml(imp)+'<div class="teach-val-action-row"><button class="alert-btn primary" onclick="teachValReview()">Review Extracted Memory</button></div></div>':'';
-  return '<main class="teach-val-stage"><div><h2>ChatGPT Context Transfer</h2><p>Use these guided prompts with ChatGPT or Claude, then paste the answer back here. VAL will organize the response into memory cards you can review before saving.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon(card.category)+'<span>'+docSafe(card.title)+'</span></h3><p>Copy this prompt into the AI that already knows you.</p><div class="teach-val-prompt-box">'+docSafe(card.prompt||'')+'</div><div class="teach-val-card-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><div id="teachValPromptCopyStatus" class="teach-val-copy-status">'+teachValCategoryIcon('things_to_remember')+'<span>Ready to copy.</span></div></div><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon('opportunities')+'<span>Paste Response</span></h3><p>VAL will extract useful memory from the answer. You can edit or exclude anything later.</p><textarea id="teachValRawResponse" class="teach-val-response-box" placeholder="Paste the response from ChatGPT or Claude here...">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="teach-val-card-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="teach-val-status-pill">'+docSafe((imp&&imp.status)||'Ready')+'</span></div></div></div>'+teachValSourceInsightsHtml()+teachValTranscriptUploadHtml()+extracted+'</main>';
+  return '<main class="teach-val-stage">'+teachValSourceInsightsHtml()+'<div><h2>ChatGPT Context Transfer</h2><p>Use these guided prompts with ChatGPT or Claude, then paste the answer back here. VAL will organize the response into memory cards you can review before saving.</p></div>'+nav+'<div class="teach-val-two"><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon(card.category)+'<span>'+docSafe(card.title)+'</span></h3><p>Copy this prompt into the AI that already knows you.</p><div class="teach-val-prompt-box">'+docSafe(card.prompt||'')+'</div><div class="teach-val-card-actions"><button id="teachValCopyPromptBtn" class="primary" onclick="teachValCopyActivePrompt()">Copy Prompt</button></div><div id="teachValPromptCopyStatus" class="teach-val-copy-status">'+teachValCategoryIcon('things_to_remember')+'<span>Ready to copy.</span></div></div><div class="exec-card"><h3 class="teach-val-card-title">'+teachValCategoryIcon('opportunities')+'<span>Paste Response</span></h3><p>VAL will extract useful memory from the answer. You can edit or exclude anything later.</p><textarea id="teachValRawResponse" class="teach-val-response-box" placeholder="Paste the response from ChatGPT or Claude here...">'+docSafe((imp&&imp.rawResponse)||'')+'</textarea><div class="teach-val-card-actions"><button class="primary" onclick="teachValSaveKnowledgeCard(\''+docSafe(card.category)+'\')">Import Response</button><button onclick="teachValReview()">Review Memory</button><span id="teachValCardStatus" class="teach-val-status-pill">'+docSafe((imp&&imp.status)||'Ready')+'</span></div></div></div>'+teachValTranscriptUploadHtml()+extracted+'</main>';
 }
 function teachValReviewStageHtml(){
   var st=teachValStepState(), imports=(teachValOnboarding&&teachValOnboarding.imports)||[], categoryCounts={};
@@ -6842,7 +6915,7 @@ function teachValRender(){
   var stageHtml=current==='complete'?teachValCompleteStageHtml():(current==='review'?teachValReviewStageHtml():(current==='welcome'?teachValWelcomeStageHtml():teachValPromptStageHtml()));
   el.innerHTML='<div class="teach-val-shell">'+teachValRailHtml(current)+stageHtml+'</div>';
 }
-Object.assign(window,{openTeachValOnboarding:openTeachValOnboarding,startOnboardingProfile:startOnboardingProfile,teachValStart:teachValStart,teachValStartUpdate:teachValStartUpdate,teachValStartOver:teachValStartOver,teachValSetStage:teachValSetStage,teachValStartVoiceInterview:teachValStartVoiceInterview,teachValPauseVoiceInterview:teachValPauseVoiceInterview,teachValStopVoiceInterview:teachValStopVoiceInterview,teachValRecordVoiceAnswer:teachValRecordVoiceAnswer,teachValStopVoiceAnswer:teachValStopVoiceAnswer,teachValSendVoiceAnswer:teachValSendVoiceAnswer,teachValSaveInterview:teachValSaveInterview,teachValOpenPrompt:teachValOpenPrompt,teachValCopyActivePrompt:teachValCopyActivePrompt,teachValSaveKnowledgeCard:teachValSaveKnowledgeCard,teachValReview:teachValReview,teachValToggleItem:teachValToggleItem,teachValCommit:teachValCommit,teachValLoadVoiceStatus:teachValLoadVoiceStatus,teachValTestVoice:teachValTestVoice,teachValScanSources:teachValScanSources,teachValImportSourceInsights:teachValImportSourceInsights});
+Object.assign(window,{openTeachValOnboarding:openTeachValOnboarding,startOnboardingProfile:startOnboardingProfile,teachValStart:teachValStart,teachValStartUpdate:teachValStartUpdate,teachValStartOver:teachValStartOver,teachValSetStage:teachValSetStage,teachValStartVoiceInterview:teachValStartVoiceInterview,teachValPauseVoiceInterview:teachValPauseVoiceInterview,teachValStopVoiceInterview:teachValStopVoiceInterview,teachValRecordVoiceAnswer:teachValRecordVoiceAnswer,teachValStopVoiceAnswer:teachValStopVoiceAnswer,teachValSendVoiceAnswer:teachValSendVoiceAnswer,teachValSaveInterview:teachValSaveInterview,teachValOpenPrompt:teachValOpenPrompt,teachValCopyActivePrompt:teachValCopyActivePrompt,teachValSaveKnowledgeCard:teachValSaveKnowledgeCard,teachValReview:teachValReview,teachValToggleItem:teachValToggleItem,teachValSaveItemEdit:teachValSaveItemEdit,teachValUpdateSourceInsight:teachValUpdateSourceInsight,teachValCommit:teachValCommit,teachValLoadVoiceStatus:teachValLoadVoiceStatus,teachValTestVoice:teachValTestVoice,teachValScanSources:teachValScanSources,teachValImportSourceInsights:teachValImportSourceInsights});
 
 // ── COPY ───────────────────────────────────────────────
 function copyMsg(text,btn){
