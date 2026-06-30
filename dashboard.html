@@ -767,55 +767,34 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 @keyframes meetingPulse{0%,100%{box-shadow:0 0 0 0 rgba(26,122,74,0.4)}50%{box-shadow:0 0 0 6px rgba(26,122,74,0)}}
 
 /* ── GENERAL CHAT OVERLAY ── */
-.gchat-overlay{
-  position:fixed;inset:0;background:rgba(27,43,69,0.7);
-  z-index:2000;display:flex;align-items:center;justify-content:center;
-  animation:fadeIn 0.2s;backdrop-filter:blur(8px);
-}
-.gchat-modal{
-  width:720px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;
-  background:var(--cream);border-radius:18px;
-  box-shadow:0 24px 80px rgba(27,43,69,0.35);
-  display:flex;flex-direction:column;overflow:hidden;
-  animation:popIn 0.28s var(--spring);
-}
-.gchat-header{
-  padding:14px 18px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
-  background:var(--navy);
-}
-.gchat-title{
-  font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;
-  display:flex;align-items:center;gap:8px;
-}
-.gchat-title::before{content:'✦';color:var(--gold);font-size:0.5rem}
-.gchat-close{
-  background:none;border:none;color:rgba(255,255,255,0.5);
-  cursor:pointer;font-size:20px;padding:0;line-height:1;transition:color 0.2s;
-}
-.gchat-close:hover{color:white}
-.gchat-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;}
-.gchat-messages::-webkit-scrollbar{width:3px}
-.gchat-messages::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:2px}
-.gchat-input-row{
-  padding:12px 16px;border-top:1px solid var(--border);
-  display:flex;align-items:flex-end;gap:8px;flex-shrink:0;background:white;
-}
-.gchat-input{
-  flex:1;border:1px solid var(--border-2);border-radius:10px;
-  padding:10px 14px;font-size:14px;font-family:var(--body);color:var(--text);
-  resize:none;height:42px;max-height:120px;outline:none;
-  transition:border 0.2s;line-height:1.5;
-}
-.gchat-input:focus{border-color:var(--gold)}
-.gchat-send{
-  width:38px;height:38px;border-radius:9px;border:none;
-  background:var(--navy);color:white;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  transition:all 0.2s;
-}
-.gchat-send:hover{background:var(--navy-2);transform:scale(1.05)}
-.gchat-send svg{width:16px;height:16px}
+.gchat-overlay{position:fixed;inset:0;background:rgba(7,18,32,.54);z-index:2400;display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn .18s;backdrop-filter:blur(10px)}
+.gchat-modal{width:min(940px,calc(100vw - 40px));height:min(760px,calc(100dvh - 48px));background:#fbfaf7;border:1px solid rgba(7,24,45,.12);border-radius:10px;box-shadow:0 28px 90px rgba(7,24,45,.34);display:grid;grid-template-columns:190px minmax(0,1fr);overflow:hidden;animation:popIn .22s var(--spring)}
+.gchat-sidebar{background:#111d30;color:#f8fafc;padding:14px;overflow:auto;border-right:1px solid rgba(255,255,255,.08)}
+.gchat-new{width:100%;height:38px;border:1px solid rgba(255,255,255,.24);border-radius:8px;background:transparent;color:#fff;font-weight:800;cursor:pointer}
+.gchat-threads{margin-top:12px;font-size:12px}
+.gchat-thread{display:block;width:100%;text-align:left;padding:9px 10px;margin:5px 0;border:0;border-radius:7px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gchat-thread.active{background:rgba(196,150,58,.28)}
+.gchat-empty{opacity:.62;padding:8px;line-height:1.4}
+.gchat-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.gchat-header{padding:15px 18px;border-bottom:1px solid #dfe4e9;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0;background:#111d30;color:#fff}
+.gchat-title{font-family:var(--serif);font-size:1.18rem;font-weight:650;color:#fff;display:flex;align-items:center;gap:8px;min-width:0}
+.gchat-title:before{content:'✦';color:#c4963a;font-size:.62rem}
+.gchat-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gchat-title button{border:0;background:transparent;color:#f2cf89;font-weight:800;cursor:pointer;padding:4px 6px}
+.gchat-context{font:700 11px var(--body);opacity:.72}
+.gchat-close{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.04);color:rgba(255,255,255,.72);cursor:pointer;font-size:18px;line-height:1}
+.gchat-close:hover{color:#fff;background:rgba(255,255,255,.08)}
+.gchat-messages{flex:1;min-height:0;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:8px;background:#f5f7f9}
+.gchat-messages::-webkit-scrollbar{width:4px}.gchat-messages::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:2px}
+.gchat-quick-actions{padding:11px 18px;display:flex;gap:8px;flex-wrap:wrap;background:#fff;border-top:1px solid #dfe4e9}
+.gchat-quick-actions button{border:1px solid rgba(17,24,39,.16);background:#fff;color:#172740;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer}
+.gchat-quick-actions button:first-child{background:#fff7df;border-color:rgba(196,150,58,.36)}
+.gchat-input-row{padding:14px 18px;border-top:1px solid #dfe4e9;display:flex;align-items:flex-end;gap:9px;flex-shrink:0;background:#fff}
+.gchat-input{flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:11px 13px;font-size:15px;font-family:var(--body);color:#111827;resize:none;height:44px;max-height:124px;outline:none;line-height:1.5;background:#fff}
+.gchat-input:focus{border-color:#c4963a;box-shadow:0 0 0 3px rgba(196,150,58,.12)}
+.gchat-send{width:44px;height:44px;border-radius:8px;border:0;background:#07182d;color:white;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.18s}
+.gchat-send:hover{background:#142943;transform:translateY(-1px)}.gchat-send svg{width:17px;height:17px}
+@media(max-width:760px){.gchat-overlay{padding:10px}.gchat-modal{width:100%;height:calc(100dvh - 20px);grid-template-columns:1fr}.gchat-sidebar{display:none}.gchat-messages{padding:15px}.gchat-header{padding:13px 14px}.gchat-quick-actions{padding:9px 12px}.gchat-input-row{padding:12px}}
 
 /* ── SOCIAL POST PANEL ── */
 .social-overlay{
@@ -1601,11 +1580,11 @@ html body .val-primary-nav{
 .val-presence-icon{width:42px!important;height:42px!important;border-radius:999px!important;display:grid!important;place-items:center!important;background:#07182d!important;color:#fff!important;font-size:1.12rem!important;font-weight:900!important}
 .val-presence-btn.meeting .val-presence-icon{background:#c4963a!important;color:#07182d!important}
 .val-presence-btn strong{display:block!important;font-size:1rem!important;line-height:1.15!important;color:#07182d!important}.val-presence-btn small{display:block!important;margin-top:5px!important;font-size:.82rem!important;line-height:1.35!important;color:#657083!important}
-.val-home-chat{max-width:1080px!important;margin:14px auto 0!important;height:74px!important;border-radius:999px!important;border:1px solid rgba(7,24,45,.09)!important;background:rgba(255,255,255,.92)!important;box-shadow:0 16px 44px rgba(7,24,45,.08)!important;display:grid!important;grid-template-columns:40px minmax(0,1fr) 54px!important;align-items:center!important;gap:12px!important;padding:0 15px 0 30px!important}
-.val-home-chat>span{color:#9ca8ba!important;font-size:1.35rem!important}.val-home-chat button{border:0!important;background:transparent!important;text-align:left!important;color:#8a93a3!important;font-size:1rem!important}.val-home-send{width:48px!important;height:48px!important;border-radius:999px!important;background:#d7b072!important;color:#fff!important;text-align:center!important;font-size:1.45rem!important;font-weight:900!important}
+.val-home-chat{max-width:1080px!important;margin:14px auto 0!important;min-height:74px!important;border-radius:8px!important;border:1px solid rgba(7,24,45,.09)!important;background:rgba(255,255,255,.94)!important;box-shadow:0 16px 44px rgba(7,24,45,.08)!important;display:grid!important;grid-template-columns:40px minmax(0,1fr) auto!important;align-items:center!important;gap:12px!important;padding:13px 15px 13px 24px!important}
+.val-home-chat>span{color:#c4963a!important;font-size:1.25rem!important}.val-home-chat button{border:0!important;background:transparent!important;text-align:left!important;color:#334155!important;font-size:1rem!important;font-weight:650!important}.val-home-send{min-width:106px!important;height:42px!important;border-radius:7px!important;background:#07182d!important;color:#fff!important;text-align:center!important;font-size:.72rem!important;font-weight:900!important;letter-spacing:.07em!important;text-transform:uppercase!important;padding:0 16px!important}
 .cmd-area{display:none!important}
-.val-talk-button{position:fixed!important;right:34px!important;bottom:28px!important;width:94px!important;height:94px!important;border-radius:999px!important;border:0!important;background:#07182d!important;color:#fff!important;display:grid!important;place-items:center!important;gap:2px!important;box-shadow:0 18px 44px rgba(7,24,45,.28)!important;z-index:80!important;font-size:.72rem!important;font-weight:700!important}
-.val-talk-button span{width:28px!important;height:24px!important;border:2px solid #fff!important;border-radius:999px!important;position:relative!important}.val-talk-button span:after{content:""!important;position:absolute!important;left:4px!important;bottom:-6px!important;border-top:7px solid #fff!important;border-right:7px solid transparent!important}
+.val-talk-button{position:fixed!important;right:34px!important;bottom:28px!important;min-width:142px!important;height:46px!important;border-radius:8px!important;border:1px solid rgba(7,24,45,.12)!important;background:#07182d!important;color:#fff!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;box-shadow:0 18px 44px rgba(7,24,45,.24)!important;z-index:80!important;font-size:.72rem!important;font-weight:900!important;letter-spacing:.07em!important;text-transform:uppercase!important;padding:0 16px!important}
+.val-talk-button span{width:9px!important;height:9px!important;border:0!important;border-radius:999px!important;background:#c4963a!important;box-shadow:0 0 0 5px rgba(196,150,58,.18)!important;position:relative!important}.val-talk-button span:after{content:none!important}
 .val-mobile-nav-floating{display:none!important}
 .val-transcript-view.open,.center-detail.open{z-index:90!important}
 @media(max-width:1180px){
@@ -1625,7 +1604,7 @@ html body .val-primary-nav{
   .val-home-hero h1{font-size:2.15rem!important}.val-home-hero p{font-size:.98rem!important}.val-hero-note{display:none!important}
   .val-dashboard-grid{grid-template-columns:1fr!important}.val-dash-card{min-height:auto!important;padding:18px!important}
   .val-presence-actions{grid-template-columns:1fr!important;gap:10px!important;margin-top:16px!important}.val-presence-btn{min-height:72px!important;padding:13px 15px!important;grid-template-columns:34px minmax(0,1fr)!important}.val-presence-icon{width:34px!important;height:34px!important;font-size:.98rem!important}
-  .val-home-chat{height:64px!important;grid-template-columns:24px minmax(0,1fr) 44px!important;padding-left:18px!important}.val-talk-button{width:62px!important;height:62px!important;right:14px!important;bottom:14px!important;font-size:0!important;gap:0!important}.val-talk-button span{width:24px!important;height:20px!important}
+  .val-home-chat{min-height:64px!important;grid-template-columns:24px minmax(0,1fr) auto!important;padding-left:18px!important}.val-home-send{min-width:72px!important;height:38px!important;padding:0 10px!important;font-size:.64rem!important}.val-talk-button{min-width:112px!important;height:42px!important;right:14px!important;bottom:14px!important;font-size:.62rem!important}.val-talk-button span{width:8px!important;height:8px!important}
   .val-signal{display:none!important}
 }
 </style>
@@ -7830,24 +7809,24 @@ function openGeneralChat(opts){
   if(document.getElementById('gchatOverlay')){document.getElementById('gchatOverlay').remove();return;}
   var el=document.createElement('div');
   el.id='gchatOverlay';
-  el.style.cssText='position:fixed;inset:0;background:rgba(27,43,69,0.75);z-index:2000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s;backdrop-filter:blur(8px);';
+  el.className='gchat-overlay';
   el.innerHTML=
-    '<div style="width:960px;max-width:calc(100vw - 32px);height:80vh;max-height:760px;background:var(--cream);border-radius:18px;box-shadow:0 24px 80px rgba(27,43,69,0.35);display:flex;overflow:hidden;animation:popIn 0.28s var(--spring);">'
-      +'<aside style="width:230px;background:#132238;color:white;padding:14px;overflow:auto;flex-shrink:0;"><button onclick="gchatNew()" style="width:100%;padding:9px;border:1px solid rgba(255,255,255,.25);border-radius:8px;background:transparent;color:white;cursor:pointer;">+ New chat</button><div id="gchatThreads" style="margin-top:12px;font-size:12px;"></div></aside>'
-      +'<div style="display:flex;flex-direction:column;min-width:0;flex:1;">'
-      +'<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--navy);flex-shrink:0;">'
-        +'<div style="font-family:var(--serif);font-size:1.1rem;font-weight:600;color:white;display:flex;align-items:center;gap:8px;"><span style="color:var(--gold);font-size:0.5rem;">✦</span><span id="gchatTitle">'+docSafe(gchatConversationTitle)+'</span><span id="gchatContextLabel" style="font:11px var(--body);opacity:.75;"></span><button onclick="gchatRename()" title="Rename conversation" style="background:none;border:0;color:#f8d98b;cursor:pointer;">Rename</button></div>'
-        +'<button onclick="document.getElementById(\'gchatOverlay\').remove()" style="background:none;border:none;color:rgba(255,255,255,0.5);cursor:pointer;font-size:20px;padding:0;line-height:1;transition:color 0.2s;" onmouseover="this.style.color=\'white\'" onmouseout="this.style.color=\'rgba(255,255,255,0.5)\'">✕</button>'
+    '<div class="gchat-modal" role="dialog" aria-modal="true" aria-label="Talk to VAL">'
+      +'<aside class="gchat-sidebar"><button class="gchat-new" onclick="gchatNew()">+ New chat</button><div id="gchatThreads" class="gchat-threads"></div></aside>'
+      +'<div class="gchat-main">'
+      +'<div class="gchat-header">'
+        +'<div class="gchat-title"><span id="gchatTitle">'+docSafe(gchatConversationTitle)+'</span><span id="gchatContextLabel" class="gchat-context"></span><button onclick="gchatRename()" title="Rename conversation">Rename</button></div>'
+        +'<button class="gchat-close" onclick="document.getElementById(\'gchatOverlay\').remove()" aria-label="Close chat">×</button>'
       +'</div>'
-      +'<div id="gchatMessages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;"></div>'
-      +'<div id="gchatQuickActions" style="padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap;background:white;border-top:1px solid rgba(203,213,225,.55);">'
-        +'<button onclick="gchatStartPlatformTour()" style="border:1px solid var(--border-2);background:#fff7df;color:#172740;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer;">Walk me through VAL</button>'
-        +'<button onclick="gchatAskNextBestMove()" style="border:1px solid var(--border-2);background:white;color:#172740;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer;">What is my next best move?</button>'
-        +'<button onclick="startVoiceChatMode()" style="border:1px solid var(--border-2);background:white;color:#172740;border-radius:999px;padding:8px 11px;font-size:12px;font-weight:800;cursor:pointer;">Switch to voice</button>'
+      +'<div id="gchatMessages" class="gchat-messages"></div>'
+      +'<div id="gchatQuickActions" class="gchat-quick-actions">'
+        +'<button onclick="gchatStartPlatformTour()">Walk me through VAL</button>'
+        +'<button onclick="gchatAskNextBestMove()">What is my next best move?</button>'
+        +'<button onclick="startVoiceChatMode()">Switch to voice</button>'
       +'</div>'
-      +'<div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;background:white;flex-shrink:0;">'
-        +'<textarea id="gchatInput" placeholder="Ask VAL anything — coding, strategy, writing, research..." style="flex:1;border:1px solid var(--border-2);border-radius:10px;padding:10px 14px;font-size:14px;font-family:var(--body);color:var(--text);resize:none;height:42px;max-height:120px;outline:none;transition:border 0.2s;line-height:1.5;" onkeydown="gchatKey(event)" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,120)+\'px\'"></textarea>'
-        +'<button onclick="gchatSend()" style="width:38px;height:38px;border-radius:9px;border:none;background:var(--navy);color:white;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;" onmouseover="this.style.background=\'var(--navy-2)\'" onmouseout="this.style.background=\'var(--navy)\'">'
+      +'<div class="gchat-input-row">'
+        +'<textarea id="gchatInput" class="gchat-input" placeholder="Ask VAL anything..." onkeydown="gchatKey(event)" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,124)+\'px\'"></textarea>'
+        +'<button class="gchat-send" onclick="gchatSend()" aria-label="Send message">'
           +'<svg fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"/></svg>'
         +'</button>'
       +'</div>'
@@ -7878,7 +7857,7 @@ function gchatUpdateContextLabel(){var el=document.getElementById('gchatContextL
 function gchatLoadThreads(){
   apiFetch(CONVERSATION_HOOK+'?limit=30').then(function(rows){
     rows=Array.isArray(rows)?rows:[];var el=document.getElementById('gchatThreads');if(!el)return;
-    el.innerHTML=rows.length?rows.map(function(c){return '<button onclick="gchatOpenThread(\''+docSafe(c.id)+'\')" style="display:block;width:100%;text-align:left;padding:8px;margin:4px 0;border:0;border-radius:7px;background:'+(c.id===gchatConversationId?'rgba(201,164,93,.3)':'rgba(255,255,255,.06)')+';color:white;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+docSafe(c.title||'Conversation')+'</button>';}).join(''):'<div style="opacity:.6;padding:8px;">No saved chats yet.</div>';
+    el.innerHTML=rows.length?rows.map(function(c){return '<button class="gchat-thread '+(c.id===gchatConversationId?'active':'')+'" onclick="gchatOpenThread(\''+docSafe(c.id)+'\')">'+docSafe(c.title||'Conversation')+'</button>';}).join(''):'<div class="gchat-empty">No saved chats yet.</div>';
   }).catch(function(){});
 }
 function gchatOpenThread(id){

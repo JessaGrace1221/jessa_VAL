@@ -6,6 +6,7 @@ const path=require('node:path');
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
+const commandCss=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 
 test('voice playback uses server-side Deepgram TTS proxy instead of browser-side token calls',()=>{
   assert.match(server,/const DEEPGRAM_API_KEY = process\.env\.DEEPGRAM_API_KEY/);
@@ -49,6 +50,21 @@ test('dashboard exposes obvious voice chat and meeting mode entry points',()=>{
   assert.match(dashboard,/Walk me through VAL/);
   assert.match(dashboard,/gchatStartPlatformTour/);
   assert.doesNotMatch(dashboard,/document\.getElementById\('voiceBtn'\)\.classList/);
+});
+
+test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
+  assert.match(commandCss,/grid-template-columns:minmax\(0,1fr\) var\(--val-cal-w\)/);
+  assert.match(commandCss,/\.rpanel\{display:flex!important;flex-direction:column!important/);
+  assert.match(commandCss,/\.week-scroll\{[^}]*overflow:auto!important/);
+  assert.match(dashboard,/el\.className='gchat-overlay'/);
+  assert.match(dashboard,/\.gchat-overlay\{[^}]*position:fixed/);
+  assert.match(dashboard,/class="gchat-modal"/);
+  assert.match(dashboard,/class="gchat-sidebar"/);
+  assert.match(dashboard,/class="gchat-input-row"/);
+  assert.match(dashboard,/class="gchat-send"/);
+  assert.match(dashboard,/\.val-talk-button\{[^}]*min-width:142px/);
+  assert.match(dashboard,/\.val-home-send\{[^}]*background:#07182d/);
+  assert.doesNotMatch(dashboard,/id='gchatOverlay';\s*el\.style\.cssText=/);
 });
 
 test('voice waits for Deepgram before falling back to browser speech',()=>{
