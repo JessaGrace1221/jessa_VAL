@@ -2405,20 +2405,38 @@ function renderTenantApiKeyCard(p){
   var approved=!!p.approved;
   var disabled=!approved?' disabled':'';
   var docs=p.docsUrl?'<a href="'+docSafe(p.docsUrl)+'" target="_blank" rel="noopener">Where do I find this key?</a>':'';
+  var metadata=p.metadata||{};
+  var fields=keyProviderFields[provider]||[['apiKey','API key','password']];
+  var fieldHtml=fields.map(function(field){
+    var name=field[0], label=field[1], type=field[2]||'text';
+    var id=name==='apiKey'?'tenant_key_'+provider:'tenant_meta_'+provider+'_'+name;
+    var placeholder=approved?(type==='password'?'Paste new key to save/update':''):'Admin approval required';
+    var value=type==='password'?'':docSafe(metadata[name]||'');
+    return '<div class="key-field"><label>'+docSafe(label)+'</label><input id="'+docSafe(id)+'" type="'+docSafe(type)+'" autocomplete="off" placeholder="'+docSafe(placeholder)+'" value="'+value+'"'+disabled+'></div>';
+  }).join('');
   var meta=[
     p.keyPreview?'Saved key: '+p.keyPreview:'No saved key yet.',
+    metadata.locationId?'Location ID: saved':'',
     p.lastTestedAt?'Last tested: '+new Date(p.lastTestedAt).toLocaleString():'',
     p.lastUpdatedAt?'Last updated: '+new Date(p.lastUpdatedAt).toLocaleString():'',
     'Approval: '+(p.approvalStatus||'')
   ].filter(Boolean).join('<br>');
   var approval=!approved?'<div class="email-reason">'+docSafe(p.requiresAdminApproval?'This provider requires admin approval before a key can be added.':'This provider is not currently approved for this tenant.')+'</div>':'';
-  return '<section class="key-card"><h3>'+docSafe(p.displayName||provider)+'</h3><p>'+docSafe(p.description||'Approved API-based connection.')+'</p><div class="key-status"><span class="key-dot '+(connected?'connected':failed?'failed':'')+'"></span>'+docSafe(status.replace(/_/g,' '))+'</div><div class="key-meta">'+meta+'</div>'+approval+'<div class="key-field"><label>API key</label><input id="tenant_key_'+docSafe(provider)+'" type="password" autocomplete="off" placeholder="'+(approved?'Paste new key to save/update':'Admin approval required')+'"'+disabled+'></div><p class="email-reason">'+docSafe(p.helpText||'Paste the provider API key here.')+' '+docs+'</p><div class="key-actions"><button class="primary" onclick="saveTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Save / Update</button><button onclick="testTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Test Connection</button><button class="danger" onclick="deleteTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Remove / Revoke</button></div></section>';
+  return '<section class="key-card"><h3>'+docSafe(p.displayName||provider)+'</h3><p>'+docSafe(p.description||'Approved API-based connection.')+'</p><div class="key-status"><span class="key-dot '+(connected?'connected':failed?'failed':'')+'"></span>'+docSafe(status.replace(/_/g,' '))+'</div><div class="key-meta">'+meta+'</div>'+approval+fieldHtml+'<p class="email-reason">'+docSafe(p.helpText||'Paste the provider API key here.')+' '+docs+'</p><div class="key-actions"><button class="primary" onclick="saveTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Save / Update</button><button onclick="testTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Test Connection</button><button class="danger" onclick="deleteTenantApiKey(\''+docSafe(provider)+'\')"'+disabled+'>Remove / Revoke</button></div></section>';
 }
 function saveTenantApiKey(provider){
   var el=document.getElementById('tenant_key_'+provider);
   var key=(el&&el.value||'').trim();
   if(!key){renderKeysPanel('Paste a new API key before saving.');return;}
-  apiFetch(PROXY+'/api/tenant-api-keys/'+encodeURIComponent(provider),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:key})})
+  var body={apiKey:key};
+  (keyProviderFields[provider]||[]).forEach(function(field){
+    var name=field[0];
+    if(name==='apiKey')return;
+    var metaEl=document.getElementById('tenant_meta_'+provider+'_'+name);
+    var value=(metaEl&&metaEl.value||'').trim();
+    if(value)body[name]=value;
+  });
+  apiFetch(PROXY+'/api/tenant-api-keys/'+encodeURIComponent(provider),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
     .then(function(){if(el)el.value='';loadKeysPanel();addSys('API key saved securely.');})
     .catch(function(e){renderKeysPanel(e.message);});
 }

@@ -1294,6 +1294,7 @@ const DASHBOARD_STUDIO_UPDATE_POLICY={
 const TENANT_API_KEY_PROVIDER_REGISTRY={
   openai:{providerId:'openai',displayName:'OpenAI',description:'Powers VAL chat, reasoning, transcript intelligence, drafting, and rewrite workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'openai_models',docsUrl:'https://platform.openai.com/api-keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in OpenAI Platform → API keys, then paste it here.'},
   anthropic:{providerId:'anthropic',displayName:'Anthropic / Claude',description:'Optional Claude model provider for approved VAL workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'anthropic_models',docsUrl:'https://console.anthropic.com/settings/keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in Anthropic Console → API Keys.'},
+  ghl:{providerId:'ghl',displayName:'GoHighLevel / LeadConnector',description:'Allows approved VAL actions to search contacts and prepare or create approved CRM updates.',credentialFields:['api_key','location_id'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developers.gohighlevel.com/',costRiskCategory:'external_crm_write',helpText:'Paste the GHL API key or access token and Location ID for this VAL tenant.'},
   outscraper:{providerId:'outscraper',displayName:'Outscraper',description:'Supports approved business search and enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://app.outscraper.com/profile',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Outscraper account.'},
   rocketreach:{providerId:'rocketreach',displayName:'RocketReach',description:'Supports approved contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://rocketreach.co/api',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your RocketReach account.'},
   apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'}
@@ -2178,6 +2179,9 @@ async function resolveOpenAIModel(){
   return resolveIntegrationSecret('openai','preferred_model',OPENAI_CHAT_MODEL);
 }
 async function resolveGhlLocationId(){
+  const meta=await getTenantApiKeyMetadata('ghl').catch(()=>({}));
+  const tenantLocationId=String(meta.locationId||meta.location_id||'').trim();
+  if(tenantLocationId) return tenantLocationId;
   return resolveIntegrationSecret('ghl','location_id',GHL_LOC);
 }
 async function markCredentialStatus(provider,status){
@@ -2256,6 +2260,10 @@ async function getTenantApiKeySecret(provider){
   const encrypted=row?.encrypted_secret||row?.encryptedSecret;
   if(!encrypted) return '';
   return decryptSecret(encrypted);
+}
+async function getTenantApiKeyMetadata(provider){
+  const row=await getTenantApiKeyRow(provider);
+  return normalizeTenantApiKeyRow(row)?.metadata||{};
 }
 async function saveTenantApiKey(req,{provider,apiKey,metadata={}}){
   const p=tenantApiKeyProvider(provider);
@@ -2349,6 +2357,7 @@ function platformKeyFallbackAllowed(provider=''){
   if(/^(0|false|no)$/i.test(explicit)) return false;
   const p=String(provider||'').toLowerCase();
   if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
+  if(p==='ghl'&&GHL_KEY&&GHL_LOC) return true;
   return false;
 }
 async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
@@ -4582,7 +4591,14 @@ app.get('/api/tenant-api-keys/providers/:provider/requirements',requirePermissio
 app.post('/api/tenant-api-keys/:provider',requirePermission('settings:manage'),async(req,res)=>{
   try{
     if(DEMO_MODE) return res.json({ok:true,demo:true,key:{provider:req.params.provider,keyPreview:'••••demo',status:'connected',lastUpdatedAt:new Date().toISOString()}});
-    const key=await saveTenantApiKey(req,{provider:req.params.provider,apiKey:req.body.apiKey||req.body.key||req.body.secret,metadata:{source:'api_keys_connections_ui'}});
+    const metadata={source:'api_keys_connections_ui'};
+    const locationId=String(req.body.locationId||req.body.location_id||'').trim();
+    const mcpUrl=String(req.body.mcpUrl||req.body.mcp_url||'').trim();
+    const preferredModel=String(req.body.preferredModel||req.body.preferred_model||'').trim();
+    if(locationId) metadata.locationId=locationId;
+    if(mcpUrl) metadata.mcpUrl=mcpUrl;
+    if(preferredModel) metadata.preferredModel=preferredModel;
+    const key=await saveTenantApiKey(req,{provider:req.params.provider,apiKey:req.body.apiKey||req.body.key||req.body.secret,metadata});
     res.json({ok:true,key,providers:await tenantApiKeyConnectionStatuses()});
   }catch(e){res.status(400).json({ok:false,error:e.message});}
 });
