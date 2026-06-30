@@ -62,6 +62,7 @@ test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
   assert.match(server,/deterministicGhlActionFromText\(lastUser\)\|\|await inferGhlActionFromChat\(lastUser\)/);
   assert.match(server,/function updateValOsExternalActionPacket/);
   assert.match(server,/function approveValOsExternalActionPacket/);
+  assert.match(server,/function saveValOsAudit/);
   assert.match(server,/not\\s\+in\\s\+ghl/);
   assert.match(server,/add\\s\+a\\s\+ghl\\s\+not\(\?:e\)\?\\s\+to/);
   assert.match(server,/saying\|with\\s\+the\\s\+note/);
@@ -79,5 +80,7 @@ test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
   assert.match(dashboard,/Review and tweak details before approving/);
   assert.match(dashboard,/Save Tweaks/);
   assert.match(dashboard,/Approve & Do It/);
+  assert.match(dashboard,/Working\.\.\./);
+  assert.match(dashboard,/Action did not complete/);
   assert.match(dashboard,/External Action Receipt/);
 });

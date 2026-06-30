@@ -16809,6 +16809,26 @@ function saveValOsExternalActionPacket(packet={}){
   saveValStore(store);
   return idx>=0?rows[idx]:clean;
 }
+function saveValOsAudit(event={}){
+  const now=new Date().toISOString();
+  const row={
+    id:event.id||uuid('vos_audit'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    eventType:String(event.eventType||event.type||'val_os_event').slice(0,120),
+    resourceType:String(event.resourceType||'val_os').slice(0,120),
+    resourceId:String(event.resourceId||'').slice(0,220),
+    summary:String(event.summary||'VAL OS event recorded.').slice(0,1200),
+    metadata:redactSecurityValue(event.metadata||{}),
+    createdAt:event.createdAt||now
+  };
+  const store=valStore();
+  store.valOsAuditTrail=store.valOsAuditTrail||[];
+  store.valOsAuditTrail.unshift(row);
+  store.valOsAuditTrail=store.valOsAuditTrail.slice(0,500);
+  saveValStore(store);
+  return row;
+}
 function buildGhlExternalActionPacket(actionRequest={},sourceText=''){
   const {action,params}=normalizeGhlActionRequest(actionRequest);
   const p=params||{};

@@ -7270,7 +7270,7 @@ function renderExternalActionPacket(packet,containerId){
   var div=document.createElement('div');
   div.className='cmsg assistant';
   div.id='externalActionPacket-'+id;
-  div.innerHTML='<div class="cmsg-bubble"><div class="email-card"><h3>'+docSafe(packet.title||'External Action Approval')+'</h3><div class="email-reason"><strong>One approval required.</strong> VAL will not touch '+docSafe(packet.provider||'the external system')+' until you approve this exact action.</div><div class="email-reason" id="externalActionWillDo-'+id+'"><strong>What VAL will do:</strong><br>'+docSafe(packet.willDo||packet.humanSummary||'')+'</div><div class="email-reason" id="externalActionAffected-'+id+'"><strong>Affected record:</strong> '+docSafe(packet.affectedRecord||'')+'</div>'+(willNot?'<div class="email-reason"><strong>What VAL will not do:</strong><br>'+willNot+'</div>':'')+'<div class="email-reason"><strong>Correction plan:</strong> '+docSafe(packet.rollbackPlan||'Use the receipt and audit trail to correct this if needed.')+'</div>'+editFields+'<div class="email-actions"><button class="primary external-action-approve" type="button">'+docSafe(packet.approvalText||'Approve & Do It')+'</button><button class="external-action-cancel" type="button">Cancel</button></div><div id="externalActionReceipt-'+id+'"></div></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  div.innerHTML='<div class="cmsg-bubble"><div class="email-card" style="border-color:#f1c96d;background:#fff8dc"><h3>'+docSafe(packet.title||'External Action Approval')+'</h3><div class="email-reason"><strong>One approval required.</strong> VAL will not touch '+docSafe(packet.provider||'the external system')+' until you approve this exact action.</div><div class="email-reason" id="externalActionWillDo-'+id+'"><strong>What VAL will do:</strong><br>'+docSafe(packet.willDo||packet.humanSummary||'')+'</div><div class="email-reason" id="externalActionAffected-'+id+'"><strong>Affected record:</strong> '+docSafe(packet.affectedRecord||'')+'</div>'+(willNot?'<div class="email-reason"><strong>What VAL will not do:</strong><br>'+willNot+'</div>':'')+'<div class="email-reason"><strong>Correction plan:</strong> '+docSafe(packet.rollbackPlan||'Use the receipt and audit trail to correct this if needed.')+'</div>'+editFields+'<div class="email-actions"><button class="primary external-action-approve" type="button" style="background:#101633!important;color:#fff!important;border-color:#101633!important;min-width:150px">'+docSafe(packet.approvalText||'Approve & Do It')+'</button><button class="external-action-cancel" type="button">Cancel</button></div><div id="externalActionReceipt-'+id+'"></div></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(div);
   var approveBtn=div.querySelector('.external-action-approve');
   var cancelBtn=div.querySelector('.external-action-cancel');
@@ -7295,7 +7295,7 @@ function externalActionEditFieldsHtml(packet,id){
       :'<input class="external-action-param" data-key="'+docSafe(k)+'" value="'+docSafe(value)+'" style="'+fieldStyle+'">';
     return '<label style="display:block;margin:9px 0;font-weight:800;color:#334155">'+docSafe(externalActionLabel(k))+input+'</label>';
   }).join('');
-  return '<div class="email-reason"><strong>Review and tweak details before approving:</strong><br><span>Saving tweaks updates the actual action VAL will send.</span>'+fields+'<label style="display:block;margin:9px 0;font-weight:800;color:#334155">Note for VAL<textarea id="externalActionCorrection-'+id+'" rows="2" style="'+fieldStyle+'" placeholder="Optional: explain what you corrected"></textarea></label><div class="email-actions"><button class="external-action-save" type="button" onclick="saveExternalActionPacketTweaks(\''+id+'\')">Save Tweaks</button><span id="externalActionEditStatus-'+id+'" class="email-reason">No external action happens until you approve.</span></div></div>';
+  return '<div class="email-reason"><strong>Review and tweak details before approving:</strong><br><span>Saving tweaks updates the actual action VAL will send.</span>'+fields+'<label style="display:block;margin:9px 0;font-weight:800;color:#334155">Note for VAL<textarea id="externalActionCorrection-'+id+'" rows="2" style="'+fieldStyle+'" placeholder="Optional: explain what you corrected"></textarea></label><div class="email-actions" style="align-items:center"><button class="external-action-save" type="button" onclick="saveExternalActionPacketTweaks(\''+id+'\')">Save Tweaks</button><span id="externalActionEditStatus-'+id+'" style="color:#475569;font-size:12px;font-weight:700">No external action happens until you approve.</span></div></div>';
 }
 function saveExternalActionPacketTweaks(id){
   var card=document.getElementById('externalActionPacket-'+docSafe(id));
@@ -7318,14 +7318,18 @@ function saveExternalActionPacketTweaks(id){
 }
 function approveExternalActionPacket(id){
   var target=document.getElementById('externalActionReceipt-'+docSafe(id));
+  var card=document.getElementById('externalActionPacket-'+docSafe(id));
+  var approveBtn=card&&card.querySelector('.external-action-approve');
+  if(approveBtn){approveBtn.disabled=true;approveBtn.textContent='Working...';approveBtn.style.opacity='0.75';}
   if(target)target.innerHTML='<div class="email-reason">Working on it...</div>';
   apiFetch(PROXY+'/api/val/os/external-action-packets/'+encodeURIComponent(id)+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
     .then(function(data){
       var receipt=data.receipt||{};
       if(target)target.innerHTML='<div class="email-card"><h3>External Action Receipt</h3><div class="email-reason"><strong>Done.</strong> '+docSafe(receipt.message||'External action completed.')+'</div><div class="email-reason"><strong>Provider:</strong> '+docSafe(receipt.provider||'')+'<br><strong>Action:</strong> '+docSafe(receipt.action||'')+'</div></div>';
+      if(approveBtn){approveBtn.textContent='Done';approveBtn.style.opacity='0.65';}
       addSys('External action completed and receipt recorded.');
     })
-    .catch(function(e){if(target)target.innerHTML='<div class="email-reason"><strong>Action did not run:</strong> '+docSafe(e.message||e)+'</div>';addSys('External action failed: '+(e.message||e));});
+    .catch(function(e){if(approveBtn){approveBtn.disabled=false;approveBtn.textContent='Approve & Do It';approveBtn.style.opacity='1';}if(target)target.innerHTML='<div class="email-reason"><strong>Action did not complete:</strong> '+docSafe(e.message||e)+'</div>';addSys('External action failed: '+(e.message||e));});
 }
 function cancelExternalActionPacket(id){
   var target=document.getElementById('externalActionReceipt-'+docSafe(id));
