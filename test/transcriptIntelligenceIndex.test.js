@@ -159,7 +159,8 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
   assert.match(ui,/Intake Status/);
-  assert.match(ui,/Notes and transcripts live together here/);
+  assert.match(ui,/Choose a transcript from the left/);
+  assert.match(ui,/Select a transcript/);
   assert.match(ui,/No real transcripts are available yet/);
   assert.match(ui,/Chat About This Transcript/);
   assert.match(ui,/Processing details/);

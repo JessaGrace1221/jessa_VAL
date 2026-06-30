@@ -70,7 +70,7 @@ test('transcript page includes VAL conversation transcripts without calling them
   assert.match(server,/function valConversationSummaryFromText/);
   assert.match(ui,/Chat About This Transcript/);
   assert.doesNotMatch(ui,/Chat About This Meeting/);
-  assert.match(ui,/Notes and transcripts live together here/);
+  assert.match(ui,/Choose a transcript from the left/);
 });
 
 test('transcript titles reject command labels and prefer real topics',()=>{
@@ -150,11 +150,12 @@ test('left navigation exposes live transcript, task, and draft badges',()=>{
   assert.match(dashboard,/\.val-nav-item\.active\{background:linear-gradient\(135deg,#fff8e8 0%,#f2cf89 48%,#c4963a 100%\)!important/);
 });
 
-test('every transcript card exposes the simple user-facing actions',()=>{
-  for(const label of ['Open Transcript','Chat'])assert.ok(ui.includes(label));
+test('transcript library opens as a quiet selector before detail review',()=>{
+  assert.match(ui,/Select a transcript/);
+  assert.match(ui,/val-transcript-blank/);
   assert.doesNotMatch(ui,/tasks extracted ·/);
   assert.doesNotMatch(ui,/summary '\+safe\(t\.summaryStatus/);
-  assert.match(ui,/Notes and transcripts live together here/);
+  assert.match(ui,/Choose a transcript from the left/);
   assert.match(ui,/data-transcript-tab="notes"/);
   assert.match(ui,/data-transcript-tab="transcript"/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
@@ -169,6 +170,7 @@ test('transcript cards and errors have readable responsive styling',()=>{
   assert.match(css,/\.val-transcript-workspace\{display:grid;grid-template-columns:260px minmax\(0,1fr\) minmax\(330px,34%\)/);
   assert.match(css,/\.val-transcript-tabs button\.active\{background:#07182d/);
   assert.match(css,/\.val-action-note\{display:grid/);
+  assert.match(css,/\.val-transcript-blank\{min-height:430px/);
   assert.match(css,/\.val-transcript-row\{[^}]*color:#17243a/);
   assert.match(css,/@media\(max-width:900px\)[\s\S]*\.val-transcript-workspace\{grid-template-columns:1fr\}/);
 });
