@@ -67,10 +67,20 @@ test('executive inbox shows session recovery instead of a dead pane',()=>{
 test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{
   assert.match(server,/function emailShouldPrepareDraft/);
   assert.match(server,/function buildEmailReplyDraft/);
+  assert.match(server,/function buildSchedulingReplyDraft/);
+  assert.match(server,/function buildQuestionReplyDraft/);
+  assert.match(server,/function buildWaitingFollowupDraft/);
+  assert.match(server,/function emailSnippetSummary/);
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
   assert.match(server,/intro\|introduction\|referral\|connect you/);
+  assert.match(server,/Thanks for the heads up/);
+  assert.match(server,/I wanted to gently bring this back to the top of the thread/);
+  assert.match(server,/I saw what you’re asking for and I want to answer it clearly/);
+  assert.doesNotMatch(server,/Thank you for your note\. I wanted to respond thoughtfully/);
+  assert.doesNotMatch(server,/I saw this needs a clear reply/);
+  assert.doesNotMatch(server,/Here is what I recommend as the next step/);
   assert.match(server,/source:'executive_inbox_auto_draft'/);
   assert.match(server,/email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);

@@ -6361,10 +6361,114 @@ function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
   return 'draft_email_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
 }
+function emailSenderFirstName(email){
+  return (email.from?.name||email.from?.email||'').split(/[.\s@_-]+/).filter(Boolean)[0]||'';
+}
+function emailDraftGreeting(email){
+  const name=emailSenderFirstName(email);
+  return `Hi ${name},`.replace(/\s+,/,',');
+}
+function emailCleanSentence(value){
+  return String(value||'').replace(/\s+/g,' ').trim().replace(/^[-–—:\s]+/,'').slice(0,260);
+}
+function emailSnippetSummary(email){
+  return emailCleanSentence(email.bodyPreview||email.snippet||email.bodyText||email.reason||'');
+}
+function emailSignoff(email){
+  const fromName=String(email.from?.name||email.from?.email||'').toLowerCase();
+  if(/michele|julian|friend|personal|family/.test(fromName))return 'Warmly,';
+  return 'Best,';
+}
+function emailDraftBody(lines){
+  return lines.filter(line=>line!==null&&line!==undefined).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
+  const conflict=/conflict|can't|cannot|unavailable|reschedul|move|instead|another time|emergency/i.test(text);
+  const proposed=(text.match(/\b(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^.?!]*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i)||[])[0];
+  if(conflict||proposed){
+    return {
+      subject,
+      body:emailDraftBody([
+        emailDraftGreeting(email),
+        '',
+        proposed
+          ? `Thanks for the heads up. ${name||'I'} can make ${emailCleanSentence(proposed)} work if that still fits on your end.`
+          : 'Thanks for the heads up. I can adjust on my end.',
+        '',
+        'If anything changes before then, just send it over and I’ll keep an eye on the calendar.',
+        '',
+        signoff,
+        'Jessa'
+      ])
+    };
+  }
+  return {
+    subject,
+    body:emailDraftBody([
+      emailDraftGreeting(email),
+      '',
+      'Thanks for sending this over. I’m good with the meeting time.',
+      snippet?`I saw the note about ${snippet.toLowerCase()}.`:'',
+      '',
+      'Looking forward to it.',
+      '',
+      signoff,
+      'Jessa'
+    ])
+  };
+}
+function buildQuestionReplyDraft(email,{subject,text,snippet,signoff}){
+  const asksForAvailability=/available|availability|schedule|when works|what time/i.test(text);
+  const asksForReview=/review|feedback|thoughts|look over|approve|approval/i.test(text);
+  const asksForInfo=/can you|could you|question|let me know|send me|share/i.test(text);
+  return {
+    subject,
+    body:emailDraftBody([
+      emailDraftGreeting(email),
+      '',
+      asksForAvailability
+        ? 'Thanks for checking. I’m looking at the calendar and want to give you a clean answer rather than toss out a time that may move.'
+        : asksForReview
+          ? 'Thanks for sending this over. I want to review it with enough attention to give you something useful.'
+          : asksForInfo
+            ? 'Thanks for the note. I saw what you’re asking for and I want to answer it clearly.'
+            : 'Thanks for reaching out. I saw the question and want to give you a useful answer.',
+      '',
+      snippet?`The piece I’m tracking is: ${snippet}`:'',
+      '',
+      asksForAvailability
+        ? 'I’ll confirm the best option shortly.'
+        : asksForReview
+          ? 'I’ll take a closer look and send back the clearest next step.'
+          : 'I’ll follow up with the right details shortly.',
+      '',
+      signoff,
+      'Jessa'
+    ])
+  };
+}
+function buildWaitingFollowupDraft(email,{subject,snippet,signoff}){
+  return {
+    subject:subject.replace(/^Re:\s*/i,'Following up: '),
+    body:emailDraftBody([
+      emailDraftGreeting(email),
+      '',
+      'I wanted to gently bring this back to the top of the thread.',
+      snippet?`The open piece on my end is: ${snippet}`:'',
+      '',
+      'When you have a moment, can you send me the latest so I know whether to move this forward, adjust, or close the loop?',
+      '',
+      signoff,
+      'Jessa'
+    ])
+  };
+}
 function buildEmailReplyDraft(email){
   const subject=`Re: ${email.subject||''}`.trim();
-  const name=(email.from?.name||'').split(/\s+/)[0]||'';
+  const name=emailSenderFirstName(email);
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.reason,email.recommendedAction].join(' ');
+  const snippet=emailSnippetSummary(email);
+  const signoff=emailSignoff(email);
   const intro=/\b(intro|introduction|referral|connect you|warm intro|warm introduction|tight version|one paragraph)\b/i.test(text);
   if(intro){
     return {
@@ -6380,25 +6484,32 @@ function buildEmailReplyDraft(email){
         '',
         'Grateful for you making the connection.',
         '',
-        'Best,'
+        signoff,
+        'Jessa'
       ].join('\n')
     };
   }
+  if(/\b(invitation|calendar|meeting|zoom|reschedule|available|availability|appointment|event)\b/i.test(text)){
+    return buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff});
+  }
+  if(email.classification==='waiting_on_response'||/\bfollowing up|checking in|circle back|waiting|next step|open loop\b/i.test(text)){
+    return buildWaitingFollowupDraft(email,{subject,snippet,signoff});
+  }
+  if(/\b(can you|could you|please|question|let me know|reply|respond|review|feedback|approve|available|schedule)\b/i.test(text)){
+    return buildQuestionReplyDraft(email,{subject,text,snippet,signoff});
+  }
   return {
     subject,
-    body:[
-      `Hi ${name},`.replace(/\s+,/,','),
+    body:emailDraftBody([
+      emailDraftGreeting(email),
       '',
-      'Thank you for your note. I wanted to respond thoughtfully.',
+      snippet?`I saw your note about ${snippet.toLowerCase()}.`:'I saw your note and wanted to acknowledge it directly.',
       '',
-      email.reason?`I saw this needs attention because ${email.reason.charAt(0).toLowerCase()+email.reason.slice(1)}`:'I saw this needs a clear reply.',
+      email.recommendedAction&&!/draft|reply/i.test(email.recommendedAction)?emailCleanSentence(email.recommendedAction):'I’ll take the next clean step and follow up with you shortly.',
       '',
-      'Here is what I recommend as the next step:',
-      '',
-      email.recommendedAction||'Let me take a closer look and follow up with the right next step.',
-      '',
-      'Best,'
-    ].join('\n')
+      signoff,
+      'Jessa'
+    ])
   };
 }
 async function prepareEmailDraftIfNeeded(email){
@@ -6728,7 +6839,8 @@ async function inboxCommandAction(body={},userId=currentUserId()){
   const email=body.email||body.message||{};
   if(!email.messageId&&!email.subject)return {ok:false,error:'Choose an email first.'};
   if(action==='draft_reply'){
-    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:'Re: '+(email.subject||''),body:body.body||`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review before sending.]\n\nBest,`,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
+    const generated=buildEmailReplyDraft(email);
+    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:generated.subject||('Re: '+(email.subject||'')),body:body.body||generated.body,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
     return {ok:true,action,draft,requiresApproval:true};
   }
   if(action==='forward_draft'||action==='forward'){
