@@ -2665,6 +2665,17 @@ function envStatus({name,present,misconfigured=false,controls,fix}){
     redeployRequired:true
   };
 }
+function secretPresenceStatus({name,present,source='runtime',controls,fix}){
+  return {
+    name,
+    status:present?'Connected':'Missing',
+    present:!!present,
+    source:present?source:'',
+    controls,
+    howToFix:fix || railwayFix(name),
+    secretValue:'hidden'
+  };
+}
 function missingEnvNames(names){
   return names.filter(name=>!process.env[name]);
 }
@@ -2682,7 +2693,12 @@ function setupHealthPayload(){
       envStatus({name:'GOOGLE_REDIRECT_URI',present:!!CONFIGURED_GOOGLE_REDIRECT_URI,controls:'Google OAuth callback URL. Use https://your-app.up.railway.app/auth/callback.',fix:railwayFix('GOOGLE_REDIRECT_URI')}),
       envStatus({name:'MICROSOFT_CLIENT_ID',present:!!MICROSOFT_CLIENT_ID,controls:'Microsoft OAuth for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_ID')}),
       envStatus({name:'MICROSOFT_CLIENT_SECRET',present:!!MICROSOFT_CLIENT_SECRET,controls:'Microsoft OAuth secret for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_SECRET')}),
-      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')})
+      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')}),
+      secretPresenceStatus({name:'GHL_KEY / GHL_API_KEY',present:!!GHL_KEY,controls:'GHL contact, opportunity, note, and lead import actions.',fix:'Railway → Variables → Add GHL_KEY or GHL_API_KEY → Redeploy'}),
+      secretPresenceStatus({name:'GHL_LOC / GHL_LOCATION_ID',present:!!GHL_LOC,controls:'The GHL location VAL may read/write after approval.',fix:'Railway → Variables → Add GHL_LOC or GHL_LOCATION_ID → Redeploy'}),
+      secretPresenceStatus({name:'OUTSCRAPER_API_KEY',present:!!OUTSCRAPER_API_KEY,controls:'Lead scraper business discovery and optional LinkedIn/public enrichment.',fix:railwayFix('OUTSCRAPER_API_KEY')}),
+      secretPresenceStatus({name:'ROCKETREACH_API_KEY',present:!!ROCKETREACH_API_KEY,controls:'Calendar attendee enrichment and Level 3 lead/person verification.',fix:railwayFix('ROCKETREACH_API_KEY')}),
+      secretPresenceStatus({name:'APOLLO_API_KEY',present:!!APOLLO_API_KEY,controls:'Fallback lead/contact enrichment where enabled.',fix:railwayFix('APOLLO_API_KEY')})
     ],
     google:{
       connected:false,
@@ -5129,6 +5145,14 @@ app.get('/api/integrations/health',async(req,res)=>{
     const microsoftConfigured=!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI);
     const microsoftSaved=await loadOAuthTokens('microsoft').catch(()=>null);
     const microsoftToken=await getMicrosoftToken().catch(e=>{errors.push('Microsoft token: '+e.message);return null;});
+    const [resolvedGhlKey,resolvedGhlLoc,resolvedOutscraperKey,resolvedRocketReachKey,resolvedApolloKey,resolvedOpenAiKey]=await Promise.all([
+      resolveIntegrationSecret('ghl','api_key',GHL_KEY).catch(()=>GHL_KEY),
+      resolveIntegrationSecret('ghl','location_id',GHL_LOC).catch(()=>GHL_LOC),
+      resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=>OUTSCRAPER_API_KEY),
+      resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY).catch(()=>ROCKETREACH_API_KEY),
+      resolveIntegrationSecret('apollo','api_key',APOLLO_API_KEY).catch(()=>APOLLO_API_KEY),
+      resolveIntegrationSecret('openai','api_key',OPENAI_KEY).catch(()=>OPENAI_KEY)
+    ]);
     const [pastCal,nextCal,outlookPastCal,outlookNextCal,recentGmail,unreadGmail,sentGmail,transcripts]=await Promise.all([
       token?fetchGoogleCalendarEvents(past,now,100).catch(e=>{errors.push('Calendar past 7 days: '+e.message);return [];}):Promise.resolve([]),
       token?fetchGoogleCalendarEvents(now,future,100).catch(e=>{errors.push('Calendar next 7 days: '+e.message);return [];}):Promise.resolve([]),
@@ -5187,6 +5211,13 @@ app.get('/api/integrations/health',async(req,res)=>{
         calendar:{enabled:!!microsoftToken,past7DaysCount:outlookPastCal.length,next7DaysCount:outlookNextCal.length}
       },
       transcripts:{last7DaysCount:transcripts.length,matchedToMeetingsCount:matched},
+      externalKeys:{
+        openai:{present:!!resolvedOpenAiKey,source:resolvedOpenAiKey===OPENAI_KEY&&OPENAI_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
+        ghl:{present:!!(resolvedGhlKey&&resolvedGhlLoc),apiKeyPresent:!!resolvedGhlKey,locationIdPresent:!!resolvedGhlLoc,source:resolvedGhlKey===GHL_KEY&&GHL_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
+        outscraper:{present:!!resolvedOutscraperKey,source:resolvedOutscraperKey===OUTSCRAPER_API_KEY&&OUTSCRAPER_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
+        rocketreach:{present:!!resolvedRocketReachKey,source:resolvedRocketReachKey===ROCKETREACH_API_KEY&&ROCKETREACH_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
+        apollo:{present:!!resolvedApolloKey,source:resolvedApolloKey===APOLLO_API_KEY&&APOLLO_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'}
+      },
       actions:{canCreateTasks:true,canCreateDrafts:true,canCreateGoogleDocs:docsHealth.connected},
       errors
     });
@@ -8087,17 +8118,23 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
   try{
     const event = req.body.event || req.body || {};
     const attendees = inferAttendeesFromEvent(event);
+    const [resolvedRocketReachKey,resolvedOutscraperKey]=await Promise.all([
+      resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY).catch(()=>ROCKETREACH_API_KEY),
+      resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=>OUTSCRAPER_API_KEY)
+    ]);
     const enriched = [];
     for(const attendee of attendees){
-      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
+      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!resolvedRocketReachKey,error:e.message}));
       const profile = rocket.data || {};
-      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
+      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!resolvedOutscraperKey,error:e.message}));
       enriched.push({attendee, rocketReach:rocket, outscraper});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
-      rocketReach:!ROCKETREACH_API_KEY
+      rocketReach:!resolvedRocketReachKey
     }, optionalConfig:{
-      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL
+      outscraperConfigured:!!resolvedOutscraperKey && !!OUTSCRAPER_LINKEDIN_POSTS_URL,
+      outscraperApiKeyPresent:!!resolvedOutscraperKey,
+      outscraperLinkedInPostsUrlPresent:!!OUTSCRAPER_LINKEDIN_POSTS_URL
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });

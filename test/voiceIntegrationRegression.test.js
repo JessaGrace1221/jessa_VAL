@@ -59,7 +59,9 @@ test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
   assert.match(commandCss,/\.week-scroll\{[^}]*overflow:auto!important/);
   assert.match(dashboard,/el\.className='gchat-overlay'/);
   assert.match(dashboard,/\.gchat-overlay\{[^}]*position:fixed/);
-  assert.match(dashboard,/\.gchat-modal\{[^}]*width:min\(1180px/);
+  assert.match(dashboard,/\.gchat-modal\{[^}]*width:min\(1260px/);
+  assert.match(dashboard,/\.gchat-input\{[^}]*font-size:18px/);
+  assert.match(dashboard,/\.cmsg-bubble\{[^}]*font-size:1\.08rem/);
   assert.match(dashboard,/\.gchat-modal\{[^}]*background:#fbfaf7/);
   assert.match(dashboard,/\.gchat-sidebar\{[^}]*linear-gradient/);
   assert.match(dashboard,/class="gchat-modal"/);
@@ -71,6 +73,11 @@ test('home keeps calendar rail and opens a clean VAL chat overlay',()=>{
   assert.match(dashboard,/@keyframes valFaceFloat/);
   assert.match(dashboard,/\.val-talk-button\{[^}]*linear-gradient\(145deg,#f8d98b/);
   assert.match(dashboard,/\.val-home-send\{[^}]*background:#07182d/);
+  assert.match(dashboard,/history\.replaceState\(\{\},document\.title,cleanUrl\)/);
+  assert.match(server,/externalKeys:\{/);
+  assert.match(server,/resolveIntegrationSecret\('outscraper','api_key',OUTSCRAPER_API_KEY\)/);
+  assert.match(server,/resolveIntegrationSecret\('rocketreach','api_key',ROCKETREACH_API_KEY\)/);
+  assert.match(dashboard,/Scraper & Enrichment Keys/);
   assert.doesNotMatch(dashboard,/id='gchatOverlay';\s*el\.style\.cssText=/);
 });
 
