@@ -9801,6 +9801,35 @@ app.post('/api/gmail/drafts',async(req,res)=>{
     res.json({ok:true,draftType:'gmail',gmailDraft:d});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/gmail/send-approved-draft',async(req,res)=>{
+  try{
+    const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
+    const missing=status.missingScopes||[];
+    if(missing.length)return res.status(400).json({ok:false,error:'Reconnect Google to grant Gmail compose permission before sending approved drafts.',missingScopes:missing});
+    const token=await getGoogleToken();
+    if(!token)return res.status(401).json({ok:false,error:lastGoogleAuthError||'Google auth required'});
+    const payload=req.body||{};
+    const to=String(payload.to||'').trim();
+    const subject=String(payload.subject||'').trim()||'(No subject)';
+    const body=String(payload.body||'').trim();
+    if(!to||!/@/.test(to))return res.status(400).json({ok:false,error:'Add a valid recipient before sending.'});
+    if(!body)return res.status(400).json({ok:false,error:'Add a message before sending.'});
+    const lines=[
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      body
+    ];
+    const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
+    const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
+    const d=await readJsonResponse(r);
+    if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
+    await logEmailAction(req.valUser.id,{provider:'gmail',messageId:d.id||payload.messageId||'',threadId:d.threadId||payload.threadId||'',actionType:'send_approved_draft',actionStatus:'sent',actedBy:'user',details:{to,subject,source:'executive_inbox_approve_draft'}});
+    res.json({ok:true,sent:true,messageId:d.id||'',threadId:d.threadId||payload.threadId||'',gmailMessage:d});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 
 function googleDocIdFromInput(value){
   const raw=String(value||'').trim();

@@ -77,6 +77,18 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(dashboard,/Review Prepared Draft/);
 });
 
+test('Executive Inbox approve draft sends email through Gmail',()=>{
+  assert.match(server,/app\.post\('\/api\/gmail\/send-approved-draft'/);
+  assert.match(server,/gmail\/v1\/users\/me\/messages\/send/);
+  assert.match(server,/actionType:'send_approved_draft'/);
+  assert.match(server,/actionStatus:'sent'/);
+  assert.match(dashboard,/function sendApprovedEmailDraft/);
+  assert.match(dashboard,/Approve & Send/);
+  assert.match(dashboard,/\/api\/gmail\/send-approved-draft/);
+  assert.match(dashboard,/Gmail sent the approved reply in this thread/);
+  assert.match(dashboard,/Save Gmail Draft/);
+});
+
 test('executive inbox actions report inline and rules avoid native confirm flow',()=>{
   assert.match(dashboard,/Follow-up tracked/);
   assert.match(dashboard,/Task created/);
