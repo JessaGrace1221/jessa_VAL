@@ -8401,6 +8401,18 @@ app.post('/api/val/ghl/action',async(req,res)=>{
     res.json(result);
   }catch(e){res.status(400).json({ok:false,error:e.message});}
 });
+app.post('/api/val/os/external-action-packets/:id/approve',async(req,res)=>{
+  try{
+    const result=await approveValOsExternalActionPacket(req,req.params.id);
+    res.json(result);
+  }catch(e){res.status(/not found/i.test(e.message)?404:400).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/external-action-packets/:id/update',async(req,res)=>{
+  try{
+    const result=await updateValOsExternalActionPacket(req,req.params.id,req.body||{});
+    res.json(result);
+  }catch(e){res.status(/not found/i.test(e.message)?404:400).json({ok:false,error:e.message});}
+});
 
 app.post('/api/val/leads/research',async(req,res)=>{
   try{
@@ -16645,9 +16657,16 @@ async function executeValGhlAction(input={}){
     return {ok:true,action,contactId,tags,result:data,content:`${method==='DELETE'?'Removed':'Added'} tag${tags.length===1?'':'s'} ${tags.join(', ')} ${method==='DELETE'?'from':'to'} GHL contact ${contactId}.`};
   }
   if(action==='contact.note.create'){
-    const contactId=String(p.contactId||p.id||'').trim();
+    let contactId=String(p.contactId||p.id||'').trim();
     const body=String(p.body||p.note||p.text||'').trim();
-    if(!contactId) throw new Error('Adding a contact note requires contactId.');
+    if(!contactId&&(p.name||p.contactName||p.query)){
+      const q=String(p.name||p.contactName||p.query||'').trim();
+      const found=await ghlStrict('GET',`/contacts/?locationId=&query=${encodeURIComponent(q)}&limit=5`);
+      const contacts=(found.contacts||found.data||[]).map(compactContactResult);
+      if(contacts.length!==1) throw new Error(`Adding a contact note by name requires exactly one GHL contact match. Found ${contacts.length} for "${q}".`);
+      contactId=contacts[0].id;
+    }
+    if(!contactId) throw new Error('Adding a contact note requires contactId or one exact contact name match.');
     if(!body) throw new Error('Adding a contact note requires note text.');
     const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body});
     return {ok:true,action,contactId,note:data.note||data,content:`Added note to GHL contact ${contactId}.`};
@@ -16704,7 +16723,155 @@ async function executeValGhlAction(input={}){
 function likelyGhlMutationRequest(text=''){
   const q=String(text||'').toLowerCase();
   if(!/\b(ghl|go high level|gohighlevel|crm|contact|opportunit|pipeline|tag|note|task)\b/.test(q)) return false;
-  return /\b(create|add|update|edit|change|tag|untag|remove tag|note|task|upsert|find|search|look up|load|show)\b/.test(q);
+  return /\b(create|add|update|edit|change|tag|untag|remove tag|note|not\s+in\s+ghl|task|upsert|find|search|look up|load|show)\b/.test(q);
+}
+function valOsExternalActionPacketRows(){
+  const store=valStore();
+  store.valOsExternalActionPackets=store.valOsExternalActionPackets||[];
+  return store.valOsExternalActionPackets.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId());
+}
+function normalizeValOsExternalActionPacket(packet={}){
+  const now=new Date().toISOString();
+  const provider=String(packet.provider||'GHL').slice(0,80);
+  const action=String(packet.action||packet.request?.action||'external.action').slice(0,120);
+  return {
+    id:String(packet.id||uuid('vos_ext')),
+    tenantId:packet.tenantId||tenantId(),
+    userId:packet.userId||currentUserId(),
+    status:String(packet.status||'approval_required').slice(0,80),
+    provider,
+    action,
+    actionLabel:String(packet.actionLabel||action.replace(/\./g,' ')).slice(0,160),
+    title:String(packet.title||`${provider} approval request`).slice(0,220),
+    humanSummary:String(packet.humanSummary||'VAL prepared an external action for approval.').slice(0,1200),
+    affectedRecord:String(packet.affectedRecord||'Record to be confirmed').slice(0,260),
+    willDo:String(packet.willDo||'VAL will perform the exact external action shown here after approval.').slice(0,1200),
+    willNotDo:Array.isArray(packet.willNotDo)?packet.willNotDo.slice(0,8).map(x=>String(x||'').slice(0,220)):[],
+    rollbackPlan:String(packet.rollbackPlan||'If this is wrong, use the receipt and audit trail to correct or reverse the record manually.').slice(0,900),
+    approvalText:String(packet.approvalText||'Approve & Do It').slice(0,80),
+    request:packet.request&&typeof packet.request==='object'?packet.request:{provider,action,params:{}},
+    receipt:packet.receipt&&typeof packet.receipt==='object'?packet.receipt:null,
+    approvedAt:packet.approvedAt||'',
+    executedAt:packet.executedAt||'',
+    lastEditedAt:packet.lastEditedAt||'',
+    correctionNote:String(packet.correctionNote||'').slice(0,900),
+    editCount:Number(packet.editCount||0),
+    externalActionTaken:packet.externalActionTaken===true,
+    executionAvailable:packet.executionAvailable!==false,
+    requiresApproval:true,
+    createdAt:packet.createdAt||now,
+    updatedAt:now
+  };
+}
+function saveValOsExternalActionPacket(packet={}){
+  const clean=normalizeValOsExternalActionPacket(packet);
+  const store=valStore();
+  const rows=store.valOsExternalActionPackets||[];
+  const idx=rows.findIndex(r=>r.tenantId===clean.tenantId&&r.userId===clean.userId&&r.id===clean.id);
+  if(idx>=0)rows[idx]={...rows[idx],...clean,id:rows[idx].id,createdAt:rows[idx].createdAt||clean.createdAt};
+  else rows.unshift(clean);
+  store.valOsExternalActionPackets=rows.slice(0,300);
+  saveValStore(store);
+  return idx>=0?rows[idx]:clean;
+}
+function buildGhlExternalActionPacket(actionRequest={},sourceText=''){
+  const {action,params}=normalizeGhlActionRequest(actionRequest);
+  const p=params||{};
+  const affected=[
+    p.contactId||p.id?`Contact ${p.contactId||p.id}`:'',
+    p.contactName||p.name||p.fullName?`Name ${p.contactName||p.name||p.fullName}`:'',
+    p.opportunityId?`Opportunity ${p.opportunityId}`:'',
+    p.email?`Email ${p.email}`:'',
+    p.title||p.task?`Task ${p.title||p.task}`:''
+  ].filter(Boolean).join(' · ')||'GHL record shown in request';
+  const willDo=[
+    `Provider: GHL / CRM`,
+    `Action: ${action.replace(/\./g,' ')}`,
+    `Affected record: ${affected}`,
+    p.note||p.body||p.text?`Text: ${String(p.note||p.body||p.text).slice(0,500)}`:'',
+    p.tags?`Tags: ${Array.isArray(p.tags)?p.tags.join(', '):p.tags}`:''
+  ].filter(Boolean).join('\n');
+  return normalizeValOsExternalActionPacket({
+    provider:'GHL',
+    action,
+    actionLabel:action.replace(/\./g,' '),
+    title:`Approve GHL action: ${action.replace(/\./g,' ')}`,
+    humanSummary:'VAL prepared this GHL action from your request. Approve once and VAL will do exactly this action.',
+    affectedRecord:affected,
+    willDo,
+    willNotDo:[
+      'VAL will not send email unless the action shown is an email/send action.',
+      'VAL will not delete records.',
+      'VAL will not change automations or workflows.',
+      'VAL will not do anything beyond this one approved GHL action.'
+    ],
+    rollbackPlan:'Use the GHL record, receipt, and audit trail to correct the note, task, tag, contact, or opportunity if needed.',
+    request:{provider:'ghl',action,params:p,sourceText:String(sourceText||'').slice(0,1200)}
+  });
+}
+function valOsExternalActionEditableValue(key,value,previous){
+  const raw=String(value??'').trim();
+  if(Array.isArray(previous)||key==='tags')return raw.split(/[,|\n]/).map(x=>x.trim()).filter(Boolean).slice(0,25);
+  if(previous&&typeof previous==='object'){
+    try{
+      const parsed=JSON.parse(raw);
+      return parsed&&typeof parsed==='object'?parsed:previous;
+    }catch(e){return previous;}
+  }
+  if(typeof previous==='number'&&raw!==''&&!Number.isNaN(Number(raw)))return Number(raw);
+  if(typeof previous==='boolean')return /^(true|yes|1)$/i.test(raw);
+  return raw.slice(0,1200);
+}
+async function updateValOsExternalActionPacket(req,id,updates={}){
+  const packet=valOsExternalActionPacketRows().find(r=>String(r.id)===String(id));
+  if(!packet)throw new Error('External action packet not found.');
+  if(packet.status==='executed')throw new Error('Executed action packets cannot be edited.');
+  if(packet.provider!=='GHL')throw new Error('Only GHL external action packets can be edited right now.');
+  const request=packet.request&&typeof packet.request==='object'?packet.request:{provider:'ghl',action:packet.action,params:{}};
+  const params={...(request.params||{})};
+  const incoming=updates.params&&typeof updates.params==='object'?updates.params:{};
+  Object.keys(incoming).slice(0,40).forEach(key=>{
+    const safeKey=String(key||'').replace(/[^\w.-]/g,'').slice(0,80);
+    if(!safeKey)return;
+    params[safeKey]=valOsExternalActionEditableValue(safeKey,incoming[key],params[safeKey]);
+  });
+  const rebuilt=buildGhlExternalActionPacket({...request,params},request.sourceText||'');
+  const saved=saveValOsExternalActionPacket({
+    ...rebuilt,
+    id:packet.id,
+    tenantId:packet.tenantId,
+    userId:packet.userId,
+    status:'approval_required',
+    createdAt:packet.createdAt,
+    editCount:Number(packet.editCount||0)+1,
+    lastEditedAt:new Date().toISOString(),
+    correctionNote:String(updates.correctionNote||'').slice(0,900),
+    request:{...request,params,sourceText:String(request.sourceText||'').slice(0,1200)}
+  });
+  const audit=saveValOsAudit({eventType:'external_action_packet_updated',resourceId:packet.id,summary:`Updated ${packet.provider} action packet before approval.`,metadata:{packetId:packet.id,provider:packet.provider,action:packet.action,editedKeys:Object.keys(incoming).slice(0,40),externalActionTaken:false}});
+  await auditLog({req,action:'val_os_external_action_packet_updated',resourceType:'val_os_external_action_packet',resourceId:packet.id,metadata:{provider:packet.provider,action:packet.action,externalActionTaken:false},success:true}).catch(()=>{});
+  return {ok:true,packet:saved,audit};
+}
+async function approveValOsExternalActionPacket(req,id){
+  const packet=valOsExternalActionPacketRows().find(r=>String(r.id)===String(id));
+  if(!packet)throw new Error('External action packet not found.');
+  if(packet.status==='executed')return {ok:true,packet,receipt:packet.receipt,alreadyExecuted:true};
+  if(packet.provider!=='GHL')throw new Error('Only GHL external action packets are enabled right now.');
+  const result=await executeValGhlAction(packet.request||{});
+  const receipt={
+    id:uuid('vos_ext_receipt'),
+    provider:packet.provider,
+    action:packet.action,
+    status:'executed',
+    message:result.content||'External action completed.',
+    providerResult:result,
+    externalActionTaken:true,
+    executedAt:new Date().toISOString()
+  };
+  const saved=saveValOsExternalActionPacket({...packet,status:'executed',receipt,approvedAt:new Date().toISOString(),executedAt:receipt.executedAt,externalActionTaken:true});
+  const audit=saveValOsAudit({eventType:'external_action_packet_executed',resourceId:packet.id,summary:`Executed ${packet.provider} action: ${packet.actionLabel||packet.action}.`,metadata:{packetId:packet.id,provider:packet.provider,action:packet.action,externalActionTaken:true}});
+  await auditLog({req,action:'val_os_external_action_packet_executed',resourceType:'val_os_external_action_packet',resourceId:packet.id,metadata:{provider:packet.provider,action:packet.action,externalActionTaken:true},success:true}).catch(()=>{});
+  return {ok:true,packet:saved,receipt,audit};
 }
 
 async function inferGhlActionFromChat(text){
@@ -16716,7 +16883,7 @@ async function inferGhlActionFromChat(text){
     'Return {"shouldExecute":false} unless the user is clearly asking to execute or retrieve a CRM action.',
     'Do not infer sending email, triggering workflows, deleting contacts, or changing automation settings.',
     'For contact.create/contact.upsert params may include firstName,lastName,name,email,phone,companyName,source,tags,note,city,state,country,website,customFields.',
-    'For updates/tags/notes/tasks/opportunities include the needed IDs when supplied. If an ID is missing but an email/name is supplied for tagging/note/task/update, return contact.search instead.'
+    'For updates/tags/tasks/opportunities include the needed IDs when supplied. For contact.note.create, if an ID is missing but a contact name is supplied, return contact.note.create with params.contactName or params.name and the note body. Do not guess a contact ID.'
   ].join('\n');
   const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true}).catch(()=>null);
   if(!raw) return null;
@@ -17871,8 +18038,14 @@ app.post('/api/val/chat',async(req,res)=>{
     }
     const inferredGhlAction=await inferGhlActionFromChat(lastUser);
     if(inferredGhlAction){
-      const result=await executeValGhlAction(inferredGhlAction);
-      return sendChat(result.content||'Done.',{ghlAction:result});
+      const packet=saveValOsExternalActionPacket(buildGhlExternalActionPacket(inferredGhlAction,lastUser));
+      return sendChat([
+        'I prepared the GHL action and need one approval before I touch the external system.',
+        '',
+        packet.willDo,
+        '',
+        'Approve it below and I will do exactly this, then show a receipt.'
+      ].join('\n'),{externalActionPacket:packet});
     }
     if(isGoogleDocRewriteRequest(lastUser)){
       try{

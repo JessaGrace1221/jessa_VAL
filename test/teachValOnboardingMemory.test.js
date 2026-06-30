@@ -53,3 +53,25 @@ test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',
   assert.doesNotMatch(dashboard,/teachValVoiceStageHtml/);
   assert.doesNotMatch(dashboard,/teach-val-voice-active/);
 });
+
+test('Jessa VAL routes GHL chat actions into editable approval packets',()=>{
+  assert.match(server,/app\.post\('\/api\/val\/os\/external-action-packets\/:id\/update'/);
+  assert.match(server,/app\.post\('\/api\/val\/os\/external-action-packets\/:id\/approve'/);
+  assert.match(server,/function buildGhlExternalActionPacket/);
+  assert.match(server,/function updateValOsExternalActionPacket/);
+  assert.match(server,/function approveValOsExternalActionPacket/);
+  assert.match(server,/not\\s\+in\\s\+ghl/);
+  assert.match(server,/Adding a contact note by name requires exactly one GHL contact match/);
+  assert.match(server,/externalActionPacket/);
+  assert.match(server,/I prepared the GHL action and need one approval/);
+  assert.match(server,/external_action_packet_updated/);
+  assert.match(server,/external_action_packet_executed/);
+  assert.match(dashboard,/function renderExternalActionPacket/);
+  assert.match(dashboard,/function saveExternalActionPacketTweaks/);
+  assert.match(dashboard,/External Action Approval/);
+  assert.match(dashboard,/One approval required/);
+  assert.match(dashboard,/Review and tweak details before approving/);
+  assert.match(dashboard,/Save Tweaks/);
+  assert.match(dashboard,/Approve & Do It/);
+  assert.match(dashboard,/External Action Receipt/);
+});

@@ -7226,7 +7226,7 @@ function chat(msg,inp){
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return apiTextOrJson(r);})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
@@ -7239,10 +7239,85 @@ function chatSilent(msg){
   if(ctx) msgs=[{role:'user',content:'[Dashboard context - use this to give specific, accurate answers:]\n'+ctx},{role:'assistant',content:'Got it. I have your live dashboard data including tasks with due dates, contacts, meetings, and pipeline.'}].concat(msgs);
   fetch(CHAT_URL,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,stream:false})})
   .then(function(r){removeTyping();return apiTextOrJson(r);})
-  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
+  .then(function(d){var m=(d.message&&d.message.content)||d.message||'I could not process that.';chatHistory.push({role:'assistant',content:m});addMsg(m,false);if(d.externalActionPacket)renderExternalActionPacket(d.externalActionPacket);if(d.createdTasks&&d.createdTasks.length){addSys('Saved '+d.createdTasks.length+' to-do'+(d.createdTasks.length===1?'':'s')+' with context.');valTasksLoad();}if(chatHistory.length%4===0){savedChat=false;autoSave();}})
   .catch(function(e){removeTyping();addSys('Error: '+e.message);})
   .finally(function(){document.getElementById('sendBtn').disabled=false;document.getElementById('msgInput').focus();});
 }
+
+function renderExternalActionPacket(packet){
+  var c=document.getElementById('chatScroll');if(!c||!packet)return;
+  var id=docSafe(packet.id||'');
+  var willNot=(packet.willNotDo||[]).map(function(x){return '• '+docSafe(x);}).join('<br>');
+  var editFields=externalActionEditFieldsHtml(packet,id);
+  var div=document.createElement('div');
+  div.className='cmsg assistant';
+  div.id='externalActionPacket-'+id;
+  div.innerHTML='<div class="cmsg-bubble"><div class="email-card"><h3>'+docSafe(packet.title||'External Action Approval')+'</h3><div class="email-reason"><strong>One approval required.</strong> VAL will not touch '+docSafe(packet.provider||'the external system')+' until you approve this exact action.</div><div class="email-reason" id="externalActionWillDo-'+id+'"><strong>What VAL will do:</strong><br>'+docSafe(packet.willDo||packet.humanSummary||'')+'</div><div class="email-reason" id="externalActionAffected-'+id+'"><strong>Affected record:</strong> '+docSafe(packet.affectedRecord||'')+'</div>'+(willNot?'<div class="email-reason"><strong>What VAL will not do:</strong><br>'+willNot+'</div>':'')+'<div class="email-reason"><strong>Correction plan:</strong> '+docSafe(packet.rollbackPlan||'Use the receipt and audit trail to correct this if needed.')+'</div>'+editFields+'<div class="email-actions"><button class="primary external-action-approve" type="button">'+docSafe(packet.approvalText||'Approve & Do It')+'</button><button class="external-action-cancel" type="button">Cancel</button></div><div id="externalActionReceipt-'+id+'"></div></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  c.appendChild(div);
+  var approveBtn=div.querySelector('.external-action-approve');
+  var cancelBtn=div.querySelector('.external-action-cancel');
+  if(approveBtn)approveBtn.onclick=function(){approveExternalActionPacket(id);};
+  if(cancelBtn)cancelBtn.onclick=function(){cancelExternalActionPacket(id);};
+  c.scrollTop=c.scrollHeight;
+}
+function externalActionLabel(key){
+  var labels={firstName:'First name',lastName:'Last name',name:'Name',contactName:'Contact name',fullName:'Full name',email:'Email',phone:'Phone',companyName:'Company',contactId:'Contact ID',opportunityId:'Opportunity ID',note:'Note',body:'Message',text:'Text',title:'Title',task:'Task',tags:'Tags',dueDate:'Due date',source:'Source'};
+  return labels[key]||String(key||'Detail').replace(/([A-Z])/g,' $1').replace(/[_-]/g,' ').replace(/^./,function(c){return c.toUpperCase();});
+}
+function externalActionEditFieldsHtml(packet,id){
+  var params=(packet.request&&packet.request.params)||{};
+  var keys=Object.keys(params).filter(function(k){return params[k]!==undefined&&params[k]!==null;}).slice(0,18);
+  if(!keys.length)return '';
+  var fieldStyle='width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:#fff;color:#111827;margin-top:5px';
+  var fields=keys.map(function(k){
+    var v=params[k];
+    var value=Array.isArray(v)?v.join(', '):(typeof v==='object'?JSON.stringify(v):String(v||''));
+    var input=(String(value).length>70||/note|body|message|description|task|text/i.test(k))
+      ?'<textarea class="external-action-param" data-key="'+docSafe(k)+'" rows="3" style="'+fieldStyle+'">'+docSafe(value)+'</textarea>'
+      :'<input class="external-action-param" data-key="'+docSafe(k)+'" value="'+docSafe(value)+'" style="'+fieldStyle+'">';
+    return '<label style="display:block;margin:9px 0;font-weight:800;color:#334155">'+docSafe(externalActionLabel(k))+input+'</label>';
+  }).join('');
+  return '<div class="email-reason"><strong>Review and tweak details before approving:</strong><br><span>Saving tweaks updates the actual action VAL will send.</span>'+fields+'<label style="display:block;margin:9px 0;font-weight:800;color:#334155">Note for VAL<textarea id="externalActionCorrection-'+id+'" rows="2" style="'+fieldStyle+'" placeholder="Optional: explain what you corrected"></textarea></label><div class="email-actions"><button class="external-action-save" type="button" onclick="saveExternalActionPacketTweaks(\''+id+'\')">Save Tweaks</button><span id="externalActionEditStatus-'+id+'" class="email-reason">No external action happens until you approve.</span></div></div>';
+}
+function saveExternalActionPacketTweaks(id){
+  var card=document.getElementById('externalActionPacket-'+docSafe(id));
+  var status=document.getElementById('externalActionEditStatus-'+docSafe(id));
+  if(status)status.textContent='Saving tweaks...';
+  var params={};
+  if(card)card.querySelectorAll('.external-action-param').forEach(function(el){params[el.getAttribute('data-key')]=el.value;});
+  var noteEl=document.getElementById('externalActionCorrection-'+docSafe(id));
+  apiFetch(PROXY+'/api/val/os/external-action-packets/'+encodeURIComponent(id)+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({params:params,correctionNote:noteEl?noteEl.value:''})})
+    .then(function(data){
+      var packet=data.packet||{};
+      var will=document.getElementById('externalActionWillDo-'+docSafe(id));
+      var affected=document.getElementById('externalActionAffected-'+docSafe(id));
+      if(will)will.innerHTML='<strong>What VAL will do:</strong><br>'+docSafe(packet.willDo||'');
+      if(affected)affected.innerHTML='<strong>Affected record:</strong> '+docSafe(packet.affectedRecord||'');
+      if(status)status.textContent='Tweaks saved. Review the updated action, then approve when it looks right.';
+      addSys('External action tweaks saved. No external action was taken.');
+    })
+    .catch(function(e){if(status)status.textContent='Tweak save failed: '+(e.message||e);addSys('External action tweak failed: '+(e.message||e));});
+}
+function approveExternalActionPacket(id){
+  var target=document.getElementById('externalActionReceipt-'+docSafe(id));
+  if(target)target.innerHTML='<div class="email-reason">Working on it...</div>';
+  apiFetch(PROXY+'/api/val/os/external-action-packets/'+encodeURIComponent(id)+'/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
+    .then(function(data){
+      var receipt=data.receipt||{};
+      if(target)target.innerHTML='<div class="email-card"><h3>External Action Receipt</h3><div class="email-reason"><strong>Done.</strong> '+docSafe(receipt.message||'External action completed.')+'</div><div class="email-reason"><strong>Provider:</strong> '+docSafe(receipt.provider||'')+'<br><strong>Action:</strong> '+docSafe(receipt.action||'')+'</div></div>';
+      addSys('External action completed and receipt recorded.');
+    })
+    .catch(function(e){if(target)target.innerHTML='<div class="email-reason"><strong>Action did not run:</strong> '+docSafe(e.message||e)+'</div>';addSys('External action failed: '+(e.message||e));});
+}
+function cancelExternalActionPacket(id){
+  var target=document.getElementById('externalActionReceipt-'+docSafe(id));
+  if(target)target.innerHTML='<div class="email-reason"><strong>Cancelled.</strong> No external action was taken.</div>';
+  addSys('External action cancelled. Nothing was changed.');
+}
+window.renderExternalActionPacket=renderExternalActionPacket;
+window.approveExternalActionPacket=approveExternalActionPacket;
+window.cancelExternalActionPacket=cancelExternalActionPacket;
+window.saveExternalActionPacketTweaks=saveExternalActionPacketTweaks;
 
 // ── CHAT RENDERING ─────────────────────────────────────
 function ftime(){return new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}
