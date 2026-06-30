@@ -159,7 +159,7 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
   assert.match(ui,/Intake Status/);
-  assert.match(ui,/Only real transcript records appear here/);
+  assert.match(ui,/Notes and transcripts live together here/);
   assert.match(ui,/No real transcripts are available yet/);
   assert.match(ui,/Chat About This Transcript/);
   assert.match(ui,/Processing details/);
@@ -250,10 +250,16 @@ test('fallback summaries are not counted as hard processing failures',()=>{
   assert.match(server,/failedProcessing:transcripts\.filter\(isHardTranscriptProcessingFailure\)\.length/);
 });
 
-test('transcript detail defaults to summary, transcript, and transcript-specific chat',()=>{
-  for(const label of ['Summary','Transcript','Chat About This Transcript','Processing details']){
+test('transcript detail defaults to notes, transcript, and transcript-specific chat',()=>{
+  for(const label of ['Notes','Transcript','Overview','Action Items','Chat About This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
+  assert.match(ui,/function transcriptSidebarHtml/);
+  assert.match(ui,/window\.setTranscriptTab/);
+  assert.match(ui,/data-transcript-tab="notes"/);
+  assert.match(ui,/data-transcript-panel="transcript"/);
+  assert.match(ui,/class="val-action-note"/);
+  assert.match(ui,/Add to Actions/);
   assert.match(ui,/api\/val\/transcripts\/'\+encodeURIComponent\(t\.id\)\+'\/chat/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/Do not say you need an email, document, Gmail, Drive, or external source/);
