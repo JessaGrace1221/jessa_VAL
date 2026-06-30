@@ -100,6 +100,8 @@ test('transcript intelligence classifies structured meeting objects instead of l
   assert.match(server,/function normalizeTranscriptAnalysis/);
   assert.match(server,/function normalizeTranscriptObject/);
   assert.match(server,/function transcriptActionIsSpecific/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/reprocess'/);
+  assert.match(server,/transcript_reprocess_requested/);
   assert.match(server,/send something/);
   assert.match(server,/structuredObjects/);
   assert.match(server,/observationTypeForObject/);
@@ -107,6 +109,9 @@ test('transcript intelligence classifies structured meeting objects instead of l
   assert.match(ui,/Risks & Dependencies/);
   assert.match(ui,/Meeting Intelligence/);
   assert.match(ui,/transcriptObjectLabel/);
+  assert.match(ui,/Reprocess Recent/);
+  assert.match(ui,/Reprocess This/);
+  assert.match(ui,/reprocessTranscript/);
 });
 
 test('relationship engine builds living profiles from observations without creating tasks',()=>{

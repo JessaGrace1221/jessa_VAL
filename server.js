@@ -18578,6 +18578,19 @@ app.post('/api/val/transcripts/repair',async(req,res)=>{
     res.json({ok:true,found:stuck.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length,results});
   }catch(e){console.error('[transcripts] repair failed',e);res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/val/transcripts/reprocess',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(25,Number(req.body?.limit)||10));
+    const transcriptId=String(req.body?.transcriptId||req.body?.id||'').trim();
+    const data=await transcriptIndexData(transcriptId);
+    const candidates=(data.transcripts||[]).filter(isUsableTranscriptIndexRow).slice(0,transcriptId?1:limit);
+    if(transcriptId&&!candidates.length)return res.status(404).json({ok:false,error:'Transcript not found'});
+    const results=[];
+    for(const row of candidates)results.push(await processExistingTranscriptRecord(row));
+    await auditLog({req,action:'transcript_reprocess_requested',resourceType:'transcript_processing',resourceId:transcriptId,metadata:{requestedTranscriptId:transcriptId,requestedLimit:limit,found:candidates.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length},success:true}).catch(()=>{});
+    res.json({ok:true,found:candidates.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length,results});
+  }catch(e){console.error('[transcripts] reprocess failed',e);res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/transcripts/process',async(req,res)=>{
   let saved=null,body=null,transcriptText='',title='Processed transcript',meetingMatch=null;
   try{
