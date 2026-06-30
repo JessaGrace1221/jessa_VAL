@@ -73,16 +73,20 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/function emailSnippetSummary/);
   assert.match(server,/function emailValIntro/);
   assert.match(server,/function emailValSignoff/);
+  assert.match(server,/function normalizeDraftStandards/);
+  assert.match(server,/function getDraftStandards/);
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
   assert.match(server,/intro\|introduction\|referral\|connect you/);
   assert.match(server,/VAL here\./);
   assert.match(server,/Jessa's AI Chief of Staff/);
-  assert.match(server,/I'll make a note of it for Jessa/);
-  assert.match(server,/I'll get this question in front of Jessa right away/);
-  assert.match(server,/I'll put it on Jessa's review list/);
-  assert.match(server,/I'll make sure Jessa has the calendar context/);
+  assert.match(server,/disclosureMode:'val_disclosed'/);
+  assert.match(server,/write_as_user/);
+  assert.match(server,/I'll make a note of it/);
+  assert.match(server,/I'll get this question in front of \$\{target\} right away/);
+  assert.match(server,/review list/);
+  assert.match(server,/calendar context/);
   assert.match(server,/I'm bringing this back to the top of the thread for Jessa/);
   assert.doesNotMatch(server,/Thank you for your note\. I wanted to respond thoughtfully/);
   assert.doesNotMatch(server,/I saw this needs a clear reply/);
@@ -93,6 +97,21 @@ test('executive inbox prepares approval drafts for reply-worthy and warm intro e
   assert.match(server,/email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
+});
+
+test('Executive Inbox exposes user-controlled draft standards',()=>{
+  assert.match(server,/create table if not exists val_user_preferences/);
+  assert.match(server,/app\.get\('\/api\/val\/draft-standards'/);
+  assert.match(server,/app\.put\('\/api\/val\/draft-standards'/);
+  assert.match(server,/draft_standards_updated/);
+  assert.match(server,/const standards=await getDraftStandards\(\)/);
+  assert.match(server,/buildEmailReplyDraft\(email,standards\)/);
+  assert.match(dashboard,/Set Draft Standards/);
+  assert.match(dashboard,/function openDraftStandards/);
+  assert.match(dashboard,/function saveDraftStandards/);
+  assert.match(dashboard,/Recipient can see VAL is writing/);
+  assert.match(dashboard,/Write as me; do not mention VAL/);
+  assert.match(dashboard,/\/api\/val\/draft-standards/);
 });
 
 test('Executive Inbox approve draft sends email through Gmail',()=>{

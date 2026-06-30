@@ -1069,6 +1069,7 @@ function writeJson(file,value){
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
   ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  if(!store.userPreferences||typeof store.userPreferences!=='object')store.userPreferences={};
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -3669,6 +3670,14 @@ async function initValDb(){
       updated_at timestamptz not null default now(),
       primary key (tenant_id,user_id)
     );
+    create table if not exists val_user_preferences (
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      preferences_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id)
+    );
     create table if not exists teach_val_onboarding_sessions (
       id text primary key,
       tenant_id text not null default 'default',
@@ -5322,7 +5331,8 @@ app.post('/api/email/actions',async(req,res)=>{
     const status=(external||sensitive)?'needs_approval':'prepared';
     const result={ok:true,status,requiresApproval:status==='needs_approval'};
     if(action==='drafted_reply'||action==='draft_reply'){
-      result.draft=buildEmailReplyDraft(email);
+      const standards=await getDraftStandards();
+      result.draft=buildEmailReplyDraft(email,standards);
       result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from}});
     }else if(action==='forwarded'||action==='forward'){
       result.forwardDraft={to:body.forwardTo||'',subject:'Fwd: '+(email.subject||''),body:`VAL summary:\n${email.reason||'This may need review.'}\n\nOriginal email below.\n\nFrom: ${email.from?.email||''}\nSubject: ${email.subject||''}\n\n${email.bodyPreview||email.snippet||''}`};
@@ -6361,6 +6371,64 @@ function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
   return 'draft_email_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
 }
+const DEFAULT_DRAFT_STANDARDS={
+  disclosureMode:'val_disclosed',
+  defaultSignoff:'Best,',
+  signatureName:'VAL',
+  signatureTitle:"Jessa's AI Chief of Staff",
+  userSignatureName:CLIENT_CONFIG.clientName||'Jessa',
+  tone:'Warm, clear, concise, and accountable.',
+  instructions:''
+};
+function normalizeDraftStandards(input={}){
+  const mode=String(input.disclosureMode||input.disclosure_mode||DEFAULT_DRAFT_STANDARDS.disclosureMode).trim();
+  const cleanMode=mode==='write_as_user'||mode==='user_voice'?'write_as_user':'val_disclosed';
+  return {
+    disclosureMode:cleanMode,
+    defaultSignoff:String(input.defaultSignoff||input.default_signoff||DEFAULT_DRAFT_STANDARDS.defaultSignoff).trim().slice(0,60)||DEFAULT_DRAFT_STANDARDS.defaultSignoff,
+    signatureName:String(input.signatureName||input.signature_name||DEFAULT_DRAFT_STANDARDS.signatureName).trim().slice(0,80)||DEFAULT_DRAFT_STANDARDS.signatureName,
+    signatureTitle:String(input.signatureTitle||input.signature_title||DEFAULT_DRAFT_STANDARDS.signatureTitle).trim().slice(0,120),
+    userSignatureName:String(input.userSignatureName||input.user_signature_name||CLIENT_CONFIG.clientName||DEFAULT_DRAFT_STANDARDS.userSignatureName).trim().slice(0,80)||DEFAULT_DRAFT_STANDARDS.userSignatureName,
+    tone:String(input.tone||DEFAULT_DRAFT_STANDARDS.tone).trim().slice(0,1000),
+    instructions:String(input.instructions||input.specialInstructions||input.special_instructions||'').trim().slice(0,3000)
+  };
+}
+async function getUserPreferences(){
+  const fallback={draftStandards:normalizeDraftStandards(DEFAULT_DRAFT_STANDARDS)};
+  if(DEMO_MODE)return fallback;
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select preferences_json from val_user_preferences where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),currentUserId()]);
+    return {...fallback,...(r.rows[0]?.preferences_json||{})};
+  }
+  const store=valStore();
+  const key=`${tenantId()}:${currentUserId()}`;
+  return {...fallback,...(store.userPreferences[key]||{})};
+}
+async function saveUserPreferences(prefs){
+  const existing=await getUserPreferences().catch(()=>({}));
+  const next={...existing,...(prefs||{})};
+  next.draftStandards=normalizeDraftStandards(next.draftStandards||DEFAULT_DRAFT_STANDARDS);
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into val_user_preferences (tenant_id,user_id,preferences_json,updated_at)
+      values ($1,$2,$3,now())
+      on conflict (tenant_id,user_id) do update set preferences_json=excluded.preferences_json,updated_at=now()`,[tenantId(),currentUserId(),JSON.stringify(next)]);
+    return next;
+  }
+  const store=valStore();
+  const key=`${tenantId()}:${currentUserId()}`;
+  store.userPreferences[key]=next;
+  saveValStore(store);
+  return next;
+}
+async function getDraftStandards(){
+  const prefs=await getUserPreferences().catch(()=>({draftStandards:DEFAULT_DRAFT_STANDARDS}));
+  return normalizeDraftStandards(prefs.draftStandards||DEFAULT_DRAFT_STANDARDS);
+}
+function draftStandardsDiscloseVal(standards){
+  return normalizeDraftStandards(standards).disclosureMode!=='write_as_user';
+}
 function emailSenderFirstName(email){
   return (email.from?.name||email.from?.email||'').split(/[.\s@_-]+/).filter(Boolean)[0]||'';
 }
@@ -6374,32 +6442,46 @@ function emailCleanSentence(value){
 function emailSnippetSummary(email){
   return emailCleanSentence(email.bodyPreview||email.snippet||email.bodyText||email.reason||'');
 }
-function emailSignoff(email){
-  return 'Best,';
+function emailSignoff(email,standards){
+  return normalizeDraftStandards(standards).defaultSignoff||'Best,';
 }
-function emailValIntro(){return 'VAL here.';}
-function emailValSignoff(){return ['Best,','VAL',"Jessa's AI Chief of Staff"];}
+function emailAssistantTarget(standards){
+  return draftStandardsDiscloseVal(standards)?(CLIENT_CONFIG.clientName||'Jessa'):'you';
+}
+function emailOwnerPossessive(standards){
+  return draftStandardsDiscloseVal(standards)?`${CLIENT_CONFIG.clientName||'Jessa'}'s`:'my';
+}
+function emailValIntro(standards){
+  return draftStandardsDiscloseVal(standards)?'VAL here.':'';
+}
+function emailValSignoff(standards){
+  const s=normalizeDraftStandards(standards);
+  if(draftStandardsDiscloseVal(s))return [s.defaultSignoff,s.signatureName,s.signatureTitle].filter(Boolean);
+  return [s.defaultSignoff,s.userSignatureName].filter(Boolean);
+}
 function emailDraftBody(lines){
   return lines.flat().filter(line=>line!==null&&line!==undefined).join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
-function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
+function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff,standards}){
   const conflict=/conflict|can't|cannot|unavailable|reschedul|move|instead|another time|emergency/i.test(text);
   const proposed=(text.match(/\b(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^.?!]*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i)||[])[0];
+  const disclose=draftStandardsDiscloseVal(standards);
+  const target=emailAssistantTarget(standards);
   if(conflict||proposed){
     return {
       subject,
       body:emailDraftBody([
         emailDraftGreeting(email),
         '',
-        emailValIntro(),
+        emailValIntro(standards),
         '',
         proposed
-          ? `Thanks for letting me know. I'll make sure ${emailCleanSentence(proposed)} is reflected for Jessa if that still works on your end.`
-          : snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it for Jessa.`:"Thanks for letting me know. I'll make a note of this for Jessa.",
+          ? disclose?`Thanks for letting me know. I'll make sure ${emailCleanSentence(proposed)} is reflected for ${target} if that still works on your end.`:`Thanks for letting me know. ${emailCleanSentence(proposed)} works if that still fits on your end.`
+          : snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it ${disclose?`for ${target}`:'on my end'}.`:`Thanks for letting me know. I'll make a note of this ${disclose?`for ${target}`:'on my end'}.`,
         '',
         "If anything changes before then, send it over and I'll keep the calendar context clean.",
         '',
-        emailValSignoff()
+        emailValSignoff(standards)
       ])
     };
   }
@@ -6408,76 +6490,81 @@ function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff}){
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      emailValIntro(),
+      emailValIntro(standards),
       '',
-      snippet?`Thanks for sending this over. I'll make sure Jessa has the calendar context for ${snippet}.`:"Thanks for sending this over. I'll make sure this gets in front of Jessa with the calendar context.",
+      snippet?`Thanks for sending this over. I'll make sure ${disclose?target:'I'} has the calendar context for ${snippet}.`:`Thanks for sending this over. I'll make sure this ${disclose?`gets in front of ${target}`:'is on my calendar radar'} with the right context.`,
       '',
-      emailValSignoff()
+      emailValSignoff(standards)
     ])
   };
 }
-function buildQuestionReplyDraft(email,{subject,text,snippet,signoff}){
+function buildQuestionReplyDraft(email,{subject,text,snippet,signoff,standards}){
   const asksForAvailability=/available|availability|schedule|when works|what time/i.test(text);
   const asksForReview=/review|feedback|thoughts|look over|approve|approval/i.test(text);
   const asksForInfo=/can you|could you|question|let me know|send me|share/i.test(text);
+  const disclose=draftStandardsDiscloseVal(standards);
+  const target=emailAssistantTarget(standards);
   return {
     subject,
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      emailValIntro(),
+      emailValIntro(standards),
       '',
       asksForAvailability
-        ? "Thanks for checking. I'll get this in front of Jessa and make sure the calendar answer is clean before we confirm."
+        ? disclose?`Thanks for checking. I'll get this in front of ${target} and make sure the calendar answer is clean before we confirm.`:"Thanks for checking. I want to make sure the calendar answer is clean before we confirm."
         : asksForReview
-          ? "Thanks for sending this over. I'll put it on Jessa's review list so she can give it the right attention."
+          ? disclose?`Thanks for sending this over. I'll put it on ${emailOwnerPossessive(standards)} review list so ${target} can give it the right attention.`:"Thanks for sending this over. I'll give it the right attention and follow up with the clearest next step."
           : asksForInfo
-            ? "Thanks for the note. I'll get this question in front of Jessa right away."
-            : "Thanks for reaching out. I'll make sure Jessa sees the question and can respond clearly.",
+            ? disclose?`Thanks for the note. I'll get this question in front of ${target} right away.`:"Thanks for the note. I'll look at this and follow up with a clear answer."
+            : disclose?`Thanks for reaching out. I'll make sure ${target} sees the question and can respond clearly.`:"Thanks for reaching out. I want to give you a useful answer.",
       '',
       snippet?`I noted this context: ${snippet}`:'',
       '',
       asksForAvailability
-        ? "I'll follow up once I have the best option from her calendar."
+        ? draftStandardsDiscloseVal(standards)?"I'll follow up once I have the best option from her calendar.":"I'll follow up once I have the best calendar option."
         : asksForReview
           ? "I'll follow up with the clearest next step once she has reviewed it."
           : "I'll follow up with the right details shortly.",
       '',
-      emailValSignoff()
+      emailValSignoff(standards)
     ])
   };
 }
-function buildWaitingFollowupDraft(email,{subject,snippet,signoff}){
+function buildWaitingFollowupDraft(email,{subject,snippet,signoff,standards}){
+  const disclose=draftStandardsDiscloseVal(standards);
   return {
     subject:subject.replace(/^Re:\s*/i,'Following up: '),
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      emailValIntro(),
+      emailValIntro(standards),
       '',
-      "I'm bringing this back to the top of the thread for Jessa.",
+      disclose?"I'm bringing this back to the top of the thread for Jessa.":"I wanted to bring this back to the top of the thread.",
       snippet?`The open piece I'm tracking is: ${snippet}`:'',
       '',
       'When you have a moment, can you send me the latest so I know whether to move this forward, adjust, or close the loop?',
       '',
-      emailValSignoff()
+      emailValSignoff(standards)
     ])
   };
 }
-function buildEmailReplyDraft(email){
+function buildEmailReplyDraft(email,standards=DEFAULT_DRAFT_STANDARDS){
+  standards=normalizeDraftStandards(standards);
   const subject=`Re: ${email.subject||''}`.trim();
   const name=emailSenderFirstName(email);
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.reason,email.recommendedAction].join(' ');
   const snippet=emailSnippetSummary(email);
-  const signoff=emailSignoff(email);
+  const signoff=emailSignoff(email,standards);
   const intro=/\b(intro|introduction|referral|connect you|warm intro|warm introduction|tight version|one paragraph)\b/i.test(text);
+  const disclose=draftStandardsDiscloseVal(standards);
   if(intro){
     return {
       subject,
       body:emailDraftBody([
         `Hi ${name},`.replace(/\s+,/,','),
         '',
-        emailValIntro(),
+        emailValIntro(standards),
         '',
         'Thank you. I really appreciate the introduction.',
         '',
@@ -6487,37 +6574,38 @@ function buildEmailReplyDraft(email){
         '',
         'Grateful for you making the connection.',
         '',
-        emailValSignoff()
+        emailValSignoff(standards)
       ])
     };
   }
   if(/\b(invitation|calendar|meeting|zoom|reschedule|available|availability|appointment|event)\b/i.test(text)){
-    return buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff});
+    return buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff,standards});
   }
   if(email.classification==='waiting_on_response'||/\bfollowing up|checking in|circle back|waiting|next step|open loop\b/i.test(text)){
-    return buildWaitingFollowupDraft(email,{subject,snippet,signoff});
+    return buildWaitingFollowupDraft(email,{subject,snippet,signoff,standards});
   }
   if(/\b(can you|could you|please|question|let me know|reply|respond|review|feedback|approve|available|schedule)\b/i.test(text)){
-    return buildQuestionReplyDraft(email,{subject,text,snippet,signoff});
+    return buildQuestionReplyDraft(email,{subject,text,snippet,signoff,standards});
   }
   return {
     subject,
     body:emailDraftBody([
       emailDraftGreeting(email),
       '',
-      emailValIntro(),
+      emailValIntro(standards),
       '',
-      snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it for Jessa.`:"Thanks for reaching out. I'll make sure this gets in front of Jessa.",
+      snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it ${disclose?'for Jessa':'on my end'}.`:disclose?"Thanks for reaching out. I'll make sure this gets in front of Jessa.":"Thanks for reaching out. I'll take a look and follow up shortly.",
       '',
       email.recommendedAction&&!/draft|reply/i.test(email.recommendedAction)?emailCleanSentence(email.recommendedAction):"I'll take the next clean step and follow up shortly.",
       '',
-      emailValSignoff()
+      emailValSignoff(standards)
     ])
   };
 }
 async function prepareEmailDraftIfNeeded(email){
   if(!emailShouldPrepareDraft(email))return null;
-  const draft=buildEmailReplyDraft(email);
+  const standards=await getDraftStandards();
+  const draft=buildEmailReplyDraft(email,standards);
   return saveInternalDraft({
     id:emailDraftStableId(email),
     draftType:'email_reply',
@@ -6842,7 +6930,8 @@ async function inboxCommandAction(body={},userId=currentUserId()){
   const email=body.email||body.message||{};
   if(!email.messageId&&!email.subject)return {ok:false,error:'Choose an email first.'};
   if(action==='draft_reply'){
-    const generated=buildEmailReplyDraft(email);
+    const standards=await getDraftStandards();
+    const generated=buildEmailReplyDraft(email,standards);
     const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:generated.subject||('Re: '+(email.subject||'')),body:body.body||generated.body,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
     return {ok:true,action,draft,requiresApproval:true};
   }
@@ -9826,6 +9915,18 @@ app.get('/api/val/templates/:templateKey',async(req,res)=>{
 app.put('/api/val/templates/:templateKey',async(req,res)=>{
   try{res.json({ok:true,template:await saveTemplate(req.params.templateKey,req.body||{})});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/draft-standards',async(req,res)=>{
+  try{res.json({ok:true,draftStandards:await getDraftStandards()});}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.put('/api/val/draft-standards',async(req,res)=>{
+  try{
+    const draftStandards=normalizeDraftStandards(req.body?.draftStandards||req.body||{});
+    await saveUserPreferences({draftStandards});
+    await auditLog({req,action:'draft_standards_updated',resourceType:'draft_standards',metadata:{disclosureMode:draftStandards.disclosureMode,hasInstructions:!!draftStandards.instructions},success:true}).catch(()=>{});
+    res.json({ok:true,draftStandards});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
 function rowToDraft(row){
