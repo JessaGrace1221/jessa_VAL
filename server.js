@@ -13026,6 +13026,89 @@ async function listDashboardEvidenceItems({limit=180}={}){
   }
   return transcriptFileArray(valStore(),'evidenceItems').slice().sort((a,b)=>interactionDate(b.occurredAt||b.capturedAt||b.createdAt)-interactionDate(a.occurredAt||a.capturedAt||a.createdAt)).slice(0,limit);
 }
+async function listEvidenceObservationsForItems(ids=[]){
+  ids=ids.map(String).filter(Boolean);
+  if(!ids.length)return [];
+  if(DEMO_MODE)return (transcriptDemoArray('evidenceObservations')||[]).filter(o=>ids.includes(String(o.evidenceItemId||o.evidence_item_id||'')));
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from evidence_observations where tenant_id=$1 and evidence_item_id=any($2::text[]) order by created_at desc',[tenantId(),ids]);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'evidenceObservations').filter(o=>ids.includes(String(o.evidenceItemId||o.evidence_item_id||'')));
+}
+function evidenceReviewShort(text='',max=900){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  return clean.length>max?clean.slice(0,max-1).trim()+'…':clean;
+}
+function publicEvidenceReviewItem(item={},observations=[],moves=[]){
+  const entities=evidenceJsonValue(item.entitiesJson||item.entities_json||item.entities,{});
+  const participants=evidenceJsonValue(item.participantsJson||item.participants_json,[]);
+  const id=item.id||'';
+  const obs=observations.filter(o=>String(o.evidenceItemId||o.evidence_item_id||'')===String(id)).map(o=>({
+    id:o.id,
+    type:o.observationType||o.observation_type||'observation',
+    title:String(o.observationType||o.observation_type||'observation').replace(/_/g,' '),
+    summary:o.content||'',
+    quote:o.exactQuote||o.exact_quote||'',
+    confidence:Number(o.confidence||0),
+    personId:o.personId||o.person_id||'',
+    projectId:o.projectId||o.project_id||'',
+    dueAt:o.dueAt||o.due_at||'',
+    createdAt:o.createdAt||o.created_at||''
+  }));
+  const linkedMoves=moves.filter(m=>(m.sourceEvidenceIds||[]).map(String).includes(String(id))).map(m=>({
+    id:m.id,
+    type:'VAL move',
+    title:m.title||m.moveType||'Suggested move',
+    summary:m.why||m.whatChanged||'',
+    confidence:Number(m.confidence||0),
+    kind:m.priorityBand||'move',
+    projectId:m.projectId||'',
+    personId:m.personId||''
+  }));
+  const impacts=[...linkedMoves];
+  if(entities.project)impacts.push({type:'project',title:String(entities.project),summary:'Source metadata links this evidence to a project.',confidence:Number(item.confidence||0)});
+  if(entities.classification)impacts.push({type:'classification',title:String(entities.classification).replace(/_/g,' '),summary:'Email/source classifier label attached to this evidence.',confidence:Number(item.confidence||0)});
+  participants.slice(0,4).forEach(p=>impacts.push({type:'person',title:p.name||p.email||p.matchedContactName||'Participant',summary:p.email||p.role||'Participant found in source receipt.',confidence:p.confidence==='high'?1:.55}));
+  return {
+    id,
+    sourceType:item.sourceType||item.source_type||'source',
+    sourceId:item.sourceId||item.source_id||'',
+    sourceUrl:item.sourceUrl||item.source_url||'',
+    title:item.title||item.summary||'Evidence receipt',
+    summary:item.summary||evidenceReviewShort(item.rawText||item.raw_text||'',220),
+    receipt:evidenceReviewShort(item.rawText||item.raw_text||item.summary||'',1400),
+    confidence:Number(item.confidence||0),
+    status:item.status||'captured',
+    occurredAt:item.occurredAt||item.occurred_at||'',
+    capturedAt:item.capturedAt||item.captured_at||'',
+    createdAt:item.createdAt||item.created_at||'',
+    observations:obs,
+    impacts:impacts.slice(0,10),
+    metadata:evidenceJsonValue(item.metadataJson||item.metadata_json||item.metadata,{})
+  };
+}
+async function buildEvidenceReview({limit=80}={}){
+  const evidence=await listDashboardEvidenceItems({limit});
+  const ids=evidence.map(e=>e.id).filter(Boolean);
+  const [observations,moves]=await Promise.all([
+    listEvidenceObservationsForItems(ids).catch(()=>[]),
+    listAgencyMoves({limit:160}).catch(()=>[])
+  ]);
+  const items=evidence.map(e=>publicEvidenceReviewItem(e,observations,moves));
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    summary:{
+      evidenceItems:items.length,
+      interpretations:observations.length,
+      linkedMoves:moves.filter(m=>(m.sourceEvidenceIds||[]).some(id=>ids.includes(String(id)))).length,
+      needsReview:items.filter(i=>!i.observations.length||Number(i.confidence||0)<.7).length
+    },
+    items
+  };
+}
 async function executiveBriefingCounts(){
   if(DEMO_MODE){
     const evidence=(transcriptDemoArray('evidenceItems')||[]).length,observations=(transcriptDemoArray('evidenceObservations')||[]).length,moves=(transcriptDemoArray('agencyMoves')||[]).length;
@@ -18972,6 +19055,10 @@ app.get('/api/executive-briefing',async(req,res)=>{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Executive Briefing is not used for Michele book/editor mode.'});
     res.json(await buildExecutiveBriefing());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/evidence/review',async(req,res)=>{
+  try{res.json(await buildEvidenceReview({limit:Math.min(Number(req.query.limit)||80,160)}));}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 function projectCabinetKey(name=''){
   return String(name||'project').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'project';
