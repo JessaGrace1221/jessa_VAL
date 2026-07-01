@@ -18527,8 +18527,15 @@ function transcriptChatWantsTaskCreation(question=''){
 function transcriptChatTaskProjectName(item={},transcript={}){
   return item.relatedProject||item.project||item.projectName||item.related_project||transcript.projectName||transcript.relatedProject||'';
 }
-async function extractTranscriptTasksForChat({transcript,question}){
+function compactTranscriptChatHistory(history=[]){
+  return (Array.isArray(history)?history:[]).slice(-8).map(m=>({
+    role:String(m.role||'').slice(0,20),
+    content:String(m.content||'').slice(0,4000)
+  })).filter(m=>m.content);
+}
+async function extractTranscriptTasksForChat({transcript,question,history=[]}){
   const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
+  const chatHistory=compactTranscriptChatHistory(history);
   const knownTasks=[
     ...(Array.isArray(transcript.tasks)?transcript.tasks:[]),
     ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[]),
@@ -18540,6 +18547,9 @@ async function extractTranscriptTasksForChat({transcript,question}){
     'Return strict JSON only: {"tasks":[...]}',
     'Each task must be specific enough for another competent person to complete without hearing the transcript.',
     'Every task must include: taskTitle, taskDescription, assignedToName, dueDate, priority, relatedProject, sourceQuote, confidence.',
+    'If the user says "these", "those", "them", "the above", or similar, use the previous chat answer as the list to convert into tasks.',
+    'The previous chat answer is more important than old staged transcript candidates, because staged candidates may be incomplete or messy.',
+    'Still verify each task against the transcript before creating it.',
     'Use null for dueDate when no timing is stated. Use empty string for assignedToName only if the transcript truly does not identify an owner.',
     'Do not create vague tasks like "follow up" or "send it". Rewrite only when the source evidence supports the full concrete action.',
     'Do not invent external facts. Do not create completed work as a task.'
@@ -18547,7 +18557,8 @@ async function extractTranscriptTasksForChat({transcript,question}){
   const user=[
     'Transcript title: '+(transcript.title||'Transcript'),
     'User request: '+question,
-    knownTasks.length?'Previously extracted task candidates:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
+    chatHistory.length?'Recent transcript chat history:\n'+JSON.stringify(chatHistory):'',
+    knownTasks.length?'Older staged transcript-page task candidates. Use only if chat history does not contain the requested task list:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
     'Transcript:\n'+transcriptText.slice(0,30000)
   ].filter(Boolean).join('\n\n');
   let parsed={tasks:[]};
@@ -18564,8 +18575,8 @@ async function extractTranscriptTasksForChat({transcript,question}){
     return {...normalized,relatedProject:transcriptChatTaskProjectName(item,transcript)};
   }).filter(Boolean).slice(0,20);
 }
-async function createTranscriptChatTasks({transcript,question}){
-  const tasks=await extractTranscriptTasksForChat({transcript,question});
+async function createTranscriptChatTasks({transcript,question,history=[]}){
+  const tasks=await extractTranscriptTasksForChat({transcript,question,history});
   const created=[];
   const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
   for(const item of tasks){
@@ -18611,7 +18622,7 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(transcriptChatWantsTaskCreation(question)){
-      const created=await createTranscriptChatTasks({transcript,question});
+      const created=await createTranscriptChatTasks({transcript,question,history:req.body.history||[]});
       const content=created.length
         ? `Added ${created.length} transcript task${created.length===1?'':'s'} to Actions.\n\n`+created.map((task,i)=>`${i+1}. ${task.title}${task.contactName?' — '+task.contactName:''}${task.dueDate?' — due '+new Date(task.dueDate).toLocaleDateString():''}`).join('\n')
         : 'I could not find transcript-backed tasks specific enough to add safely. Ask me to list the tasks and owners first, then I can add the ones you choose.';
