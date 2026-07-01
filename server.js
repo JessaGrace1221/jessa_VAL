@@ -18524,6 +18524,9 @@ function transcriptChatWantsTaskCreation(question=''){
     || /\b(add|create|save)\s+(these|those|them|all of (these|those))\b/i.test(question)
     || /\bput (these|those|them) in (my )?(tasks?|actions?)\b/i.test(question);
 }
+function transcriptChatRefersToPriorList(question=''){
+  return /\b(these|those|them|the above|that list|all of (these|those|them)|the tasks you listed|the ones you listed|individual tasks)\b/i.test(question);
+}
 function transcriptChatTaskProjectName(item={},transcript={}){
   return item.relatedProject||item.project||item.projectName||item.related_project||transcript.projectName||transcript.relatedProject||'';
 }
@@ -18536,6 +18539,7 @@ function compactTranscriptChatHistory(history=[]){
 async function extractTranscriptTasksForChat({transcript,question,history=[]}){
   const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
   const chatHistory=compactTranscriptChatHistory(history);
+  const usePriorList=transcriptChatRefersToPriorList(question)&&chatHistory.some(m=>m.role==='assistant');
   const knownTasks=[
     ...(Array.isArray(transcript.tasks)?transcript.tasks:[]),
     ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[]),
@@ -18547,8 +18551,8 @@ async function extractTranscriptTasksForChat({transcript,question,history=[]}){
     'Return strict JSON only: {"tasks":[...]}',
     'Each task must be specific enough for another competent person to complete without hearing the transcript.',
     'Every task must include: taskTitle, taskDescription, assignedToName, dueDate, priority, relatedProject, sourceQuote, confidence.',
-    'If the user says "these", "those", "them", "the above", or similar, use the previous chat answer as the list to convert into tasks.',
-    'The previous chat answer is more important than old staged transcript candidates, because staged candidates may be incomplete or messy.',
+    usePriorList?'The user is referring to the previous chat answer. Convert ONLY the tasks in recent transcript chat history. Do not use older staged transcript-page task candidates.':'Use the transcript and any provided user request to identify tasks.',
+    usePriorList?'If recent chat history listed 10 tasks, create those 10 tasks unless one cannot be verified against the transcript.':'',
     'Still verify each task against the transcript before creating it.',
     'Use null for dueDate when no timing is stated. Use empty string for assignedToName only if the transcript truly does not identify an owner.',
     'Do not create vague tasks like "follow up" or "send it". Rewrite only when the source evidence supports the full concrete action.',
@@ -18558,7 +18562,7 @@ async function extractTranscriptTasksForChat({transcript,question,history=[]}){
     'Transcript title: '+(transcript.title||'Transcript'),
     'User request: '+question,
     chatHistory.length?'Recent transcript chat history:\n'+JSON.stringify(chatHistory):'',
-    knownTasks.length?'Older staged transcript-page task candidates. Use only if chat history does not contain the requested task list:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
+    (!usePriorList&&knownTasks.length)?'Older staged transcript-page task candidates. Use only if they are concrete and verified:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
     'Transcript:\n'+transcriptText.slice(0,30000)
   ].filter(Boolean).join('\n\n');
   let parsed={tasks:[]};
