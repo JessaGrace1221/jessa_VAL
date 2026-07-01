@@ -18976,6 +18976,17 @@ app.get('/api/executive-briefing',async(req,res)=>{
 function projectCabinetKey(name=''){
   return String(name||'project').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'project';
 }
+function projectCabinetCanonicalName(name=''){
+  const raw=String(name||'').trim();
+  const key=projectCabinetKey(raw);
+  if(!raw)return '';
+  if(/^(jessa-?val|jessa-val-production|val-core|baby-val|val-platform)$/i.test(key))return 'VAL';
+  if(/^(helpbyshopping|help-by-shopping|helpby-shopping)$/i.test(key))return 'Help by Shopping';
+  if(/^(hopemakers|hope-makers)$/i.test(key))return 'HopeMakers';
+  if(/^(grace-intelligence|graceintelligence)$/i.test(key))return 'Grace Intelligence';
+  if(/^goall$/i.test(key))return 'GOALL';
+  return raw;
+}
 function projectCabinetText(row={}){
   return [
     row.title,row.name,row.displayName,row.summary,row.rawText,row.notes,row.contactName,row.kind,row.type,row.sourceType,
@@ -19005,7 +19016,7 @@ function projectCabinetPublicRow(row={},fallbackType='source'){
   };
 }
 function projectCabinetAdd(map,name,source='observed',summary=''){
-  name=String(name||'').trim();
+  name=projectCabinetCanonicalName(name);
   if(!name||name.length<2)return null;
   const key=projectCabinetKey(name);
   if(!map.has(key))map.set(key,{key,name,aliases:Array.from(new Set([name,key,name.replace(/\s+/g,''),name.replace(/&/g,'and')])),source,status:'Active',summary});

@@ -1266,11 +1266,12 @@ body{font-size:1rem}
 .project-cabinet-rail-head{padding:4px 4px 10px!important;border-bottom:1px solid rgba(201,154,61,.18)!important;margin-bottom:4px!important}
 .project-cabinet-rail-head strong{display:block!important;font-size:.76rem!important;letter-spacing:.12em!important;text-transform:uppercase!important;color:#8a5a17!important}
 .project-cabinet-rail-head span{display:block!important;margin-top:3px!important;font-size:.78rem!important;color:#667386!important}
-.project-drawer-tab{width:100%!important;border:1px solid transparent!important;background:transparent!important;border-radius:9px!important;text-align:left!important;padding:10px!important;color:#17243a!important;cursor:pointer!important;display:grid!important;gap:4px!important}
-.project-drawer-tab:hover,.project-drawer-tab.active{background:#fff!important;border-color:rgba(201,154,61,.28)!important;box-shadow:0 8px 20px rgba(7,24,45,.055)!important}
-.project-drawer-tab strong{font-size:.92rem!important;line-height:1.2!important;color:#07182d!important}
-.project-drawer-tab span{font-size:.76rem!important;line-height:1.35!important;color:#657184!important}
-.project-drawer-tab em{font-style:normal!important;font-size:.68rem!important;text-transform:uppercase!important;letter-spacing:.08em!important;color:#8a5a17!important}
+.project-cabinet .project-drawer-tab{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:72px!important;border:1px solid rgba(7,24,45,.08)!important;background:rgba(255,255,255,.58)!important;border-radius:9px!important;text-align:left!important;padding:11px 12px!important;color:#17243a!important;cursor:pointer!important;display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:4px!important;box-sizing:border-box!important;overflow:hidden!important;line-height:1.2!important}
+.project-cabinet .project-drawer-tab:hover,.project-cabinet .project-drawer-tab.active{background:#fff!important;border-color:rgba(201,154,61,.32)!important;box-shadow:0 8px 20px rgba(7,24,45,.055)!important}
+.project-cabinet .project-drawer-tab.active{border-left:3px solid #c99a3d!important;padding-left:10px!important}
+.project-cabinet .project-drawer-tab strong{display:block!important;width:100%!important;font-size:.9rem!important;line-height:1.15!important;color:#07182d!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.project-cabinet .project-drawer-tab span{display:block!important;width:100%!important;font-size:.73rem!important;line-height:1.3!important;color:#657184!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.project-cabinet .project-drawer-tab em{display:block!important;font-style:normal!important;font-size:.64rem!important;line-height:1!important;text-transform:uppercase!important;letter-spacing:.09em!important;color:#8a5a17!important;white-space:nowrap!important}
 .project-cabinet-main{overflow:auto!important;padding-right:4px!important}
 .project-file{display:grid!important;gap:14px!important}
 .project-file-hero{border:1px solid rgba(201,154,61,.25)!important;border-radius:12px!important;background:linear-gradient(135deg,#fffdf8,#fff7e4)!important;padding:18px!important;box-shadow:0 16px 34px rgba(7,24,45,.045)!important}
@@ -1292,6 +1293,10 @@ body{font-size:1rem}
 .project-chat-row{display:flex!important;gap:8px!important;align-items:center!important}
 .project-chat-row input{min-height:42px!important}
 .project-answer{display:none;margin-top:12px!important;border:1px solid rgba(201,154,61,.22)!important;border-radius:10px!important;background:#fffdf8!important;padding:12px!important;color:#26354d!important;font-size:.86rem!important;line-height:1.5!important;white-space:pre-wrap!important}
+.exec-workspace-modal .project-file .relationship-primary-actions button{appearance:none!important;min-height:36px!important;border-radius:8px!important;padding:8px 13px!important;font-size:.75rem!important;font-weight:800!important;letter-spacing:.01em!important;box-shadow:none!important}
+.exec-workspace-modal .project-file .relationship-primary-actions button.primary{background:#07182d!important;color:#fff!important;border:1px solid #07182d!important;box-shadow:0 8px 18px rgba(7,24,45,.14)!important}
+.exec-workspace-modal .project-file .relationship-primary-actions button.secondary{background:#fff!important;color:#07182d!important;border:1px solid rgba(7,24,45,.16)!important}
+.exec-workspace-modal .project-file .relationship-primary-actions button.tertiary{background:#fffaf0!important;color:#715014!important;border:1px solid rgba(201,154,61,.24)!important}
 @media(max-width:980px){.project-cabinet{grid-template-columns:1fr!important;height:auto!important;overflow:visible!important}.project-cabinet-rail,.project-cabinet-main{max-height:none!important;overflow:visible!important}}
 .exec-workspace-drawer-wide #draftsWorkspaceBody .exec-workspace-grid{grid-template-columns:1fr!important}
 .exec-workspace-drawer-wide #draftsWorkspaceBody pre{font-size:.82rem!important;line-height:1.45!important;background:#fffdf8!important;border-color:rgba(7,24,45,.1)!important}
@@ -2370,6 +2375,14 @@ html body .val-talk-button > span.val-face:after{left:auto!important;right:14px!
 html body .val-talk-button .val-face .val-face-smile{position:absolute!important;left:17px!important;bottom:13px!important;width:25px!important;height:13px!important;border:0!important;border-bottom:4px solid #07182d!important;border-radius:0 0 999px 999px!important;background:transparent!important}
 html body .val-talk-button .val-face .val-face-smile:before,
 html body .val-talk-button .val-face .val-face-smile:after{display:none!important}
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab{height:auto!important;min-height:72px!important;display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:4px!important;padding:11px 12px!important;background:rgba(255,255,255,.58)!important;border:1px solid rgba(7,24,45,.08)!important;border-radius:9px!important;box-shadow:none!important;color:#07182d!important}
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab.active,
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab:hover{background:#fff!important;border-color:rgba(201,154,61,.32)!important;box-shadow:0 8px 20px rgba(7,24,45,.055)!important}
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab strong{font-size:.9rem!important;line-height:1.15!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;color:#07182d!important}
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab span{font-size:.73rem!important;line-height:1.3!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;color:#657184!important}
+html body .exec-workspace-modal .project-cabinet .project-drawer-tab em{font-size:.64rem!important;line-height:1!important;letter-spacing:.09em!important;text-transform:uppercase!important;color:#8a5a17!important}
+html body .exec-workspace-modal .project-file .relationship-primary-actions button.primary{background:#07182d!important;color:#fff!important;border-color:#07182d!important;box-shadow:0 8px 18px rgba(7,24,45,.14)!important}
+html body .exec-workspace-modal .project-file .relationship-primary-actions button.secondary{background:#fff!important;color:#07182d!important;border-color:rgba(7,24,45,.16)!important}
 @media(max-width:900px){
   html body .val-home-hero{margin:0 -18px!important;grid-template-rows:86px auto!important}
   html body .val-home-banner{height:86px!important}
