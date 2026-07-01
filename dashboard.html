@@ -1184,10 +1184,34 @@ body{font-size:1rem}
 .exec-workspace-drawer-modal .val-empty-plant i,.exec-workspace-drawer-modal .val-empty-plant b{position:absolute!important;width:18px!important;height:10px!important;border-radius:999px 999px 0 999px!important;background:#9aaa8d!important;bottom:23px!important;left:20px!important;transform:rotate(-24deg)!important}
 .exec-workspace-drawer-modal .val-empty-plant b{left:1px!important;bottom:30px!important;transform:rotate(214deg)!important}
 .exec-workspace-drawer-modal .val-empty-mug{position:absolute!important;left:50%!important;bottom:24px!important;transform:translateX(-50%)!important;width:62px!important;height:48px!important;border-radius:8px 8px 16px 16px!important;background:linear-gradient(135deg,#dcb76d,#b6842d)!important;color:#fff!important;display:grid!important;place-items:center!important;font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1rem!important;letter-spacing:.08em!important;box-shadow:0 14px 34px rgba(138,90,23,.16)!important}
+.exec-workspace-drawer-wide{width:min(820px,calc(100vw - 24px))!important}
+.exec-workspace-drawer-wide .exec-workspace-title{font-size:1.82rem!important}
+.exec-workspace-drawer-wide .exec-workspace-body{padding:16px!important}
+.exec-workspace-drawer-wide .inbox-command-card{background:linear-gradient(135deg,#fffdf8,#fff7e7)!important;border-color:rgba(201,154,61,.24)!important;box-shadow:0 12px 34px rgba(7,24,45,.05)!important}
+.exec-workspace-drawer-wide .inbox-command-card h3{font-family:'Inter','Jost',system-ui,sans-serif!important;font-size:.98rem!important;font-weight:760!important;letter-spacing:0!important}
+.exec-workspace-drawer-wide .inbox-command-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:8px!important}
+.exec-workspace-drawer-wide #emailSyncStatus{font-size:.82rem!important;color:#516071!important}
+.exec-workspace-drawer-wide .email-tabs{position:sticky!important;top:0!important;z-index:3!important;background:#fbfaf7!important;border:1px solid rgba(7,24,45,.08)!important;border-radius:8px 8px 0 0!important;border-bottom:0!important;padding:9px!important}
+.exec-workspace-drawer-wide .email-tabs button{height:32px!important;border-radius:7px!important;font-size:.72rem!important;font-weight:760!important;letter-spacing:0!important;text-transform:none!important}
+.exec-workspace-drawer-wide .email-body{height:calc(100dvh - 318px)!important;min-height:430px!important;display:grid!important;grid-template-columns:minmax(220px,300px) minmax(0,1fr)!important;background:#fff!important;border:1px solid rgba(7,24,45,.08)!important;border-radius:0 0 8px 8px!important;overflow:hidden!important;box-shadow:0 12px 34px rgba(7,24,45,.045)!important}
+.exec-workspace-drawer-wide .email-list{background:#fffdf8!important;border-right:1px solid rgba(7,24,45,.08)!important;padding:8px!important}
+.exec-workspace-drawer-wide .email-item{background:rgba(255,255,255,.8)!important;border:1px solid transparent!important;border-radius:8px!important;margin:0 0 7px!important;padding:12px!important;box-shadow:none!important;color:#07182d!important}
+.exec-workspace-drawer-wide .email-item:hover,.exec-workspace-drawer-wide .email-item.active{background:#fff7e8!important;border-color:rgba(201,154,61,.3)!important}
+.exec-workspace-drawer-wide .email-detail{background:#fbfaf7!important;padding:14px!important}
+.exec-workspace-drawer-wide .email-card{border-radius:8px!important;border-color:rgba(7,24,45,.09)!important;box-shadow:0 10px 26px rgba(7,24,45,.04)!important}
+.exec-workspace-drawer-wide .email-card h3{font-family:'Cormorant Garamond',Georgia,'Times New Roman',serif!important;font-size:1.35rem!important;font-weight:650!important;line-height:1.08!important}
+.exec-workspace-drawer-wide .email-reason,.exec-workspace-drawer-wide .email-preview{background:rgba(255,255,255,.76)!important;border-color:rgba(7,24,45,.09)!important;border-radius:8px!important;font-size:.82rem!important;line-height:1.48!important}
+.exec-workspace-drawer-wide .email-actions{display:flex!important;gap:7px!important;flex-wrap:wrap!important}
+.exec-workspace-drawer-wide .email-actions button{min-height:34px!important;border-radius:8px!important;font-size:.74rem!important}
+.exec-workspace-drawer-wide .exec-workspace-footer{justify-content:flex-end!important}
+.exec-workspace-drawer-wide .exec-workspace-footer .alert-btn{font-size:.74rem!important;padding:0 11px!important}
 @keyframes valDrawerIn{from{opacity:.82;transform:translateX(22px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:720px){
   .exec-workspace-drawer-overlay{padding:0!important}
   .exec-workspace-drawer-modal{width:100%!important;height:100dvh!important;border-radius:0!important;border-right:0!important}
+  .exec-workspace-drawer-wide .email-body{height:auto!important;min-height:0!important;grid-template-columns:1fr!important}
+  .exec-workspace-drawer-wide .email-list{max-height:30dvh!important;border-right:0!important;border-bottom:1px solid rgba(7,24,45,.08)!important}
+  .exec-workspace-drawer-wide .inbox-command-row{grid-template-columns:1fr!important}
 }
 .val-presence-actions{max-width:1080px!important;margin:22px auto 0!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important}
 .val-presence-btn{border:1px solid rgba(7,24,45,.1)!important;border-radius:8px!important;background:rgba(255,255,255,.94)!important;color:#07182d!important;box-shadow:0 16px 44px rgba(7,24,45,.08)!important;min-height:86px!important;padding:18px 20px!important;display:grid!important;grid-template-columns:42px minmax(0,1fr)!important;gap:14px!important;align-items:center!important;text-align:left!important;cursor:pointer!important}
@@ -3094,13 +3118,14 @@ function openExecutiveWorkspace(opts){
   opts=opts||{};
   var id=opts.id||'executiveWorkspaceOverlay';
   var isDrawer=opts.mode==='drawer';
+  var drawerSize=isDrawer&&opts.size?String(opts.size).replace(/[^a-z0-9_-]/gi,''):'';
   var kicker=opts.kicker||'Executive Workspace';
   closeExecutiveWorkspace(id);
   var overlay=document.createElement('div');
   overlay.id=id;
   overlay.className='exec-workspace-overlay'+(isDrawer?' exec-workspace-drawer-overlay':'');
   overlay.onclick=function(e){if(e.target===overlay)closeExecutiveWorkspace(id);};
-  overlay.innerHTML='<div class="exec-workspace-modal'+(isDrawer?' exec-workspace-drawer-modal':'')+'" role="dialog" aria-modal="true" aria-label="'+docSafe(opts.title||'Workspace')+'">'
+  overlay.innerHTML='<div class="exec-workspace-modal'+(isDrawer?' exec-workspace-drawer-modal':'')+(drawerSize?' exec-workspace-drawer-'+drawerSize:'')+'" role="dialog" aria-modal="true" aria-label="'+docSafe(opts.title||'Workspace')+'">'
     +'<div class="exec-workspace-head"><div><div class="exec-workspace-kicker">'+docSafe(kicker)+'</div><div class="exec-workspace-title">'+docSafe(opts.title||'Workspace')+'</div></div><button class="exec-workspace-close" onclick="closeExecutiveWorkspace(\''+id+'\')" aria-label="Close">&times;</button></div>'
     +'<div class="exec-workspace-body" id="'+id+'Body">'+(opts.body||'')+'</div>'
     +'<div class="exec-workspace-footer" id="'+id+'Footer">'+(opts.footer||'<button class="alert-btn" onclick="closeExecutiveWorkspace(\''+id+'\')">Close</button>')+'</div>'
@@ -3200,7 +3225,7 @@ function openOpportunityIntelligence(){
 var emailIntel={emails:[],rules:[],summary:{},tab:'attention',selected:null,currentRows:[],ruleNotice:'',inbox:{query:'',results:[],selected:null,answer:''}};
 function emailMessageKey(e){return String(e&&((e.provider||'email')+':'+(e.messageId||e.threadId||e.subject||'')));}
 function openEmailIntelligence(){
-  openExecutiveWorkspace({id:'emailOverlay',title:'Executive Inbox',body:'<div class="email-card" style="margin-bottom:10px;padding:12px"><h3>Executive Inbox Command</h3><div style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the thread with Greg about next Thursday..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find a conversation, summarize it, prepare a reply, or turn it into a task. Gmail and Outlook are active; LinkedIn context belongs here as soon as it is connected.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Executive Inbox...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading active conversations...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Compose Draft</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Inbox</button><button class="alert-btn" onclick="openDraftStandards()">Set Draft Standards</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Connections</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
+  openExecutiveWorkspace({id:'emailOverlay',title:'Executive Inbox',kicker:'Executive Workspace',mode:'drawer',size:'wide',body:'<div class="email-card inbox-command-card" style="margin-bottom:10px;padding:12px"><h3>Executive Inbox Command</h3><div class="inbox-command-row" style="display:flex;gap:8px;align-items:center"><input id="inboxCommandInput" placeholder="Find the thread with Greg about next Thursday..." style="flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px;color:#111827;background:#fff" onkeydown="if(event.key===\'Enter\')runInboxCommand()"><button class="primary" onclick="runInboxCommand()">Search</button></div><div id="inboxCommandStatus" class="email-reason" style="margin-top:8px">Ask VAL to find a conversation, summarize it, prepare a reply, or turn it into a task. Gmail and Outlook are active; LinkedIn context belongs here as soon as it is connected.</div><div id="inboxCommandResults"></div></div><div id="emailSyncStatus" class="email-card" style="margin-bottom:10px;padding:10px">Loading Executive Inbox...</div><div class="email-tabs" id="emailTabs"></div><div class="email-body"><div class="email-list" id="emailList"><div class="email-item">Loading active conversations...</div></div><div class="email-detail" id="emailDetail"></div></div>',footer:'<button class="alert-btn primary" onclick="emailAction(\'draft_reply\')">Compose Draft</button><button class="alert-btn primary" onclick="refreshGmailNow()">Refresh Inbox</button><button class="alert-btn" onclick="openDraftStandards()">Set Draft Standards</button><button class="alert-btn" onclick="connectGmail()">Connect Gmail</button><button class="alert-btn" onclick="connectMicrosoft()">Connect Outlook</button><button class="alert-btn" onclick="openKeysPanel()">Connections</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'emailOverlay\')">Close</button>'});
   loadEmailIntelligence();
 }
 function connectGmail(){
