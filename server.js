@@ -9611,11 +9611,12 @@ async function saveTaskCalendarBlock(taskId,block){
 async function loadTasks(){
   if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.tasks || []);
   await valDbReady;
+  const usableTask=t=>!jessaLooksLikeBadDashboardArtifact([t.title,t.notes,t.contactName,JSON.stringify(t.details||[])].filter(Boolean).join('\n'));
   if(pgPool){
     const r=await dbQuery('select * from val_tasks where user_id=$1 order by completed asc, due_date asc nulls last, created_at desc',[VAL_USER_ID]);
-    return mergeTaskCalendarBlocks(r.rows.map(rowToTask));
+    return (await mergeTaskCalendarBlocks(r.rows.map(rowToTask))).filter(usableTask);
   }
-  return readTasks();
+  return readTasks().filter(usableTask);
 }
 async function saveTask(task){
   task={...task};
@@ -10070,9 +10071,10 @@ async function saveInternalDraft(payload){
   return record;
 }
 async function listDrafts(status=''){
+  const usableDraft=d=>!jessaLooksLikeBadDashboardArtifact([d.subject,d.body,d.textBody,JSON.stringify(d.sourceContext||{})].filter(Boolean).join('\n'));
   if(DEMO_MODE){
     const drafts=requestContext.getStore()?.demoState?.drafts || [];
-    return cloneDemo(drafts.filter(d=>!status||d.status===status).slice(0,100));
+    return cloneDemo(drafts.filter(d=>(!status||d.status===status)&&usableDraft(d)).slice(0,100));
   }
   await valDbReady;
   if(pgPool){
@@ -10081,9 +10083,9 @@ async function listDrafts(status=''){
     if(status){params.push(status);sql+=' and status=$3';}
     sql+=' order by created_at desc limit 100';
     const r=await dbQuery(sql,params);
-    return r.rows.map(rowToDraft);
+    return r.rows.map(rowToDraft).filter(usableDraft);
   }
-  return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
+  return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)&&usableDraft(d)).slice(0,100);
 }
 app.get('/api/val/drafts',async(req,res)=>{
   try{
@@ -12942,6 +12944,7 @@ async function runAgencyEngineForObservations(evidenceItem,observations=[]){
 }
 function publicAgencyMove(row={}){
   if(!row)return null;
+  if(jessaLooksLikeBadDashboardArtifact([row.title,row.why,row.whatChanged||row.what_changed,row.ifIgnored||row.if_ignored,JSON.stringify(row.metadataJson||row.metadata_json||row.metadata||{})].filter(Boolean).join('\n')))return null;
   return {
     id:row.id,
     moveType:row.moveType||row.move_type||'wait',
@@ -12980,6 +12983,7 @@ async function listAgencyMoves({limit=80}={}){
 }
 function publicRelationshipProfile(row={}){
   if(!row)return null;
+  if(jessaLooksLikeBadDashboardArtifact([row.displayName||row.display_name,row.summary,row.profileKey||row.profile_key,JSON.stringify(row.metadataJson||row.metadata_json||row.metadata||{})].filter(Boolean).join('\n')))return null;
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
@@ -14058,6 +14062,31 @@ function isTranscriptLikeType(type=''){
   const kind=String(type||'').toLowerCase();
   return !kind||['transcript','processed_transcript','voice_session','meeting_transcript','call_transcript','webhook'].includes(kind)||/(^|_)(transcript|recording)($|_)/.test(kind);
 }
+function jessaLooksLikeRandomTranscriptArtifact(text=''){
+  const raw=String(text||'');
+  if(/\b[A-Za-z0-9_-]{14,}\b/.test(raw)&&raw.length<1200)return true;
+  if(/\b(donor gift|DDV|come here and you're|donation rather than a donor gift|501\(c\)\(4\)|set the cold email outreach|burns the domain|nonprofit piece)\b/i.test(raw))return true;
+  if(/^(NOPE|Tom|DDV\b)/i.test(raw.trim()))return true;
+  return false;
+}
+function jessaLooksLikeBadDashboardArtifact(value=''){
+  if(!jessaRequiresKrispTranscripts())return false;
+  const raw=String(value||'');
+  if(jessaLooksLikeRandomTranscriptArtifact(raw))return true;
+  if(/\b(Close loop:\s*[A-Za-z0-9_-]{10,}|Draft for Jessa Grace\s*\||Speaker\s*\d+|michele julian|julianmethod)\b/i.test(raw))return true;
+  return false;
+}
+function jessaTrustedTranscriptRecord(record={}){
+  if(!jessaRequiresKrispTranscripts())return true;
+  const metadata=record.metadata||record.metadataJson||record.metadata_json||{};
+  const source=String(record.source||record.type||record.kind||metadata.source||metadata.provider||'');
+  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
+  const hay=[record.id||record.transcriptId||record.transcript_id||'',record.title||record.meetingTitle||record.meeting_title||'',raw,source,JSON.stringify(metadata||{})].join('\n');
+  if(jessaLooksLikeRandomTranscriptArtifact(hay))return false;
+  if(hasKrispTranscriptUrl(hay)||/\bkrisp\b/i.test(source)||metadata.krispDetected===true)return true;
+  const speakerTurns=(raw.match(/^\s*[^|:\n]{2,80}\s*(?:\||:)\s*(?:(?:\d{1,2}:)?\d{1,2}:\d{2}\s*)?.{12,}/gm)||[]).length;
+  return raw.length>=1800&&speakerTurns>=4;
+}
 function isNonTranscriptArtifact(record={}){
   const type=String(record.type||record.kind||record.metadata?.type||'').toLowerCase();
   const title=String(record.title||record.meetingTitle||record.metadata?.title||'');
@@ -14096,6 +14125,7 @@ function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
   if(!raw) return false;
+  if(!jessaTrustedTranscriptRecord(record)) return false;
   if(isNonTranscriptArtifact(record)) return false;
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
@@ -14105,7 +14135,7 @@ function isUsableTranscriptArchiveRecord(record={}){
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
   if(!raw) return false;
-  return isUsableTranscriptArchiveRecord({type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,metadata:{source:row.source||''}});
+  return isUsableTranscriptArchiveRecord({id:row.transcriptId||row.transcript_id||'',type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,source:row.source||'',metadata:{source:row.source||'',krispDetected:row.krispDetected||row.krisp_detected}});
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
@@ -18626,12 +18656,9 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(transcriptChatWantsTaskCreation(question)){
-      const created=await createTranscriptChatTasks({transcript,question,history:req.body.history||[]});
-      const content=created.length
-        ? `Added ${created.length} transcript task${created.length===1?'':'s'} to Actions.\n\n`+created.map((task,i)=>`${i+1}. ${task.title}${task.contactName?' — '+task.contactName:''}${task.dueDate?' — due '+new Date(task.dueDate).toLocaleDateString():''}`).join('\n')
-        : 'I could not find transcript-backed tasks specific enough to add safely. Ask me to list the tasks and owners first, then I can add the ones you choose.';
-      await auditLog({req,action:'transcript_chat_created_tasks',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240),created:created.length},success:true}).catch(()=>{});
-      return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:created.length,tasks:created}});
+      const content='I can see the task list, but automatic transcript-to-Action creation is paused while VAL repairs transcript filtering. I will not add tasks from this transcript until the source records are clean.';
+      await auditLog({req,action:'transcript_chat_task_creation_paused',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240)},success:true}).catch(()=>{});
+      return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:0,tasks:[],paused:true}});
     }
     const summary=transcript.summary?.executiveSummary||transcript.summaryPreview||'';
     const system=[
