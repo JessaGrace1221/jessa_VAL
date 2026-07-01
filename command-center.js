@@ -719,9 +719,14 @@ window.openTranscriptChat=function(question){
   if(question)transcriptAsk(question);
 };
 function chatMessage(text,user){var log=document.getElementById('valTranscriptChat');if(!log){openTranscriptChat();log=document.getElementById('valTranscriptChat');}if(!log)return;var el=document.createElement('div');el.className='val-chat-msg'+(user?' user':'');el.textContent=text;log.appendChild(el);log.scrollTop=log.scrollHeight;}
+function transcriptActionSummary(data){
+  var action=data&&data.actionsCreated;
+  if(!action||action.type!=='tasks'||!Array.isArray(action.tasks)||!action.tasks.length)return '';
+  return '\n\nCreated in Actions:\n'+action.tasks.map(function(task,i){return (i+1)+'. '+(task.title||'Task')+(task.contactName?' — '+task.contactName:'')+(task.dueDate?' — due '+new Date(task.dueDate).toLocaleDateString():'');}).join('\n');
+}
 window.transcriptAsk=function(question){
   var t=transcriptState.active;if(!t)return;var input=document.getElementById('valTranscriptQuestion'),q=question||(input&&input.value.trim());if(!q)return;if(input)input.value='';chatMessage(q,true);chatMessage('Working from this transcript…',false);var log=document.getElementById('valTranscriptChat'),pending=log&&log.lastChild;
-  fetch((window.PROXY||'')+'/api/val/transcripts/'+encodeURIComponent(t.id)+'/chat',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'Transcript chat failed.');return d;});}).then(function(d){if(pending)pending.remove();chatMessage((d.message&&d.message.content)||d.message||'No response was returned.',false);}).catch(function(e){if(pending)pending.remove();chatMessage('Unable to complete that request: '+e.message,false);});
+  fetch((window.PROXY||'')+'/api/val/transcripts/'+encodeURIComponent(t.id)+'/chat',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'Transcript chat failed.');return d;});}).then(function(d){if(pending)pending.remove();if(d.actionsCreated&&d.actionsCreated.type==='tasks'){call('valTasksLoad');loadTranscripts(false).catch(function(){});}chatMessage(((d.message&&d.message.content)||d.message||'No response was returned.')+transcriptActionSummary(d),false);}).catch(function(e){if(pending)pending.remove();chatMessage('Unable to complete that request: '+e.message,false);});
 };
 function transcriptById(id){return transcriptState.items.find(function(t){return String(t.id)===String(id);})||transcriptState.active;}
 function transcriptAction(id,action){return fetch((window.PROXY||'')+'/api/val/transcripts/'+encodeURIComponent(id)+'/actions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).then(function(r){return r.json().catch(function(){return{};}).then(function(data){if(!r.ok||data.ok===false)throw new Error(data.error||'Transcript action failed.');return data;});});}

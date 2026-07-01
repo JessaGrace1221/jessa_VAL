@@ -18519,6 +18519,85 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
+function transcriptChatWantsTaskCreation(question=''){
+  return /\b(add|create|save|put|turn|make|file)\b[\s\S]{0,80}\b(tasks?|actions?|to[-\s]?dos?|open loops?)\b/i.test(question)
+    || /\b(add|create|save)\s+(these|those|them|all of (these|those))\b/i.test(question)
+    || /\bput (these|those|them) in (my )?(tasks?|actions?)\b/i.test(question);
+}
+function transcriptChatTaskProjectName(item={},transcript={}){
+  return item.relatedProject||item.project||item.projectName||item.related_project||transcript.projectName||transcript.relatedProject||'';
+}
+async function extractTranscriptTasksForChat({transcript,question}){
+  const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
+  const knownTasks=[
+    ...(Array.isArray(transcript.tasks)?transcript.tasks:[]),
+    ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[]),
+    ...(Array.isArray(transcript.summary?.tasks)?transcript.summary.tasks:[])
+  ].filter(Boolean);
+  const system=[
+    VAL_SYSTEM_PROMPT,
+    'You convert a selected transcript into durable task records.',
+    'Return strict JSON only: {"tasks":[...]}',
+    'Each task must be specific enough for another competent person to complete without hearing the transcript.',
+    'Every task must include: taskTitle, taskDescription, assignedToName, dueDate, priority, relatedProject, sourceQuote, confidence.',
+    'Use null for dueDate when no timing is stated. Use empty string for assignedToName only if the transcript truly does not identify an owner.',
+    'Do not create vague tasks like "follow up" or "send it". Rewrite only when the source evidence supports the full concrete action.',
+    'Do not invent external facts. Do not create completed work as a task.'
+  ].join('\n');
+  const user=[
+    'Transcript title: '+(transcript.title||'Transcript'),
+    'User request: '+question,
+    knownTasks.length?'Previously extracted task candidates:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
+    'Transcript:\n'+transcriptText.slice(0,30000)
+  ].filter(Boolean).join('\n\n');
+  let parsed={tasks:[]};
+  try{
+    const raw=await callValModel({system,user,maxTokens:2200,temperature:0.12,json:true});
+    parsed=JSON.parse(raw);
+  }catch(e){
+    parsed={tasks:deterministicTranscriptNotes(transcriptText).tasks||[],modelError:e.message};
+  }
+  const candidates=Array.isArray(parsed.tasks)?parsed.tasks:[];
+  return candidates.map(item=>{
+    const normalized=normalizeTranscriptTask(item);
+    if(!normalized)return null;
+    return {...normalized,relatedProject:transcriptChatTaskProjectName(item,transcript)};
+  }).filter(Boolean).slice(0,20);
+}
+async function createTranscriptChatTasks({transcript,question}){
+  const tasks=await extractTranscriptTasksForChat({transcript,question});
+  const created=[];
+  const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
+  for(const item of tasks){
+    const staged={
+      taskId:uuid('tr_task'),
+      transcriptId:transcript.id,
+      assignedToContactId:'',
+      assignedToName:item.assignedToName||'',
+      taskTitle:contextualTaskTitle(transcript.title,item.taskTitle||item.title),
+      taskDescription:item.taskDescription||item.description||'Created from transcript chat.',
+      dueDate:item.dueDate||null,
+      priority:item.priority||'medium',
+      confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.78)),
+      status:'staged',
+      needsApproval:false,
+      sourceQuote:transcriptSupportingQuote(transcriptText,item.sourceQuote||item.evidence||item.taskTitle),
+      calendarEventId:transcript.calendarEventId||transcript.meetingId||'',
+      calendarEventTitle:transcript.title||'Transcript',
+      createdAt:new Date().toISOString()
+    };
+    if(!staged.taskTitle)continue;
+    await saveStagedTranscriptTask(staged);
+    const task=await promoteTranscriptTask(staged);
+    if(item.relatedProject){
+      task.details=[...(task.details||[]),{projectName:item.relatedProject,source:'transcript_chat'}];
+      task.notes=[task.notes,`Related project: ${item.relatedProject}`].filter(Boolean).join('\n\n');
+      await saveTask(task);
+    }
+    created.push(task);
+  }
+  return created;
+}
 app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId),question=String(req.body.question||req.body.message||'').trim();
@@ -18531,6 +18610,14 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
       if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
+    if(transcriptChatWantsTaskCreation(question)){
+      const created=await createTranscriptChatTasks({transcript,question});
+      const content=created.length
+        ? `Added ${created.length} transcript task${created.length===1?'':'s'} to Actions.\n\n`+created.map((task,i)=>`${i+1}. ${task.title}${task.contactName?' — '+task.contactName:''}${task.dueDate?' — due '+new Date(task.dueDate).toLocaleDateString():''}`).join('\n')
+        : 'I could not find transcript-backed tasks specific enough to add safely. Ask me to list the tasks and owners first, then I can add the ones you choose.';
+      await auditLog({req,action:'transcript_chat_created_tasks',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240),created:created.length},success:true}).catch(()=>{});
+      return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:created.length,tasks:created}});
+    }
     const summary=transcript.summary?.executiveSummary||transcript.summaryPreview||'';
     const system=[
       VAL_SYSTEM_PROMPT,
