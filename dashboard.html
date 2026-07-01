@@ -1262,6 +1262,41 @@ body{font-size:1rem}
 .val-chat-drawer-overlay .gchat-quick-actions button{border-radius:999px!important;font-size:.78rem!important}
 .val-chat-drawer-overlay .gchat-input{height:46px!important;font-size:.9rem!important}
 .val-chat-drawer-overlay .gchat-send{width:46px!important;height:46px!important;border-radius:8px!important}
+.exec-workspace-drawer-wide .system-drawer-note,
+.exec-workspace-drawer-wide .keys-sub{margin:0 0 12px!important;padding:12px 14px!important;border:1px solid rgba(201,154,61,.2)!important;border-radius:8px!important;background:#fffaf0!important;color:#516071!important;font-size:.82rem!important;line-height:1.45!important}
+.exec-workspace-drawer-wide .system-drawer-body{display:grid!important;gap:12px!important}
+.exec-workspace-drawer-wide .keys-note,
+.exec-workspace-drawer-wide .key-card,
+.exec-workspace-drawer-wide #securityPrivacyBody .exec-card,
+.exec-workspace-drawer-wide #dashboardStudioBody .exec-card,
+.exec-workspace-drawer-wide #templatesWorkspaceBody .exec-card,
+.exec-workspace-drawer-wide #teachValOnboardingBody .exec-card{background:rgba(255,255,255,.84)!important;border:1px solid rgba(7,24,45,.09)!important;border-radius:8px!important;box-shadow:0 10px 26px rgba(7,24,45,.04)!important;color:#07182d!important}
+.exec-workspace-drawer-wide .key-card h3,
+.exec-workspace-drawer-wide #securityPrivacyBody h3,
+.exec-workspace-drawer-wide #dashboardStudioBody h3,
+.exec-workspace-drawer-wide #templatesWorkspaceBody h3,
+.exec-workspace-drawer-wide #teachValOnboardingBody h3{font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.32rem!important;font-weight:650!important;line-height:1.1!important;color:#07182d!important}
+.exec-workspace-drawer-wide .key-card p,
+.exec-workspace-drawer-wide #securityPrivacyBody p,
+.exec-workspace-drawer-wide #dashboardStudioBody p,
+.exec-workspace-drawer-wide #templatesWorkspaceBody p,
+.exec-workspace-drawer-wide #teachValOnboardingBody p{font-size:.84rem!important;line-height:1.5!important;color:#334155!important}
+.exec-workspace-drawer-wide .key-actions,
+.exec-workspace-drawer-wide .email-actions{gap:7px!important}
+.exec-workspace-drawer-wide .key-actions button,
+.exec-workspace-drawer-wide .email-actions button{border-radius:8px!important;min-height:34px!important;font-size:.74rem!important}
+.exec-workspace-drawer-wide .exec-table,
+.exec-workspace-drawer-wide .security-table{background:#fff!important;border:1px solid rgba(7,24,45,.09)!important;border-radius:8px!important;overflow:hidden!important}
+.exec-workspace-drawer-wide .exec-table th,
+.exec-workspace-drawer-wide .security-table th{background:#fffdf8!important;color:#8a5a17!important;font-size:.66rem!important;letter-spacing:.07em!important}
+.exec-workspace-drawer-wide .exec-table td,
+.exec-workspace-drawer-wide .security-table td{font-size:.78rem!important;color:#26354d!important}
+.exec-workspace-drawer-wide .teach-val-stage{background:rgba(255,255,255,.84)!important;border:1px solid rgba(7,24,45,.09)!important;border-radius:8px!important;box-shadow:0 10px 26px rgba(7,24,45,.04)!important;min-height:calc(100dvh - 210px)!important}
+.exec-workspace-drawer-wide .teach-val-rail{background:#fffdf8!important;border-color:rgba(201,154,61,.2)!important;border-radius:8px!important}
+.exec-workspace-drawer-wide .teach-val-shell{min-height:calc(100dvh - 210px)!important}
+.exec-workspace-drawer-wide .teach-val-stage h2{font-family:'Cormorant Garamond',Georgia,serif!important;font-weight:650!important;color:#07182d!important}
+.exec-workspace-drawer-wide .teach-val-stage p{color:#334155!important}
+.exec-workspace-drawer-wide .teach-val-orb{background:linear-gradient(135deg,#fff8e4,#d9b062)!important;color:#07182d!important;box-shadow:0 16px 40px rgba(138,90,23,.14)!important}
 @keyframes valDrawerIn{from{opacity:.82;transform:translateX(22px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:720px){
   .exec-workspace-drawer-overlay{padding:0!important}
@@ -2747,10 +2782,15 @@ function providerStatus(provider){
   return 'Not tested';
 }
 function openKeysPanel(){
-  var existing=document.getElementById('keysOverlay');if(existing)existing.remove();
-  var overlay=document.createElement('div');overlay.id='keysOverlay';overlay.className='keys-overlay';
-  overlay.innerHTML=`<div class="keys-modal"><div class="keys-head"><div><div class="keys-title">API Keys & Connections</div><div class="keys-sub">Tenant-owned API keys are encrypted in VAL’s vault. Full keys never show after save.</div></div><button class="keys-close" onclick="document.getElementById('keysOverlay').remove()">x</button></div><div class="keys-body" id="keysBody"><div class="keys-note">Loading API key vault...</div><div class="key-actions" style="margin-top:10px"><button class="primary" onclick="openTemplatesPage()">Open Templates</button></div></div></div>`;
-  document.body.appendChild(overlay);
+  openExecutiveWorkspace({
+    id:'keysOverlay',
+    title:'API Keys & Connections',
+    kicker:'System Workspace',
+    mode:'drawer',
+    size:'wide',
+    body:'<div class="keys-sub system-drawer-note">Tenant-owned API keys are encrypted in VAL’s vault. Full keys never show after save.</div><div class="keys-body system-drawer-body" id="keysBody"><div class="keys-note">Loading API key vault...</div><div class="key-actions" style="margin-top:10px"><button class="primary" onclick="openTemplatesPage()">Open Templates</button></div></div>',
+    footer:'<button class="alert-btn primary" onclick="loadKeysPanel()">Refresh</button><button class="alert-btn" onclick="openTemplatesPage()">Templates</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'keysOverlay\')">Close</button>'
+  });
   loadKeysPanel();
 }
 function loadKeysPanel(){
@@ -2859,7 +2899,7 @@ function securityStatusPill(value){
 function securityMini(label,value){return '<div class="val-mini-item"><strong>'+docSafe(label)+'</strong><span>'+docSafe(value==null?'—':value)+'</span></div>';}
 function openSecurityPrivacyPage(){
   var body='<div id="securityPrivacyBody"><div class="task-empty">Loading Security & Privacy Center...</div></div>';
-  openExecutiveWorkspace({id:'securityPrivacyWorkspace',title:'Security & Privacy',body:body,footer:'<button class="alert-btn primary" onclick="loadSecurityPrivacyCenter()">Refresh</button><button class="alert-btn" onclick="exportValData()">Export My Data</button><button class="alert-btn danger" onclick="requestDataDelete()">Delete My Data</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'securityPrivacyWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'securityPrivacyWorkspace',title:'Security & Privacy',kicker:'System Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="loadSecurityPrivacyCenter()">Refresh</button><button class="alert-btn" onclick="exportValData()">Export My Data</button><button class="alert-btn danger" onclick="requestDataDelete()">Delete My Data</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'securityPrivacyWorkspace\')">Close</button>'});
   loadSecurityPrivacyCenter();
 }
 function loadSecurityPrivacyCenter(){
@@ -3032,7 +3072,7 @@ function saveBabyStudioSettings(){
 function openDashboardStudioPage(){
   if(!(VAL_CONFIG&&VAL_CONFIG.featureFlags&&VAL_CONFIG.featureFlags.dashboard_studio_beta)){addSys('Dashboard Studio is not enabled for this VAL.');return;}
   var body='<div id="dashboardStudioBody"><div class="task-empty">Loading Dashboard Studio Beta...</div></div>';
-  openExecutiveWorkspace({id:'dashboardStudioWorkspace',title:'Dashboard Studio',body:body,footer:'<button class="alert-btn primary" onclick="saveBabyStudioSettings()">Save Simple Settings</button><button class="alert-btn" onclick="submitDashboardStudioRequest()">Submit Advanced Request</button><button class="alert-btn" onclick="loadDashboardStudio()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'dashboardStudioWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'dashboardStudioWorkspace',title:'Dashboard Studio',kicker:'System Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="saveBabyStudioSettings()">Save Simple Settings</button><button class="alert-btn" onclick="submitDashboardStudioRequest()">Submit Advanced Request</button><button class="alert-btn" onclick="loadDashboardStudio()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'dashboardStudioWorkspace\')">Close</button>'});
   loadDashboardStudio();
 }
 function loadDashboardStudio(){
@@ -3109,7 +3149,7 @@ function openTemplatesPage(){
     +'<section class="exec-card"><h3>Settings → Templates</h3><p>Edit the active Meeting Recap Template. Transcript recap drafts use this template immediately after save.</p><p><strong>Available variables:</strong><br>{{meeting_title}}, {{recipient_first_name}}, {{recipient_name}}, {{executive_summary}}, {{key_decisions_html}}, {{key_decisions_text}}, {{open_questions_html}}, {{open_questions_text}}, {{tasks_html}}, {{tasks_text}}, {{transcript_id}}</p></section>'
     +'<section class="exec-card"><h3>Meeting Recap Template</h3><div id="templateEditorBody"><p>Loading template...</p></div></section>'
     +'</div>';
-  openExecutiveWorkspace({id:'templatesWorkspace',title:'Templates',body:body,footer:'<button class="alert-btn primary" onclick="saveMeetingRecapTemplate()">Save Template</button><button class="alert-btn" onclick="loadMeetingRecapTemplate()">Reload</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'templatesWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'templatesWorkspace',title:'Templates',kicker:'System Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="saveMeetingRecapTemplate()">Save Template</button><button class="alert-btn" onclick="loadMeetingRecapTemplate()">Reload</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'templatesWorkspace\')">Close</button>'});
   loadMeetingRecapTemplate();
 }
 function loadMeetingRecapTemplate(){
@@ -6935,6 +6975,9 @@ function openTeachValOnboarding(){
   openExecutiveWorkspace({
     id:'teachValOnboardingWorkspace',
     title:'Teach VAL About You',
+    kicker:'Learning Workspace',
+    mode:'drawer',
+    size:'wide',
     body:'<div id="teachValOnboardingBody"><div class="task-empty">Loading Teach VAL About You...</div></div>',
     footer:'<button class="alert-btn" onclick="closeExecutiveWorkspace(\'teachValOnboardingWorkspace\')">Close</button>'
   });
