@@ -18932,6 +18932,19 @@ app.post('/api/relationships/actions',async(req,res)=>{
       await saveTask(task);
       return res.json({ok:true,task});
     }
+    if(action==='remember_context'){
+      const note=String(req.body.note||'').trim();
+      if(!note) return res.status(400).json({ok:false,error:'Missing context note'});
+      const contactName=contact.name||contact.email||'this relationship';
+      await saveMemoryItem({
+        kind:'relationship_context_note',
+        summary:`Relationship context: ${contactName}`,
+        rawText:note,
+        importance:4,
+        metadata:{source:'relationship_review',action,contact,identityKey:personKey(contact.name,contact.email)}
+      });
+      return res.json({ok:true,status:'remembered',message:`Saved context for ${contactName}. VAL will use it in relationship review, meeting prep, and chat.`});
+    }
     if(['mark_vip','snooze','not_important'].includes(action)){
       const until=action==='snooze'?(req.body.until||new Date(Date.now()+7*24*60*60*1000).toISOString()):'';
       await saveMemoryItem({kind:'relationship_preference',summary:`${action}: ${contact.name||contact.email}`,rawText:JSON.stringify({action,contact,until}),importance:action==='mark_vip'?4:2,metadata:{source:'relationship_review',action,contact,until,identityKey:personKey(contact.name,contact.email)}});

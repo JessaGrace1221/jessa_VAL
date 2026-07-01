@@ -1232,6 +1232,35 @@ body{font-size:1rem}
 .exec-workspace-drawer-wide .relationship-profile-wide{grid-column:1/-1!important}
 .exec-workspace-drawer-wide .relationship-timeline{max-height:300px!important;overflow:auto!important}
 .exec-workspace-drawer-wide .exec-workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}
+.relationship-workspace{display:grid!important;gap:14px!important}
+.relationship-identity-row{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:16px!important}
+.relationship-card .relationship-identity-row h3{font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.72rem!important;font-weight:600!important;line-height:1.05!important;margin:0 0 5px!important;color:#07182d!important}
+.relationship-pill-row{display:flex!important;gap:8px!important;flex-wrap:wrap!important;margin:10px 0 0!important}
+.relationship-read{border:1px solid rgba(201,154,61,.24)!important;border-left:3px solid #c99a3d!important;border-radius:10px!important;background:linear-gradient(135deg,#fffdf8,#fff8e8)!important;padding:16px 18px!important;color:#26354d!important;font-size:.96rem!important;line-height:1.58!important}
+.relationship-section-grid{display:grid!important;grid-template-columns:1fr!important;gap:14px!important;align-items:start!important}
+.relationship-panel{background:#fff!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:10px!important;padding:14px!important;box-shadow:0 10px 24px rgba(7,24,45,.035)!important}
+.relationship-panel h4{font-size:.76rem!important;letter-spacing:.11em!important;text-transform:uppercase!important;color:#8a5a17!important;margin:0 0 11px!important;font-weight:800!important}
+.relationship-context-list{display:grid!important;gap:10px!important;margin:0!important}
+.relationship-context-row{display:grid!important;grid-template-columns:118px minmax(0,1fr)!important;gap:12px!important;align-items:start!important;border-top:1px solid rgba(7,24,45,.07)!important;padding-top:10px!important}
+.relationship-context-row:first-child{border-top:0!important;padding-top:0!important}
+.relationship-context-row strong{font-size:.7rem!important;letter-spacing:.08em!important;text-transform:uppercase!important;color:#667386!important}
+.relationship-context-row span{font-size:.86rem!important;line-height:1.45!important;color:#26354d!important;overflow-wrap:anywhere!important}
+.relationship-next-move{background:linear-gradient(135deg,#fffaf0,#fff4d8)!important;border-color:rgba(201,154,61,.26)!important}
+.relationship-next-move p{font-size:.94rem!important;line-height:1.5!important;margin:0 0 12px!important;color:#26354d!important}
+.relationship-primary-actions{display:flex!important;gap:8px!important;flex-wrap:wrap!important}
+.relationship-primary-actions button{min-height:34px!important;border-radius:8px!important;padding:7px 12px!important;font-size:.73rem!important;font-weight:800!important;letter-spacing:.02em!important;cursor:pointer!important}
+.relationship-primary-actions button.primary{background:#07182d!important;color:#fff!important;border:1px solid #07182d!important}
+.relationship-primary-actions button.secondary{background:#fff!important;color:#07182d!important;border:1px solid rgba(7,24,45,.18)!important}
+.relationship-primary-actions button.tertiary{background:#fffaf0!important;color:#715014!important;border:1px solid rgba(201,154,61,.24)!important}
+.relationship-update-card textarea,.relationship-chat-card input{width:100%!important;border:1px solid rgba(7,24,45,.14)!important;border-radius:9px!important;background:#fff!important;color:#17243a!important;font:400 .88rem/1.45 var(--body)!important;padding:11px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)!important}
+.relationship-update-card textarea{min-height:106px!important;resize:vertical!important}
+.relationship-chat-row{display:flex!important;gap:8px!important;align-items:center!important}
+.relationship-chat-row input{min-height:42px!important}
+.relationship-quick-chips{display:flex!important;gap:7px!important;flex-wrap:wrap!important;margin-top:10px!important}
+.relationship-quick-chips button{border:1px solid rgba(201,154,61,.28)!important;background:#fffaf0!important;color:#715014!important;border-radius:999px!important;min-height:28px!important;padding:5px 10px!important;font-size:.72rem!important;font-weight:750!important}
+.relationship-answer{margin-top:12px!important;border:1px solid rgba(201,154,61,.22)!important;border-radius:10px!important;background:#fffdf8!important;padding:12px!important;color:#26354d!important;font-size:.86rem!important;line-height:1.5!important;white-space:pre-wrap!important}
+.relationship-evidence ul{max-height:220px!important;overflow:auto!important;padding-left:18px!important}
+@media(max-width:980px){.relationship-section-grid{grid-template-columns:1fr!important}.relationship-context-row{grid-template-columns:1fr!important;gap:4px!important}}
 .exec-workspace-drawer-wide #draftsWorkspaceBody .exec-workspace-grid{grid-template-columns:1fr!important}
 .exec-workspace-drawer-wide #draftsWorkspaceBody pre{font-size:.82rem!important;line-height:1.45!important;background:#fffdf8!important;border-color:rgba(7,24,45,.1)!important}
 .exec-workspace-drawer-wide #taskWorkspaceBody .task-board{height:calc(100dvh - 190px)!important;min-height:560px!important;grid-template-columns:minmax(0,1fr) minmax(260px,.82fr)!important;gap:12px!important}
@@ -3743,14 +3772,43 @@ function selectRelationship(i){
   relationshipReview.selected=relationshipRows(relationshipReview.tab)[i]||relationshipReview.selected;
   renderRelationshipReview();
 }
+function relationshipShortText(value,max){
+  var text=String(value||'').replace(/\s+/g,' ').trim();
+  max=max||220;
+  return text.length>max?text.slice(0,max-1).trim()+'…':text;
+}
+function relationshipContextRows(r,last){
+  var loops=(r.openLoops||[]).slice(0,3).map(function(x){return relationshipShortText(x,150);}).join(' | ');
+  return [
+    {label:'Role',value:(r.company||'Independent relationship')+' · '+(r.relationshipType||'Professional')},
+    {label:'Last signal',value:last?new Date(last).toLocaleString():'Not clear yet'},
+    {label:'Open loops',value:loops||'None detected'},
+    {label:'Known context',value:relationshipShortText(r.relationshipSummary||r.context||r.reason||'VAL has evidence, but needs your lived context for this person.',240)}
+  ].map(function(row){return '<div class="relationship-context-row"><strong>'+docSafe(row.label)+'</strong><span>'+docSafe(row.value)+'</span></div>';}).join('');
+}
 function renderRelationshipDetail(r){
   var detail=document.getElementById('relationshipDetail');if(!detail)return;
   if(!r){detail.innerHTML='';return;}
-  var ev=(r.evidence||[]).slice(0,12).map(function(e){return '<li><strong>'+docSafe(e.type||'source')+':</strong> '+docSafe(e.summary||'')+(e.date?' <small>· '+docSafe(new Date(e.date).toLocaleDateString())+'</small>':'')+'</li>';}).join('');
-  var loops=(r.openLoops||[]).slice(0,5).map(function(x){return '<li>'+docSafe(x)+'</li>';}).join('');
+  var ev=(r.evidence||[]).slice(0,12).map(function(e){return '<li><strong>'+docSafe(e.type||'source')+':</strong> '+docSafe(relationshipShortText(e.summary||'',260))+(e.date?' <small>· '+docSafe(new Date(e.date).toLocaleDateString())+'</small>':'')+'</li>';}).join('');
   var score=r.scoreBreakdown?'<div class="email-reason"><strong>Score breakdown:</strong><br>Strategic '+r.scoreBreakdown.strategicImportance+' · Opportunity '+r.scoreBreakdown.opportunityPotential+' · Activity '+r.scoreBreakdown.relationshipActivity+' · Drift '+r.scoreBreakdown.driftRisk+' · Loops '+r.scoreBreakdown.openLoopsCommitments+' · Reciprocity '+r.scoreBreakdown.reciprocityBalance+'</div>':'';
   var last=r.lastInteractionAt||r.lastMeaningfulInteraction;
-  detail.innerHTML=`<div class="email-card relationship-card"><div class="relationship-card-head"><div><h3>${docSafe(r.name||r.contact||'Relationship')}</h3><div class="relationship-context">${docSafe(r.company||'Independent relationship')} · ${docSafe(r.relationshipType||'Professional')}</div></div><div class="relationship-score">${docSafe(r.score||0)}</div></div><div><span class="email-pill">${(r.evidence||[]).length} sources</span>${(r.tags||[]).map(function(t){return '<span class="email-pill '+(t==='VIP'?'vip':'')+'">'+docSafe(t)+'</span>';}).join('')}</div><div class="relationship-summary">${docSafe(r.reason||'VAL found meaningful external relationship evidence.')}</div><div class="relationship-facts"><div><strong>Why now</strong><span>${docSafe(r.recommendedAction||'Choose one useful next move.')}</span></div><div><strong>Last meaningful interaction</strong><span>${docSafe(last?new Date(last).toLocaleString():'Unclear')}</span></div><div><strong>Open loops</strong><span>${docSafe((r.openLoops||[]).length?(r.openLoops||[]).join(' · '):'None detected')}</span></div></div>${score}<details class="relationship-evidence"><summary>View source evidence (${(r.evidence||[]).length})</summary><ul>${ev||'<li>No attributable evidence found.</li>'}</ul></details><div class="relationship-actions"><button class="primary" onclick="relationshipAction('draft_message')">Draft Message</button><button class="primary" onclick="relationshipAction('create_task')">Create Task</button><button class="secondary" onclick="showRelationshipProfile()">View Profile</button><button class="secondary" onclick="relationshipAction('brainstorm')">Brainstorm</button><button class="secondary" onclick="relationshipAction('mark_vip')">${(r.tags||[]).includes('VIP')?'VIP Marked':'Mark VIP'}</button><button class="tertiary" onclick="relationshipAction('snooze')">Snooze</button><button class="tertiary" onclick="relationshipAction('not_important')">Not Important</button></div><div id="relationshipActionPanel"></div></div>`;
+  var name=r.name||r.contact||'Relationship';
+  var tags='<span class="email-pill">'+(r.evidence||[]).length+' sources</span>'+((r.tags||[]).map(function(t){return '<span class="email-pill '+(t==='VIP'?'vip':'')+'">'+docSafe(t)+'</span>';}).join(''));
+  detail.innerHTML=`<div class="email-card relationship-card relationship-workspace">
+    <div class="relationship-identity-row"><div><h3>${docSafe(name)}</h3><div class="relationship-context">${docSafe(r.company||'Independent relationship')} · ${docSafe(r.relationshipType||'Professional')}</div><div class="relationship-pill-row">${tags}</div></div><div class="relationship-score">${docSafe(r.score||0)}</div></div>
+    <div class="relationship-read">${docSafe(relationshipShortText(r.reason||'VAL found meaningful external relationship evidence. Add your context so VAL can understand the person, not just the signals.',520))}</div>
+    <div class="relationship-section-grid">
+      <section class="relationship-panel"><h4>What VAL knows</h4><div class="relationship-context-list">${relationshipContextRows(r,last)}</div></section>
+      <section class="relationship-panel relationship-next-move"><h4>Best next move</h4><p>${docSafe(relationshipShortText(r.recommendedAction||'Choose one useful next move.',260))}</p><div class="relationship-primary-actions"><button class="primary" onclick="relationshipAction('draft_message')">Draft Message</button><button class="primary" onclick="relationshipAction('create_task')">Create Task</button><button class="secondary" onclick="relationshipAction('brainstorm')">Brainstorm</button></div></section>
+    </div>
+    <div class="relationship-section-grid">
+      <section class="relationship-panel relationship-update-card"><h4>Update VAL about this person</h4><textarea id="relationshipContextNote" placeholder="Example: This is my assistant. She owns scheduling, inbox triage, and follow-up logistics. Treat her as internal support, not an external sales relationship."></textarea><div class="relationship-primary-actions" style="margin-top:10px"><button class="primary" onclick="saveRelationshipContextNote()">Save Context</button><button class="secondary" onclick="showRelationshipProfile()">View Profile</button><button class="tertiary" onclick="relationshipAction('mark_vip')">${(r.tags||[]).includes('VIP')?'VIP Marked':'Mark VIP'}</button></div></section>
+      <section class="relationship-panel relationship-chat-card"><h4>Ask VAL about ${docSafe(name)}</h4><div class="relationship-chat-row"><input id="relationshipAskInput" placeholder="Ask what matters, what context is missing, or how to handle this relationship."><button class="primary" onclick="relationshipAskVal()">Ask</button></div><div class="relationship-quick-chips"><button onclick="relationshipAskVal('What context is missing for this person?')">Missing context</button><button onclick="relationshipAskVal('What should I do next with this person?')">Next move</button><button onclick="relationshipAskVal('Draft a thoughtful update or follow-up.')">Draft follow-up</button></div><div id="relationshipAskAnswer" class="relationship-answer" style="display:none"></div></section>
+    </div>
+    ${score}
+    <details class="relationship-evidence"><summary>Source evidence (${(r.evidence||[]).length})</summary><ul>${ev||'<li>No attributable evidence found.</li>'}</ul></details>
+    <div class="relationship-actions"><button class="secondary" onclick="openContactTimeline()">Contact Timeline</button><button class="tertiary" onclick="relationshipAction('snooze')">Snooze</button><button class="tertiary" onclick="relationshipAction('not_important')">Not Important</button></div><div id="relationshipActionPanel"></div>
+  </div>`;
 }
 function renderRelationshipSpecial(title,rows,mapper){
   var list=document.getElementById('relationshipList'),detail=document.getElementById('relationshipDetail');
@@ -3774,6 +3832,39 @@ function relationshipAction(action){
   }).catch(function(e){addSys('Relationship action failed: '+e.message);});
 }
 function renderRelationshipActionPanel(title,content){var p=document.getElementById('relationshipActionPanel');if(p)p.innerHTML='<section class="relationship-action-panel"><h4>'+docSafe(title)+'</h4><div>'+docSafe(content).replace(/\n/g,'<br>')+'</div></section>';}
+function saveRelationshipContextNote(){
+  var c=relationshipReview.selected,noteEl=document.getElementById('relationshipContextNote');if(!c||!noteEl)return;
+  var note=String(noteEl.value||'').trim();
+  if(!note){renderRelationshipActionPanel('Context needed','Add a sentence or two about this person first.');return;}
+  apiFetch(PROXY+'/api/relationships/actions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remember_context',contact:c,note:note})}).then(function(d){
+    c.context=[c.context,note].filter(Boolean).join('\n');
+    noteEl.value='';
+    renderRelationshipActionPanel('Context saved',d.message||('VAL will use this context when reviewing '+(c.name||c.email||'this person')+'.'));
+  }).catch(function(e){renderRelationshipActionPanel('Context save failed',e.message);});
+}
+function relationshipAskVal(promptText){
+  var c=relationshipReview.selected;if(!c)return;
+  var input=document.getElementById('relationshipAskInput'),answer=document.getElementById('relationshipAskAnswer');
+  var text=String(promptText||(input&&input.value)||'').trim();
+  if(!text){if(answer){answer.style.display='block';answer.textContent='Ask VAL a specific question about this person.';}return;}
+  if(input&&!promptText)input.value='';
+  if(answer){answer.style.display='block';answer.textContent='Thinking...';}
+  var evidence=(c.evidence||[]).slice(0,8).map(function(e){return '- '+(e.type||'source')+': '+relationshipShortText(e.summary||'',240);}).join('\n');
+  var context=[
+    'Relationship workspace question: '+text,
+    'Contact: '+(c.name||c.contact||c.email||'Unknown'),
+    'Company/type: '+(c.company||'Independent relationship')+' / '+(c.relationshipType||'Professional'),
+    'Score: '+(c.score||0),
+    'Known context: '+(c.context||c.relationshipSummary||c.reason||''),
+    'Recommended action: '+(c.recommendedAction||''),
+    'Open loops: '+((c.openLoops||[]).join(' | ')||'None detected'),
+    'Evidence:\n'+(evidence||'No source evidence supplied.')
+  ].join('\n');
+  apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:context}],dashboard:{surface:'relationship_drawer',contact:c}})}).then(function(d){
+    var reply=d.reply||d.content||(d.message&&d.message.content)||'VAL did not return a response.';
+    if(answer)answer.textContent=reply;
+  }).catch(function(e){if(answer)answer.textContent='Ask failed: '+e.message;});
+}
 function renderRelationshipDraftComposer(contact,draft){
   var p=document.getElementById('relationshipActionPanel');if(!p)return;
   p.innerHTML='<section class="relationship-action-panel"><h4>Thoughtful follow-up draft</h4><label>To<input value="'+docSafe(contact.email||'Email not available')+'" '+(contact.email?'':'disabled')+'></label><label>Subject<input id="relationshipDraftSubject" value="'+docSafe(draft.subject||'')+'"></label><label>Message<textarea id="relationshipDraftBody" rows="9">'+docSafe(draft.body||'')+'</textarea></label><p>This is a draft only. Nothing has been sent.</p><button class="secondary" onclick="openDraftsPage()">Open Approval Queue</button></section>';
