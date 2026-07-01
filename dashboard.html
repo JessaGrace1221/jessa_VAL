@@ -1231,6 +1231,37 @@ body{font-size:1rem}
 .exec-workspace-drawer-wide .relationship-profile-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}
 .exec-workspace-drawer-wide .relationship-profile-wide{grid-column:1/-1!important}
 .exec-workspace-drawer-wide .relationship-timeline{max-height:300px!important;overflow:auto!important}
+.exec-workspace-drawer-wide .exec-workspace-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}
+.exec-workspace-drawer-wide #draftsWorkspaceBody .exec-workspace-grid{grid-template-columns:1fr!important}
+.exec-workspace-drawer-wide #draftsWorkspaceBody pre{font-size:.82rem!important;line-height:1.45!important;background:#fffdf8!important;border-color:rgba(7,24,45,.1)!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-board{height:calc(100dvh - 190px)!important;min-height:560px!important;grid-template-columns:minmax(0,1fr) minmax(260px,.82fr)!important;gap:12px!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-column{background:rgba(255,255,255,.82)!important;border:1px solid rgba(7,24,45,.09)!important;border-radius:8px!important;box-shadow:0 10px 26px rgba(7,24,45,.04)!important;overflow:auto!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-column-head{position:sticky!important;top:0!important;background:#fffdf8!important;border-bottom:1px solid rgba(7,24,45,.08)!important;z-index:2!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-column-title{font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.28rem!important;font-weight:650!important;color:#07182d!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-card{background:#fff!important;border:1px solid rgba(7,24,45,.09)!important;border-radius:8px!important;box-shadow:none!important;margin:9px!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-title{font-size:.88rem!important;line-height:1.25!important;color:#07182d!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-meta,.exec-workspace-drawer-wide #taskWorkspaceBody .task-notes{font-size:.74rem!important;color:#516071!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-check{border-color:rgba(201,154,61,.34)!important;background:#fff8e4!important;color:#07182d!important}
+.exec-workspace-drawer-wide #taskWorkspaceBody .task-empty{color:#516071!important;background:#fffdf8!important;border:1px dashed rgba(201,154,61,.28)!important;border-radius:8px!important;margin:9px!important}
+#taskDetailPanel{background:#fbfaf7!important;border-left:1px solid rgba(201,154,61,.24)!important;box-shadow:-18px 0 54px rgba(7,24,45,.18)!important;color:#07182d!important}
+#taskDetailPanel [style*="border-bottom"]{border-bottom-color:rgba(7,24,45,.08)!important;background:#fbfaf7!important}
+#taskDetailPanel [style*="border-top"]{border-top-color:rgba(7,24,45,.08)!important;background:#fbfaf7!important}
+#taskDetailPanel div,#taskDetailPanel label{color:#07182d!important}
+#taskDetailPanel textarea{background:#fff!important;color:#07182d!important;border-color:rgba(7,24,45,.14)!important}
+#taskDetailPanel .chip{background:#fff!important;border:1px solid rgba(7,24,45,.12)!important;color:#07182d!important;border-radius:8px!important}
+#taskDetailPanel .chip:first-child{background:#07182d!important;border-color:#07182d!important;color:#fff!important}
+.val-chat-drawer-overlay{align-items:stretch!important;justify-content:flex-end!important;background:rgba(7,24,45,.22)!important;backdrop-filter:blur(5px)!important;padding:12px!important}
+.val-chat-drawer-overlay .val-transcript-chat-modal{width:min(520px,calc(100vw - 24px))!important;height:calc(100dvh - 24px)!important;display:flex!important;grid-template-columns:none!important;border-radius:8px!important;background:#fbfaf7!important;animation:valDrawerIn .22s ease-out!important}
+.val-chat-drawer-overlay .gchat-main{width:100%!important;background:#fbfaf7!important}
+.val-chat-drawer-overlay .gchat-header{background:#fbfaf7!important;border-bottom:1px solid rgba(7,24,45,.08)!important;padding:18px 20px 14px!important}
+.val-chat-drawer-overlay .gchat-title{font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.55rem!important;font-weight:650!important;color:#07182d!important}
+.val-chat-drawer-overlay .gchat-context{font-size:.72rem!important;color:#667386!important}
+.val-chat-drawer-overlay .gchat-messages{background:linear-gradient(180deg,#fbfaf7,#f8f4eb)!important;padding:18px!important;font-size:.9rem!important}
+.val-chat-drawer-overlay .val-chat-msg{border-radius:8px!important}
+.val-chat-drawer-overlay .gchat-quick-actions,.val-chat-drawer-overlay .gchat-input-row{background:#fbfaf7!important;border-top:1px solid rgba(7,24,45,.08)!important}
+.val-chat-drawer-overlay .gchat-quick-actions button{border-radius:999px!important;font-size:.78rem!important}
+.val-chat-drawer-overlay .gchat-input{height:46px!important;font-size:.9rem!important}
+.val-chat-drawer-overlay .gchat-send{width:46px!important;height:46px!important;border-radius:8px!important}
 @keyframes valDrawerIn{from{opacity:.82;transform:translateX(22px)}to{opacity:1;transform:translateX(0)}}
 @media(max-width:720px){
   .exec-workspace-drawer-overlay{padding:0!important}
@@ -1241,6 +1272,10 @@ body{font-size:1rem}
   .exec-workspace-drawer-wide .relationship-facts,
   .exec-workspace-drawer-wide .relationship-profile-grid{grid-template-columns:1fr!important}
   .exec-workspace-drawer-wide .relationship-profile-wide{grid-column:auto!important}
+  .exec-workspace-drawer-wide #taskWorkspaceBody .task-board,
+  .exec-workspace-drawer-wide .exec-workspace-grid{grid-template-columns:1fr!important;height:auto!important;min-height:0!important}
+  .val-chat-drawer-overlay{padding:0!important}
+  .val-chat-drawer-overlay .val-transcript-chat-modal{width:100%!important;height:100dvh!important;border-radius:0!important}
 }
 .val-presence-actions{max-width:1080px!important;margin:22px auto 0!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important}
 .val-presence-btn{border:1px solid rgba(7,24,45,.1)!important;border-radius:8px!important;background:rgba(255,255,255,.94)!important;color:#07182d!important;box-shadow:0 16px 44px rgba(7,24,45,.08)!important;min-height:86px!important;padding:18px 20px!important;display:grid!important;grid-template-columns:42px minmax(0,1fr)!important;gap:14px!important;align-items:center!important;text-align:left!important;cursor:pointer!important}
@@ -3100,7 +3135,7 @@ function draftTypeLabel(type){
   return String(type||'draft').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
 }
 function openDraftsPage(focusDraftId){
-  openExecutiveWorkspace({id:'draftsWorkspace',title:'Communications / Drafts',body:'<div id="draftsWorkspaceBody"><div class="exec-card"><p>Loading drafts...</p></div></div>',footer:'<button class="alert-btn primary" onclick="loadBackendDrafts()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'draftsWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'draftsWorkspace',title:'Communications / Drafts',kicker:'Approval Workspace',mode:'drawer',size:'wide',body:'<div id="draftsWorkspaceBody"><div class="exec-card"><p>Loading drafts...</p></div></div>',footer:'<button class="alert-btn primary" onclick="loadBackendDrafts()">Refresh</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'draftsWorkspace\')">Close</button>'});
   loadBackendDrafts(focusDraftId);
 }
 function draftIsDashboardReady(dr){return !dr.dashboardQuality||dr.dashboardQuality.ready!==false;}
@@ -3190,7 +3225,7 @@ function openPriorityReview(){
     +'<section class="exec-card"><h3>Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline opportunities loaded yet.</li>')+'</ul></section>'
     +'<section class="exec-card"><h3>Recommended Actions</h3><p>Start with the highest-friction item: overdue commitments, next meeting prep, then relationship drift.</p><p>'+drafts.length+' draft'+(drafts.length===1?'':'s')+' waiting for approval.</p></section>'
     +'</div>';
-  openExecutiveWorkspace({id:'priorityWorkspace',title:'Priority Review',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Executive Inbox</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'priorityWorkspace',title:'Projects & Priorities',kicker:'Project Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Executive Inbox</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
 }
 function openLeadIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Scrape Employers</h3><p>Would this company benefit from GOALL?</p><p>Search by industry, market, and company size.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Employer leads keep the existing scoring, review, automation, and import workflow.</p></section><section class="exec-card"><h3>CRM Route</h3><p>The existing employer pipeline and stage remain unchanged.</p></section></div>';
@@ -4907,6 +4942,9 @@ function openTaskBoard(){
   openExecutiveWorkspace({
     id:'taskWorkspace',
     title:isBookEditorMode()?'Editorial Tasks':'Tasks',
+    kicker:'Action Workspace',
+    mode:'drawer',
+    size:'wide',
     body:'<div id="taskWorkspaceBody"></div>',
     footer:"<button class=\"alert-btn primary\" onclick=\"ask('What should I work on next? Put every action in the to-do list with context.')\">Ask What Next</button><button class=\"alert-btn\" onclick=\"calendarizeOpenTasks()\">Calendarize Tasks</button><button class=\"alert-btn\" onclick=\"valTasksLoad()\">Refresh</button><button class=\"alert-btn\" onclick=\"closeExecutiveWorkspace('taskWorkspace')\">Close</button>"
   });
