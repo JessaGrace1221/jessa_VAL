@@ -2437,7 +2437,6 @@ html body .evidence-answer{display:none;margin-top:12px!important;border:1px sol
     <button class="val-nav-item active" data-view="dashboard"><span class="val-nav-icon">⌂</span><span>Home</span></button>
     <button class="val-nav-item" data-view="relationships"><span class="val-nav-icon">♙</span><span>Relationships</span></button>
     <button class="val-nav-item" data-view="projects"><span class="val-nav-icon">□</span><span>Projects</span></button>
-    <button class="val-nav-item" data-view="evidence"><span class="val-nav-icon">▣</span><span>Evidence</span></button>
     <button class="val-nav-item" data-view="calendar"><span class="val-nav-icon">▤</span><span>Calendar</span></button>
     <button class="val-nav-item" data-view="documents"><span class="val-nav-icon">▧</span><span>Documents</span></button>
     <div class="val-nav-group-label">Momentum</div>
@@ -3441,7 +3440,7 @@ function projectCabinetCreateTask(){
 var evidenceReviewState={items:[],selectedId:''};
 function openEvidenceReview(){
   document.querySelectorAll('.val-nav-item').forEach(function(el){el.classList.toggle('active',el.getAttribute('data-view')==='evidence');});
-  openExecutiveWorkspace({id:'evidenceWorkspace',title:'Evidence Review',kicker:'Evidence & Learning',mode:'drawer',size:'wide',body:'<div class="evidence-trust"><aside class="evidence-rail"><div class="evidence-rail-head"><strong>Source receipts</strong><span>Loading VAL evidence...</span></div></aside><main class="evidence-main"><section class="evidence-hero"><h3>Reading VAL evidence</h3><p>VAL is gathering source receipts, interpretations, and places where your correction would improve trust.</p></section></main></div>',footer:'<button class="alert-btn primary" onclick="loadEvidenceReview()">Refresh Evidence</button><button class="alert-btn" onclick="openTranscripts()">Open Transcripts</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'evidenceWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'evidenceWorkspace',title:'Evidence Review',kicker:'Evidence & Learning',mode:'drawer',size:'wide',body:'<div class="evidence-trust"><aside class="evidence-rail"><div class="evidence-rail-head"><strong>Source receipts</strong><span>Loading VAL evidence...</span></div></aside><main class="evidence-main"><section class="evidence-hero"><h3>Reading VAL evidence</h3><p>VAL is gathering source receipts, interpretations, and places where your correction would improve trust.</p></section></main></div>',footer:'<button class="alert-btn primary" onclick="loadEvidenceReview()">Refresh Evidence</button><button class="alert-btn" onclick="buildEvidenceFromTranscripts()">Build Evidence</button><button class="alert-btn" onclick="openTranscripts()">Open Transcripts</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'evidenceWorkspace\')">Close</button>'});
   loadEvidenceReview();
 }
 function loadEvidenceReview(){
@@ -3451,8 +3450,17 @@ function loadEvidenceReview(){
     renderEvidenceReview(data);
   }).catch(function(e){
     var body=document.getElementById('evidenceWorkspaceBody');
-    if(body)body.innerHTML=execEmptyState('Evidence review could not load',e.message,'<button class="alert-btn primary" onclick="loadEvidenceReview()">Try Again</button>');
+    if(!body)return;
+    if(/session|sign back|sign in|login|expired/i.test(e.message||'')){
+      body.innerHTML=evidenceSessionExpiredState(e.message);
+      return;
+    }
+    body.innerHTML=execEmptyState('Evidence review could not load',e.message,'<button class="alert-btn primary" onclick="loadEvidenceReview()">Try Again</button><button class="alert-btn" onclick="buildEvidenceFromTranscripts()">Build Evidence From Existing Transcripts</button>');
   });
+}
+function evidenceSessionExpiredState(message){
+  var next=encodeURIComponent(location.pathname+location.search);
+  return '<div class="evidence-trust"><aside class="evidence-rail"><div class="evidence-rail-head"><strong>Source receipts</strong><span>Sign-in needed</span></div><button class="evidence-source-tab active"><em>Recovery</em><strong>VAL needs a fresh session</strong><span>Your evidence is not gone. The drawer just cannot read protected source records until you sign back in.</span></button></aside><main class="evidence-main"><section class="evidence-hero"><h3>Sign back in to review evidence</h3><p>'+docSafe(message||'VAL needs a fresh sign-in before she can show source receipts, transcripts, corrections, and audit history.')+'</p><div class="evidence-meta"><span>Protected data</span><span>Source receipts</span><span>Corrections</span><span>Audit trail</span></div></section><section class="evidence-panel"><h4>Nothing was erased</h4><p>The Evidence drawer is asking for authentication before loading the private receipts behind VAL&apos;s interpretations.</p><div class="evidence-action-row"><button class="primary" onclick="window.location.href=\'/login?next='+next+'\'">Sign In Again</button><button onclick="loadEvidenceReview()">Try Again</button><button onclick="openTranscripts()">Open Transcripts</button></div><div id="evidenceAnswer" class="evidence-answer"></div></section></main></div>';
 }
 function evidenceActive(){return evidenceReviewState.items.find(function(x){return x.id===evidenceReviewState.selectedId;})||evidenceReviewState.items[0]||null;}
 function evidenceDate(value){if(!value)return '';var d=new Date(value);return isNaN(d.getTime())?'':d.toLocaleDateString();}
@@ -3469,7 +3477,7 @@ function renderEvidenceReview(data){
   var body=document.getElementById('evidenceWorkspaceBody');if(!body)return;
   var items=evidenceReviewState.items||[];
   if(!items.length){
-    body.innerHTML='<div class="evidence-trust"><aside class="evidence-rail"><div class="evidence-rail-head"><strong>Source receipts</strong><span>No receipts ready yet</span></div><button class="evidence-source-tab active"><em>Trust Center</em><strong>Waiting for source-backed evidence</strong><span>Transcripts, email analysis, documents, and Teach VAL memory will appear here.</span></button></aside><main class="evidence-main"><section class="evidence-hero"><h3>No evidence receipts yet</h3><p>This is where VAL will show exactly what she saw, how she interpreted it, what confidence she has, and what you can correct.</p><div class="evidence-meta"><span>Source receipts</span><span>Interpretations</span><span>Corrections</span><span>Audit trail</span></div></section><section class="evidence-panel"><h4>What will appear here</h4><div class="evidence-interpretation"><div class="evidence-row"><div><strong>Source receipt</strong><span>The exact email, transcript, document, calendar item, or memory record VAL used.</span></div><em>Why</em></div><div class="evidence-row"><div><strong>VAL interpretation</strong><span>Whether VAL read it as a task, risk, promise, decision, relationship signal, or project update.</span></div><em>How</em></div><div class="evidence-row"><div><strong>Your correction</strong><span>Mark wrong person/project, not useful, remember this, forget this, or create a task.</span></div><em>Teach</em></div></div></section><section class="evidence-panel"><h4>Next ways to feed Evidence</h4><div class="evidence-action-row"><button class="primary" onclick="openTranscripts()">Open Transcripts</button><button onclick="openEmailIntelligence()">Executive Inbox</button><button onclick="openTeachValOnboarding()">Teach VAL</button><button onclick="loadEvidenceReview()">Refresh</button></div></section></main></div>';
+    body.innerHTML='<div class="evidence-trust"><aside class="evidence-rail"><div class="evidence-rail-head"><strong>Source receipts</strong><span>No receipts ready yet</span></div><button class="evidence-source-tab active"><em>Trust Center</em><strong>Waiting for source-backed evidence</strong><span>Transcripts, email analysis, documents, and Teach VAL memory will appear here.</span></button></aside><main class="evidence-main"><section class="evidence-hero"><h3>No evidence receipts yet</h3><p>This is where VAL will show exactly what she saw, how she interpreted it, what confidence she has, and what you can correct.</p><div class="evidence-meta"><span>Source receipts</span><span>Interpretations</span><span>Corrections</span><span>Audit trail</span></div></section><section class="evidence-panel"><h4>What will appear here</h4><div class="evidence-interpretation"><div class="evidence-row"><div><strong>Source receipt</strong><span>The exact email, transcript, document, calendar item, or memory record VAL used.</span></div><em>Why</em></div><div class="evidence-row"><div><strong>VAL interpretation</strong><span>Whether VAL read it as a task, risk, promise, decision, relationship signal, or project update.</span></div><em>How</em></div><div class="evidence-row"><div><strong>Your correction</strong><span>Mark wrong person/project, not useful, remember this, forget this, or create a task.</span></div><em>Teach</em></div></div></section><section class="evidence-panel"><h4>Build from what VAL already has</h4><p>Use this to turn existing transcript history into source receipts. VAL will not send emails, texts, invites, or outside actions. She will only read existing transcripts, store receipts, and refresh the trust center.</p><div class="evidence-action-row"><button id="buildEvidenceBtn" class="primary" onclick="buildEvidenceFromTranscripts()">Build Evidence From Existing Transcripts</button><button onclick="openTranscripts()">Open Transcripts</button><button onclick="openEmailIntelligence()">Executive Inbox</button><button onclick="openTeachValOnboarding()">Teach VAL</button><button onclick="loadEvidenceReview()">Refresh</button></div><div id="evidenceAnswer" class="evidence-answer"></div></section></main></div>';
     return;
   }
   var active=evidenceActive();
@@ -3487,6 +3495,29 @@ function renderEvidenceReview(data){
   body.innerHTML='<div class="evidence-trust">'+rail+main+'</div>';
 }
 function evidenceAnswer(message){var el=document.getElementById('evidenceAnswer');if(el){el.style.display='block';el.textContent=message;}else addSys(message);}
+function buildEvidenceFromTranscripts(){
+  var btn=document.getElementById('buildEvidenceBtn');
+  if(btn){btn.disabled=true;btn.textContent='Building Evidence...';}
+  evidenceAnswer('Building evidence from existing transcripts. VAL is only reading stored transcripts and creating source receipts.');
+  apiFetch(PROXY+'/api/val/transcripts/migrate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:3650,limit:250})}).then(function(data){
+    var t=data.transcripts||{};
+    var parts=[
+      (t.processed||0)+' transcripts processed',
+      (t.observations||0)+' observations created',
+      (t.found||0)+' found'
+    ];
+    if((t.errors||[]).length)parts.push((t.errors||[]).length+' need review');
+    evidenceAnswer('Evidence build complete: '+parts.join(' · ')+'. Refreshing receipts now.');
+    return loadEvidenceReview();
+  }).catch(function(e){
+    if(/session|sign back|sign in|login|expired/i.test(e.message||'')){
+      var body=document.getElementById('evidenceWorkspaceBody');
+      if(body)body.innerHTML=evidenceSessionExpiredState(e.message);
+    }else evidenceAnswer('Evidence build failed: '+e.message);
+  }).finally(function(){
+    if(btn){btn.disabled=false;btn.textContent='Build Evidence From Existing Transcripts';}
+  });
+}
 function evidenceAction(action){
   var item=evidenceActive();if(!item)return;
   var noteEl=document.getElementById('evidenceCorrectionNote'),note=String((noteEl&&noteEl.value)||'').trim();

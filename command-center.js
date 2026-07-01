@@ -9,7 +9,6 @@ var navItems=[
   {id:'dashboard',icon:'home',label:'Home',group:'core'},
   {id:'relationships',icon:'people',label:'Relationships',group:'core'},
   {id:'projects',icon:'folder',label:'Projects',group:'core'},
-  {id:'evidence',icon:'evidence',label:'Evidence',group:'core'},
   {id:'transcripts',icon:'document',label:'Transcripts',group:'core'},
   {id:'documents',icon:'document',label:'Documents',group:'core'},
   {id:'email_intelligence',icon:'mail',label:'Executive Inbox',group:'growth'},
