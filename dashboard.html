@@ -1261,6 +1261,38 @@ body{font-size:1rem}
 .relationship-answer{margin-top:12px!important;border:1px solid rgba(201,154,61,.22)!important;border-radius:10px!important;background:#fffdf8!important;padding:12px!important;color:#26354d!important;font-size:.86rem!important;line-height:1.5!important;white-space:pre-wrap!important}
 .relationship-evidence ul{max-height:220px!important;overflow:auto!important;padding-left:18px!important}
 @media(max-width:980px){.relationship-section-grid{grid-template-columns:1fr!important}.relationship-context-row{grid-template-columns:1fr!important;gap:4px!important}}
+.project-cabinet{display:grid!important;grid-template-columns:250px minmax(0,1fr)!important;gap:18px!important;height:calc(100dvh - 220px)!important;min-height:560px!important;overflow:hidden!important}
+.project-cabinet-rail{background:linear-gradient(180deg,#fffdf8,#fbfaf7)!important;border:1px solid rgba(201,154,61,.18)!important;border-radius:10px!important;padding:12px!important;overflow:auto!important;display:grid!important;align-content:start!important;gap:8px!important}
+.project-cabinet-rail-head{padding:4px 4px 10px!important;border-bottom:1px solid rgba(201,154,61,.18)!important;margin-bottom:4px!important}
+.project-cabinet-rail-head strong{display:block!important;font-size:.76rem!important;letter-spacing:.12em!important;text-transform:uppercase!important;color:#8a5a17!important}
+.project-cabinet-rail-head span{display:block!important;margin-top:3px!important;font-size:.78rem!important;color:#667386!important}
+.project-drawer-tab{width:100%!important;border:1px solid transparent!important;background:transparent!important;border-radius:9px!important;text-align:left!important;padding:10px!important;color:#17243a!important;cursor:pointer!important;display:grid!important;gap:4px!important}
+.project-drawer-tab:hover,.project-drawer-tab.active{background:#fff!important;border-color:rgba(201,154,61,.28)!important;box-shadow:0 8px 20px rgba(7,24,45,.055)!important}
+.project-drawer-tab strong{font-size:.92rem!important;line-height:1.2!important;color:#07182d!important}
+.project-drawer-tab span{font-size:.76rem!important;line-height:1.35!important;color:#657184!important}
+.project-drawer-tab em{font-style:normal!important;font-size:.68rem!important;text-transform:uppercase!important;letter-spacing:.08em!important;color:#8a5a17!important}
+.project-cabinet-main{overflow:auto!important;padding-right:4px!important}
+.project-file{display:grid!important;gap:14px!important}
+.project-file-hero{border:1px solid rgba(201,154,61,.25)!important;border-radius:12px!important;background:linear-gradient(135deg,#fffdf8,#fff7e4)!important;padding:18px!important;box-shadow:0 16px 34px rgba(7,24,45,.045)!important}
+.project-file-hero h3{font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.78rem!important;font-weight:600!important;line-height:1.05!important;color:#07182d!important;margin:0 0 6px!important}
+.project-file-hero p{font-size:.93rem!important;line-height:1.55!important;color:#26354d!important;margin:0!important}
+.project-file-meta{display:flex!important;gap:8px!important;flex-wrap:wrap!important;margin-top:12px!important}
+.project-file-meta span{border:1px solid rgba(201,154,61,.22)!important;background:#fff!important;border-radius:999px!important;padding:5px 10px!important;font-size:.72rem!important;font-weight:800!important;color:#715014!important}
+.project-file-grid{display:grid!important;grid-template-columns:1fr!important;gap:14px!important}
+.project-file-panel{background:#fff!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:10px!important;padding:14px!important;box-shadow:0 10px 24px rgba(7,24,45,.035)!important}
+.project-file-panel h4{margin:0 0 11px!important;font-size:.76rem!important;letter-spacing:.11em!important;text-transform:uppercase!important;color:#8a5a17!important;font-weight:800!important}
+.project-file-list{display:grid!important;gap:9px!important}
+.project-file-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:10px!important;align-items:start!important;border-top:1px solid rgba(7,24,45,.07)!important;padding-top:10px!important}
+.project-file-row:first-child{border-top:0!important;padding-top:0!important}
+.project-file-row strong{font-size:.88rem!important;line-height:1.25!important;color:#07182d!important}
+.project-file-row span{font-size:.78rem!important;line-height:1.4!important;color:#667386!important;display:block!important;margin-top:3px!important}
+.project-file-row em{font-style:normal!important;font-size:.68rem!important;text-transform:uppercase!important;letter-spacing:.07em!important;color:#8a5a17!important;white-space:nowrap!important}
+.project-update-card textarea,.project-chat-card input{width:100%!important;border:1px solid rgba(7,24,45,.14)!important;border-radius:9px!important;background:#fff!important;color:#17243a!important;font:400 .88rem/1.45 var(--body)!important;padding:11px!important}
+.project-update-card textarea{min-height:105px!important;resize:vertical!important}
+.project-chat-row{display:flex!important;gap:8px!important;align-items:center!important}
+.project-chat-row input{min-height:42px!important}
+.project-answer{display:none;margin-top:12px!important;border:1px solid rgba(201,154,61,.22)!important;border-radius:10px!important;background:#fffdf8!important;padding:12px!important;color:#26354d!important;font-size:.86rem!important;line-height:1.5!important;white-space:pre-wrap!important}
+@media(max-width:980px){.project-cabinet{grid-template-columns:1fr!important;height:auto!important;overflow:visible!important}.project-cabinet-rail,.project-cabinet-main{max-height:none!important;overflow:visible!important}}
 .exec-workspace-drawer-wide #draftsWorkspaceBody .exec-workspace-grid{grid-template-columns:1fr!important}
 .exec-workspace-drawer-wide #draftsWorkspaceBody pre{font-size:.82rem!important;line-height:1.45!important;background:#fffdf8!important;border-color:rgba(7,24,45,.1)!important}
 .exec-workspace-drawer-wide #taskWorkspaceBody .task-board{height:calc(100dvh - 190px)!important;min-height:560px!important;grid-template-columns:minmax(0,1fr) minmax(260px,.82fr)!important;gap:12px!important}
@@ -3280,21 +3312,86 @@ function dismissAlert(btn){
   addSys('Alert dismissed.');
 }
 function openPriorityReview(){
-  var open=valTasks.filter(function(t){return !t.completed;});
-  var overdue=open.filter(function(t){return t.dueDate&&new Date(t.dueDate)<new Date();});
-  var meetings=(dashData.appointments||dashData.calendarEvents||[]).slice(0,5);
-  var opps=(dashData.opportunities||[]).slice(0,5);
-  var drafts=valDocs.filter(function(d){return d.status==='draft';});
-  var body='<div class="exec-workspace-grid">'
-    +'<section class="exec-card"><h3>Top Priorities</h3><p>'+(overdue.length?overdue.length+' overdue task'+(overdue.length===1?'':'s')+' need a decision.':'No overdue tasks found.')+'</p><ul>'+open.slice(0,5).map(function(t){return '<li>'+docSafe(t.title)+'</li>';}).join('')+'</ul></section>'
-    +'<section class="exec-card"><h3>Email Priorities</h3><p>'+(dashData.followups?dashData.followups+' unread conversation'+(dashData.followups===1?'':'s')+' should be triaged.':'No unread communication count is currently available.')+'</p></section>'
-    +'<section class="exec-card"><h3>Relationship Priorities</h3><p>Open Relationship Review to rank cooling, high-leverage, and momentum relationships from recent evidence.</p></section>'
-    +'<section class="exec-card"><h3>Meetings</h3><ul>'+(meetings.length?meetings.map(function(m){return '<li>'+docSafe(eventTitle(m))+'</li>';}).join(''):'<li>No meeting data loaded yet.</li>')+'</ul></section>'
-    +'<section class="exec-card"><h3>Commitments</h3><p>'+(open.length?open.length+' active task'+(open.length===1?'':'s')+' are in memory.':'No remembered tasks yet.')+'</p></section>'
-    +'<section class="exec-card"><h3>Opportunities</h3><ul>'+(opps.length?opps.map(function(o){return '<li>'+docSafe(pipelineDisplayName(o))+'</li>';}).join(''):'<li>No pipeline opportunities loaded yet.</li>')+'</ul></section>'
-    +'<section class="exec-card"><h3>Recommended Actions</h3><p>Start with the highest-friction item: overdue commitments, next meeting prep, then relationship drift.</p><p>'+drafts.length+' draft'+(drafts.length===1?'':'s')+' waiting for approval.</p></section>'
-    +'</div>';
-  openExecutiveWorkspace({id:'priorityWorkspace',title:'Projects & Priorities',kicker:'Project Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="askTasks()">Review Tasks</button><button class="alert-btn" onclick="openEmailIntelligence()">Executive Inbox</button><button class="alert-btn" onclick="openRelationshipReview()">Relationship Review</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
+  openExecutiveWorkspace({id:'priorityWorkspace',title:'Project Cabinet',kicker:'Project Workspace',mode:'drawer',size:'wide',body:'<div class="project-cabinet"><aside class="project-cabinet-rail"><div class="project-cabinet-rail-head"><strong>Project files</strong><span>Loading active project drawers...</span></div></aside><main class="project-cabinet-main"><section class="exec-card"><h3>Opening project cabinet</h3><p>VAL is gathering tasks, memory, transcripts, documents, and evidence by project.</p></section></main></div>',footer:'<button class="alert-btn primary" onclick="projectCabinetCreateTask()">Create Project Task</button><button class="alert-btn" onclick="openEmailIntelligence()">Executive Inbox</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'priorityWorkspace\')">Close</button>'});
+  loadProjectCabinet();
+}
+var projectCabinetState={projects:[],selectedKey:''};
+function projectDateLabel(value){if(!value)return '';var d=new Date(value);return isNaN(d.getTime())?'':d.toLocaleDateString();}
+function projectShortText(value,max){var text=String(value||'').replace(/\s+/g,' ').trim();max=max||180;return text.length>max?text.slice(0,max-1).trim()+'…':text;}
+function loadProjectCabinet(){
+  apiFetch(PROXY+'/api/projects/cabinet').then(function(data){
+    projectCabinetState.projects=data.projects||[];
+    projectCabinetState.selectedKey=(projectCabinetState.projects[0]&&projectCabinetState.projects[0].key)||'';
+    renderProjectCabinet();
+  }).catch(function(e){
+    var body=document.getElementById('priorityWorkspaceBody');
+    if(body)body.innerHTML=execEmptyState('Project cabinet could not load',e.message,'<button class="alert-btn primary" onclick="loadProjectCabinet()">Try Again</button>');
+  });
+}
+function selectProjectDrawer(key){projectCabinetState.selectedKey=key;renderProjectCabinet();}
+function projectActive(){
+  return projectCabinetState.projects.find(function(p){return p.key===projectCabinetState.selectedKey;})||projectCabinetState.projects[0]||null;
+}
+function projectRows(items,type){
+  items=items||[];
+  if(!items.length)return '<div class="project-file-row"><div><strong>Nothing filed here yet</strong><span>When VAL finds '+docSafe(type)+' connected to this project, it will appear in this drawer.</span></div><em>Quiet</em></div>';
+  return items.slice(0,8).map(function(item){
+    var title=item.title||item.summary||item.kind||'Untitled';
+    var meta=[item.kind||item.sourceType||item.type||type,projectDateLabel(item.createdAt||item.occurredAt||item.dueDate)].filter(Boolean).join(' · ');
+    var detail=item.summary||item.notes||item.rawText||item.content||'';
+    return '<div class="project-file-row"><div><strong>'+docSafe(projectShortText(title,100))+'</strong><span>'+docSafe(projectShortText(detail,210))+'</span></div><em>'+docSafe(meta||type)+'</em></div>';
+  }).join('');
+}
+function renderProjectCabinet(){
+  var body=document.getElementById('priorityWorkspaceBody');if(!body)return;
+  var projects=projectCabinetState.projects||[];
+  if(!projects.length){body.innerHTML=execEmptyState('No project files yet','VAL did not find project-specific evidence yet. Add project context in Teach VAL or use the update box once a project appears.','<button class="alert-btn primary" onclick="teachValStartUpdate()">Update VAL</button>');return;}
+  var selected=projectActive();
+  var rail='<aside class="project-cabinet-rail"><div class="project-cabinet-rail-head"><strong>Project files</strong><span>'+projects.length+' active drawer'+(projects.length===1?'':'s')+'</span></div>'+projects.map(function(p){
+    var active=selected&&p.key===selected.key;
+    return '<button class="project-drawer-tab '+(active?'active':'')+'" onclick="selectProjectDrawer(\''+docSafe(p.key)+'\')"><em>'+docSafe(p.status||'Active')+'</em><strong>'+docSafe(p.name)+'</strong><span>'+docSafe((p.counts.openTasks||0)+' tasks · '+(p.counts.documents||0)+' docs · '+(p.counts.conversations||0)+' conversations')+'</span></button>';
+  }).join('')+'</aside>';
+  var p=selected;
+  var main='<main class="project-cabinet-main"><div class="project-file"><section class="project-file-hero"><h3>'+docSafe(p.name)+'</h3><p>'+docSafe(projectShortText(p.summary||'This project file is active, but VAL needs more source context to understand its status.',420))+'</p><div class="project-file-meta"><span>'+docSafe((p.counts.openTasks||0)+' open tasks')+'</span><span>'+docSafe((p.counts.updates||0)+' updates')+'</span><span>'+docSafe((p.counts.documents||0)+' docs/memory')+'</span><span>'+docSafe((p.counts.conversations||0)+' conversations')+'</span></div></section>'
+    +'<section class="project-file-panel project-next-move"><h4>Next useful move</h4><p>'+docSafe(projectShortText(p.nextMove||'Choose one concrete task or ask VAL what matters next.',300))+'</p><div class="relationship-primary-actions"><button class="primary" onclick="projectCabinetCreateTask()">Create Task</button><button class="secondary" onclick="projectCabinetAskVal(\'What matters most for this project right now?\')">Ask VAL</button><button class="secondary" onclick="projectCabinetAskVal(\'Draft a status update for this project.\')">Draft Update</button></div></section>'
+    +'<div class="project-file-grid"><section class="project-file-panel"><h4>Tasks</h4><div class="project-file-list">'+projectRows(p.tasks,'task')+'</div></section>'
+    +'<section class="project-file-panel"><h4>Updates & agreements</h4><div class="project-file-list">'+projectRows(p.updates,'update')+'</div></section>'
+    +'<section class="project-file-panel"><h4>Documents & memory</h4><div class="project-file-list">'+projectRows(p.documents,'document')+'</div></section>'
+    +'<section class="project-file-panel"><h4>Conversations, transcripts & email</h4><div class="project-file-list">'+projectRows(p.conversations,'conversation')+'</div></section></div>'
+    +'<section class="project-file-panel project-update-card"><h4>Update VAL about this project</h4><textarea id="projectContextNote" placeholder="Add project context, decisions, agreements, owner changes, current status, or what VAL should remember."></textarea><div class="relationship-primary-actions" style="margin-top:10px"><button class="primary" onclick="saveProjectContextNote()">Save Context</button><button class="secondary" onclick="projectCabinetAskVal(\'What context is missing for this project?\')">What is missing?</button></div></section>'
+    +'<section class="project-file-panel project-chat-card"><h4>Ask VAL about '+docSafe(p.name)+'</h4><div class="project-chat-row"><input id="projectAskInput" placeholder="Ask for next steps, a status update, risks, or a task plan."><button class="primary" onclick="projectCabinetAskVal()">Ask</button></div><div class="relationship-quick-chips"><button onclick="projectCabinetAskVal(\'What are the open loops for this project?\')">Open loops</button><button onclick="projectCabinetAskVal(\'What should I do next?\')">Next task</button><button onclick="projectCabinetAskVal(\'Draft a clean project status update.\')">Status draft</button></div><div id="projectAskAnswer" class="project-answer"></div></section>'
+    +'</div></main>';
+  body.innerHTML='<div class="project-cabinet">'+rail+main+'</div>';
+}
+function projectCabinetSnapshot(p){
+  return ['Project: '+(p.name||''),'Summary: '+(p.summary||''),'Next move: '+(p.nextMove||''),'Tasks: '+(p.tasks||[]).slice(0,8).map(function(t){return t.title||t.summary||'';}).filter(Boolean).join(' | '),'Updates: '+(p.updates||[]).slice(0,6).map(function(u){return u.summary||u.title||'';}).filter(Boolean).join(' | '),'Documents/memory: '+(p.documents||[]).slice(0,6).map(function(d){return d.summary||d.title||'';}).filter(Boolean).join(' | '),'Conversations: '+(p.conversations||[]).slice(0,6).map(function(c){return c.title||c.summary||'';}).filter(Boolean).join(' | ')].join('\n');
+}
+function saveProjectContextNote(){
+  var p=projectActive(),el=document.getElementById('projectContextNote');if(!p||!el)return;
+  var note=String(el.value||'').trim();if(!note){projectCabinetPanelMessage('Add a sentence or two about this project first.');return;}
+  apiFetch(PROXY+'/api/val/memory',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'project_context_note',summary:'Project context: '+p.name,rawText:note,importance:4,metadata:{source:'project_cabinet',projectKey:p.key,projectName:p.name}})}).then(function(){
+    el.value='';projectCabinetPanelMessage('Saved. VAL will use this project context in chat, tasks, and future project review.');
+    loadProjectCabinet();
+  }).catch(function(e){projectCabinetPanelMessage('Context save failed: '+e.message);});
+}
+function projectCabinetPanelMessage(message){var ans=document.getElementById('projectAskAnswer');if(ans){ans.style.display='block';ans.textContent=message;}else addSys(message);}
+function projectCabinetAskVal(promptText){
+  var p=projectActive();if(!p)return;
+  var input=document.getElementById('projectAskInput'),answer=document.getElementById('projectAskAnswer');
+  var text=String(promptText||(input&&input.value)||'').trim();
+  if(!text){projectCabinetPanelMessage('Ask VAL a specific question about this project.');return;}
+  if(input&&!promptText)input.value='';
+  if(answer){answer.style.display='block';answer.textContent='Thinking...';}
+  apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'Project cabinet question: '+text+'\n\n'+projectCabinetSnapshot(p)}],dashboard:{surface:'project_cabinet',project:p}})}).then(function(d){
+    if(answer)answer.textContent=d.reply||d.content||(d.message&&d.message.content)||'VAL did not return a response.';
+  }).catch(function(e){if(answer)answer.textContent='Ask failed: '+e.message;});
+}
+function projectCabinetCreateTask(){
+  var p=projectActive();if(!p){askTasks();return;}
+  var title=prompt('Task for '+p.name, p.nextMove||('Move '+p.name+' forward'));
+  if(!title)return;
+  var task=valAddTask(title,p.name,new Date(Date.now()+2*86400000).toISOString(),'Created from Project Cabinet for '+p.name);
+  if(task){projectCabinetPanelMessage('Task created for '+p.name+'.');loadProjectCabinet();}
 }
 function openLeadIntelligence(){
   var body='<div class="exec-workspace-grid"><section class="exec-card"><h3>Scrape Employers</h3><p>Would this company benefit from GOALL?</p><p>Search by industry, market, and company size.</p></section><section class="exec-card"><h3>Lead Results</h3><p>Employer leads keep the existing scoring, review, automation, and import workflow.</p></section><section class="exec-card"><h3>CRM Route</h3><p>The existing employer pipeline and stage remain unchanged.</p></section></div>';

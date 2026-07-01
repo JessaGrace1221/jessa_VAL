@@ -18973,6 +18973,121 @@ app.get('/api/executive-briefing',async(req,res)=>{
     res.json(await buildExecutiveBriefing());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+function projectCabinetKey(name=''){
+  return String(name||'project').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'project';
+}
+function projectCabinetText(row={}){
+  return [
+    row.title,row.name,row.displayName,row.summary,row.rawText,row.notes,row.contactName,row.kind,row.type,row.sourceType,
+    JSON.stringify(row.metadata||row.metadataJson||row.entitiesJson||row.sourceContext||row.preparedPayload||{})
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function projectCabinetMatches(project,item){
+  const hay=projectCabinetText(item);
+  if(!hay)return false;
+  return (project.aliases||[]).some(alias=>{
+    const clean=String(alias||'').toLowerCase().trim();
+    if(!clean)return false;
+    if(clean==='val')return /\b(jessa[_ -]?val|baby val|val platform|val project|project val)\b/i.test(hay);
+    const normalized=clean.replace(/[^a-z0-9]+/g,'');
+    return hay.includes(clean)||hay.replace(/[^a-z0-9]+/g,'').includes(normalized);
+  });
+}
+function projectCabinetPublicRow(row={},fallbackType='source'){
+  return {
+    id:row.id||row.sourceId||uuid('proj-row'),
+    title:row.title||row.displayName||row.summary||row.kind||fallbackType,
+    summary:row.summary||row.notes||row.why||row.whatChanged||row.rawText||row.content||'',
+    kind:row.kind||row.moveType||row.sourceType||row.type||fallbackType,
+    createdAt:row.createdAt||row.updatedAt||row.occurredAt||row.capturedAt||row.dueAt||row.dueDate||'',
+    dueDate:row.dueDate||row.dueAt||'',
+    status:row.status||''
+  };
+}
+function projectCabinetAdd(map,name,source='observed',summary=''){
+  name=String(name||'').trim();
+  if(!name||name.length<2)return null;
+  const key=projectCabinetKey(name);
+  if(!map.has(key))map.set(key,{key,name,aliases:Array.from(new Set([name,key,name.replace(/\s+/g,''),name.replace(/&/g,'and')])),source,status:'Active',summary});
+  else{
+    const p=map.get(key);
+    p.summary=p.summary||summary;
+    [name,key,name.replace(/\s+/g,''),name.replace(/&/g,'and')].forEach(a=>{if(a&&!p.aliases.includes(a))p.aliases.push(a);});
+  }
+  return map.get(key);
+}
+async function buildProjectCabinet(){
+  const [profiles,tasks,memory,evidence,moves,transcripts,conversations,drafts,emailData]=await Promise.all([
+    listRelationshipProfiles({limit:180}).catch(()=>[]),
+    loadTasks().catch(()=>[]),
+    recentMemoryItems(3650,800).catch(()=>[]),
+    listDashboardEvidenceItems({limit:300}).catch(()=>[]),
+    listAgencyMoves({limit:160}).catch(()=>[]),
+    recentTranscripts(3650).catch(()=>[]),
+    recentConversationTextRows(3650,250).catch(()=>[]),
+    listDrafts().catch(()=>[]),
+    emailIntelligencePayload({query:{}},{force:false}).catch(()=>({emails:[]}))
+  ]);
+  const map=new Map();
+  ['GOALL','HopeMakers','Grace Intelligence','VAL','Help by Shopping'].forEach(name=>projectCabinetAdd(map,name,'jessa_standard'));
+  [CLIENT_CONFIG.projectName,CLIENT_CONFIG.brandName].filter(Boolean).forEach(name=>projectCabinetAdd(map,name,'deployment'));
+  profiles.filter(p=>p.profileType==='project').forEach(p=>projectCabinetAdd(map,p.displayName||p.projectId||p.profileKey,'profile',p.summary||''));
+  tasks.forEach(t=>{
+    const meta=t.metadata||{};
+    const projectName=t.projectName||t.project||meta.projectName||meta.project;
+    if(projectName)projectCabinetAdd(map,projectName,'task');
+  });
+  memory.forEach(m=>{
+    const meta=m.metadata||{};
+    const name=meta.projectName||meta.project||meta.projectKey||(/project context:\s*([^\n]+)/i.exec(m.summary||'')||[])[1];
+    if(name)projectCabinetAdd(map,name,'memory',m.summary||'');
+  });
+  evidence.forEach(e=>{
+    const entities=e.entitiesJson||e.entities||e.metadataJson?.entities||{};
+    if(entities.project)projectCabinetAdd(map,entities.project,'evidence',e.summary||e.title||'');
+  });
+  const projects=Array.from(map.values()).map(project=>{
+    const projectProfiles=profiles.filter(p=>p.profileType==='project'&&(projectCabinetKey(p.displayName||p.projectId||p.profileKey)===project.key||projectCabinetMatches(project,p)));
+    const profile=projectProfiles[0]||{};
+    const projectTasks=tasks.filter(t=>!t.completed&&projectCabinetMatches(project,t)).slice(0,20).map(t=>projectCabinetPublicRow(t,'task'));
+    const projectMemory=memory.filter(m=>projectCabinetMatches(project,m)).slice(0,18);
+    const projectEvidence=evidence.filter(e=>projectCabinetMatches(project,e)).slice(0,18);
+    const projectMoves=moves.filter(m=>projectCabinetMatches(project,m)||projectCabinetKey(m.projectId||'')===project.key).slice(0,12);
+    const projectTranscripts=transcripts.filter(t=>projectCabinetMatches(project,t)).slice(0,10);
+    const projectConversations=conversations.filter(c=>projectCabinetMatches(project,c)).slice(0,10);
+    const projectDrafts=drafts.filter(d=>projectCabinetMatches(project,d)).slice(0,8);
+    const projectEmails=(emailData.emails||[]).filter(e=>projectCabinetMatches(project,e)).slice(0,8);
+    const profileUpdates=[]
+      .concat((profile.openLoops||[]).map(x=>({kind:'open_loop',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})))
+      .concat((profile.risks||[]).map(x=>({kind:'risk',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})))
+      .concat((profile.opportunities||[]).map(x=>({kind:'opportunity',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})));
+    const updates=profileUpdates.concat(projectMoves).concat(projectEvidence).slice(0,18).map(x=>projectCabinetPublicRow(x,'update'));
+    const documents=projectMemory.filter(m=>!/transcript|conversation|chat/i.test(String(m.kind||''))).slice(0,14).map(x=>projectCabinetPublicRow(x,'document'));
+    const sourceConversations=projectTranscripts.map(x=>projectCabinetPublicRow(x,'transcript'))
+      .concat(projectConversations.map(x=>projectCabinetPublicRow(x,'conversation')))
+      .concat(projectEmails.map(x=>projectCabinetPublicRow(x,'email')))
+      .concat(projectDrafts.map(x=>projectCabinetPublicRow(x,'draft'))).slice(0,18);
+    const nextMove=(projectTasks[0]?.title)||updates[0]?.summary||profile.openLoops?.[0]?.content||profile.summary||'Ask VAL to identify the next clean project move.';
+    const summary=profile.summary||project.summary||documents[0]?.summary||updates[0]?.summary||'VAL has created a project file. Add context or connect source material to make this drawer more useful.';
+    return {
+      key:project.key,
+      name:project.name,
+      status:profile.relationshipStatus||project.status||'Active',
+      summary,
+      nextMove,
+      counts:{openTasks:projectTasks.length,updates:updates.length,documents:documents.length,conversations:sourceConversations.length},
+      tasks:projectTasks,
+      updates,
+      documents,
+      conversations:sourceConversations
+    };
+  }).sort((a,b)=>(b.counts.openTasks+b.counts.updates+b.counts.documents+b.counts.conversations)-(a.counts.openTasks+a.counts.updates+a.counts.documents+a.counts.conversations)||a.name.localeCompare(b.name));
+  return {ok:true,projects,generatedAt:new Date().toISOString()};
+}
+app.get('/api/projects/cabinet',async(req,res)=>{
+  try{res.json(await buildProjectCabinet());}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/homepage-cards/action',async(req,res)=>{
   try{
     const action=String(req.body.action||'').trim();
