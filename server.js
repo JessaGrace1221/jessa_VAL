@@ -19669,6 +19669,18 @@ function chatContextIntent(text=''){
   if(/\b(add|attach|file|save)\b[\s\S]{0,60}\b(project|drawer|cabinet)\b/.test(lower))return 'add_to_project';
   return '';
 }
+function chatContextCorrection(text=''){
+  const lower=String(text||'').toLowerCase();
+  const noSave=/\b(don't|dont|do not|no need to|shouldn't|should not|not necessary to|nothing to)\b[\s\S]{0,80}\b(save|remember|add|update|file|store)\b/.test(lower)
+    || /\b(save|remember|add|update|file|store)\b[\s\S]{0,80}\b(nothing|don't|dont|do not|no need|shouldn't|should not)\b/.test(lower);
+  const selfIdentity=/\b(this is actually me|that's actually me|that is actually me|this is me|that's me|that is me|my own contact|my profile|my own profile)\b/.test(lower);
+  const wrongAssociation=/\b(wrong|incorrect|not right|misread|misunderstood|bad match|wrong person|not this person|not about this contact)\b/.test(lower);
+  if(noSave&&selfIdentity)return 'self_no_save';
+  if(noSave)return 'do_not_save';
+  if(selfIdentity)return 'self_identity';
+  if(wrongAssociation)return 'wrong_association';
+  return '';
+}
 function requestedTaskTitle(text='',ctx={}){
   const quoted=String(text||'').match(/['"“”]([^'"“”]{4,160})['"“”]/);
   if(quoted&&quoted[1])return dashboardCleanText(quoted[1]);
@@ -19680,6 +19692,17 @@ function requestedTaskTitle(text='',ctx={}){
 }
 async function handleContextualChatCommand({context,lastUser}){
   if(!context)return null;
+  const correction=chatContextCorrection(lastUser);
+  if(correction){
+    const title=chatContextTitle(context);
+    const selfMsg=/self/.test(correction)
+      ? `You're right. I was treating ${title} like an outside relationship, and that is not the right read if this is you.`
+      : `You're right. I may be reading this context too mechanically.`;
+    const saveMsg=/no_save|do_not_save/.test(correction)
+      ? `I will not save anything from that message.`
+      : `I will not take action from that correction unless you ask me to.`;
+    return {content:[selfMsg,saveMsg,'What I can do next: leave it alone, show you the source that caused the match, or create a correction if you want VAL to stop surfacing this card this way.'].join('\n\n'),extra:{contextualCorrection:correction}};
+  }
   const intent=chatContextIntent(lastUser);
   if(!intent)return null;
   const title=chatContextTitle(context);

@@ -8604,7 +8604,7 @@ function gchatShowWelcome(){
 function gchatShowContextWelcome(context){
   var label=(context&&context.label)||'this workspace';
   var title=(context&&context.title)||'the current item';
-  gchatBubble('I have '+label+' open and I am using the context for '+title+'. I can explain what matters, create a task, draft or send an email for approval, schedule time, update memory, add this to a project, or show the evidence behind it.',false);
+  gchatBubble('I’m looking at '+title+' from '+label+'. Tell me what is true, wrong, missing, or what you want done. I can turn this into a task, draft, schedule request, project note, or evidence check.',false);
 }
 function gchatPrompt(text){var inp=document.getElementById('gchatInput');if(inp){inp.value=text;gchatSend();}}
 function gchatRenderQuickActions(){
@@ -8612,12 +8612,12 @@ function gchatRenderQuickActions(){
   if(gchatContext){
     var label=gchatContext.title||gchatContext.label||'this';
     var actions=[
-      ['Create task','Create a task from this context and link it to the right project, person, or source.'],
-      ['Draft email','Draft the best email from this context and save it for my approval.'],
-      ['Schedule','Create a calendar appointment or reminder based on this context.'],
-      ['Update memory','Update VAL memory with what should be remembered from this context.'],
-      ['Add to project','Add this context to the right project drawer.'],
-      ['Show evidence','Show the evidence behind '+label+'.']
+      ['Create task','Make a clear action item from this, with the right person, project, and source attached.'],
+      ['Draft email','Draft the follow-up this situation needs, but keep it for my approval.'],
+      ['Schedule','Help me make time for this without sending anything yet.'],
+      ['Remember this','Remember the important context from this conversation.'],
+      ['File to project','File this under the right project and keep the source attached.'],
+      ['Show evidence','Show me why '+label+' is showing up here.']
     ];
     window._gchatQuickPrompts=actions.map(function(a){return a[1];});
     el.innerHTML=actions.map(function(a,i){return '<button onclick="gchatPrompt(window._gchatQuickPrompts['+i+'])">'+docSafe(a[0])+'</button>';}).join('');
