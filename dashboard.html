@@ -794,6 +794,21 @@ input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .gchat-input:focus{border-color:#c4963a;box-shadow:0 0 0 3px rgba(196,150,58,.12)}
 .gchat-send{width:58px;height:58px;border-radius:8px;border:0;background:#07182d;color:white;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.18s}
 .gchat-send:hover{background:#142943;transform:translateY(-1px)}.gchat-send svg{width:17px;height:17px}
+.gchat-command-overlay{align-items:stretch;justify-content:flex-end;background:rgba(7,24,45,.26);backdrop-filter:blur(7px);padding:12px}
+.gchat-command-overlay .gchat-modal{width:min(760px,calc(100vw - 24px));height:calc(100dvh - 24px);display:grid;grid-template-columns:1fr;border-radius:8px;background:#fbfaf7;border-color:rgba(201,154,61,.24);box-shadow:0 24px 78px rgba(7,24,45,.22);animation:valDrawerIn .22s ease-out}
+.gchat-command-overlay .gchat-sidebar{display:none}
+.gchat-command-overlay .gchat-header{background:#fbfaf7;border-bottom:1px solid rgba(7,24,45,.08);padding:22px 24px 18px}
+.gchat-command-overlay .gchat-title{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.9rem;font-weight:650;line-height:1.02;color:#07182d}
+.gchat-command-overlay .gchat-title:before{color:#c99a3d;font-size:.78rem}
+.gchat-command-overlay .gchat-title button{display:none}
+.gchat-command-overlay .gchat-context{font:700 .78rem/1 var(--body);color:#8a5a17;opacity:1;letter-spacing:.02em}
+.gchat-command-overlay .gchat-messages{background:linear-gradient(180deg,#fbfaf7 0%,#f8f4eb 100%);padding:24px;gap:12px}
+.gchat-command-overlay .gchat-quick-actions{background:#fbfaf7;border-top:1px solid rgba(7,24,45,.08);padding:14px 18px;gap:8px}
+.gchat-command-overlay .gchat-quick-actions button{border-radius:8px;border:1px solid rgba(7,24,45,.1);background:#fff;color:#07182d;padding:10px 12px;font-size:.8rem;font-weight:760;box-shadow:0 8px 18px rgba(7,24,45,.035)}
+.gchat-command-overlay .gchat-quick-actions button:first-child{background:#07182d;color:#fff;border-color:#07182d}
+.gchat-command-overlay .gchat-input-row{background:#fbfaf7;border-top:1px solid rgba(7,24,45,.08);padding:16px 18px}
+.gchat-command-overlay .gchat-input{height:58px;font-size:1rem;border-radius:8px;border-color:rgba(7,24,45,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
+.gchat-command-overlay .gchat-send{border-radius:8px;background:#c99a3d;color:#07182d;box-shadow:0 10px 24px rgba(138,90,23,.13)}
 @media(max-width:760px){.gchat-overlay{padding:10px}.gchat-modal{width:100%;height:calc(100dvh - 20px);grid-template-columns:1fr}.gchat-sidebar{display:none}.gchat-messages{padding:15px}.gchat-header{padding:13px 14px}.gchat-quick-actions{padding:9px 12px}.gchat-input-row{padding:12px}}
 
 /* ── SOCIAL POST PANEL ── */
@@ -1218,6 +1233,13 @@ body{font-size:1rem}
 #homepageCardWorkspaceBody .val-card-main{max-width:100%!important;max-height:none!important;overflow:visible!important;padding:0!important}
 #homepageCardWorkspaceBody .val-card-tabs{position:relative!important;top:auto!important;margin:0 0 22px!important;padding:0!important;background:transparent!important}
 #homepageCardWorkspaceBody .val-card-tabs span{font-size:.92rem!important;padding-bottom:12px!important}
+.val-command-launch-card{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:18px!important;align-items:center!important;margin-top:20px!important;padding:22px!important;border:1px solid rgba(201,154,61,.22)!important;border-radius:12px!important;background:linear-gradient(135deg,#fffdf8,#fff7e8)!important;box-shadow:0 14px 34px rgba(7,24,45,.05)!important;color:#07182d!important}
+.val-command-launch-card span{display:block!important;margin-bottom:5px!important;font-size:.72rem!important;letter-spacing:.08em!important;text-transform:uppercase!important;color:#8a5a17!important;font-weight:800!important}
+.val-command-launch-card h3{margin:0 0 7px!important;font-family:'Cormorant Garamond',Georgia,serif!important;font-size:1.45rem!important;line-height:1.08!important;font-weight:650!important;color:#07182d!important}
+.val-command-launch-card p{margin:0!important;max-width:56ch!important;font-size:.92rem!important;line-height:1.55!important;color:#334155!important}
+.val-command-launch-actions{display:flex!important;gap:8px!important;align-items:center!important;justify-content:flex-end!important;flex-wrap:wrap!important}
+.val-command-launch-actions button{min-height:38px!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:8px!important;background:#fff!important;color:#07182d!important;padding:0 13px!important;font-size:.78rem!important;font-weight:800!important;cursor:pointer!important;box-shadow:0 8px 18px rgba(7,24,45,.035)!important}
+.val-command-launch-actions button.primary{background:#07182d!important;color:#fff!important;border-color:#07182d!important;box-shadow:0 12px 26px rgba(7,24,45,.12)!important}
 .val-premium-card-panel{display:grid!important;grid-template-columns:190px minmax(0,1fr)!important;gap:22px!important;align-items:stretch!important;margin-bottom:20px!important}
 .val-premium-key-rail{background:#fffdf8!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:12px!important;padding:20px!important;min-height:430px!important;color:#07182d!important;box-shadow:0 10px 30px rgba(7,24,45,.04)!important}
 .val-premium-icon{width:42px!important;height:42px!important;border-radius:999px!important;border:1px solid rgba(201,154,61,.38)!important;color:#c99a3d!important;display:grid!important;place-items:center!important;font-size:1.2rem!important;margin-bottom:24px!important;background:#fffaf0!important}
@@ -8533,10 +8555,17 @@ var gchatConversationTitle='New conversation';
 var gchatContext=null;
 function openGeneralChat(opts){
   opts=opts||{};
-  if(document.getElementById('gchatOverlay')){document.getElementById('gchatOverlay').remove();return;}
+  var existing=document.getElementById('gchatOverlay');
+  if(existing){existing.remove();if(!opts.context&&!opts.prompt&&!opts.welcome)return;}
+  if(opts.context){
+    gchatContext=opts.context;
+    gchatConversationId=null;
+    gchatHistory=[];
+    gchatConversationTitle=opts.title||'Chat with VAL';
+  }
   var el=document.createElement('div');
   el.id='gchatOverlay';
-  el.className='gchat-overlay';
+  el.className='gchat-overlay'+(opts.context?' gchat-command-overlay':'');
   el.innerHTML=
     '<div class="gchat-modal" role="dialog" aria-modal="true" aria-label="Talk to VAL">'
       +'<aside class="gchat-sidebar"><button class="gchat-new" onclick="gchatNew()">+ New chat</button><div id="gchatThreads" class="gchat-threads"></div></aside>'
@@ -8546,11 +8575,7 @@ function openGeneralChat(opts){
         +'<button class="gchat-close" onclick="document.getElementById(\'gchatOverlay\').remove()" aria-label="Close chat">×</button>'
       +'</div>'
       +'<div id="gchatMessages" class="gchat-messages"></div>'
-      +'<div id="gchatQuickActions" class="gchat-quick-actions">'
-        +'<button onclick="gchatStartPlatformTour()">Walk me through VAL</button>'
-        +'<button onclick="gchatAskNextBestMove()">What is my next best move?</button>'
-        +'<button onclick="startVoiceChatMode()">Switch to voice</button>'
-      +'</div>'
+      +'<div id="gchatQuickActions" class="gchat-quick-actions"></div>'
       +'<div class="gchat-input-row">'
         +'<textarea id="gchatInput" class="gchat-input" placeholder="Ask VAL anything..." onkeydown="gchatKey(event)" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,124)+\'px\'"></textarea>'
         +'<button class="gchat-send" onclick="gchatSend()" aria-label="Send message">'
@@ -8561,15 +8586,42 @@ function openGeneralChat(opts){
     +'</div>';
   el.onclick=function(e){if(e.target===el)el.remove();};
   document.body.appendChild(el);
+  gchatUpdateContextLabel();
   gchatRenderHistory();
+  gchatRenderQuickActions();
   gchatLoadThreads();
-  if(opts.welcome||!gchatHistory.length)gchatShowWelcome();
-  setTimeout(function(){document.getElementById('gchatInput').focus();},100);
+  if(opts.context&&!gchatHistory.length)gchatShowContextWelcome(opts.context);
+  else if(opts.welcome||!gchatHistory.length)gchatShowWelcome();
+  setTimeout(function(){var input=document.getElementById('gchatInput');if(!input)return;input.focus();if(opts.prompt){input.value=opts.prompt;gchatSend();}},100);
 }
 function gchatShowWelcome(){
   if(gchatHistory.length)return;
   var m='Hello '+valFirstName()+'. You can ask me what matters today, what your next best move is, how to use VAL, or what I am noticing across your relationships, evidence, projects, and actions.';
   gchatBubble(m,false);
+}
+function gchatShowContextWelcome(context){
+  var label=(context&&context.label)||'this workspace';
+  var title=(context&&context.title)||'the current item';
+  gchatBubble('I have '+label+' open and I am using the context for '+title+'. I can explain what matters, create a task, draft or send an email for approval, schedule time, update memory, add this to a project, or show the evidence behind it.',false);
+}
+function gchatPrompt(text){var inp=document.getElementById('gchatInput');if(inp){inp.value=text;gchatSend();}}
+function gchatRenderQuickActions(){
+  var el=document.getElementById('gchatQuickActions');if(!el)return;
+  if(gchatContext){
+    var label=gchatContext.title||gchatContext.label||'this';
+    var actions=[
+      ['Create task','Create a task from this context and link it to the right project, person, or source.'],
+      ['Draft email','Draft the best email from this context and save it for my approval.'],
+      ['Schedule','Create a calendar appointment or reminder based on this context.'],
+      ['Update memory','Update VAL memory with what should be remembered from this context.'],
+      ['Add to project','Add this context to the right project drawer.'],
+      ['Show evidence','Show the evidence behind '+label+'.']
+    ];
+    window._gchatQuickPrompts=actions.map(function(a){return a[1];});
+    el.innerHTML=actions.map(function(a,i){return '<button onclick="gchatPrompt(window._gchatQuickPrompts['+i+'])">'+docSafe(a[0])+'</button>';}).join('');
+    return;
+  }
+  el.innerHTML='<button onclick="gchatStartPlatformTour()">Walk me through VAL</button><button onclick="gchatAskNextBestMove()">What is my next best move?</button><button onclick="startVoiceChatMode()">Switch to voice</button>';
 }
 function gchatAskNextBestMove(){
   var inp=document.getElementById('gchatInput');if(inp){inp.value='What is my next best move?';gchatSend();}
@@ -8579,8 +8631,8 @@ function gchatStartPlatformTour(){
   var inp=document.getElementById('gchatInput');if(inp){inp.value=msg;gchatSend();}
 }
 function gchatRenderHistory(){var c=document.getElementById('gchatMessages');if(!c)return;c.innerHTML='';gchatHistory.forEach(function(m){gchatBubble(m.content,m.role==='user');});}
-function gchatNew(){gchatConversationId=null;gchatConversationTitle='New conversation';gchatHistory=[];gchatContext=null;var t=document.getElementById('gchatTitle');if(t)t.textContent=gchatConversationTitle;gchatUpdateContextLabel();gchatRenderHistory();}
-function gchatUpdateContextLabel(){var el=document.getElementById('gchatContextLabel');if(el)el.textContent=gchatContext&&gchatContext.contact?'Linked: '+(gchatContext.contact.name||gchatContext.contact.email||gchatContext.contact.company||'contact'):'';}
+function gchatNew(){gchatConversationId=null;gchatConversationTitle='New conversation';gchatHistory=[];gchatContext=null;var t=document.getElementById('gchatTitle');if(t)t.textContent=gchatConversationTitle;gchatUpdateContextLabel();gchatRenderQuickActions();gchatRenderHistory();}
+function gchatUpdateContextLabel(){var el=document.getElementById('gchatContextLabel');if(!el)return;if(gchatContext&&gchatContext.contact)el.textContent='Linked: '+(gchatContext.contact.name||gchatContext.contact.email||gchatContext.contact.company||'contact');else if(gchatContext)el.textContent='Context: '+(gchatContext.title||gchatContext.label||gchatContext.kind||'current workspace');else el.textContent='';}
 function gchatLoadThreads(){
   apiFetch(CONVERSATION_HOOK+'?limit=30').then(function(rows){
     rows=Array.isArray(rows)?rows:[];var el=document.getElementById('gchatThreads');if(!el)return;
@@ -8618,7 +8670,7 @@ function gchatBubble(text,isUser){
   var d=document.createElement('div');
   var fmt=isUser?text:text.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
   if(!isUser)fmt='<p>'+fmt+'</p>';
-  d.style.cssText='max-width:min(86%,100%);min-width:0;overflow:hidden;overflow-wrap:anywhere;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.65;margin-bottom:4px;word-break:break-word;'
+  d.style.cssText='max-width:min(86%,100%);min-width:0;overflow:hidden;overflow-wrap:anywhere;padding:12px 15px;border-radius:12px;font-size:15px;line-height:1.62;margin-bottom:4px;word-break:break-word;'
     +(isUser?'background:var(--navy);color:white;align-self:flex-end;border-bottom-right-radius:3px;'
             :'background:white;color:#16233a;border:1px solid var(--border);align-self:flex-start;border-bottom-left-radius:3px;');
   d.innerHTML=fmt;
@@ -8636,7 +8688,7 @@ function gchatSend(){
   typing.textContent='VAL is thinking...';
   document.getElementById('gchatMessages').appendChild(typing);
   document.getElementById('gchatMessages').scrollTop=99999;
-  apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:gchatHistory,dashboard:dashData||{},conversationId:gchatConversationId,channel:'general_chat'})})
+  apiFetch(PROXY+'/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:gchatHistory,dashboard:Object.assign({},dashData||{},{activeContext:gchatContext||null}),context:gchatContext||null,conversationId:gchatConversationId,channel:(gchatContext&&gchatContext.channel)||'general_chat'})})
   .then(function(d){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
     var text=((d.message&&d.message.content)||d.content||d.text||'').trim();
@@ -8648,7 +8700,7 @@ function gchatSend(){
     if(!gchatConversationTitle||gchatConversationTitle==='New conversation')gchatConversationTitle=msg.slice(0,70);
     var title=document.getElementById('gchatTitle');if(title)title.textContent=gchatConversationTitle;
     gchatLoadThreads();loadWsThreads();gchatSuggestContext(msg);
-    return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:gchatConversationId,title:gchatConversationTitle,source:'general_chat',messages:gchatHistory,metadata:{channel:'general_chat',context:gchatContext}})}).then(function(saved){gchatConversationId=saved.id;gchatLoadThreads();loadWsThreads();}).catch(function(){});
+    return apiFetch(CONVERSATION_HOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:gchatConversationId,title:gchatConversationTitle,source:(gchatContext&&gchatContext.channel)||'general_chat',messages:gchatHistory,metadata:{channel:(gchatContext&&gchatContext.channel)||'general_chat',context:gchatContext}})}).then(function(saved){gchatConversationId=saved.id;gchatLoadThreads();loadWsThreads();}).catch(function(){});
   }).catch(function(e){
     var t=document.getElementById('gchatTyping');if(t)t.remove();
     gchatBubble('Error: '+e.message,false);
@@ -9452,7 +9504,7 @@ window.addEventListener('resize',valSignalPlace);
 document.addEventListener('DOMContentLoaded',valSignalInit);
 setTimeout(valSignalInit,0);
 </script>
-<script src="/command-center.js?v=20260701-prior-chat-tasks"></script>
+<script src="/command-center.js?v=20260702-command-chat"></script>
 <script>
 (function(){
   var opened=false;

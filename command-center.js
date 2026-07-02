@@ -200,7 +200,7 @@ function cardChatPanel(type,item,activeId,chips){
     {label:'Show evidence',prompt:'Show me the evidence behind this card.'},
     {label:'Next move',prompt:'What should I do next from this card?'}
   ];
-  return '<section class="exec-card val-card-chat-panel"><h3>Chat With VAL</h3><div id="valCardChatLog"><div class="val-card-chat">'+safe(spec.intro)+' What would you like to do next?</div></div><div class="val-card-chip-row">'+chips.map(function(ch){return '<button onclick="homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\',\''+jsString(ch.prompt)+'\')">'+safe(ch.label)+'</button>';}).join('')+'</div><div class="val-card-chat-input"><input id="valCardChatInput" placeholder="Ask about this card..." onkeydown="if(event.key===\'Enter\')homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\')"><button onclick="homepageCardAsk(\''+jsString(type)+'\',\''+jsString(activeId)+'\')">Send</button></div></section>';
+  return '<section class="val-command-launch-card"><div><span>Command VAL</span><h3>Chat with VAL about this</h3><p>'+safe(spec.intro)+' VAL will bring this card, its evidence, and the available actions into the conversation.</p></div><div class="val-command-launch-actions"><button class="primary" onclick="openHomepageCardCommandChat(\''+jsString(type)+'\',\''+jsString(activeId)+'\')">Chat with VAL</button>'+chips.slice(0,3).map(function(ch){return '<button onclick="openHomepageCardCommandChat(\''+jsString(type)+'\',\''+jsString(activeId)+'\',\''+jsString(ch.prompt)+'\')">'+safe(ch.label)+'</button>';}).join('')+'</div></section>';
 }
 function readyWorkspaceHtml(type,item,activeId){
   var reviewType=item.review_type||item.reviewType||item.draftType||item.source_type||'review';
@@ -353,6 +353,15 @@ window.homepageCardAsk=function(type,id,prompt){
     var text=((data.message&&data.message.content)||data.content||data.text||'').trim()||'I could not generate a response for this card.';
     if(out)out.lastChild.innerHTML='<p>'+safe(text).replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')+'</p>';
   }).catch(function(e){if(out)out.lastChild.textContent='Chat failed: '+(e.message||e);});
+};
+window.openHomepageCardCommandChat=function(type,id,prompt){
+  var spec=cardSpec(type),item=homepageCardFind(type,id)||{},label=item.title||item.name||spec.title;
+  var context={kind:'homepage_card',channel:'homepage_card',label:spec.title,title:label,cardType:type,cardId:id,item:item,availableActions:['create_task','draft_email','send_email','schedule_event','update_memory','add_to_project','show_evidence']};
+  if(typeof openGeneralChat==='function'){
+    openGeneralChat({context:context,title:'Chat with VAL',subtitle:spec.title,prompt:prompt});
+    return;
+  }
+  homepageCardAsk(type,id,prompt);
 };
 window.openHomepageCard=function(type,id){
   var spec=cardSpec(type),items=homepageCardItems(type),item=homepageCardFind(type,id);
