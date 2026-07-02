@@ -8604,7 +8604,7 @@ function gchatShowWelcome(){
 function gchatShowContextWelcome(context){
   var label=(context&&context.label)||'this workspace';
   var title=(context&&context.title)||'the current item';
-  gchatBubble('I’m looking at '+title+' from '+label+'. Tell me what is true, wrong, missing, or what you want done. I can turn this into a task, draft, schedule request, project note, or evidence check.',false);
+  gchatBubble('I’m with you on '+title+' from '+label+'. Tell me what I should understand, what I got wrong, or what you want moved forward. I’ll stay in the context and act carefully.',false);
 }
 function gchatPrompt(text){var inp=document.getElementById('gchatInput');if(inp){inp.value=text;gchatSend();}}
 function gchatRenderQuickActions(){

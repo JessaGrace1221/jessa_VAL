@@ -17984,6 +17984,17 @@ Document protocol: when drafting or sending proposals, scopes, emails, agreement
 
 Content standards: calm, executive, direct, precise, premium, psychologically intelligent. No emojis. No hype. Do not overpromise or invent pricing/scope. Use short paragraphs, clarity, operational structure, and concise reasoning.
 
+Deep conversational standard for every user-facing voice or chat response:
+- Sound like a present, emotionally intelligent partner, not a form, workflow, ticketing system, or status API.
+- First show that you understood the human meaning of what the user said. Then, if needed, name what you did or can do.
+- If the user corrects you, respond relationally before operationally. Own the miss lightly and warmly. Example: "Oh. I should have known that, Jessa. Of course that is you. And yes, you are still the most important person on any list. I will not save that as an outside contact."
+- If the user says not to save, remember, file, send, schedule, or act, do not do it. Acknowledge the preference and reassure them.
+- If the user gives personal context, interpret it like a trusted executive partner: what it means, why it matters, and what it changes for VAL.
+- Avoid generic receipt language like "Saved. I will use this context..." unless the user asked for a receipt. Prefer natural language: "Got it. I will treat that as context for how I support you going forward."
+- Ask a short follow-up when the context is emotionally or operationally ambiguous.
+- Be warm, specific, and occasionally lightly playful, while staying premium and calm.
+- Actionability still matters: after understanding, offer the clean next move.
+
 Weekly accountability: review what moved revenue, what stalled, what was avoided, where overload appeared, what created leverage, what fragmented attention, what needs to stop, and the highest-leverage move next week.
 
 Monthly synthesis: provide improvements, recurring drift, leverage increases, energy drains, execution inconsistencies, and strategic adjustments in a calm, grounded, non-judgmental, precise tone.
@@ -19690,18 +19701,77 @@ function requestedTaskTitle(text='',ctx={}){
   if(/\bschedule|calendar|appointment|meeting\b/i.test(text))return `Schedule: ${title}`;
   return `Review: ${title}`;
 }
+function valUserFirstName(){
+  const name=(currentValUser()?.name||CLIENT_CONFIG.clientName||'').trim();
+  return String(name||'there').split(/\s+/)[0]||'there';
+}
+function conversationalContextReply(type,{title='',entityName='',task=null,draft=null}={}){
+  const first=valUserFirstName();
+  if(type==='self_no_save'){
+    return [
+      `Oh. I should have known that, ${first}. Of course that is you.`,
+      'And honestly, yes: you are still the most important person on any list.',
+      'I will not save that as an outside contact or add anything from this correction. I will just hold the correction in this conversation and move more carefully.'
+    ].join('\n\n');
+  }
+  if(type==='do_not_save'){
+    return [
+      'Got it. I will not save anything from that.',
+      'Thank you for catching the difference between "use this for the conversation" and "store this as memory." That distinction matters.'
+    ].join('\n\n');
+  }
+  if(type==='self_identity'){
+    return [
+      `Oh. I should have recognized that as you, ${first}.`,
+      'I will treat this as owner context, not an outside relationship. If you want, I can show what source made it appear as a separate contact.'
+    ].join('\n\n');
+  }
+  if(type==='wrong_association'){
+    return [
+      'You are right to stop me there.',
+      `I may be associating ${title||'this'} with the wrong person or context. I will not act on that interpretation unless you confirm it.`
+    ].join('\n\n');
+  }
+  if(type==='task'){
+    return [
+      `Yes. I turned that into an action item: ${task?.title||title}.`,
+      entityName?`I linked it to ${entityName} so it does not float around without context.`:'I kept the source context attached so it does not become a vague loose end.',
+      'Nothing external happened. It is waiting in Actions.'
+    ].join('\n\n');
+  }
+  if(type==='schedule'){
+    return [
+      `Yes. I made this a scheduling action: ${task?.title||title}.`,
+      'I am keeping it internal for now, so no calendar invite, guest, or meeting link goes out without your approval.'
+    ].join('\n\n');
+  }
+  if(type==='draft'){
+    return [
+      `I drafted it and kept it for approval: ${draft?.subject||title}.`,
+      'Nothing was sent. I will let you shape the tone before it leaves your world.'
+    ].join('\n\n');
+  }
+  if(type==='memory'){
+    return [
+      'Got it. I will remember that as context, not as a random note.',
+      title?`I am connecting it to ${title} so it can actually help me support you later.`:'I will use it to support you more accurately later.'
+    ].join('\n\n');
+  }
+  if(type==='evidence_empty'){
+    return [
+      `I do not have a clean display receipt for ${title||'this'} yet.`,
+      'That does not mean the context is useless. It means I should be careful and not overstate certainty.'
+    ].join('\n\n');
+  }
+  return '';
+}
 async function handleContextualChatCommand({context,lastUser}){
   if(!context)return null;
   const correction=chatContextCorrection(lastUser);
   if(correction){
     const title=chatContextTitle(context);
-    const selfMsg=/self/.test(correction)
-      ? `You're right. I was treating ${title} like an outside relationship, and that is not the right read if this is you.`
-      : `You're right. I may be reading this context too mechanically.`;
-    const saveMsg=/no_save|do_not_save/.test(correction)
-      ? `I will not save anything from that message.`
-      : `I will not take action from that correction unless you ask me to.`;
-    return {content:[selfMsg,saveMsg,'What I can do next: leave it alone, show you the source that caused the match, or create a correction if you want VAL to stop surfacing this card this way.'].join('\n\n'),extra:{contextualCorrection:correction}};
+    const type=correction==='self_no_save'?'self_no_save':correction;
+    return {content:conversationalContextReply(type,{title}),extra:{contextualCorrection:correction}};
   }
   const intent=chatContextIntent(lastUser);
   if(!intent)return null;
@@ -19715,14 +19785,13 @@ async function handleContextualChatCommand({context,lastUser}){
     const ids=[].concat(item.evidenceIds||[],item.observationIds||[],item.source_ids||[]).filter(Boolean);
     const lines=evidence.slice(0,8).map((e,i)=>`${i+1}. ${dashboardCleanText(e.title||e.type||'Evidence')} — ${dashboardCleanText(e.summary||e.id||'Stored source record')}`);
     const idLines=!lines.length&&ids.length?ids.slice(0,8).map((id,i)=>`${i+1}. Source ID: ${id}`):[];
-    return {content:[`Here is the evidence I have for ${title}.`,(lines.length?lines:idLines).join('\n')||'I do not have display-ready evidence attached to this context yet, but I will keep the source relationship linked when you act from this card.'].join('\n\n'),extra:{contextualIntent:intent,evidence:evidence.slice(0,8),sourceIds:ids.slice(0,12)}};
+    return {content:lines.length||idLines.length?[`Here is what I can see behind ${title}.`,(lines.length?lines:idLines).join('\n')].join('\n\n'):conversationalContextReply('evidence_empty',{title}),extra:{contextualIntent:intent,evidence:evidence.slice(0,8),sourceIds:ids.slice(0,12)}};
   }
   if(intent==='create_task'||intent==='schedule'){
     const taskTitle=requestedTaskTitle(lastUser,context);
     const task={id:uuid('task'),title:taskTitle,contactName:entityName,dueDate:new Date(Date.now()+24*60*60*1000).toISOString(),notes:[summary,`Created from contextual chat for ${title}.`,intent==='schedule'?'Scheduling requested. Confirm a calendar block from Actions before anything external is created.':''].filter(Boolean).join('\n\n'),details:[{text:`Created from contextual chat: ${intent}`,ts:new Date().toISOString(),sourceContext}],completed:false,createdAt:new Date().toISOString(),source:'contextual_chat'};
     await saveTask(task);
-    const prefix=intent==='schedule'?'I created a scheduling action':'I created an action item';
-    return {content:`${prefix}: ${task.title}.\n\nIt is now in Actions${entityName?` and linked to ${entityName}`:''}. Nothing external was sent or scheduled without approval.`,extra:{contextualIntent:intent,createdTasks:[task]}};
+    return {content:conversationalContextReply(intent==='schedule'?'schedule':'task',{title,entityName,task}),extra:{contextualIntent:intent,createdTasks:[task]}};
   }
   if(intent==='draft_email'){
     const subject=/\bfollow[- ]?up\b/i.test(lastUser)?`Follow-up: ${title}`:`Draft: ${title}`;
@@ -19735,12 +19804,12 @@ async function handleContextualChatCommand({context,lastUser}){
       currentValUser().name||CLIENT_CONFIG.clientName||'Jessa'
     ].join('\n');
     const draft=await saveInternalDraft({draftType:'contextual_chat_email',provider:'internal',subject,body,status:'draft',sourceContext:{...sourceContext,replyAll:true,to:item.email||item.matchedEmail||'',cc:''}});
-    return {content:`I prepared a draft for approval: ${draft.subject}.\n\nIt is saved in Drafts. I did not send anything.`,extra:{contextualIntent:intent,draft}};
+    return {content:conversationalContextReply('draft',{title,entityName,draft}),extra:{contextualIntent:intent,draft}};
   }
   if(intent==='update_memory'||intent==='add_to_project'){
     const kind=intent==='add_to_project'?'project_context_note':'contextual_chat_memory';
     const memory=await saveMemoryItem({kind,summary:`${intent==='add_to_project'?'Project context':'Context'}: ${title}`,rawText:[summary,lastUser].filter(Boolean).join('\n\n'),importance:4,metadata:sourceContext});
-    return {content:`Saved. I will use this context for ${title} in future chat, relationship review, projects, and actions.`,extra:{contextualIntent:intent,memory}};
+    return {content:conversationalContextReply('memory',{title,entityName}),extra:{contextualIntent:intent,memory}};
   }
   return null;
 }
