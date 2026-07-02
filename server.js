@@ -18199,9 +18199,14 @@ function transcriptActionIsSpecific(item={}){
   const quote=dashboardCleanText(item.sourceQuote||item.supportingQuote||item.quote||'');
   const text=[title,description,quote].filter(Boolean).join(' ');
   if(title.length<18)return false;
-  if(/\b(check that|send something|send it|send from high level|do that|follow up on that|look into it|handle this|circle back)\b/i.test(title))return false;
-  if(!/\b(send|draft|write|create|add|check|review|confirm|schedule|update|monitor|ask|prepare|share|verify|call|email|text)\b/i.test(title))return false;
-  if(!/\b(email|reminder|GoHighLevel|GHL|RSVP|recipient|list|deliverability|meeting|draft|document|statistics|stats|task|project|contact|Ashley|Jessa|Greg|Westwood|HopeMakers)\b/i.test(text))return false;
+  const vaguePronoun=/\b(this|that|these|those|it|thing|stuff|whatever)\b/i;
+  const concreteAnchor=/\b(Michelle|Jessa|Julian|VAL|Chapter\s*\d+|GoHighLevel|GHL|Facebook|calendar|invite|passport|ticket|button|talk button|followup|follow-up|email|document|draft|meeting|project|contact|HopeMakers|Grace Intelligence|Help by Shopping)\b/i;
+  if(/\b(check that|send something|send it|send from high level|do that|follow up on that|look into it|handle this|circle back|write the revision|write the revisionless|draft as a response|send this email|move that button|get that check)\b/i.test(title))return false;
+  if(vaguePronoun.test(title)&&!concreteAnchor.test(title))return false;
+  if(/\b(Speaker\s*\d+|Unknown|Unclear)\b/i.test(title))return false;
+  if(/\b(i chose|you chose|you wanted|now i'm ready|unless there'?s|one last thing|all of these things|what you actively have chosen)\b/i.test(text))return false;
+  if(!/\b(send|draft|write|create|add|check|review|confirm|schedule|reschedule|update|monitor|ask|prepare|share|verify|call|email|text|move|discuss|rework|use|break|watch|buy|program|tweak|make)\b/i.test(title))return false;
+  if(!/\b(email|reminder|GoHighLevel|GHL|RSVP|recipient|list|deliverability|meeting|follow[-\s]?up|draft|document|statistics|stats|task|project|contact|Michelle|Julian|VAL|Chapter|button|talk button|passport|ticket|calendar|invite|Ashley|Jessa|Greg|Westwood|HopeMakers)\b/i.test(text))return false;
   return true;
 }
 function normalizeTranscriptTask(item={}){
@@ -18261,7 +18266,7 @@ async function processTranscriptPayload(payload){
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Do not summarize the transcript as prose. Classify direct evidence into structured meeting objects that another employee could act on without hearing the meeting.','Allowed object types: '+TRANSCRIPT_OBJECT_TYPES.join(', ')+'.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe what changed because of the meeting.','Required keys: executiveSummary, clientSummary, internalNotes, meetingGoals, decisions, decisionNeeded, openQuestions, risks, ideas, relationshipInsights, personalPreferences, projectUpdates, importantFacts, taskDependencies, contactInformation, timelines, futureMeetings, tasks, contactUpdates, followupDrafts.','Every object must include: title, summary, speaker, timestamp, owner, relatedPeople, relatedProject, relatedCompany, confidence (0-1), sourceQuote copied exactly from the transcript. Use null or [] when unknown.','tasks are only true action items. They must include taskTitle, taskDescription, assignedToName, dueDate, priority, confidence, sourceQuote. A task must pass this test: could another employee complete it without hearing the meeting? If not, omit it.','Rewrite transcript fragments into complete actions using only direct evidence. Example: do not output "send something out"; output "Ashley will send the meeting reminder email through GoHighLevel before today’s meeting" only if the transcript supports Ashley, the reminder email, GoHighLevel, and timing.','Never guess identity, owner, project, company, deadline, or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Do not summarize the transcript as prose. Classify direct evidence into structured meeting objects that another employee could act on without hearing the meeting.','Allowed object types: '+TRANSCRIPT_OBJECT_TYPES.join(', ')+'.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe what changed because of the meeting.','Required keys: executiveSummary, clientSummary, internalNotes, meetingGoals, decisions, decisionNeeded, openQuestions, risks, ideas, relationshipInsights, personalPreferences, projectUpdates, importantFacts, taskDependencies, contactInformation, timelines, futureMeetings, tasks, contactUpdates, followupDrafts.','Every object must include: title, summary, speaker, timestamp, owner, relatedPeople, relatedProject, relatedCompany, confidence (0-1), sourceQuote copied exactly from the transcript. Use null or [] when unknown.','tasks are only true action items. They must include taskTitle, taskDescription, assignedToName, dueDate, priority, confidence, sourceQuote. A task must pass this test: could another employee complete it without hearing the meeting? If not, omit it.','Think like the transcript chat: identify the real commitment, owner, object, and context. The taskTitle should read like a clean Actions item, not a copied transcript fragment.','Rewrite pronouns and fragments into concrete tasks only when the source evidence supports the full meaning. Example: output "Jessa will move Michelle’s talk button to the top", not "move that button to the top instead". Example: output "Michelle and Julian will discuss the three Chapter 4 improvement areas", not "write the revision".','Reject tasks that are only interface chatter, unclear pronouns, incomplete excerpts, or broad discussion topics without an owner/action. Do not output "send this email", "write the revision", "draft as a response", "get that check", or speaker-number tasks.','Never guess identity, owner, project, company, deadline, or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
   try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
@@ -18557,6 +18562,55 @@ function transcriptChatWantsTaskCreation(question=''){
 function transcriptChatRefersToPriorList(question=''){
   return /\b(these|those|them|the above|that list|all of (these|those|them)|the tasks you listed|the ones you listed|individual tasks)\b/i.test(question);
 }
+function transcriptChatDirectTaskTitle(question=''){
+  const text=String(question||'').trim();
+  if(!text) return '';
+  if(transcriptChatRefersToPriorList(text)||/\b(all|every|from (this|the) transcript|task list|tasks and assignees|action items?)\b/i.test(text)) return '';
+  const quoted=text.match(/['"“”]([^'"“”]{4,160})['"“”]/);
+  if(quoted?.[1]) return cleanAutoTaskTitle(quoted[1]);
+  const patterns=[
+    /\b(?:add|create|save|file)\s+(?:a|an|one)?\s*(?:new\s*)?(?:action item|task|to[-\s]?do)\s+(?:to\s+)?(.{4,180})$/i,
+    /\b(?:add|create|save|file)\s+(.{4,180})\s+(?:as|to)\s+(?:a|an|my)?\s*(?:action item|task|to[-\s]?do)\b/i
+  ];
+  for(const pattern of patterns){
+    const match=text.match(pattern);
+    if(match?.[1]){
+      return cleanAutoTaskTitle(match[1].replace(/\bfor this (contact|person|relationship|transcript)\b\.?$/i,''));
+    }
+  }
+  return '';
+}
+async function createDirectTranscriptChatTask({transcript,question,title}){
+  const taskTitle=cleanAutoTaskTitle(title);
+  if(!taskTitle) return null;
+  const contactName=transcript.contactName||transcript.primaryContactName||transcript.matchedContactName||'';
+  const task={
+    id:uuid('task'),
+    title:taskTitle,
+    contactName,
+    dueDate:null,
+    notes:[
+      'User-created from transcript chat.',
+      transcript.title?`Transcript: ${transcript.title}`:'',
+      question?`User request: ${question}`:''
+    ].filter(Boolean).join('\n\n'),
+    details:[{
+      text:`Created directly from transcript chat${transcript.title?`: ${transcript.title}`:''}.`,
+      ts:new Date().toISOString(),
+      transcriptId:transcript.id||'',
+      transcriptTitle:transcript.title||''
+    }],
+    completed:false,
+    source:'transcript_chat',
+    sourceId:transcript.id||'',
+    transcriptId:transcript.id||'',
+    transcriptTitle:transcript.title||'',
+    createdAt:new Date().toISOString()
+  };
+  await saveTask(task);
+  await saveEvidenceLink({sourceType:'transcript',sourceId:transcript.id||'',sourceLabel:transcript.title||'',targetType:'task',targetId:task.id,relationship:'user_created_task_from_chat',summary:task.title,confidence:1,metadata:{contactName}}).catch(()=>{});
+  return task;
+}
 function transcriptChatTaskProjectName(item={},transcript={}){
   return item.relatedProject||item.project||item.projectName||item.related_project||transcript.projectName||transcript.relatedProject||'';
 }
@@ -18656,6 +18710,15 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(transcriptChatWantsTaskCreation(question)){
+      const directTitle=transcriptChatDirectTaskTitle(question);
+      if(directTitle){
+        const task=await createDirectTranscriptChatTask({transcript,question,title:directTitle});
+        await auditLog({req,action:'transcript_chat_direct_task_created',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,taskTitle:task?.title||directTitle},success:!!task}).catch(()=>{});
+        const content=task
+          ? `Added 1 action item to Actions: ${task.title}`
+          : 'I could not create that action item because the task title was unclear.';
+        return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:task?1:0,tasks:task?[task]:[]}});
+      }
       const content='I can see the task list, but automatic transcript-to-Action creation is paused while VAL repairs transcript filtering. I will not add tasks from this transcript until the source records are clean.';
       await auditLog({req,action:'transcript_chat_task_creation_paused',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240)},success:true}).catch(()=>{});
       return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:0,tasks:[],paused:true}});
