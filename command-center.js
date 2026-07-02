@@ -236,15 +236,20 @@ function highestWorkspaceHtml(type,item,activeId){
 }
 function whatChangedWorkspaceHtml(type,item,activeId){
   var changeType=item.source_type||item.sourceType||item.type||'record';
+  var title=item.title||'No meaningful changes yet.';
+  var summary=item.summary||item.reason_it_matters||'VAL will populate this card only when a stored source record supports it.';
   var chips=[
     {label:'Explain change',prompt:'Explain what changed in plain English and why it matters.'},
     {label:'Show evidence',prompt:'Show the evidence behind this change.'},
     {label:'Act on it',prompt:'What are my best action options for this change?'}
   ];
-  return '<section class="val-card-callout changed-mode"><strong>'+safe(item.title||'What changed')+'</strong><p>'+safe(item.summary||item.reason_it_matters||'VAL detected a source-backed change.')+'</p></section>'
-    +'<div class="val-card-decision-strip"><div><span>Change type</span><strong>'+safe(actionLabel(changeType))+'</strong></div><div><span>Source</span><strong>'+safe(item.source_id||item.sourceId||'Attached')+'</strong></div><div><span>Created</span><strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></div><div><span>Evidence</span><strong>'+safe(item.evidence_count||((item.evidence||[]).length)||'Source IDs')+'</strong></div></div>'
-    +'<div class="val-card-two-col changed-layout"><section class="exec-card"><h3>Why This Matters</h3><p>'+safe(item.reason_it_matters||item.summary||'This may update memory, context, a relationship, a project, or an action queue.')+'</p></section><section class="exec-card"><h3>Actions</h3><div class="val-card-action-grid">'+cardActionButtons(type,item,8)+'</div></section></div>'
-    +'<section class="exec-card"><h3>Evidence Behind the Change</h3><div class="val-card-source-line"><strong>'+safe(cardTaskSource(item))+'</strong><span>'+safe(item.source_id||item.sourceId||'Stored source attached')+'</span></div>'+cardEvidenceList(item)+'</section>'
+  return '<div class="val-premium-card-panel">'
+    +'<aside class="val-premium-key-rail"><div class="val-premium-icon">✧</div><div class="val-premium-rule"></div><strong>Key takeaway</strong><p>'+safe(summary)+'</p><button class="val-card-action-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button></aside>'
+    +'<main class="val-premium-main"><section class="val-premium-overview"><div><h3>'+safe(title)+'</h3><p>'+safe(summary)+'</p></div><div class="val-empty-state-scene" aria-hidden="true"><div class="val-empty-sun"></div><div class="val-empty-hill one"></div><div class="val-empty-hill two"></div><div class="val-empty-plant"><span></span><i></i><b></b></div></div></section>'
+    +'<section class="val-premium-watch"><h3>What VAL is watching for</h3><ul><li>New risks, blockers, or open loops</li><li>Relationship shifts or capacity changes</li><li>Project movement or decisions</li><li>Opportunities needing your attention</li></ul></section></main>'
+    +'</div>'
+    +'<section class="val-premium-footer-card"><div><h3>Stay in the loop</h3><p>I will let you know when something deserves your attention.</p></div><button class="val-card-action-btn primary" onclick="commandCenterNavigate(\'actions\')">Go to Actions →</button><span>✦</span></section>'
+    +'<details class="val-premium-details"><summary>Evidence and source details</summary><div class="val-card-decision-strip"><div><span>Change type</span><strong>'+safe(actionLabel(changeType))+'</strong></div><div><span>Source</span><strong>'+safe(item.source_id||item.sourceId||'Attached')+'</strong></div><div><span>Created</span><strong>'+safe(cardDate(item.created_at||item.createdAt))+'</strong></div><div><span>Evidence</span><strong>'+safe(item.evidence_count||((item.evidence||[]).length)||'Source IDs')+'</strong></div></div>'+cardEvidenceList(item)+'</details>'
     +cardChatPanel(type,item,activeId,chips);
 }
 function peopleWorkspaceHtml(type,item,activeId){
@@ -363,7 +368,7 @@ window.openHomepageCard=function(type,id){
       +(item?cardWorkspaceContent(type,item,activeId)
       :emptyWorkspaceHtml(type,activeId))
     +'</main></div>';
-  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'homepageCardWorkspace',title:spec.title,kicker:'Executive Workspace',mode:'drawer',body:body,footer:'<button class="alert-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button><button class="alert-btn" onclick="commandCenterNavigate(\''+spec.view+'\')">Open Source View</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'homepageCardWorkspace\')">Close</button>'});
+  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'homepageCardWorkspace',title:spec.title,kicker:'Executive Workspace',mode:'drawer',drawerSize:'wide',body:body,footer:'<button class="alert-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button><button class="alert-btn" onclick="commandCenterNavigate(\''+spec.view+'\')">Open Source View</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'homepageCardWorkspace\')">Close</button>'});
 };
 function dashboardTargetAction(target,fallback){
   target=target||{};
