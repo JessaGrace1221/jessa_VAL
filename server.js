@@ -5415,7 +5415,8 @@ app.post('/api/email/actions',async(req,res)=>{
     if(action==='drafted_reply'||action==='draft_reply'){
       const standards=await getDraftStandards();
       result.draft=buildEmailReplyDraft(email,standards);
-      result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from}});
+      const recipients=resolveReplyAllRecipients({email,to:email.from?.email||''});
+      result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from,to:recipients.to.map(p=>p.email),cc:recipients.cc.map(p=>p.email),replyAll:true}});
     }else if(action==='forwarded'||action==='forward'){
       result.forwardDraft={to:body.forwardTo||'',subject:'Fwd: '+(email.subject||''),body:`VAL summary:\n${email.reason||'This may need review.'}\n\nOriginal email below.\n\nFrom: ${email.from?.email||''}\nSubject: ${email.subject||''}\n\n${email.bodyPreview||email.snippet||''}`};
       result.internalDraft=await saveInternalDraft({draftType:'email_forward',provider:'internal',subject:result.forwardDraft.subject,body:result.forwardDraft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,forwardTo:result.forwardDraft.to}});
@@ -6339,6 +6340,54 @@ function parseEmailAddress(raw){
   const name=(match?match[1]:text.replace(email,'')).replace(/"/g,'').trim();
   return {name:name||email.split('@')[0]||'',email};
 }
+function emailHeaderAddress(person){
+  const parsed=typeof person==='string'?parseEmailAddress(person):(person||{});
+  const email=normalizeEmailAddress(parsed.email||'');
+  if(!email)return '';
+  const name=String(parsed.name||'').replace(/[\r\n"]/g,'').trim();
+  return name&&name.toLowerCase()!==email.split('@')[0]?`${name} <${email}>`:email;
+}
+function emailAddressList(value){
+  if(!value)return [];
+  if(Array.isArray(value))return value.flatMap(emailAddressList);
+  return String(value).split(',').map(parseEmailAddress).filter(p=>normalizeEmailAddress(p.email||''));
+}
+function emailRecipientKey(person){return normalizeEmailAddress((person&&person.email)||person||'');}
+function uniqueEmailPeople(items=[]){
+  const seen=new Set(),out=[];
+  for(const item of items){
+    const p=typeof item==='string'?parseEmailAddress(item):item;
+    const key=emailRecipientKey(p);
+    if(!key||seen.has(key))continue;
+    seen.add(key);out.push({name:p.name||'',email:key});
+  }
+  return out;
+}
+function resolveReplyAllRecipients(payload={}){
+  const email=payload.email||payload.sourceEmail||payload.message||{};
+  const current=currentValUser()||{};
+  const self=new Set([current.email,payload.selfEmail,payload.accountEmail,CLIENT_CONFIG.email].map(normalizeEmailAddress).filter(Boolean));
+  const from=email.from||payload.from||null;
+  const fromKey=emailRecipientKey(from);
+  const originalTo=uniqueEmailPeople([...(email.to||[]),...emailAddressList(payload.originalTo),...emailAddressList(payload.to)]);
+  const originalCc=uniqueEmailPeople([...(email.cc||[]),...emailAddressList(payload.originalCc),...emailAddressList(payload.cc)]);
+  const fallbackTo=uniqueEmailPeople(emailAddressList(payload.to||payload.recipient||''));
+  function notSelf(p){return p&&emailRecipientKey(p)&&!self.has(emailRecipientKey(p));}
+  function notIn(keys){return p=>notSelf(p)&&!keys.has(emailRecipientKey(p));}
+  let to=[],cc=[];
+  if(fromKey&&!self.has(fromKey)){
+    to=uniqueEmailPeople([from]);
+    const toKeys=new Set(to.map(emailRecipientKey));
+    cc=uniqueEmailPeople([...originalTo,...originalCc].filter(notIn(toKeys)));
+  }else{
+    to=uniqueEmailPeople(originalTo.filter(notSelf));
+    const toKeys=new Set(to.map(emailRecipientKey));
+    cc=uniqueEmailPeople(originalCc.filter(notIn(toKeys)));
+  }
+  if(!to.length)to=fallbackTo.filter(notSelf);
+  if(!to.length&&fallbackTo.length)to=fallbackTo;
+  return {to,cc};
+}
 function decodeBase64Url(value){
   if(!value)return '';
   try{return Buffer.from(String(value).replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');}
@@ -6506,7 +6555,25 @@ async function saveUserPreferences(prefs){
 }
 async function getDraftStandards(){
   const prefs=await getUserPreferences().catch(()=>({draftStandards:DEFAULT_DRAFT_STANDARDS}));
-  return normalizeDraftStandards(prefs.draftStandards||DEFAULT_DRAFT_STANDARDS);
+  const standards=normalizeDraftStandards(prefs.draftStandards||DEFAULT_DRAFT_STANDARDS);
+  const samples=Array.isArray(prefs.draftStyleSamples)?prefs.draftStyleSamples.slice(0,5):[];
+  if(samples.length){
+    const styleHint=samples.map((s,i)=>`Example ${i+1}: subject "${s.subject||'draft'}"; ${String(s.body||'').replace(/\s+/g,' ').slice(0,420)}`).join('\n');
+    standards.instructions=[standards.instructions,`Learn from these user-approved draft style examples. Match the user's pacing, directness, warmth, and signoff patterns without copying private details verbatim.\n${styleHint}`].filter(Boolean).join('\n\n').slice(0,3000);
+  }
+  return standards;
+}
+async function rememberDraftStyleSample({subject='',body='',source='draft',draftId='',sourceContext={}}={}){
+  const cleanBody=String(body||'').replace(/\s+/g,' ').trim();
+  if(cleanBody.length<80)return null;
+  const sample={subject:String(subject||'').slice(0,160),body:cleanBody.slice(0,1200),source,draftId,updatedAt:new Date().toISOString()};
+  const prefs=await getUserPreferences().catch(()=>({}));
+  const existing=Array.isArray(prefs.draftStyleSamples)?prefs.draftStyleSamples:[];
+  const fingerprint=crypto.createHash('sha1').update(`${sample.subject}\n${sample.body}`).digest('hex').slice(0,16);
+  const next=[{...sample,fingerprint},...existing.filter(s=>s.fingerprint!==fingerprint)].slice(0,12);
+  await saveUserPreferences({draftStyleSamples:next});
+  await saveMemoryItem({kind:'draft_style_sample',summary:`User-approved draft style sample: ${sample.subject||source}`,rawText:cleanBody.slice(0,4000),importance:3,metadata:{source,draftId,subject:sample.subject,fingerprint,sourceContext}}).catch(()=>{});
+  return {ok:true,fingerprint};
 }
 function draftStandardsDiscloseVal(standards){
   return normalizeDraftStandards(standards).disclosureMode!=='write_as_user';
@@ -6706,6 +6773,7 @@ async function prepareEmailDraftIfNeeded(email){
   if(!emailShouldPrepareDraft(email))return null;
   const standards=await getDraftStandards();
   const draft=buildEmailReplyDraft(email,standards);
+  const recipients=resolveReplyAllRecipients({email,to:email.from?.email||''});
   return saveInternalDraft({
     id:emailDraftStableId(email),
     draftType:'email_reply',
@@ -6718,7 +6786,9 @@ async function prepareEmailDraftIfNeeded(email){
       provider:email.provider||'email',
       messageId:email.messageId||'',
       threadId:email.threadId||'',
-      to:email.from?.email||'',
+      to:recipients.to.map(p=>p.email),
+      cc:recipients.cc.map(p=>p.email),
+      replyAll:true,
       senderName:email.from?.name||'',
       why:email.reason||'',
       recommendedAction:email.recommendedAction||'',
@@ -10100,7 +10170,9 @@ app.patch('/api/val/drafts/:id',async(req,res)=>{
   try{
     const existing=(await listDrafts()).find(d=>d.id===req.params.id);
     if(!existing)return res.status(404).json({ok:false,error:'Draft not found'});
-    res.json({ok:true,draft:await saveInternalDraft({...existing,...req.body,id:req.params.id})});
+    const draft=await saveInternalDraft({...existing,...req.body,id:req.params.id});
+    await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_draft_edit',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
+    res.json({ok:true,draft});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/gmail/drafts',async(req,res)=>{
@@ -10108,21 +10180,32 @@ app.post('/api/gmail/drafts',async(req,res)=>{
     const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     const missing=status.missingScopes||[];
     const payload=req.body||{};
+    const fallbackRecipients=resolveReplyAllRecipients(payload);
+    const fallbackTo=fallbackRecipients.to.map(p=>p.email);
+    const fallbackCc=fallbackRecipients.cc.map(p=>p.email);
     if(missing.length){
-      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:'Gmail compose scope missing. Created internal draft instead.',to:payload.to||'',threadId:payload.threadId||''}});
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:'Gmail compose scope missing. Created internal draft instead.',to:fallbackTo,cc:fallbackCc,threadId:payload.threadId||'',replyAll:true}});
+      await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_gmail_fallback_draft',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
       return res.status(202).json({ok:true,draftType:'internal',warning:'Gmail compose scope missing. Created internal draft instead.',draft});
     }
     const token=await getGoogleToken();
     if(!token){
-      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:lastGoogleAuthError||'Google auth required',to:payload.to||'',threadId:payload.threadId||''}});
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:lastGoogleAuthError||'Google auth required',to:fallbackTo,cc:fallbackCc,threadId:payload.threadId||'',replyAll:true}});
+      await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_gmail_fallback_draft',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
       return res.status(202).json({ok:true,draftType:'internal',warning:'Google auth unavailable. Created internal draft instead.',draft});
     }
-    const lines=[`To: ${payload.to||''}`,`Subject: ${payload.subject||''}`,'',payload.body||''];
+    const recipients=resolveReplyAllRecipients(payload);
+    const toHeader=recipients.to.map(emailHeaderAddress).filter(Boolean).join(', ');
+    const ccHeader=recipients.cc.map(emailHeaderAddress).filter(Boolean).join(', ');
+    if(!toHeader)return res.status(400).json({ok:false,error:'No valid reply-all recipients were found. Open the original thread or add a recipient before saving a Gmail draft.'});
+    const headers=[`To: ${toHeader}`,ccHeader?`Cc: ${ccHeader}`:null,`Subject: ${payload.subject||''}`,'Content-Type: text/plain; charset="UTF-8"','Content-Transfer-Encoding: 8bit'].filter(Boolean);
+    const lines=[...headers,'',payload.body||''];
     const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
     const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||undefined}})});
     const d=await readJsonResponse(r);
     if(!r.ok) throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
-    res.json({ok:true,draftType:'gmail',gmailDraft:d});
+    await rememberDraftStyleSample({subject:payload.subject||'',body:payload.body||'',source:'gmail_draft_saved',draftId:d.id||'',sourceContext:{threadId:payload.threadId||'',messageId:payload.messageId||'',to:toHeader,cc:ccHeader}}).catch(()=>{});
+    res.json({ok:true,draftType:'gmail',gmailDraft:d,replyAll:{to:recipients.to,cc:recipients.cc}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/gmail/send-approved-draft',async(req,res)=>{
@@ -10133,25 +10216,28 @@ app.post('/api/gmail/send-approved-draft',async(req,res)=>{
     const token=await getGoogleToken();
     if(!token)return res.status(401).json({ok:false,error:lastGoogleAuthError||'Google auth required'});
     const payload=req.body||{};
-    const to=String(payload.to||'').trim();
+    const recipients=resolveReplyAllRecipients(payload);
+    const to=recipients.to.map(emailHeaderAddress).filter(Boolean).join(', ');
+    const cc=recipients.cc.map(emailHeaderAddress).filter(Boolean).join(', ');
     const subject=String(payload.subject||'').trim()||'(No subject)';
     const body=String(payload.body||'').trim();
     if(!to||!/@/.test(to))return res.status(400).json({ok:false,error:'Add a valid recipient before sending.'});
     if(!body)return res.status(400).json({ok:false,error:'Add a message before sending.'});
-    const lines=[
+    const headers=[
       `To: ${to}`,
+      cc?`Cc: ${cc}`:null,
       `Subject: ${subject}`,
       'Content-Type: text/plain; charset="UTF-8"',
-      'Content-Transfer-Encoding: 8bit',
-      '',
-      body
-    ];
+      'Content-Transfer-Encoding: 8bit'
+    ].filter(Boolean);
+    const lines=[...headers,'',body];
     const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
     const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
     const d=await readJsonResponse(r);
     if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
-    await logEmailAction(req.valUser.id,{provider:'gmail',messageId:d.id||payload.messageId||'',threadId:d.threadId||payload.threadId||'',actionType:'send_approved_draft',actionStatus:'sent',actedBy:'user',details:{to,subject,source:'executive_inbox_approve_draft'}});
-    res.json({ok:true,sent:true,messageId:d.id||'',threadId:d.threadId||payload.threadId||'',gmailMessage:d});
+    await rememberDraftStyleSample({subject,body,source:'gmail_approved_send',draftId:d.id||'',sourceContext:{threadId:payload.threadId||'',messageId:payload.messageId||'',to,cc}}).catch(()=>{});
+    await logEmailAction(req.valUser.id,{provider:'gmail',messageId:d.id||payload.messageId||'',threadId:d.threadId||payload.threadId||'',actionType:'send_approved_draft',actionStatus:'sent',actedBy:'user',details:{to,cc,subject,source:'executive_inbox_approve_draft'}});
+    res.json({ok:true,sent:true,messageId:d.id||'',threadId:d.threadId||'',gmailMessage:d,replyAll:{to:recipients.to,cc:recipients.cc}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 

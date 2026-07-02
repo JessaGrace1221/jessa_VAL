@@ -3915,12 +3915,14 @@ function emailAction(action){
 }
 function renderEmailDraftPanel(draft,email,internalDraft){
   var p=document.getElementById('emailDraftPanel');if(!p)return;
-  var to=(email&&email.from&&email.from.email)||'';
-  p.innerHTML='<div class="email-reason"><strong>Reply draft</strong><br><label>To<input id="emailDraftTo" value="'+docSafe(to)+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Subject<input id="emailDraftSubject" value="'+docSafe(draft.subject||'')+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Message<textarea id="emailDraftBody" rows="10" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827">'+docSafe(draft.body||'')+'</textarea></label><div class="email-actions"><button id="emailApproveDraftBtn" class="primary" onclick="sendApprovedEmailDraft()">Approve & Send</button><button onclick="saveEmailDraftToGmail()">Save Gmail Draft</button><button onclick="openDraftsPage()">Open Drafts</button></div></div>';
+  var ctx=(internalDraft&&internalDraft.sourceContext)||{};
+  var to=Array.isArray(ctx.to)?ctx.to.join(', '):((email&&email.from&&email.from.email)||'');
+  var cc=Array.isArray(ctx.cc)?ctx.cc.join(', '):'';
+  p.innerHTML='<div class="email-reason"><strong>Reply-all draft</strong><br><label>To<input id="emailDraftTo" value="'+docSafe(to)+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Cc<input id="emailDraftCc" value="'+docSafe(cc)+'" placeholder="Reply-all cc recipients appear here when present" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Subject<input id="emailDraftSubject" value="'+docSafe(draft.subject||'')+'" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827"></label><label>Message<textarea id="emailDraftBody" rows="10" style="width:100%;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;padding:9px;background:white;color:#111827">'+docSafe(draft.body||'')+'</textarea></label><small>VAL will preserve the Gmail thread and default to reply-all, excluding your own email.</small><div class="email-actions"><button id="emailApproveDraftBtn" class="primary" onclick="sendApprovedEmailDraft()">Approve & Send</button><button onclick="saveEmailDraftToGmail()">Save Gmail Draft</button><button onclick="openDraftsPage()">Open Drafts</button></div></div>';
 }
 function saveEmailDraftToGmail(){
   var e=emailIntel.selected;if(!e)return;
-  var payload={to:document.getElementById('emailDraftTo').value,subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||''};
+  var payload={to:document.getElementById('emailDraftTo').value,cc:(document.getElementById('emailDraftCc')||{}).value||'',subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||'',messageId:e.messageId||'',email:e};
   apiFetch(PROXY+'/api/gmail/drafts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
     .then(function(d){if(d.ok)setEmailActionStatus('Draft approved',d.draftType==='gmail'?'Gmail draft created in the thread.':'Internal draft saved for review.');else setEmailActionStatus('Draft approval failed',d.error||'Draft approval failed.',false);})
     .catch(function(err){setEmailActionStatus('Draft approval failed',err.message,false);});
@@ -3928,7 +3930,7 @@ function saveEmailDraftToGmail(){
 function sendApprovedEmailDraft(){
   var e=emailIntel.selected;if(!e)return;
   var btn=document.getElementById('emailApproveDraftBtn');
-  var payload={to:document.getElementById('emailDraftTo').value,subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||'',messageId:e.messageId||''};
+  var payload={to:document.getElementById('emailDraftTo').value,cc:(document.getElementById('emailDraftCc')||{}).value||'',subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||'',messageId:e.messageId||'',email:e};
   if(btn){btn.disabled=true;btn.textContent='Sending...';}
   setEmailActionStatus('Sending approved draft','VAL is sending this email through Gmail now.');
   apiFetch(PROXY+'/api/gmail/send-approved-draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
