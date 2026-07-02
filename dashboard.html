@@ -3930,7 +3930,7 @@ function saveEmailDraftToGmail(){
 function sendApprovedEmailDraft(){
   var e=emailIntel.selected;if(!e)return;
   var btn=document.getElementById('emailApproveDraftBtn');
-  var payload={to:document.getElementById('emailDraftTo').value,cc:(document.getElementById('emailDraftCc')||{}).value||'',subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||'',messageId:e.messageId||'',email:e};
+  var payload={approved:true,to:document.getElementById('emailDraftTo').value,cc:(document.getElementById('emailDraftCc')||{}).value||'',subject:document.getElementById('emailDraftSubject').value,body:document.getElementById('emailDraftBody').value,threadId:e.threadId||'',messageId:e.messageId||'',email:e};
   if(btn){btn.disabled=true;btn.textContent='Sending...';}
   setEmailActionStatus('Sending approved draft','VAL is sending this email through Gmail now.');
   apiFetch(PROXY+'/api/gmail/send-approved-draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})

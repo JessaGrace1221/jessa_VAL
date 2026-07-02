@@ -10216,6 +10216,7 @@ app.post('/api/gmail/send-approved-draft',async(req,res)=>{
     const token=await getGoogleToken();
     if(!token)return res.status(401).json({ok:false,error:lastGoogleAuthError||'Google auth required'});
     const payload=req.body||{};
+    if(payload.approved!==true)return res.status(400).json({ok:false,error:'Approval required before sending email'});
     const recipients=resolveReplyAllRecipients(payload);
     const to=recipients.to.map(emailHeaderAddress).filter(Boolean).join(', ');
     const cc=recipients.cc.map(emailHeaderAddress).filter(Boolean).join(', ');
@@ -19636,6 +19637,90 @@ app.post('/api/homepage-cards/action',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+function activeChatContextFromBody(body={},dashboard={}){
+  const ctx=body.context||dashboard.activeContext||dashboard.contact||dashboard.project||dashboard.evidence||null;
+  return ctx&&typeof ctx==='object'?ctx:null;
+}
+function chatContextTitle(ctx={}){
+  const item=ctx.item||ctx.contact||ctx.project||ctx.evidence||ctx;
+  return dashboardCleanText(item.title||item.name||item.subject||item.summary||ctx.title||ctx.label||'this context','this context');
+}
+function chatContextSummary(ctx={}){
+  const item=ctx.item||ctx.contact||ctx.project||ctx.evidence||ctx;
+  return dashboardCleanText([
+    item.summary||item.reason_it_matters||item.why||item.notes||item.description||'',
+    item.snippet||item.content||item.rawText||'',
+    ctx.label?`Workspace: ${ctx.label}`:'',
+    ctx.kind?`Context kind: ${ctx.kind}`:''
+  ].filter(Boolean).join('\n\n'),'');
+}
+function chatContextEntityName(ctx={}){
+  const item=ctx.contact||ctx.item||ctx.project||ctx.evidence||ctx;
+  return dashboardCleanText(item.name||item.contactName||item.person||item.company||'','');
+}
+function chatContextIntent(text=''){
+  const lower=String(text||'').toLowerCase();
+  if(/\b(show|list|explain)\b[\s\S]{0,50}\bevidence\b/.test(lower))return 'show_evidence';
+  if(/\b(create|add|make|save|turn)\b[\s\S]{0,50}\b(task|action item|to[- ]?do|todo|follow[- ]?up)\b/.test(lower))return 'create_task';
+  if(/\b(draft|write|compose|prepare)\b[\s\S]{0,60}\b(email|reply|response|message|update)\b/.test(lower))return 'draft_email';
+  if(/\b(send)\b[\s\S]{0,60}\b(email|reply|message)\b/.test(lower))return 'draft_email';
+  if(/\b(schedule|calendar|appointment|meeting|reminder|block time|follow[- ]?up)\b/.test(lower)&&/\b(create|add|make|schedule|calendar|remind|appointment|meeting|time)\b/.test(lower))return 'schedule';
+  if(/\b(update|remember|save|teach|add)\b[\s\S]{0,60}\b(memory|context|val|note|relationship|person|contact)\b/.test(lower))return 'update_memory';
+  if(/\b(add|attach|file|save)\b[\s\S]{0,60}\b(project|drawer|cabinet)\b/.test(lower))return 'add_to_project';
+  return '';
+}
+function requestedTaskTitle(text='',ctx={}){
+  const quoted=String(text||'').match(/['"“”]([^'"“”]{4,160})['"“”]/);
+  if(quoted&&quoted[1])return dashboardCleanText(quoted[1]);
+  const title=chatContextTitle(ctx);
+  if(/\breschedule\b/i.test(text))return `Reschedule follow-up: ${title}`;
+  if(/\bfollow[- ]?up\b/i.test(text))return `Follow up: ${title}`;
+  if(/\bschedule|calendar|appointment|meeting\b/i.test(text))return `Schedule: ${title}`;
+  return `Review: ${title}`;
+}
+async function handleContextualChatCommand({context,lastUser}){
+  if(!context)return null;
+  const intent=chatContextIntent(lastUser);
+  if(!intent)return null;
+  const title=chatContextTitle(context);
+  const summary=chatContextSummary(context);
+  const entityName=chatContextEntityName(context);
+  const item=context.item||context.contact||context.project||context.evidence||{};
+  const sourceContext={source:'contextual_chat',channel:context.channel||'general_chat',intent,contextKind:context.kind||'',surface:context.surface||'',label:context.label||'',title,entityName,itemId:item.id||item.source_id||item.sourceId||'',cardType:context.cardType||context.type||'',sourceType:item.source_type||item.sourceType||item.type||'',sourceId:item.source_id||item.sourceId||''};
+  if(intent==='show_evidence'){
+    const evidence=Array.isArray(item.evidence)?item.evidence:[];
+    const ids=[].concat(item.evidenceIds||[],item.observationIds||[],item.source_ids||[]).filter(Boolean);
+    const lines=evidence.slice(0,8).map((e,i)=>`${i+1}. ${dashboardCleanText(e.title||e.type||'Evidence')} — ${dashboardCleanText(e.summary||e.id||'Stored source record')}`);
+    const idLines=!lines.length&&ids.length?ids.slice(0,8).map((id,i)=>`${i+1}. Source ID: ${id}`):[];
+    return {content:[`Here is the evidence I have for ${title}.`,(lines.length?lines:idLines).join('\n')||'I do not have display-ready evidence attached to this context yet, but I will keep the source relationship linked when you act from this card.'].join('\n\n'),extra:{contextualIntent:intent,evidence:evidence.slice(0,8),sourceIds:ids.slice(0,12)}};
+  }
+  if(intent==='create_task'||intent==='schedule'){
+    const taskTitle=requestedTaskTitle(lastUser,context);
+    const task={id:uuid('task'),title:taskTitle,contactName:entityName,dueDate:new Date(Date.now()+24*60*60*1000).toISOString(),notes:[summary,`Created from contextual chat for ${title}.`,intent==='schedule'?'Scheduling requested. Confirm a calendar block from Actions before anything external is created.':''].filter(Boolean).join('\n\n'),details:[{text:`Created from contextual chat: ${intent}`,ts:new Date().toISOString(),sourceContext}],completed:false,createdAt:new Date().toISOString(),source:'contextual_chat'};
+    await saveTask(task);
+    const prefix=intent==='schedule'?'I created a scheduling action':'I created an action item';
+    return {content:`${prefix}: ${task.title}.\n\nIt is now in Actions${entityName?` and linked to ${entityName}`:''}. Nothing external was sent or scheduled without approval.`,extra:{contextualIntent:intent,createdTasks:[task]}};
+  }
+  if(intent==='draft_email'){
+    const subject=/\bfollow[- ]?up\b/i.test(lastUser)?`Follow-up: ${title}`:`Draft: ${title}`;
+    const body=[
+      entityName?`Hi ${String(entityName).split(/\s+/)[0]},`:'Hi,',
+      '',
+      summary||`I wanted to follow up on ${title}.`,
+      '',
+      'Best,',
+      currentValUser().name||CLIENT_CONFIG.clientName||'Jessa'
+    ].join('\n');
+    const draft=await saveInternalDraft({draftType:'contextual_chat_email',provider:'internal',subject,body,status:'draft',sourceContext:{...sourceContext,replyAll:true,to:item.email||item.matchedEmail||'',cc:''}});
+    return {content:`I prepared a draft for approval: ${draft.subject}.\n\nIt is saved in Drafts. I did not send anything.`,extra:{contextualIntent:intent,draft}};
+  }
+  if(intent==='update_memory'||intent==='add_to_project'){
+    const kind=intent==='add_to_project'?'project_context_note':'contextual_chat_memory';
+    const memory=await saveMemoryItem({kind,summary:`${intent==='add_to_project'?'Project context':'Context'}: ${title}`,rawText:[summary,lastUser].filter(Boolean).join('\n\n'),importance:4,metadata:sourceContext});
+    return {content:`Saved. I will use this context for ${title} in future chat, relationship review, projects, and actions.`,extra:{contextualIntent:intent,memory}};
+  }
+  return null;
+}
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
@@ -19671,6 +19756,9 @@ app.post('/api/val/chat',async(req,res)=>{
       return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
+    const activeContext=activeChatContextFromBody(req.body,dashboard);
+    const contextualCommand=await handleContextualChatCommand({context:activeContext,lastUser}).catch(e=>({content:`I tried to act on this context, but the action did not complete: ${e.message}`,extra:{contextualIntentError:e.message}}));
+    if(contextualCommand)return sendChat(contextualCommand.content,contextualCommand.extra||{});
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
     if(presenceIntent?.requiresConfirmation){
       return sendChat([
@@ -19836,6 +19924,8 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
 const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{
   console.log(`VAL proxy running on port ${PORT}`);
+  setTimeout(()=>purgeJessaTranscriptArtifacts().catch(e=>console.error('Transcript artifact purge failed:',e.message)),5000);
+  setTimeout(()=>purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('Recovered transcript purge failed:',e.message)),7000);
   setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
   setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
 });
