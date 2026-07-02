@@ -1128,7 +1128,6 @@ body{font-size:1rem}
 .val-card-chat-input{display:grid!important;grid-template-columns:minmax(0,1fr) 68px!important;gap:8px!important}
 .val-card-chat-input input{min-height:44px!important;border:1px solid #d9e0e8!important;border-radius:9px!important;padding:0 13px!important;color:#17243a!important;background:#fff!important}
 .val-card-chat-input button{border:0!important;border-radius:8px!important;background:#c4963a!important;color:#07182d!important;font-weight:900!important}
-
 .exec-workspace-drawer-overlay{align-items:stretch!important;justify-content:flex-end!important;background:rgba(7,24,45,.22)!important;backdrop-filter:blur(5px)!important;padding:12px!important}
 .exec-workspace-drawer-modal{width:min(454px,calc(100vw - 24px))!important;height:calc(100dvh - 24px)!important;background:#fbfaf7!important;color:#07182d!important;border:1px solid rgba(201,154,61,.24)!important;border-radius:8px!important;box-shadow:0 24px 78px rgba(7,24,45,.22)!important;animation:valDrawerIn .22s ease-out!important}
 .exec-workspace-drawer-modal .exec-workspace-head{height:auto!important;min-height:78px!important;padding:18px 20px 14px!important;background:#fbfaf7!important;border-bottom:1px solid rgba(7,24,45,.08)!important;color:#07182d!important}
@@ -2427,57 +2426,6 @@ html body .evidence-answer{display:none;margin-top:12px!important;border:1px sol
   html body .val-talk-button > span.val-face:before{left:12px!important}
   html body .val-talk-button > span.val-face:after{right:12px!important}
   html body .val-talk-button .val-face .val-face-smile{left:14px!important;bottom:11px!important;width:21px!important;height:11px!important;border-bottom-width:3px!important}
-}
-</style>
-<style id="val-launch-readable-command-layer">
-html body .exec-workspace-modal{font-size:16px!important}
-html body .exec-workspace-modal p,
-html body .exec-workspace-modal li,
-html body .exec-workspace-modal small,
-html body .exec-workspace-modal input,
-html body .exec-workspace-modal textarea,
-html body .exec-workspace-modal select{font-size:1rem!important;line-height:1.62!important}
-html body .exec-workspace-modal .exec-card p,
-html body .exec-workspace-modal .exec-card li{font-size:1rem!important;line-height:1.68!important}
-html body .exec-workspace-modal .exec-card h3{font-size:1.48rem!important;line-height:1.12!important;font-weight:600!important}
-html body .exec-workspace-modal .alert-btn,
-html body .exec-workspace-modal button:not(.exec-workspace-close){font-size:.92rem!important;line-height:1.15!important}
-html body .exec-workspace-drawer-modal{width:min(590px,calc(100vw - 24px))!important}
-html body .exec-workspace-drawer-modal .exec-workspace-title{font-size:2rem!important;line-height:1!important}
-html body .exec-workspace-drawer-modal .exec-workspace-kicker{font-size:.78rem!important}
-html body .exec-workspace-drawer-modal .exec-workspace-body{font-size:16px!important}
-html body .exec-workspace-drawer-modal .val-card-side{max-height:230px!important}
-html body .exec-workspace-drawer-modal .val-card-side-item strong{font-size:.98rem!important}
-html body .exec-workspace-drawer-modal .val-card-side-item small{font-size:.86rem!important;line-height:1.42!important}
-html body .exec-workspace-drawer-modal .val-card-tabs span{font-size:.96rem!important}
-html body .exec-workspace-drawer-modal .val-card-callout strong{font-size:1.16rem!important}
-html body .exec-workspace-drawer-modal .val-card-callout p,
-html body .exec-workspace-drawer-modal .val-card-meta span,
-html body .exec-workspace-drawer-modal .val-card-source-line span{font-size:1rem!important}
-html body .val-card-chat-panel{
-  margin-top:20px!important;
-  padding:18px!important;
-  border-radius:12px!important;
-  border:1px solid rgba(201,154,61,.28)!important;
-  background:linear-gradient(135deg,#fffdf8 0%,#fff8e8 62%,#f8fbff 100%)!important;
-  box-shadow:0 16px 38px rgba(7,24,45,.075)!important;
-}
-html body .val-card-chat-panel h3{font-size:1.48rem!important;margin-bottom:12px!important}
-html body #valCardChatLog{min-height:230px!important;max-height:390px!important;gap:12px!important;padding:4px!important;margin-bottom:14px!important}
-html body .val-card-chat{max-width:92%!important;border-radius:12px!important;padding:14px 16px!important;font-size:1rem!important;line-height:1.66!important;background:#fff!important;color:#17243a!important;box-shadow:0 8px 22px rgba(7,24,45,.045)!important}
-html body .val-card-chat.user{background:#07182d!important;color:#fff!important}
-html body .val-card-chip-row{gap:10px!important;margin-bottom:14px!important}
-html body .val-card-chip-row button{min-height:36px!important;padding:8px 13px!important;font-size:.9rem!important;font-weight:750!important}
-html body .val-card-chat-input{grid-template-columns:minmax(0,1fr) 84px!important;gap:10px!important;align-items:end!important}
-html body .val-card-chat-input textarea,
-html body .val-card-chat-input input{min-height:58px!important;max-height:118px!important;resize:none!important;border:1px solid rgba(201,154,61,.34)!important;border-radius:10px!important;padding:13px 14px!important;color:#17243a!important;background:#fff!important;font:1rem/1.5 var(--body)!important;outline:none!important}
-html body .val-card-chat-input textarea:focus,
-html body .val-card-chat-input input:focus{border-color:rgba(7,24,45,.28)!important;box-shadow:0 0 0 4px rgba(201,154,61,.13)!important}
-html body .val-card-chat-input button{min-height:58px!important;border-radius:10px!important;background:#07182d!important;color:#fff!important;font-size:.92rem!important;box-shadow:0 12px 26px rgba(7,24,45,.16)!important}
-@media(max-width:720px){
-  html body .exec-workspace-drawer-modal{width:100%!important}
-  html body .val-card-chat-panel{padding:15px!important}
-  html body #valCardChatLog{min-height:190px!important}
 }
 </style>
 </head>
