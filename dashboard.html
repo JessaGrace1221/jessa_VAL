@@ -1211,6 +1211,13 @@ body{font-size:1rem}
 .exec-workspace-drawer-wide #homepageCardWorkspaceBody .val-card-tabs{position:relative!important;top:auto!important;margin:0 0 22px!important;padding:0!important;background:transparent!important}
 .exec-workspace-drawer-wide #homepageCardWorkspaceBody .val-card-tabs span{font-size:.92rem!important;padding-bottom:12px!important}
 .exec-workspace-drawer-wide #homepageCardWorkspaceBody .val-card-main{max-width:100%!important;overflow:visible!important}
+#homepageCardWorkspace .exec-workspace-drawer-modal{width:min(760px,calc(100vw - 24px))!important}
+#homepageCardWorkspaceBody{padding:18px!important;background:#fbfaf7!important}
+#homepageCardWorkspaceBody .val-card-workspace{display:block!important;max-height:none!important;overflow:visible!important;padding:0!important}
+#homepageCardWorkspaceBody .val-card-side{display:none!important}
+#homepageCardWorkspaceBody .val-card-main{max-width:100%!important;max-height:none!important;overflow:visible!important;padding:0!important}
+#homepageCardWorkspaceBody .val-card-tabs{position:relative!important;top:auto!important;margin:0 0 22px!important;padding:0!important;background:transparent!important}
+#homepageCardWorkspaceBody .val-card-tabs span{font-size:.92rem!important;padding-bottom:12px!important}
 .val-premium-card-panel{display:grid!important;grid-template-columns:190px minmax(0,1fr)!important;gap:22px!important;align-items:stretch!important;margin-bottom:20px!important}
 .val-premium-key-rail{background:#fffdf8!important;border:1px solid rgba(7,24,45,.1)!important;border-radius:12px!important;padding:20px!important;min-height:430px!important;color:#07182d!important;box-shadow:0 10px 30px rgba(7,24,45,.04)!important}
 .val-premium-icon{width:42px!important;height:42px!important;border-radius:999px!important;border:1px solid rgba(201,154,61,.38)!important;color:#c99a3d!important;display:grid!important;place-items:center!important;font-size:1.2rem!important;margin-bottom:24px!important;background:#fffaf0!important}
@@ -3361,7 +3368,7 @@ function openExecutiveWorkspace(opts){
   opts=opts||{};
   var id=opts.id||'executiveWorkspaceOverlay';
   var isDrawer=opts.mode==='drawer';
-  var drawerSize=isDrawer&&opts.size?String(opts.size).replace(/[^a-z0-9_-]/gi,''):'';
+  var drawerSize=isDrawer&&(opts.size||opts.drawerSize)?String(opts.size||opts.drawerSize).replace(/[^a-z0-9_-]/gi,''):'';
   var kicker=opts.kicker||'Executive Workspace';
   closeExecutiveWorkspace(id);
   var overlay=document.createElement('div');

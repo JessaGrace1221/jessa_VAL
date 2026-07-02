@@ -358,17 +358,14 @@ window.openHomepageCard=function(type,id){
   var spec=cardSpec(type),items=homepageCardItems(type),item=homepageCardFind(type,id);
   if(!item&&items.length)item=items[0];
   var activeId=cardItemKey(item||{});
-  var title=item?(item.title||item.name||spec.title):spec.empty;
-  var confidence=item&&item.confidence!=null?pct(item.confidence):'--';
   var evidenceCount=Number((item&&item.evidence_count)||((item&&item.evidence)||[]).length||0);
-  var body='<div class="val-card-workspace">'
-    +'<aside class="val-card-side"><div class="val-card-side-head"><strong>'+safe(spec.title)+'</strong><button onclick="loadExecutiveBriefing(true)">Refresh</button></div>'+cardRowsForWorkspace(type,activeId)+'</aside>'
+  var body='<div class="val-card-workspace val-card-workspace-premium">'
     +'<main class="val-card-main">'
       +'<nav class="val-card-tabs"><span class="active">Overview</span><span>Evidence '+(evidenceCount?'('+evidenceCount+')':'')+'</span><span>Actions</span><span>History</span></nav>'
       +(item?cardWorkspaceContent(type,item,activeId)
       :emptyWorkspaceHtml(type,activeId))
     +'</main></div>';
-  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'homepageCardWorkspace',title:spec.title,kicker:'Executive Workspace',mode:'drawer',drawerSize:'wide',body:body,footer:'<button class="alert-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button><button class="alert-btn" onclick="commandCenterNavigate(\''+spec.view+'\')">Open Source View</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'homepageCardWorkspace\')">Close</button>'});
+  if(typeof openExecutiveWorkspace==='function')openExecutiveWorkspace({id:'homepageCardWorkspace',title:spec.title,kicker:'Executive Workspace',mode:'drawer',size:'wide',body:body,footer:'<button class="alert-btn primary" onclick="loadExecutiveBriefing(true)">Check Again</button><button class="alert-btn" onclick="commandCenterNavigate(\''+spec.view+'\')">Open Source View</button><button class="alert-btn" onclick="closeExecutiveWorkspace(\'homepageCardWorkspace\')">Close</button>'});
 };
 function dashboardTargetAction(target,fallback){
   target=target||{};
