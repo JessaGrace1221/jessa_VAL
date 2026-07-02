@@ -18214,6 +18214,28 @@ function normalizeTranscriptTask(item={}){
   const task={...item,taskTitle:title,taskDescription:item.taskDescription||item.description||item.summary||item.reason||'',assignedToName:item.assignedToName||item.owner||item.person||item.contactName||'',dueDate:item.dueDate||item.deadline||item.due_at||null,priority:item.priority||'medium',confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.72)),sourceQuote:item.sourceQuote||item.supportingQuote||item.quote||item.evidence||''};
   return transcriptActionIsSpecific(task)?task:null;
 }
+function transcriptProviderActionItems(payload={}){
+  const metadata=payload.metadata||{};
+  return uniqueTranscriptActionItems([
+    ...(Array.isArray(payload.actionItems)?payload.actionItems:[]),
+    ...(Array.isArray(payload.action_items)?payload.action_items:[]),
+    ...(Array.isArray(payload.tasks)?payload.tasks:[]),
+    ...(Array.isArray(metadata.providerActionItems)?metadata.providerActionItems:[]),
+    ...transcriptActionItemsFromPayloadValue(metadata.providerNoteText||'')
+  ].map(transcriptActionItemFromValue).filter(Boolean));
+}
+function mergeTranscriptTaskLists(primary=[],secondary=[]){
+  const merged=[],seen=new Set();
+  for(const item of [...(primary||[]),...(secondary||[])]){
+    const normalized=normalizeTranscriptTask(item);
+    if(!normalized)continue;
+    const key=String(normalized.taskTitle||'').toLowerCase().replace(/\W+/g,' ').trim().slice(0,120);
+    if(!key||seen.has(key))continue;
+    seen.add(key);
+    merged.push(normalized);
+  }
+  return merged.slice(0,20);
+}
 function normalizeTranscriptAnalysis(parsed={},raw=''){
   const out={...parsed};
   const objectGroups=[
@@ -18261,6 +18283,7 @@ function mergeTranscriptDeterministicNotes(parsed={},raw=''){
 }
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
+  const providerTasks=transcriptProviderActionItems(payload);
   const title=transcriptDisplayTitleFromPayload(payload,transcript),sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
   await updateTranscriptIndexStatus(sourceId,{meetingTitle:title,calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',meetingDatetime:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||null});
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
@@ -18268,11 +18291,12 @@ async function processTranscriptPayload(payload){
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
   const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Do not summarize the transcript as prose. Classify direct evidence into structured meeting objects that another employee could act on without hearing the meeting.','Allowed object types: '+TRANSCRIPT_OBJECT_TYPES.join(', ')+'.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe what changed because of the meeting.','Required keys: executiveSummary, clientSummary, internalNotes, meetingGoals, decisions, decisionNeeded, openQuestions, risks, ideas, relationshipInsights, personalPreferences, projectUpdates, importantFacts, taskDependencies, contactInformation, timelines, futureMeetings, tasks, contactUpdates, followupDrafts.','Every object must include: title, summary, speaker, timestamp, owner, relatedPeople, relatedProject, relatedCompany, confidence (0-1), sourceQuote copied exactly from the transcript. Use null or [] when unknown.','tasks are only true action items. They must include taskTitle, taskDescription, assignedToName, dueDate, priority, confidence, sourceQuote. A task must pass this test: could another employee complete it without hearing the meeting? If not, omit it.','Think like the transcript chat: identify the real commitment, owner, object, and context. The taskTitle should read like a clean Actions item, not a copied transcript fragment.','Rewrite pronouns and fragments into concrete tasks only when the source evidence supports the full meaning. Example: output "Jessa will move Michelle’s talk button to the top", not "move that button to the top instead". Example: output "Michelle and Julian will discuss the three Chapter 4 improvement areas", not "write the revision".','Reject tasks that are only interface chatter, unclear pronouns, incomplete excerpts, or broad discussion topics without an owner/action. Do not output "send this email", "write the revision", "draft as a response", "get that check", or speaker-number tasks.','Never guess identity, owner, project, company, deadline, or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
-  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
+  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nProvider-supplied action items from Krisp or webhook notes:\n${providerTasks.length?JSON.stringify(providerTasks.slice(0,20)):'None supplied.'}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
   parsed=normalizeTranscriptAnalysis(parsed,transcript);
+  parsed.tasks=mergeTranscriptTaskLists(parsed.tasks,providerTasks);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
@@ -18350,6 +18374,50 @@ function transcriptTextFromNoteValue(value,depth=0){
     return ['note','notes','summary','meetingNote','meeting_note','generatedNote','generated_note','memo','sections','items','bullets','actionItems','action_items'].map(k=>transcriptTextFromNoteValue(value[k],depth+1)).filter(Boolean).join('\n');
   }
   return '';
+}
+function transcriptActionItemFromValue(value){
+  if(!value)return null;
+  if(typeof value==='string')return {taskTitle:cleanAutoTaskTitle(value),taskDescription:'Provider-supplied action item.',sourceQuote:value,confidence:0.86};
+  if(typeof value!=='object')return null;
+  const title=value.taskTitle||value.title||value.action||value.text||value.content||value.summary||value.description||value.name||'';
+  if(!title)return null;
+  return {
+    taskTitle:cleanAutoTaskTitle(title),
+    taskDescription:value.taskDescription||value.description||value.notes||value.note||value.context||value.summary||'Provider-supplied action item.',
+    assignedToName:value.assignedToName||value.assignee||value.owner||value.person||value.name||value.responsible||'',
+    dueDate:value.dueDate||value.due_date||value.deadline||value.date||null,
+    priority:value.priority||'medium',
+    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.86)),
+    sourceQuote:value.sourceQuote||value.quote||value.evidence||value.text||value.content||title
+  };
+}
+function transcriptActionItemsFromPayloadValue(value,depth=0){
+  if(depth>4||!value)return [];
+  if(Array.isArray(value))return value.flatMap(item=>transcriptActionItemsFromPayloadValue(item,depth+1));
+  if(typeof value==='string')return splitAutoTaskText(value).map(line=>transcriptActionItemFromValue(line)).filter(Boolean);
+  if(typeof value!=='object')return [];
+  const directKeys=['actionItems','action_items','actions','tasks','taskItems','task_items','todos','toDos','to_dos','followUps','followups','nextSteps','next_steps'];
+  const direct=directKeys.flatMap(key=>transcriptActionItemsFromPayloadValue(value[key],depth+1));
+  if(direct.length)return direct;
+  const nestedKeys=['sections','items','bullets','children','blocks','content'];
+  const hasNested=nestedKeys.some(key=>value[key]!==undefined);
+  const standalone=transcriptActionItemFromValue(value);
+  if(standalone&&!hasNested)return [standalone];
+  const title=String(value.title||value.heading||value.name||value.label||'');
+  const sectionText=transcriptTextFromNoteValue(value);
+  if(/\b(action items?|tasks?|to[-\s]?dos?|next steps?|follow[-\s]?ups?)\b/i.test(title)&&sectionText){
+    return splitAutoTaskText(sectionText).map(line=>transcriptActionItemFromValue(line)).filter(Boolean);
+  }
+  return nestedKeys.flatMap(key=>transcriptActionItemsFromPayloadValue(value[key],depth+1));
+}
+function uniqueTranscriptActionItems(items=[]){
+  const seen=new Set();
+  return (items||[]).filter(Boolean).filter(item=>{
+    const key=String(item.taskTitle||item.title||item.sourceQuote||'').toLowerCase().replace(/\W+/g,' ').trim().slice(0,120);
+    if(!key||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,30);
 }
 function transcriptTurnSpeaker(turn={}){
   const speaker=turn.speaker||turn.speakerName||turn.speaker_name||turn.name||turn.author||turn.participant||turn.user||turn.person||{};
@@ -18433,6 +18501,11 @@ function normalizedTranscriptWebhookPayload(body={}){
   const transcriptTurns=transcriptTurnsFromValue(root).concat(transcriptTurnsFromValue(transcriptObject)).filter(Boolean);
   const segmentText=[...new Set(transcriptTurns)].join('\n');
   const noteText=transcriptTextFromNoteValue(note)||transcriptFirstString(root.summary,root.notes,root.note,root.meetingNote,root.meeting_note,root.generatedNote,root.generated_note,meeting.summary,meeting.notes,meeting.note);
+  const providerActionItems=uniqueTranscriptActionItems([
+    ...transcriptActionItemsFromPayloadValue(root.actionItems||root.action_items||root.actions||root.tasks||root.taskItems||root.task_items||root.todos||root.nextSteps||root.next_steps),
+    ...transcriptActionItemsFromPayloadValue(note),
+    ...transcriptActionItemsFromPayloadValue(noteText)
+  ]);
   const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.rawContent,root.raw_content,root.rawMeeting,root.raw_meeting,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,meeting.rawContent,meeting.raw_content,segmentText,noteText);
   const rawTitle=transcriptFirstString(root.title,root.meetingTitle,root.meeting_title,root.meetingName,root.meeting_name,root.callTitle,root.call_title,root.callName,root.call_name,root.name,transcriptObject.title,meeting.title,meeting.name,note.title,note.name,body.title);
   const source=transcriptFirstString(root.source,root.provider,root.platform,body.source)||(/krisp/i.test(JSON.stringify(body).slice(0,2000))?'krisp':'webhook');
@@ -18442,7 +18515,7 @@ function normalizedTranscriptWebhookPayload(body={}){
     if(/^(transcript|raw_?text|transcript_?text|text|content|body|plain_?text|full_?text|segments|sentences|utterances|speaker_?turns|turns|items|entries|paragraphs)$/i.test(key))continue;
     sourcePayloadMetadata[key]=value&&typeof value==='object'?JSON.parse(JSON.stringify(value,(nestedKey,nestedValue)=>/^(transcript|raw_?text|transcript_?text|text|content|body|segments|sentences)$/i.test(nestedKey)?undefined:nestedValue)):value;
   }
-  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript'};
+  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript',providerNoteText:noteText,providerActionItems};
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
