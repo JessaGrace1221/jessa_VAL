@@ -1302,6 +1302,43 @@ button,a{font:inherit}
   font-size:.72rem;
   line-height:1.42;
 }
+.val-autocorrect{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:fit-content;
+  max-width:100%;
+  margin-top:2px;
+  padding:5px 6px 5px 8px;
+  border:1px solid rgba(93,96,54,.18);
+  border-radius:999px;
+  background:rgba(222,226,199,.52);
+  color:rgba(58,33,27,.78);
+  font-size:.68rem;
+  line-height:1.2;
+}
+.val-autocorrect span{
+  font:800 .5rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(93,96,54,.76);
+}
+.val-autocorrect button{
+  min-height:24px;
+  border:1px solid rgba(93,96,54,.2);
+  border-radius:999px;
+  background:rgba(255,249,239,.62);
+  color:rgba(58,33,27,.88);
+  padding:0 8px;
+  font-size:.66rem;
+  font-weight:800;
+  cursor:pointer;
+}
+.val-autocorrect button:hover,
+.val-autocorrect button:focus-visible{
+  border-color:rgba(93,96,54,.38);
+  background:rgba(255,249,239,.84);
+}
 .workspace-tool-status{
   display:block;
 }

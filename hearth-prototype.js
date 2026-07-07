@@ -29,6 +29,7 @@ const workspaceActions = document.querySelector('.workspace-actions');
 const scraperCriteriaPanel = document.querySelector('.scraper-criteria-panel');
 const scraperPreviewList = document.querySelector('.scraper-preview-list');
 const workspaceInputPanel = document.querySelector('.workspace-input-panel');
+let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
@@ -5051,6 +5052,146 @@ function renderContextPortalText(text, workspace = {}, allowFallback = true){
     '</button>';
 }
 
+const valAutocorrectMap = {
+  teh:'the',
+  adn:'and',
+  recieve:'receive',
+  recieved:'received',
+  definately:'definitely',
+  seperate:'separate',
+  occured:'occurred',
+  occuring:'occurring',
+  accomodate:'accommodate',
+  acheive:'achieve',
+  acheived:'achieved',
+  becuase:'because',
+  begining:'beginning',
+  calender:'calendar',
+  committment:'commitment',
+  committments:'commitments',
+  concious:'conscious',
+  enviroment:'environment',
+  goverment:'government',
+  judgement:'judgment',
+  liason:'liaison',
+  maintenence:'maintenance',
+  neccessary:'necessary',
+  occassion:'occasion',
+  opporunity:'opportunity',
+  opporunities:'opportunities',
+  priviledge:'privilege',
+  recomend:'recommend',
+  recomendation:'recommendation',
+  recomendations:'recommendations',
+  relevent:'relevant',
+  sucess:'success',
+  sucessful:'successful',
+  tommorrow:'tomorrow',
+  wierd:'weird',
+  woudl:'would',
+  shoudl:'should',
+  coudl:'could',
+  thier:'their',
+  taht:'that',
+  tehre:'there',
+  tehri:'their'
+};
+
+const valAutocorrectWords = [
+  'alignment','approve','briefing','calendar','commitment','context','correspondence','decision',
+  'document','draft','email','evidence','follow','intelligence','judgment','leverage','meeting',
+  'memory','onboarding','opportunity','prepared','project','recommendation','relationship',
+  'source','timeline','transcript','velocity','witnessing'
+];
+
+function valEditDistance(a = '', b = ''){
+  if(Math.abs(a.length - b.length) > 1) return 2;
+  const rows = Array.from({length:a.length + 1}, (_, i) => [i]);
+  for(let j = 1; j <= b.length; j++) rows[0][j] = j;
+  for(let i = 1; i <= a.length; i++){
+    for(let j = 1; j <= b.length; j++){
+      rows[i][j] = Math.min(
+        rows[i - 1][j] + 1,
+        rows[i][j - 1] + 1,
+        rows[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return rows[a.length][b.length];
+}
+
+function valAutocorrectSuggestion(word = ''){
+  const clean = String(word || '').replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, '');
+  if(clean.length < 3 || /^[A-Z][a-z]+$/.test(clean)) return null;
+  const lower = clean.toLowerCase();
+  const mapped = valAutocorrectMap[lower];
+  if(mapped) return clean === lower ? mapped : mapped.charAt(0).toUpperCase() + mapped.slice(1);
+  if(clean.length < 5) return null;
+  const close = valAutocorrectWords.find((candidate) => valEditDistance(lower, candidate) === 1);
+  if(!close || close === lower) return null;
+  return clean === lower ? close : close.charAt(0).toUpperCase() + close.slice(1);
+}
+
+function valAutocorrectTarget(field){
+  const value = field.value || '';
+  const caret = field.selectionStart == null ? value.length : field.selectionStart;
+  const before = value.slice(0, caret);
+  const match = before.match(/([A-Za-z']+)(\s*)$/);
+  if(!match) return null;
+  const word = match[1];
+  const suggestion = valAutocorrectSuggestion(word);
+  if(!suggestion || suggestion.toLowerCase() === word.toLowerCase()) return null;
+  const end = caret - match[2].length;
+  return {word, suggestion, start:end - word.length, end};
+}
+
+function removeValAutocorrect(){
+  document.querySelectorAll('.val-autocorrect').forEach((node) => node.remove());
+}
+
+function applyValAutocorrect(field, target){
+  if(!field || !target) return;
+  field.value = field.value.slice(0, target.start) + target.suggestion + field.value.slice(target.end);
+  const caret = target.start + target.suggestion.length;
+  field.setSelectionRange(caret, caret);
+  field.dispatchEvent(new Event('input', {bubbles:true}));
+  field.focus();
+}
+
+function renderValAutocorrect(field){
+  removeValAutocorrect();
+  if(!isValAutocorrectField(field)) return;
+  const target = valAutocorrectTarget(field);
+  if(!target) return;
+  const prompt = document.createElement('div');
+  prompt.className = 'val-autocorrect';
+  prompt.innerHTML = '<span>Spelling</span><button type="button">Did you mean "' + escapeHtml(target.suggestion) + '"?</button>';
+  prompt.querySelector('button').addEventListener('click', () => applyValAutocorrect(field, target));
+  const label = field.closest('label');
+  if(label && field.nextSibling){
+    label.insertBefore(prompt, field.nextSibling);
+  } else if(label) {
+    label.appendChild(prompt);
+  } else {
+    field.insertAdjacentElement('afterend', prompt);
+  }
+}
+
+function isValAutocorrectField(field){
+  if(!field || field.disabled || field.readOnly) return false;
+  if(field.tagName === 'TEXTAREA') return true;
+  if(field.tagName !== 'INPUT') return false;
+  return ['text','search'].includes((field.type || 'text').toLowerCase());
+}
+
+function enableValAutocorrect(root = document){
+  root.querySelectorAll('textarea,input[type="text"],input[type="search"]').forEach((field) => {
+    field.setAttribute('spellcheck', 'true');
+    field.setAttribute('autocorrect', 'on');
+    field.setAttribute('autocomplete', field.getAttribute('autocomplete') || 'on');
+  });
+}
+
 function renderWorkspaceInput({label,placeholder,helper,mode,value = '', promptCards = []}){
   activeWorkspacePromptCards = promptCards;
   workspaceInputPanel.hidden = false;
@@ -5066,7 +5207,7 @@ function renderWorkspaceInput({label,placeholder,helper,mode,value = '', promptC
     )).join('') + '</div>' : '',
     '<label>',
       '<span>' + escapeHtml(label) + '</span>',
-      '<textarea data-workspace-input="' + escapeHtml(mode) + '" placeholder="' + escapeHtml(placeholder) + '">' + escapeHtml(value) + '</textarea>',
+      '<textarea data-workspace-input="' + escapeHtml(mode) + '" placeholder="' + escapeHtml(placeholder) + '" spellcheck="true" autocorrect="on" autocomplete="on">' + escapeHtml(value) + '</textarea>',
     '</label>',
     isCowork ? [
       '<div class="workspace-input-tools" aria-label="Co-Work input tools">',
@@ -5079,6 +5220,7 @@ function renderWorkspaceInput({label,placeholder,helper,mode,value = '', promptC
     ].join('') : '',
     helper ? '<small>' + escapeHtml(helper) + '</small>' : ''
   ].join('');
+  enableValAutocorrect(workspaceInputPanel);
 }
 
 function activeWorkspaceTextarea(){
@@ -9600,6 +9742,30 @@ function routeWorkspaceActionClick(event){
 }
 
 workspaceActions.addEventListener('click', routeWorkspaceActionClick);
+document.addEventListener('input', (event) => {
+  const field = event.target;
+  if(!isValAutocorrectField(field)) return;
+  activeAutocorrectField = field;
+  renderValAutocorrect(field);
+});
+document.addEventListener('focusin', (event) => {
+  const field = event.target;
+  if(!isValAutocorrectField(field)) return;
+  activeAutocorrectField = field;
+  renderValAutocorrect(field);
+});
+document.addEventListener('selectionchange', () => {
+  if(activeAutocorrectField && document.activeElement === activeAutocorrectField){
+    renderValAutocorrect(activeAutocorrectField);
+  }
+});
+document.addEventListener('focusout', (event) => {
+  if(isValAutocorrectField(event.target)){
+    window.setTimeout(() => {
+      if(!document.activeElement?.closest?.('.val-autocorrect')) removeValAutocorrect();
+    }, 120);
+  }
+});
 workspaceInputPanel.addEventListener('click', (event) => {
   const googleButton = event.target.closest('[data-google-oauth]');
   if(googleButton){
@@ -9764,6 +9930,7 @@ rooms.forEach((room) => {
 
 returnButton.addEventListener('click', closeWorkspace);
 
+enableValAutocorrect(document);
 setState(hearth.dataset.state || 'quiet');
 hydrateHomePresence();
 hydrateCalendarPanel();

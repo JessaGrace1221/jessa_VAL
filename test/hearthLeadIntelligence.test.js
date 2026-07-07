@@ -757,6 +757,21 @@ test('Hearth source actions open the most specific executive surface available',
   assert.match(hearthJs, /opportunities/);
 });
 
+test('Hearth text inputs offer VAL autocorrect suggestions without silently rewriting', () => {
+  assert.match(hearthJs, /const valAutocorrectMap/);
+  assert.match(hearthJs, /teh:'the'/);
+  assert.match(hearthJs, /function valAutocorrectSuggestion/);
+  assert.match(hearthJs, /function renderValAutocorrect/);
+  assert.match(hearthJs, /Did you mean/);
+  assert.match(hearthJs, /spellcheck="true"/);
+  assert.match(hearthJs, /autocorrect="on"/);
+  assert.match(hearthJs, /enableValAutocorrect\(document\)/);
+  assert.match(hearthCss, /\.val-autocorrect/);
+  assert.match(hearthCss, /\.val-autocorrect button/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=autocorrect-20260707/);
+});
+
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
   assert.match(hearthJs, /function primaryPortalPhrase/);
   assert.match(hearthJs, /function roomCardObservation/);
