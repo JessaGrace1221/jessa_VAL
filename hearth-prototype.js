@@ -4931,13 +4931,25 @@ function homeSourceContextLines(item = {}, fallbackTitle = 'Source context'){
   ].filter(Boolean);
 }
 
-function openHomeItemWorkspaceFromButton(button, event){
+async function openHomeItemWorkspaceFromButton(button, event){
   if(!button || !button.dataset.homeRoomItem) return false;
   if(event){
     event.preventDefault();
     event.stopPropagation();
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
+  const preflight = await ensureHearthClickPacket({
+    node: button,
+    packetName: button.dataset.valVariablePacket || 'home_source_packet',
+    action: 'homeRoomItem:' + (button.dataset.homeRoomItem || ''),
+    source: {
+      sourceId: button.dataset.sourceId || '',
+      sourceType: button.dataset.sourceType || '',
+      sourceLabel: button.dataset.sourceLabel || '',
+      sourceItem: (homeRoomQueues[button.dataset.homeRoomItem] || [])[Number(button.dataset.homeRoomIndex)] || null
+    }
+  });
+  if(!preflight.ok) return true;
   openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
   return true;
 }
@@ -5195,8 +5207,8 @@ function renderWorkspaceActionButtons(actions = []){
       ' class="' + classes.join(' ') + '"',
       spec.workflow ? ' data-workflow-action="' + escapeHtml(spec.workflow) + '"' : '',
       spec.homeAction ? ' data-home-action="' + escapeHtml(spec.homeAction) + '"' : '',
-      spec.workflow ? ' onclick="event.preventDefault();event.stopPropagation();handleWorkflowAction(this.dataset.workflowAction);return false;"' : '',
-      spec.homeAction ? ' onclick="event.preventDefault();event.stopPropagation();handleHomeRoomAction(this.dataset.homeAction);return false;"' : ''
+      spec.workflow ? ' onclick="event.preventDefault();event.stopPropagation();handleWorkflowAction(this.dataset.workflowAction,this);return false;"' : '',
+      spec.homeAction ? ' onclick="event.preventDefault();event.stopPropagation();handleHomeRoomAction(this.dataset.homeAction,this);return false;"' : ''
     ].join('');
     return '<button type="button"' + attrs + '>' + escapeHtml(label) + '</button>';
   }).join('');
@@ -5729,6 +5741,111 @@ async function getJson(url){
     throw error;
   }
   return data;
+}
+
+const hearthServerPacketNames = new Set([
+  'relationship_packet',
+  'project_packet',
+  'email_packet',
+  'timeline_packet',
+  'home_source_packet',
+  'workflow_scoped_packet',
+  'val_os_packet'
+]);
+let lastHearthPacketReceipt = null;
+
+function hearthPacketSourceFromContext(source = {}, node = null){
+  const nodeSource = node?.dataset || {};
+  const homeSourceItem = activeHomeWorkspace?.workspace?.sourceItem || {};
+  return {
+    ...source,
+    action: source.action || nodeSource.workflowAction || nodeSource.homeAction || nodeSource.valAction || nodeSource.relationshipAction || nodeSource.projectAction || nodeSource.commitmentAction || nodeSource.correspondenceAction || '',
+    sourceId: source.sourceId || nodeSource.sourceId || nodeSource.actionTarget || homeSourceItem.sourceId || homeSourceItem.source_id || homeSourceItem.id || '',
+    sourceType: source.sourceType || nodeSource.sourceType || homeSourceItem.sourceType || homeSourceItem.source_type || homeSourceItem.kind || '',
+    sourceLabel: source.sourceLabel || nodeSource.sourceLabel || homeSourceItem.title || homeSourceItem.name || '',
+    relationshipId: source.relationshipId || nodeSource.relationshipOpenProfile || nodeSource.relationshipProfile || activeRelationshipProfile?.contactId || activeRelationshipProfile?.crmContactId || activeRelationshipProfile?.id || '',
+    relationshipName: source.relationshipName || activeRelationshipProfile?.name || '',
+    projectId: source.projectId || nodeSource.projectOpenProfile || activeProjectProfile?.projectId || activeProjectProfile?.id || '',
+    projectName: source.projectName || activeProjectProfile?.name || '',
+    email: source.email || activeCorrespondenceItem || homeSourceItem.email || null,
+    commitmentId: source.commitmentId || nodeSource.commitmentItem || activeCommitmentItem?.id || '',
+    documentId: source.documentId || nodeSource.documentItem || activeDocumentItem?.id || '',
+    homeCard: source.homeCard || activeHomeWorkspace?.workspace || null,
+    sourceItem: source.sourceItem || homeSourceItem || null
+  };
+}
+
+function hearthPacketShouldSkip(action = '', packetName = ''){
+  const command = String(action || '').split(':')[0];
+  if(!canUseApi) return true;
+  if(!packetName || !hearthServerPacketNames.has(packetName)) return true;
+  return ['cancel','calendar','relationshipAllPeople','projectAllProjects'].includes(command);
+}
+
+function hearthPacketMissingLines(packet = {}){
+  const missing = Array.isArray(packet.missingRequired) ? packet.missingRequired : [];
+  const gaps = Array.isArray(packet.providerGaps) ? packet.providerGaps : [];
+  const partials = Array.isArray(packet.providerPartials) ? packet.providerPartials : [];
+  return [
+    missing.length ? 'Missing context: ' + missing.slice(0, 6).join(', ') + (missing.length > 6 ? ' +' + (missing.length - 6) + ' more' : '') : '',
+    gaps.length ? 'Provider gaps: ' + gaps.join(', ') : '',
+    partials.length ? 'Partial providers: ' + partials.join(', ') : '',
+    packet.counts?.variables ? 'Checked ' + packet.counts.variables + ' required variables.' : ''
+  ].filter(Boolean);
+}
+
+function showHearthPacketBlocked(packet = {}, action = ''){
+  lastHearthPacketReceipt = packet;
+  setWorkspaceContent({
+    lens: 'Packet Check',
+    title: 'VAL needs the right context before this click.',
+    meaning: packet.receipt?.summary || 'This click did not have enough source context attached.',
+    understanding: hearthPacketMissingLines(packet).concat([
+      'Click/action: ' + (action || packet.click?.action || 'unknown'),
+      'Packet: ' + (packet.packetName || 'unknown')
+    ]),
+    recommendation: 'Open or select the exact source first, then retry the action. VAL should not blend unrelated context to make this work.',
+    actions: [{label:'Back to desk', workflow:'cancel:meeting'}],
+    label: 'Hearth packet blocked receipt'
+  });
+  openWorkspaceShell('Hearth packet blocked receipt', {returnTarget:workspaceReturnTarget || 'home'});
+}
+
+async function ensureHearthClickPacket({node = null, packetName = '', action = '', source = {}, allowBlockedForInspection = false} = {}){
+  const resolvedPacketName = packetName || node?.dataset?.valVariablePacket || '';
+  if(hearthPacketShouldSkip(action, resolvedPacketName)) return {ok:true,status:'not_checked'};
+  const payload = {
+    packetName: resolvedPacketName,
+    source: hearthPacketSourceFromContext(source, node),
+    click: {
+      action,
+      contract: node?.dataset?.valClickContract || '',
+      promptRule: node?.dataset?.valPromptRule || '',
+      allowedActions: node?.dataset?.valAllowedActions || '',
+      neverDo: node?.dataset?.valNeverDo || ''
+    },
+    mode: allowBlockedForInspection ? 'inspect' : 'preflight'
+  };
+  if(node) node.setAttribute('aria-busy', 'true');
+  try{
+    const packet = await postJson('/api/hearth/build-packet', payload);
+    lastHearthPacketReceipt = packet;
+    if(node){
+      node.dataset.valPacketStatus = packet.status || '';
+      node.dataset.valPacketCheckedAt = packet.generatedAt || new Date().toISOString();
+    }
+    if(packet.status === 'blocked' && !allowBlockedForInspection){
+      showHearthPacketBlocked(packet, action);
+      return {ok:false,packet};
+    }
+    return {ok:true,packet};
+  }catch(error){
+    const packet = error.data || {packetName:resolvedPacketName,status:'blocked',receipt:{summary:error.message},missingRequired:[],providerGaps:['packet_builder_unavailable']};
+    if(!allowBlockedForInspection) showHearthPacketBlocked(packet, action);
+    return {ok:allowBlockedForInspection,packet,error};
+  }finally{
+    if(node) node.removeAttribute('aria-busy');
+  }
 }
 
 function compactSentence(value, fallback = ''){
@@ -8586,7 +8703,10 @@ async function handleValAction(action){
   openWorkspaceShell('VAL onboarding workspace', {returnTarget:'val'});
 }
 
-async function handleWorkflowAction(action){
+async function handleWorkflowAction(action, node = null){
+  const workflowPacket = node?.dataset?.valVariablePacket || 'workflow_scoped_packet';
+  const workflowPreflight = await ensureHearthClickPacket({node, packetName:workflowPacket, action});
+  if(!workflowPreflight.ok) return;
   const [command,type,...rest] = String(action || '').split(':');
   if(command === 'relationshipAllPeople'){
     closeWorkspace();
@@ -9251,7 +9371,9 @@ function renderHomeActionResult(action, result){
   }
 }
 
-async function handleHomeRoomAction(action){
+async function handleHomeRoomAction(action, node = null){
+  const homePreflight = await ensureHearthClickPacket({node, packetName:node?.dataset?.valVariablePacket || 'home_source_packet', action});
+  if(!homePreflight.ok) return;
   if(action === 'open_source'){
     openHomeSourceView();
     return;
@@ -9380,7 +9502,13 @@ function openWorkspace(roomName){
   });
 }
 
-function handlePrimaryAction(button){
+async function handlePrimaryAction(button){
+  const preflight = await ensureHearthClickPacket({
+    node: button,
+    packetName: button?.dataset?.valVariablePacket || 'home_source_packet',
+    action: button?.dataset?.openRoom || button?.dataset?.actionType || 'home_primary'
+  });
+  if(!preflight.ok) return;
   const actionType = button.dataset.actionType || 'workspace';
   const target = button.dataset.actionTarget;
   if(actionType === 'openExternal' && target){
@@ -9749,6 +9877,8 @@ drawerTray.addEventListener('click', async (event) => {
   if(timelineAction){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction});
+    if(!preflight.ok) return;
     if(timelineAction.dataset.timelineAction === 'cowork_timeline') openTimelineCoworkSession();
     return;
   }
@@ -9772,6 +9902,8 @@ drawerTray.addEventListener('click', async (event) => {
   if(timelineReviewAction){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:timelineReviewAction, packetName:'timeline_packet', action:timelineReviewAction.dataset.timelineReviewAction});
+    if(!preflight.ok) return;
     await handleTimelineReviewAction(timelineReviewAction.dataset.timelineReviewId, timelineReviewAction.dataset.timelineReviewAction);
     return;
   }
@@ -9779,6 +9911,8 @@ drawerTray.addEventListener('click', async (event) => {
   if(projectReviewButton){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:projectReviewButton, packetName:'project_packet', action:'projectReviewUpdate'});
+    if(!preflight.ok) return;
     const update = findProjectSourceReviewUpdate(projectReviewButton.dataset.projectReviewUpdate);
     await openProjectSourceReview(update);
     return;
@@ -9787,6 +9921,8 @@ drawerTray.addEventListener('click', async (event) => {
   if(correspondenceAction){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceAction.dataset.correspondenceAction});
+    if(!preflight.ok) return;
     await handleCorrespondenceAction(correspondenceAction.dataset.correspondenceAction);
     return;
   }
@@ -9823,6 +9959,8 @@ drawerTray.addEventListener('click', async (event) => {
   if(valAction){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:valAction, packetName:'val_os_packet', action:valAction.dataset.valAction});
+    if(!preflight.ok) return;
     await handleValAction(valAction.dataset.valAction);
     return;
   }
@@ -9830,7 +9968,7 @@ drawerTray.addEventListener('click', async (event) => {
   if(drawerWorkflowAction){
     event.preventDefault();
     event.stopPropagation();
-    await handleWorkflowAction(drawerWorkflowAction.dataset.workflowAction);
+    await handleWorkflowAction(drawerWorkflowAction.dataset.workflowAction, drawerWorkflowAction);
     return;
   }
   const commitmentItem = event.target.closest('[data-commitment-item]');
@@ -9850,23 +9988,29 @@ drawerTray.addEventListener('click', async (event) => {
   }
   const relationshipProfileButton = event.target.closest('[data-relationship-open-profile]');
   if(relationshipProfileButton){
+    await ensureHearthClickPacket({node:relationshipProfileButton, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true});
     loadRelationshipDossier(relationshipProfileButton.dataset.relationshipOpenProfile);
     return;
   }
   const projectProfileButton = event.target.closest('[data-project-open-profile]');
   if(projectProfileButton){
+    await ensureHearthClickPacket({node:projectProfileButton, packetName:'project_packet', action:'project:open_profile', allowBlockedForInspection:true});
     loadProjectDossier(projectProfileButton.dataset.projectOpenProfile);
     return;
   }
   const relationshipAction = event.target.closest('[data-relationship-action]');
   if(relationshipAction){
     event.preventDefault();
+    const preflight = await ensureHearthClickPacket({node:relationshipAction, packetName:'relationship_packet', action:relationshipAction.dataset.relationshipAction});
+    if(!preflight.ok) return;
     handleRelationshipAction(relationshipAction.dataset.relationshipAction);
     return;
   }
   const projectAction = event.target.closest('[data-project-action]');
   if(projectAction){
     event.preventDefault();
+    const preflight = await ensureHearthClickPacket({node:projectAction, packetName:'project_packet', action:projectAction.dataset.projectAction});
+    if(!preflight.ok) return;
     handleProjectAction(projectAction.dataset.projectAction);
     return;
   }
@@ -9912,7 +10056,7 @@ fullCalendarPanel?.addEventListener('click', (event) => {
   if(actionButton){
     event.preventDefault();
     event.stopPropagation();
-    handleWorkflowAction(actionButton.dataset.workflowAction);
+    handleWorkflowAction(actionButton.dataset.workflowAction, actionButton);
   }
 });
 
@@ -9920,23 +10064,25 @@ scraperButtons.forEach((button) => {
   button.addEventListener('click', () => openScraper(button.dataset.openScraper));
 });
 
-function routeWorkspaceActionClick(event){
+async function routeWorkspaceActionClick(event){
   const homeActionButton = event.target.closest('[data-home-action]');
   if(homeActionButton){
     event.preventDefault();
     event.stopPropagation();
-    handleHomeRoomAction(homeActionButton.dataset.homeAction);
+    await handleHomeRoomAction(homeActionButton.dataset.homeAction, homeActionButton);
     return true;
   }
   const actionButton = event.target.closest('[data-workflow-action]');
   if(!actionButton) return false;
   event.preventDefault();
   event.stopPropagation();
-  handleWorkflowAction(actionButton.dataset.workflowAction);
+  await handleWorkflowAction(actionButton.dataset.workflowAction, actionButton);
   return true;
 }
 
-workspaceActions.addEventListener('click', routeWorkspaceActionClick);
+workspaceActions.addEventListener('click', (event) => {
+  routeWorkspaceActionClick(event);
+});
 document.addEventListener('input', (event) => {
   const field = event.target;
   if(!isValAutocorrectField(field)) return;
@@ -9973,7 +10119,7 @@ workspaceInputPanel.addEventListener('click', (event) => {
   if(actionButton){
     event.preventDefault();
     event.stopPropagation();
-    handleWorkflowAction(actionButton.dataset.workflowAction);
+    handleWorkflowAction(actionButton.dataset.workflowAction, actionButton);
     return;
   }
   const tool = event.target.closest('[data-workspace-tool]');
@@ -10043,11 +10189,11 @@ deskWorkspace.addEventListener('click', async (event) => {
     }
     return;
   }
-  if(routeWorkspaceActionClick(event)) return;
+  if(await routeWorkspaceActionClick(event)) return;
   const homeActionButton = event.target.closest('[data-home-action]');
   if(!homeActionButton) return;
   event.preventDefault();
-  handleHomeRoomAction(homeActionButton.dataset.homeAction);
+  handleHomeRoomAction(homeActionButton.dataset.homeAction, homeActionButton);
 });
 
 scraperPreviewList.addEventListener('click', async (event) => {

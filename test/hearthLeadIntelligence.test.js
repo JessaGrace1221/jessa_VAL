@@ -952,6 +952,28 @@ test('Hearth packet hydration audit distinguishes live providers from builder ga
   assert.match(server, /Packet is blocked until required context is available/);
 });
 
+test('Hearth client preflights action clicks with packet receipts before dispatch', () => {
+  [
+    /const hearthServerPacketNames = new Set/,
+    /async function ensureHearthClickPacket/,
+    /postJson\('\/api\/hearth\/build-packet'/,
+    /function hearthPacketSourceFromContext/,
+    /lastHearthPacketReceipt/,
+    /function showHearthPacketBlocked/,
+    /VAL needs the right context before this click/,
+    /handleWorkflowAction\(action, node = null\)/,
+    /handleHomeRoomAction\(action, node = null\)/,
+    /handlePrimaryAction\(button\)/,
+    /routeWorkspaceActionClick\(event\)/,
+    /handleWorkflowAction\(drawerWorkflowAction\.dataset\.workflowAction, drawerWorkflowAction\)/,
+    /handleHomeRoomAction\(homeActionButton\.dataset\.homeAction, homeActionButton\)/,
+    /ensureHearthClickPacket\(\{node:correspondenceAction, packetName:'email_packet'/,
+    /ensureHearthClickPacket\(\{node:relationshipAction, packetName:'relationship_packet'/,
+    /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
+    /allowBlockedForInspection:true/
+  ].forEach((pattern) => assert.match(hearthJs, pattern));
+});
+
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
   assert.match(hearthJs, /function primaryPortalPhrase/);
   assert.match(hearthJs, /function roomCardObservation/);
