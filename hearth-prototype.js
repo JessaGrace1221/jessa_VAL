@@ -164,6 +164,58 @@ let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connecti
 const homeRoomQueues = {velocity: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
+const hearthClickContractRegistry = [
+  {selector:'[data-state-option]', contract:'home.state_switch', packet:'home_state_packet', rule:'Prototype state display rule', actions:'Switch visual Home state', never:'Do not run intelligence or mutate memory'},
+  {selector:'.lean-button', contract:'home.why_today', packet:'home_presence_packet', rule:'Daily witness explanation rule', actions:'Open or close evidence panel', never:'Do not create tasks or drafts'},
+  {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
+  {selector:'.next-meeting-card,.calendar-tab,.agenda-item', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
+  {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
+  {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
+  {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
+  {selector:'[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer workspace rule', actions:'Open source, review evidence, source-specific action', never:'Do not blend unrelated Home items'},
+  {selector:'[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge rule', actions:'Open source, draft reply/create task for email, review evidence', never:'Do not open a different relationship/project than the card named'},
+  {selector:'[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
+  {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
+  {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
+  {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
+  {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
+  {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open file, Co-Work, ask priority, show alternatives, review source learning', never:'Do not create or mutate project records without explicit flow'},
+  {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
+  {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Co-Work, review, prepare draft, tighten draft, send packet', never:'Do not send directly from drawer click'},
+  {selector:'.commitment-drawer-link,[data-commitment-item],[data-commitment-filter],[data-commitment-action]', contract:'drawer.commitments', packet:'commitment_packet', rule:'Commitment observer/task support rules', actions:'Co-Work, draft email, create task, schedule, status, show source', never:'Do not send; status changes need visible user action'},
+  {selector:'.document-drawer-link,[data-document-item],[data-document-action],[data-document-search],[data-document-relationship-filter],[data-document-project-filter]', contract:'drawer.documents', packet:'document_packet', rule:'Document observer/reference prompt suite', actions:'Co-Work, present, update, send packet, open source, link context', never:'Do not send or update live document without approval gate'},
+  {selector:'.source-drawer-link,[data-open-scraper],[data-preview-choice]', contract:'drawer.lead_intelligence', packet:'lead_intelligence_packet', rule:'Lead Intelligence scraper prompt suite', actions:'Run preview, approve/hold, import approved only', never:'Do not import unreviewed leads'},
+  {selector:'.val-drawer-link,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL OS / Teach VAL / connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
+  {selector:'[data-workflow-action]', contract:'shared.workflow_action', packet:'workflow_scoped_packet', rule:'handleWorkflowAction dispatch rule', actions:'Only workflow-specific actions', never:'Do not dispatch unknown workflow silently'},
+  {selector:'[data-workspace-tool],[data-workspace-file-input],[data-workspace-prompt-copy]', contract:'shared.workspace_tools', packet:'cowork_packet', rule:'Workspace input tool rule', actions:'Voice, upload, image request, prompt copy', never:'Do not transmit externally without approval'},
+  {selector:'.val-autocorrect button', contract:'shared.autocorrect', packet:'user_text_field_packet', rule:'Spelling suggestion rule', actions:'Replace misspelled word after click', never:'Do not silently rewrite'}
+];
+
+function applyHearthClickContracts(root = document){
+  hearthClickContractRegistry.forEach((entry) => {
+    root.querySelectorAll(entry.selector).forEach((node) => {
+      if(node.dataset.valClickContract) return;
+      node.dataset.valClickContract = entry.contract;
+      node.dataset.valVariablePacket = entry.packet;
+      node.dataset.valPromptRule = entry.rule;
+      node.dataset.valAllowedActions = entry.actions;
+      node.dataset.valNeverDo = entry.never;
+    });
+  });
+}
+
+function observeHearthClickContracts(){
+  applyHearthClickContracts(document);
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if(node.nodeType === 1) applyHearthClickContracts(node);
+      });
+    });
+  });
+  observer.observe(document.body, {childList:true, subtree:true});
+}
+
 const linkedinVisibilityItems = [
   {
     contact: 'Michele',
@@ -4926,6 +4978,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   scraperPreviewList.classList.remove('linkedin-preview-list');
   workspaceInputPanel.hidden = true;
   workspaceInputPanel.innerHTML = '';
+  applyHearthClickContracts(deskWorkspace);
 }
 
 function lensSequenceLabels(workspace = {}, roomName = ''){
@@ -5221,6 +5274,7 @@ function renderWorkspaceInput({label,placeholder,helper,mode,value = '', promptC
     helper ? '<small>' + escapeHtml(helper) + '</small>' : ''
   ].join('');
   enableValAutocorrect(workspaceInputPanel);
+  applyHearthClickContracts(workspaceInputPanel);
 }
 
 function activeWorkspaceTextarea(){
@@ -9903,20 +9957,6 @@ roomButtons.forEach((button) => {
 
 rooms.forEach((room) => {
   room.addEventListener('click', (event) => {
-    const itemButton = event.target.closest('[data-home-room-item]');
-    if(!itemButton) return;
-    openHomeItemWorkspaceFromButton(itemButton, event);
-  });
-});
-
-document.addEventListener('click', (event) => {
-  const itemButton = event.target.closest('[data-home-room-item]');
-  if(!itemButton) return;
-  openHomeItemWorkspaceFromButton(itemButton, event);
-}, true);
-
-rooms.forEach((room) => {
-  room.addEventListener('click', (event) => {
     if(event.target.closest('button')) return;
     openWorkspace(room.dataset.room);
   });
@@ -9931,6 +9971,7 @@ rooms.forEach((room) => {
 returnButton.addEventListener('click', closeWorkspace);
 
 enableValAutocorrect(document);
+observeHearthClickContracts();
 setState(hearth.dataset.state || 'quiet');
 hydrateHomePresence();
 hydrateCalendarPanel();

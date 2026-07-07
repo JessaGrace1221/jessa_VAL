@@ -23,6 +23,18 @@ Required fields:
 - `Never do`: actions or context blending this click must not perform.
 - `Receipt`: what the user should see after the click.
 
+Runtime enforcement:
+
+- Clickable elements are annotated by `hearthClickContractRegistry`.
+- Runtime attributes:
+  - `data-val-click-contract`
+  - `data-val-variable-packet`
+  - `data-val-prompt-rule`
+  - `data-val-allowed-actions`
+  - `data-val-never-do`
+- Dynamic controls are annotated through a `MutationObserver`.
+- Chrome audits can inspect these attributes before clicking.
+
 Global rule:
 
 - Do not send the whole registry into a click. Each click receives a packet.

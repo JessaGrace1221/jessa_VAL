@@ -776,6 +776,11 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
   for(const required of [
     'surface -> trigger -> variable packet -> prompt/rule -> source-of-source -> allowed actions -> never-do -> receipt',
+    'data-val-click-contract',
+    'data-val-variable-packet',
+    'data-val-prompt-rule',
+    'data-val-allowed-actions',
+    'data-val-never-do',
     'home_source_packet',
     'relationship_packet',
     'project_packet',
@@ -805,6 +810,17 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   ]){
     assert.ok(hearthClickContracts.includes(required), 'Missing Hearth click contract entry: ' + required);
   }
+  assert.match(hearthJs, /const hearthClickContractRegistry = \[/);
+  assert.match(hearthJs, /function applyHearthClickContracts/);
+  assert.match(hearthJs, /function observeHearthClickContracts/);
+  assert.match(hearthJs, /new MutationObserver/);
+  assert.match(hearthJs, /node\.dataset\.valClickContract = entry\.contract/);
+  assert.match(hearthJs, /node\.dataset\.valVariablePacket = entry\.packet/);
+  assert.match(hearthJs, /node\.dataset\.valPromptRule = entry\.rule/);
+  assert.match(hearthJs, /node\.dataset\.valAllowedActions = entry\.actions/);
+  assert.match(hearthJs, /node\.dataset\.valNeverDo = entry\.never/);
+  assert.match(hearthJs, /observeHearthClickContracts\(\)/);
+  assert.doesNotMatch(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
