@@ -171,6 +171,11 @@
       <button class="close-calendar-button" type="button">Close calendar</button>
       <p class="calendar-panel-kicker">Agenda book</p>
       <h2>Today</h2>
+      <div class="calendar-source-status" data-calendar-source-status>
+        <strong>Checking Google Calendar...</strong>
+        <span>VAL uses this connection for meeting prep, commitments, and daily rhythm.</span>
+        <button type="button" data-workflow-action="valConnections:google">Connect Google</button>
+      </div>
       <div class="agenda-list">
         <button class="agenda-item active" type="button">
           <span>2:30 PM</span>
@@ -247,7 +252,7 @@
             <button type="button" data-val-action="start_onboarding">Begin Witnessing Session</button>
             <button type="button" data-workflow-action="valWitnessingResume">Pick Up Where We Left Off</button>
             <button type="button" data-workflow-action="valWitnessingFresh">Start Fresh</button>
-            <button type="button" data-val-action="connections">Connect AI</button>
+            <button type="button" data-val-action="connections">Connect inbox/calendar</button>
           </div>
           <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
         </div>

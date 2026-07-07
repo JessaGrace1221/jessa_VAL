@@ -7,6 +7,8 @@ const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 const cleanDashboard=fs.readFileSync(path.join(root,'jessa-clean-dashboard.html'),'utf8');
 const cleanDashboardJs=fs.readFileSync(path.join(root,'jessa-clean-dashboard.js'),'utf8');
 
@@ -70,6 +72,12 @@ test('API Keys & Connections UI is exposed under settings navigation',()=>{
 });
 
 test('clean dashboard exposes Google connection as a first-run user action',()=>{
+  assert.match(server,/app\.get\('\/dashboard',\(req,res\)=>\{res\.set\('Cache-Control','no-store, max-age=0'\);res\.sendFile\(path\.join\(__dirname,'hearth-prototype\.html'\)\);\}\);/);
+  assert.match(server,/app\.get\('\/witnessing-dashboard'/);
+  assert.match(hearth,/Connect inbox\/calendar/);
+  assert.match(hearth,/data-calendar-source-status/);
+  assert.match(hearthJs,/\/api\/setup-health/);
+  assert.match(hearthJs,/href="\/auth\/google"/);
   assert.match(cleanDashboard,/Connect Google/);
   assert.match(cleanDashboard,/href="\/auth\/google"/);
   assert.match(cleanDashboard,/id="google-connection-status"/);

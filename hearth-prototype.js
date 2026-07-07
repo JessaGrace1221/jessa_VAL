@@ -135,6 +135,7 @@ const agendaItems = Array.from(document.querySelectorAll('.agenda-item'));
 const calendarTab = document.querySelector('.calendar-tab');
 const closeCalendarButton = document.querySelector('.close-calendar-button');
 const fullCalendarPanel = document.querySelector('#full-calendar-panel');
+const calendarSourceStatus = document.querySelector('[data-calendar-source-status]');
 const coworkNotebook = document.querySelector('.cowork-notebook');
 const teachPen = document.querySelector('.teach-pen');
 const linkedinWidget = document.querySelector('.linkedin-widget');
@@ -7793,22 +7794,34 @@ async function openValOsReviewWorkspace(){
 function openValConnectionsWorkspace(){
   setWorkspaceContent({
     lens: 'VAL Connections',
-    title: 'Review connections and permission boundaries.',
-    meaning: 'Connections are capabilities, not permission. VAL should make each source visible before using it for execution.',
+    title: 'Connect the sources VAL needs to work.',
+    meaning: 'This is where a user connects inbox, calendar, documents, and AI before expecting VAL to prepare real work.',
     understanding: [
-      'Email, calendar, CRM/GHL, Google Docs, GitHub, LinkedIn observers, document stores, and scrapers should each expose readiness and approval rules.',
-      'Missing connections should create next steps instead of silent failure.',
-      'External actions stay behind explicit approval gates unless the user enables automation for that action.'
+      'Google gives VAL Gmail, Calendar, Drive, and Docs context for meeting prep, relationship memory, commitments, and source-backed drafts.',
+      'OpenAI powers live Witnessing observations and Co-Work reasoning.',
+      'Connected sources give VAL evidence. External sends, CRM writes, calendar changes, posts, and durable memory still require explicit approval.'
     ],
-    recommendation: 'Teach the permission rule for each connected system, then connect only what the next layer of work actually needs.',
+    recommendation: 'For system testing, connect Google first, then confirm OpenAI is available, then return to Hearth and test calendar, inbox, documents, relationships, prepared work, and Witnessing.',
     actions: [{label:'Teach permission rule', workflow:'teach:extract'}, {label:'Review VAL OS here', workflow:'valOs:review'}, {label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL connections workspace'
   });
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
+    '<div class="val-connection-panel" data-google-connection-panel>',
+      '<span>Google inbox/calendar</span>',
+      '<p>Connect Google so VAL can read Gmail, Calendar, Drive, and Docs context inside your approval boundaries.</p>',
+      '<div class="val-source-status" data-google-connection-status>',
+        '<b>Checking Google connection...</b>',
+        '<small>VAL never displays Google tokens or secrets here.</small>',
+      '</div>',
+      '<div class="val-conversation-actions">',
+        '<a class="val-source-link" href="/auth/google">Connect Google</a>',
+        '<button type="button" data-workflow-action="valGoogle:refresh">Refresh status</button>',
+      '</div>',
+    '</div>',
     '<div class="val-connection-panel">',
-      '<span>AI connection for this local test</span>',
-      '<p>Paste an OpenAI API key here so the Witnessing Session can use the live observation model. This is held in server memory only and clears when the local server restarts.</p>',
+      '<span>AI reasoning</span>',
+      '<p>Confirm OpenAI is available so the Witnessing Session and Co-Work can use the live observation model.</p>',
       '<label>',
         '<b>OpenAI API key</b>',
         '<input type="password" data-openai-runtime-key placeholder="sk-..." autocomplete="off" />',
@@ -7824,8 +7837,45 @@ function openValConnectionsWorkspace(){
       '<p class="val-conversation-helper" data-openai-runtime-status>Not connected in this local server yet.</p>',
     '</div>'
   ].join('');
+  refreshGoogleConnectionStatus();
   refreshRuntimeOpenAIStatus();
   openWorkspaceShell('VAL connections workspace', {returnTarget:'val'});
+}
+
+async function refreshGoogleConnectionStatus(){
+  const status = workspaceInputPanel.querySelector('[data-google-connection-status]');
+  const link = workspaceInputPanel.querySelector('.val-source-link[href="/auth/google"]');
+  if(!status || !canUseApi) return;
+  try{
+    const data = await getJson('/api/setup-health');
+    const google = data.google || {};
+    const connected = !!google.connected;
+    status.classList.toggle('connected', connected);
+    status.classList.toggle('failed', !connected && !!google.error);
+    status.innerHTML = '<b>' + escapeHtml(connected ? 'Google is connected.' : (google.setupMessage || google.error || 'Google is not connected yet.')) + '</b>'
+      + '<small>' + escapeHtml(connected ? 'Now test Calendar, Executive Inbox, Documents, Relationships, and prepared work from Hearth.' : 'Click Connect Google to authorize Gmail, Calendar, Drive, and Docs.') + '</small>';
+    if(link) link.textContent = connected ? 'Reconnect Google' : 'Connect Google';
+  }catch(error){
+    status.classList.add('failed');
+    status.innerHTML = '<b>Could not check Google connection.</b><small>' + escapeHtml(error.message || 'Refresh and try again.') + '</small>';
+  }
+}
+
+async function refreshCalendarSourceStatus(){
+  if(!calendarSourceStatus || !canUseApi) return;
+  try{
+    const data = await getJson('/api/setup-health');
+    const google = data.google || {};
+    const connected = !!google.connected;
+    calendarSourceStatus.classList.toggle('connected', connected);
+    calendarSourceStatus.classList.toggle('failed', !connected && !!google.error);
+    calendarSourceStatus.innerHTML = '<strong>' + escapeHtml(connected ? 'Google Calendar is connected.' : 'Connect Google Calendar to test live meeting prep.') + '</strong>'
+      + '<span>' + escapeHtml(connected ? 'Use this panel to inspect calendar-driven prep, then test Timeline & Tasks from the drawers.' : (google.setupMessage || google.error || 'VAL needs Google authorization before live calendar context can be used.')) + '</span>'
+      + '<button type="button" data-workflow-action="valConnections:google">' + escapeHtml(connected ? 'Reconnect Google' : 'Connect Google') + '</button>';
+  }catch(error){
+    calendarSourceStatus.classList.add('failed');
+    calendarSourceStatus.innerHTML = '<strong>Could not check Google Calendar.</strong><span>' + escapeHtml(error.message || 'Try again from VAL connections.') + '</span><button type="button" data-workflow-action="valConnections:google">Open connections</button>';
+  }
 }
 
 async function refreshRuntimeOpenAIStatus(){
@@ -8226,6 +8276,15 @@ async function handleWorkflowAction(action){
   }
   if(command === 'valRuntimeOpenAI'){
     await saveRuntimeOpenAIConnection(type || 'save');
+    return;
+  }
+  if(command === 'valGoogle'){
+    await refreshGoogleConnectionStatus();
+    return;
+  }
+  if(command === 'valConnections'){
+    openValConnectionsWorkspace();
+    if(type === 'google') setTimeout(refreshGoogleConnectionStatus, 0);
     return;
   }
   if(command === 'cancel') openScraper(type, 'setup');
@@ -8709,6 +8768,7 @@ function openCalendarPanel(){
   hearth.classList.add('calendar-open');
   calendarTab.setAttribute('aria-expanded', 'true');
   fullCalendarPanel.setAttribute('aria-hidden', 'false');
+  refreshCalendarSourceStatus();
 }
 
 function closeCalendarPanel(){

@@ -881,7 +881,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /id="val-detail"/);
   assert.match(hearthHtml, /Witnessing Session/);
   assert.match(hearthHtml, /Begin Witnessing Session/);
-  assert.match(hearthHtml, /Connect AI/);
+  assert.match(hearthHtml, /Connect inbox\/calendar/);
+  assert.match(hearthHtml, /data-calendar-source-status/);
   assert.match(hearthHtml, /VAL begins with one question, not a setup checklist/);
   assert.match(hearthHtml, /Nothing leaves this session/);
   assert.match(hearthHtml, /data-val-live-status/);
@@ -894,6 +895,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /const valDrawerLink/);
   assert.match(hearthJs, /function restoreValWindow/);
   assert.match(hearthJs, /function handleValAction/);
+  assert.match(hearthJs, /function refreshGoogleConnectionStatus/);
+  assert.match(hearthJs, /function refreshCalendarSourceStatus/);
+  assert.match(hearthJs, /\/api\/setup-health/);
+  assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);
   assert.match(hearthJs, /async function openValWitnessingSession/);
   assert.match(hearthJs, /async function saveValWitnessingCard/);

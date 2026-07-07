@@ -6710,7 +6710,7 @@ app.get('/',async(req,res)=>{
   const user=await getSessionUser(req);
   if(!user) return res.type('html').send(loginHtml());
   res.set('Cache-Control','no-store, max-age=0');
-  return res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));
+  return res.sendFile(path.join(__dirname,'hearth-prototype.html'));
 });
 app.get('/api/health',(req,res)=>res.json(statusPayload()));
 app.get('/health',(req,res)=>res.json(statusPayload()));
@@ -8135,8 +8135,9 @@ app.get('/guide',(req,res)=>{
   });
 });
 app.use(express.static(__dirname));
-app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));});
+app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'hearth-prototype.html'));});
 app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
+app.get('/witnessing-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));});
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
