@@ -968,6 +968,9 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /postJson\('\/api\/teach-val\/onboarding\/start'/);
   assert.match(hearthJs, /'\/api\/teach-val\/onboarding\/' \+ encodeURIComponent\(sessionId\) \+ '\/imports\/' \+ encodeURIComponent\(spec\.category\)/);
   assert.match(hearthJs, /'\/api\/teach-val\/onboarding\/' \+ encodeURIComponent\(sessionId\) \+ '\/witnessing-cards\/' \+ encodeURIComponent\(card\.id\)/);
+  assert.match(server, /async function teachValWitnessingSessionIsComplete/);
+  assert.match(server, /witness_partnership_agreement/);
+  assert.match(server, /restoreJessaRealWitnessingSessionBackup\(\) \|\| existing/);
   assert.match(hearthJs, /valAiImportPromptCards/);
   assert.match(hearthJs, /ChatGPT \/ Claude import/);
   assert.match(hearthJs, /ai_history_import/);

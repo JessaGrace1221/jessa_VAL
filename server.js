@@ -3003,6 +3003,13 @@ async function getTeachValWitnessingResumeSession(){
     })[0];
   return teachValSessionRow(found);
 }
+async function teachValWitnessingSessionIsComplete(session){
+  if(!session?.id) return false;
+  const state=normalizeTeachValState(session.state||{});
+  const imports=await listTeachValImports(session.id).catch(()=>[]);
+  const hasFinalCard=imports.some(i=>String(i.category||'')==='witness_partnership_agreement' && !/Needs Clarification/i.test(String(i.status||'')));
+  return state.stage==='complete' && hasFinalCard;
+}
 async function restoreJessaRealWitnessingSessionBackup(){
   const backupPath=path.join(DATA_DIR,'jessa-real-witnessing-session-2026-07-06.json');
   if(!fs.existsSync(backupPath)) return null;
@@ -6981,7 +6988,9 @@ app.post('/api/teach-val/onboarding/start',async(req,res)=>{
     if(req.body.resume!==false){
       if(req.body.resumeWitnessing){
         existing=await getTeachValWitnessingResumeSession();
-        if(!existing) existing=await restoreJessaRealWitnessingSessionBackup();
+        if(!existing || !(await teachValWitnessingSessionIsComplete(existing))){
+          existing=await restoreJessaRealWitnessingSessionBackup() || existing;
+        }
       }
       existing=existing||await getTeachValSession(req.body.sessionId||'');
     }
