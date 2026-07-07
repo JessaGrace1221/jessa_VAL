@@ -22106,8 +22106,14 @@ function hearthSelectHomeCard(briefing={},source={}){
   return cards.find(card=>id&&[card.id,card.source_id,card.sourceId,card.target?.id].filter(Boolean).map(String).includes(id))||cards[0]||null;
 }
 
-async function buildHearthPacketContext({packetName='',source={},click={} }={}){
-  const [briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems]=await Promise.all([
+let hearthPacketBaseContextCache = null;
+let hearthPacketBaseContextInflight = null;
+
+async function loadHearthPacketBaseContext(){
+  const now=Date.now();
+  if(hearthPacketBaseContextCache&&now-hearthPacketBaseContextCache.loadedAt<15000)return hearthPacketBaseContextCache.value;
+  if(hearthPacketBaseContextInflight)return hearthPacketBaseContextInflight;
+  hearthPacketBaseContextInflight=Promise.all([
     buildExecutiveBriefing().catch(error=>({ok:false,error:error.message})),
     listTeachValCoreMemory({limit:120}).catch(()=>[]),
     listDrafts('').catch(()=>[]),
@@ -22116,7 +22122,20 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
     listRelationshipProfiles({limit:120}).catch(()=>[]),
     listProjectProfiles({limit:120}).catch(()=>[]),
     listDashboardEvidenceItems({limit:180}).catch(()=>[])
-  ]);
+  ]).then(([briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems])=>{
+    const value={briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems};
+    hearthPacketBaseContextCache={loadedAt:Date.now(),value};
+    hearthPacketBaseContextInflight=null;
+    return value;
+  }).catch(error=>{
+    hearthPacketBaseContextInflight=null;
+    throw error;
+  });
+  return hearthPacketBaseContextInflight;
+}
+
+async function buildHearthPacketContext({packetName='',source={},click={} }={}){
+  const {briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems}=await loadHearthPacketBaseContext();
   const homeCard=hearthSelectHomeCard(briefing||{},source||{});
   const relationshipId=source.relationshipId||source.contactId||source.personId||source.targetId||source.id||'';
   const projectId=source.projectId||source.targetId||source.id||'';
@@ -22126,8 +22145,8 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
   const openCommitments=Array.isArray(commitments.commitments)?commitments.commitments:[];
   const documentRows=Array.isArray(documents.documents)?documents.documents:[];
   const connectionReadiness={
-    google:await getGoogleConnectionStatus([]).catch(error=>({connected:false,error:error.message})),
-    microsoft:{connected:!!(await getMicrosoftToken().catch(()=>''))},
+    google:{status:'checked_elsewhere',source:'Google connection status helpers'},
+    microsoft:{status:'checked_elsewhere',source:'Microsoft connection status helpers'},
     ghl:{configured:!!GHL_API_KEY}
   };
   return {
@@ -22169,7 +22188,9 @@ async function buildHearthPacket({packetName='',source={},click={},mode='preflig
   const providerPartials=variables.filter(item=>item.providerStatus==='partial').map(item=>item.variable);
   const missingRequired=variables.filter(item=>!item.present).map(item=>item.variable);
   const actionGated=HEARTH_PACKET_ACTION_GATED.has(packetName);
-  const status=providerGaps.length||missingRequired.length&&actionGated?'blocked':(providerPartials.length||missingRequired.length?'partial':'ready');
+  const blocked=providerGaps.length>0||(missingRequired.length>0&&actionGated);
+  const partial=providerPartials.length>0||missingRequired.length>0;
+  const status=blocked?'blocked':(partial?'partial':'ready');
   return {
     ok:status!=='blocked',
     status,
