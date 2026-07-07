@@ -22040,6 +22040,13 @@ async function buildHearthPacketHydrationAudit(){
       ...(briefing?.readyForYou||[])
     ].filter(Boolean).length
   };
+  const liveDataWarnings=[
+    liveCounts.projects===0&&{scope:'project_packet',status:'no_live_project_profiles',message:'Project packet hydrators exist, but no project profiles are currently available in production.'},
+    liveCounts.commitments===0&&{scope:'commitment_packet',status:'no_live_commitments',message:'Commitment packet hydrators exist, but no transcript/email-derived commitments are currently available in production.'},
+    liveCounts.relationships===0&&{scope:'relationship_packet',status:'no_live_relationship_profiles',message:'Relationship packet hydrators exist, but no relationship profiles are currently available.'},
+    liveCounts.teachValMemory===0&&{scope:'witnessing_root',status:'no_teach_val_memory',message:'Witnessing root requires Teach VAL memory, but none is currently available.'},
+    liveCounts.homeCards===0&&{scope:'home_source_packet',status:'no_live_home_cards',message:'Home source packet requires Executive Briefing cards, but none are currently available.'}
+  ].filter(Boolean);
   const packets=Object.fromEntries(Object.entries(HEARTH_PACKET_HYDRATION_REQUIREMENTS).map(([packet,requirements])=>{
     const variables=requirements.map(([variable,provider,source])=>({
       variable,
@@ -22061,6 +22068,7 @@ async function buildHearthPacketHydrationAudit(){
     generatedAt:new Date().toISOString(),
     purpose:'Audit whether Hearth packet variables have real hydration providers, not just click-contract names.',
     liveCounts,
+    liveDataWarnings,
     providers,
     packets,
     nextBuilderGap:'Add a unified Hearth packet builder that assembles these variables per click and fails closed when required providers are unavailable.'

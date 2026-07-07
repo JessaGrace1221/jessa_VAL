@@ -11,6 +11,7 @@ The packet completeness contract says what every click must know. The hydration 
 The endpoint returns:
 
 - `liveCounts`: current counts from real services such as Executive Briefing, relationship profiles, project profiles, commitments, documents, drafts, and Teach VAL memory.
+- `liveDataWarnings`: warnings when a provider exists but the current production dataset has no data to hydrate for that scope.
 - `providers`: each source provider and whether it is `available`, `partial`, or `gap`.
 - `packets`: each packet, each required variable, its provider, route/source, and status.
 - `nextBuilderGap`: the next architecture step.
