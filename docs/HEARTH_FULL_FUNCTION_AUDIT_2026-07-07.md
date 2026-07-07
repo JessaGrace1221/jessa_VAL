@@ -69,5 +69,4 @@ Remaining caution:
 - `node --check server.js`
 - `node --test test/hearthLeadIntelligence.test.js`
 - Chrome local Hearth click audit with screenshot verification.
-- Railway deployment `73f5d5d1-ca86-47dc-898c-056dd0372abf` on commit `99bd5bb` succeeded before the second fix. The Lead Intelligence CSS fix still needs the next push/deploy.
-
+- Railway deployment `ed960f98-9b05-47ed-9e10-81e4aad57745` on commit `33e01f5` succeeded with the Lead Intelligence drawer isolation fix.
