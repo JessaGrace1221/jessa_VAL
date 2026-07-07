@@ -2896,19 +2896,21 @@ async function handleDocumentAction(action){
       if(documentStatus) documentStatus.textContent = 'The local VAL server is needed to send through the shared send gate. Nothing was sent.';
       return;
     }
-    if(documentStatus) documentStatus.textContent = 'Final send approval captured. VAL is sending this document through the shared send gate...';
-    let executed;
+    if(documentStatus) documentStatus.textContent = 'Preparing a send packet for review. Nothing is sent from this drawer click.';
+    let packetResult;
     try{
-      executed = await postJson('/api/val/external-actions/email-send-now', payload);
+      packetResult = await postJson('/api/val/external-actions/email-send-packet', payload);
     }catch(error){
-      executed = error.data || {ok:false,error:error.message};
+      packetResult = error.data || {ok:false,error:error.message};
     }
-    if(documentStatus) documentStatus.textContent = correspondenceExecutionMessage(executed);
-    if(executed.executed){
-      activeDocumentItem = {...item, status:'sent'};
+    if(packetResult.ok && packetResult.packet){
+      if(documentStatus) documentStatus.textContent = 'Send packet prepared for review. Nothing was sent; use the external-action approval gate for final confirmation.';
+      activeDocumentItem = {...item, status:'send_packet_ready'};
       currentDocumentItems = currentDocumentItems.map((row) => row.id === item.id ? activeDocumentItem : row);
       renderDocumentBrief(activeDocumentItem);
+      return;
     }
+    if(documentStatus) documentStatus.textContent = 'Send packet was not prepared: ' + (packetResult.error || 'missing send context.');
   }
 }
 
@@ -3159,19 +3161,20 @@ async function handleCorrespondenceAction(action){
         showCorrespondenceLocalBoundary('send', item);
         return;
       }
-      if(correspondenceSafety) correspondenceSafety.textContent = 'Final send approval captured. VAL is sending this exact draft through the shared send gate...';
-      let executed;
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a send packet for review. Nothing is sent from this drawer click.';
+      let packetResult;
       try{
-        executed = await postJson('/api/val/external-actions/email-send-now', payload);
+        packetResult = await postJson('/api/val/external-actions/email-send-packet', payload);
       }catch(executeError){
-        executed = executeError.data || {ok:false,error:executeError.message};
+        packetResult = executeError.data || {ok:false,error:executeError.message};
       }
-      if(correspondenceSafety) correspondenceSafety.textContent = correspondenceExecutionMessage(executed);
-      if(executed.executed){
-        setCorrespondenceField('status', 'Sent');
-        setCorrespondenceField('needs', 'Sent with explicit approval from this Executive Inbox drawer through the shared send gate.');
+      if(packetResult.ok && packetResult.packet){
+        if(correspondenceSafety) correspondenceSafety.textContent = 'Send packet prepared for review. Nothing was sent; use the external-action approval gate for final confirmation.';
+        setCorrespondenceField('status', 'Send packet ready');
+        setCorrespondenceField('needs', 'A send packet is ready for the external-action approval gate. No email was sent from this drawer.');
         return;
       }
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Send packet was not prepared: ' + (packetResult.error || 'missing send context.');
     }
   }catch(error){
     if(correspondenceSafety) correspondenceSafety.textContent = 'Correspondence action stayed local: ' + error.message;

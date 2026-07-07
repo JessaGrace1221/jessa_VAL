@@ -377,9 +377,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /represents Jessa externally/);
   assert.match(hearthJs, /function sendPacketForDraft/);
   assert.match(hearthJs, /function correspondenceSendPayload/);
-  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-now/);
+  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-packet/);
   assert.match(hearthJs, /hearth_executive_inbox_drawer/);
-  assert.match(hearthJs, /Sent with explicit approval from this Executive Inbox drawer through the shared send gate/);
+  assert.match(hearthJs, /Nothing was sent; use the external-action approval gate for final confirmation/);
   assert.match(hearthJs, /live conversation id/);
   assert.match(hearthJs, /draft id/);
   assert.match(hearthJs, /Back to Executive Inbox drawer/);
@@ -458,7 +458,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /action === 'cowork_document'/);
   assert.match(hearthJs, /function documentSendPayload/);
   assert.match(hearthJs, /hearth_documents_drawer/);
-  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-now/);
+  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-packet/);
   assert.match(hearthJs, /function hydrateRelationshipDocuments/);
   assert.match(hearthJs, /function hydrateProjectDocuments/);
   assert.match(hearthJs, /\/api\/val\/documents\/reference\?relationship=/);
