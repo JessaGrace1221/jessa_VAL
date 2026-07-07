@@ -7,6 +7,8 @@ const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const cleanDashboard=fs.readFileSync(path.join(root,'jessa-clean-dashboard.html'),'utf8');
+const cleanDashboardJs=fs.readFileSync(path.join(root,'jessa-clean-dashboard.js'),'utf8');
 
 test('tenant API key vault has provider registry and encrypted storage tables',()=>{
   assert.match(server,/TENANT_API_KEY_PROVIDER_REGISTRY/);
@@ -47,7 +49,7 @@ test('runtime resolver prefers tenant vault and blocks silent platform fallback'
   assert.match(server,/async function resolveIntegrationSecret/);
   assert.match(server,/tenantApiKeyProvider\(provider\)/);
   assert.match(server,/platformKeyFallbackAllowed\(\) \? \(fallback \|\| ''\) : ''/);
-  assert.match(server,/async function resolveOpenAIKey\(\)\{ return resolveIntegrationSecret\('openai','api_key',OPENAI_KEY\); \}/);
+  assert.match(server,/async function resolveOpenAIKey\(\)\{ return RUNTIME_OPENAI_KEY \|\| resolveIntegrationSecret\('openai','api_key',OPENAI_KEY\); \}/);
   assert.match(server,/async function resolveAnthropicKey\(\)\{ return resolveIntegrationSecret\('anthropic','api_key',ANTHROPIC_KEY\); \}/);
 });
 
@@ -67,3 +69,10 @@ test('API Keys & Connections UI is exposed under settings navigation',()=>{
   assert.doesNotMatch(dashboard,/Full keys never show after save[\s\S]*value="\$\{/);
 });
 
+test('clean dashboard exposes Google connection as a first-run user action',()=>{
+  assert.match(cleanDashboard,/Connect Google/);
+  assert.match(cleanDashboard,/href="\/auth\/google"/);
+  assert.match(cleanDashboard,/id="google-connection-status"/);
+  assert.match(cleanDashboardJs,/\/api\/setup-health/);
+  assert.match(cleanDashboardJs,/Reconnect Google/);
+});

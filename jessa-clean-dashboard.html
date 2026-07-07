@@ -14,7 +14,7 @@
       </button>
       <p class="eyebrow">Jessa VAL</p>
       <h1>Partnership first. Everything else after trust.</h1>
-      <p class="hero-copy">This dashboard is intentionally quiet. The only imported experience is the Witnessing Session.</p>
+      <p class="hero-copy">This dashboard is intentionally quiet. Begin with the Witnessing Session, then connect Google when VAL is ready to see your real calendar and inbox context.</p>
     </header>
 
     <nav class="primary-actions" aria-label="Jessa VAL actions">
@@ -22,6 +22,11 @@
         <span>01</span>
         <strong>Witnessing Session</strong>
         <small>Begin or continue the Partnership Protocol.</small>
+      </button>
+      <button class="action-card" type="button" data-panel="connections">
+        <span>02</span>
+        <strong>Connect Google</strong>
+        <small>Authorize Gmail, Calendar, Drive, and Docs.</small>
       </button>
     </nav>
 
@@ -36,6 +41,27 @@
           <p>Open the current Partnership Protocol experience. This is the one carried-over function in the clean Jessa VAL dashboard.</p>
           <div class="button-row">
             <a class="primary-button" href="./hearth-prototype.html#valWitnessingResume">Open Witnessing Session</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel" id="connections-panel" aria-label="Google Connection">
+      <div class="panel-heading">
+        <p class="eyebrow">Connections</p>
+        <h2>Let VAL see the sources you choose.</h2>
+      </div>
+      <div class="quiet-grid">
+        <article class="quiet-card">
+          <h3>Google workspace</h3>
+          <p>Connect Google so VAL can read Gmail, Calendar, Drive, and Docs context inside your approval boundaries.</p>
+          <div class="connection-status" id="google-connection-status">
+            <span class="status-dot"></span>
+            <strong>Checking Google connection...</strong>
+            <small>VAL never displays tokens or secrets here.</small>
+          </div>
+          <div class="button-row">
+            <a class="primary-button" id="google-connect-link" href="/auth/google">Connect Google</a>
           </div>
         </article>
       </div>

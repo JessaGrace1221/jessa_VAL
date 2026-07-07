@@ -47,7 +47,7 @@ a{color:inherit}
 h1,h2,h3{font-family:Georgia, "Times New Roman", serif;font-weight:500;letter-spacing:0}
 h1{max-width:900px;margin:0;font-size:clamp(3.2rem,8vw,6.8rem);line-height:.94}
 .hero-copy{max-width:690px;margin:22px 0 0;color:var(--muted);font-size:1.1rem;line-height:1.65}
-.primary-actions{display:grid;grid-template-columns:minmax(0,420px);gap:14px;margin:28px 0 30px}
+.primary-actions{display:grid;grid-template-columns:repeat(2,minmax(0,420px));gap:14px;margin:28px 0 30px}
 button,a.primary-button,a.ghost-button{font:inherit}
 .action-card{
   min-height:132px;
@@ -79,6 +79,27 @@ h2{margin:0;font-size:clamp(2.2rem,5vw,4.3rem);line-height:1.05}
 }
 .quiet-card h3{margin:0 0 12px;font-size:1.65rem}
 .quiet-card p{color:var(--muted);line-height:1.62;margin:0 0 18px}
+.connection-status{
+  display:grid;
+  grid-template-columns:12px minmax(0,1fr);
+  gap:4px 10px;
+  align-items:center;
+  margin:0 0 18px;
+  padding:13px 14px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:rgba(255,255,252,.72);
+}
+.connection-status .status-dot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--rose);
+}
+.connection-status.connected .status-dot{background:var(--green)}
+.connection-status.failed .status-dot{background:#9b2f2f}
+.connection-status strong{font-size:.98rem}
+.connection-status small{grid-column:2;color:var(--muted);font-size:.88rem;line-height:1.4}
 .button-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .primary-button,.ghost-button{
   display:inline-flex;
