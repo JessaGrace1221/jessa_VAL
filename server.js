@@ -89,6 +89,7 @@ const CLIENT_CONFIG = {
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
 const DEMO_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_DEMO_MODE || ''));
+const PUBLIC_HEARTH_TEST_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_PUBLIC_HEARTH_TEST_MODE || ''));
 const IS_PRODUCTION = process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
 const VAL_SIGNUP_URL = process.env.VAL_SIGNUP_URL || 'https://graceintelligence.com/val';
 const GHL_KEY = process.env.GHL_KEY || process.env.GHL_API_KEY;
@@ -1934,6 +1935,20 @@ function ownerLoginEmails(){
 }
 function isOwnerLoginEmail(email){
   return ownerLoginEmails().includes(String(email||'').trim().toLowerCase());
+}
+async function publicHearthTestUser(){
+  const ownerEmails=ownerLoginEmails();
+  for(const email of ownerEmails){
+    const user=await findUserByEmail(email)||await createOwnerUserForEmail(email);
+    if(user)return user;
+  }
+  return {
+    id:VAL_USER_ID,
+    email:String(process.env.ADMIN_EMAIL||process.env.VAL_OWNER_EMAIL||'public-hearth-test@graceintelligence.local').trim().toLowerCase(),
+    name:process.env.ADMIN_NAME||CLIENT_CONFIG.clientName||'VAL Public Hearth Test',
+    role:'owner',
+    publicHearthTest:true
+  };
 }
 async function createOwnerUserForEmail(email){
   const normalized=String(email||'').trim().toLowerCase();
@@ -6652,6 +6667,11 @@ async function requireAuth(req,res,next){
     return requestContext.run({user,demo:true,demoState:state},()=>next());
   }
   await valDbReady;
+  if(PUBLIC_HEARTH_TEST_MODE){
+    const user=await publicHearthTestUser();
+    req.valUser=user;
+    return requestContext.run({user,publicHearthTest:true},()=>next());
+  }
   const user=await getSessionUser(req);
   if(user){req.valUser=user;return requestContext.run({user},()=>next());}
   if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
@@ -6699,7 +6719,8 @@ function statusPayload(){
       leadOpportunityStage:GHL_OPPORTUNITY_STAGE_NAME,
       rocketReachEnrichBatchMax:ROCKETREACH_ENRICH_BATCH_MAX,
       leadContactValidation:'strict-v2',
-      demoMode:DEMO_MODE
+      demoMode:DEMO_MODE,
+      publicHearthTestMode:PUBLIC_HEARTH_TEST_MODE
     }
   };
 }
@@ -6707,6 +6728,10 @@ function statusPayload(){
 app.get('/',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
   await valDbReady;
+  if(PUBLIC_HEARTH_TEST_MODE){
+    res.set('Cache-Control','no-store, max-age=0');
+    return res.sendFile(path.join(__dirname,'hearth-prototype.html'));
+  }
   const user=await getSessionUser(req);
   if(!user) return res.type('html').send(loginHtml());
   res.set('Cache-Control','no-store, max-age=0');
@@ -6716,6 +6741,7 @@ app.get('/api/health',(req,res)=>res.json(statusPayload()));
 app.get('/health',(req,res)=>res.json(statusPayload()));
 app.get('/login',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
+  if(PUBLIC_HEARTH_TEST_MODE) return res.redirect('/dashboard');
   await valDbReady;
   const user=await getSessionUser(req);
   if(user) return res.redirect('/dashboard');
