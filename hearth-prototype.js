@@ -5024,6 +5024,7 @@ function renderContextPortalText(text, workspace = {}, allowFallback = true){
       '</button>' +
       escapeHtml(value.slice(index + phrase.length));
   }
+  if(profile.key === 'email') return escapeHtml(value);
   if(!allowFallback) return escapeHtml(value);
   return escapeHtml(value) +
     ' <button type="button" class="context-portal inline-context-portal" data-home-action="open_source">' +

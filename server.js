@@ -15926,7 +15926,28 @@ function dashboardEvidenceTargetMeta(ids=[],evidenceById=new Map()){
     const evidence=evidenceById.get(String(id));
     if(!evidence)continue;
     const entities=evidenceJsonValue(evidence.entitiesJson||evidence.entities_json,{})||{};
+    const metadata=evidenceJsonValue(evidence.metadataJson||evidence.metadata_json||evidence.metadata,{})||{};
     const participants=evidenceJsonValue(evidence.participantsJson||evidence.participants_json,[])||[];
+    const sourceType=String(evidence.sourceType||evidence.source_type||'').toLowerCase();
+    if(!out.email&&/\b(gmail|outlook|email)\b/.test(sourceType)){
+      const from=entities.from&&typeof entities.from==='object'?entities.from:{};
+      const participant=Array.isArray(participants)?participants.find(p=>p.email||p.name||p.displayName)||participants[0]:null;
+      out.email={
+        provider:metadata.provider||entities.provider||sourceType.replace(/_?email$/,'')||'email',
+        messageId:metadata.messageId||metadata.message_id||evidence.sourceId||evidence.source_id||'',
+        threadId:metadata.threadId||metadata.thread_id||entities.threadId||entities.thread_id||'',
+        subject:dashboardShortText(evidence.title||'', '', 160),
+        snippet:dashboardShortText(evidence.summary||evidence.rawText||evidence.raw_text||'', '', 240),
+        reason:dashboardShortText(evidence.summary||'', '', 240),
+        recommendedAction:entities.recommendedAction||entities.recommended_action||'',
+        webLink:evidence.sourceUrl||evidence.source_url||'',
+        from:{
+          name:from.name||participant?.name||participant?.displayName||'',
+          email:from.email||participant?.email||''
+        }
+      };
+      [out.email.subject,out.email.from.name,out.email.from.email].filter(Boolean).forEach(value=>out.portalPhrases.push(dashboardShortText(value,'',80)));
+    }
     out.opportunityId=out.opportunityId||entities.opportunityId||entities.opportunity_id||'';
     out.projectId=out.projectId||entities.projectId||entities.project_id||entities.project||entities.projectName||entities.project_name||'';
     [entities.opportunityName,entities.opportunity_name,entities.project,entities.projectName,entities.project_name,evidence.title].filter(Boolean).forEach(value=>out.portalPhrases.push(dashboardShortText(value,'',80)));
@@ -15942,6 +15963,7 @@ function dashboardTargetFromSignal(signal={},fallbackTarget={},evidenceById=new 
   const sourceEvidenceIds=Array.isArray(signal.sourceEvidenceIds)?signal.sourceEvidenceIds:(Array.isArray(signal.evidenceIds)?signal.evidenceIds:[]);
   const metadata=evidenceJsonValue(signal.metadataJson||signal.metadata,{})||{};
   const evidenceMeta=dashboardEvidenceTargetMeta(sourceEvidenceIds,evidenceById);
+  if(evidenceMeta.email?.messageId)return {type:'email',id:String(evidenceMeta.email.messageId),messageId:String(evidenceMeta.email.messageId),threadId:String(evidenceMeta.email.threadId||''),label:evidenceMeta.email.subject||'Email'};
   const opportunityId=signal.opportunityId||metadata.opportunityId||metadata.opportunity_id||evidenceMeta.opportunityId||'';
   if(opportunityId)return {type:'opportunity',id:String(opportunityId)};
   const draftId=signal.draftId||metadata.draftId||metadata.draft_id||'';
@@ -15956,6 +15978,8 @@ function dashboardConclusionFromMove(move={},profilesById=new Map(),evidenceById
   const rawTitle=dashboardCleanText(move.title||'');
   const rawWhy=dashboardCleanText(move.whatChanged||move.why||'');
   const type=move.moveType||'wait';
+  const evidenceIds=move.sourceEvidenceIds||[];
+  const targetMeta=dashboardEvidenceTargetMeta(evidenceIds,evidenceById);
   let verb='Review';
   if(type==='draft_reply')verb='Draft reply';
   else if(type==='send_follow_up'||type==='close_open_loop')verb='Close loop';
@@ -15965,14 +15989,25 @@ function dashboardConclusionFromMove(move={},profilesById=new Map(),evidenceById
   else if(type==='send_document')verb='Send document';
   else if(type==='nurture_relationship')verb='Nurture';
   const profile=profilesById.get(move.personId)||profilesById.get(move.projectId)||null;
-  const subject=profile?.displayName||dashboardCleanText(rawTitle.replace(/^(Review risk|Prepare opportunity move|Close loop|Draft reply|Prepare answer|Review signal)\s*:\s*/i,''),rawWhy);
+  const subject=targetMeta.email?.subject||profile?.displayName||dashboardCleanText(rawTitle.replace(/^(Review risk|Prepare opportunity move|Close loop|Draft reply|Prepare answer|Review signal)\s*:\s*/i,''),rawWhy);
   const title=dashboardShortText(`${verb}: ${subject}`, rawTitle||'Review this signal', 92);
   const why=dashboardShortText(rawWhy||move.why||`VAL found a ${type.replace(/_/g,' ')} signal.`, '', 220);
   const impact=move.priorityBand==='top_recommended'?'Highest':move.priorityBand==='also_important'?'Important':move.priorityBand==='watching'?'Watching':'Quiet';
-  const evidenceIds=move.sourceEvidenceIds||[];
   const target=dashboardTargetFromSignal(move,{type:profile?.profileType||'move',id:profile?.id||profile?.profileKey||move.id},evidenceById);
-  const targetMeta=dashboardEvidenceTargetMeta(evidenceIds,evidenceById);
-  return {...move,...targetMeta,title,why,summary:why,impact,target,evidenceIds,observationIds:move.sourceObservationIds||[]};
+  const emailFields=targetMeta.email?{
+    provider:targetMeta.email.provider,
+    messageId:targetMeta.email.messageId,
+    threadId:targetMeta.email.threadId,
+    subject:targetMeta.email.subject,
+    snippet:targetMeta.email.snippet,
+    bodyPreview:targetMeta.email.snippet,
+    reason:targetMeta.email.reason||why,
+    recommendedAction:targetMeta.email.recommendedAction,
+    from:targetMeta.email.from,
+    webLink:targetMeta.email.webLink
+  }:{};
+  const {email,...restTargetMeta}=targetMeta;
+  return {...move,...restTargetMeta,...emailFields,title,why,summary:why,impact,target,evidenceIds,observationIds:move.sourceObservationIds||[]};
 }
 function dashboardDraftQuality(draft={}){
   const body=String(draft.body||''),subject=String(draft.subject||'');

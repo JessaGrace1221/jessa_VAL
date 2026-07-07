@@ -688,6 +688,10 @@ test('Hearth keeps email-derived Home judgments in Executive Inbox action langua
   assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'email_intelligence'/);
   assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'Open email'/);
   assert.match(hearthJs, /Nothing is sent, archived, or changed in Gmail from this click/);
+  assert.match(hearthJs, /if\(profile\.key === 'email'\) return escapeHtml\(value\)/);
+  assert.match(server, /if\(evidenceMeta\.email\?\.messageId\)return \{type:'email'/);
+  assert.match(server, /const subject=targetMeta\.email\?\.subject\|\|profile\?\.displayName/);
+  assert.match(server, /messageId:targetMeta\.email\.messageId/);
 });
 
 test('Hearth source actions open the most specific executive surface available', () => {
