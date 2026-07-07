@@ -22147,7 +22147,7 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
   const connectionReadiness={
     google:{status:'checked_elsewhere',source:'Google connection status helpers'},
     microsoft:{status:'checked_elsewhere',source:'Microsoft connection status helpers'},
-    ghl:{configured:!!GHL_API_KEY}
+    ghl:{configured:!!GHL_KEY}
   };
   return {
     event:{type:click.action||click.workflowAction||click.homeAction||source.action||''},
