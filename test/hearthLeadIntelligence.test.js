@@ -770,7 +770,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=autocorrect-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=click-contracts-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -811,6 +811,7 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
     assert.ok(hearthClickContracts.includes(required), 'Missing Hearth click contract entry: ' + required);
   }
   assert.match(hearthJs, /const hearthClickContractRegistry = \[/);
+  assert.match(hearthJs, /\.living-room \.room-action\[data-open-room="alignment"\]/);
   assert.match(hearthJs, /function applyHearthClickContracts/);
   assert.match(hearthJs, /function observeHearthClickContracts/);
   assert.match(hearthJs, /new MutationObserver/);
