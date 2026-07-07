@@ -22300,6 +22300,22 @@ function hearthSelectHomeCard(briefing={},source={}){
   return cards.find(card=>id&&[card.id,card.source_id,card.sourceId,card.target?.id].filter(Boolean).map(String).includes(id))||cards[0]||null;
 }
 
+function hearthSourceRefsForItem(item={},source={}){
+  const metadata=item?.metadata||item?.metadataJson||{};
+  const refs=item?.sourceRefs||item?.source_refs||item?.sourceRefsJson||metadata.sourceRefs||metadata.source_refs||item?.evidence||[];
+  if(Array.isArray(refs)&&refs.length)return refs;
+  const sourceType=source.sourceType||source.source_type||item?.sourceType||item?.source_type||metadata.sourceType||metadata.source_type||item?.type||'source';
+  const sourceId=source.sourceId||source.source_id||item?.sourceId||item?.source_id||metadata.sourceId||metadata.source_id||item?.messageId||metadata.messageId||item?.threadId||metadata.threadId||item?.id||'';
+  const label=source.sourceLabel||item?.title||item?.subject||item?.name||item?.summary||'Selected Home source';
+  if(!sourceId&&!label)return [];
+  return [{
+    source_type:sourceType,
+    source_id:sourceId,
+    quote_or_summary:label,
+    confidence:item?.confidence??null
+  }];
+}
+
 let hearthPacketBaseContextCache = null;
 let hearthPacketBaseContextInflight = null;
 
@@ -22342,14 +22358,22 @@ async function loadHearthPacketBaseContext(){
 
 async function buildHearthPacketContext({packetName='',source={},click={} }={}){
   const {briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems}=await loadHearthPacketBaseContext();
-  const homeCard=hearthSelectHomeCard(briefing||{},source||{});
+  const requestedHomeCard=source?.homeCard&&typeof source.homeCard==='object'?source.homeCard:null;
+  const homeCard=requestedHomeCard||hearthSelectHomeCard(briefing||{},source||{});
+  const homeSourceItem=source?.sourceItem&&typeof source.sourceItem==='object'?source.sourceItem:(homeCard?.sourceItem||homeCard);
+  const homeSourceRefs=hearthSourceRefsForItem(homeSourceItem||homeCard||{},source||{});
+  const homeSourceType=source.sourceType||source.source_type||homeSourceItem?.source_type||homeSourceItem?.sourceType||homeSourceItem?.type||homeCard?.source_type||homeCard?.sourceType||'';
+  const homeSourceId=source.sourceId||source.source_id||homeSourceItem?.source_id||homeSourceItem?.sourceId||homeSourceItem?.id||homeCard?.source_id||homeCard?.sourceId||homeCard?.id||'';
   const relationshipId=source.relationshipId||source.contactId||source.personId||source.targetId||source.id||'';
   const projectId=source.projectId||source.targetId||source.id||'';
   const relationship=relationships.find(profile=>relationshipId&&[profile.id,profile.contactId,profile.personId,profile.profileKey,profile.email].filter(Boolean).map(String).includes(String(relationshipId)))||relationships[0]||null;
   const project=projects.find(profile=>projectId&&[profile.id,profile.projectId,profile.profileKey,profile.displayName].filter(Boolean).map(String).includes(String(projectId)))||projects[0]||null;
-  const currentEvidence=source.evidenceItem||source.sourceItem||homeCard||evidenceItems.find(item=>String(item.id||item.sourceId||item.source_id||'')===String(source.sourceId||source.id||''))||null;
+  const currentEvidence=source.evidenceItem||homeSourceItem||homeCard||evidenceItems.find(item=>String(item.id||item.sourceId||item.source_id||'')===String(source.sourceId||source.id||''))||null;
   const openCommitments=Array.isArray(commitments.commitments)?commitments.commitments:[];
   const documentRows=Array.isArray(documents.documents)?documents.documents:[];
+  const uncertainty=Array.isArray(briefing?.unknowns)&&briefing.unknowns.length
+    ? briefing.unknowns
+    : [{status:'no_explicit_uncertainty',source:'hearth_packet_builder',message:'No additional uncertainty was reported for this selected Home source.'}];
   const connectionReadiness={
     google:{status:'checked_elsewhere',source:'Google connection status helpers'},
     microsoft:{status:'checked_elsewhere',source:'Microsoft connection status helpers'},
@@ -22360,9 +22384,9 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
     teach_val:{reviewed_memory:teachVal,context_imports:teachVal.filter(item=>/import|witness|onboarding/i.test(String(item.kind||item.category||'')))},
     onboarding:{first_understanding:briefing?.onboardingReflection||{},connected_source_readiness:connectionReadiness},
     user:{preferences:teachVal.filter(item=>/preference|working_agreement|style/i.test(String(item.category||item.kind||''))),do_not_do:teachVal.filter(item=>/do_not|boundary|risk/i.test(String(item.category||item.kind||'')))},
-    val:{do_not_do:[],review_only_mode:true,external_action_allowed:false,confidence:homeCard?.confidence||null,uncertainty:briefing?.unknowns||[]},
+    val:{do_not_do:[],review_only_mode:true,external_action_allowed:false,confidence:homeSourceItem?.confidence??homeCard?.confidence??null,uncertainty},
     rules:{val_os:{behavior_packet:{status:'partial',source:'VAL OS contract; hot-reload builder pending'},approval_packet:{status:'available',source:'external action packet gate'}}},
-    home:{card:{current:homeCard,sourceItem:homeCard,sourceType:homeCard?.source_type||homeCard?.sourceType||'',sourceId:homeCard?.source_id||homeCard?.sourceId||homeCard?.id||'',sourceRefs:homeCard?.evidence||homeCard?.sourceRefs||[]}},
+    home:{card:{current:homeCard,sourceItem:homeSourceItem,sourceType:homeSourceType,sourceId:homeSourceId,sourceRefs:homeSourceRefs}},
     relationships:{current:relationship,linked_to_project:relationship?[relationship]:[],moving_project:relationship?[relationship]:[]},
     projects:{current:project,linked_to_relationship:project?[project]:[],active:projects},
     emails:{current:source.email||homeCard?.email||{},thread:{current:{messages:source.threadMessages||[],summary:source.threadSummary||homeCard?.snippet||homeCard?.summary||'',relationship_temperature:'unknown'}}},

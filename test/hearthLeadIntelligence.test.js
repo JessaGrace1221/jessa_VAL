@@ -732,7 +732,9 @@ test('Hearth keeps email-derived Home judgments in Executive Inbox action langua
   assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'email_intelligence'/);
   assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'Open email'/);
   assert.match(hearthJs, /Email needing attention/);
-  assert.match(hearthJs, /email\.subject && !\/\^Review:/);
+  assert.match(hearthJs, /return compactSentence\(email\.subject, fallback \|\| 'Email needing attention'\)/);
+  assert.match(hearthJs, /const id = email\.messageId \|\| email\.threadId \|\| metadata\.sourceId/);
+  assert.match(hearthJs, /return \{type:'email', id:String\(id \|\| ''\), label:itemTitle\(item, 'Email needing attention'\)\}/);
   assert.match(hearthJs, /Nothing is sent, archived, or changed in Gmail from this click/);
   assert.match(hearthJs, /if\(profile\.key === 'email'\) return escapeHtml\(value\)/);
   assert.match(server, /if\(evidenceMeta\.email\?\.messageId\)return \{type:'email'/);
@@ -1007,6 +1009,11 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /postJson\('\/api\/hearth\/build-packet'/,
     /function hearthPacketSourceFromContext/,
     /lastHearthPacketReceipt/,
+    /data-workspace-packet-receipt/,
+    /function renderHearthPacketReceiptStrip/,
+    /node\.dataset\.valPacketReceiptId/,
+    /Packet receipt/,
+    /Source proof:/,
     /function showHearthPacketBlocked/,
     /VAL needs the right context before this click/,
     /handleWorkflowAction\(action, node = null\)/,

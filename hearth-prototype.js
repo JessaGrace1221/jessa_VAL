@@ -29,6 +29,7 @@ const workspaceActions = document.querySelector('.workspace-actions');
 const scraperCriteriaPanel = document.querySelector('.scraper-criteria-panel');
 const scraperPreviewList = document.querySelector('.scraper-preview-list');
 const workspaceInputPanel = document.querySelector('.workspace-input-panel');
+const workspacePacketReceipt = document.querySelector('[data-workspace-packet-receipt]');
 let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
@@ -4986,6 +4987,7 @@ function renderWorkspace(roomName){
   workspacePapers.understanding.innerHTML = workspace.understanding.map((item, index) => '<li>' + renderContextPortalText(item, workspace, index === 0) + '</li>').join('');
   workspacePapers.recommendation.innerHTML = renderContextPortalText(workspace.recommendation, workspace);
   workspaceActions.innerHTML = renderWorkspaceActionButtons(workspace.actions);
+  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
   deskWorkspace.setAttribute('aria-label', (workspace.lens || roomName) + ' decision workspace');
   return true;
 }
@@ -5110,7 +5112,7 @@ async function runMeetingPrep(){
   }
 }
 
-function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label}){
+function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt}){
   activeHomeWorkspace = null;
   deskWorkspace.classList.remove('witnessing-mode');
   workspaceKicker.textContent = lens;
@@ -5123,6 +5125,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   workspacePapers.understanding.innerHTML = understanding.map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
   workspacePapers.recommendation.textContent = recommendation;
   workspaceActions.innerHTML = renderWorkspaceActionButtons(actions);
+  renderHearthPacketReceiptStrip(packetReceipt || lastHearthPacketReceipt);
   deskWorkspace.setAttribute('aria-label', label || lens + ' workspace');
   scraperCriteriaPanel.hidden = true;
   scraperCriteriaPanel.innerHTML = '';
@@ -5132,6 +5135,51 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   workspaceInputPanel.hidden = true;
   workspaceInputPanel.innerHTML = '';
   applyHearthClickContracts(deskWorkspace);
+}
+
+function packetReceiptSummary(packet = {}){
+  const receipt = packet.receipt || {};
+  const sourceReceipts = Array.isArray(receipt.sourceReceipts) ? receipt.sourceReceipts : [];
+  const downstreamConsumers = Array.isArray(receipt.downstreamConsumers) ? receipt.downstreamConsumers : [];
+  const sourceLabels = sourceReceipts
+    .map((item) => item.label || item.sourceLabel || item.source_type || item.sourceType || item.key || item.variable)
+    .filter(Boolean)
+    .slice(0, 3);
+  return {
+    packetName: packet.packetName || receipt.packetName || '',
+    status: packet.status || receipt.status || '',
+    receiptId: packet.receiptId || receipt.id || '',
+    clickAction: packet.click?.action || receipt.clickAction || '',
+    sourceCount: sourceReceipts.length,
+    downstreamConsumers,
+    sourceLabels
+  };
+}
+
+function renderHearthPacketReceiptStrip(packet = null){
+  if(!workspacePacketReceipt) return;
+  if(!packet || !packet.packetName){
+    workspacePacketReceipt.hidden = true;
+    workspacePacketReceipt.innerHTML = '';
+    return;
+  }
+  const summary = packetReceiptSummary(packet);
+  const status = summary.status || 'checked';
+  workspacePacketReceipt.hidden = false;
+  workspacePacketReceipt.dataset.packetStatus = status;
+  workspacePacketReceipt.innerHTML = [
+    '<div>',
+      '<span>Packet receipt</span>',
+      '<strong>' + escapeHtml(summary.packetName) + '</strong>',
+      summary.receiptId ? '<small>' + escapeHtml(summary.receiptId) + '</small>' : '<small>metadata-only receipt</small>',
+    '</div>',
+    '<ul>',
+      '<li>Status: ' + escapeHtml(status) + '</li>',
+      summary.clickAction ? '<li>Click: ' + escapeHtml(summary.clickAction) + '</li>' : '',
+      '<li>Sources: ' + escapeHtml(String(summary.sourceCount)) + '</li>',
+      summary.downstreamConsumers.length ? '<li>Feeds: ' + escapeHtml(summary.downstreamConsumers.slice(0, 4).join(', ')) + '</li>' : '',
+      summary.sourceLabels.length ? '<li>Source proof: ' + escapeHtml(summary.sourceLabels.join(', ')) + '</li>' : ''
+    ].filter(Boolean).join('') + '</ul>';
 }
 
 function lensSequenceLabels(workspace = {}, roomName = ''){
@@ -5833,7 +5881,9 @@ async function ensureHearthClickPacket({node = null, packetName = '', action = '
     if(node){
       node.dataset.valPacketStatus = packet.status || '';
       node.dataset.valPacketCheckedAt = packet.generatedAt || new Date().toISOString();
+      node.dataset.valPacketReceiptId = packet.receiptId || packet.receipt?.id || '';
     }
+    renderHearthPacketReceiptStrip(packet);
     if(packet.status === 'blocked' && !allowBlockedForInspection){
       showHearthPacketBlocked(packet, action);
       return {ok:false,packet};
@@ -5863,7 +5913,7 @@ function briefingItems(items){
 function itemTitle(item, fallback){
   if(isEmailSourceItem(item)){
     const email = homeEmailPayload(item);
-    return compactSentence(email.subject && !/^Review:\s+/i.test(email.subject) ? email.subject : '', 'Email needing attention');
+    return compactSentence(email.subject, fallback || 'Email needing attention');
   }
   return compactSentence(item?.title || item?.name || item?.summary || fallback, fallback);
 }
@@ -6191,6 +6241,11 @@ function sourceIdentityForItem(item = {}){
   const metadata = item.metadata || item.metadataJson || {};
   const target = item.target || {};
   const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  if(isEmailSourceItem(item)){
+    const email = homeEmailPayload(item);
+    const id = email.messageId || email.threadId || metadata.sourceId || metadata.source_id || item.sourceId || item.source_id || item.id || '';
+    return {type:'email', id:String(id || ''), label:itemTitle(item, 'Email needing attention')};
+  }
   const type = normalizedTargetType(target.type || item.targetType || item.source_type || item.sourceType || item.review_type || item.reviewType || item.type || preparedArtifactKind(item), item);
   const id = target.id || item.targetId || item.messageId || metadata.messageId || item.threadId || metadata.threadId || item.draftId || artifact.id || artifact.artifactId || item.contactId || item.personId || item.projectId || metadata.projectId || item.opportunityId || metadata.opportunityId || item.source_id || item.sourceId || item.id || '';
   const label = itemTitle(item, target.label || target.name || item.title || item.name || id || 'Source context');
@@ -9503,10 +9558,21 @@ function openWorkspace(roomName){
 }
 
 async function handlePrimaryAction(button){
+  const roomName = button?.dataset?.openRoom || '';
+  const roomWorkspace = roomName && currentState.rooms?.[roomName]?.workspace ? currentState.rooms[roomName].workspace : {};
+  const roomSourceItem = roomWorkspace.sourceItem || {};
+  const roomIdentity = sourceIdentityForItem(roomSourceItem);
   const preflight = await ensureHearthClickPacket({
     node: button,
     packetName: button?.dataset?.valVariablePacket || 'home_source_packet',
-    action: button?.dataset?.openRoom || button?.dataset?.actionType || 'home_primary'
+    action: roomName || button?.dataset?.actionType || 'home_primary',
+    source: {
+      sourceId: roomIdentity.id,
+      sourceType: roomIdentity.type,
+      sourceLabel: roomIdentity.label,
+      sourceItem: roomSourceItem,
+      homeCard: roomWorkspace
+    }
   });
   if(!preflight.ok) return;
   const actionType = button.dataset.actionType || 'workspace';

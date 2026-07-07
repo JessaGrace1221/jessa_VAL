@@ -1383,6 +1383,51 @@ button,a{font:inherit}
   font-size:.76rem;
   line-height:1.42;
 }
+.workspace-packet-receipt{
+  display:grid;
+  grid-template-columns:minmax(150px,.7fr) 1fr;
+  gap:12px;
+  align-items:start;
+  margin-top:13px;
+  padding:11px 12px;
+  border:1px solid rgba(64,86,61,.22);
+  border-radius:6px;
+  background:rgba(232,239,222,.5);
+  color:rgba(47,67,43,.88);
+  font-size:.7rem;
+}
+.workspace-packet-receipt[hidden]{display:none}
+.workspace-packet-receipt[data-packet-status="blocked"]{
+  border-color:rgba(139,62,49,.28);
+  background:rgba(250,234,228,.62);
+  color:rgba(98,42,35,.92);
+}
+.workspace-packet-receipt span{
+  display:block;
+  margin-bottom:3px;
+  color:rgba(47,67,43,.62);
+  font-family:"DM Mono",monospace;
+  font-size:.58rem;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.workspace-packet-receipt strong,
+.workspace-packet-receipt small{
+  display:block;
+  overflow-wrap:anywhere;
+}
+.workspace-packet-receipt small{
+  margin-top:3px;
+  opacity:.72;
+}
+.workspace-packet-receipt ul{
+  display:grid;
+  gap:4px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
 .workspace-actions{
   display:flex;
   gap:10px;
