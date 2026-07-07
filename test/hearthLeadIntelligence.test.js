@@ -713,6 +713,10 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /Source-of-source/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
+  assert.match(hearthJs, /function isConcreteHomeActionItem/);
+  assert.match(hearthJs, /roomName === 'leverage' \? allItems\.filter\(isConcreteHomeActionItem\)/);
+  assert.match(hearthJs, /leverageItems\.find\(isConcreteHomeActionItem\)/);
+  assert.match(hearthJs, /queueItems\.find\(isConcreteHomeActionItem\)/);
   assert.doesNotMatch(hearthJs, /Co-Work with VAL about ' \+ item\.title/);
 });
 

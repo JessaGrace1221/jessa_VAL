@@ -5896,8 +5896,27 @@ function homeQueueItem(item, index, roomName){
   };
 }
 
+function isConcreteHomeActionItem(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const type = String(identity.type || item.target?.type || item.type || '').toLowerCase();
+  return !!(
+    isEmailSourceItem(item) ||
+    preparedArtifactKind(item) ||
+    item.draftId ||
+    item.messageId ||
+    item.threadId ||
+    item.contactId ||
+    item.personId ||
+    item.projectId ||
+    item.opportunityId ||
+    /^(email|draft|person|project|meeting|opportunity|evidence)$/.test(type)
+  );
+}
+
 function setHomeRoomQueue(roomName, items){
-  homeRoomQueues[roomName] = briefingItems(items).map((item, index) => homeQueueItem(item, index, roomName));
+  const allItems = briefingItems(items);
+  const scopedItems = roomName === 'leverage' ? allItems.filter(isConcreteHomeActionItem) : allItems;
+  homeRoomQueues[roomName] = (scopedItems.length ? scopedItems : allItems).map((item, index) => homeQueueItem(item, index, roomName));
 }
 
 function hydrateRoomsFromBriefing(briefing){
@@ -5905,7 +5924,7 @@ function hydrateRoomsFromBriefing(briefing){
   const changed = firstBriefingItem(velocityItems);
   const highest = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
   const leverageItems = briefingItems(briefing.readyForYou).concat(briefingItems(briefing.watching));
-  const ready = firstBriefingItem(leverageItems) || highest || null;
+  const ready = leverageItems.find(isConcreteHomeActionItem) || firstBriefingItem(leverageItems) || highest || null;
   const theme = briefing.todayTheme || {};
   setHomeRoomQueue('velocity', velocityItems);
   setHomeRoomQueue('leverage', leverageItems);
@@ -6044,7 +6063,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
   setHomeRoomQueue('leverage', queueItems);
   const preparedCount = Number(result.preparedCount != null ? result.preparedCount : (allBuilt.length || items.length));
   updatePreparedCount(preparedCount);
-  const ready = queueItems[0] || normalizeReadyForYouItem(items[0] || allBuilt[0] || null);
+  const ready = queueItems.find(isConcreteHomeActionItem) || queueItems[0] || normalizeReadyForYouItem(items[0] || allBuilt[0] || null);
   if(!ready || !ready.id) return;
   const artifactCopy = preparedArtifactHomeCopy(ready);
   const titleText = artifactCopy?.workspaceTitle || itemTitle(ready, 'Prepared work is ready');
