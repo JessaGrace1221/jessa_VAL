@@ -692,6 +692,9 @@ test('Hearth keeps email-derived Home judgments in Executive Inbox action langua
   assert.match(server, /if\(evidenceMeta\.email\?\.messageId\)return \{type:'email'/);
   assert.match(server, /const subject=targetMeta\.email\?\.subject\|\|profile\?\.displayName/);
   assert.match(server, /messageId:targetMeta\.email\.messageId/);
+  assert.match(server, /function dashboardEvidenceLookupMap/);
+  assert.match(server, /metadata\.messageId/);
+  assert.match(server, /const evidenceById=dashboardEvidenceLookupMap\(evidenceItems\)/);
 });
 
 test('Hearth source actions open the most specific executive surface available', () => {

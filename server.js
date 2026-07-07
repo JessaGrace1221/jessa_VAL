@@ -15872,6 +15872,22 @@ function dashboardEvidenceSummary(evidence={}){
     occurredAt:evidence.occurredAt||evidence.occurred_at||evidence.capturedAt||evidence.captured_at||evidence.createdAt||evidence.created_at||''
   };
 }
+function dashboardEvidenceLookupMap(evidenceItems=[]){
+  const map=new Map();
+  for(const evidence of Array.isArray(evidenceItems)?evidenceItems:[]){
+    const metadata=evidenceJsonValue(evidence.metadataJson||evidence.metadata_json||evidence.metadata,{})||{};
+    [
+      evidence.id,
+      evidence.sourceId,
+      evidence.source_id,
+      metadata.messageId,
+      metadata.message_id,
+      metadata.threadId,
+      metadata.thread_id
+    ].filter(Boolean).forEach(id=>map.set(String(id),evidence));
+  }
+  return map;
+}
 function dashboardPeopleFromEvidence(evidenceItems=[]){
   const rows=[];
   for(const e of evidenceItems){
@@ -16091,7 +16107,7 @@ function dashboardDedupeCardItems(items=[]){
 function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[]}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
-  const evidenceById=new Map((Array.isArray(evidenceItems)?evidenceItems:[]).map(e=>[String(e.id||e.sourceId||e.source_id||''),e]).filter(row=>row[0]));
+  const evidenceById=dashboardEvidenceLookupMap(evidenceItems);
   const conclusions=moves.map(m=>dashboardConclusionFromMove(m,profilesById,evidenceById)).filter(m=>dashboardCleanText(m.title));
   const profilePeople=profiles.filter(p=>p.profileType==='person').map(dashboardEntityFromProfile);
   const profileProjects=profiles.filter(p=>p.profileType==='project').map(dashboardEntityFromProfile);
