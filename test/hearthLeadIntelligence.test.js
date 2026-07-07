@@ -704,6 +704,17 @@ test('Hearth keeps email-derived Home judgments in Executive Inbox action langua
   assert.match(server, /const evidenceById=dashboardEvidenceLookupMap\(evidenceItems\)/);
 });
 
+test('Hearth Home queue items preserve source identity and source-of-source context', () => {
+  assert.match(hearthJs, /function sourceIdentityForItem/);
+  assert.match(hearthJs, /function sourceOfSourceLines/);
+  assert.match(hearthJs, /data-source-type/);
+  assert.match(hearthJs, /data-source-id/);
+  assert.match(hearthJs, /Source-of-source/);
+  assert.match(hearthJs, /function suggestedHomeActionsForItem/);
+  assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
+  assert.doesNotMatch(hearthJs, /Co-Work with VAL about ' \+ item\.title/);
+});
+
 test('Hearth source actions open the most specific executive surface available', () => {
   assert.match(hearthJs, /function sourceActionLabel/);
   assert.match(hearthJs, /function targetProfile/);

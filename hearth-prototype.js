@@ -4668,7 +4668,10 @@ function setRoomCopy(state){
       list.className = 'room-item-list';
       list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
       list.innerHTML = queue.map((item, index) => (
-        '<button type="button" data-home-room-item="' + name + '" data-home-room-index="' + index + '">' +
+        '<button type="button" data-home-room-item="' + name + '" data-home-room-index="' + index + '"' +
+          ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
+          ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
+          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
@@ -4699,35 +4702,30 @@ function setRoomCopy(state){
 function openHomeItemCowork(roomName, index){
   const item = (homeRoomQueues[roomName] || [])[Number(index)];
   if(!item) return;
+  const sourceItem = item.sourceItem || item;
   const roomLabel = roomName === 'leverage' ? 'prepared work' : 'movement';
-  closeCalendarPanel();
-  setWorkspaceContent({
-    lens: 'Co-Work with VAL',
-    title: 'Co-Work with VAL about ' + item.title + '.',
-    meaning: item.summary || 'VAL opened this Home item with its current context attached.',
+  const sourceLabel = sourceActionLabel(sourceItem, roomName === 'leverage' ? 'Open prepared work' : 'Open source context');
+  const identity = sourceIdentityForItem(sourceItem);
+  const workspace = {
+    lens: roomName === 'leverage' ? 'Leverage Item' : 'Velocity Item',
+    title: item.title,
+    meaning: item.summary || itemMeaning(sourceItem, 'VAL opened this Home item with its current context attached.'),
     understanding: [
-      'Priority ' + item.priority + ' in ' + (roomName === 'leverage' ? 'Leverage' : 'Velocity') + '.',
-      item.kind ? 'Type: ' + item.kind : '',
-      'This is a private Co-Work space. Nothing is sent, posted, approved, or changed externally from opening it.'
+      'Home source: ' + (identity.label || item.title),
+      identity.type ? 'Source type: ' + identity.type : '',
+      identity.id ? 'Source id: ' + identity.id : '',
+      ...sourceOfSourceLines(sourceItem),
+      sourceItem.confidence != null ? 'Confidence: ' + Math.round(Number(sourceItem.confidence) * 100) + '%' : '',
+      'Priority ' + item.priority + ' in ' + (roomName === 'leverage' ? 'Leverage' : 'Velocity') + '.'
     ].filter(Boolean),
-    recommendation: roomName === 'leverage'
-      ? 'Review what VAL already prepared, then ask for only the refinement or missing context needed to finish.'
-      : 'Use this to understand what changed, decide whether it matters now, and shape the next move without opening a new tool.',
-    actions: [
-      {label: 'Think with VAL', workflow: 'cowork:think'},
-      {label: 'Draft with VAL', workflow: 'cowork:draft'},
-      {label: 'Teach VAL', workflow: 'teach'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-    ],
-    label: 'Home ' + roomLabel + ' Co-Work workspace'
-  });
-  renderWorkspaceInput({
-    label: 'Co-Work with VAL',
-    placeholder: 'Ask VAL to reason through this, draft from it, or turn it into the next clean action.',
-    helper: 'Context: ' + item.title + '. External actions still require a separate approval gate.',
-    mode: 'cowork',
-    value: 'Help me work through this ' + roomLabel + ': ' + item.title
-  });
+    recommendation: suggestedRecommendationForHomeItem(sourceItem, roomName),
+    actions: suggestedHomeActionsForItem(sourceItem, roomName, sourceLabel),
+    sourceItem,
+    cardType: roomName === 'leverage' ? 'ready_for_you_queue_item' : 'what_changed_queue_item'
+  };
+  closeCalendarPanel();
+  setWorkspaceContent({...workspace, label: 'Home ' + roomLabel + ' source workspace'});
+  activeHomeWorkspace = {roomName, workspace};
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   document.querySelectorAll('.living-room').forEach((room) => {
@@ -5713,8 +5711,70 @@ function homeEmailActions(item, sourceLabel = 'Open email'){
     {label: sourceLabel, homeAction: 'open_source'},
     {label: 'Draft reply', homeAction: 'draft_email_reply'},
     {label: 'Create task', homeAction: 'create_email_task'},
-    {label: 'Open Executive Inbox', homeAction: 'open_executive_inbox'},
-    {label: 'Teach VAL', workflow: 'teach'}
+    {label: 'Open Executive Inbox', homeAction: 'open_executive_inbox'}
+  ];
+}
+
+function sourceIdentityForItem(item = {}){
+  const metadata = item.metadata || item.metadataJson || {};
+  const target = item.target || {};
+  const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const type = normalizedTargetType(target.type || item.targetType || item.source_type || item.sourceType || item.review_type || item.reviewType || item.type || preparedArtifactKind(item), item);
+  const id = target.id || item.targetId || item.messageId || metadata.messageId || item.threadId || metadata.threadId || item.draftId || artifact.id || artifact.artifactId || item.contactId || item.personId || item.projectId || metadata.projectId || item.opportunityId || metadata.opportunityId || item.source_id || item.sourceId || item.id || '';
+  const label = itemTitle(item, target.label || target.name || item.title || item.name || id || 'Source context');
+  return {type, id:String(id || ''), label};
+}
+
+function sourceOfSourceLines(item = {}){
+  const metadata = item.metadata || item.metadataJson || {};
+  const rawRefs = item.sourceRefsJson || item.source_refs || item.sourceRefs || metadata.sourceRefs || metadata.source_refs || item.evidence || [];
+  const refs = Array.isArray(rawRefs) ? rawRefs : [];
+  const lines = refs.map((ref, index) => {
+    if(typeof ref === 'string') return 'Source-of-source ' + (index + 1) + ': ' + ref;
+    const type = ref.source_type || ref.sourceType || ref.type || ref.label || 'evidence';
+    const id = ref.source_id || ref.sourceId || ref.id || '';
+    const quote = ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.detail || ref.content || '';
+    return ['Source-of-source ' + (index + 1) + ': ' + type + (id ? ' ' + id : ''), quote].filter(Boolean).join(' - ');
+  }).filter(Boolean);
+  if(lines.length) return lines.slice(0,4);
+  if(item.messageId || metadata.messageId) return ['Source-of-source: Gmail message ' + (item.messageId || metadata.messageId) + (item.threadId || metadata.threadId ? ' in thread ' + (item.threadId || metadata.threadId) : '') + '.'];
+  if(item.target?.type || item.sourceType || item.source_type) return ['Source-of-source: ' + sourceDestinationLabel(item) + ' context.'];
+  return ['Source-of-source: no deeper source receipt is attached yet.'];
+}
+
+function suggestedRecommendationForHomeItem(item = {}, roomName = ''){
+  if(isEmailSourceItem(item)) return 'Reply if the relationship needs it, or create a dated follow-up task if the next move is yours.';
+  const kind = preparedArtifactKind(item);
+  if(kind) return preparedArtifactHomeCopy(item)?.recommendation || 'Review the prepared work, then refine or approve only if the source context still supports it.';
+  const profile = targetProfile(item);
+  if(profile.key === 'relationship') return 'Open the relationship file and choose the next relationship-safe move from the current open loop.';
+  if(profile.key === 'project') return 'Open the project dossier and decide what should move, pause, or be protected.';
+  if(profile.key === 'meeting') return 'Open the meeting prep and use the people, purpose, and opening move only for this meeting.';
+  if(roomName === 'velocity') return 'Inspect the source/evidence, then decide whether this movement deserves an action today.';
+  return workspaceRecommendation(item, 'Open the source context before taking action.');
+}
+
+function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Open source context'){
+  const emailActions = homeEmailActions(item, sourceLabel);
+  if(emailActions) return emailActions;
+  const kind = preparedArtifactKind(item);
+  if(kind){
+    return [
+      {label: sourceLabel, homeAction: 'open_source'},
+      {label: 'Refine prepared work', homeAction: 'edit_before_approving'},
+      {label: 'Approve prepared work', homeAction: 'approve'}
+    ];
+  }
+  const profile = targetProfile(item);
+  if(profile.key === 'relationship' || profile.key === 'project' || profile.key === 'meeting' || profile.key === 'opportunity'){
+    return [
+      {label: sourceLabel, homeAction: 'open_source'},
+      {label: 'Review evidence', homeAction: 'review_evidence'}
+    ];
+  }
+  return [
+    {label: sourceLabel, homeAction: 'open_source'},
+    {label: roomName === 'leverage' ? 'Review prepared context' : 'Review evidence', homeAction: 'review_evidence'}
   ];
 }
 
@@ -5816,12 +5876,16 @@ function updateRoomFromBriefing(roomName, content){
 
 function homeQueueItem(item, index, roomName){
   const artifactCopy = roomName === 'leverage' ? preparedArtifactHomeCopy(item) : null;
+  const identity = sourceIdentityForItem(item);
   return {
     sourceItem: item,
     priority: index + 1,
     title: artifactCopy?.workspaceTitle || itemTitle(item, roomName === 'leverage' ? 'Prepared work' : 'Meaningful movement'),
     summary: artifactCopy?.implication || itemMeaning(item, item?.summary || ''),
-    kind: artifactCopy?.observation || preparedArtifactKind(item).replace(/_/g, ' ') || item?.target?.type || item?.type || ''
+    kind: artifactCopy?.observation || preparedArtifactKind(item).replace(/_/g, ' ') || item?.target?.type || item?.type || '',
+    sourceType: identity.type,
+    sourceId: identity.id,
+    sourceLabel: identity.label
   };
 }
 
@@ -5860,11 +5924,7 @@ function hydrateRoomsFromBriefing(briefing){
         meaning: meaningText,
         understanding: workspaceUnderstanding(changed, [changed.reason_it_matters || changed.summary]),
         recommendation: workspaceRecommendation(changed, 'I would review the meaning first, then decide whether it deserves action today.'),
-        actions: [
-          {label: sourceLabel, homeAction: 'open_source'},
-          {label: 'Review evidence', homeAction: 'review_evidence'},
-          {label: 'Teach VAL', workflow: 'teach'}
-        ],
+        actions: suggestedHomeActionsForItem(changed, 'velocity', sourceLabel),
         confidence: changed.confidence,
         restraintReason: 'Velocity owns what changed so the other rooms can avoid repeating the same story.',
         sourceItem: changed,
@@ -5879,13 +5939,7 @@ function hydrateRoomsFromBriefing(briefing){
     const cardTitle = roomCardObservation(highest, titleText, 'alignment');
     const cardSummary = roomCardImplication(highest, meaningText, 'alignment');
     const sourceLabel = sourceActionLabel(highest, 'Open the thing needing attention');
-    const actions = homeEmailActions(highest, sourceLabel) || [
-      {label: sourceLabel, homeAction: 'open_source'},
-      {label: 'Accept', homeAction: 'approve'},
-      {label: 'Adjust', homeAction: 'edit_before_approving'},
-      {label: 'Show alternatives', homeAction: 'summarize_project'},
-      {label: 'Teach VAL', workflow: 'teach'}
-    ];
+    const actions = suggestedHomeActionsForItem(highest || theme, 'alignment', sourceLabel);
     updateRoomFromBriefing('alignment', {
       card: {
         observation: cardTitle,
@@ -5938,12 +5992,7 @@ function hydrateRoomsFromBriefing(briefing){
           ready.target?.type ? 'Source type: ' + ready.target.type : ''
         ]),
         recommendation: artifactCopy?.recommendation || workspaceRecommendation(ready, 'I would review only the prepared decision point before opening supporting material.'),
-        actions: [
-          {label: sourceLabel, homeAction: 'open_source'},
-          {label: 'Approve', homeAction: 'approve'},
-          {label: 'Refine', homeAction: 'edit_before_approving'},
-          {label: 'Teach VAL', workflow: 'teach'}
-        ],
+        actions: suggestedHomeActionsForItem(ready, 'leverage', sourceLabel),
         confidence: ready.confidence,
         restraintReason: 'Leverage surfaces prepared capability without turning Home into a work queue.',
         sourceItem: ready,
@@ -6016,12 +6065,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
         preparedCount ? preparedCount + ' prepared item' + (preparedCount === 1 ? '' : 's') + ' waiting.' : ''
       ]),
       recommendation: artifactCopy?.recommendation || workspaceRecommendation(ready, 'Review what VAL finished, then provide only the missing context needed to complete the job.'),
-      actions: [
-        {label: sourceLabel, homeAction: 'open_source'},
-        {label: 'Approve', homeAction: 'approve'},
-        {label: 'Refine', homeAction: 'edit_before_approving'},
-        {label: 'Teach VAL', workflow: 'teach'}
-      ],
+      actions: suggestedHomeActionsForItem(ready, 'leverage', sourceLabel),
       confidence: ready.confidence,
       restraintReason: 'Leverage counts prepared work without turning Home into a generic task queue.',
       sourceItem: ready,
@@ -8659,9 +8703,7 @@ function renderSourceOpenReceipt(priorWorkspace, route){
     ],
     recommendation: 'Use the source only as far as needed to trust the judgment, then return to the desk.',
     actions: [
-      {label: 'Open source again', homeAction: 'open_source'},
-      {label: 'Teach VAL', workflow: 'teach'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      {label: 'Open source again', homeAction: 'open_source'}
     ],
     label: 'Source opened receipt'
   });
@@ -8814,9 +8856,7 @@ function renderHomeActionResult(action, result){
     ],
     recommendation: posture.recommendation,
     actions: [
-      item && Object.keys(item).length ? {label: sourceActionLabel(item, 'Open source context'), homeAction: 'open_source'} : null,
-      {label: 'Teach VAL', workflow: 'teach'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      item && Object.keys(item).length ? {label: sourceActionLabel(item, 'Open source context'), homeAction: 'open_source'} : null
     ].filter(Boolean),
     label: 'Home judgment action result'
   });
