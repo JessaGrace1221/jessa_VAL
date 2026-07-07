@@ -5030,6 +5030,7 @@ function portalPhraseForWorkspace(workspace = {}){
 
 function renderContextPortalText(text, workspace = {}, allowFallback = true){
   const value = String(text == null ? '' : text);
+  if(workspace.suppressInlinePortals) return escapeHtml(value);
   const profile = targetProfile(workspace.sourceItem || {});
   if(profile.key === 'source' && !(workspace.sourceItem?.target || workspace.sourceItem?.id || workspace.sourceItem?.source_id || workspace.sourceItem?.sourceId)) return escapeHtml(value);
   const phrase = compactSentence(portalPhraseForWorkspace(workspace));
@@ -5775,7 +5776,8 @@ function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Op
   const emailActions = homeEmailActions(item, sourceLabel);
   if(emailActions) return emailActions;
   const kind = preparedArtifactKind(item);
-  if(kind){
+  const identityType = String(sourceIdentityForItem(item).type || '').toLowerCase();
+  if(kind || identityType === 'draft'){
     return [
       {label: sourceLabel, homeAction: 'open_source'},
       {label: 'Refine prepared work', homeAction: 'edit_before_approving'},
@@ -5871,7 +5873,7 @@ function hydrateGreetingFromBriefing(briefing){
   permission.textContent = greeting.permission_line || currentState.permission;
 }
 
-function briefingWorkspace({lens,title,meaning,understanding,recommendation,actions = [{label: 'Open source view', homeAction: 'open_source'}, {label: 'Teach VAL', workflow: 'teach'}],confidence,restraintReason,sourceItem,cardType}){
+function briefingWorkspace({lens,title,meaning,understanding,recommendation,actions = [{label: 'Open source view', homeAction: 'open_source'}, {label: 'Teach VAL', workflow: 'teach'}],confidence,restraintReason,sourceItem,cardType,suppressInlinePortals = true}){
   return {
     lens,
     title,
@@ -5882,7 +5884,8 @@ function briefingWorkspace({lens,title,meaning,understanding,recommendation,acti
     confidence,
     restraintReason,
     sourceItem,
-    cardType
+    cardType,
+    suppressInlinePortals
   };
 }
 
