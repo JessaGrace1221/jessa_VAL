@@ -165,10 +165,13 @@ const homeRoomQueues = {velocity: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
 const hearthClickContractRegistry = [
+  {selector:'.val-mark', contract:'nav.val_home', packet:'navigation_packet', rule:'VAL home navigation rule', actions:'Return to canonical VAL dashboard shell', never:'Do not alter source data or memory'},
+  {selector:'.return-button,.close-calendar-button,.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail', contract:'nav.close_context', packet:'active_context_packet', rule:'Close active context without mutation', actions:'Close active card/detail and return to prior Hearth context', never:'Do not save, send, import, or mutate while closing'},
+  {selector:'.workspace-card button', contract:'workspace.static_action', packet:'workspace_seed_packet', rule:'Static workspace card action rule', actions:'Open the matching review/approval/teaching workspace only', never:'Do not execute external action from static demo card'},
   {selector:'[data-state-option]', contract:'home.state_switch', packet:'home_state_packet', rule:'Prototype state display rule', actions:'Switch visual Home state', never:'Do not run intelligence or mutate memory'},
   {selector:'.lean-button', contract:'home.why_today', packet:'home_presence_packet', rule:'Daily witness explanation rule', actions:'Open or close evidence panel', never:'Do not create tasks or drafts'},
   {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
-  {selector:'.next-meeting-card,.calendar-tab,.agenda-item', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
+  {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
   {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
@@ -178,7 +181,7 @@ const hearthClickContractRegistry = [
   {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
-  {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
+  {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, search, sort, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
   {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open file, Co-Work, ask priority, show alternatives, review source learning', never:'Do not create or mutate project records without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Co-Work, review, prepare draft, tighten draft, send packet', never:'Do not send directly from drawer click'},
@@ -193,7 +196,10 @@ const hearthClickContractRegistry = [
 
 function applyHearthClickContracts(root = document){
   hearthClickContractRegistry.forEach((entry) => {
-    root.querySelectorAll(entry.selector).forEach((node) => {
+    const nodes = [];
+    if(root.nodeType === 1 && root.matches(entry.selector)) nodes.push(root);
+    root.querySelectorAll(entry.selector).forEach((node) => nodes.push(node));
+    nodes.forEach((node) => {
       if(node.dataset.valClickContract) return;
       node.dataset.valClickContract = entry.contract;
       node.dataset.valVariablePacket = entry.packet;

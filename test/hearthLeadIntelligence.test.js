@@ -812,6 +812,11 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   }
   assert.match(hearthJs, /const hearthClickContractRegistry = \[/);
   assert.match(hearthJs, /\.living-room \.room-action\[data-open-room="alignment"\]/);
+  assert.match(hearthJs, /nav\.close_context/);
+  assert.match(hearthJs, /workspace\.static_action/);
+  assert.match(hearthJs, /root\.matches\(entry\.selector\)/);
+  assert.match(hearthJs, /\[data-relationship-search\]/);
+  assert.match(hearthJs, /\[data-calendar-event-index\]/);
   assert.match(hearthJs, /function applyHearthClickContracts/);
   assert.match(hearthJs, /function observeHearthClickContracts/);
   assert.match(hearthJs, /new MutationObserver/);
