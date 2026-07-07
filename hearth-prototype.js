@@ -4678,6 +4678,13 @@ function setRoomCopy(state){
         '</button>'
       )).join('');
       room.insertBefore(list, actionButton);
+      list.querySelectorAll('[data-home-room-item]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
+        });
+      });
     }
     actionButton.innerHTML = content.card.action + ' <b>&rarr;</b>';
     actionButton.dataset.actionType = content.card.primaryAction?.type || 'workspace';

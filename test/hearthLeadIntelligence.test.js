@@ -709,6 +709,7 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /function sourceOfSourceLines/);
   assert.match(hearthJs, /data-source-type/);
   assert.match(hearthJs, /data-source-id/);
+  assert.match(hearthJs, /list\.querySelectorAll\('\[data-home-room-item\]'\)\.forEach/);
   assert.match(hearthJs, /Source-of-source/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
