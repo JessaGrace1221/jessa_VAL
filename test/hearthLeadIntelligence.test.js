@@ -933,8 +933,9 @@ test('Hearth packet hydration audit distinguishes live providers from builder ga
     /valCommitments\.list\(\{limit:120\}\)/,
     /valDocuments\.list\(\{limit:120\}\)/,
     /listTeachValCoreMemory\(\{limit:120\}\)/,
-    /contract_gap:\{status:'gap'/,
-    /nextBuilderGap:'Add a unified Hearth packet builder/
+    /click_context:\{status:'available'/,
+    /withHearthPacketTimeout/,
+    /nextBuilderGap:'Wire the unified Hearth packet builder/
   ].forEach((pattern) => assert.match(server, pattern));
 
   [

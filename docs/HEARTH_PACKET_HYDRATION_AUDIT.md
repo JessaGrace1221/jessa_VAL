@@ -50,6 +50,8 @@ It returns:
 
 Action-gated packets fail closed. That means VAL may show the user what is missing, but it should not continue into an action workflow as if the context were complete.
 
+The builder timeboxes provider reads so a slow source cannot freeze a click. If a provider cannot respond in time, the packet returns the safest available `partial` or `blocked` state.
+
 ## Status Meanings
 
 - `available`: a real route/service/source exists and can hydrate the variable.
@@ -74,5 +76,3 @@ It does not yet have:
 
 - client-side preflight wired before every workflow action
 - durable per-click packet receipts stored for later review
-
-That builder is the next layer.

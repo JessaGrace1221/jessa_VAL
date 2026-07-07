@@ -21963,12 +21963,12 @@ const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
     ['{{home.card.sourceId}}','executive_briefing','dashboardNormalizeCardItem.source_id'],
     ['{{home.card.sourceRefs}}','evidence','dashboardEvidenceLookupMap / evidence source ids'],
     ['{{val.confidence}}','executive_briefing','dashboardNormalizeCardItem.confidence'],
-    ['{{val.uncertainty}}','contract_gap','No unified packet builder fail-closed unknowns yet']
+    ['{{val.uncertainty}}','executive_briefing','buildExecutiveBriefing unknowns / fail-closed packet receipt']
   ],
   workflow_scoped_packet: [
     ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
-    ['{{event.type}}','contract_gap','Workflow click event is client-side; no server packet builder yet'],
-    ['{{evidence.current_item}}','contract_gap','Needs selected source handoff into packet builder'],
+    ['{{event.type}}','click_context','Workflow click event passed into POST /api/hearth/build-packet'],
+    ['{{evidence.current_item}}','evidence','Selected source handoff into POST /api/hearth/build-packet'],
     ['{{rules.val_os.behavior_packet}}','val_os','VAL OS instructions + behavior packet docs/routes'],
     ['{{val.external_action_allowed}}','external_actions','valExternalActions approval gates']
   ],
@@ -22005,6 +22005,7 @@ function hearthHydrationProviderMap(){
     val_os:{status:'partial',route:'VAL OS docs/routes',description:'Behavior packet contract exists; hot-reloadable builder remains incomplete.'},
     external_actions:{status:'available',route:'/api/val/external-actions',description:'External action packets and approvals are gated and receipted.'},
     evidence:{status:'available',route:'internal evidence_items / evidence_observations',description:'Executive Briefing and source refs read evidence items.'},
+    click_context:{status:'available',route:'POST /api/hearth/build-packet',description:'The packet builder receives the clicked action and source payload.'},
     contract_gap:{status:'gap',route:'none',description:'Required by the packet contract but not yet hydrated by a unified Hearth packet builder.'}
   };
 }
@@ -22073,7 +22074,7 @@ async function buildHearthPacketHydrationAudit(){
     liveDataWarnings,
     providers,
     packets,
-    nextBuilderGap:'Add a unified Hearth packet builder that assembles these variables per click and fails closed when required providers are unavailable.'
+    nextBuilderGap:'Wire the unified Hearth packet builder into every client-side click before opening action workflows, and store durable packet receipts.'
   };
 }
 
