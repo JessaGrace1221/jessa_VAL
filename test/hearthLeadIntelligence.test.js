@@ -36,6 +36,11 @@ test('Lead Intelligence remains reachable from the office drawers', () => {
   assert.match(hearthHtml, /data-open-scraper="partners"/);
 });
 
+test('Lead Intelligence drawer opens only its own detail panel', () => {
+  assert.match(hearthCss, /\.drawer-tray\.source-open #source-detail/);
+  assert.doesNotMatch(hearthCss, /\.drawer-tray\.source-open \.source-detail/);
+});
+
 test('Projects drawer opens project dossiers from the Hearth instead of a dashboard shortcut', () => {
   assert.match(hearthHtml, /class="drawer-link project-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="project-detail"/);

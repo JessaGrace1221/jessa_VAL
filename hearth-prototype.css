@@ -2137,7 +2137,7 @@ button.drawer-link{
   transform:translateY(10px);
   transition:max-height .36s ease,opacity .28s ease,transform .34s ease;
 }
-.drawer-tray.source-open .source-detail{
+.drawer-tray.source-open #source-detail{
   max-height:none;
   opacity:1;
   transform:translateY(0);
