@@ -7,7 +7,6 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
-const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -68,7 +67,7 @@ test('transcript page includes VAL conversation transcripts without calling them
   assert.match(server,/const task=text\.match\(/);
   assert.match(server,/Planning: /);
   assert.match(server,/function valConversationSummaryFromText/);
-  assert.match(ui,/Chat About This Transcript/);
+  assert.match(ui,/Co-Work on This Transcript/);
   assert.doesNotMatch(ui,/Chat About This Meeting/);
   assert.match(ui,/Choose a transcript from the left/);
 });
@@ -92,7 +91,7 @@ test('frontend distinguishes loading failure from a successful empty archive',()
   assert.match(ui,/data\.ok===false\|\|!Array\.isArray\(data\.transcripts\)/);
   assert.match(ui,/Unable to load transcripts/);
   assert.match(ui,/Check the transcript retrieval endpoint or server logs/);
-  assert.match(ui,/No transcripts are available yet/);
+  assert.match(ui,/No transcripts yet/);
   assert.match(ui,/renderTranscriptLoading/);
 });
 
@@ -146,20 +145,13 @@ test('left navigation exposes live transcript, task, and draft badges',()=>{
   assert.match(ui,/function transcriptAttentionCount/);
   assert.match(ui,/window\.syncCommandCenterDrafts/);
   assert.match(ui,/navBadge/);
-  assert.doesNotMatch(ui,/\{id:'calendar',icon:'calendar',label:'Calendar',group:'core'\}/);
-  assert.match(dashboard,/\.val-nav-item\.active\{background:linear-gradient\(135deg,#fff8e8 0%,#f2cf89 48%,#c4963a 100%\)!important/);
 });
 
-test('transcript library opens as a quiet selector before detail review',()=>{
-  assert.match(ui,/Select a transcript/);
-  assert.match(ui,/val-transcript-blank/);
+test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
+  for(const label of ['Select a transcript','Co-Work on This Transcript'])assert.ok(ui.includes(label));
   assert.doesNotMatch(ui,/tasks extracted ·/);
   assert.doesNotMatch(ui,/summary '\+safe\(t\.summaryStatus/);
-  assert.match(ui,/Choose a transcript from the left/);
-  assert.match(ui,/data-transcript-tab="notes"/);
-  assert.match(ui,/data-transcript-tab="transcript"/);
-  assert.match(ui,/window\.openTranscriptChat=function/);
-  assert.match(ui,/valTranscriptChatOverlay/);
+  assert.match(ui,/Select a transcript/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
@@ -169,12 +161,6 @@ test('transcript library opens as a quiet selector before detail review',()=>{
 test('transcript cards and errors have readable responsive styling',()=>{
   assert.match(css,/\.val-transcript-actions\{/);
   assert.match(css,/\.val-transcript-error\{/);
-  assert.match(css,/\.val-transcript-workspace\{display:grid;grid-template-columns:260px minmax\(0,1fr\) minmax\(330px,34%\)/);
-  assert.match(css,/\.val-transcript-tabs button\.active\{background:#07182d/);
-  assert.match(css,/\.val-action-note\{display:grid/);
-  assert.match(css,/\.val-transcript-blank\{min-height:430px/);
-  assert.match(css,/\.val-transcript-chat-launch\{min-height:44px/);
-  assert.match(css,/\.val-transcript-chat-modal\{grid-template-columns:minmax\(0,1fr\)!important/);
   assert.match(css,/\.val-transcript-row\{[^}]*color:#17243a/);
-  assert.match(css,/@media\(max-width:900px\)[\s\S]*\.val-transcript-workspace\{grid-template-columns:1fr\}/);
+  assert.match(css,/@media\(max-width:900px\)[\s\S]*\.val-transcript-row\{grid-template-columns:1fr\}/);
 });

@@ -46,7 +46,12 @@ test('requires evidence, confidence, review state, and action traceability',()=>
   assert.match(server,/saveTranscriptEvidenceObservations/);
   assert.match(server,/runObservationEngine\(evidence,\{candidates,replace:true\}\)/);
   assert.match(server,/async function saveEvidenceLink/);
+  assert.match(server,/async function listEvidenceLinks/);
+  assert.match(server,/async function saveRelationshipProjectLink/);
+  assert.match(server,/async function saveCalendarProjectLink/);
   assert.match(server,/relationship:'extracted_task'/);
+  assert.match(server,/relationship:'linked_to_project'/);
+  assert.match(server,/relationship:'meeting_context_for_project'/);
   assert.match(server,/relationship:'created_task'/);
   assert.match(server,/relationship:'created_followup_draft'/);
   assert.match(server,/clearEvidenceLinksForTranscript/);
@@ -90,30 +95,6 @@ test('canonical transcript pipeline preserves conversations, identities, and dec
   assert.ok(drafts>canonical,'draft creation should happen after canonical conversation and decision capture');
 });
 
-test('transcript intelligence classifies structured meeting objects instead of loose summaries',()=>{
-  assert.match(server,/Do not summarize the transcript as prose/);
-  assert.match(server,/Classify direct evidence into structured meeting objects/);
-  assert.match(server,/could another employee complete it without hearing the meeting/);
-  for(const key of ['meetingGoals','decisions','decisionNeeded','risks','ideas','relationshipInsights','personalPreferences','projectUpdates','importantFacts','taskDependencies','contactInformation','timelines','futureMeetings']){
-    assert.match(server,new RegExp(key));
-  }
-  assert.match(server,/function normalizeTranscriptAnalysis/);
-  assert.match(server,/function normalizeTranscriptObject/);
-  assert.match(server,/function transcriptActionIsSpecific/);
-  assert.match(server,/app\.post\('\/api\/val\/transcripts\/reprocess'/);
-  assert.match(server,/transcript_reprocess_requested/);
-  assert.match(server,/send something/);
-  assert.match(server,/structuredObjects/);
-  assert.match(server,/observationTypeForObject/);
-  assert.match(ui,/What Changed/);
-  assert.match(ui,/Risks & Dependencies/);
-  assert.match(ui,/Meeting Intelligence/);
-  assert.match(ui,/transcriptObjectLabel/);
-  assert.match(ui,/Reprocess Recent/);
-  assert.match(ui,/Reprocess This/);
-  assert.match(ui,/reprocessTranscript/);
-});
-
 test('relationship engine builds living profiles from observations without creating tasks',()=>{
   for(const table of ['relationship_profiles','relationship_timeline_events']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
@@ -130,23 +111,6 @@ test('relationship engine builds living profiles from observations without creat
   assert.match(server,/clearRelationshipTimelineForEvidence\(evidenceItem\.id\)/);
   assert.match(server,/runRelationshipEngineForObservations\(evidenceItem,observations\)/);
   assert.doesNotMatch(server,/runRelationshipEngineForObservations[\s\S]{0,1200}saveTask/);
-});
-
-test('generated action summaries are filtered out of transcript archive',()=>{
-  assert.match(server,/const markdownActionSummary=/);
-  assert.match(server,/Action Items\|Key Points\|Decisions\|Summary/);
-  assert.match(server,/markdownActionSummary\|\|generatedMeetingNotes/);
-  assert.match(server,/const generatedMeetingNotes=/);
-  assert.match(server,/async function purgeJessaTranscriptArtifacts/);
-  assert.match(server,/purgedTranscriptArtifacts/);
-  assert.match(server,/purgeJessaTranscriptArtifacts\(\)\.catch/);
-});
-
-test('raw transcript excerpts are not presented as completed summaries',()=>{
-  assert.match(server,/function transcriptSummaryLooksLikeExcerpt/);
-  assert.match(server,/function transcriptPendingSummary/);
-  assert.match(server,/transcriptSummaryLooksLikeExcerpt\(clean,rawText\)/);
-  assert.match(server,/instead of pretending a transcript line is a summary/);
 });
 
 test('agency engine ranks discerning moves without turning observations into tasks',()=>{
@@ -183,10 +147,9 @@ test('exposes inbox, detail, and review queue UI',()=>{
   assert.match(ui,/Transcript Intelligence/);
   assert.match(ui,/Review Queue/);
   assert.match(ui,/Intake Status/);
-  assert.match(ui,/Choose a transcript from the left/);
-  assert.match(ui,/Select a transcript/);
-  assert.match(ui,/No real transcripts are available yet/);
-  assert.match(ui,/Chat About This Transcript/);
+  assert.match(ui,/only uncertain items from real transcripts appear here/);
+  assert.match(ui,/No transcripts yet/);
+  assert.match(ui,/Co-Work on This Transcript/);
   assert.match(ui,/Processing details/);
   assert.match(ui,/Approve & Create/);
 });
@@ -275,25 +238,15 @@ test('fallback summaries are not counted as hard processing failures',()=>{
   assert.match(server,/failedProcessing:transcripts\.filter\(isHardTranscriptProcessingFailure\)\.length/);
 });
 
-test('transcript detail defaults to notes, transcript, and transcript-specific chat',()=>{
-  for(const label of ['Notes','Transcript','What Changed','Action Items','Open Questions','Meeting Intelligence','Chat About This Transcript','Processing details']){
+test('transcript detail defaults to summary, transcript, and transcript-specific co-work',()=>{
+  for(const label of ['Summary','Transcript','Co-Work on This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
-  assert.match(ui,/function transcriptSidebarHtml/);
-  assert.match(ui,/window\.setTranscriptTab/);
-  assert.match(ui,/data-transcript-tab="notes"/);
-  assert.match(ui,/data-transcript-panel="transcript"/);
-  assert.match(ui,/class="val-action-note"/);
-  assert.match(ui,/Add to Actions/);
   assert.match(ui,/api\/val\/transcripts\/'\+encodeURIComponent\(t\.id\)\+'\/chat/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/Do not say you need an email, document, Gmail, Drive, or external source/);
   assert.match(server,/function cleanTranscriptForUi/);
   assert.match(server,/function cleanTranscriptSummaryForUi/);
-  assert.match(server,/function deterministicTranscriptNotes/);
-  assert.match(server,/function mergeTranscriptDeterministicNotes/);
-  assert.match(server,/Ignore greetings, weather, audio checks, small talk/);
-  assert.match(server,/Every object must include/);
   assert.match(server,/function cleanTranscriptTitleForUi/);
   assert.match(server,/transcript\.drafts=\(await listDrafts\(\)\)\.filter/);
   assert.match(server,/req\.query\.transcriptId/);

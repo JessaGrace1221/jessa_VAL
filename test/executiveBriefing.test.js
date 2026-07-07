@@ -7,6 +7,7 @@ const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
+const commandCenterCss=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 
 test('executive briefing endpoint distills engine outputs without model reasoning',()=>{
   assert.match(server,/app\.get\('\/api\/executive-briefing'/);
@@ -22,6 +23,8 @@ test('executive briefing endpoint distills engine outputs without model reasonin
   assert.match(server,/alsoImportant/);
   assert.match(server,/onboardingReflection/);
   assert.match(server,/readyForYou/);
+  assert.match(server,/buildDailyWitnessGreeting/);
+  assert.match(server,/dailyWitness/);
   const start=server.indexOf('async function buildExecutiveBriefing');
   const end=server.indexOf('function executiveBriefingChatContext',start);
   const body=server.slice(start,end);
@@ -35,11 +38,25 @@ test('executive briefing preserves Michele book/editor separation',()=>{
   assert.match(commandCenter,/if\(bookMode\)return ''/);
 });
 
+test('Michele book mode renders one joyful continue-book home card',()=>{
+  assert.match(commandCenter,/function micheleBookHomeHtml/);
+  assert.match(commandCenter,/Michele, your brave beautiful book is waiting/);
+  assert.match(commandCenter,/assets\/michele-big-trick-cover\.png/);
+  assert.match(commandCenter,/welcome\.className='center-welcome michele-book-home'/);
+  assert.match(commandCenter,/welcome\.innerHTML=micheleBookHomeHtml\(\)/);
+  assert.doesNotMatch(commandCenter,/commandCard\(bookMode\?'Book Priorities'/);
+  assert.match(commandCenterCss,/\.michele-book-home/);
+  assert.match(commandCenterCss,/\.michele-continue-card/);
+  assert.match(commandCenterCss,/\.michele-cover-frame img/);
+});
+
 test('dashboard renders relationship-first executive briefing panel',()=>{
   assert.match(commandCenter,/var executiveBriefingState=/);
   assert.match(commandCenter,/function loadExecutiveBriefing/);
   assert.match(commandCenter,/\/api\/executive-briefing/);
   assert.match(commandCenter,/function executiveBriefingHtml/);
+  assert.match(commandCenter,/function dailyWitnessGreetingHtml/);
+  assert.match(commandCenter,/witness\.display_greeting/);
   assert.match(commandCenter,/People Create Velocity/);
   assert.match(commandCenter,/Highest Leverage Move/);
   assert.match(commandCenter,/Also Important/);
@@ -81,8 +98,17 @@ test('dashboard cards route to exact entities and drafts',()=>{
   assert.match(commandCenter,/type==='person'/);
   assert.match(commandCenter,/type==='project'/);
   assert.match(commandCenter,/type==='draft'/);
+  assert.match(commandCenter,/type==='opportunity'\|\|type==='pipeline'/);
+  assert.match(commandCenter,/openPipelineTarget/);
+  assert.match(commandCenter,/type==='meeting'\|\|type==='calendar'/);
   assert.match(commandCenter,/openDashboardTarget\('/);
   assert.match(commandCenter,/dashboardEntities/);
+  assert.match(dashboard,/targetType/);
+  assert.match(dashboard,/targetId/);
+  assert.match(dashboard,/openRequestedTarget/);
+  assert.match(dashboard,/loadExecutiveBriefing\(false\)\.then\(openTarget\)/);
+  assert.match(dashboard,/function openPipelineTarget/);
+  assert.match(dashboard,/No task was created just by opening this opportunity/);
   assert.match(dashboard,/function openDraftsPage\(focusDraftId\)/);
   assert.match(dashboard,/function draftIsDashboardReady/);
   assert.match(dashboard,/Drafts needing cleanup/);

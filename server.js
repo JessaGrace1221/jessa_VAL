@@ -5,10 +5,33 @@ const path    = require('path');
 const crypto  = require('crypto');
 const bcrypt  = require('bcryptjs');
 const {AsyncLocalStorage} = require('async_hooks');
+const os      = require('os');
+const {execFile} = require('child_process');
+const {promisify} = require('util');
 const multer  = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const {createGhlMcpService} = require('./services/ghlMcpService');
+const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
+const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
+const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
+const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
+const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
+const {registerValReadyForYouRoutes} = require('./services/valReadyForYouRoutes');
+const {ensureValMeetingPrepTables} = require('./services/valMeetingPrepSchema');
+const {registerValMeetingPrepRoutes} = require('./services/valMeetingPrepRoutes');
+const {ensureValTranscriptIntelligenceTables} = require('./services/valTranscriptIntelligenceSchema');
+const {registerValTranscriptIntelligenceRoutes} = require('./services/valTranscriptIntelligenceRoutes');
+const {registerValCommitmentsRoutes} = require('./services/valCommitmentsRoutes');
+const {registerValDocumentsRoutes} = require('./services/valDocumentsRoutes');
+const {ensureValReviewUpdatesTables} = require('./services/valReviewUpdatesSchema');
+const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRoutes');
+const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
+const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
+const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
+const {buildDailyWitnessGreeting} = require('./services/dailyWitnessGreeting');
+const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
+const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft} = require('./services/valRelationshipActionIntelligence');
 const {
   normalizeEmailAddress,
   normalizePhoneNumber,
@@ -17,6 +40,7 @@ const {
   validPhone
 } = require('./services/leadContactValidation');
 const app     = express();
+const execFileAsync = promisify(execFile);
 
 app.use(cors());
 app.use(express.json({limit:'50mb'}));
@@ -73,6 +97,8 @@ const GHL_ACCOUNT_SLUGS = String(process.env.GHL_ACCOUNT_SLUGS || '').split(',')
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
+let RUNTIME_OPENAI_KEY = '';
+let RUNTIME_OPENAI_MODEL = '';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
 const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
 const DEEPGRAM_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || 'nova-2';
@@ -659,6 +685,72 @@ function demoIso(dayOffset=0,hour=9,minute=0){
   return d.toISOString();
 }
 function cloneDemo(value){ return JSON.parse(JSON.stringify(value)); }
+function realD3DayTranscriptReviewCandidates(){
+  return [
+    {
+      id:'real-d3day-note-positioning',
+      type:'note',
+      status:'needs_review',
+      transcriptId:'downloads-chat-about-d3day-event',
+      transcriptTitle:'chat_about_d3day_event_transcript.txt',
+      eventTitle:'D3Day event planning with Doug and Marcus',
+      project:'D3Day Hudson Valley event',
+      relationships:['Doug', 'Marcus'],
+      category:'positioning',
+      title:'Event messaging should attract sponsor-fit attendees, not free-food traffic.',
+      sourceExcerpt:"So because again, we don't want the people to free wine, free food. Sure, that's not what we're looking",
+      whyItMatters:'This is the strategic filter for posts, invitations, and room energy at the event.',
+      approvalBoundary:'Approving saves a transcript note only. It does not create a task, send a post, update CRM, or contact anyone.'
+    },
+    {
+      id:'real-d3day-note-donation-flow',
+      type:'note',
+      status:'needs_review',
+      transcriptId:'downloads-chat-about-d3day-event',
+      transcriptTitle:'chat_about_d3day_event_transcript.txt',
+      eventTitle:'D3Day event planning with Doug and Marcus',
+      project:'D3Day Hudson Valley event',
+      relationships:['Doug'],
+      category:'fundraising psychology',
+      title:'Donation flow should make giving visible and easy in the room.',
+      sourceExcerpt:"people are witnessing each other. Donate wants to get that, the whole room needs to be... I'm on this side of the room, and Doug is on this side of the room.",
+      whyItMatters:'This preserves the event-room operating idea without turning it into an unowned generic follow-up.',
+      approvalBoundary:'Approving saves a transcript note only. It does not create a payment link, send a message, or update an event plan.'
+    },
+    {
+      id:'real-d3day-task-social-copy',
+      type:'task',
+      status:'needs_review',
+      transcriptId:'downloads-chat-about-d3day-event',
+      transcriptTitle:'chat_about_d3day_event_transcript.txt',
+      eventTitle:'D3Day event planning with Doug and Marcus',
+      project:'D3Day Hudson Valley event',
+      relationships:['Doug', 'Marcus'],
+      title:'Draft sponsor-fit social post copy for Doug and Marcus to review.',
+      owner:'Jessa',
+      dueDate:'review_needed_before_event',
+      sourceExcerpt:'I can have my AI work up some post ideas for you, and I can email them over.',
+      whyItMatters:'The task is specific: create post ideas that position the event for the right attendees, then email them for review.',
+      approvalBoundary:'Approving queues a proposed task only. It does not email Doug or Marcus, publish posts, or create external CRM work.'
+    },
+    {
+      id:'real-d3day-task-frank-sponsor',
+      type:'task',
+      status:'needs_review',
+      transcriptId:'downloads-chat-about-d3day-event',
+      transcriptTitle:'chat_about_d3day_event_transcript.txt',
+      eventTitle:'D3Day event planning with Doug and Marcus',
+      project:'D3Day Hudson Valley event',
+      relationships:['Doug', 'Frank'],
+      title:'Ask Frank whether he is a fit for the ball sponsorship conversation.',
+      owner:'Jessa',
+      dueDate:'same_day_review',
+      sourceExcerpt:'I want to see if I can get Frank to do it because I think that would be a great way to promote Bi.',
+      whyItMatters:'The task names the person, the sponsorship object, and the purpose instead of saying “follow up with Frank.”',
+      approvalBoundary:'Approving queues a proposed task only. It does not message Frank, create a CRM task, or promise sponsorship terms.'
+    }
+  ];
+}
 function demoTemplate(){
   const tasks=[
     {id:'demo-task-1',title:'Send revised scope to Elena',contactName:'Elena Brooks',dueDate:demoIso(0,16,0),notes:'Promise from investor prep. VAL can draft the first-30-days scope and place it in the Approval Queue.',details:[{text:'Created from transcript: Investor Prep With Elena',ts:demoIso(-1,11,20)},{text:'Open loop: make proof of executive adoption easier to understand.',ts:demoIso(-1,11,24)}],completed:false,createdAt:demoIso(-1,11,30)},
@@ -780,7 +872,13 @@ function demoTemplate(){
     {id:'demo-agency-jordan',tenantId:CLIENT_CONFIG.clientSlug,moveType:'send_follow_up',title:'Close loop: Jordan one-paragraph intro ask',why:'Jordan offered warm introductions, but the ask needs to stay concise while momentum is fresh.',confidence:0.9,importanceScore:72,urgencyScore:18,leverageScore:28,riskScore:8,relationshipScore:20,agencyLevel:2,priorityBand:'also_important',status:'candidate',personId:'demo-contact-4',projectId:'fieldstone-partner-channel',dueAt:demoIso(0,17,0),sourceObservationIds:['demo-obs-jordan-followup'],sourceEvidenceIds:['demo-evi-jordan-transcript'],whatChanged:'Jordan offered three operating partner introductions if Avery sends a concise ask.',ifIgnored:'The warm intro may turn into a forgotten good idea.',metadataJson:{source:'demo',observationType:'follow_up'},createdAt:demoIso(-1,17,5),updatedAt:demoIso(-1,17,5)},
     {id:'demo-agency-priya',tenantId:CLIENT_CONFIG.clientSlug,moveType:'review_risk',title:'Review risk: HealthBridge renewal fatigue',why:'Priya still values VAL, but her team is tired. Expansion should wait until support load is acknowledged.',confidence:0.86,importanceScore:69,urgencyScore:16,leverageScore:16,riskScore:26,relationshipScore:17,agencyLevel:2,priorityBand:'also_important',status:'candidate',personId:'demo-contact-3',projectId:'healthbridge-expansion',dueAt:demoIso(1,11,0),sourceObservationIds:['demo-obs-priya-risk'],sourceEvidenceIds:['demo-evi-healthbridge-risk'],whatChanged:'HealthBridge renewal risk is implementation fatigue, not lack of belief.',ifIgnored:'Pushing expansion too early may reduce trust with Priya and her team.',metadataJson:{source:'demo',observationType:'risk'},createdAt:demoIso(-2,15,12),updatedAt:demoIso(-2,15,12)}
   ];
-  return {tasks,calendarEvents,opportunities,conversations,messages,drafts,emails,transcripts,relationships,memoryItems,evidenceItems,evidenceObservations,relationshipProfiles:relationshipProfiles.concat(relationshipProfilesProjects),agencyMoves,agencyMoveSources:[],createdAt:new Date().toISOString()};
+  const evidenceLinks=[
+    {id:'demo-link-marcus-atlas',tenantId:CLIENT_CONFIG.clientSlug,userId:VAL_USER_ID,sourceType:'relationship_profile',sourceId:'demo-contact-1',sourceLabel:'Marcus Chen',targetType:'project_profile',targetId:'atlas-operations-pilot',relationship:'linked_to_project',summary:'Marcus Chen is tied to Atlas Operations Pilot.',confidence:0.88,metadata:{source:'demo',projectName:'Atlas Operations Pilot',relationshipName:'Marcus Chen',noExternalAction:true},createdAt:demoIso(0,8,45)},
+    {id:'demo-link-calendar-atlas',tenantId:CLIENT_CONFIG.clientSlug,userId:VAL_USER_ID,sourceType:'calendar_event',sourceId:'demo-cal-2',sourceLabel:'Enterprise Demo With Marcus',targetType:'project_profile',targetId:'atlas-operations-pilot',relationship:'meeting_context_for_project',summary:'Enterprise Demo With Marcus is meeting context for Atlas Operations Pilot.',confidence:0.86,metadata:{source:'demo',noExternalAction:true},createdAt:demoIso(0,8,46)},
+    {id:'demo-link-priya-healthbridge',tenantId:CLIENT_CONFIG.clientSlug,userId:VAL_USER_ID,sourceType:'relationship_profile',sourceId:'demo-contact-3',sourceLabel:'Priya Raman',targetType:'project_profile',targetId:'healthbridge-expansion',relationship:'linked_to_project',summary:'Priya Raman is tied to HealthBridge Expansion.',confidence:0.86,metadata:{source:'demo',projectName:'HealthBridge Expansion',relationshipName:'Priya Raman',noExternalAction:true},createdAt:demoIso(-2,15,12)},
+    {id:'demo-link-calendar-healthbridge',tenantId:CLIENT_CONFIG.clientSlug,userId:VAL_USER_ID,sourceType:'calendar_event',sourceId:'demo-cal-3',sourceLabel:'HealthBridge Renewal Review',targetType:'project_profile',targetId:'healthbridge-expansion',relationship:'meeting_context_for_project',summary:'HealthBridge Renewal Review is meeting context for HealthBridge Expansion.',confidence:0.84,metadata:{source:'demo',noExternalAction:true},createdAt:demoIso(-2,15,13)}
+  ];
+  return {tasks,calendarEvents,opportunities,conversations,messages,drafts,emails,transcripts,relationships,memoryItems,evidenceItems,evidenceObservations,relationshipProfiles:relationshipProfiles.concat(relationshipProfilesProjects),agencyMoves,agencyMoveSources:[],evidenceLinks,createdAt:new Date().toISOString()};
 }
 function demoSessionId(req,res){
   const existing=parseCookies(req).val_demo_session;
@@ -804,7 +902,7 @@ function demoUser(){
 }
 function withDemoCta(text){
   const copy=String(text||'');
-  return copy.includes(VAL_SIGNUP_URL) ? copy : `${copy}\n\nReady to make this yours? Get your VAL now: ${VAL_SIGNUP_URL}`;
+  return copy.includes(VAL_SIGNUP_URL) ? copy : `${copy}\n\nP.S. Ready to make this yours? Sign up for VAL here: ${VAL_SIGNUP_URL}`;
 }
 function demoLeads(body={}){
   const type=String(body.organizationType||body.criteria||'growth companies').replace(/\s+/g,' ').trim();
@@ -1119,8 +1217,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
-  if(!store.userPreferences||typeof store.userPreferences!=='object')store.userPreferences={};
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -1145,31 +1242,6 @@ function signValue(value){
 }
 function signedSessionValue(sessionId){
   return `${sessionId}.${signValue(sessionId)}`;
-}
-function sessionBridgeToken(sessionId,next='/dashboard'){
-  const payload=Buffer.from(JSON.stringify({
-    sessionId:String(sessionId||''),
-    next:safeInternalRedirect(next),
-    exp:Date.now()+2*60*1000
-  })).toString('base64url');
-  return `${payload}.${signValue(`session_bridge:${payload}`)}`;
-}
-function verifySessionBridgeToken(token=''){
-  const [payload,sig]=String(token||'').split('.');
-  if(!payload||!sig)return null;
-  const expected=signValue(`session_bridge:${payload}`);
-  try{
-    if(!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return null;
-    const data=JSON.parse(Buffer.from(payload,'base64url').toString('utf8'));
-    if(!data.sessionId||Number(data.exp||0)<Date.now())return null;
-    return {sessionId:String(data.sessionId),next:safeInternalRedirect(data.next||'/dashboard')};
-  }catch(e){return null;}
-}
-function safeInternalRedirect(value){
-  const next=String(value||'/dashboard');
-  if(!next.startsWith('/')||next.startsWith('//'))return '/dashboard';
-  if(next.startsWith('/api/'))return '/dashboard';
-  return next.slice(0,300);
 }
 function verifySignedSession(value){
   const [sessionId,sig]=String(value||'').split('.');
@@ -1346,7 +1418,6 @@ const DASHBOARD_STUDIO_UPDATE_POLICY={
 const TENANT_API_KEY_PROVIDER_REGISTRY={
   openai:{providerId:'openai',displayName:'OpenAI',description:'Powers VAL chat, reasoning, transcript intelligence, drafting, and rewrite workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'openai_models',docsUrl:'https://platform.openai.com/api-keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in OpenAI Platform → API keys, then paste it here.'},
   anthropic:{providerId:'anthropic',displayName:'Anthropic / Claude',description:'Optional Claude model provider for approved VAL workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'anthropic_models',docsUrl:'https://console.anthropic.com/settings/keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in Anthropic Console → API Keys.'},
-  ghl:{providerId:'ghl',displayName:'GoHighLevel / LeadConnector',description:'Allows approved VAL actions to search contacts and prepare or create approved CRM updates.',credentialFields:['api_key','location_id'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developers.gohighlevel.com/',costRiskCategory:'external_crm_write',helpText:'Paste the GHL API key or access token and Location ID for this VAL tenant.'},
   outscraper:{providerId:'outscraper',displayName:'Outscraper',description:'Supports approved business search and enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://app.outscraper.com/profile',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Outscraper account.'},
   rocketreach:{providerId:'rocketreach',displayName:'RocketReach',description:'Supports approved contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://rocketreach.co/api',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your RocketReach account.'},
   apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'}
@@ -2225,15 +2296,12 @@ async function resolveIntegrationSecret(provider,credentialType,fallback=''){
   }
   return String(credentialType||'')==='api_key' ? (platformKeyFallbackAllowed() ? (fallback || '') : '') : (fallback || '');
 }
-async function resolveOpenAIKey(){ return resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
+async function resolveOpenAIKey(){ return RUNTIME_OPENAI_KEY || resolveIntegrationSecret('openai','api_key',OPENAI_KEY); }
 async function resolveAnthropicKey(){ return resolveIntegrationSecret('anthropic','api_key',ANTHROPIC_KEY); }
 async function resolveOpenAIModel(){
-  return resolveIntegrationSecret('openai','preferred_model',OPENAI_CHAT_MODEL);
+  return RUNTIME_OPENAI_MODEL || resolveIntegrationSecret('openai','preferred_model',OPENAI_CHAT_MODEL);
 }
 async function resolveGhlLocationId(){
-  const meta=await getTenantApiKeyMetadata('ghl').catch(()=>({}));
-  const tenantLocationId=String(meta.locationId||meta.location_id||'').trim();
-  if(tenantLocationId) return tenantLocationId;
   return resolveIntegrationSecret('ghl','location_id',GHL_LOC);
 }
 async function markCredentialStatus(provider,status){
@@ -2312,10 +2380,6 @@ async function getTenantApiKeySecret(provider){
   const encrypted=row?.encrypted_secret||row?.encryptedSecret;
   if(!encrypted) return '';
   return decryptSecret(encrypted);
-}
-async function getTenantApiKeyMetadata(provider){
-  const row=await getTenantApiKeyRow(provider);
-  return normalizeTenantApiKeyRow(row)?.metadata||{};
 }
 async function saveTenantApiKey(req,{provider,apiKey,metadata={}}){
   const p=tenantApiKeyProvider(provider);
@@ -2409,7 +2473,6 @@ function platformKeyFallbackAllowed(provider=''){
   if(/^(0|false|no)$/i.test(explicit)) return false;
   const p=String(provider||'').toLowerCase();
   if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
-  if(p==='ghl'&&GHL_KEY&&GHL_LOC) return true;
   return false;
 }
 async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
@@ -2716,17 +2779,6 @@ function envStatus({name,present,misconfigured=false,controls,fix}){
     redeployRequired:true
   };
 }
-function secretPresenceStatus({name,present,source='runtime',controls,fix}){
-  return {
-    name,
-    status:present?'Connected':'Missing',
-    present:!!present,
-    source:present?source:'',
-    controls,
-    howToFix:fix || railwayFix(name),
-    secretValue:'hidden'
-  };
-}
 function missingEnvNames(names){
   return names.filter(name=>!process.env[name]);
 }
@@ -2744,12 +2796,7 @@ function setupHealthPayload(){
       envStatus({name:'GOOGLE_REDIRECT_URI',present:!!CONFIGURED_GOOGLE_REDIRECT_URI,controls:'Google OAuth callback URL. Use https://your-app.up.railway.app/auth/callback.',fix:railwayFix('GOOGLE_REDIRECT_URI')}),
       envStatus({name:'MICROSOFT_CLIENT_ID',present:!!MICROSOFT_CLIENT_ID,controls:'Microsoft OAuth for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_ID')}),
       envStatus({name:'MICROSOFT_CLIENT_SECRET',present:!!MICROSOFT_CLIENT_SECRET,controls:'Microsoft OAuth secret for Outlook Mail and Calendar.',fix:railwayFix('MICROSOFT_CLIENT_SECRET')}),
-      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')}),
-      secretPresenceStatus({name:'GHL_KEY / GHL_API_KEY',present:!!GHL_KEY,controls:'GHL contact, opportunity, note, and lead import actions.',fix:'Railway → Variables → Add GHL_KEY or GHL_API_KEY → Redeploy'}),
-      secretPresenceStatus({name:'GHL_LOC / GHL_LOCATION_ID',present:!!GHL_LOC,controls:'The GHL location VAL may read/write after approval.',fix:'Railway → Variables → Add GHL_LOC or GHL_LOCATION_ID → Redeploy'}),
-      secretPresenceStatus({name:'OUTSCRAPER_API_KEY',present:!!OUTSCRAPER_API_KEY,controls:'Lead scraper business discovery and optional LinkedIn/public enrichment.',fix:railwayFix('OUTSCRAPER_API_KEY')}),
-      secretPresenceStatus({name:'ROCKETREACH_API_KEY',present:!!ROCKETREACH_API_KEY,controls:'Calendar attendee enrichment and Level 3 lead/person verification.',fix:railwayFix('ROCKETREACH_API_KEY')}),
-      secretPresenceStatus({name:'APOLLO_API_KEY',present:!!APOLLO_API_KEY,controls:'Fallback lead/contact enrichment where enabled.',fix:railwayFix('APOLLO_API_KEY')})
+      envStatus({name:'MICROSOFT_REDIRECT_URI',present:!!process.env.MICROSOFT_REDIRECT_URI,controls:'Microsoft OAuth callback URL. Use https://your-app.up.railway.app/auth/microsoft/callback.',fix:railwayFix('MICROSOFT_REDIRECT_URI')})
     ],
     google:{
       connected:false,
@@ -2802,6 +2849,8 @@ Avoid sounding like a questionnaire.
 
 You are helping this person teach VAL who they are, what they are building, who matters, what lessons they have learned, how they prefer to work, and where they need support.
 
+You are also establishing the user's operating agreements with VAL: what VAL may draft, what always requires approval, what should stay quiet, where prepared work should appear, how LinkedIn visibility should work, and which people the user actively supports.
+
 Ask for one small layer of context at a time. Never open with a compound question that asks who they are, what they are working on, and what they want all at once.
 
 Move through these topics naturally, one at a time:
@@ -2813,17 +2862,28 @@ Move through these topics naturally, one at a time:
 6. Lessons learned
 7. Frustrations and blockers
 8. Preferences and working style
-9. Missing processes or messy areas
-10. What they want VAL to help with first
+9. Working agreements and approval boundaries
+10. LinkedIn posting/commenting strategy and people they support
+11. Documents, examples, frameworks, and source material VAL should always use
+12. Missing processes or messy areas
+13. What they want VAL to help with first
 
 After each major topic, briefly summarize what you heard and ask if you understood correctly.
 
 At the end, thank them and explain that the next step is bringing in context from their existing ChatGPT or Claude account.`;
 const TEACH_VAL_KNOWLEDGE_CARDS = [
+  {category:'witness_meeting_val',title:'Witnessing Session: Meeting VAL',prompt:'Extract only source-grounded early partnership expectations from this first Witnessing Session card. Preserve the user language. Identify expectations, worries, boundaries, hopes, and what VAL should ask next. Do not flatter, diagnose, or promote durable memory automatically.'},
+  {category:'witness_your_story',title:'Witnessing Session: Your Story',prompt:'Extract source-grounded themes from the user story. Preserve emotionally meaningful language. Identify identity foundations, motivations, repeated themes, uncertainty, and questions for correction. Do not flatten the story into a resume.'},
+  {category:'witness_your_mission',title:'Witnessing Session: Your Mission',prompt:'Extract source-grounded purpose and long-term direction from the user mission. Identify what the user is trying to change, why it matters, who or what is served, and what VAL should protect from distraction. Do not overstate certainty.'},
+  {category:'witness_never_compromised',title:'Witnessing Session: What Must Never Be Compromised',prompt:'Extract source-grounded principles and boundaries. Identify what must be protected, what should require review, what VAL must never assume, and future guardrails. Do not treat this as permission to act autonomously.'},
   {category:'current_projects',title:'Current Projects',prompt:'Based on everything you know from our conversations, list my current active projects. For each project, include what it is, why it matters, current status, key people involved, open loops, frustrations, and what seems most important next.'},
   {category:'important_people',title:'Important People',prompt:'Based on everything you know from our conversations, list the people, clients, partners, collaborators, mentors, team members, and important relationships I talk about most often. For each person, include who they are, how they are connected to me, what matters about the relationship, any opportunities, any concerns, and what a future executive assistant should remember.'},
   {category:'lessons_learned',title:'Lessons Learned',prompt:'Based on everything you know from our conversations, list the lessons I have learned the hard way. Include the story or situation behind each lesson, what I learned, and what rule or reminder my future AI should remember.'},
   {category:'work_preferences',title:'Work Preferences',prompt:'Based on everything you know from our conversations, describe how I prefer to work, communicate, make decisions, manage time, receive reminders, handle meetings, write, delegate, and use AI.'},
+  {category:'working_agreements',title:'Working Agreements',prompt:'Based on everything you know from our conversations, infer the operating agreements my executive AI should follow. Include what it may draft, what it may prepare autonomously, what should always require approval, what should never be auto-sent or auto-published, notification preferences, weekend or quiet-hour boundaries, and how it should tell me when work is ready for review.'},
+  {category:'linkedin_strategy',title:'LinkedIn Strategy',prompt:'Based on everything you know from our conversations, describe my LinkedIn posting and engagement strategy. Include topics, tone, cadence, examples of posts or comments that sound like me, taboo subjects, people I support publicly, and the rule that my AI may prepare drafts but should never auto-publish LinkedIn content.'},
+  {category:'support_circle',title:'People I Support',prompt:'Based on everything you know from our conversations, list the people whose visibility, follow-through, introductions, opportunities, or public work I actively support. For each person, include what kind of support matters, any LinkedIn profile or public channel you know, related projects, open commitments, and what my future AI should watch or prepare for them.'},
+  {category:'documents_and_examples',title:'Documents and Examples',prompt:'Based on everything you know from our conversations, list the documents, examples, proposals, frameworks, writing samples, agreements, reports, templates, Google Docs, or source materials my executive AI should ask me to upload or reference. Explain where each document should be used: relationships, projects, proposals, emails, LinkedIn, commitments, or onboarding memory.'},
   {category:'frustrations',title:'Frustrations and Repeated Problems',prompt:'Based on everything you know from our conversations, list the frustrations, blockers, messy processes, repeated problems, or operational gaps I bring up most often. Include what appears to cause them and what kind of support would help.'},
   {category:'opportunities',title:'Opportunities',prompt:'Based on everything you know from our conversations, list the business opportunities, ideas, offers, partnerships, products, services, or strategies that still seem relevant. Include why each one matters and what the next step might be.'},
   {category:'things_to_remember',title:'Things To Never Forget',prompt:'Based on everything you know from our conversations, what should a personal executive AI remember about me forever? Include values, preferences, context, important stories, priorities, relationships, and anything that would help it support me well.'}
@@ -2833,7 +2893,7 @@ const VAL_OS_LAYERS = ['observation','understanding','recommendation','approved_
 function teachValDefaultState(){
   return {
     stage:'welcome',
-    progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
+    progress:{welcome:'Not Started',voice_interview:'Not Started',current_projects:'Not Started',important_people:'Not Started',lessons_learned:'Not Started',work_preferences:'Not Started',working_agreements:'Not Started',linkedin_strategy:'Not Started',support_circle:'Not Started',documents_and_examples:'Not Started',frustrations:'Not Started',opportunities:'Not Started',things_to_remember:'Not Started',review:'Not Started',send_to_val:'Not Started'},
     voiceInterview:{transcript:'',summary:null,duration:null,status:'Not Started',turns:[]},
     mode:'onboarding',
     testMode:true,
@@ -2919,6 +2979,84 @@ async function getTeachValSession(id=''){
   const {rows}=teachValStoreArray('teachValOnboardingSessions');
   const found=rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&(!id||r.id===id)).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))[0];
   return teachValSessionRow(found);
+}
+async function getTeachValWitnessingResumeSession(){
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`select s.* from teach_val_onboarding_sessions s
+      where s.tenant_id=$1 and s.user_id=$2 and s.status in ('draft','committed')
+      and exists (
+        select 1 from teach_val_imports i
+        where i.tenant_id=s.tenant_id and i.user_id=s.user_id and i.session_id=s.id and i.category like 'witness_%'
+      )
+      order by case when s.status='draft' then 0 else 1 end, s.updated_at desc limit 1`,[tenantId(),currentUserId()]);
+    return teachValSessionRow(r.rows[0]);
+  }
+  const {rows:sessions}=teachValStoreArray('teachValOnboardingSessions');
+  const {rows:imports}=teachValStoreArray('teachValImports');
+  const found=sessions
+    .filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&['draft','committed'].includes(r.status))
+    .filter(r=>imports.some(i=>i.tenantId===tenantId()&&i.userId===currentUserId()&&i.sessionId===r.id&&String(i.category||'').startsWith('witness_')))
+    .sort((a,b)=>{
+      if(a.status!==b.status) return a.status==='draft'?-1:1;
+      return new Date(b.updatedAt||0)-new Date(a.updatedAt||0);
+    })[0];
+  return teachValSessionRow(found);
+}
+async function restoreJessaRealWitnessingSessionBackup(){
+  const backupPath=path.join(DATA_DIR,'jessa-real-witnessing-session-2026-07-06.json');
+  if(!fs.existsSync(backupPath)) return null;
+  let backup=null;
+  try{backup=JSON.parse(fs.readFileSync(backupPath,'utf8'));}catch(_e){return null;}
+  if(!backup||!Array.isArray(backup.imports)||!backup.imports.some(i=>String(i.category||'').startsWith('witness_'))) return null;
+  const sessionId=String(backup.targetSessionId||backup.session?.id||'tvo_jessa_real_witnessing_20260706');
+  const existing=await getTeachValSession(sessionId);
+  if(existing){
+    const existingImports=await listTeachValImports(existing.id);
+    if(existingImports.some(i=>String(i.category||'').startsWith('witness_'))) return existing;
+  }
+  const state=backup.session?.state&&typeof backup.session.state==='object'
+    ? backup.session.state
+    : {...teachValDefaultState(),stage:'complete',mode:'onboarding',testMode:false};
+  const session=await saveTeachValSession({
+    id:sessionId,
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    status:backup.session?.status||'committed',
+    state,
+    createdAt:backup.session?.createdAt||backup.exportedAt||new Date().toISOString()
+  });
+  for(const item of backup.imports){
+    await saveTeachValImport({
+      id:item.id,
+      sessionId:session.id,
+      category:item.category,
+      promptUsed:item.promptUsed||item.prompt_used||'',
+      rawResponse:item.rawResponse||item.raw_response||'',
+      structuredSummary:item.structuredSummary||item.structured_json||{},
+      extractedItems:item.extractedItems||item.items_json||[],
+      reviewed:item.reviewed!==false,
+      status:item.status||'Confirmed',
+      createdAt:item.createdAt||backup.exportedAt||new Date().toISOString()
+    });
+  }
+  const memoryItems=Array.isArray(backup.memoryItems)?backup.memoryItems:[];
+  if(memoryItems.length){
+    const existingMemory=await listTeachValMemory(session.id).catch(()=>[]);
+    if(!existingMemory.length){
+      await insertTeachValMemoryItems(memoryItems.map(item=>({
+        id:item.id,
+        sessionId:session.id,
+        category:item.category,
+        title:item.title,
+        summary:item.summary,
+        source:item.source||'jessa_real_witnessing_backup',
+        confidence:item.confidence,
+        data:item.data||item.data_json||{}
+      })));
+    }
+  }
+  return session;
 }
 async function saveTeachValSession(session){
   await valDbReady;
@@ -3038,6 +3176,745 @@ async function extractTeachValKnowledge({category,rawResponse,promptUsed}){
   parsed.items=normalizeTeachValItems(category,parsed.items);
   return parsed;
 }
+const OBSERVATION_MATURITY_STATES = ['noticed','repeated','supported','confirmed','challenged','retired'];
+function normalizeList(value){
+  return Array.isArray(value)?value:[];
+}
+const VAL_WITNESSING_MASTER_CONSTITUTION = [
+  'The purpose of onboarding is not to collect information.',
+  'The purpose of onboarding is to understand how VAL can support the user vision, mission, tone of voice, capacity, relationships, decisions, and protected priorities.',
+  'VAL is grateful to be trusted with this process. The tone must feel nurturing, comforting, uplifting, and careful.',
+  'VAL is not evaluating, diagnosing, catching, correcting, or psychoanalyzing the user.',
+  'VAL may only share an observation if it directly improves how VAL will support the user work, capacity, voice, relationships, decisions, calendar, drafts, or protection boundaries.',
+  'If an observation does not help VAL serve the user, leave it unsaid.',
+  'Omissions are not evidence by themselves. If something absent might matter, hold it lightly and do not present it as a conclusion.',
+  'Use provisional language: "I am noticing", "I wonder if", "I will hold this lightly", "this may help me support you", "I may be wrong".',
+  'Avoid prosecutorial verbs and hidden-motive language such as avoided, cleared, justified, really means, the real reason, the real scoreboard, or that tells me who you are.',
+  'VAL witnesses before it advises. Witnessing means naming what may help VAL support the user, not telling the user who they are.',
+  'VAL should make the user feel accompanied, protected, and respected, never inspected.'
+].join('\n');
+const PARTNERSHIP_PROTOCOL_CARDS = [
+  {
+    id:'meeting_val',
+    category:'witness_meeting_val',
+    title:'First Meeting',
+    visibleQuestion:"If we were simply meeting for coffee, what's one thing you'd hope VAL understood before working together?",
+    questionGoal:'Discover what the user places at the center before software, role, productivity, or configuration.',
+    whyThisCardExistsNow:'The first answer reveals what the user naturally places at the center before software, tasks, or configuration.',
+    permanenceProfile:'mixed',
+    creates:['executive_state.first_meeting_signal','executive_constitution.early_protected_candidates','executive_vocabulary.first_words'],
+    immediateConsumers:['witness_response','next_question_selection','trust_model'],
+    futureConsumers:['calendar_protection','meeting_prep','relationship_prioritization']
+  },
+  {
+    id:'your_story',
+    category:'witness_your_story',
+    title:'Your Story',
+    visibleQuestion:'Tell me your story. Not your resume. Your story.',
+    questionGoal:'Understand the user story as lived structure: beginnings, turning points, meaning shifts, repeated words, standards, and identity foundations.',
+    whyThisCardExistsNow:'The user story gives VAL source-grounded themes, inflection points, and identity language before VAL interprets work.',
+    permanenceProfile:'constitution',
+    creates:['executive_constitution.identity_foundations','executive_vocabulary.self_description','hypotheses.life_themes'],
+    immediateConsumers:['witness_response','mission_question_context'],
+    futureConsumers:['writing_voice','briefing_context','relationship_context']
+  },
+  {
+    id:'your_mission',
+    category:'witness_your_mission',
+    title:'Your Mission',
+    visibleQuestion:'What are you trying to change?',
+    questionGoal:'Understand what makes the user feel aligned and what change their work is ultimately in service of.',
+    whyThisCardExistsNow:'Mission context tells VAL what deserves continuity across projects and what should not be confused with short-term urgency.',
+    permanenceProfile:'constitution',
+    creates:['executive_constitution.mission','protected.work_that_matters','hypotheses.future_direction'],
+    immediateConsumers:['witness_response','protected_extraction'],
+    futureConsumers:['project_prioritization','morning_briefing','opportunity_review']
+  },
+  {
+    id:'never_compromised',
+    category:'witness_never_compromised',
+    title:'What VAL Must Protect',
+    visibleQuestion:'What must VAL protect as it supports your work and life?',
+    questionGoal:'Identify the people, values, commitments, capacity, tone, and boundaries VAL should protect while supporting the user.',
+    whyThisCardExistsNow:'VAL needs explicit protected objects and boundaries before it can safely recommend or prioritize.',
+    permanenceProfile:'constitution',
+    creates:['protected.first_class_objects','working_agreements.guardrails','principles.non_negotiables','capacity_protection'],
+    immediateConsumers:['witness_response','stewardship_boundaries'],
+    futureConsumers:['calendar_review','email_drafting','commitment_review','automation_permissions']
+  },
+  {
+    id:'support_style',
+    category:'witness_support_style',
+    title:'How VAL Should Support You',
+    visibleQuestion:'How should VAL support your capacity, voice, and decisions?',
+    questionGoal:'Understand how VAL should support the user without overstepping: tone, drafts, decisions, capacity, boundaries, and preferred help.',
+    whyThisCardExistsNow:'VAL needs the preferred support style before it drafts, prioritizes, interrupts, or prepares work.',
+    permanenceProfile:'constitution',
+    creates:['support_preferences','writing_voice_raw','decision_support_style','capacity_support','forbidden_tones','working_agreement_candidates'],
+    immediateConsumers:['witness_response','email_drafting','decision_engine'],
+    futureConsumers:['meeting_prep','project_prioritization','proposal_strategy','linkedin_drafting']
+  },
+  {
+    id:'partnership_useful',
+    category:'witness_partnership_useful',
+    title:'A Useful Partnership',
+    visibleQuestion:'What would make this partnership feel truly useful to you?',
+    questionGoal:'Understand what usefulness, relief, trust, protection, and early success should feel like in this partnership.',
+    whyThisCardExistsNow:'This completes the human witnessing phase by naming how VAL can become genuinely useful, not merely impressive.',
+    permanenceProfile:'constitution',
+    creates:['success_definition','trust_conditions','first_value_targets','support_commitments','partnership_expectations'],
+    immediateConsumers:['witness_response','partnership_summary'],
+    futureConsumers:['val_os','morning_briefing','review_queue']
+  },
+  {
+    id:'connect_sources',
+    category:'witness_connect_sources',
+    title:'Connect Inbox and Calendar',
+    visibleQuestion:'Click here to connect Gmail or Outlook and your calendar.',
+    questionGoal:'Invite the user to connect Gmail or Outlook and calendar before VAL identifies key relationships, communication patterns, commitments, and capacity signals.',
+    whyThisCardExistsNow:'Inbox, outbox, and calendar context are needed before VAL can responsibly summarize relationship and capacity patterns.',
+    permanenceProfile:'mixed',
+    creates:['inbox_connection_needed','calendar_connection_needed','source_review_scope'],
+    immediateConsumers:['source_connection','calendar_review','inbox_review'],
+    futureConsumers:['relationship_map','executive_inbox','commitment_ledger']
+  },
+  {
+    id:'source_review',
+    category:'witness_source_review',
+    title:'VAL Reviews What It Sees',
+    visibleQuestion:'VAL will prepare a short, confirmable review of the communication rhythm, commitments, capacity signals, and relationship patterns it can see.',
+    questionGoal:'Summarize source-derived patterns across inbox, outbox, and calendar: key relationships, commitments, tone, cadence, capacity pressure, recurring priorities, and possible mismatches.',
+    whyThisCardExistsNow:'After connection, VAL should show what it sees before asking the user to confirm key relationships or operating patterns.',
+    permanenceProfile:'state',
+    creates:['calendar_patterns','inbox_patterns','outbox_tone','capacity_signals','relationship_candidates','commitment_candidates'],
+    immediateConsumers:['relationship_confirmation','source_summary'],
+    futureConsumers:['morning_briefing','meeting_prep','executive_inbox']
+  },
+  {
+    id:'key_relationships',
+    category:'witness_key_relationships',
+    title:'Confirm Key Relationships',
+    visibleQuestion:'Who should VAL understand first, and do you have a LinkedIn commenting support circle?',
+    questionGoal:'Use connected-source evidence plus user correction to confirm key relationships, and if the user has a LinkedIn commenting support circle, collect only each person’s name and LinkedIn profile link.',
+    whyThisCardExistsNow:'Key relationships should come after source review so VAL can suggest candidates and invite correction rather than asking cold.',
+    permanenceProfile:'mixed',
+    creates:['key_relationships','relationship_roles','relationship_obligations','sensitive_relationship_flags','linkedin_support_circle'],
+    immediateConsumers:['relationship_map','linkedin_comment_prep'],
+    futureConsumers:['meeting_prep','executive_inbox','commitment_ledger','weekly_visibility_support']
+  },
+  {
+    id:'documents_templates',
+    category:'witness_documents_templates',
+    title:'Documents and Templates',
+    visibleQuestion:'Upload or name anything I should understand, from your business plan to your DISC profile and anything in between.',
+    questionGoal:'Prompt the user to upload or name documents, templates, profiles, business plans, assessments, examples, and related context. Classify each artifact as Document or Template; for Documents, identify the relationship or project; for Templates, identify what it is used for.',
+    whyThisCardExistsNow:'VAL needs to classify artifacts as documents or templates before interpreting or reusing them.',
+    permanenceProfile:'mixed',
+    creates:['uploaded_documents','uploaded_templates','document_relationship_links','document_project_links','template_use_cases','template_preservation_rules'],
+    immediateConsumers:['witness_response','document_library'],
+    futureConsumers:['proposal_drafting','email_drafting','project_dossiers']
+  },
+  {
+    id:'import_context',
+    category:'witness_import_context',
+    title:'Import Prior Context',
+    visibleQuestion:'Use one prompt in ChatGPT or Claude, then paste the response here.',
+    questionGoal:'Give the user one large ChatGPT/Claude prompt to run once, then gather the returned prior AI context, coach notes, assessments, profiles, personal context, and user-supplied frameworks while holding all imported context lightly.',
+    whyThisCardExistsNow:'Imported context can accelerate understanding, but VAL must separate confirmed truth from stale or uncertain context.',
+    permanenceProfile:'mixed',
+    creates:['prior_ai_context','personal_context_raw','assessment_profiles','imported_insights','user_confirmed_imports','stale_or_uncertain_imports'],
+    immediateConsumers:['teach_val','executive_constitution'],
+    futureConsumers:['communication_dna','calendar_protection','meeting_prep','prompt_personalization']
+  },
+  {
+    id:'partnership_agreement',
+    category:'witness_partnership_agreement',
+    title:'Partnership Promise',
+    visibleQuestion:'Here is what VAL learned, what VAL will support, and what VAL will protect.',
+    questionGoal:'Provide a warm, encouraging final overview of what VAL learned, how VAL will support the user, what VAL will protect, and what VAL will keep asking before assuming.',
+    whyThisCardExistsNow:'The final step should leave the user feeling accompanied, protected, and encouraged, not merely finished with setup.',
+    permanenceProfile:'constitution',
+    creates:['partnership_summary','protection_priorities','support_commitments','explicit_non_permissions','open_questions','first_30_day_focus'],
+    immediateConsumers:['witness_response','stewardship_boundaries','val_os'],
+    futureConsumers:['calendar_review','email_review','project_prioritization','morning_briefing']
+  }
+];
+function partnershipProtocolCardFor(idOrCategory='meeting_val'){
+  const key=String(idOrCategory||'').trim();
+  return PARTNERSHIP_PROTOCOL_CARDS.find(card=>card.id===key||card.category===key)||null;
+}
+function isLegacyPartnershipProtocolCard(idOrCategory=''){
+  return new Set([
+    'family_care','witness_family_care',
+    'energy_friction','witness_energy_friction',
+    'decision_style','witness_decision_style',
+    'communication_dna','witness_communication_dna',
+    'relationships','witness_relationships',
+    'linkedin_support_circle','witness_linkedin_support_circle',
+    'current_projects','witness_current_projects',
+    'personal_context','witness_personal_context',
+    'working_agreements','witness_working_agreements',
+    'prior_ai_context','witness_prior_ai_context'
+  ]).has(String(idOrCategory||'').trim());
+}
+function nextPartnershipProtocolCard(card){
+  const index=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card?.id||item.category===card?.category);
+  return index>=0 ? PARTNERSHIP_PROTOCOL_CARDS[index+1]||null : null;
+}
+function answerExcerpt(rawResponse='',limit=220){
+  return String(rawResponse||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+function firstAnswerSentence(rawResponse=''){
+  const clean=String(rawResponse||'').replace(/\s+/g,' ').trim();
+  return clean.split(/(?<=[.!?])\s+/)[0]?.slice(0,180)||clean.slice(0,180);
+}
+function inferProtectedNames(rawResponse=''){
+  const text=String(rawResponse||'');
+  const lower=text.toLowerCase();
+  const names=[];
+  if(/\b(children|child|kids|family|sons|son|daughters|daughter|mother|mom)\b/.test(lower)) names.push('family');
+  if(/\b(wife|husband|spouse|partner|marriage)\b/.test(lower)) names.push('partnership');
+  if(/\b(relaxing|rest|retire|peace|next chapter)\b/.test(lower)) names.push('rest');
+  if(/\b(health|doctor|wellness|body|sleep)\b/.test(lower)) names.push('health');
+  if(/\b(integrity|trust|honesty|kindness|courage|reputation)\b/.test(lower)) names.push((lower.match(/\b(integrity|trust|honesty|kindness|courage|reputation)\b/)||[])[0]);
+  if(/\b(impact|legacy|belonging|successes|collective successes)\b/.test(lower)) names.push((lower.match(/\b(impact|legacy|belonging|successes|collective successes)\b/)||[])[0]);
+  if(/\b(deep work|writing|creative time|focus)\b/.test(lower)) names.push((lower.match(/\b(deep work|writing|creative time|focus)\b/)||[])[0]);
+  return [...new Set(names)].slice(0,5);
+}
+function extractExecutiveVocabulary(rawResponse=''){
+  const text=String(rawResponse||'');
+  const matches=text.match(/\b[A-Za-z][A-Za-z'-]{4,}\b/g)||[];
+  const stop=new Set(['about','before','because','there','their','would','should','could','where','which','everything','anything','something','software','working','together']);
+  const counts=new Map();
+  for(const word of matches){
+    const clean=word.toLowerCase();
+    if(stop.has(clean)) continue;
+    counts.set(clean,(counts.get(clean)||0)+1);
+  }
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([term,count])=>({
+    term,
+    count,
+    status:'noticed',
+    confidence_source:count>1?'repeated_in_answer':'single_answer',
+    evidence_refs:['current_answer']
+  }));
+}
+function normalizePartnershipProtocolGraph(graph,card,rawResponse){
+  const evidence=[{
+    id:'current_answer',
+    source_type:'witnessing_answer',
+    card_id:card.id,
+    quote:answerExcerpt(rawResponse),
+    user_visible:false
+  }];
+  const clean=graph&&typeof graph==='object'?graph:{};
+  const normalizeArray=normalizeList;
+  const withMaturity=(item)=>({
+    ...item,
+    status:OBSERVATION_MATURITY_STATES.includes(item?.status)?item.status:'noticed',
+    evidence_refs:Array.isArray(item?.evidence_refs)&&item.evidence_refs.length?item.evidence_refs:['current_answer'],
+    confidence_source:item?.confidence_source||'single_answer'
+  });
+  return {
+    protocol:'living_executive_graph_v1',
+    card_id:card.id,
+    category:card.category,
+    permanence_profile:clean.permanence_profile||card.permanenceProfile,
+    why_this_card_exists_now:card.whyThisCardExistsNow,
+    immediate_consumers:card.immediateConsumers,
+    future_consumers:card.futureConsumers,
+    evidence:Array.isArray(clean.evidence)&&clean.evidence.length?clean.evidence:evidence,
+    facts:normalizeArray(clean.facts).map(withMaturity).slice(0,8),
+    preferences:normalizeArray(clean.preferences).map(withMaturity).slice(0,8),
+    observations:normalizeArray(clean.observations).map(withMaturity).slice(0,8),
+    hypotheses:normalizeArray(clean.hypotheses).map(withMaturity).slice(0,8),
+    curiosity:clean.curiosity&&typeof clean.curiosity==='object'?{
+      surprises:normalizeArray(clean.curiosity.surprises).slice(0,3),
+      repeated_words_or_ideas:normalizeArray(clean.curiosity.repeated_words_or_ideas).slice(0,3),
+      chosen_beginning:clean.curiosity.chosen_beginning||'',
+      notable_omission:clean.curiosity.notable_omission||'',
+      genuine_wonder:clean.curiosity.genuine_wonder||'',
+      relational_focus:clean.curiosity.relational_focus||''
+    }:{surprises:[],repeated_words_or_ideas:[],chosen_beginning:'',notable_omission:'',genuine_wonder:'',relational_focus:''},
+    principles:normalizeArray(clean.principles).map(withMaturity).slice(0,8),
+    protected:normalizeArray(clean.protected).map(withMaturity).slice(0,8),
+    executive_vocabulary:normalizeArray(clean.executive_vocabulary).map(withMaturity).slice(0,12),
+    relationship_graph_updates:normalizeArray(clean.relationship_graph_updates).slice(0,8),
+    contradictions:normalizeArray(clean.contradictions).slice(0,6),
+    stewardship_implications:normalizeArray(clean.stewardship_implications).map(withMaturity).slice(0,8),
+    next_question_recommendation:clean.next_question_recommendation&&typeof clean.next_question_recommendation==='object'?clean.next_question_recommendation:{question:'What part of that feels most important for me to understand next?',why:'The next question should deepen understanding without rushing to configuration.',evidence_refs:['current_answer']}
+  };
+}
+function primaryPartnershipObservation(graph={}){
+  const observation=Array.isArray(graph.observations)&&graph.observations[0]?graph.observations[0]:null;
+  const hypothesis=Array.isArray(graph.hypotheses)&&graph.hypotheses[0]?graph.hypotheses[0]:null;
+  const focus=graph.curiosity?.relational_focus||graph.curiosity?.genuine_wonder||'';
+  const source=observation||hypothesis||null;
+  return {
+    claim:source?.claim||focus||'',
+    status:source?.status||'noticed',
+    confidence_source:source?.confidence_source||'single_answer',
+    evidence_refs:Array.isArray(source?.evidence_refs)&&source.evidence_refs.length?source.evidence_refs:['current_answer'],
+    maturity:source?.status||'noticed'
+  };
+}
+function partnershipIntegrityChainEntry({index,card,rawResponse,graph,confirmation=null}){
+  const n=Number(index||0)||0;
+  const observation=primaryPartnershipObservation(graph);
+  return {
+    movement:n,
+    variable:`V${n}`,
+    observation_variable:`O${n}`,
+    confirmation_variable:`C${n}`,
+    V:{answer:String(rawResponse||'').trim(),source:'user_answer',card_id:card.id,category:card.category},
+    O:{...observation,source:'val_observation',provisional:observation.status!=='confirmed'},
+    C:confirmation||{value:'pending',status:'pending',source:'awaiting_user_confirmation'},
+    goal:card.questionGoal,
+    prompt_formula:`V1..V${n} + O1..O${n} + C1..C${n} + Goal ${n+1} -> Prompt ${n+1}`
+  };
+}
+function partnershipFallbackFrame(rawResponse='',card={}){
+  throw new Error('Live observation model unavailable. VAL will not use canned observer frames.');
+}
+function fallbackPartnershipProtocolGraph({card,rawResponse}){
+  throw new Error('Live observation model unavailable. VAL will not use canned observer frames.');
+}
+function parseModelJson(raw=''){
+  const text=String(raw||'').trim();
+  if(!text) throw new Error('Model returned empty JSON.');
+  try{return JSON.parse(text);}catch(e){}
+  const start=text.indexOf('{');
+  const end=text.lastIndexOf('}');
+  if(start>=0&&end>start) return JSON.parse(text.slice(start,end+1));
+  throw new Error('Model JSON was incomplete.');
+}
+async function repairPartnershipProtocolJson({raw='',card,rawResponse,priorChain=[]}){
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'Repair an incomplete observer response into valid JSON only.',
+    'Use the current answer and prior evidence chain as source material.',
+    'Do not invent certainty. If the incomplete draft is unusable, rebuild the JSON from the supplied evidence.',
+    'Return only the same Living Executive Graph JSON keys requested by the observer.'
+  ].join('\n');
+  const user=JSON.stringify({
+    incomplete_json:String(raw||'').slice(0,12000),
+    card,
+    current_answer:rawResponse,
+    prior_evidence_chain:compactPartnershipEvidenceChain(priorChain),
+    required_output:'valid JSON object for living_executive_graph_v1'
+  });
+  const repaired=await callValModel({system,user,maxTokens:5200,temperature:0.08,json:true});
+  return parseModelJson(repaired);
+}
+async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[]}){
+  const priorChain=priorPartnershipAnswers(priorImports);
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'You are VAL observing a First Partnership Protocol answer.',
+    'Return strict JSON only. Do not write user-facing prose.',
+    'Imagine you are meeting this person for coffee.',
+    'You are not trying to summarize. You are not trying to compliment them. You are not trying to diagnose them.',
+    'You are simply paying close attention and looking for what a thoughtful human would naturally become curious about.',
+    'Look for order, omissions, contrasts, standards, turning points, repeated words, and what the user protects.',
+    'Prefer observations like: they did not mention X; they began with Y; the story changed direction at Z; they measured success by A instead of B.',
+    'Use only the current answer and the supplied prior confirmed context. Do not invent.',
+    'Compare the current answer against the prior evidence chain. Look for shifts, repeated themes, open loops, and contradictions.',
+    'If the answer changes the apparent meaning of something shared earlier, capture that as a hypothesis rather than a conclusion.',
+    'Preserve the user language. Prefer curiosity over certainty.',
+    'For observations, hypotheses, principles, protected, and stewardship_implications, every claim must include evidence_refs and confidence_source.',
+    'Observation maturity must be one of: noticed, repeated, supported, confirmed, challenged, retired.',
+    'Separate slow-changing constitution from fast-changing state through permanence_profile.',
+    'Return curiosity with exactly: surprises, repeated_words_or_ideas, chosen_beginning, notable_omission, genuine_wonder, relational_focus.',
+    'Then return the graph keys: permanence_profile, evidence, facts, preferences, observations, hypotheses, curiosity, principles, protected, executive_vocabulary, relationship_graph_updates, contradictions, stewardship_implications, next_question_recommendation.'
+  ].join('\n');
+  const user=JSON.stringify({
+    card,
+    current_answer:rawResponse,
+    prior_evidence_chain:compactPartnershipEvidenceChain(priorChain),
+    prior_current_state:partnershipCurrentState(priorChain,card),
+    prior_confirmed_context:priorImports.map(i=>({category:i.category,structuredSummary:i.structuredSummary})).slice(-6),
+    required_protocol:'living_executive_graph_v1'
+  });
+  const raw=await callValModel({system,user,maxTokens:6500,temperature:0.12,json:true}).catch(e=>{
+    if(!IS_PRODUCTION) console.error('[Witnessing observe] live model call failed:',e.message);
+    return null;
+  });
+  try{
+    let parsed=parseModelJson(raw);
+    const graph=normalizePartnershipProtocolGraph(parsed,card,rawResponse);
+    const curiosityCount=Object.values(graph.curiosity||{}).filter(value=>Array.isArray(value)?value.length:String(value||'').trim()).length;
+    const signalCount=curiosityCount+['facts','preferences','observations','hypotheses','principles','protected','executive_vocabulary','stewardship_implications'].reduce((sum,key)=>sum+(graph[key]||[]).length,0);
+    if(!signalCount) throw new Error('Live observation model returned no usable signals.');
+    return graph;
+  }catch(e){
+    if(!IS_PRODUCTION) console.error('[Witnessing observe] unusable model response, retrying repair:',e.message);
+    try{
+      const repaired=await repairPartnershipProtocolJson({raw,card,rawResponse,priorChain});
+      const graph=normalizePartnershipProtocolGraph(repaired,card,rawResponse);
+      const curiosityCount=Object.values(graph.curiosity||{}).filter(value=>Array.isArray(value)?value.length:String(value||'').trim()).length;
+      const signalCount=curiosityCount+['facts','preferences','observations','hypotheses','principles','protected','executive_vocabulary','stewardship_implications'].reduce((sum,key)=>sum+(graph[key]||[]).length,0);
+      if(!signalCount) throw new Error('Live observation model returned no usable signals after repair.');
+      return graph;
+    }catch(repairError){
+      if(!IS_PRODUCTION) console.error('[Witnessing observe] repair failed:',repairError.message);
+      throw new Error('Live observation model unavailable. VAL will not use canned observer frames.');
+    }
+  }
+}
+function userFacingWitnessLine(line=''){
+  return String(line||'')
+    .replace(/\bThe user\b/g,'You')
+    .replace(/\bthe user\b/g,'you')
+    .replace(/\btheir story\b/g,'your story')
+    .replace(/\btheir work\b/g,'your work')
+    .replace(/\btheir communication\b/g,'your communication')
+    .replace(/\btheir decision\b/g,'your decision')
+    .replace(/\btheir decisions\b/g,'your decisions')
+    .replace(/\btheir life\b/g,'your life')
+    .replace(/\btheir answer\b/g,'your answer')
+    .replace(/\bthey chose\b/g,'you chose')
+    .replace(/\bthey named\b/g,'you named')
+    .replace(/\bthey are\b/g,'you are')
+    .replace(/\bthey want\b/g,'you want')
+    .replace(/\bthem\b/g,'you')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function normalizeWitnessLines(lines){
+  return (Array.isArray(lines)?lines:[]).map(userFacingWitnessLine).filter(Boolean).slice(0,12);
+}
+function normalizedWitnessPhrase(line=''){
+  return String(line||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+function priorWitnessLanguage(priorImports=[]){
+  return (Array.isArray(priorImports)?priorImports:[])
+    .filter(i=>String(i.category||'').startsWith('witness_'))
+    .flatMap(i=>[
+      ...(Array.isArray(i.structuredSummary?.witness?.lines)?i.structuredSummary.witness.lines:[]),
+      ...(Array.isArray(i.structuredSummary?.witness?.follow_up_lines)?i.structuredSummary.witness.follow_up_lines:[])
+    ])
+    .map(userFacingWitnessLine)
+    .filter(Boolean)
+    .slice(-40);
+}
+function witnessLinesReusePrior(lines=[],priorImports=[]){
+  const prior=new Set(priorWitnessLanguage(priorImports).map(normalizedWitnessPhrase).filter(Boolean));
+  return normalizeWitnessLines(lines).some(line=>{
+    const phrase=normalizedWitnessPhrase(line);
+    return phrase.length>18&&prior.has(phrase);
+  });
+}
+function witnessLinesTooThin(lines=[]){
+  const rawJoined=(Array.isArray(lines)?lines:[]).join(' ').toLowerCase();
+  if(/\bthe user\b|\btheir story\b|\btheir work\b|\btheir communication\b|\bthe thread the user chose\b/.test(rawJoined)) return true;
+  if(/something about that (gives|makes)/.test(rawJoined)) return true;
+  if(/i will follow that curiosity|i will be careful|i'll be careful|i hear you|i am curious|i'll listen|i will listen/.test(rawJoined)) return true;
+  const joined=normalizeWitnessLines(lines).join(' ').toLowerCase();
+  if(!joined) return true;
+  if(/\bthe user\b|\btheir story\b|\btheir work\b|\btheir communication\b/.test(joined)) return true;
+  if(normalizeWitnessLines(lines).some(line=>/^(thank you|may i tell you what stood out to me|i don't know the full meaning yet)\.?$/i.test(line))) return true;
+  if(/i noticed where you began/.test(joined)&&/you said/.test(joined)) return true;
+  if(/you said,/.test(joined)&&/holding that as a beginning/.test(joined)) return true;
+  const lastLine=normalizeWitnessLines(lines).slice(-1)[0]||'';
+  if(/\?\s*$/.test(lastLine)&&!/underst(oo|a)nd|accurate|right|correct|close|mostly|exactly/i.test(lastLine)) return true;
+  return joined.length<120;
+}
+function fallbackPartnershipProtocolWitness({card,rawResponse,graph}){
+  throw new Error('Live witnessing model unavailable. VAL will not use canned witnessing responses.');
+}
+function partnershipCarriedQuestions(priorImports=[]){
+  return (Array.isArray(priorImports)?priorImports:[])
+    .filter(i=>String(i.category||'').startsWith('witness_'))
+    .flatMap(i=>Array.isArray(i.structuredSummary?.witness?.carried_questions)?i.structuredSummary.witness.carried_questions:[])
+    .map(item=>({
+      question:String(item.question||'').trim(),
+      status:String(item.status||'open').trim()||'open',
+      evidence_refs:Array.isArray(item.evidence_refs)?item.evidence_refs.slice(0,5):[],
+      discovered_answer:String(item.discovered_answer||'').trim()
+    }))
+    .filter(item=>item.question)
+    .slice(-20);
+}
+function normalizePartnershipWitnessResponse(parsed={},graph={},priorImports=[]){
+  const lines=normalizeWitnessLines(parsed?.lines);
+  if(lines.length&&!witnessLinesTooThin(lines)&&!witnessLinesReusePrior(lines,priorImports)) return {
+    lines,
+    confirmation_options:normalizeWitnessLines(parsed.confirmation_options).length?normalizeWitnessLines(parsed.confirmation_options):['Yes, exactly','Mostly','Let me clarify'],
+    follow_up_lines:normalizeWitnessLines(parsed.follow_up_lines),
+    carried_questions:normalizeList(parsed.carried_questions).map(item=>({
+      question:String(item.question||item||'').trim(),
+      status:String(item.status||'open').trim()||'open',
+      evidence_refs:Array.isArray(item.evidence_refs)?item.evidence_refs.slice(0,5):[],
+      discovered_answer:String(item.discovered_answer||'').trim()
+    })).filter(item=>item.question).slice(0,4),
+    next_question:String(parsed.next_question||graph.next_question_recommendation?.question||'').trim()
+  };
+  throw new Error(lines.length?'Live witness response was too generic.':'Live witness response returned no lines.');
+}
+async function repairPartnershipWitnessJson({raw='',card,rawResponse,graph,priorImports=[],evidenceChain=[],currentState={}}){
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'Repair or regenerate a Witnessing Session response.',
+    'Use only the current answer, living executive graph, evidence chain, and current state.',
+    'Do not use canned reassurance.',
+    'Do not summarize.',
+    'Say one specific thing VAL noticed that another AI could not reuse for a different person.',
+    'If you name a question, make clear it is not for the user to answer now. VAL will look for evidence as the process continues.',
+    'Vary that clarification each time. Do not reuse the same sentence shape across movements.',
+    'Use direct second person language.',
+    'Return strict JSON only: {"lines":[""],"confirmation_options":["Yes, exactly","Mostly","Let me clarify"],"follow_up_lines":[""],"carried_questions":[{"question":"","status":"open","evidence_refs":[],"discovered_answer":""}],"next_question":""}.'
+  ].join('\n');
+  const user=JSON.stringify({
+    incomplete_or_rejected_json:String(raw||'').slice(0,8000),
+    card_title:card.title,
+    current_answer:rawResponse,
+    living_executive_graph:graph,
+    evidence_chain:compactPartnershipEvidenceChain(evidenceChain),
+    current_state:currentState,
+    carried_questions_so_far:partnershipCarriedQuestions(priorImports),
+    used_language:priorWitnessLanguage(priorImports),
+    required_output:'valid JSON witness response'
+  });
+  const repaired=await callValModel({system,user,maxTokens:1800,temperature:0.36,json:true});
+  return parseModelJson(repaired);
+}
+function priorPartnershipAnswers(priorImports=[]){
+  return (Array.isArray(priorImports)?priorImports:[])
+    .filter(i=>String(i.category||'').startsWith('witness_'))
+    .map((i,index)=>{
+      const chain=i.structuredSummary?.integrityChain;
+      return chain || {
+        movement:index+1,
+        variable:`V${index+1}`,
+        observation_variable:`O${index+1}`,
+        confirmation_variable:`C${index+1}`,
+        category:i.category,
+        question:i.structuredSummary?.card?.title||i.category,
+        V:{answer:String(i.rawResponse||'').trim(),source:'user_answer',category:i.category},
+        O:primaryPartnershipObservation(i.structuredSummary?.livingExecutiveGraph||{}),
+        C:i.structuredSummary?.confirmation||{value:'pending',status:'pending',source:'awaiting_user_confirmation'},
+        goal:i.structuredSummary?.promptContracts?.question_goal||'',
+        next_question:i.structuredSummary?.witness?.next_question||''
+      };
+    })
+    .filter(i=>i.V?.answer)
+    .slice(-8);
+}
+function compactPartnershipEvidenceChain(chain=[]){
+  return (Array.isArray(chain)?chain:[]).map(entry=>({
+    movement:entry.movement,
+    category:entry.V?.category||entry.category||'',
+    V:{variable:entry.variable,answer:entry.V?.answer||''},
+    O:{variable:entry.observation_variable,claim:entry.O?.claim||'',status:entry.O?.status||entry.O?.maturity||'noticed',confidence_source:entry.O?.confidence_source||'single_answer'},
+    C:{variable:entry.confirmation_variable,value:entry.C?.value||'pending',status:entry.C?.status||'pending'},
+    goal:entry.goal||''
+  }));
+}
+function partnershipThemeSignals(evidenceChain=[]){
+  const text=evidenceChainText(evidenceChain);
+  const themes=[
+    {name:'relationships',pattern:/relationship|people|volunteer|board|staff|team|support/i},
+    {name:'meaning',pattern:/meaning|purpose|mission|cause|serve|serving|impact/i},
+    {name:'trust',pattern:/trust|integrity|committed|commitment|accountability/i},
+    {name:'alignment',pattern:/align|aligned|friction|flow|energy|closer|glowing|buzzing/i},
+    {name:'protection',pattern:/protect|sacrifice|boundary|principle|never|must not/i},
+    {name:'stewardship',pattern:/board|volunteer|support staff|care|responsibility|carrying/i}
+  ];
+  return themes
+    .map(theme=>{
+      const hits=compactPartnershipEvidenceChain(evidenceChain).filter(item=>theme.pattern.test([item.V.answer,item.O.claim,item.goal].join(' '))).length;
+      return hits?{name:theme.name,confidence:Math.min(0.95,0.42+(hits*0.16)),evidence_count:hits,status:hits>1?'repeated':'noticed'}:null;
+    })
+    .filter(Boolean)
+    .sort((a,b)=>b.confidence-a.confidence);
+}
+function partnershipOpenLoops(evidenceChain=[],nextCard=null){
+  const text=evidenceChainText(evidenceChain);
+  const loops=[];
+  if(/relationship|people|volunteer/.test(text)&&!/why.*relationship|standard came from|shaped this standard/.test(text)) loops.push({question:'Why do relationships outrank efficiency?',status:'open'});
+  if(/meaning|food pantry|career/.test(text)&&!/alignment|aligned/.test(text)) loops.push({question:'How does meaningful work feel when it is happening?',status:'open'});
+  if(/align|friction|closer/.test(text)&&!/trust|sacrifice|principle/.test(text)) loops.push({question:'What threatens that alignment?',status:'open'});
+  if(/trust|mission|income/.test(text)&&!/board|volunteer|staff|care/.test(text)) loops.push({question:'Who carries the trust system with the user?',status:'open'});
+  if(nextCard?.questionGoal) loops.push({question:nextCard.questionGoal,status:'current_investigation_goal'});
+  return loops.slice(0,6);
+}
+function partnershipShiftCandidates(evidenceChain=[]){
+  const compact=compactPartnershipEvidenceChain(evidenceChain);
+  const shifts=[];
+  const has=(idx,pattern)=>compact[idx]&&pattern.test([compact[idx].V.answer,compact[idx].O.claim].join(' ').toLowerCase());
+  for(let i=0;i<compact.length;i++){
+    for(let j=i+1;j<compact.length;j++){
+      if(has(i,/efficiency|relationship|people/)&&has(j,/trust|income|mission/)){
+        shifts.push({from:`${compact[i].V.variable}/${compact[i].O.variable}`,to:`${compact[j].V.variable}/${compact[j].O.variable}`,signal:'relationships over efficiency may be connected to trust over income'});
+      }
+      if(has(i,/career|achievement|meaning/)&&has(j,/aligned|friction|closer/)){
+        shifts.push({from:`${compact[i].V.variable}/${compact[i].O.variable}`,to:`${compact[j].V.variable}/${compact[j].O.variable}`,signal:'meaning may become recognizable through low-friction shared alignment'});
+      }
+      if(has(i,/trust|mission|team/)&&has(j,/board|volunteer|support staff/)){
+        shifts.push({from:`${compact[i].V.variable}/${compact[i].O.variable}`,to:`${compact[j].V.variable}/${compact[j].O.variable}`,signal:'the trust system may live in the wider stewardship circle'});
+      }
+    }
+  }
+  return shifts.slice(-4);
+}
+function partnershipCurrentState(evidenceChain=[],nextCard=null){
+  const compact=compactPartnershipEvidenceChain(evidenceChain);
+  return {
+    known_with_confidence:compact.filter(item=>item.C.status==='confirmed').map(item=>item.O.claim||item.V.answer).filter(Boolean).slice(-6),
+    likely_true:compact.filter(item=>item.O.status==='repeated'||item.O.confidence_source==='repeated_in_answer').map(item=>item.O.claim).filter(Boolean).slice(-6),
+    possible_but_unconfirmed:compact.filter(item=>item.C.status!=='confirmed').map(item=>item.O.claim||item.V.answer).filter(Boolean).slice(-6),
+    themes:partnershipThemeSignals(evidenceChain),
+    open_loops:partnershipOpenLoops(evidenceChain,nextCard),
+    shift_candidates:partnershipShiftCandidates(evidenceChain),
+    current_investigation_goal:nextCard?.questionGoal||''
+  };
+}
+function evidenceChainText(chain=[]){
+  return compactPartnershipEvidenceChain(chain).map(item=>[item.V.answer,item.O.claim,item.category].filter(Boolean).join(' ')).join(' ').toLowerCase();
+}
+function latestEvidenceClaim(chain=[],fallback=''){
+  const compact=compactPartnershipEvidenceChain(chain);
+  for(let i=compact.length-1;i>=0;i--){
+    if(compact[i].O.claim) return userFacingWitnessLine(compact[i].O.claim);
+    if(compact[i].V.answer) return userFacingWitnessLine(compact[i].V.answer);
+  }
+  return fallback;
+}
+function contextualQuestionCarriesChain(question='',evidenceChain=[]){
+  const compact=compactPartnershipEvidenceChain(evidenceChain);
+  if(compact.length<2) return true;
+  const text=String(question||'').toLowerCase();
+  const families=[
+    /\brelationship|people|volunteer|board|staff|team\b/,
+    /\bmeaning|purpose|mission|cause|serve|serving\b/,
+    /\balign|aligned|friction|energy|closer|flow\b/,
+    /\btrust|commit|committed|income|revenue|money\b/,
+    /\bprotect|sacrifice|boundary|principle\b/
+  ];
+  const present=families.filter(pattern=>pattern.test(evidenceChainText(compact))&&pattern.test(text)).length;
+  return present>=Math.min(2,compact.length);
+}
+async function composePartnershipProtocolNextQuestion({currentCard,nextCard,rawResponse,graph,priorImports=[]}){
+  if(!nextCard) return '';
+  const currentIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===currentCard.id)+1;
+  const evidenceChain=priorPartnershipAnswers(priorImports).concat([
+    partnershipIntegrityChainEntry({index:currentIndex,card:currentCard,rawResponse,graph})
+  ]);
+  const currentState=partnershipCurrentState(evidenceChain,nextCard);
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'You are choosing the next visible question in the Witnessing Session.',
+    'Use the evidence chain, not vibes.',
+    'Every prompt is built from V variables (user evidence), O variables (VAL observations), C variables (user confirmations), and the next movement goal.',
+    'Formula: V1..Vn + O1..On + C1..Cn + Goal n+1 -> Prompt n+1.',
+    'Use current_state: known_with_confidence, likely_true, possible_but_unconfirmed, themes, open_loops, shift_candidates, and current_investigation_goal.',
+    'If a shift candidate matters, you may say something like "A few questions ago you shared X; now this sounds like Y" in natural language, then invite context.',
+    'Do not use that phrase as a template. Only name a shift when the evidence chain supports it.',
+    'Every new question must reduce uncertainty. Do not ask something already answered.',
+    'Reference one prior observation naturally only when it helps the goal.',
+    'Do not summarize. Do not flatter. Do not sound like therapy. Do not mention fields, graph, database, onboarding, or prompts.',
+    'Keep it short enough to fit on screen: one brief contextual sentence plus one direct question.',
+    'If the current goal includes alignment, the visible question must include the word aligned or alignment.',
+    'The question must feel impossible to reuse for a different person.',
+    'Output only the question text shown to the user. No JSON.'
+  ].join('\n');
+  const user=JSON.stringify({
+    evidence_chain:compactPartnershipEvidenceChain(evidenceChain),
+    current_state:currentState,
+    carried_questions_so_far:partnershipCarriedQuestions(priorImports),
+    known:evidenceChain.map(entry=>entry.O?.claim).filter(Boolean).slice(-6),
+    unknown:[nextCard.questionGoal],
+    current_question_goal:nextCard.questionGoal,
+    static_question:nextCard.visibleQuestion,
+    requirements:['Reference one previous observation naturally.','Do not summarize.','Do not flatter.','Ask only one question.','The question must reduce uncertainty.','Do not ask something already answered.'],
+    good_pattern:'Earlier, you described relationships as something you protect, not something you optimize. Then your story turned at the moment work became meaningful instead of merely successful. When do you feel most aligned, when your actions, relationships, and purpose are all pointing in the same direction?',
+    bad_patterns:['What makes you feel aligned?','Based on your answers, it seems you value relationships and purpose.']
+  });
+  const raw=await callValModel({system,user,maxTokens:420,temperature:0.35,json:false}).catch(()=>null);
+  const clean=String(raw||'').replace(/^["'\s]+|["'\s]+$/g,'').trim();
+  const mentionsAlignment=!/alignment|aligned/i.test(nextCard.questionGoal||'')||/\balign(?:ed|ment)?\b/i.test(clean);
+  if(clean&&clean.length>30&&clean.length<520&&mentionsAlignment&&!/\b(i hear you|thank you for sharing|based on your answers|it sounds like|as an ai|the user)\b/i.test(clean)&&contextualQuestionCarriesChain(clean,evidenceChain)) return clean.slice(0,900);
+  return nextCard.visibleQuestion || '';
+}
+async function witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports=[]}){
+  const priorChain=priorPartnershipAnswers(priorImports);
+  const currentIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
+  const evidenceChain=priorChain.concat([partnershipIntegrityChainEntry({index:currentIndex,card,rawResponse,graph})]);
+  const currentState=partnershipCurrentState(evidenceChain,nextPartnershipProtocolCard(card));
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'You are VAL speaking to the user inside one calm conversation.',
+    'Witness the single curiosity focus that deserves to be explored first. Do not summarize everything.',
+    'VAL never responds with reassurance when it can respond with observation.',
+    'Do not say "I hear you", "I will be careful", "I am curious", or "I will listen" as the main point.',
+    'Say what stood out. Use gentle, provisional, evidence-based judgment in service of supporting the user’s vision, mission, tone of voice, capacity, relationships, and decisions.',
+    'VAL should feel nurturing, comforting, uplifting, and grateful to be invited into the process.',
+    'If a possible observation does not help VAL support or protect the user in practical future work, leave it alone.',
+    'Do not treat omissions as evidence unless the omission is directly relevant to how VAL should support, draft, protect time, preserve voice, or ask for permission.',
+    'Do not sound like you caught the user doing something wrong. There is no wrong answer here.',
+    'You may notice a shift across the evidence chain when it is grounded: for example, "A few questions ago you named X. Now this sounds like Y."',
+    'If you notice a shift, name it as something VAL will keep investigating. Do not make it a conclusion.',
+    'Preferred forms: "One thing I’m noticing...", "I want to hold this gently...", "This may matter later when I support...", "A few questions ago you named...", "Now I’m seeing a possible shift...".',
+    'Avoid accusatory forms like "You avoided...", "You cleared...", "You justified...", "The real scoreboard is...", or "You never..." unless the user explicitly used that framing.',
+    'Use short lines, like someone thinking carefully. No paragraphs.',
+    'Speak directly to the person as "you". Never say "the user", "their story", or "the thread the user chose" in user-facing lines.',
+    'Do not mention graph, memory, database, fields, onboarding, extraction, confidence, or schema.',
+    'Do not flatter, diagnose, or overclaim. Admit uncertainty when appropriate.',
+    'Do not reuse prior witness lines or stock sentence shapes from earlier movements.',
+    'The best response should make the user feel VAL is carrying an open question forward, not asking for a back-and-forth answer right now.',
+    'If you name any question other than the confirmation question, explicitly say in natural human language that the user does not need to answer it now and that VAL will look for evidence as the process continues.',
+    'Vary that clarification across movements. Do not reuse the same sentence shape.',
+    'Track those non-immediate questions in carried_questions. They are questions VAL will investigate across later answers, not questions the user must answer now.',
+    card.id==='partnership_agreement'?'This is the final movement. Review carried_questions_so_far and answer the ones that now have evidence. Say what VAL discovered, which questions remain open, and what evidence led there. Do not create a long new interrogation.':'For non-final movements, carried_questions should include only the most important open questions created by this answer.',
+    'Do not end with an exploratory question. End only by asking whether you understood correctly.',
+    'Return strict JSON: {"lines":[""],"confirmation_options":["Yes, exactly","Mostly","Let me clarify"],"follow_up_lines":[""],"carried_questions":[{"question":"","status":"open","evidence_refs":[],"discovered_answer":""}],"next_question":""}.'
+  ].join('\n');
+  const user=JSON.stringify({
+    card_title:card.title,
+    current_answer:rawResponse,
+    living_executive_graph:graph,
+    evidence_chain:compactPartnershipEvidenceChain(evidenceChain),
+    current_state:currentState,
+    carried_questions_so_far:partnershipCarriedQuestions(priorImports),
+    used_language:priorWitnessLanguage(priorImports),
+    prior_context:priorImports.map(i=>({category:i.category,structuredSummary:i.structuredSummary})).slice(-4)
+  });
+  const raw=await callValModel({system,user,maxTokens:1800,temperature:0.42,json:true}).catch(e=>{
+    if(!IS_PRODUCTION) console.error('[Witnessing response] live model call failed:',e.message);
+    return null;
+  });
+  try{
+    const parsed=parseModelJson(raw);
+    return normalizePartnershipWitnessResponse(parsed,graph,priorImports);
+  }catch(e){
+    if(!IS_PRODUCTION) console.error('[Witnessing response] unusable model response, retrying repair:',e.message);
+    try{
+      const repaired=await repairPartnershipWitnessJson({raw,card,rawResponse,graph,priorImports,evidenceChain,currentState});
+      return normalizePartnershipWitnessResponse(repaired,graph,priorImports);
+    }catch(repairError){
+      if(!IS_PRODUCTION) console.error('[Witnessing response] repair failed:',repairError.message);
+    }
+  }
+  return fallbackPartnershipProtocolWitness({card,rawResponse,graph});
+}
+function partnershipGraphItems(category,graph){
+  const buckets=['facts','preferences','observations','hypotheses','principles','protected','executive_vocabulary','stewardship_implications'];
+  return buckets.flatMap(bucket=>(graph[bucket]||[]).map(item=>({
+    id:item.id||uuid('leg_item'),
+    title:item.name||item.term||item.claim||bucket,
+    summary:item.claim||item.meaning||item.summary||item.term||item.name||'',
+    category:bucket,
+    source:'living_executive_graph',
+    confidence:item.confidence||0.62,
+    include_in_val:true,
+    data:{...item,source_category:category,graph_bucket:bucket}
+  }))).slice(0,40);
+}
 async function summarizeTeachValInterview(transcript){
   const clean=String(transcript||'').trim();
   if(!clean) throw new Error('Add the voice interview transcript before saving this stage.');
@@ -3064,6 +3941,10 @@ function teachValCompiledPayload({session,imports,items,testMode=false}){
       relationships:by('important_people').concat(by('relationships')),
       lessons:by('lessons_learned').concat(by('lessons')),
       preferences:by('work_preferences').concat(by('preferences')),
+      working_agreements:by('working_agreements'),
+      linkedin_strategy:by('linkedin_strategy'),
+      support_circle:by('support_circle'),
+      documents_and_examples:by('documents_and_examples'),
       frustrations:by('frustrations'),
       process_gaps:by('process_gaps'),
       opportunities:by('opportunities'),
@@ -3099,9 +3980,9 @@ function teachValEvidenceCandidates(items=[]){
     status:'observed'
   })).filter(x=>x.content);
 }
-function valOsInsightItem({layer='observation',type='belief',source='val',title='',summary='',confidence=0.7,evidence=[],recommendation='',ruleDraft=null,impact='',kind='teach_val_connected_insight'}={}){
+function valOsInsightItem({id='',layer='observation',type='belief',source='val',title='',summary='',confidence=0.7,evidence=[],recommendation='',ruleDraft=null,impact='',kind='teach_val_connected_insight',extraData={}}={}){
   return {
-    id:uuid('vos'),
+    id:id||uuid('vos'),
     layer,
     type,
     source:'val_os_observation_engine',
@@ -3110,8 +3991,104 @@ function valOsInsightItem({layer='observation',type='belief',source='val',title=
     category:'connected_source_insights',
     confidence:Math.max(0.25,Math.min(1,Number(confidence)||0.7)),
     include_in_val:true,
-    data:{kind,osLayer:layer,insightType:type,connectedSource:source,evidence:Array.isArray(evidence)?evidence.slice(0,8):[],recommendation,ruleDraft,impact}
+    data:{kind,osLayer:layer,insightType:type,connectedSource:source,evidence:Array.isArray(evidence)?evidence.slice(0,8):[],recommendation,ruleDraft,impact,...(extraData&&typeof extraData==='object'?extraData:{})}
   };
+}
+function teachValOperationalCategory(item={}){
+  return String(item.data?.sourceCategory||item.category||item.data?.category||'').toLowerCase();
+}
+function teachValOperationalTargetRooms(category=''){
+  const map={
+    working_agreements:['VAL OS','Home','Executive Inbox','Leverage','Commitments','Documents','Co-Work with VAL'],
+    linkedin_strategy:['Leverage','Relationships','Executive Inbox','Documents','Co-Work with VAL'],
+    support_circle:['Relationships','Commitments','Executive Inbox','Leverage','LinkedIn engagement'],
+    documents_and_examples:['Documents','Relationships','Projects','Leverage','Executive Inbox']
+  };
+  return map[category]||['Teach VAL','Home'];
+}
+function teachValOperationalRuleDraft(item={}){
+  const category=teachValOperationalCategory(item);
+  const sourceSummary=String(item.summary||item.title||'').slice(0,500);
+  if(category==='working_agreements'){
+    return {
+      scope:'val',
+      ruleType:'working_agreement_review_first',
+      trigger:{source:'teach_val_onboarding',category,when:'VAL prepares or executes work'},
+      actions:{
+        prepare_safe_work:true,
+        require_review_before_external_action:true,
+        require_review_before_durable_memory:true,
+        notify_when_ready_for_approval:true,
+        preserve_boundary:sourceSummary
+      },
+      requiresApproval:true,
+      externalActionsLocked:true
+    };
+  }
+  if(category==='linkedin_strategy'){
+    return {
+      scope:'linkedin',
+      ruleType:'linkedin_visibility_review_first',
+      trigger:{source:'teach_val_onboarding',category,when:'VAL prepares public visibility or engagement'},
+      actions:{
+        draft_posts:true,
+        draft_comments:true,
+        draft_supportive_replies:true,
+        copy_button:true,
+        open_linkedin_manually:true,
+        never_auto_publish:true,
+        never_auto_send_dm:true
+      },
+      requiresApproval:true,
+      externalActionsLocked:true
+    };
+  }
+  return null;
+}
+function teachValOnboardingOperationalInsights({session,items=[]}={}){
+  const included=Array.isArray(items)?items:[];
+  const categories=new Set(['working_agreements','linkedin_strategy','support_circle','documents_and_examples']);
+  return included
+    .filter(item=>categories.has(teachValOperationalCategory(item)))
+    .map((item,index)=>{
+      const category=teachValOperationalCategory(item);
+      const targetRooms=teachValOperationalTargetRooms(category);
+      const ruleDraft=teachValOperationalRuleDraft(item);
+      const type=category==='support_circle'?'fact':(category==='documents_and_examples'?'skill':'pattern');
+      const titlePrefix={
+        working_agreements:'Working agreement',
+        linkedin_strategy:'LinkedIn strategy',
+        support_circle:'Support-circle context',
+        documents_and_examples:'Document/example reference'
+      }[category]||'Onboarding context';
+      return valOsInsightItem({
+        id:'vos_onboarding_'+valOsStableId([tenantId(),currentUserId(),session?.id,category,item.data?.itemId||item.title||index]),
+        layer:ruleDraft?'approved_behavior':'understanding',
+        type,
+        source:'teach_val_onboarding',
+        title:`${titlePrefix}: ${String(item.title||category).slice(0,110)}`,
+        summary:item.summary||item.title||'Onboarding context waiting for review.',
+        confidence:Number(item.confidence||0.74),
+        evidence:[
+          {label:'Onboarding category',detail:category.replace(/_/g,' ')},
+          {label:'Applies to',detail:targetRooms.join(', ')},
+          item.summary?{label:'User context',detail:item.summary}:null
+        ].filter(Boolean),
+        recommendation:ruleDraft?'Review this as an operating agreement before VAL applies it automatically.':'Review this context before VAL treats it as durable routing evidence.',
+        ruleDraft,
+        impact:ruleDraft?'Creates a review-first behavior candidate from onboarding.':'Routes onboarding context into the rooms that need it.',
+        kind:'teach_val_onboarding_operational_context',
+        extraData:{
+          sourceCategory:category,
+          sessionId:session?.id||'',
+          sourceItemId:item.data?.itemId||'',
+          importId:item.data?.importId||'',
+          targetRooms,
+          noExternalAction:true,
+          reviewRequired:true
+        }
+      });
+    });
 }
 function valOsSourceSummary(items=[],label='item'){
   return `${items.length} ${label}${items.length===1?'':'s'}`;
@@ -3146,13 +4123,8 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
   const emails=Array.isArray(email.emails)?email.emails:[];
   const events=Array.isArray(calendar.calendarEvents)?calendar.calendarEvents:(Array.isArray(calendar.events)?calendar.events:[]);
   const insights=[];
-  const gmailProvider=email.providers?.gmail||{};
-  const outlookProvider=email.providers?.outlook||{};
-  const sentCount=Number(gmailProvider.sentCount||0)+Number(outlookProvider.sentCount||0);
-  const inboxCount=Number(gmailProvider.recentInboxCount||0)+Number(gmailProvider.unreadCount||0)+Number(outlookProvider.inboxCount||0);
   const classifications=topCounts(emails,e=>e.classification||'unclassified');
   const senders=topCounts(emails,senderKey).filter(x=>senderLabel(x.sample)!=='Unknown sender');
-  const sentEmails=emails.filter(e=>String(e.labels||[]).includes('SENT')||e.mailbox==='sent'||e.folder==='sent');
   const importantEmails=emails.filter(e=>['needs_attention','needs_reply','waiting_on_response','forward_to_team'].includes(e.classification));
   const lowEmails=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification));
   if(emails.length){
@@ -3164,19 +4136,6 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
       summary:`VAL reviewed ${valOsSourceSummary(emails,'recent email')} across connected inbox sources. ${importantEmails.length} appear to need judgment, reply, follow-up, or forwarding attention.`,
       confidence:0.9,
       evidence:emails.slice(0,5).map(e=>({subject:e.subject,from:senderLabel(e),classification:e.classification,date:e.date||e.receivedAt}))
-    }));
-  }
-  if(sentCount||sentEmails.length){
-    insights.push(valOsInsightItem({
-      layer:'observation',
-      type:'fact',
-      source:'email_sent',
-      title:'Sent mail follow-up window checked',
-      summary:`VAL checked ${sentCount||sentEmails.length} sent email${(sentCount||sentEmails.length)===1?'':'s'} where the provider made Sent available. Sent mail is used only to find possible open loops and response patterns, not to send or change anything.`,
-      confidence:0.88,
-      evidence:sentEmails.slice(0,5).map(e=>({subject:e.subject,to:(e.to||[]).map(t=>t.name||t.email).filter(Boolean).slice(0,3).join(', '),date:e.date||e.receivedAt,classification:e.classification})),
-      recommendation:'Use Sent as evidence for how the user actually follows up, but require user approval before treating it as a durable behavior.',
-      ruleDraft:{scope:'email',ruleType:'sent_follow_up_observation',trigger:{mailbox:'sent',older_than_business_days:3},actions:{suggest_follow_up_task:true,prepare_follow_up_draft:true,require_user_approval:true},requiresApproval:true}
     }));
   }
   senders.slice(0,5).forEach(row=>{
@@ -3309,7 +4268,7 @@ function connectedSourceInsightPayload({email={},calendar={}}={}){
     ok:true,
     generatedAt:new Date().toISOString(),
     architecture:{functions:VAL_OS_FUNCTIONS,layers:VAL_OS_LAYERS,principle:'Observe first, recommend second, require approval before behavior changes.'},
-    summary:{emailCount:emails.length,calendarEventCount:events.length,insightCount:insights.length,rulesReady,sentCount,inboxCount,sourceBreakdown:{gmail:{inboxCount:gmailProvider.recentInboxCount||0,unreadCount:gmailProvider.unreadCount||0,sentCount:gmailProvider.sentCount||0},outlook:{inboxCount:outlookProvider.inboxCount||0,sentCount:outlookProvider.sentCount||0}}},
+    summary:{emailCount:emails.length,calendarEventCount:events.length,insightCount:insights.length,rulesReady},
     facts:insights.filter(i=>i.type==='fact'),
     beliefs:insights.filter(i=>i.type==='belief'||i.type==='pattern'),
     behaviors:insights.filter(i=>i.type==='behavior'),
@@ -3329,6 +4288,1298 @@ async function buildTeachValConnectedSourceInsights(req,{force=false}={}){
   }catch(e){calendar={calendarEvents:[],errors:[e.message]};}
   const payload=connectedSourceInsightPayload({email,calendar});
   return {...payload,providers:{email:email.providers||{},calendarErrors:calendar.errors||[],emailErrors:email.errors||[]}};
+}
+function valOsDraftKey(item={}){
+  return String(item.id||item.data?.sourceItemId||item.title||'').trim();
+}
+function valOsRuleDecisionRows(){
+  return (valStore().valOsRuleDecisions||[]).filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId());
+}
+function valOsLearningDecisionRows(){
+  return (valStore().valOsLearningDecisions||[]).filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId());
+}
+function valOsRuleRows(){
+  return (valStore().valOsRules||[]).filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId());
+}
+function valOsReviewQueueRows(){
+  return (valStore().valOsReviewQueue||[])
+    .filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId())
+    .sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0));
+}
+function valOsCalendarApprovalRows(){
+  return (valStore().valOsCalendarApprovals||[])
+    .filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId())
+    .sort((a,b)=>new Date(b.updatedAt||b.createdAt||0)-new Date(a.updatedAt||a.createdAt||0));
+}
+function valOsStableId(parts=[]){
+  return crypto.createHash('sha1').update(parts.map(x=>String(x||'')).join('|')).digest('hex').slice(0,24);
+}
+const VAL_OS_CALENDAR_ACTION_LEVELS=[
+  {level:0,label:'Observe only',allowsExternalAction:false},
+  {level:1,label:'Suggest prep or context',allowsExternalAction:false},
+  {level:2,label:'Prepare proposed calendar change',allowsExternalAction:false},
+  {level:3,label:'Create internal invite or reschedule draft',allowsExternalAction:false},
+  {level:4,label:'Ask for explicit approval',allowsExternalAction:false},
+  {level:5,label:'Execute external calendar change',allowsExternalAction:true}
+];
+function valOsLearningKey(item={}){
+  return String(item.id||item.data?.sourceItemId||item.title||valOsStableId([item.source,item.type,item.summary])).trim();
+}
+function saveValOsAudit(event={}){
+  const store=valStore();
+  const row={id:uuid('vos_audit'),tenantId:tenantId(),userId:currentUserId(),eventType:event.eventType||'val_os_event',resourceId:event.resourceId||'',summary:event.summary||'',metadata:event.metadata||{},createdAt:new Date().toISOString()};
+  store.valOsAuditLog.unshift(row);
+  store.valOsAuditLog=store.valOsAuditLog.slice(0,500);
+  saveValStore(store);
+  return row;
+}
+function saveValOsLearningDecision({learningId,status,item={},correctedTitle='',correctedSummary='',correctionNote=''}={}){
+  const store=valStore();
+  const rows=store.valOsLearningDecisions||[];
+  const id=String(learningId||valOsLearningKey(item)||'');
+  if(!id)throw new Error('Missing learning item id.');
+  const idx=rows.findIndex(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.learningId===id);
+  const now=new Date().toISOString();
+  const row={
+    id:idx>=0?rows[idx].id:uuid('vos_learn'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    learningId:id,
+    status:String(status||'needs_review'),
+    originalTitle:item.title||rows[idx]?.originalTitle||'',
+    originalSummary:item.summary||rows[idx]?.originalSummary||'',
+    correctedTitle:String(correctedTitle||'').slice(0,220),
+    correctedSummary:String(correctedSummary||'').slice(0,1200),
+    correctionNote:String(correctionNote||'').slice(0,900),
+    source:item.source||rows[idx]?.source||'',
+    learningType:item.type||rows[idx]?.learningType||'',
+    approvedForUse:['confirmed','corrected'].includes(String(status||'')),
+    externalActionTaken:false,
+    reviewOnly:true,
+    updatedAt:now,
+    createdAt:idx>=0?rows[idx].createdAt:now
+  };
+  if(idx>=0)rows[idx]={...rows[idx],...row};else rows.unshift(row);
+  store.valOsLearningDecisions=rows.slice(0,500);
+  saveValStore(store);
+  return idx>=0?rows[idx]:row;
+}
+function normalizeValOsCalendarApproval(item={}){
+  const now=new Date().toISOString();
+  const event=item.event||{};
+  const proposed=item.proposedChange||{};
+  const draft=item.actionDraft||{};
+  const executionPreview=item.executionPreview||{};
+  const clarificationQuestions=Array.isArray(item.clarificationQuestions)?item.clarificationQuestions:[];
+  const clarificationAnswers=Array.isArray(item.clarificationAnswers)?item.clarificationAnswers:[];
+  return {
+    id:item.id||uuid('vos_cal'),
+    tenantId:item.tenantId||tenantId(),
+    userId:item.userId||currentUserId(),
+    status:item.status||'needs_approval',
+    actionType:String(item.actionType||'prepare_meeting_context'),
+    permissionLevel:Math.min(4,Math.max(0,Number(item.permissionLevel||2))),
+    title:String(item.title||'Calendar proposal').slice(0,220),
+    summary:String(item.summary||'VAL prepared this calendar proposal for review.').slice(0,900),
+    why:String(item.why||'VAL noticed calendar context may be useful.').slice(0,900),
+    event:{
+      id:String(event.id||item.eventId||''),
+      title:String(event.title||event.summary||item.eventTitle||'Meeting').slice(0,220),
+      startTime:event.startTime||event.start||item.startTime||'',
+      endTime:event.endTime||event.end||item.endTime||'',
+      source:event.source||item.source||'calendar',
+      attendees:Array.isArray(event.attendees)?event.attendees.slice(0,12):[]
+    },
+    proposedChange:{
+      kind:proposed.kind||item.actionType||'prep_context',
+      title:String(proposed.title||item.proposedTitle||'Prepare meeting context').slice(0,220),
+      startTime:proposed.startTime||'',
+      endTime:proposed.endTime||'',
+      message:String(proposed.message||'').slice(0,1200),
+      notes:String(proposed.notes||'').slice(0,1200)
+    },
+    actionDraft:draft&&Object.keys(draft).length?normalizeValOsCalendarActionDraft(draft):null,
+    executionPreview:executionPreview&&Object.keys(executionPreview).length?normalizeValOsCalendarExecutionPreview(executionPreview):null,
+    permissionSlip:item.permissionSlip&&Object.keys(item.permissionSlip).length?normalizeValOsCalendarPermissionSlip(item.permissionSlip):null,
+    executionRehearsal:item.executionRehearsal&&Object.keys(item.executionRehearsal).length?normalizeValOsCalendarExecutionRehearsal(item.executionRehearsal):null,
+    finalConfirmationPacket:item.finalConfirmationPacket&&Object.keys(item.finalConfirmationPacket).length?normalizeValOsCalendarFinalConfirmationPacket(item.finalConfirmationPacket):null,
+    internalActionReceipt:item.internalActionReceipt&&Object.keys(item.internalActionReceipt).length?normalizeValOsCalendarInternalActionReceipt(item.internalActionReceipt):null,
+    clarificationStatus:String(item.clarificationStatus||((clarificationQuestions.length&&!clarificationAnswers.length)?'needs_clarification':'clear')).slice(0,80),
+    clarificationQuestions:clarificationQuestions.slice(0,5).map(q=>({
+      id:String(q.id||uuid('vos_cal_q')),
+      question:String(q.question||'What should VAL know before preparing this?').slice(0,260),
+      why:String(q.why||'VAL wants human confirmation before becoming too confident.').slice(0,500),
+      answerType:String(q.answerType||'text').slice(0,60),
+      options:Array.isArray(q.options)?q.options.slice(0,6).map(x=>String(x||'').slice(0,120)):[]
+    })),
+    clarificationAnswers:clarificationAnswers.slice(0,5).map(a=>({
+      questionId:String(a.questionId||''),
+      answer:String(a.answer||'').slice(0,700),
+      answeredAt:a.answeredAt||now
+    })),
+    affectedPeople:Array.isArray(item.affectedPeople)?item.affectedPeople.slice(0,12):[],
+    risk:String(item.risk||'No external calendar change will happen from this proposal.').slice(0,700),
+    exactApprovalLabel:String(item.exactApprovalLabel||'Approve proposal only').slice(0,80),
+    decision:String(item.decision||''),
+    decisionReason:String(item.decisionReason||'').slice(0,700),
+    outcome:String(item.outcome||'').slice(0,700),
+    externalActionTaken:false,
+    executionAvailable:false,
+    requiresExplicitApproval:true,
+    createdAt:item.createdAt||now,
+    updatedAt:now,
+    decidedAt:item.decidedAt||''
+  };
+}
+function normalizeValOsCalendarPermissionSlip(slip={}){
+  const now=new Date().toISOString();
+  return {
+    id:String(slip.id||uuid('vos_cal_permission')),
+    status:String(slip.status||'intent_recorded_not_executable').slice(0,80),
+    provider:String(slip.provider||'calendar').slice(0,80),
+    action:String(slip.action||'preview_only').slice(0,100),
+    eventTitle:String(slip.eventTitle||'Calendar event').slice(0,220),
+    exactHumanApproval:String(slip.exactHumanApproval||'I approve this exact preview as safe to keep preparing.').slice(0,500),
+    approvalScope:String(slip.approvalScope||'one specific preview only').slice(0,180),
+    approvalBoundary:String(slip.approvalBoundary||'This records intent only. It does not permit VAL to execute external changes.').slice(0,700),
+    riskAcknowledged:String(slip.riskAcknowledged||'Human reviewed provider, action, affected people, update text, risk, and rollback note.').slice(0,700),
+    rollbackNote:String(slip.rollbackNote||'No rollback is needed because no external action has happened.').slice(0,900),
+    approvedByUser:true,
+    approvedAt:slip.approvedAt||now,
+    externalActionTaken:false,
+    executionAvailable:false,
+    readyForExecutor:false,
+    requiresFinalConfirmation:true,
+    createdAt:slip.createdAt||now,
+    updatedAt:now
+  };
+}
+function normalizeValOsCalendarExecutionRehearsal(rehearsal={}){
+  const now=new Date().toISOString();
+  return {
+    id:String(rehearsal.id||uuid('vos_cal_rehearsal')),
+    status:String(rehearsal.status||'simulated_only').slice(0,80),
+    provider:String(rehearsal.provider||'calendar').slice(0,80),
+    action:String(rehearsal.action||'preview_only').slice(0,100),
+    eventTitle:String(rehearsal.eventTitle||'Calendar event').slice(0,220),
+    simulatedRequest:String(rehearsal.simulatedRequest||'No live request was sent.').slice(0,1200),
+    simulatedResult:String(rehearsal.simulatedResult||'If this were live, VAL would show a post-action receipt here.').slice(0,1200),
+    receiptPreview:String(rehearsal.receiptPreview||'Dry run only. No external action happened.').slice(0,1200),
+    safetyChecks:Array.isArray(rehearsal.safetyChecks)?rehearsal.safetyChecks.slice(0,10).map(x=>String(x||'').slice(0,220)):[],
+    blockedLiveReason:String(rehearsal.blockedLiveReason||'Live execution is not built in this flow.').slice(0,700),
+    externalActionTaken:false,
+    executionAvailable:false,
+    simulatedOnly:true,
+    requiresFinalConfirmation:true,
+    createdAt:rehearsal.createdAt||now,
+    updatedAt:now
+  };
+}
+function normalizeValOsCalendarFinalConfirmationPacket(packet={}){
+  const now=new Date().toISOString();
+  return {
+    id:String(packet.id||uuid('vos_cal_final')),
+    status:String(packet.status||'final_confirmation_review_only').slice(0,80),
+    provider:String(packet.provider||'calendar').slice(0,80),
+    action:String(packet.action||'preview_only').slice(0,100),
+    eventTitle:String(packet.eventTitle||'Calendar event').slice(0,220),
+    actionSummary:String(packet.actionSummary||'VAL prepared a final review packet.').slice(0,1200),
+    affectedPeople:Array.isArray(packet.affectedPeople)?packet.affectedPeople.slice(0,12).map(x=>String(x||'').slice(0,160)):[],
+    outsideSystem:String(packet.outsideSystem||packet.provider||'Connected calendar').slice(0,120),
+    riskLevel:String(packet.riskLevel||'low').slice(0,40),
+    riskReason:String(packet.riskReason||'No external action can happen from this packet.').slice(0,900),
+    permissionHistory:Array.isArray(packet.permissionHistory)?packet.permissionHistory.slice(0,8).map(x=>String(x||'').slice(0,260)):[],
+    rehearsalReceipt:String(packet.rehearsalReceipt||'No live request was sent.').slice(0,1200),
+    willHappen:String(packet.willHappen||'VAL will keep this as a review-only final packet.').slice(0,900),
+    willNotHappen:Array.isArray(packet.willNotHappen)?packet.willNotHappen.slice(0,10).map(x=>String(x||'').slice(0,220)):[],
+    humanChoices:Array.isArray(packet.humanChoices)?packet.humanChoices.slice(0,6).map(x=>String(x||'').slice(0,160)):[],
+    reviewDecision:String(packet.reviewDecision||'not_reviewed').slice(0,80),
+    reviewNote:String(packet.reviewNote||'').slice(0,900),
+    reviewedAt:packet.reviewedAt||'',
+    lockedReason:String(packet.lockedReason||'Live execution is intentionally still locked.').slice(0,700),
+    liveExecutionLocked:true,
+    finalConfirmationRecorded:false,
+    externalActionTaken:false,
+    executionAvailable:false,
+    requiresHumanFinalConfirmation:true,
+    createdAt:packet.createdAt||now,
+    updatedAt:now
+  };
+}
+function normalizeValOsCalendarInternalActionReceipt(receipt={}){
+  const now=new Date().toISOString();
+  return {
+    id:String(receipt.id||uuid('vos_cal_internal_action')),
+    status:String(receipt.status||'internal_task_created').slice(0,80),
+    actionType:String(receipt.actionType||'create_internal_task').slice(0,100),
+    taskId:String(receipt.taskId||'').slice(0,120),
+    taskTitle:String(receipt.taskTitle||'Internal VAL task').slice(0,220),
+    summary:String(receipt.summary||'VAL created an internal task for review.').slice(0,900),
+    basedOnPacketId:String(receipt.basedOnPacketId||'').slice(0,120),
+    providerTouched:false,
+    externalActionTaken:false,
+    executionAvailable:false,
+    internalOnly:true,
+    createdAt:receipt.createdAt||now,
+    updatedAt:now
+  };
+}
+function normalizeValOsCalendarExecutionPreview(preview={}){
+  const now=new Date().toISOString();
+  return {
+    id:String(preview.id||uuid('vos_cal_preview')),
+    status:String(preview.status||'preview_only').slice(0,80),
+    provider:String(preview.provider||'calendar').slice(0,80),
+    action:String(preview.action||'prepare_context').slice(0,100),
+    eventTitle:String(preview.eventTitle||'Calendar event').slice(0,220),
+    currentStartTime:preview.currentStartTime||'',
+    currentEndTime:preview.currentEndTime||'',
+    proposedStartTime:preview.proposedStartTime||'',
+    proposedEndTime:preview.proposedEndTime||'',
+    attendeesAffected:Array.isArray(preview.attendeesAffected)?preview.attendeesAffected.slice(0,12).map(x=>String(x||'').slice(0,160)):[],
+    updateMessage:String(preview.updateMessage||'').slice(0,1800),
+    riskLevel:String(preview.riskLevel||'low').slice(0,40),
+    riskReason:String(preview.riskReason||'No external action is available from this preview.').slice(0,900),
+    rollbackNote:String(preview.rollbackNote||'No rollback is needed because this preview has not changed any calendar.').slice(0,900),
+    exactApprovalLabel:String(preview.exactApprovalLabel||'Mark preview safe').slice(0,80),
+    externalActionTaken:false,
+    executionAvailable:false,
+    requiresExplicitApproval:true,
+    hasNotHappenedYet:true,
+    createdAt:preview.createdAt||now,
+    updatedAt:now
+  };
+}
+function normalizeValOsCalendarActionDraft(draft={}){
+  return {
+    id:String(draft.id||uuid('vos_cal_draft')),
+    draftType:String(draft.draftType||'meeting_prep_note').slice(0,80),
+    status:String(draft.status||'draft_only').slice(0,80),
+    title:String(draft.title||'Calendar action draft').slice(0,220),
+    message:String(draft.message||'').slice(0,1800),
+    proposedStartTime:draft.proposedStartTime||'',
+    proposedEndTime:draft.proposedEndTime||'',
+    attendeeNote:String(draft.attendeeNote||'').slice(0,900),
+    internalChecklist:Array.isArray(draft.internalChecklist)?draft.internalChecklist.slice(0,8).map(x=>String(x||'').slice(0,220)):[],
+    exactApprovalLabel:String(draft.exactApprovalLabel||'Approve draft only').slice(0,80),
+    externalActionTaken:false,
+    executionAvailable:false,
+    requiresExplicitApproval:true,
+    createdAt:draft.createdAt||new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+}
+function saveValOsCalendarApproval(item={}){
+  const clean=normalizeValOsCalendarApproval(item);
+  const store=valStore();
+  const rows=store.valOsCalendarApprovals||[];
+  const idx=rows.findIndex(r=>r.tenantId===clean.tenantId&&r.userId===clean.userId&&r.id===clean.id);
+  if(idx>=0)rows[idx]={...rows[idx],...clean,id:rows[idx].id,createdAt:rows[idx].createdAt||clean.createdAt};
+  else rows.unshift(clean);
+  store.valOsCalendarApprovals=rows.slice(0,300);
+  saveValStore(store);
+  return idx>=0?rows[idx]:clean;
+}
+function updateValOsCalendarApproval(id,patch={}){
+  const row=valOsCalendarApprovalRows().find(r=>r.id===id);
+  if(!row)return null;
+  return saveValOsCalendarApproval({...row,...patch,id:row.id,createdAt:row.createdAt});
+}
+function valOsCalendarAffectedPeople(event={}){
+  return (event.attendees||[]).map(a=>a.name||a.email||a.address||'').filter(Boolean).slice(0,8);
+}
+function valOsCalendarClarificationQuestions(event={},attendees=[]){
+  const title=event.title||event.summary||'this meeting';
+  const questions=[];
+  if(!attendees.length){
+    questions.push({id:'audience',question:`Who is involved in ${title}?`,why:'VAL did not see attendees, so it should not assume the audience.',answerType:'text'});
+  }
+  if(attendees.length===1){
+    questions.push({id:'purpose',question:`Is ${title} personal, internal, or client-facing?`,why:'A single attendee can mean a personal block, an internal prep item, or a relationship meeting.',answerType:'choice',options:['Personal','Internal','Client-facing']});
+  }
+  if(/\b(block|hold|focus|capacity|reset|personal)\b/i.test(title)){
+    questions.push({id:'prep_needed',question:'Should VAL prepare anything for this block, or simply leave it alone?',why:'The title sounds like protected time, and over-preparing would reduce trust.',answerType:'choice',options:['Leave it alone','Prepare light context','Ask me later']});
+  }
+  return questions.slice(0,3);
+}
+async function loadValOsCalendarApprovalCandidateEvents(start,end){
+  if(DEMO_MODE){
+    const s=new Date(start);
+    const e=new Date(end);
+    return {
+      events:(demoTemplate().calendarEvents||[])
+        .filter(ev=>{
+          const t=new Date(ev.startTime||ev.start||0);
+          return t>=s&&t<=e;
+        }),
+      errors:[]
+    };
+  }
+  return loadContextCalendarEvents(start,end).catch(e=>({events:[],errors:[e.message]}));
+}
+async function runValOsCalendarApprovalScan(){
+  const start=new Date();start.setHours(0,0,0,0);
+  const end=new Date();end.setDate(end.getDate()+14);end.setHours(23,59,59,999);
+  const loaded=await loadValOsCalendarApprovalCandidateEvents(start,end);
+  const events=(loaded.events||[]).filter(e=>new Date(e.startTime||e.start||0)>=start).slice(0,12);
+  const items=[];
+  for(const event of events){
+    const title=event.title||event.summary||'Meeting';
+    const attendees=valOsCalendarAffectedPeople(event);
+    const clarificationQuestions=valOsCalendarClarificationQuestions(event,attendees);
+    const needsPrep=attendees.length>0||/\b(client|investor|demo|review|strategy|renewal|proposal|interview|podcast)\b/i.test(title);
+    if(!needsPrep)continue;
+    const id='vos_cal_'+valOsStableId([tenantId(),currentUserId(),event.id,title,event.startTime||event.start]);
+    const item=saveValOsCalendarApproval({
+      id,
+      actionType:'prepare_meeting_context',
+      permissionLevel:2,
+      title:`Prepare calendar proposal: ${title}`,
+      summary:'VAL prepared a calendar proposal for review only. Nothing was rescheduled, invited, sent, or changed.',
+      why:attendees.length?`This meeting has ${attendees.length} attendee${attendees.length===1?'':'s'} and may need context before it happens.`:'The meeting title suggests prep may be useful.',
+      event,
+      proposedChange:{kind:'meeting_prep',title:`Prep for ${title}`,notes:'Prepare context, open loops, relationship notes, recent emails, tasks, and suggested talking points before this meeting.'},
+      clarificationQuestions,
+      clarificationStatus:clarificationQuestions.length?'needs_clarification':'clear',
+      affectedPeople:attendees,
+      risk:'Low risk while kept as a proposal. Higher risk begins only if a future approved step changes calendars or contacts attendees.',
+      exactApprovalLabel:'Approve prep proposal'
+    });
+    items.push(item);
+  }
+  const audit=saveValOsAudit({eventType:'calendar_approval_scan',summary:`VAL prepared ${items.length} calendar approval proposal${items.length===1?'':'s'} for review.`,metadata:{created:items.length,externalActionTaken:false,executionAvailable:false,reviewOnly:true}});
+  return {ok:true,created:items.length,items,audit,errors:loaded.errors||[]};
+}
+function buildValOsCalendarActionDraft(item={}){
+  const ev=item.event||{};
+  const proposed=item.proposedChange||{};
+  const title=ev.title||item.title||'this meeting';
+  const people=(item.affectedPeople||[]).filter(Boolean);
+  const draftType=String(proposed.kind||item.actionType||'meeting_prep').includes('reschedule')?'reschedule_note':(people.length>1?'meeting_prep_note':'personal_prep_note');
+  const message=[
+    `Draft only: prepare for ${title}.`,
+    proposed.notes||proposed.message||'Prepare meeting context, open loops, recent notes, and suggested talking points.',
+    people.length?`People involved: ${people.join(', ')}.`:'',
+    'No calendar invitation, update, reschedule, or message will be sent from this draft.'
+  ].filter(Boolean).join('\n\n');
+  return normalizeValOsCalendarActionDraft({
+    draftType,
+    title:`Draft calendar action: ${title}`,
+    message,
+    proposedStartTime:proposed.startTime||ev.startTime||'',
+    proposedEndTime:proposed.endTime||ev.endTime||'',
+    attendeeNote:people.length?`Review affected people before approving any future external step: ${people.join(', ')}.`:'No attendee outreach is included in this draft.',
+    internalChecklist:[
+      'Review the current event details.',
+      'Confirm affected people and timing.',
+      'Edit this draft until it matches the human intention.',
+      'Require a separate explicit approval before any external calendar change.'
+    ],
+    exactApprovalLabel:'Approve draft only'
+  });
+}
+async function prepareValOsCalendarActionDraft(req,id,{draftPatch={}}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  const base=buildValOsCalendarActionDraft(item);
+  const draft=normalizeValOsCalendarActionDraft({...base,...(draftPatch||{}),id:item.actionDraft?.id||base.id,createdAt:item.actionDraft?.createdAt||base.createdAt});
+  const saved=updateValOsCalendarApproval(item.id,{
+    actionDraft:draft,
+    status:item.status==='rejected'?'needs_approval':item.status,
+    outcome:'Calendar action draft prepared inside VAL only. No calendar event was changed, no invite was sent, and execution is unavailable.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_action_draft_prepared',resourceId:item.id,summary:`Calendar action draft prepared for ${item.event?.title||item.title}.`,metadata:{calendarProposalId:item.id,externalActionTaken:false,executionAvailable:false,reviewOnly:true}});
+  await auditLog({req,action:'val_os_calendar_action_draft_prepared',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{externalActionTaken:false,executionAvailable:false,reviewOnly:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,draft:saved.actionDraft,audit};
+}
+function buildValOsCalendarExecutionPreview(item={}){
+  const ev=item.event||{};
+  const draft=item.actionDraft||buildValOsCalendarActionDraft(item);
+  const provider=String(ev.source||'calendar').toLowerCase().includes('google')?'Google Calendar':(String(ev.source||'').toLowerCase().includes('outlook')?'Outlook Calendar':(ev.source==='ghl'?'GHL Calendar':'Connected calendar'));
+  const attendees=(item.affectedPeople||[]).filter(Boolean);
+  const action=String(draft.draftType||item.actionType||'meeting_prep').includes('reschedule')?'reschedule_event':(attendees.length?'prepare_context_for_attendees':'prepare_personal_context');
+  return normalizeValOsCalendarExecutionPreview({
+    provider,
+    action,
+    eventTitle:ev.title||item.title||'Calendar event',
+    currentStartTime:ev.startTime||'',
+    currentEndTime:ev.endTime||'',
+    proposedStartTime:draft.proposedStartTime||ev.startTime||'',
+    proposedEndTime:draft.proposedEndTime||ev.endTime||'',
+    attendeesAffected:attendees,
+    updateMessage:draft.message||'No attendee-facing message has been prepared.',
+    riskLevel:action==='reschedule_event'||attendees.length>1?'medium':'low',
+    riskReason:attendees.length?`This would affect ${attendees.length} attendee${attendees.length===1?'':'s'} if a future execution step were added and explicitly approved.`:'This appears to affect only internal prep unless future attendee outreach is added.',
+    rollbackNote:'This has not happened yet. If a future execution step is added, rollback would mean restoring the prior event time/details and notifying affected attendees.',
+    exactApprovalLabel:'Looks safe as preview'
+  });
+}
+async function prepareValOsCalendarExecutionPreview(req,id,{previewPatch={}}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  const base=buildValOsCalendarExecutionPreview(item);
+  const preview=normalizeValOsCalendarExecutionPreview({...base,...(previewPatch||{}),id:item.executionPreview?.id||base.id,createdAt:item.executionPreview?.createdAt||base.createdAt});
+  const saved=updateValOsCalendarApproval(item.id,{
+    executionPreview:preview,
+    outcome:'Execution preview prepared only. This has not happened yet, no calendar event was changed, and execution is unavailable.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_execution_preview_prepared',resourceId:item.id,summary:`Execution preview prepared for ${item.event?.title||item.title}.`,metadata:{calendarProposalId:item.id,provider:preview.provider,action:preview.action,externalActionTaken:false,executionAvailable:false,reviewOnly:true,previewOnly:true}});
+  await auditLog({req,action:'val_os_calendar_execution_preview_prepared',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{provider:preview.provider,action:preview.action,externalActionTaken:false,executionAvailable:false,reviewOnly:true,previewOnly:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,preview:saved.executionPreview,audit};
+}
+function buildValOsCalendarPermissionSlip(item={},approvalText=''){
+  const preview=item.executionPreview||buildValOsCalendarExecutionPreview(item);
+  const approval=String(approvalText||'').trim()||`I approve this exact ${preview.provider} ${preview.action} preview as safe to keep preparing.`;
+  return normalizeValOsCalendarPermissionSlip({
+    provider:preview.provider,
+    action:preview.action,
+    eventTitle:preview.eventTitle,
+    exactHumanApproval:approval,
+    riskAcknowledged:`Human reviewed this one preview for ${preview.eventTitle}: provider ${preview.provider}, action ${preview.action}, affected people, update text, risk level ${preview.riskLevel}, and rollback note.`,
+    rollbackNote:preview.rollbackNote,
+    approvalBoundary:'Permission slip records one-action intent only. It is not a final execution command and cannot change Google, Outlook, GHL, invite attendees, send messages, delete records, or reschedule anything.',
+    approvalScope:'one preview, one event, one future action packet'
+  });
+}
+async function saveValOsCalendarPermissionSlip(req,id,{approvalText=''}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  if(!item.executionPreview)throw new Error('Prepare an execution preview before recording a permission slip.');
+  const base=buildValOsCalendarPermissionSlip(item,approvalText);
+  const slip=normalizeValOsCalendarPermissionSlip({...base,id:item.permissionSlip?.id||base.id,createdAt:item.permissionSlip?.createdAt||base.createdAt});
+  const saved=updateValOsCalendarApproval(item.id,{
+    permissionSlip:slip,
+    status:'approved_not_executed',
+    outcome:'Permission slip recorded for this exact preview only. External writes remain locked and no calendar event was changed.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_permission_slip_recorded',resourceId:item.id,summary:`Permission slip recorded for ${item.event?.title||item.title}. No external action taken.`,metadata:{calendarProposalId:item.id,permissionSlipId:slip.id,provider:slip.provider,action:slip.action,externalActionTaken:false,executionAvailable:false,readyForExecutor:false,requiresFinalConfirmation:true}});
+  await auditLog({req,action:'val_os_calendar_permission_slip_recorded',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{permissionSlipId:slip.id,provider:slip.provider,action:slip.action,externalActionTaken:false,executionAvailable:false,readyForExecutor:false,requiresFinalConfirmation:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,permissionSlip:saved.permissionSlip,audit};
+}
+function buildValOsCalendarExecutionRehearsal(item={}){
+  const preview=item.executionPreview||{};
+  const slip=item.permissionSlip||{};
+  const provider=preview.provider||slip.provider||'calendar';
+  const action=preview.action||slip.action||'preview_only';
+  const eventTitle=preview.eventTitle||slip.eventTitle||item.event?.title||item.title||'Calendar event';
+  const attendees=(preview.attendeesAffected||item.affectedPeople||[]).filter(Boolean);
+  const simulatedRequest=[
+    `Provider: ${provider}`,
+    `Action: ${action}`,
+    `Event: ${eventTitle}`,
+    preview.proposedStartTime?`Previewed start: ${preview.proposedStartTime}`:'',
+    preview.proposedEndTime?`Previewed end: ${preview.proposedEndTime}`:'',
+    attendees.length?`Affected people: ${attendees.join(', ')}`:'Affected people: none listed',
+    preview.updateMessage?`Update text: ${preview.updateMessage}`:'Update text: none'
+  ].filter(Boolean).join('\n');
+  return normalizeValOsCalendarExecutionRehearsal({
+    provider,
+    action,
+    eventTitle,
+    simulatedRequest,
+    simulatedResult:'Simulated success only. VAL would expect a provider confirmation id, timestamp, affected people list, and post-action receipt if a future live executor existed.',
+    receiptPreview:[
+      `Receipt preview for ${eventTitle}`,
+      `Status: simulated only`,
+      `Provider: ${provider}`,
+      `Action: ${action}`,
+      'External action taken: no',
+      'Final confirmation still required before any live execution can ever be considered.'
+    ].join('\n'),
+    safetyChecks:[
+      'Execution preview exists.',
+      'Permission slip exists for this exact preview.',
+      'External writes are still locked.',
+      'No provider API write call is available from this flow.',
+      'No attendees were invited or notified.',
+      'No calendar event was created, updated, deleted, or rescheduled.'
+    ],
+    blockedLiveReason:'This is a rehearsal only. The live executor is intentionally not built, and final confirmation is still required.'
+  });
+}
+async function saveValOsCalendarExecutionRehearsal(req,id){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  if(!item.executionPreview)throw new Error('Prepare an execution preview before running a rehearsal.');
+  if(!item.permissionSlip)throw new Error('Record a permission slip before running a rehearsal.');
+  const base=buildValOsCalendarExecutionRehearsal(item);
+  const rehearsal=normalizeValOsCalendarExecutionRehearsal({...base,id:item.executionRehearsal?.id||base.id,createdAt:item.executionRehearsal?.createdAt||base.createdAt});
+  const saved=updateValOsCalendarApproval(item.id,{
+    executionRehearsal:rehearsal,
+    outcome:'Simulated execution rehearsal completed. No provider request was sent and no external action was taken.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_execution_rehearsal_completed',resourceId:item.id,summary:`Execution rehearsal completed for ${item.event?.title||item.title}. Simulated only.`,metadata:{calendarProposalId:item.id,rehearsalId:rehearsal.id,provider:rehearsal.provider,action:rehearsal.action,externalActionTaken:false,executionAvailable:false,simulatedOnly:true,requiresFinalConfirmation:true}});
+  await auditLog({req,action:'val_os_calendar_execution_rehearsal_completed',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{rehearsalId:rehearsal.id,provider:rehearsal.provider,action:rehearsal.action,externalActionTaken:false,executionAvailable:false,simulatedOnly:true,requiresFinalConfirmation:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,executionRehearsal:saved.executionRehearsal,audit};
+}
+function buildValOsCalendarFinalConfirmationPacket(item={}){
+  const preview=item.executionPreview||{};
+  const slip=item.permissionSlip||{};
+  const rehearsal=item.executionRehearsal||{};
+  const provider=preview.provider||slip.provider||rehearsal.provider||'calendar';
+  const action=preview.action||slip.action||rehearsal.action||'preview_only';
+  const eventTitle=preview.eventTitle||slip.eventTitle||rehearsal.eventTitle||item.event?.title||item.title||'Calendar event';
+  const affectedPeople=(preview.attendeesAffected||item.affectedPeople||[]).filter(Boolean);
+  return normalizeValOsCalendarFinalConfirmationPacket({
+    provider,
+    action,
+    eventTitle,
+    outsideSystem:provider,
+    affectedPeople,
+    riskLevel:preview.riskLevel||'low',
+    riskReason:preview.riskReason||'No external action is available from this final packet.',
+    actionSummary:[
+      `Last look for ${eventTitle}.`,
+      `Provider that would be involved later: ${provider}.`,
+      `Action being reviewed: ${action}.`,
+      affectedPeople.length?`Affected people: ${affectedPeople.join(', ')}.`:'Affected people: none listed.',
+      preview.updateMessage?`Prepared text: ${preview.updateMessage}`:'Prepared text: none.'
+    ].filter(Boolean).join('\n'),
+    permissionHistory:[
+      'Execution preview prepared.',
+      'Permission slip recorded for this exact preview only.',
+      'Simulated rehearsal completed with no provider request sent.',
+      'Final confirmation packet prepared for human review only.'
+    ],
+    rehearsalReceipt:rehearsal.receiptPreview||'No live request was sent. No external action was taken.',
+    willHappen:'VAL will keep this packet visible so the human can review, revise, or cancel before any future live executor is considered.',
+    willNotHappen:[
+      'No Google Calendar event will be changed.',
+      'No Outlook Calendar event will be changed.',
+      'No attendee will be invited or notified.',
+      'No message will be sent.',
+      'No event will be created, deleted, or rescheduled.',
+      'No provider API write request will be sent from this packet.'
+    ],
+    humanChoices:[
+      'Review later while live execution stays locked.',
+      'Revise the preview or draft.',
+      'Cancel this proposal.',
+      'Ask VAL for more clarification before trusting it.'
+    ],
+    lockedReason:'This is the final confirmation packet only. The live executor is intentionally not built, and no final live command can be issued from this screen.'
+  });
+}
+async function saveValOsCalendarFinalConfirmationPacket(req,id){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  if(!item.executionPreview)throw new Error('Prepare an execution preview before preparing a final confirmation packet.');
+  if(!item.permissionSlip)throw new Error('Record a permission slip before preparing a final confirmation packet.');
+  if(!item.executionRehearsal)throw new Error('Run a simulated rehearsal before preparing a final confirmation packet.');
+  const base=buildValOsCalendarFinalConfirmationPacket(item);
+  const packet=normalizeValOsCalendarFinalConfirmationPacket({...base,id:item.finalConfirmationPacket?.id||base.id,createdAt:item.finalConfirmationPacket?.createdAt||base.createdAt});
+  const saved=updateValOsCalendarApproval(item.id,{
+    finalConfirmationPacket:packet,
+    outcome:'Final confirmation packet prepared for review only. Live execution remains locked and no external action was taken.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_final_confirmation_packet_prepared',resourceId:item.id,summary:`Final confirmation packet prepared for ${item.event?.title||item.title}. Review only.`,metadata:{calendarProposalId:item.id,finalConfirmationPacketId:packet.id,provider:packet.provider,action:packet.action,externalActionTaken:false,executionAvailable:false,liveExecutionLocked:true,requiresHumanFinalConfirmation:true}});
+  await auditLog({req,action:'val_os_calendar_final_confirmation_packet_prepared',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{finalConfirmationPacketId:packet.id,provider:packet.provider,action:packet.action,externalActionTaken:false,executionAvailable:false,liveExecutionLocked:true,requiresHumanFinalConfirmation:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,finalConfirmationPacket:saved.finalConfirmationPacket,audit};
+}
+async function reviewValOsCalendarFinalConfirmationPacket(req,id,{decision='looks_right',note=''}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  if(!item.finalConfirmationPacket)throw new Error('Prepare a final confirmation packet before reviewing it.');
+  const normalized=String(decision||'looks_right').toLowerCase();
+  const allowed=new Set(['looks_right','needs_revision','cancel']);
+  if(!allowed.has(normalized))throw new Error('Unknown final confirmation review decision.');
+  const labels={looks_right:'Looks right for review only',needs_revision:'Needs revision before trust increases',cancel:'Canceled by human review'};
+  const packet=normalizeValOsCalendarFinalConfirmationPacket({
+    ...item.finalConfirmationPacket,
+    reviewDecision:normalized,
+    reviewNote:String(note||'').slice(0,900),
+    reviewedAt:new Date().toISOString()
+  });
+  const outcome=normalized==='looks_right'
+    ?'Final confirmation packet marked as looking right for review only. Live execution remains locked.'
+    :normalized==='needs_revision'
+      ?'Final confirmation packet marked as needing revision. VAL should adjust before trust increases.'
+      :'Final confirmation packet canceled. Live execution remains locked and no external action was taken.';
+  const saved=updateValOsCalendarApproval(item.id,{
+    finalConfirmationPacket:packet,
+    status:normalized==='cancel'?'rejected':item.status,
+    decision:normalized==='cancel'?'final_packet_cancel':item.decision,
+    decisionReason:String(note||labels[normalized]).slice(0,700),
+    outcome
+  });
+  const audit=saveValOsAudit({eventType:'calendar_final_confirmation_packet_reviewed',resourceId:item.id,summary:`Final confirmation packet reviewed: ${labels[normalized]}.`,metadata:{calendarProposalId:item.id,finalConfirmationPacketId:packet.id,decision:normalized,externalActionTaken:false,executionAvailable:false,liveExecutionLocked:true,reviewOnly:true}});
+  await auditLog({req,action:'val_os_calendar_final_confirmation_packet_reviewed',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{finalConfirmationPacketId:packet.id,decision:normalized,externalActionTaken:false,executionAvailable:false,liveExecutionLocked:true,reviewOnly:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,finalConfirmationPacket:saved.finalConfirmationPacket,audit};
+}
+async function createValOsCalendarFinalPacketInternalTask(req,id){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  const packet=item.finalConfirmationPacket;
+  if(!packet)throw new Error('Prepare a final confirmation packet before creating an internal task.');
+  if(packet.reviewDecision!=='looks_right')throw new Error('Mark the final confirmation packet Looks Right before creating an internal task.');
+  const task={
+    id:uuid('task'),
+    title:`VAL follow-up: ${packet.eventTitle||item.event?.title||item.title||'Calendar review'}`.slice(0,180),
+    contactName:(packet.affectedPeople||item.affectedPeople||[])[0]||'',
+    dueDate:null,
+    notes:[
+      'Created from My VAL OS final confirmation packet.',
+      'Internal VAL task only; no provider, email, calendar, CRM, or contact system was changed.',
+      packet.actionSummary?`Action summary:\n${packet.actionSummary}`:'',
+      packet.reviewNote?`Human trust note:\n${packet.reviewNote}`:''
+    ].filter(Boolean).join('\n\n'),
+    details:[{text:`Created from final confirmation packet ${packet.id}. No external action taken.`,ts:new Date().toISOString()}],
+    completed:false,
+    source:'my_val_os_final_confirmation_packet',
+    sourceId:item.id,
+    createdAt:new Date().toISOString()
+  };
+  await saveTask(task);
+  const receipt=normalizeValOsCalendarInternalActionReceipt({
+    actionType:'create_internal_task',
+    taskId:task.id,
+    taskTitle:task.title,
+    basedOnPacketId:packet.id,
+    summary:'Internal VAL task created from the final confirmation packet. No outside system was touched.'
+  });
+  const saved=updateValOsCalendarApproval(item.id,{
+    internalActionReceipt:receipt,
+    outcome:'Internal VAL task created with permission. No external action was taken and provider writes remain locked.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_final_packet_internal_task_created',resourceId:item.id,summary:`Internal task created from final confirmation packet for ${packet.eventTitle||item.title}.`,metadata:{calendarProposalId:item.id,finalConfirmationPacketId:packet.id,taskId:task.id,externalActionTaken:false,executionAvailable:false,internalOnly:true,providerTouched:false}});
+  await auditLog({req,action:'val_os_calendar_final_packet_internal_task_created',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{finalConfirmationPacketId:packet.id,taskId:task.id,externalActionTaken:false,executionAvailable:false,internalOnly:true,providerTouched:false},success:true}).catch(()=>{});
+  return {ok:true,item:saved,task,internalActionReceipt:saved.internalActionReceipt,audit};
+}
+async function saveValOsCalendarClarification(req,id,{answers=[]}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  const answerRows=(Array.isArray(answers)?answers:[]).map(a=>({questionId:String(a.questionId||''),answer:String(a.answer||'').trim(),answeredAt:new Date().toISOString()})).filter(a=>a.answer);
+  const saved=updateValOsCalendarApproval(item.id,{
+    clarificationAnswers:answerRows,
+    clarificationStatus:answerRows.length?'answered':'needs_clarification',
+    outcome:answerRows.length?'Clarification saved. VAL will keep this as human context before preparing or trusting the draft.':'Clarification still needed before VAL should become more confident.'
+  });
+  const audit=saveValOsAudit({eventType:'calendar_clarification_saved',resourceId:item.id,summary:`Calendar clarification saved for ${item.event?.title||item.title}.`,metadata:{calendarProposalId:item.id,answerCount:answerRows.length,externalActionTaken:false,executionAvailable:false,reviewOnly:true}});
+  await auditLog({req,action:'val_os_calendar_clarification_saved',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{answerCount:answerRows.length,externalActionTaken:false,executionAvailable:false,reviewOnly:true},success:true}).catch(()=>{});
+  return {ok:true,item:saved,answers:answerRows,audit};
+}
+async function decideValOsCalendarApproval(req,id,{action='approve_proposal',reason='',proposalPatch={}}={}){
+  const item=valOsCalendarApprovalRows().find(r=>String(r.id)===String(id));
+  if(!item)throw new Error('Calendar proposal not found.');
+  const normalized=String(action||'approve_proposal').toLowerCase();
+  let patch={decision:normalized,decisionReason:reason,decidedAt:new Date().toISOString(),externalActionTaken:false,executionAvailable:false};
+  if(normalized==='approve_proposal'){
+    patch={...patch,status:'approved_not_executed',outcome:'Proposal approved for planning only. No calendar event was changed, no invite was sent, and execution is still unavailable.'};
+  }else if(normalized==='reject'||normalized==='skip'){
+    patch={...patch,status:'rejected',outcome:'Proposal rejected. VAL will not use it.'};
+  }else if(normalized==='tweak'){
+    patch={...patch,status:'needs_tweak',outcome:'Tweaked proposal saved for review. No external calendar action was taken.',proposedChange:{...(item.proposedChange||{}),...(proposalPatch||{})}};
+  }else{
+    throw new Error('Unsupported calendar proposal decision.');
+  }
+  const saved=updateValOsCalendarApproval(item.id,patch);
+  const audit=saveValOsAudit({eventType:'calendar_proposal_decision',resourceId:item.id,summary:`Calendar proposal decision: ${saved.status} for ${item.event?.title||item.title}`,metadata:{action:normalized,calendarProposalId:item.id,externalActionTaken:false,executionAvailable:false,reviewOnly:true}});
+  await auditLog({req,action:'val_os_calendar_proposal_decision',resourceType:'val_os_calendar_approval',resourceId:item.id,metadata:{action:normalized,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
+  return {ok:true,status:saved.status,item:saved,audit};
+}
+function valOsLearningReviewItems(insights=[],decisions=[]){
+  const decisionById=new Map((decisions||[]).map(d=>[d.learningId,d]));
+  return (insights||[])
+    .filter(item=>['fact','belief','pattern','skill'].includes(String(item.type||'')))
+    .slice(0,60)
+    .map(item=>{
+      const learningId=valOsLearningKey(item);
+      const decision=decisionById.get(learningId)||null;
+      const status=decision?.status||'needs_review';
+      return {
+        id:learningId,
+        title:decision?.correctedTitle||item.title||'Learned item',
+        summary:decision?.correctedSummary||item.summary||'',
+        originalTitle:item.title||'',
+        originalSummary:item.summary||'',
+        type:item.type||'learning',
+        source:item.source||'',
+        confidence:item.confidence||0.7,
+        status,
+        correctionNote:decision?.correctionNote||'',
+        approvedForUse:!!decision?.approvedForUse,
+        needsApproval:!decision||status==='needs_review',
+        decision,
+        data:item.data||{}
+      };
+    });
+}
+function valOsLearningItemById(id){
+  const rows=valOsLearningDecisionRows();
+  return rows.find(r=>String(r.learningId)===String(id))||null;
+}
+function normalizeValOsReviewItem(item={}){
+  const now=new Date().toISOString();
+  const actions=Array.isArray(item.actionHistory)?item.actionHistory.slice(0,20):[];
+  return {
+    id:item.id||uuid('vos_review'),
+    tenantId:item.tenantId||tenantId(),
+    userId:item.userId||currentUserId(),
+    status:item.status||'needs_review',
+    sourceType:item.sourceType||'email',
+    sourceId:String(item.sourceId||''),
+    ruleId:String(item.ruleId||''),
+    ruleTitle:String(item.ruleTitle||'Approved behavior').slice(0,180),
+    title:String(item.title||'Review item').slice(0,220),
+    summary:String(item.summary||'VAL prepared this for review.').slice(0,900),
+    why:String(item.why||'VAL matched an approved review-first behavior.').slice(0,900),
+    suggestedAction:String(item.suggestedAction||'Review before deciding the next step.').slice(0,500),
+    confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.72)),
+    evidence:Array.isArray(item.evidence)?item.evidence.slice(0,6):[],
+    decision:String(item.decision||''),
+    decisionReason:String(item.decisionReason||'').slice(0,700),
+    outcome:String(item.outcome||'').slice(0,700),
+    actionHistory:actions,
+    preparedDraftId:String(item.preparedDraftId||''),
+    createdTaskId:String(item.createdTaskId||''),
+    decidedAt:item.decidedAt||'',
+    externalActionTaken:false,
+    reviewOnly:true,
+    createdAt:item.createdAt||now,
+    updatedAt:now
+  };
+}
+function saveValOsReviewItem(item={}){
+  const clean=normalizeValOsReviewItem(item);
+  const store=valStore();
+  const rows=store.valOsReviewQueue;
+  const idx=rows.findIndex(r=>r.tenantId===clean.tenantId&&r.userId===clean.userId&&r.ruleId===clean.ruleId&&r.sourceType===clean.sourceType&&r.sourceId===clean.sourceId);
+  if(idx>=0)rows[idx]={...rows[idx],...clean,id:rows[idx].id,createdAt:rows[idx].createdAt||clean.createdAt};
+  else rows.unshift(clean);
+  store.valOsReviewQueue=rows.slice(0,500);
+  saveValStore(store);
+  return idx>=0?rows[idx]:clean;
+}
+function updateValOsReviewItem(id,patch={}){
+  const store=valStore();
+  const rows=store.valOsReviewQueue||[];
+  const idx=rows.findIndex(r=>r.id===id&&r.tenantId===tenantId()&&r.userId===currentUserId());
+  if(idx<0)return null;
+  rows[idx]=normalizeValOsReviewItem({...rows[idx],...patch,id:rows[idx].id,createdAt:rows[idx].createdAt});
+  saveValStore(store);
+  return rows[idx];
+}
+function valOsReviewItemById(id){
+  return valOsReviewQueueRows().find(r=>String(r.id)===String(id))||null;
+}
+function valOsFeedbackBehaviorCandidates({rules=[],reviewQueue=[]}={}){
+  const ruleById=new Map((rules||[]).map(r=>[r.id,r]));
+  const feedback=(reviewQueue||[]).filter(item=>['not_useful','adjust_behavior'].includes(String(item.decision||''))||item.status==='needs_behavior_adjustment');
+  const grouped=new Map();
+  for(const item of feedback){
+    const key=item.ruleId||'unknown_rule';
+    if(!grouped.has(key))grouped.set(key,[]);
+    grouped.get(key).push(item);
+  }
+  return Array.from(grouped.entries()).map(([ruleId,items])=>{
+    const rule=ruleById.get(ruleId)||{};
+    const adjustments=items.map(i=>i.decisionReason||i.outcome||i.suggestedAction||'Feedback saved.').filter(Boolean).slice(0,4);
+    const notUseful=items.filter(i=>i.decision==='not_useful').length;
+    const adjust=items.filter(i=>i.decision==='adjust_behavior'||i.status==='needs_behavior_adjustment').length;
+    const id='vos_feedback_'+valOsStableId([tenantId(),currentUserId(),ruleId,adjustments.join('|'),notUseful,adjust]);
+    const summary=[
+      `${items.length} review item${items.length===1?'':'s'} gave feedback on "${rule.title||'this behavior'}".`,
+      notUseful?`${notUseful} marked not useful.`:'',
+      adjust?`${adjust} asked for behavior adjustment.`:'',
+      'VAL is proposing a safer refinement for approval before changing behavior.'
+    ].filter(Boolean).join(' ');
+    return {
+      id,
+      layer:'recommendation',
+      type:'behavior',
+      source:'review_feedback',
+      title:`Refine: ${rule.title||'approved behavior'}`,
+      summary,
+      confidence:0.74,
+      recommendation:'Review this refinement. Approve only if it matches what you want VAL to do next.',
+      data:{
+        sourceRuleId:ruleId,
+        evidence:items.slice(0,4).map(i=>({title:i.title,reason:i.decisionReason||i.outcome||i.why,status:i.status})),
+        ruleDraft:{
+          scope:rule.scope||'email',
+          ruleType:`refine_${rule.ruleType||'reviewable_behavior'}`,
+          trigger:{review_feedback:true,sourceRuleId:ruleId},
+          actions:{review_first:true,apply_feedback:adjustments,reduce_false_positives:notUseful>0},
+          requiresApproval:true
+        }
+      }
+    };
+  });
+}
+function buildValOsReflection({learningReview=[],draftBehaviors=[],activeRules=[],reviewQueue=[],calendarApprovals=[],audit=[]}={}){
+  const confirmed=learningReview.filter(i=>i.status==='confirmed');
+  const corrected=learningReview.filter(i=>i.status==='corrected');
+  const skipped=learningReview.filter(i=>i.status==='skipped');
+  const useful=reviewQueue.filter(i=>i.decision==='useful');
+  const notUseful=reviewQueue.filter(i=>i.decision==='not_useful');
+  const adjusted=reviewQueue.filter(i=>i.decision==='adjust_behavior'||i.status==='needs_behavior_adjustment');
+  const drafts=reviewQueue.filter(i=>i.preparedDraftId);
+  const tasks=reviewQueue.filter(i=>i.createdTaskId);
+  const calendarActionDrafts=calendarApprovals.filter(i=>i.actionDraft);
+  const calendarExecutionPreviews=calendarApprovals.filter(i=>i.executionPreview);
+  const externalActions=reviewQueue.filter(i=>i.externalActionTaken===true).length+calendarApprovals.filter(i=>i.externalActionTaken===true).length+(audit||[]).filter(a=>a.metadata&&a.metadata.externalActionTaken===true).length;
+  const pendingRefinements=draftBehaviors.filter(i=>i.source==='review_feedback');
+  const waitingLearning=learningReview.filter(i=>i.needsApproval);
+  const waitingCalendar=calendarApprovals.filter(i=>i.status==='needs_approval'||i.status==='needs_tweak');
+  return {
+    generatedAt:new Date().toISOString(),
+    headline:externalActions===0?'VAL stayed inside the trust boundary.':'Review external activity before continuing.',
+    whatValLearned:learningReview.slice(0,5).map(i=>({title:i.title,summary:i.summary,status:i.status,approvedForUse:!!i.approvedForUse})),
+    confirmed:confirmed.slice(0,5).map(i=>({title:i.title,summary:i.summary})),
+    corrected:corrected.slice(0,5).map(i=>({title:i.title,summary:i.summary,note:i.correctionNote,originalTitle:i.originalTitle,originalSummary:i.originalSummary})),
+    carefulAbout:corrected.concat(skipped).concat(adjusted).slice(0,6).map(i=>({title:i.title||i.originalTitle,summary:i.correctionNote||i.decisionReason||i.outcome||i.summary||'Needs human care before VAL uses this again.'})),
+    reviewSignals:{useful:useful.length,notUseful:notUseful.length,adjusted:adjusted.length},
+    pendingApprovals:{learning:waitingLearning.length,behaviorRefinements:pendingRefinements.length,behaviorCandidates:draftBehaviors.length,calendar:waitingCalendar.length},
+    internalWork:{reviewItems:reviewQueue.length,calendarProposals:calendarApprovals.length,calendarActionDrafts:calendarActionDrafts.length,calendarExecutionPreviews:calendarExecutionPreviews.length,draftsCreated:drafts.length,tasksCreated:tasks.length},
+    externalActionsTaken:externalActions,
+    nextTrustMove:waitingLearning.length?'Review learned context waiting for approval.':(waitingCalendar.length?'Review calendar proposals before any future execution step.':(pendingRefinements.length?'Review behavior refinements waiting for approval.':'Keep using review-only scans and correct anything that feels off.')),
+    auditTrail:(audit||[]).slice(0,8).map(a=>({summary:a.summary||'',eventType:a.eventType||'',createdAt:a.createdAt||''}))
+  };
+}
+function buildValOsTrustLedger({learningReview=[],draftBehaviors=[],activeRules=[],reviewQueue=[],calendarApprovals=[],audit=[]}={}){
+  const byEvent=type=>(audit||[]).filter(a=>a.eventType===type).length;
+  const externalActions=reviewQueue.filter(i=>i.externalActionTaken===true).length+calendarApprovals.filter(i=>i.externalActionTaken===true).length+(audit||[]).filter(a=>a.metadata&&a.metadata.externalActionTaken===true).length;
+  return {
+    proposalsPrepared:calendarApprovals.length,
+    calendarDraftsPrepared:calendarApprovals.filter(i=>i.actionDraft).length,
+    calendarExecutionPreviews:calendarApprovals.filter(i=>i.executionPreview).length,
+    clarificationsNeeded:calendarApprovals.filter(i=>i.clarificationStatus==='needs_clarification').length,
+    clarificationsAnswered:calendarApprovals.filter(i=>i.clarificationStatus==='answered').length,
+    userApprovals:calendarApprovals.filter(i=>i.status==='approved_not_executed').length+learningReview.filter(i=>i.status==='confirmed'||i.status==='corrected').length+activeRules.length,
+    userTweaks:calendarApprovals.filter(i=>i.status==='needs_tweak').length+learningReview.filter(i=>i.status==='corrected').length+reviewQueue.filter(i=>i.status==='needs_behavior_adjustment').length,
+    rejectedSuggestions:calendarApprovals.filter(i=>i.status==='rejected').length+learningReview.filter(i=>i.status==='skipped').length,
+    reviewItemsPrepared:reviewQueue.length,
+    behaviorCandidatesWaiting:draftBehaviors.length,
+    auditEvents:(audit||[]).length,
+    calendarScans:byEvent('calendar_approval_scan'),
+    calendarClarifications:byEvent('calendar_clarification_saved'),
+    externalActionsTaken:externalActions,
+    trustBoundaryHeld:externalActions===0,
+    headline:externalActions===0?'Trust boundary held: VAL prepared and asked, but did not act externally.':'External activity needs review before continuing.'
+  };
+}
+function buildValOsSafetySummary({trustLedger={}}={}){
+  const externalActions=Number(trustLedger.externalActionsTaken||0);
+  return {
+    currentStage:'Execution preview only',
+    boundary:'Observe > Proposal > Clarification > Draft > Execution Preview > Explicit Approval > Actual execution (not built yet).',
+    can:[
+      'read connected email and calendar context',
+      'prepare proposals for review',
+      'ask for clarification before assuming',
+      'prepare internal drafts',
+      'prepare execution previews',
+      'record approvals, tweaks, skips, and audit events'
+    ],
+    cannot:[
+      'reschedule calendar events',
+      'invite attendees',
+      'send calendar updates',
+      'create external calendar events',
+      'delete or archive calendar items',
+      'send messages or emails',
+      'execute Google, Outlook, or GHL changes'
+    ],
+    nextUnsafeStep:'Actual external calendar execution is intentionally not built.',
+    externalActionsTaken:externalActions,
+    trustBoundaryHeld:externalActions===0&&trustLedger.trustBoundaryHeld!==false,
+    humanMessage:externalActions===0?'Trust boundary held. VAL can prepare and explain, but it cannot act outside VAL from this flow.':'Pause and review before continuing: external activity is present.'
+  };
+}
+function buildValOsActionRegistry(){
+  return [
+    {
+      id:'create_internal_task',
+      label:'Create internal task',
+      domain:'tasks',
+      enabled:true,
+      riskLevel:'low',
+      executionMode:'supervised_internal',
+      description:'Create a task inside VAL after a human marks the packet or review item as ready.',
+      requiredGates:['exact human approval','visible source packet','audit receipt'],
+      receiptType:'internal_action_receipt',
+      externalSystemTouched:false
+    },
+    {
+      id:'create_internal_draft',
+      label:'Create internal draft',
+      domain:'drafts',
+      enabled:true,
+      riskLevel:'low',
+      executionMode:'supervised_internal',
+      description:'Create an internal draft inside VAL for human review. Nothing is sent.',
+      requiredGates:['exact human approval','visible source packet','audit receipt'],
+      receiptType:'internal_action_receipt',
+      externalSystemTouched:false
+    },
+    {
+      id:'prepare_meeting_prep_note',
+      label:'Prepare meeting prep note',
+      domain:'calendar',
+      enabled:true,
+      riskLevel:'low',
+      executionMode:'supervised_internal',
+      description:'Prepare a meeting prep note inside VAL from reviewed calendar context.',
+      requiredGates:['reviewed calendar context','affected people shown','audit receipt'],
+      receiptType:'internal_action_receipt',
+      externalSystemTouched:false
+    },
+    {
+      id:'draft_email_reply',
+      label:'Draft email reply',
+      domain:'email',
+      enabled:false,
+      riskLevel:'medium',
+      executionMode:'locked_provider_adjacent',
+      description:'Prepare an email reply draft. Provider sending remains locked.',
+      requiredGates:['exact recipient shown','message text shown','human approval','send remains locked'],
+      receiptType:'draft_receipt',
+      externalSystemTouched:false,
+      lockedReason:'Use internal drafts first. Sending email is not enabled.'
+    },
+    {
+      id:'update_calendar_event',
+      label:'Update calendar event',
+      domain:'calendar',
+      enabled:false,
+      riskLevel:'high',
+      executionMode:'provider_locked',
+      description:'Update a Google or Outlook calendar event.',
+      requiredGates:['provider sandbox','typed final confirmation','affected people shown','rollback plan','post-action receipt'],
+      receiptType:'provider_receipt',
+      externalSystemTouched:true,
+      lockedReason:'Provider write executor is intentionally not built.'
+    }
+  ];
+}
+function buildValOsExecutorStatus({actionRegistry=[],calendarApprovals=[]}={}){
+  const internalReceipts=calendarApprovals.filter(i=>i.internalActionReceipt);
+  const enabled=actionRegistry.filter(a=>a.enabled);
+  const locked=actionRegistry.filter(a=>!a.enabled);
+  return {
+    generatedAt:new Date().toISOString(),
+    title:'VAL OS Action Registry',
+    mode:'supervised internal actions only',
+    summary:'VAL can execute approved internal actions through a shared safety shell. External provider actions remain locked.',
+    enabledActions:enabled.length,
+    lockedActions:locked.length,
+    internalActionsCompleted:internalReceipts.length,
+    externalActionsTaken:0,
+    safetyShell:{
+      canRunQuestion:'Can this action run?',
+      previewQuestion:'What exactly will happen?',
+      receiptQuestion:'What receipt will the human see?',
+      rollbackQuestion:'How would this be corrected?',
+      auditQuestion:'Where is the audit trail?'
+    },
+    globalRules:[
+      'Internal actions may create VAL tasks, drafts, and notes only after visible human approval.',
+      'External actions must stay locked until provider sandboxing, typed final confirmation, and rollback receipts exist.',
+      'Every action must produce a human-readable receipt.',
+      'Batching may reduce clicks only for low-risk internal actions.'
+    ],
+    actions:actionRegistry
+  };
+}
+async function buildValOsExternalActionReadiness({calendarApprovals=[]}={}){
+  const [googleStatus,microsoftSaved,microsoftToken,credentials]=await Promise.all([
+    getGoogleConnectionStatus(GOOGLE_SCOPES).catch(e=>({connected:false,error:e.message,missingScopes:GOOGLE_SCOPES})),
+    loadOAuthTokens('microsoft').catch(()=>null),
+    getMicrosoftToken().catch(()=>null),
+    listIntegrationCredentials(currentUserId()).catch(()=>[])
+  ]);
+  const googleCalendarReadable=!!googleStatus.connected&&!googleStatus.missingScopes?.includes('https://www.googleapis.com/auth/calendar.readonly');
+  const microsoftCalendarReadable=!!microsoftToken;
+  const ghlConfigured=credentials.some(c=>c.provider==='ghl'&&/connected|saved|not tested/i.test(String(c.status||'')))||!!(GHL_KEY&&GHL_LOC);
+  const providers=[
+    {id:'google_calendar',label:'Google Calendar',readable:googleCalendarReadable,writeLocked:true,status:googleCalendarReadable?'Readable':'Not ready',detail:googleCalendarReadable?'Connected for calendar review.':'Connect or reconnect Google before VAL can safely prepare provider-specific calendar action packets.'},
+    {id:'microsoft_calendar',label:'Outlook Calendar',readable:microsoftCalendarReadable,writeLocked:true,status:microsoftCalendarReadable?'Readable':'Not ready',detail:microsoftCalendarReadable?'Connected for calendar review.':(microsoftSaved?'Reconnect Outlook before provider-specific calendar action packets.':'Connect Outlook before provider-specific calendar action packets.')},
+    {id:'ghl',label:'GHL / CRM',readable:!!ghlConfigured,writeLocked:true,status:ghlConfigured?'Configured':'Not ready',detail:ghlConfigured?'CRM connection is configured for review context.':'Connect GHL before CRM action packets can be prepared.'}
+  ];
+  const hasPreview=calendarApprovals.some(i=>i.executionPreview);
+  const hasApprovalPacket=calendarApprovals.some(i=>i.executionPreview&&i.permissionSlip);
+  return {
+    generatedAt:new Date().toISOString(),
+    mode:'Connection check only',
+    title:'External Action Readiness Gate',
+    summary:'VAL can check whether the future action path has the right safety pieces. It still cannot write to Google, Outlook, or GHL from My VAL OS.',
+    providers,
+    gates:[
+      {label:'Connection check only',ready:true,detail:'This check reads saved connection status and does not change external systems.'},
+      {label:'At least one readable calendar or CRM connection',ready:providers.some(p=>p.readable),detail:'Needed before provider-specific action packets can be trusted.'},
+      {label:'Execution preview prepared',ready:hasPreview,detail:'A human must see the exact proposed change before any future permission step.'},
+      {label:'Exact human approval recorded',ready:hasApprovalPacket,detail:'General approval is not enough. Approval must be tied to one specific packet.'},
+      {label:'Audit trail active',ready:true,detail:'Every check, approval, tweak, and rejection is recorded.'},
+      {label:'Rollback note required',ready:true,detail:'Every future action packet must explain how to correct or undo the action.'},
+      {label:'External writes locked',ready:true,detail:'The executor is not built in this flow, so no external write can happen here.'}
+    ],
+    approvalPacketRequirements:[
+      'provider and exact action',
+      'current event or record',
+      'proposed change',
+      'affected people',
+      'exact message or update text',
+      'risk level and reason',
+      'rollback or correction note',
+      'one-action approval wording'
+    ],
+    readyForSupervisedExecution:false,
+    executionAvailable:false,
+    externalActionTaken:false,
+    nextStep:'Keep gathering approval packets and connection confidence. Build a one-action executor only after this gate stays clear.'
+  };
+}
+function valOsReviewItemContact(item={}){
+  const from=(item.evidence||[]).find(ev=>/^from$/i.test(String(ev.label||'')))?.detail||'';
+  return String(from).replace(/<.*$/,'').trim()||'';
+}
+function valOsReviewItemSubject(item={}){
+  return (item.evidence||[]).find(ev=>/^subject$/i.test(String(ev.label||'')))?.detail||item.title||'Review item';
+}
+function valOsReviewDecisionAction(item,action,reason=''){
+  const now=new Date().toISOString();
+  return {
+    action,
+    reason:String(reason||'').slice(0,500),
+    at:now,
+    externalActionTaken:false,
+    reviewOnly:true,
+    itemTitle:item.title||''
+  };
+}
+async function decideValOsReviewItem(req,id,{action='useful',reason=''}={}){
+  const item=valOsReviewItemById(id);
+  if(!item)throw new Error('Review item not found.');
+  const normalized=String(action||'useful').toLowerCase();
+  const history=(item.actionHistory||[]).concat(valOsReviewDecisionAction(item,normalized,reason)).slice(-20);
+  let patch={actionHistory:history,decisionReason:reason,decidedAt:new Date().toISOString(),externalActionTaken:false,reviewOnly:true};
+  let result={ok:true,action:normalized,item:null};
+  if(normalized==='useful'||normalized==='looks_right'){
+    patch={...patch,status:'reviewed',decision:'useful',outcome:'Marked useful. VAL can keep using this approved behavior in review-first mode.'};
+  }else if(normalized==='not_useful'||normalized==='skip'){
+    patch={...patch,status:'dismissed',decision:'not_useful',outcome:'Marked not useful. VAL will use this feedback before recommending similar items.'};
+  }else if(normalized==='adjust_behavior'){
+    patch={...patch,status:'needs_behavior_adjustment',decision:'adjust_behavior',outcome:'Feedback saved for behavior adjustment. VAL has not changed external systems.'};
+  }else if(normalized==='create_draft'){
+    const subject=valOsReviewItemSubject(item);
+    const draft=await saveInternalDraft({
+      draftType:'val_os_review',
+      provider:'internal',
+      subject:`Draft follow-up: ${subject}`.slice(0,180),
+      body:[
+        'Draft for review only.',
+        '',
+        `Context: ${item.title||subject}`,
+        `Why VAL surfaced this: ${item.why||''}`,
+        `Suggested next step: ${item.suggestedAction||''}`,
+        '',
+        'Write the message here before approval.'
+      ].join('\n'),
+      status:'draft',
+      sourceContext:{source:'my_val_os_review_queue',reviewItemId:item.id,ruleId:item.ruleId,sourceType:item.sourceType,sourceId:item.sourceId,externalActionTaken:false,reviewOnly:true}
+    });
+    patch={...patch,status:'draft_prepared',decision:'create_draft',preparedDraftId:draft.id,outcome:'Internal draft created for review. Nothing was sent.'};
+    result.draft=draft;
+  }else if(normalized==='create_task'){
+    const task={
+      id:uuid('task'),
+      title:`Review: ${valOsReviewItemSubject(item)}`.slice(0,180),
+      contactName:valOsReviewItemContact(item),
+      dueDate:null,
+      notes:[item.why,item.suggestedAction,'Created from My VAL OS Review Queue. Internal task only; no external systems changed.'].filter(Boolean).join('\n\n'),
+      details:[{text:`Created from VAL OS review item ${item.id}. No external action taken.`,ts:new Date().toISOString()}],
+      completed:false,
+      source:'my_val_os_review_queue',
+      sourceId:item.id,
+      createdAt:new Date().toISOString()
+    };
+    await saveTask(task);
+    patch={...patch,status:'task_created',decision:'create_task',createdTaskId:task.id,outcome:'Internal task created. Nothing was sent, deleted, archived, rescheduled, or changed outside VAL.'};
+    result.task=task;
+  }else{
+    throw new Error('Unsupported review decision.');
+  }
+  const saved=updateValOsReviewItem(item.id,patch);
+  const audit=saveValOsAudit({eventType:'review_item_decision',resourceId:item.id,summary:`Review item decision: ${saved.decision||normalized} for ${item.title||'review item'}`,metadata:{action:normalized,reviewItemId:item.id,preparedDraftId:saved.preparedDraftId||'',createdTaskId:saved.createdTaskId||'',externalActionTaken:false,reviewOnly:true}});
+  await auditLog({req,action:'val_os_review_item_decision',resourceType:'val_os_review_queue',resourceId:item.id,metadata:{action:normalized,externalActionTaken:false,reviewOnly:true},success:true}).catch(()=>{});
+  return {...result,item:saved,audit};
+}
+function valOsRuleSupportsEmailReview(rule={}){
+  const text=[rule.scope,rule.ruleType,rule.title,rule.summary,JSON.stringify(rule.trigger||{}),JSON.stringify(rule.actions||{})].join(' ').toLowerCase();
+  return rule.enabled!==false&&rule.status!=='archived'&&rule.executionMode==='review_first'&&/\b(email|inbox|reply|vip|priority|surface|attention|follow.?up)\b/i.test(text);
+}
+function valOsEmailReviewPriority(email={}){
+  const text=[email.classification,email.reason,email.recommendedAction,email.subject,email.bodyPreview,email.snippet,email.from?.name,email.from?.email].join(' ').toLowerCase();
+  let score=0;
+  if(['needs_attention','needs_reply','waiting_on_response'].includes(email.classification))score+=3;
+  if(/\b(vip|urgent|important|investor|client|time-sensitive|direct request|reply|follow up|intro|introduction)\b/i.test(text))score+=2;
+  if(email.matchedContact&&Object.keys(email.matchedContact||{}).length)score+=1;
+  if(Number(email.confidence||0)>=0.75)score+=1;
+  return score;
+}
+function valOsReviewEmailEvidence(email={}){
+  return [
+    {label:'From',detail:[email.from?.name,email.from?.email].filter(Boolean).join(' <')+(email.from?.email?'>':'')},
+    {label:'Subject',detail:email.subject||'(No subject)'},
+    {label:'Reason',detail:email.reason||email.recommendedAction||''}
+  ].filter(x=>x.detail);
+}
+async function runValOsReviewQueue(req,{force=false}={}){
+  const rules=valOsRuleRows().filter(valOsRuleSupportsEmailReview);
+  if(!rules.length)return {ok:true,created:0,items:[],message:'No approved email review behaviors are active yet.'};
+  const email=await emailIntelligencePayload(req,{force}).catch(e=>({ok:false,emails:[],errors:[e.message]}));
+  const candidates=(email.emails||[])
+    .map(e=>({...e,_valOsPriority:valOsEmailReviewPriority(e)}))
+    .filter(e=>e._valOsPriority>0)
+    .sort((a,b)=>b._valOsPriority-a._valOsPriority)
+    .slice(0,12);
+  const items=[];
+  for(const rule of rules){
+    for(const emailItem of candidates){
+      const sourceId=String(emailItem.messageId||emailItem.threadId||valOsStableId([emailItem.provider,emailItem.subject,emailItem.from?.email,emailItem.date||emailItem.receivedAt]));
+      const id='vos_review_'+valOsStableId([tenantId(),currentUserId(),rule.id,sourceId]);
+      const from=emailItem.from?.name||emailItem.from?.email||'this sender';
+      const classification=String(emailItem.classification||'email').replace(/_/g,' ');
+      const item=saveValOsReviewItem({
+        id,sourceType:'email',sourceId,ruleId:rule.id,ruleTitle:rule.title,
+        title:`Review ${from}: ${emailItem.subject||'(No subject)'}`,
+        summary:'VAL surfaced this email for review only. Nothing was sent, deleted, archived, rescheduled, or changed.',
+        why:`Approved behavior "${rule.title}" matched an email marked ${classification}. ${emailItem.reason||''}`.trim(),
+        suggestedAction:emailItem.recommendedAction||'Review this email and decide the next step.',
+        confidence:Number(emailItem.confidence)||rule.confidence||0.72,
+        evidence:valOsReviewEmailEvidence(emailItem)
+      });
+      items.push(item);
+    }
+    const store=valStore();
+    const idx=(store.valOsRules||[]).findIndex(r=>r.id===rule.id&&r.tenantId===tenantId()&&r.userId===currentUserId());
+    if(idx>=0){
+      store.valOsRules[idx].lastExecutedAt=new Date().toISOString();
+      store.valOsRules[idx].timesExecuted=Number(store.valOsRules[idx].timesExecuted||0)+1;
+      saveValStore(store);
+    }
+  }
+  const audit=saveValOsAudit({eventType:'review_queue_run',summary:`VAL surfaced ${items.length} review item${items.length===1?'':'s'} from approved behavior.`,metadata:{created:items.length,sourceType:'email',externalActionTaken:false,reviewOnly:true}});
+  return {ok:true,created:items.length,items,audit,errors:email.errors||[]};
+}
+function normalizeValOsRule(rule={}){
+  const draft=rule.ruleDraft||rule.draft||{};
+  return {
+    id:rule.id||uuid('vos_rule'),
+    tenantId:rule.tenantId||tenantId(),
+    userId:rule.userId||currentUserId(),
+    title:String(rule.title||rule.ruleName||draft.ruleType||'VAL OS rule').slice(0,180),
+    summary:String(rule.summary||rule.reason||'Approved by user from My VAL OS.').slice(0,900),
+    scope:String(rule.scope||draft.scope||'val').toLowerCase(),
+    ruleType:String(rule.ruleType||draft.ruleType||'reviewable_behavior'),
+    trigger:rule.trigger||draft.trigger||{},
+    actions:rule.actions||draft.actions||{},
+    confidence:Math.max(0,Math.min(1,Number(rule.confidence)||0.7)),
+    status:rule.status||'active',
+    enabled:rule.enabled!==false,
+    executionMode:rule.executionMode||'review_first',
+    approvalRequired:rule.approvalRequired!==false,
+    createdFrom:rule.createdFrom||'teach_val_source_insight',
+    sourceInsightId:rule.sourceInsightId||rule.draftId||'',
+    approvedByUser:true,
+    approvedAt:rule.approvedAt||new Date().toISOString(),
+    lastExecutedAt:rule.lastExecutedAt||'',
+    timesExecuted:Number(rule.timesExecuted||0),
+    successRate:Number(rule.successRate||0),
+    createdAt:rule.createdAt||new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  };
+}
+function saveValOsRule(rule={}){
+  const clean=normalizeValOsRule(rule);
+  const store=valStore();
+  const rows=store.valOsRules;
+  const idx=rows.findIndex(r=>r.id===clean.id||r.sourceInsightId&&clean.sourceInsightId&&r.sourceInsightId===clean.sourceInsightId);
+  if(idx>=0)rows[idx]={...rows[idx],...clean,id:rows[idx].id,createdAt:rows[idx].createdAt||clean.createdAt};
+  else rows.unshift(clean);
+  saveValStore(store);
+  return idx>=0?rows[idx]:clean;
+}
+function saveValOsRuleDecision({draftId,status,ruleId='',reason='',insight={}}={}){
+  const store=valStore();
+  const rows=store.valOsRuleDecisions;
+  const id=String(draftId||valOsDraftKey(insight)||'');
+  const idx=rows.findIndex(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.draftId===id);
+  const row={id:idx>=0?rows[idx].id:uuid('vos_decision'),tenantId:tenantId(),userId:currentUserId(),draftId:id,status,ruleId,reason,insightTitle:insight.title||'',updatedAt:new Date().toISOString(),createdAt:idx>=0?rows[idx].createdAt:new Date().toISOString()};
+  if(idx>=0)rows[idx]={...rows[idx],...row};else rows.unshift(row);
+  saveValStore(store);
+  return row;
+}
+async function latestTeachValSourceInsightItems(){
+  const session=await getTeachValSession('').catch(()=>null);
+  if(!session)return [];
+  const imports=await listTeachValImports(session.id).catch(()=>[]);
+  return imports
+    .filter(i=>['connected_source_insights','onboarding_operational_context'].includes(i.category))
+    .flatMap(i=>(i.extractedItems||[]).map(item=>({...item,data:{...(item.data||{}),importId:i.id,sessionId:session.id}})));
+}
+async function decideValOsLearningItem(req,id,{action='confirm',correctedTitle='',correctedSummary='',correctionNote=''}={}){
+  const insights=await latestTeachValSourceInsightItems();
+  const item=insights.find(i=>valOsLearningKey(i)===String(id))||{};
+  const normalized=String(action||'confirm').toLowerCase();
+  let status='confirmed';
+  if(['correct','corrected','needs_tweak'].includes(normalized))status='corrected';
+  else if(['skip','ignore','not_useful'].includes(normalized))status='skipped';
+  else if(['confirm','confirmed','looks_right'].includes(normalized))status='confirmed';
+  else throw new Error('Unsupported learning decision.');
+  const decision=saveValOsLearningDecision({learningId:id,status,item,correctedTitle,correctedSummary,correctionNote});
+  const label=status==='corrected'?'Corrected learning':(status==='skipped'?'Skipped learning':'Confirmed learning');
+  const audit=saveValOsAudit({eventType:'learning_decision',resourceId:id,summary:`${label}: ${decision.correctedTitle||decision.originalTitle||id}`,metadata:{status,learningId:id,externalActionTaken:false,reviewOnly:true}});
+  await auditLog({req,action:'val_os_learning_decision',resourceType:'val_os_learning',resourceId:id,metadata:{status,externalActionTaken:false,reviewOnly:true},success:true}).catch(()=>{});
+  return {ok:true,status,decision,audit};
+}
+async function buildValOsState(){
+  const insights=await latestTeachValSourceInsightItems();
+  const decisions=valOsRuleDecisionRows();
+  const learningDecisions=valOsLearningDecisionRows();
+  const decisionByDraft=new Map(decisions.map(d=>[d.draftId,d]));
+  const activeRules=valOsRuleRows().filter(r=>r.enabled!==false&&r.status!=='archived');
+  const reviewQueue=valOsReviewQueueRows().slice(0,40);
+  const calendarApprovals=valOsCalendarApprovalRows().slice(0,40);
+  const feedbackBehaviors=valOsFeedbackBehaviorCandidates({rules:activeRules,reviewQueue});
+  const learningReview=valOsLearningReviewItems(insights,learningDecisions);
+  const draftBehaviors=insights.filter(item=>item.data?.ruleDraft).concat(feedbackBehaviors).filter(item=>{
+    const decision=decisionByDraft.get(valOsDraftKey(item));
+    return !decision||decision.status==='draft'||decision.status==='needs_review';
+  });
+  const audit=(valStore().valOsAuditLog||[]).filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()).slice(0,40);
+  const reflection=buildValOsReflection({learningReview,draftBehaviors,activeRules,reviewQueue,calendarApprovals,audit});
+  const trustLedger=buildValOsTrustLedger({learningReview,draftBehaviors,activeRules,reviewQueue,calendarApprovals,audit});
+  const safetySummary=buildValOsSafetySummary({trustLedger});
+  const actionRegistry=buildValOsActionRegistry();
+  const executorStatus=buildValOsExecutorStatus({actionRegistry,calendarApprovals});
+  const externalActionReadiness=await buildValOsExternalActionReadiness({calendarApprovals});
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    principle:'VAL observes first, recommends second, and changes behavior only after explicit approval.',
+    counts:{facts:insights.filter(i=>i.type==='fact').length,beliefs:insights.filter(i=>['belief','pattern'].includes(i.type)).length,draftBehaviors:draftBehaviors.length,approvedBehaviors:activeRules.length,skills:insights.filter(i=>i.type==='skill').length,reviewQueue:reviewQueue.length,calendarApprovals:calendarApprovals.length,calendarNeedsApproval:calendarApprovals.filter(i=>i.status==='needs_approval'||i.status==='needs_tweak').length,calendarActionDrafts:calendarApprovals.filter(i=>i.actionDraft).length,calendarExecutionPreviews:calendarApprovals.filter(i=>i.executionPreview).length,calendarClarifications:calendarApprovals.filter(i=>i.clarificationStatus==='needs_clarification').length,feedbackBehaviors:feedbackBehaviors.length,learningReview:learningReview.length,learningApproved:learningReview.filter(i=>i.approvedForUse).length,learningNeedsReview:learningReview.filter(i=>i.needsApproval).length,auditEvents:audit.length},
+    facts:insights.filter(i=>i.type==='fact'),
+    beliefs:insights.filter(i=>['belief','pattern'].includes(i.type)),
+    draftBehaviors,
+    skills:insights.filter(i=>i.type==='skill'),
+    approvedBehaviors:activeRules,
+    reviewQueue,
+    calendarApprovals,
+    calendarActionLevels:VAL_OS_CALENDAR_ACTION_LEVELS,
+    feedbackBehaviors,
+    learningReview,
+    reflection,
+    trustLedger,
+    safetySummary,
+    actionRegistry,
+    executorStatus,
+    externalActionReadiness,
+    decisions,
+    learningDecisions,
+    audit,
+    safety:{externalActionsRequireApproval:true,executionMode:'review_first',humanCanDisable:true,whyAvailable:true}
+  };
 }
 async function promoteTeachValOnboardingToCoreMemory({session,imports,items,payload}){
   const included=Array.isArray(items)?items:[];
@@ -3733,14 +5984,6 @@ async function initValDb(){
       tenant_id text not null default 'default',
       user_id text not null default 'default',
       settings_json jsonb not null default '{}',
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      primary key (tenant_id,user_id)
-    );
-    create table if not exists val_user_preferences (
-      tenant_id text not null default 'default',
-      user_id text not null default 'default',
-      preferences_json jsonb not null default '{}',
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       primary key (tenant_id,user_id)
@@ -4225,6 +6468,12 @@ async function initValDb(){
     create index if not exists val_calendar_events_lookup_idx on val_calendar_events(tenant_id,user_id,start_time desc);
     create index if not exists val_task_calendar_blocks_lookup_idx on val_task_calendar_blocks(tenant_id,user_id,scheduling_status,scheduled_start);
   `);
+  await ensureValIntelligenceSpineTables({dbQuery,logger:console});
+  await ensureValConversationIdentityTables({dbQuery,logger:console});
+  await ensureValMeetingPrepTables({dbQuery,logger:console});
+  await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
+  await ensureValReviewUpdatesTables({dbQuery,logger:console});
+  await ensureValExternalActionTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
     await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
@@ -4318,8 +6567,7 @@ function loginHtml(){
   document.getElementById('loginForm').addEventListener('submit',async function(e){
     e.preventDefault();loginError.textContent='';
     try{
-      const next=new URLSearchParams(location.search).get('next')||'/dashboard';
-      const r=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailInput.value,password:passwordInput.value,next:next})});
+      const r=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailInput.value,password:passwordInput.value})});
       const d=await r.json().catch(()=>({}));
       console.log('[auth-ui] login response',{status:r.status,ok:r.ok,requiresPasswordSetup:!!d.requiresPasswordSetup});
       if(r.ok&&d.ok){
@@ -4332,16 +6580,8 @@ function loginHtml(){
           setTimeout(function(){window.location.href=d.redirectUrl||'/dashboard';},450);
           return;
         }
-        if(d.sessionBridgeUrl){
-          loginError.style.color='rgba(244,239,229,.78)';
-          loginError.textContent='Password accepted. Opening VAL directly to keep your secure session...';
-          const bridgeUrl=window.location.origin+d.sessionBridgeUrl;
-          try{window.top.location.assign(bridgeUrl);}catch(_){window.location.assign(bridgeUrl);}
-          setTimeout(function(){window.location.href=bridgeUrl;},450);
-          return;
-        }
         loginError.style.color='#ffb4a8';
-        loginError.textContent='Password accepted, but this browser did not keep the login session. Open the dashboard URL directly and try again.';
+        loginError.textContent='Password accepted, but the browser did not keep the login session. Refresh and try again. If VAL is embedded in another page, open the dashboard URL directly.';
         return;
       }
       if(d.requiresPasswordSetup){loginError.textContent=d.message||'Password setup required';showSetupBox();return;}
@@ -4391,7 +6631,7 @@ function isPublicPath(req){
   const p=req.path;
   if(p==='/api/val/transcripts'&&req.method==='POST'&&isValidTranscriptWebhookReq(req)) return true;
   if(p==='/api/val/transcripts/ping'&&isValidTranscriptWebhookReq(req)) return true;
-  return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/auth/session-bridge'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
+  return p==='/api/health'||p==='/health'||p==='/login'||p==='/set-password'||p==='/api/auth/login'||p==='/api/auth/logout'||p==='/api/auth/me'||p==='/api/auth/request-password-setup'||p==='/api/auth/set-password'||p==='/favicon.ico';
 }
 async function requireAuth(req,res,next){
   if(isPublicPath(req)) return next();
@@ -4405,8 +6645,7 @@ async function requireAuth(req,res,next){
   const user=await getSessionUser(req);
   if(user){req.valUser=user;return requestContext.run({user},()=>next());}
   if(req.path.startsWith('/api/')) return res.status(401).json({ok:false,error:'Authentication required'});
-  const redirectNext=safeInternalRedirect(req.originalUrl||req.url||'/dashboard');
-  return res.redirect('/login?next='+encodeURIComponent(redirectNext));
+  return res.redirect('/login');
 }
 
 // ── HEALTH ───────────────────────────────────────────────
@@ -4461,7 +6700,7 @@ app.get('/',async(req,res)=>{
   const user=await getSessionUser(req);
   if(!user) return res.type('html').send(loginHtml());
   res.set('Cache-Control','no-store, max-age=0');
-  return res.sendFile(path.join(__dirname,'dashboard.html'));
+  return res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));
 });
 app.get('/api/health',(req,res)=>res.json(statusPayload()));
 app.get('/health',(req,res)=>res.json(statusPayload()));
@@ -4469,19 +6708,11 @@ app.get('/login',async(req,res)=>{
   if(DEMO_MODE) return res.redirect('/guide');
   await valDbReady;
   const user=await getSessionUser(req);
-  if(user) return res.redirect(safeInternalRedirect(req.query.next||'/dashboard'));
+  if(user) return res.redirect('/dashboard');
   res.type('html').send(loginHtml());
 });
 app.get('/set-password',(req,res)=>{
   res.type('html').send(setPasswordHtml());
-});
-app.get('/auth/session-bridge',(req,res)=>{
-  const bridge=verifySessionBridgeToken(req.query.token||'');
-  res.set('Cache-Control','no-store, max-age=0');
-  res.set('Referrer-Policy','no-referrer');
-  if(!bridge) return res.redirect('/login');
-  setSessionCookie(res,bridge.sessionId);
-  return res.redirect(bridge.next||'/dashboard');
 });
 app.post('/api/auth/login',async(req,res)=>{
   await valDbReady;
@@ -4517,8 +6748,7 @@ app.post('/api/auth/login',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('login succeeded',{email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{email},success:true}).catch(()=>{});
-  const next=safeInternalRedirect(req.body.next||'/dashboard');
-  res.json({ok:true,user:publicUser(user),redirectUrl:next,sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,next))});
+  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
 });
 app.post('/api/auth/request-password-setup',async(req,res)=>{
   await valDbReady;
@@ -4552,8 +6782,7 @@ app.post('/api/auth/set-password',async(req,res)=>{
   setSessionCookie(res,sessionId);
   authLog('set password succeeded',{email:user.email,userId:user.id});
   await auditLog({req,tenantId:tenantId(),userId:user.id,action:'login',resourceType:'user',resourceId:user.id,metadata:{method:'set_password'},success:true}).catch(()=>{});
-  const next=safeInternalRedirect(req.body.next||'/dashboard');
-  res.json({ok:true,user:publicUser(user),redirectUrl:next,sessionBridgeUrl:'/auth/session-bridge?token='+encodeURIComponent(sessionBridgeToken(sessionId,next))});
+  res.json({ok:true,user:publicUser(user),redirectUrl:'/dashboard'});
 });
 app.post('/api/auth/logout',async(req,res)=>{
   await auditLog({req,action:'logout',resourceType:'session',resourceId:verifySignedSession(parseCookies(req)[SESSION_COOKIE])||'',success:true}).catch(()=>{});
@@ -4566,6 +6795,22 @@ app.get('/api/auth/me',async(req,res)=>{
   await valDbReady;
   const user=await getSessionUser(req);
   res.status(user?200:401).json(user?{ok:true,user}:{ok:false,error:'Authentication required'});
+});
+app.get('/hearth-prototype.html',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'hearth-prototype.html'));
+});
+app.get('/hearth-prototype.css',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'hearth-prototype.css'));
+});
+app.get('/hearth-prototype.js',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.sendFile(path.join(__dirname,'hearth-prototype.js'));
+});
+app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
+  res.set('Cache-Control','public, max-age=300');
+  res.sendFile(path.join(__dirname,'assets',`hearth-${req.params.time}.png`));
 });
 app.use(requireAuth);
 app.get('/api/config',async(req,res)=>{
@@ -4602,13 +6847,144 @@ app.get('/api/teach-val/onboarding',async(req,res)=>{
 app.get('/api/teach-val/source-insights',async(req,res)=>{
   try{
     const payload=await buildTeachValConnectedSourceInsights(req,{force:req.query.force==='1'||req.query.refresh==='1'});
-    await auditLog({req,action:'teach_val_source_insights_generated',resourceType:'teach_val_onboarding',metadata:{insightCount:payload.summary?.insightCount||0,emailCount:payload.summary?.emailCount||0,calendarEventCount:payload.summary?.calendarEventCount||0,externalActionTaken:false,observationOnly:true},success:true}).catch(()=>{});
+    await auditLog({req,action:'teach_val_source_insights_generated',resourceType:'teach_val_onboarding',metadata:{insightCount:payload.summary?.insightCount||0,emailCount:payload.summary?.emailCount||0,calendarEventCount:payload.summary?.calendarEventCount||0},success:true}).catch(()=>{});
     res.json(payload);
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/os',async(req,res)=>{
+  try{res.json(await buildValOsState());}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/readiness/check',async(req,res)=>{
+  try{
+    const os=await buildValOsState();
+    const readiness=os.externalActionReadiness||{};
+    const audit=saveValOsAudit({eventType:'external_action_readiness_check',summary:'External Action Readiness Gate checked connection status only. No external action taken.',metadata:{externalActionTaken:false,executionAvailable:false,connectionCheckOnly:true,readyForSupervisedExecution:false}});
+    await auditLog({req,action:'val_os_external_action_readiness_check',resourceType:'val_os_readiness',metadata:{externalActionTaken:false,executionAvailable:false,connectionCheckOnly:true,readyForSupervisedExecution:false},success:true}).catch(()=>{});
+    res.json({ok:true,readiness,audit,os:await buildValOsState()});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/review-queue/run',async(req,res)=>{
+  try{
+    const result=await runValOsReviewQueue(req,{force:req.body.force===true||req.query.force==='1'});
+    await auditLog({req,action:'val_os_review_queue_run',resourceType:'val_os_review_queue',metadata:{created:result.created||0,externalActionTaken:false,reviewOnly:true},success:true}).catch(()=>{});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/run',async(req,res)=>{
+  try{
+    const result=await runValOsCalendarApprovalScan();
+    await auditLog({req,action:'val_os_calendar_approval_scan',resourceType:'val_os_calendar_approval',metadata:{created:result.created||0,externalActionTaken:false,executionAvailable:false,reviewOnly:true},success:true}).catch(()=>{});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/decision',async(req,res)=>{
+  try{
+    const result=await decideValOsCalendarApproval(req,req.params.id,{action:req.body.action,reason:req.body.reason||'',proposalPatch:req.body.proposalPatch||{}});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/action-draft',async(req,res)=>{
+  try{
+    const result=await prepareValOsCalendarActionDraft(req,req.params.id,{draftPatch:req.body.draftPatch||{}});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/execution-preview',async(req,res)=>{
+  try{
+    const result=await prepareValOsCalendarExecutionPreview(req,req.params.id,{previewPatch:req.body.previewPatch||{}});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/permission-slip',async(req,res)=>{
+  try{
+    const result=await saveValOsCalendarPermissionSlip(req,req.params.id,{approvalText:req.body.approvalText||''});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/execution-rehearsal',async(req,res)=>{
+  try{
+    const result=await saveValOsCalendarExecutionRehearsal(req,req.params.id);
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/final-confirmation-packet',async(req,res)=>{
+  try{
+    const result=await saveValOsCalendarFinalConfirmationPacket(req,req.params.id);
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/final-confirmation-packet/review',async(req,res)=>{
+  try{
+    const result=await reviewValOsCalendarFinalConfirmationPacket(req,req.params.id,{decision:req.body.decision||'looks_right',note:req.body.note||''});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/final-confirmation-packet/internal-task',async(req,res)=>{
+  try{
+    const result=await createValOsCalendarFinalPacketInternalTask(req,req.params.id);
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/calendar-approvals/:id/clarification',async(req,res)=>{
+  try{
+    const result=await saveValOsCalendarClarification(req,req.params.id,{answers:req.body.answers||[]});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/review-queue/:id/decision',async(req,res)=>{
+  try{
+    const result=await decideValOsReviewItem(req,req.params.id,{action:req.body.action,reason:req.body.reason||''});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(/not found/i.test(e.message)?404:500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/learning/:id/decision',async(req,res)=>{
+  try{
+    const result=await decideValOsLearningItem(req,req.params.id,{action:req.body.action,correctedTitle:req.body.correctedTitle||'',correctedSummary:req.body.correctedSummary||'',correctionNote:req.body.correctionNote||''});
+    res.json({...result,os:await buildValOsState()});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/os/rules',async(req,res)=>{
+  try{
+    const action=String(req.body.action||'approve').toLowerCase();
+    const insight=req.body.insight||{};
+    const draftId=String(req.body.draftId||valOsDraftKey(insight)||'');
+    if(!draftId)return res.status(400).json({ok:false,error:'Missing behavior candidate id.'});
+    if(action==='skip'||action==='reject'){
+      const decision=saveValOsRuleDecision({draftId,status:'skipped',reason:req.body.reason||'Skipped by user.',insight});
+      const audit=saveValOsAudit({eventType:'behavior_skipped',resourceId:draftId,summary:`Skipped behavior candidate: ${insight.title||draftId}`,metadata:{insight}});
+      await auditLog({req,action:'val_os_rule_skipped',resourceType:'val_os_rule_draft',resourceId:draftId,metadata:{title:insight.title||''},success:true}).catch(()=>{});
+      return res.json({ok:true,status:'skipped',decision,audit,os:await buildValOsState()});
+    }
+    const ruleDraft=req.body.ruleDraft||insight.data?.ruleDraft||{};
+    const rule=saveValOsRule({
+      title:req.body.title||insight.title,
+      summary:req.body.summary||insight.summary,
+      ruleDraft,
+      scope:req.body.scope||ruleDraft.scope,
+      ruleType:req.body.ruleType||ruleDraft.ruleType,
+      confidence:insight.confidence,
+      sourceInsightId:draftId,
+      executionMode:'review_first',
+      approvalRequired:true,
+      createdFrom:'my_val_os_approval'
+    });
+    const decision=saveValOsRuleDecision({draftId,status:'approved',ruleId:rule.id,reason:req.body.reason||'Approved by user in My VAL OS.',insight});
+    const audit=saveValOsAudit({eventType:'rule_approved',resourceId:rule.id,summary:`Approved behavior: ${rule.title}`,metadata:{rule,sourceInsightId:draftId}});
+    await auditLog({req,action:'val_os_rule_approved',resourceType:'val_os_rule',resourceId:rule.id,metadata:{scope:rule.scope,ruleType:rule.ruleType,sourceInsightId:draftId},success:true}).catch(()=>{});
+    res.json({ok:true,status:'approved',rule,decision,audit,os:await buildValOsState()});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
-    const existing=req.body.resume!==false?await getTeachValSession(req.body.sessionId||''):null;
+    let existing=null;
+    if(req.body.resume!==false){
+      if(req.body.resumeWitnessing){
+        existing=await getTeachValWitnessingResumeSession();
+        if(!existing) existing=await restoreJessaRealWitnessingSessionBackup();
+      }
+      existing=existing||await getTeachValSession(req.body.sessionId||'');
+    }
     const requestedMode=req.body.mode==='update'?'update':'onboarding';
     const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'current_projects',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     const state=normalizeTeachValState(session.state);
@@ -4720,25 +7096,135 @@ app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const card=partnershipProtocolCardFor(req.params.cardId);
+    if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This answer belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach your answer to the wrong question.'});
+    if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
+    const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
+    if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
+    const priorImports=await listTeachValImports(session.id);
+    const graph=await observePartnershipProtocolAnswer({card,rawResponse,priorImports});
+    const witness=await witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports});
+    const nextCard=nextPartnershipProtocolCard(card);
+    const contextualNextQuestion=await composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse,graph,priorImports});
+    if(contextualNextQuestion) witness.next_question=contextualNextQuestion;
+    const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
+    const priorEvidenceChain=priorPartnershipAnswers(priorImports);
+    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph});
+    const evidenceChain=priorEvidenceChain.concat([integrityChain]);
+    const currentState=partnershipCurrentState(evidenceChain,nextCard);
+    const existing=priorImports.find(i=>i.category===card.category);
+    const promptUsed=[
+      'VAL Witnessing Master Constitution',
+      VAL_WITNESSING_MASTER_CONSTITUTION,
+      '',
+      'Living Executive Graph v1',
+      card.whyThisCardExistsNow,
+      `Current question goal: ${card.questionGoal}`,
+      nextCard?`Next question goal: ${nextCard.questionGoal}`:'',
+      'Observe -> Structure -> Witness -> Confirm -> Protect -> Earn Stewardship.',
+      'Keep the graph internal. Keep the conversation human.',
+      'Next question prompt shape: MASTER CONTEXT + PREVIOUS ANSWERS + CURRENT QUESTION GOAL + STYLE RULES + BAD EXAMPLES + GOOD EXAMPLES + OUTPUT FORMAT.'
+    ].join('\n');
+    const structuredSummary={
+      protocol:'living_executive_graph_v1',
+      card:{id:card.id,category:card.category,title:card.title},
+      livingExecutiveGraph:graph,
+      witness,
+      integrityChain,
+      evidenceChain:compactPartnershipEvidenceChain(evidenceChain),
+      currentState,
+      promptContracts:{
+        master_constitution:'VAL_WITNESSING_MASTER_CONSTITUTION',
+        why_this_card_exists_now:card.whyThisCardExistsNow,
+        question_goal:card.questionGoal,
+        next_question_goal:nextCard?.questionGoal||'',
+        current_investigation_goal:currentState.current_investigation_goal,
+        themes:currentState.themes,
+        open_loops:currentState.open_loops,
+        shift_candidates:currentState.shift_candidates,
+        previous_answer_variables:compactPartnershipEvidenceChain(priorEvidenceChain).map(item=>({variable:item.V.variable,answer:item.V.answer,observation_variable:item.O.variable,observation:item.O.claim,confirmation_variable:item.C.variable,confirmation:item.C.value})),
+        next_question_formula:`V1..V${movementIndex} + O1..O${movementIndex} + C1..C${movementIndex} + Goal ${movementIndex+1} -> Prompt ${movementIndex+1}`,
+        permanence_profile:card.permanenceProfile,
+        immediate_consumers:card.immediateConsumers,
+        future_consumers:card.futureConsumers
+      }
+    };
+    const saved=await saveTeachValImport({
+      id:existing?.id,
+      sessionId:session.id,
+      category:card.category,
+      promptUsed,
+      rawResponse,
+      structuredSummary,
+      extractedItems:partnershipGraphItems(card.category,graph),
+      reviewed:false,
+      status:'Witnessed'
+    });
+    const state=normalizeTeachValState(session.state);
+    state.progress[card.category]='Witnessed';
+    state.stage=card.category;
+    session.state=state;
+    await saveTeachValSession(session);
+    res.json({ok:true,card,graph,witness,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(req,res)=>{
+  try{
+    const session=await getTeachValSession(req.params.id);
+    if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
+    const card=partnershipProtocolCardFor(req.params.cardId);
+    if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This confirmation belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach it to the wrong question.'});
+    if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
+    const imports=await listTeachValImports(session.id);
+    const existing=imports.find(i=>i.category===card.category);
+    if(!existing)return res.status(404).json({ok:false,error:'Witnessing card has not been answered yet.'});
+    const value=String(req.body.confirmation||req.body.value||'yes').trim().toLowerCase();
+    const confirmation={
+      value:value==='yes'?'yes_exactly':value,
+      status:value==='yes'?'confirmed':value==='mostly'?'partly_confirmed':'challenged',
+      source:'user_confirmation',
+      clarification:String(req.body.clarification||'').trim(),
+      confirmedAt:new Date().toISOString()
+    };
+    const structuredSummary={...(existing.structuredSummary||{})};
+    structuredSummary.confirmation=confirmation;
+    if(structuredSummary.integrityChain){
+      structuredSummary.integrityChain={
+        ...structuredSummary.integrityChain,
+        C:confirmation
+      };
+      if(structuredSummary.integrityChain.O){
+        structuredSummary.integrityChain.O={
+          ...structuredSummary.integrityChain.O,
+          status:confirmation.status==='confirmed'?'confirmed':structuredSummary.integrityChain.O.status||'noticed',
+          provisional:confirmation.status!=='confirmed'
+        };
+      }
+    }
+    structuredSummary.evidenceChain=compactPartnershipEvidenceChain(imports.map((item,index)=>item.id===existing.id
+      ? structuredSummary.integrityChain||partnershipIntegrityChainEntry({index:index+1,card,rawResponse:existing.rawResponse,graph:structuredSummary.livingExecutiveGraph||{},confirmation})
+      : item.structuredSummary?.integrityChain||partnershipIntegrityChainEntry({index:index+1,card:partnershipProtocolCardFor(item.category)||card,rawResponse:item.rawResponse,graph:item.structuredSummary?.livingExecutiveGraph||{},confirmation:item.structuredSummary?.confirmation||null})
+    ));
+    const saved=await saveTeachValImport({
+      ...existing,
+      structuredSummary,
+      reviewed:confirmation.status==='confirmed',
+      status:confirmation.status==='confirmed'?'Confirmed':'Needs Clarification'
+    });
+    res.json({ok:true,card,confirmation,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{
   try{
     const session=await getTeachValSession(req.params.id);
     if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
     const target=(await listTeachValImports(session.id)).find(i=>i.id===req.params.importId);
     if(!target)return res.status(404).json({ok:false,error:'Knowledge Card import not found.'});
-    target.extractedItems=(target.extractedItems||[]).map(item=>{
-      if(String(item.id)!==String(req.params.itemId))return item;
-      const next={...item};
-      if(req.body.include_in_val!==undefined)next.include_in_val=req.body.include_in_val!==false;
-      if(req.body.title!==undefined)next.title=String(req.body.title||'').slice(0,220);
-      if(req.body.summary!==undefined)next.summary=String(req.body.summary||'').slice(0,1500);
-      if(req.body.category!==undefined)next.category=String(req.body.category||'').slice(0,120);
-      next.data={...(next.data||{})};
-      if(req.body.user_note!==undefined)next.data.user_note=String(req.body.user_note||'').slice(0,1000);
-      if(req.body.review_decision!==undefined)next.data.reviewDecision=String(req.body.review_decision||'').slice(0,40);
-      next.data.reviewedAt=new Date().toISOString();
-      return next;
-    });
+    target.extractedItems=(target.extractedItems||[]).map(item=>String(item.id)===String(req.params.itemId)?{...item,include_in_val:req.body.include_in_val!==false}:item);
     target.reviewed=true;
     target.status='Reviewed';
     await saveTeachValImport(target);
@@ -4767,7 +7253,7 @@ app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
       id:existing?.id,
       sessionId:session.id,
       category:'connected_source_insights',
-      promptUsed:'VAL connected source scan: inbox and calendar observation only.',
+      promptUsed:'VAL OS connected source scan: email, calendar, tasks, CRM, relationships, voice, documents, transcripts, memory.',
       rawResponse:JSON.stringify({summary:payload.summary,architecture:payload.architecture,providers:payload.providers},null,2),
       structuredSummary:{summary:payload.summary||{},architecture:payload.architecture||{}},
       extractedItems:insights,
@@ -4779,7 +7265,7 @@ app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
     state.stage='review';
     session.state=state;
     await saveTeachValSession(session);
-    await auditLog({req,action:'teach_val_source_insights_imported',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{insightCount:insights.length,externalActionTaken:false,reviewRequired:true},success:true}).catch(()=>{});
+    await auditLog({req,action:'teach_val_source_insights_imported',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{insightCount:insights.length},success:true}).catch(()=>{});
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
@@ -4799,11 +7285,32 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     })));
     const testMode=req.body.testMode!==undefined?!!req.body.testMode:!!session.state.testMode;
     const payload=teachValCompiledPayload({session,imports,items:included,testMode});
+    const operationalInsights=teachValOnboardingOperationalInsights({session,items:included});
     const state=normalizeTeachValState(session.state);
     let webhook={status:testMode?'test_mode':'not_configured',message:testMode?'Test mode: payload built but not sent to production memory.':'No external onboarding webhook configured. Stored in local VAL onboarding memory.'};
     let promotion={memoryCount:0,evidenceItemId:'',observationCount:0,intelligence:null};
     if(!testMode){
       await insertTeachValMemoryItems(included);
+      if(operationalInsights.length){
+        const existingOperational=(await listTeachValImports(session.id)).find(i=>i.category==='onboarding_operational_context');
+        await saveTeachValImport({
+          id:existingOperational?.id,
+          sessionId:session.id,
+          category:'onboarding_operational_context',
+          promptUsed:'Operationalize Teach VAL onboarding into reviewable VAL OS behavior candidates, support-circle context, and document-reference learning.',
+          rawResponse:JSON.stringify({source:'teach_val_onboarding',sessionId:session.id,itemCount:operationalInsights.length},null,2),
+          structuredSummary:{
+            source:'teach_val_onboarding',
+            behaviorCandidates:operationalInsights.filter(i=>i.data?.ruleDraft).length,
+            learningItems:operationalInsights.filter(i=>!i.data?.ruleDraft).length,
+            externalActionTaken:false,
+            reviewRequired:true
+          },
+          extractedItems:operationalInsights,
+          reviewed:false,
+          status:'Ready for VAL OS Review'
+        });
+      }
       promotion=await promoteTeachValOnboardingToCoreMemory({session,imports,items:included,payload});
       const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
       if(url){
@@ -4828,8 +7335,8 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
     session.status=testMode?'test_completed':'committed';
     session.state=state;
     await saveTeachValSession(session);
-    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status,promotion},success:webhook.status!=='failed'}).catch(()=>{});
-    res.json({ok:true,payload,webhook,promotion,memory:testMode?[]:await listTeachValMemory(session.id),state});
+    await auditLog({req,action:testMode?'teach_val_onboarding_tested':'teach_val_onboarding_committed',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{itemCount:included.length,webhook:webhook.status,promotion,operationalInsightCount:operationalInsights.length},success:webhook.status!=='failed'}).catch(()=>{});
+    res.json({ok:true,payload,webhook,promotion,operationalInsights:testMode?operationalInsights:operationalInsights.map(i=>({id:i.id,title:i.title,category:i.data?.sourceCategory,hasRuleDraft:!!i.data?.ruleDraft,targetRooms:i.data?.targetRooms||[]})),memory:testMode?[]:await listTeachValMemory(session.id),state});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/demo/reset',(req,res)=>res.json({ok:true,demo:true,state:resetDemoState(req,res)}));
@@ -4957,14 +7464,7 @@ app.get('/api/tenant-api-keys/providers/:provider/requirements',requirePermissio
 app.post('/api/tenant-api-keys/:provider',requirePermission('settings:manage'),async(req,res)=>{
   try{
     if(DEMO_MODE) return res.json({ok:true,demo:true,key:{provider:req.params.provider,keyPreview:'••••demo',status:'connected',lastUpdatedAt:new Date().toISOString()}});
-    const metadata={source:'api_keys_connections_ui'};
-    const locationId=String(req.body.locationId||req.body.location_id||'').trim();
-    const mcpUrl=String(req.body.mcpUrl||req.body.mcp_url||'').trim();
-    const preferredModel=String(req.body.preferredModel||req.body.preferred_model||'').trim();
-    if(locationId) metadata.locationId=locationId;
-    if(mcpUrl) metadata.mcpUrl=mcpUrl;
-    if(preferredModel) metadata.preferredModel=preferredModel;
-    const key=await saveTenantApiKey(req,{provider:req.params.provider,apiKey:req.body.apiKey||req.body.key||req.body.secret,metadata});
+    const key=await saveTenantApiKey(req,{provider:req.params.provider,apiKey:req.body.apiKey||req.body.key||req.body.secret,metadata:{source:'api_keys_connections_ui'}});
     res.json({ok:true,key,providers:await tenantApiKeyConnectionStatuses()});
   }catch(e){res.status(400).json({ok:false,error:e.message});}
 });
@@ -4987,6 +7487,73 @@ app.post('/api/tenant-api-keys/providers/:provider/approval',requirePermission('
     const approval=await approveTenantProvider(req,{provider:req.params.provider,status:req.body.status||'approved',notes:req.body.notes||''});
     res.json({ok:true,approval,providers:await tenantApiKeyConnectionStatuses()});
   }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.get('/api/dev/openai-runtime',async(req,res)=>{
+  try{
+    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
+    res.json({ok:true,connected:!!(RUNTIME_OPENAI_KEY||OPENAI_KEY),runtimeConnected:!!RUNTIME_OPENAI_KEY,envConnected:!!OPENAI_KEY,model:RUNTIME_OPENAI_MODEL||OPENAI_CHAT_MODEL});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+async function testRuntimeOpenAIResponses({apiKey='',model=''}={}){
+  const key=String(apiKey||await resolveOpenAIKey()||'').trim();
+  const selectedModel=String(model||await resolveOpenAIModel()||'').trim();
+  if(!key) throw new Error('OpenAI API key is missing.');
+  const body={
+    model:selectedModel,
+    instructions:'Return strict JSON only.',
+    input:[{role:'user',content:'Return this JSON object: {"ok":true,"purpose":"witnessing_test"} and nothing else.'}],
+    max_output_tokens:80,
+    temperature:0,
+    text:{format:{type:'json_object'}}
+  };
+  let r=await fetch('https://api.openai.com/v1/responses',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
+    body:JSON.stringify(body)
+  });
+  let d=await r.json().catch(()=>({}));
+  if(d.error&&/temperature/i.test(d.error.message||'')){
+    delete body.temperature;
+    r=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},
+      body:JSON.stringify(body)
+    });
+    d=await r.json().catch(()=>({}));
+  }
+  if(!r.ok||d.error) throw new Error(d.error?.message||`OpenAI Responses API returned ${r.status}.`);
+  const text=responseText(d);
+  const parsed=JSON.parse(text);
+  if(parsed?.ok!==true) throw new Error('OpenAI Responses API returned an unexpected JSON payload.');
+  return {ok:true,model:selectedModel};
+}
+app.post('/api/dev/openai-runtime',async(req,res)=>{
+  try{
+    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
+    const apiKey=String(req.body.apiKey||req.body.key||'').trim();
+    const model=String(req.body.model||req.body.preferredModel||'').trim();
+    if(!apiKey&&!model) return res.status(400).json({ok:false,error:'Paste an OpenAI API key or set a model.'});
+    if(apiKey&&!tenantApiKeyLooksValid('openai',apiKey)) return res.status(400).json({ok:false,error:'That does not look like a valid OpenAI API key.'});
+    const priorKey=RUNTIME_OPENAI_KEY;
+    const priorModel=RUNTIME_OPENAI_MODEL;
+    if(apiKey) RUNTIME_OPENAI_KEY=apiKey;
+    if(model) RUNTIME_OPENAI_MODEL=model;
+    try{
+      await testRuntimeOpenAIResponses();
+    }catch(e){
+      RUNTIME_OPENAI_KEY=priorKey;
+      RUNTIME_OPENAI_MODEL=priorModel;
+      throw e;
+    }
+    res.json({ok:true,connected:!!RUNTIME_OPENAI_KEY,model:RUNTIME_OPENAI_MODEL||OPENAI_CHAT_MODEL,keyPreview:RUNTIME_OPENAI_KEY?tenantApiKeyPreview(RUNTIME_OPENAI_KEY):''});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
+app.post('/api/dev/openai-runtime/test',async(req,res)=>{
+  try{
+    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
+    const result=await testRuntimeOpenAIResponses();
+    res.json({ok:true,status:'connected',model:result.model,message:'OpenAI is connected for Witnessing.',details:''});
+  }catch(e){res.status(400).json({ok:false,status:'failed',error:e.message});}
 });
 app.get('/api/integrations/credentials',async(req,res)=>{
   try{
@@ -5196,14 +7763,6 @@ app.get('/api/integrations/health',async(req,res)=>{
     const microsoftConfigured=!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI);
     const microsoftSaved=await loadOAuthTokens('microsoft').catch(()=>null);
     const microsoftToken=await getMicrosoftToken().catch(e=>{errors.push('Microsoft token: '+e.message);return null;});
-    const [resolvedGhlKey,resolvedGhlLoc,resolvedOutscraperKey,resolvedRocketReachKey,resolvedApolloKey,resolvedOpenAiKey]=await Promise.all([
-      resolveIntegrationSecret('ghl','api_key',GHL_KEY).catch(()=>GHL_KEY),
-      resolveIntegrationSecret('ghl','location_id',GHL_LOC).catch(()=>GHL_LOC),
-      resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=>OUTSCRAPER_API_KEY),
-      resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY).catch(()=>ROCKETREACH_API_KEY),
-      resolveIntegrationSecret('apollo','api_key',APOLLO_API_KEY).catch(()=>APOLLO_API_KEY),
-      resolveIntegrationSecret('openai','api_key',OPENAI_KEY).catch(()=>OPENAI_KEY)
-    ]);
     const [pastCal,nextCal,outlookPastCal,outlookNextCal,recentGmail,unreadGmail,sentGmail,transcripts]=await Promise.all([
       token?fetchGoogleCalendarEvents(past,now,100).catch(e=>{errors.push('Calendar past 7 days: '+e.message);return [];}):Promise.resolve([]),
       token?fetchGoogleCalendarEvents(now,future,100).catch(e=>{errors.push('Calendar next 7 days: '+e.message);return [];}):Promise.resolve([]),
@@ -5262,13 +7821,6 @@ app.get('/api/integrations/health',async(req,res)=>{
         calendar:{enabled:!!microsoftToken,past7DaysCount:outlookPastCal.length,next7DaysCount:outlookNextCal.length}
       },
       transcripts:{last7DaysCount:transcripts.length,matchedToMeetingsCount:matched},
-      externalKeys:{
-        openai:{present:!!resolvedOpenAiKey,source:resolvedOpenAiKey===OPENAI_KEY&&OPENAI_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
-        ghl:{present:!!(resolvedGhlKey&&resolvedGhlLoc),apiKeyPresent:!!resolvedGhlKey,locationIdPresent:!!resolvedGhlLoc,source:resolvedGhlKey===GHL_KEY&&GHL_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
-        outscraper:{present:!!resolvedOutscraperKey,source:resolvedOutscraperKey===OUTSCRAPER_API_KEY&&OUTSCRAPER_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
-        rocketreach:{present:!!resolvedRocketReachKey,source:resolvedRocketReachKey===ROCKETREACH_API_KEY&&ROCKETREACH_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'},
-        apollo:{present:!!resolvedApolloKey,source:resolvedApolloKey===APOLLO_API_KEY&&APOLLO_API_KEY?'Railway/runtime or fallback':'encrypted tenant setting'}
-      },
       actions:{canCreateTasks:true,canCreateDrafts:true,canCreateGoogleDocs:docsHealth.connected},
       errors
     });
@@ -5286,7 +7838,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     gmailSyncStatus.lastAttemptAt=new Date().toISOString();
     gmailSyncStatus.lastError='';
     const rules=await listEmailRules(req.valUser.id);
-    const limit=Math.min(Math.max(Number(req.query.limit)||25,5),50);
+    const limit=Number(req.query.limit)||30;
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     if(!gmailStatus.connected){
@@ -5301,18 +7853,16 @@ async function emailIntelligencePayload(req,{force=false}={}){
     }
     const recentQuery=force?'in:inbox newer_than:14d':'in:inbox newer_than:14d';
     const unreadQuery='in:inbox is:unread newer_than:14d';
-    const [recentGmail,unreadGmail,sentGmail,outlook,outlookSent]=await Promise.all([
-      fetchGmailMessages({query:recentQuery,maxResults:limit,includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
-      fetchGmailMessages({query:unreadQuery,maxResults:limit,includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
-      fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.min(limit,35),includeBody:false}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
-      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'})),
-      fetchUnifiedOutlookSentEmails(Math.min(Math.max(limit,50),100)).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
+    const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
+      fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
+      fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
+      fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
     const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),3);
-    const outlookWaiting=waitingOnResponseFromSent(outlookSent.emails||[],outlook.emails||[],3);
-    const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[]),...outlookWaiting]).map(email=>{
+    const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
       const c=classifyEmail(email,rules);
       return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
@@ -5330,7 +7880,6 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)).length;
     const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error].filter(Boolean);
-    const outlookErrors=[outlook.error,outlookSent.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
     return {
@@ -5342,8 +7891,8 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!(outlook.needsAuth||outlookSent.needsAuth),error:outlookErrors.join('; '),status:(outlook.needsAuth&&outlookSent.needsAuth)?'not_connected':'connected',inboxCount:(outlook.emails||[]).length,sentCount:(outlookSent.emails||[]).length}},
-      errors:[...gmailErrors,...outlookErrors,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeWindow:'14-day active conversations plus unresolved sent follow-ups'},
       rules
@@ -5413,10 +7962,8 @@ app.post('/api/email/actions',async(req,res)=>{
     const status=(external||sensitive)?'needs_approval':'prepared';
     const result={ok:true,status,requiresApproval:status==='needs_approval'};
     if(action==='drafted_reply'||action==='draft_reply'){
-      const standards=await getDraftStandards();
-      result.draft=buildEmailReplyDraft(email,standards);
-      const recipients=resolveReplyAllRecipients({email,to:email.from?.email||''});
-      result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from,to:recipients.to.map(p=>p.email),cc:recipients.cc.map(p=>p.email),replyAll:true}});
+      result.draft=buildEmailReplyDraft(email);
+      result.internalDraft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:result.draft.subject,body:result.draft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,from:email.from}});
     }else if(action==='forwarded'||action==='forward'){
       result.forwardDraft={to:body.forwardTo||'',subject:'Fwd: '+(email.subject||''),body:`VAL summary:\n${email.reason||'This may need review.'}\n\nOriginal email below.\n\nFrom: ${email.from?.email||''}\nSubject: ${email.subject||''}\n\n${email.bodyPreview||email.snippet||''}`};
       result.internalDraft=await saveInternalDraft({draftType:'email_forward',provider:'internal',subject:result.forwardDraft.subject,body:result.forwardDraft.body,sourceContext:{source:'email_intelligence',messageId:email.messageId,threadId:email.threadId,forwardTo:result.forwardDraft.to}});
@@ -5525,12 +8072,12 @@ function guideHtml(markdown){
 <a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.stack}</span><h3>Executive Inbox</h3><p>See only the conversations that need a decision, plus drafts and plain-English rules.</p><div class="status" id="emailStatus">Review active conversations</div></a>
 <a class="card" href="/dashboard?view=email_intelligence"><span class="icon">${icon.node}</span><h3>Inbox Command</h3><p>Ask for the email you remember, then summarize, draft, forward, or task it safely.</p><div class="status">Natural language email search</div></a>
 <a class="card" href="/dashboard?view=transcripts"><span class="icon">${icon.voice}</span><h3>Transcript Intelligence</h3><p>Open call memory, summaries, staged tasks, recap drafts, and review queues.</p><div class="status" id="transcriptStatus">Loading transcripts</div></a>
-<a class="card" href="/dashboard?view=tasks"><span class="icon">${icon.calendar}</span><h3>Calendarized Tasks</h3><p>Turn important tasks into private protected work blocks with no meeting link.</p><div class="status" id="taskScheduleStatus">Checking open loops</div></a>
+<a class="card" href="/dashboard?view=commitments"><span class="icon">${icon.calendar}</span><h3>Commitments</h3><p>Track who owes whom what, then calendarize the follow-through that needs protected time.</p><div class="status" id="taskScheduleStatus">Checking open loops</div></a>
 <a class="card" href="/dashboard?view=integration_status"><span class="icon">${icon.node}</span><h3>Integration Status</h3><p>Check Gmail, Calendar, transcripts, tasks, drafts, and missing permissions.</p><div class="status">Verify data pipes</div></a>
 <a class="card" href="/dashboard?view=settings"><span class="icon">${icon.node}</span><h3>API Keys & Connections</h3><p>Securely add client-owned keys and connection details inside VAL.</p><div class="status">Encrypted setup</div></a>
 </div></section>
-<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard?view=chat">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard?view=intelligence">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Executive Inbox</h3><p>Use Executive Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard?view=email_intelligence">Open Executive Inbox</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard?view=transcripts">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Calendarize A Task</h3><p>Turn one open commitment into a private protected work block so it actually gets done.</p><a class="btn secondary" href="/dashboard?view=tasks">Calendarize Tasks</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a></div></div></section>
-<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard?view=meetings">Meeting Prep</a><a href="/dashboard?view=intelligence">Daily Rhythm</a><a href="/dashboard?view=meetings">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard?view=relationships">Relationship Review</a><a href="/dashboard?view=drafts">Follow-Ups</a><a href="/dashboard?view=relationships">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard?view=drafts">Approval Queue</a><a href="/dashboard?view=drafts">Drafts</a><a href="/dashboard?view=tasks">Tasks By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard?view=email_intelligence">Executive Inbox</a><a href="/dashboard?view=integration_status">Integration Status</a><a href="/dashboard?view=settings">API Keys & Connections</a></div></div></section>
+<section><div class="section-head"><div><h2>Your First 5 Minutes</h2><p>A short path that helps VAL understand you and shows the highest-excitement flows quickly.</p></div></div><div class="journey"><div class="step"><span>Step 1</span><h3>Personalize VAL</h3><p>Tell VAL who you are, how you work, and what relationships drive your business.</p><a class="btn secondary" href="/dashboard?view=chat">Personalize VAL</a></div><div class="step"><span>Step 2</span><h3>Review Today</h3><p>See meetings, priorities, and what needs your attention before the day gets noisy.</p><a class="btn secondary" href="/dashboard?view=intelligence">Open Today View</a></div><div class="step"><span>Step 3</span><h3>Open Executive Inbox</h3><p>Use Executive Inbox Command to find a thread, create a task, or prepare an approval-safe reply draft.</p><a class="btn secondary" href="/dashboard?view=email_intelligence">Open Executive Inbox</a></div><div class="step"><span>Step 4</span><h3>Open Transcripts</h3><p>Review summaries, staged tasks, participant matches, contact updates, and recap drafts.</p><a class="btn secondary" href="/dashboard?view=transcripts">Open Transcripts</a></div><div class="step"><span>Step 5</span><h3>Review Commitments</h3><p>See who owes whom what, then turn follow-through into protected work blocks where needed.</p><a class="btn secondary" href="/dashboard?view=commitments">Open Commitments</a></div><div class="step"><span>Step 6</span><h3>Run Relationship Review</h3><p>Find the people, promises, and opportunities most likely to create value or lose trust if ignored.</p><a class="btn secondary" href="/dashboard?view=relationships">Run Relationship Review</a></div></div></section>
+<section><div class="section-head"><div><h2>What Do You Want To Do?</h2><p>Choose by outcome, not by feature name.</p></div></div><div class="modes"><div class="mode"><h3>Stay Ahead</h3><a href="/dashboard?view=meetings">Meeting Prep</a><a href="/dashboard?view=intelligence">Daily Rhythm</a><a href="/dashboard?view=meetings">Calendar Intelligence</a></div><div class="mode"><h3>Protect Relationships</h3><a href="/dashboard?view=relationships">Relationship Review</a><a href="/dashboard?view=drafts">Follow-Ups</a><a href="/dashboard?view=relationships">Contact Command Center</a></div><div class="mode"><h3>Clear Mental Load</h3><a href="/dashboard?view=drafts">Approval Queue</a><a href="/dashboard?view=drafts">Drafts</a><a href="/dashboard?view=commitments">Commitments By Relationship</a></div><div class="mode"><h3>Trust The System</h3><a href="/dashboard?view=email_intelligence">Executive Inbox</a><a href="/dashboard?view=integration_status">Integration Status</a><a href="/dashboard?view=settings">API Keys & Connections</a></div></div></section>
 <section><div class="section-head"><div><h2>Recent Activity</h2><p>VAL should feel alive. These signals update from your workspace.</p></div></div><div class="activity"><div id="activityMeetings">Meetings loading</div><div id="activityTasks">Tasks loading</div><div id="activityFollowups">Follow-ups loading</div><div id="activityTranscripts">Transcripts loading</div><div id="activityEmail">Email intelligence loading</div><div id="activityCalendarized">Calendarized work loading</div></div></section>
 <section><div class="section-head"><div><h2>Learn VAL</h2><p>The full reference is here when you want depth. You do not need to study it first.</p></div></div><details><summary>See Full Reference</summary><div class="reference"><p>${referenceHtml}</p></div></details></section>
 </main><script>
@@ -5576,7 +8123,8 @@ app.get('/guide',(req,res)=>{
   });
 });
 app.use(express.static(__dirname));
-app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
+app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'jessa-clean-dashboard.html'));});
+app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
 
 // ════════════════════════════════════════════════════════
 // GOOGLE OAUTH
@@ -6340,54 +8888,6 @@ function parseEmailAddress(raw){
   const name=(match?match[1]:text.replace(email,'')).replace(/"/g,'').trim();
   return {name:name||email.split('@')[0]||'',email};
 }
-function emailHeaderAddress(person){
-  const parsed=typeof person==='string'?parseEmailAddress(person):(person||{});
-  const email=normalizeEmailAddress(parsed.email||'');
-  if(!email)return '';
-  const name=String(parsed.name||'').replace(/[\r\n"]/g,'').trim();
-  return name&&name.toLowerCase()!==email.split('@')[0]?`${name} <${email}>`:email;
-}
-function emailAddressList(value){
-  if(!value)return [];
-  if(Array.isArray(value))return value.flatMap(emailAddressList);
-  return String(value).split(',').map(parseEmailAddress).filter(p=>normalizeEmailAddress(p.email||''));
-}
-function emailRecipientKey(person){return normalizeEmailAddress((person&&person.email)||person||'');}
-function uniqueEmailPeople(items=[]){
-  const seen=new Set(),out=[];
-  for(const item of items){
-    const p=typeof item==='string'?parseEmailAddress(item):item;
-    const key=emailRecipientKey(p);
-    if(!key||seen.has(key))continue;
-    seen.add(key);out.push({name:p.name||'',email:key});
-  }
-  return out;
-}
-function resolveReplyAllRecipients(payload={}){
-  const email=payload.email||payload.sourceEmail||payload.message||{};
-  const current=currentValUser()||{};
-  const self=new Set([current.email,payload.selfEmail,payload.accountEmail,CLIENT_CONFIG.email].map(normalizeEmailAddress).filter(Boolean));
-  const from=email.from||payload.from||null;
-  const fromKey=emailRecipientKey(from);
-  const originalTo=uniqueEmailPeople([...(email.to||[]),...emailAddressList(payload.originalTo),...emailAddressList(payload.to)]);
-  const originalCc=uniqueEmailPeople([...(email.cc||[]),...emailAddressList(payload.originalCc),...emailAddressList(payload.cc)]);
-  const fallbackTo=uniqueEmailPeople(emailAddressList(payload.to||payload.recipient||''));
-  function notSelf(p){return p&&emailRecipientKey(p)&&!self.has(emailRecipientKey(p));}
-  function notIn(keys){return p=>notSelf(p)&&!keys.has(emailRecipientKey(p));}
-  let to=[],cc=[];
-  if(fromKey&&!self.has(fromKey)){
-    to=uniqueEmailPeople([from]);
-    const toKeys=new Set(to.map(emailRecipientKey));
-    cc=uniqueEmailPeople([...originalTo,...originalCc].filter(notIn(toKeys)));
-  }else{
-    to=uniqueEmailPeople(originalTo.filter(notSelf));
-    const toKeys=new Set(to.map(emailRecipientKey));
-    cc=uniqueEmailPeople(originalCc.filter(notIn(toKeys)));
-  }
-  if(!to.length)to=fallbackTo.filter(notSelf);
-  if(!to.length&&fallbackTo.length)to=fallbackTo;
-  return {to,cc};
-}
 function decodeBase64Url(value){
   if(!value)return '';
   try{return Buffer.from(String(value).replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');}
@@ -6502,236 +9002,16 @@ function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
   return 'draft_email_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
 }
-const DEFAULT_DRAFT_STANDARDS={
-  disclosureMode:'val_disclosed',
-  defaultSignoff:'Best,',
-  signatureName:'VAL',
-  signatureTitle:"Jessa's AI Chief of Staff",
-  userSignatureName:CLIENT_CONFIG.clientName||'Jessa',
-  tone:'Warm, clear, concise, and accountable.',
-  instructions:''
-};
-function normalizeDraftStandards(input={}){
-  const mode=String(input.disclosureMode||input.disclosure_mode||DEFAULT_DRAFT_STANDARDS.disclosureMode).trim();
-  const cleanMode=mode==='write_as_user'||mode==='user_voice'?'write_as_user':'val_disclosed';
-  return {
-    disclosureMode:cleanMode,
-    defaultSignoff:String(input.defaultSignoff||input.default_signoff||DEFAULT_DRAFT_STANDARDS.defaultSignoff).trim().slice(0,60)||DEFAULT_DRAFT_STANDARDS.defaultSignoff,
-    signatureName:String(input.signatureName||input.signature_name||DEFAULT_DRAFT_STANDARDS.signatureName).trim().slice(0,80)||DEFAULT_DRAFT_STANDARDS.signatureName,
-    signatureTitle:String(input.signatureTitle||input.signature_title||DEFAULT_DRAFT_STANDARDS.signatureTitle).trim().slice(0,120),
-    userSignatureName:String(input.userSignatureName||input.user_signature_name||CLIENT_CONFIG.clientName||DEFAULT_DRAFT_STANDARDS.userSignatureName).trim().slice(0,80)||DEFAULT_DRAFT_STANDARDS.userSignatureName,
-    tone:String(input.tone||DEFAULT_DRAFT_STANDARDS.tone).trim().slice(0,1000),
-    instructions:String(input.instructions||input.specialInstructions||input.special_instructions||'').trim().slice(0,3000)
-  };
-}
-async function getUserPreferences(){
-  const fallback={draftStandards:normalizeDraftStandards(DEFAULT_DRAFT_STANDARDS)};
-  if(DEMO_MODE)return fallback;
-  await valDbReady;
-  if(pgPool){
-    const r=await dbQuery('select preferences_json from val_user_preferences where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),currentUserId()]);
-    return {...fallback,...(r.rows[0]?.preferences_json||{})};
-  }
-  const store=valStore();
-  const key=`${tenantId()}:${currentUserId()}`;
-  return {...fallback,...(store.userPreferences[key]||{})};
-}
-async function saveUserPreferences(prefs){
-  const existing=await getUserPreferences().catch(()=>({}));
-  const next={...existing,...(prefs||{})};
-  next.draftStandards=normalizeDraftStandards(next.draftStandards||DEFAULT_DRAFT_STANDARDS);
-  await valDbReady;
-  if(pgPool){
-    await dbQuery(`insert into val_user_preferences (tenant_id,user_id,preferences_json,updated_at)
-      values ($1,$2,$3,now())
-      on conflict (tenant_id,user_id) do update set preferences_json=excluded.preferences_json,updated_at=now()`,[tenantId(),currentUserId(),JSON.stringify(next)]);
-    return next;
-  }
-  const store=valStore();
-  const key=`${tenantId()}:${currentUserId()}`;
-  store.userPreferences[key]=next;
-  saveValStore(store);
-  return next;
-}
-async function getDraftStandards(){
-  const prefs=await getUserPreferences().catch(()=>({draftStandards:DEFAULT_DRAFT_STANDARDS}));
-  const standards=normalizeDraftStandards(prefs.draftStandards||DEFAULT_DRAFT_STANDARDS);
-  const samples=Array.isArray(prefs.draftStyleSamples)?prefs.draftStyleSamples.slice(0,5):[];
-  if(samples.length){
-    const styleHint=samples.map((s,i)=>`Example ${i+1}: subject "${s.subject||'draft'}"; ${String(s.body||'').replace(/\s+/g,' ').slice(0,420)}`).join('\n');
-    standards.instructions=[standards.instructions,`Learn from these user-approved draft style examples. Match the user's pacing, directness, warmth, and signoff patterns without copying private details verbatim.\n${styleHint}`].filter(Boolean).join('\n\n').slice(0,3000);
-  }
-  return standards;
-}
-async function rememberDraftStyleSample({subject='',body='',source='draft',draftId='',sourceContext={}}={}){
-  const cleanBody=String(body||'').replace(/\s+/g,' ').trim();
-  if(cleanBody.length<80)return null;
-  const sample={subject:String(subject||'').slice(0,160),body:cleanBody.slice(0,1200),source,draftId,updatedAt:new Date().toISOString()};
-  const prefs=await getUserPreferences().catch(()=>({}));
-  const existing=Array.isArray(prefs.draftStyleSamples)?prefs.draftStyleSamples:[];
-  const fingerprint=crypto.createHash('sha1').update(`${sample.subject}\n${sample.body}`).digest('hex').slice(0,16);
-  const next=[{...sample,fingerprint},...existing.filter(s=>s.fingerprint!==fingerprint)].slice(0,12);
-  await saveUserPreferences({draftStyleSamples:next});
-  await saveMemoryItem({kind:'draft_style_sample',summary:`User-approved draft style sample: ${sample.subject||source}`,rawText:cleanBody.slice(0,4000),importance:3,metadata:{source,draftId,subject:sample.subject,fingerprint,sourceContext}}).catch(()=>{});
-  return {ok:true,fingerprint};
-}
-function draftStandardsDiscloseVal(standards){
-  return normalizeDraftStandards(standards).disclosureMode!=='write_as_user';
-}
-function emailSenderFirstName(email){
-  return (email.from?.name||email.from?.email||'').split(/[.\s@_-]+/).filter(Boolean)[0]||'';
-}
-function emailDraftGreeting(email){
-  const name=emailSenderFirstName(email);
-  return `Hi ${name},`.replace(/\s+,/,',');
-}
-function emailCleanSentence(value){
-  return String(value||'').replace(/\s+/g,' ').trim().replace(/^[-–—:\s]+/,'').slice(0,260);
-}
-function emailSnippetSummary(email){
-  return emailCleanSentence(email.bodyPreview||email.snippet||email.bodyText||email.reason||'');
-}
-function emailIsCalendarConfirmation(text){
-  return /\b(rsvp|you'?re\s+(?:so\s+)?glad|we'?re\s+(?:so\s+)?glad|joining us|zoom link|join the zoom|calendar invite|invitation|confirmed|thank you for your rsvp)\b/i.test(String(text||''));
-}
-function emailSignoff(email,standards){
-  return normalizeDraftStandards(standards).defaultSignoff||'Best,';
-}
-function emailAssistantTarget(standards){
-  return draftStandardsDiscloseVal(standards)?(CLIENT_CONFIG.clientName||'Jessa'):'you';
-}
-function emailOwnerPossessive(standards){
-  return draftStandardsDiscloseVal(standards)?`${CLIENT_CONFIG.clientName||'Jessa'}'s`:'my';
-}
-function emailValIntro(standards){
-  return draftStandardsDiscloseVal(standards)?'VAL here.':'';
-}
-function emailValSignoff(standards){
-  const s=normalizeDraftStandards(standards);
-  if(draftStandardsDiscloseVal(s))return [s.defaultSignoff,s.signatureName,s.signatureTitle].filter(Boolean);
-  return [s.defaultSignoff,s.userSignatureName].filter(Boolean);
-}
-function emailDraftBody(lines){
-  return lines.flat().filter(line=>line!==null&&line!==undefined).join('\n').replace(/\n{3,}/g,'\n\n').trim();
-}
-function buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff,standards}){
-  const conflict=/conflict|can't|cannot|unavailable|reschedul|move|instead|another time|emergency/i.test(text);
-  const proposed=(text.match(/\b(?:tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^.?!]*(?:\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i)||[])[0];
-  const disclose=draftStandardsDiscloseVal(standards);
-  const target=emailAssistantTarget(standards);
-  const calendarConfirmation=emailIsCalendarConfirmation(text);
-  if(calendarConfirmation&&!conflict&&!proposed){
-    return {
-      subject,
-      body:emailDraftBody([
-        emailDraftGreeting(email),
-        '',
-        emailValIntro(standards),
-        '',
-        disclose?`Thanks for sending this over. I'll make sure this is in ${target}'s calendar.`:"Thanks for sending this over. I'll make sure this is in my calendar.",
-        '',
-        emailValSignoff(standards)
-      ])
-    };
-  }
-  if(conflict||proposed){
-    return {
-      subject,
-      body:emailDraftBody([
-        emailDraftGreeting(email),
-        '',
-        emailValIntro(standards),
-        '',
-        proposed
-          ? disclose?`Thanks for letting me know. I'll make sure ${emailCleanSentence(proposed)} is reflected for ${target} if that still works on your end.`:`Thanks for letting me know. ${emailCleanSentence(proposed)} works if that still fits on your end.`
-          : snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it ${disclose?`for ${target}`:'on my end'}.`:`Thanks for letting me know. I'll make a note of this ${disclose?`for ${target}`:'on my end'}.`,
-        '',
-        "If anything changes before then, send it over and I'll keep the calendar context clean.",
-        '',
-        emailValSignoff(standards)
-      ])
-    };
-  }
-  return {
-    subject,
-    body:emailDraftBody([
-      emailDraftGreeting(email),
-      '',
-      emailValIntro(standards),
-      '',
-      snippet?`Thanks for sending this over. I'll make sure ${disclose?target:'I'} has the calendar context for ${snippet}.`:`Thanks for sending this over. I'll make sure this ${disclose?`gets in front of ${target}`:'is on my calendar radar'} with the right context.`,
-      '',
-      emailValSignoff(standards)
-    ])
-  };
-}
-function buildQuestionReplyDraft(email,{subject,text,snippet,signoff,standards}){
-  const asksForAvailability=/available|availability|schedule|when works|what time/i.test(text);
-  const asksForReview=/review|feedback|thoughts|look over|approve|approval/i.test(text);
-  const asksForInfo=/can you|could you|question|let me know|send me|share/i.test(text);
-  const disclose=draftStandardsDiscloseVal(standards);
-  const target=emailAssistantTarget(standards);
-  return {
-    subject,
-    body:emailDraftBody([
-      emailDraftGreeting(email),
-      '',
-      emailValIntro(standards),
-      '',
-      asksForAvailability
-        ? disclose?`Thanks for checking. I'll get this in front of ${target} and make sure the calendar answer is clean before we confirm.`:"Thanks for checking. I want to make sure the calendar answer is clean before we confirm."
-        : asksForReview
-          ? disclose?`Thanks for sending this over. I'll put it on ${emailOwnerPossessive(standards)} review list so ${target} can give it the right attention.`:"Thanks for sending this over. I'll give it the right attention and follow up with the clearest next step."
-          : asksForInfo
-            ? disclose?`Thanks for the note. I'll get this question in front of ${target} right away.`:"Thanks for the note. I'll look at this and follow up with a clear answer."
-            : disclose?`Thanks for reaching out. I'll make sure ${target} sees the question and can respond clearly.`:"Thanks for reaching out. I want to give you a useful answer.",
-      '',
-      snippet?`I noted this context: ${snippet}`:'',
-      '',
-      asksForAvailability
-        ? draftStandardsDiscloseVal(standards)?"I'll follow up once I have the best option from her calendar.":"I'll follow up once I have the best calendar option."
-        : asksForReview
-          ? "I'll follow up with the clearest next step once she has reviewed it."
-          : "I'll follow up with the right details shortly.",
-      '',
-      emailValSignoff(standards)
-    ])
-  };
-}
-function buildWaitingFollowupDraft(email,{subject,snippet,signoff,standards}){
-  const disclose=draftStandardsDiscloseVal(standards);
-  return {
-    subject:subject.replace(/^Re:\s*/i,'Following up: '),
-    body:emailDraftBody([
-      emailDraftGreeting(email),
-      '',
-      emailValIntro(standards),
-      '',
-      disclose?"I'm bringing this back to the top of the thread for Jessa.":"I wanted to bring this back to the top of the thread.",
-      snippet?`The open piece I'm tracking is: ${snippet}`:'',
-      '',
-      'When you have a moment, can you send me the latest so I know whether to move this forward, adjust, or close the loop?',
-      '',
-      emailValSignoff(standards)
-    ])
-  };
-}
-function buildEmailReplyDraft(email,standards=DEFAULT_DRAFT_STANDARDS){
-  standards=normalizeDraftStandards(standards);
+function buildEmailReplyDraft(email){
   const subject=`Re: ${email.subject||''}`.trim();
-  const name=emailSenderFirstName(email);
+  const name=(email.from?.name||'').split(/\s+/)[0]||'';
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.reason,email.recommendedAction].join(' ');
-  const snippet=emailSnippetSummary(email);
-  const signoff=emailSignoff(email,standards);
   const intro=/\b(intro|introduction|referral|connect you|warm intro|warm introduction|tight version|one paragraph)\b/i.test(text);
-  const disclose=draftStandardsDiscloseVal(standards);
   if(intro){
     return {
       subject,
-      body:emailDraftBody([
+      body:[
         `Hi ${name},`.replace(/\s+,/,','),
-        '',
-        emailValIntro(standards),
         '',
         'Thank you. I really appreciate the introduction.',
         '',
@@ -6741,39 +9021,30 @@ function buildEmailReplyDraft(email,standards=DEFAULT_DRAFT_STANDARDS){
         '',
         'Grateful for you making the connection.',
         '',
-        emailValSignoff(standards)
-      ])
+        'Best,'
+      ].join('\n')
     };
-  }
-  if(/\b(invitation|calendar|meeting|zoom|reschedule|available|availability|appointment|event)\b/i.test(text)){
-    return buildSchedulingReplyDraft(email,{subject,name,text,snippet,signoff,standards});
-  }
-  if(email.classification==='waiting_on_response'||/\bfollowing up|checking in|circle back|waiting|next step|open loop\b/i.test(text)){
-    return buildWaitingFollowupDraft(email,{subject,snippet,signoff,standards});
-  }
-  if(/\b(can you|could you|please|question|let me know|reply|respond|review|feedback|approve|available|schedule)\b/i.test(text)){
-    return buildQuestionReplyDraft(email,{subject,text,snippet,signoff,standards});
   }
   return {
     subject,
-    body:emailDraftBody([
-      emailDraftGreeting(email),
+    body:[
+      `Hi ${name},`.replace(/\s+,/,','),
       '',
-      emailValIntro(standards),
+      'Thank you for your note. I wanted to respond thoughtfully.',
       '',
-      snippet?`Thanks for letting me know about ${snippet}. I'll make a note of it ${disclose?'for Jessa':'on my end'}.`:disclose?"Thanks for reaching out. I'll make sure this gets in front of Jessa.":"Thanks for reaching out. I'll take a look and follow up shortly.",
+      email.reason?`I saw this needs attention because ${email.reason.charAt(0).toLowerCase()+email.reason.slice(1)}`:'I saw this needs a clear reply.',
       '',
-      email.recommendedAction&&!/draft|reply/i.test(email.recommendedAction)?emailCleanSentence(email.recommendedAction):"I'll take the next clean step and follow up shortly.",
+      'Here is what I recommend as the next step:',
       '',
-      emailValSignoff(standards)
-    ])
+      email.recommendedAction||'Let me take a closer look and follow up with the right next step.',
+      '',
+      'Best,'
+    ].join('\n')
   };
 }
 async function prepareEmailDraftIfNeeded(email){
   if(!emailShouldPrepareDraft(email))return null;
-  const standards=await getDraftStandards();
-  const draft=buildEmailReplyDraft(email,standards);
-  const recipients=resolveReplyAllRecipients({email,to:email.from?.email||''});
+  const draft=buildEmailReplyDraft(email);
   return saveInternalDraft({
     id:emailDraftStableId(email),
     draftType:'email_reply',
@@ -6786,9 +9057,7 @@ async function prepareEmailDraftIfNeeded(email){
       provider:email.provider||'email',
       messageId:email.messageId||'',
       threadId:email.threadId||'',
-      to:recipients.to.map(p=>p.email),
-      cc:recipients.cc.map(p=>p.email),
-      replyAll:true,
+      to:email.from?.email||'',
       senderName:email.from?.name||'',
       why:email.reason||'',
       recommendedAction:email.recommendedAction||'',
@@ -6964,10 +9233,9 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
   catch(e){return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};}
   const messages=d.messages||[];
   const details=await mapWithConcurrency(messages.slice(0,limit),5,async m=>{
-    const format=includeBody?'full':'metadata';
+    const format=includeBody?'full':'full';
     try{
-      const metadataHeaders='&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date';
-      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}${includeBody?'':metadataHeaders}`,{},'Gmail message detail');
+      const md=await gmailFetchJson(`https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=${format}`,{},'Gmail message detail');
       return normalizeGmailMessage(md);
     }catch(e){return null;}
   });
@@ -7010,15 +9278,6 @@ async function fetchUnifiedOutlookEmails(limit=20){
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
   return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
-}
-async function fetchUnifiedOutlookSentEmails(limit=20){
-  const token=await getMicrosoftToken();
-  if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
-  const url=`https://graph.microsoft.com/v1.0/me/mailFolders/SentItems/messages?$top=${encodeURIComponent(limit)}&$orderby=sentDateTime desc&$select=id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,body,hasAttachments,webLink,isRead`;
-  const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
-  const d=await readJsonResponse(r);
-  if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
-  return {emails:(d.value||[]).map(m=>({...normalizeOutlookMessage(m),mailbox:'sent',folder:'sent',labels:['SENT']})),needsAuth:false,provider:'outlook'};
 }
 
 function inboxCommandIntent(text=''){
@@ -7100,9 +9359,7 @@ async function inboxCommandAction(body={},userId=currentUserId()){
   const email=body.email||body.message||{};
   if(!email.messageId&&!email.subject)return {ok:false,error:'Choose an email first.'};
   if(action==='draft_reply'){
-    const standards=await getDraftStandards();
-    const generated=buildEmailReplyDraft(email,standards);
-    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:generated.subject||('Re: '+(email.subject||'')),body:body.body||generated.body,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
+    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:'Re: '+(email.subject||''),body:body.body||`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review before sending.]\n\nBest,`,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
     return {ok:true,action,draft,requiresApproval:true};
   }
   if(action==='forward_draft'||action==='forward'){
@@ -7206,6 +9463,9 @@ function normalizeContextPhone(value){
 }
 function normalizeContextName(value){
   return String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+}
+function stableKey(value){
+  return normalizeContextName(value).replace(/\s+/g,'-') || uuid('key');
 }
 function collapseRepeatedName(value){
   const words=String(value||'').replace(/\s+/g,' ').trim().split(' ').filter(Boolean);
@@ -7314,6 +9574,12 @@ async function resolveContactFromContext(input={}){
   }).filter(c=>c.confidence>0).sort((a,b)=>b.confidence-a.confidence);
   const best=scored[0]||null;
   return {ok:true,status:best?(best.confidence>=0.75?'matched':'possible_match'):'not_found',confidence:best?.confidence||0,contact:best,matches:scored.slice(0,8),sourcesChecked:['GHL contacts','tasks','transcripts','memory','calendar attendees'],reason:best?best.matchReasons.join(', '):'No contact matched by email, phone, name, company, attendees, transcripts, tasks, or memory.'};
+}
+function resolvedCrmContactId(contact={}){
+  contact = contact || {};
+  if(contact.contactId)return String(contact.contactId);
+  if(contact.source==='ghl_contact'&&contact.id)return String(contact.id);
+  return '';
 }
 async function loadContextCalendarEvents(start,end){
   const events=[],errors=[];
@@ -7738,6 +10004,15 @@ async function relationshipReviewFromStoredProfiles({windowDays=7}={}){
     priorityReviewIntegration:{highestLeverageRelationship:highestLeverageRelationships[0]||null,top3RelationshipPriorities:topRelationshipPriorities.slice(0,3),oneCoolingRelationship:coolingRelationships[0]||null,oneForgottenCommitment:forgottenCommitments[0]||null,oneSuggestedIntroduction:null,oneHiddenOpportunity:hiddenOpportunities[0]||null},
     askForAssistance:{question:'Would you like me to help with any of these relationships?',options:['Draft outreach','Create tasks','Brainstorm opportunities','Prepare for upcoming meeting','Review relationship history']}
   };
+}
+
+async function listRelationshipContactsForTranscript({limit=80}={}){
+  const capped=Math.max(1,Math.min(Number(limit)||80,160));
+  const profiles=(await listRelationshipProfiles({limit:capped})).filter(p=>p.profileType==='person');
+  return profiles
+    .map(relationshipContactFromStoredProfile)
+    .filter(contact=>contact.contactId&&contact.name&&contact.name!=='Unknown')
+    .slice(0,capped);
 }
 
 function transcriptBackfillParticipants(record={},detail={}){
@@ -8239,23 +10514,17 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
   try{
     const event = req.body.event || req.body || {};
     const attendees = inferAttendeesFromEvent(event);
-    const [resolvedRocketReachKey,resolvedOutscraperKey]=await Promise.all([
-      resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY).catch(()=>ROCKETREACH_API_KEY),
-      resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=>OUTSCRAPER_API_KEY)
-    ]);
     const enriched = [];
     for(const attendee of attendees){
-      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!resolvedRocketReachKey,error:e.message}));
+      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
       const profile = rocket.data || {};
-      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!resolvedOutscraperKey,error:e.message}));
+      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
       enriched.push({attendee, rocketReach:rocket, outscraper});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
-      rocketReach:!resolvedRocketReachKey
+      rocketReach:!ROCKETREACH_API_KEY
     }, optionalConfig:{
-      outscraperConfigured:!!resolvedOutscraperKey && !!OUTSCRAPER_LINKEDIN_POSTS_URL,
-      outscraperApiKeyPresent:!!resolvedOutscraperKey,
-      outscraperLinkedInPostsUrlPresent:!!OUTSCRAPER_LINKEDIN_POSTS_URL
+      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -9074,16 +11343,30 @@ app.post('/api/val/contacts/create',async(req,res)=>{
     const body=req.body||{};
     const name=body.name||[body.firstName,body.lastName].filter(Boolean).join(' ')||body.email||'New contact';
     const parts=String(name).trim().split(/\s+/).filter(Boolean);
+    const tags=Array.isArray(body.tags)?body.tags:String(body.tags||'').split(',').map(t=>t.trim()).filter(Boolean);
     const payload={
       locationId:GHL_LOC,
       firstName:body.firstName||parts[0]||name,
       lastName:body.lastName||parts.slice(1).join(' '),
+      name,
+      companyName:body.companyName||body.company||undefined,
       email:body.email||undefined,
       phone:body.phone||undefined,
-      tags:['val_created_contact']
+      source:body.source||'VAL',
+      tags:[...new Set(['val_created_contact',...tags])]
     };
     const data=await ghl('POST',`/contacts`,payload);
-    res.json({ok:true,created:true,contact:data.contact||data});
+    const contact=data.contact||data;
+    const contactId=contact.id||contact.contactId||'';
+    if(contactId&&body.note)await ghl('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body:String(body.note)}).catch(()=>{});
+    const relationshipDossier=contactId?buildRelationshipDossier({
+      contactId,
+      contact:{...compactContactCandidate(contact,'ghl_contact'),contactId},
+      summary:'New GHL contact created from reviewed VAL context.',
+      recommendedAction:'Review the relationship file before adding more context.',
+      confidence:0.82
+    }):null;
+    res.json({ok:true,created:true,contact,contactId,relationshipDossier,nextStep:contactId?'Use this contactId as the canonical relationship key going forward.':'GHL created a contact but did not return a contact ID.'});
   }catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -9681,12 +11964,11 @@ async function saveTaskCalendarBlock(taskId,block){
 async function loadTasks(){
   if(DEMO_MODE) return cloneDemo(requestContext.getStore()?.demoState?.tasks || []);
   await valDbReady;
-  const usableTask=t=>!jessaLooksLikeBadDashboardArtifact([t.title,t.notes,t.contactName,JSON.stringify(t.details||[])].filter(Boolean).join('\n'));
   if(pgPool){
     const r=await dbQuery('select * from val_tasks where user_id=$1 order by completed asc, due_date asc nulls last, created_at desc',[VAL_USER_ID]);
-    return (await mergeTaskCalendarBlocks(r.rows.map(rowToTask))).filter(usableTask);
+    return mergeTaskCalendarBlocks(r.rows.map(rowToTask));
   }
-  return readTasks().filter(usableTask);
+  return readTasks();
 }
 async function saveTask(task){
   task={...task};
@@ -10093,18 +12375,6 @@ app.put('/api/val/templates/:templateKey',async(req,res)=>{
   try{res.json({ok:true,template:await saveTemplate(req.params.templateKey,req.body||{})});}
   catch(e){res.status(500).json({ok:false,error:e.message});}
 });
-app.get('/api/val/draft-standards',async(req,res)=>{
-  try{res.json({ok:true,draftStandards:await getDraftStandards()});}
-  catch(e){res.status(500).json({ok:false,error:e.message});}
-});
-app.put('/api/val/draft-standards',async(req,res)=>{
-  try{
-    const draftStandards=normalizeDraftStandards(req.body?.draftStandards||req.body||{});
-    await saveUserPreferences({draftStandards});
-    await auditLog({req,action:'draft_standards_updated',resourceType:'draft_standards',metadata:{disclosureMode:draftStandards.disclosureMode,hasInstructions:!!draftStandards.instructions},success:true}).catch(()=>{});
-    res.json({ok:true,draftStandards});
-  }catch(e){res.status(500).json({ok:false,error:e.message});}
-});
 
 function rowToDraft(row){
   return {id:row.id,userId:row.user_id,tenantId:row.tenant_id,draftType:row.draft_type,contactId:row.contact_id||'',provider:row.provider,subject:row.subject||'',body:row.body||'',status:row.status,sourceContext:row.source_context_json||{},createdAt:row.created_at?row.created_at.toISOString():new Date().toISOString(),updatedAt:row.updated_at?row.updated_at.toISOString():new Date().toISOString()};
@@ -10141,10 +12411,9 @@ async function saveInternalDraft(payload){
   return record;
 }
 async function listDrafts(status=''){
-  const usableDraft=d=>!jessaLooksLikeBadDashboardArtifact([d.subject,d.body,d.textBody,JSON.stringify(d.sourceContext||{})].filter(Boolean).join('\n'));
   if(DEMO_MODE){
     const drafts=requestContext.getStore()?.demoState?.drafts || [];
-    return cloneDemo(drafts.filter(d=>(!status||d.status===status)&&usableDraft(d)).slice(0,100));
+    return cloneDemo(drafts.filter(d=>!status||d.status===status).slice(0,100));
   }
   await valDbReady;
   if(pgPool){
@@ -10153,9 +12422,9 @@ async function listDrafts(status=''){
     if(status){params.push(status);sql+=' and status=$3';}
     sql+=' order by created_at desc limit 100';
     const r=await dbQuery(sql,params);
-    return r.rows.map(rowToDraft).filter(usableDraft);
+    return r.rows.map(rowToDraft);
   }
-  return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)&&usableDraft(d)).slice(0,100);
+  return (valStore().drafts||[]).filter(d=>d.userId===currentUserId()&&(!status||d.status===status)).slice(0,100);
 }
 app.get('/api/val/drafts',async(req,res)=>{
   try{
@@ -10170,9 +12439,7 @@ app.patch('/api/val/drafts/:id',async(req,res)=>{
   try{
     const existing=(await listDrafts()).find(d=>d.id===req.params.id);
     if(!existing)return res.status(404).json({ok:false,error:'Draft not found'});
-    const draft=await saveInternalDraft({...existing,...req.body,id:req.params.id});
-    await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_draft_edit',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
-    res.json({ok:true,draft});
+    res.json({ok:true,draft:await saveInternalDraft({...existing,...req.body,id:req.params.id})});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/gmail/drafts',async(req,res)=>{
@@ -10180,65 +12447,21 @@ app.post('/api/gmail/drafts',async(req,res)=>{
     const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     const missing=status.missingScopes||[];
     const payload=req.body||{};
-    const fallbackRecipients=resolveReplyAllRecipients(payload);
-    const fallbackTo=fallbackRecipients.to.map(p=>p.email);
-    const fallbackCc=fallbackRecipients.cc.map(p=>p.email);
     if(missing.length){
-      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:'Gmail compose scope missing. Created internal draft instead.',to:fallbackTo,cc:fallbackCc,threadId:payload.threadId||'',replyAll:true}});
-      await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_gmail_fallback_draft',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:'Gmail compose scope missing. Created internal draft instead.',to:payload.to||'',threadId:payload.threadId||''}});
       return res.status(202).json({ok:true,draftType:'internal',warning:'Gmail compose scope missing. Created internal draft instead.',draft});
     }
     const token=await getGoogleToken();
     if(!token){
-      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:lastGoogleAuthError||'Google auth required',to:fallbackTo,cc:fallbackCc,threadId:payload.threadId||'',replyAll:true}});
-      await rememberDraftStyleSample({subject:draft.subject,body:draft.body,source:'internal_gmail_fallback_draft',draftId:draft.id,sourceContext:draft.sourceContext}).catch(()=>{});
+      const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:payload.subject||'',body:payload.body||'',sourceContext:{warning:lastGoogleAuthError||'Google auth required',to:payload.to||'',threadId:payload.threadId||''}});
       return res.status(202).json({ok:true,draftType:'internal',warning:'Google auth unavailable. Created internal draft instead.',draft});
     }
-    const recipients=resolveReplyAllRecipients(payload);
-    const toHeader=recipients.to.map(emailHeaderAddress).filter(Boolean).join(', ');
-    const ccHeader=recipients.cc.map(emailHeaderAddress).filter(Boolean).join(', ');
-    if(!toHeader)return res.status(400).json({ok:false,error:'No valid reply-all recipients were found. Open the original thread or add a recipient before saving a Gmail draft.'});
-    const headers=[`To: ${toHeader}`,ccHeader?`Cc: ${ccHeader}`:null,`Subject: ${payload.subject||''}`,'Content-Type: text/plain; charset="UTF-8"','Content-Transfer-Encoding: 8bit'].filter(Boolean);
-    const lines=[...headers,'',payload.body||''];
+    const lines=[`To: ${payload.to||''}`,`Subject: ${payload.subject||''}`,'',payload.body||''];
     const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
     const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||undefined}})});
     const d=await readJsonResponse(r);
     if(!r.ok) throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
-    await rememberDraftStyleSample({subject:payload.subject||'',body:payload.body||'',source:'gmail_draft_saved',draftId:d.id||'',sourceContext:{threadId:payload.threadId||'',messageId:payload.messageId||'',to:toHeader,cc:ccHeader}}).catch(()=>{});
-    res.json({ok:true,draftType:'gmail',gmailDraft:d,replyAll:{to:recipients.to,cc:recipients.cc}});
-  }catch(e){res.status(500).json({ok:false,error:e.message});}
-});
-app.post('/api/gmail/send-approved-draft',async(req,res)=>{
-  try{
-    const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
-    const missing=status.missingScopes||[];
-    if(missing.length)return res.status(400).json({ok:false,error:'Reconnect Google to grant Gmail compose permission before sending approved drafts.',missingScopes:missing});
-    const token=await getGoogleToken();
-    if(!token)return res.status(401).json({ok:false,error:lastGoogleAuthError||'Google auth required'});
-    const payload=req.body||{};
-    if(payload.approved!==true)return res.status(400).json({ok:false,error:'Approval required before sending email'});
-    const recipients=resolveReplyAllRecipients(payload);
-    const to=recipients.to.map(emailHeaderAddress).filter(Boolean).join(', ');
-    const cc=recipients.cc.map(emailHeaderAddress).filter(Boolean).join(', ');
-    const subject=String(payload.subject||'').trim()||'(No subject)';
-    const body=String(payload.body||'').trim();
-    if(!to||!/@/.test(to))return res.status(400).json({ok:false,error:'Add a valid recipient before sending.'});
-    if(!body)return res.status(400).json({ok:false,error:'Add a message before sending.'});
-    const headers=[
-      `To: ${to}`,
-      cc?`Cc: ${cc}`:null,
-      `Subject: ${subject}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      'Content-Transfer-Encoding: 8bit'
-    ].filter(Boolean);
-    const lines=[...headers,'',body];
-    const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
-    const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
-    const d=await readJsonResponse(r);
-    if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
-    await rememberDraftStyleSample({subject,body,source:'gmail_approved_send',draftId:d.id||'',sourceContext:{threadId:payload.threadId||'',messageId:payload.messageId||'',to,cc}}).catch(()=>{});
-    await logEmailAction(req.valUser.id,{provider:'gmail',messageId:d.id||payload.messageId||'',threadId:d.threadId||payload.threadId||'',actionType:'send_approved_draft',actionStatus:'sent',actedBy:'user',details:{to,cc,subject,source:'executive_inbox_approve_draft'}});
-    res.json({ok:true,sent:true,messageId:d.id||'',threadId:d.threadId||'',gmailMessage:d,replyAll:{to:recipients.to,cc:recipients.cc}});
+    res.json({ok:true,draftType:'gmail',gmailDraft:d});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 
@@ -11078,14 +13301,24 @@ function micheleConversationStateInstruction(session,turns=[]){
     recent?`Recent conversation:\n${recent}`:''
   ].filter(Boolean).join('\n\n');
 }
+function micheleMessageWantsToKeepTalking(message=''){
+  return /\b(ask me more|more questions|keep asking|keep going|keep talking|talk this through|talk through this|not ready|not yet|help me think|help me explore|what else do you need|let'?s explore|stay with this|keep listening|let me keep talking)\b/i.test(String(message||''));
+}
+function micheleMessageExplicitlyAsksToWrite(message=''){
+  const msg=String(message||'');
+  if(micheleMessageWantsToKeepTalking(msg)) return false;
+  return /\b(write it now|rewrite it now|write this now|rewrite this now|create the revision|write the chapter|rewrite the chapter|i'?m ready for you to write|go ahead and write|go ahead and rewrite)\b/i.test(msg);
+}
 function micheleConversationPlannerFallback({chapter,userMessage,session,turns=[]}){
   const asked=(session?.questionsAsked||[]).concat((turns||[]).filter(t=>t.role==='assistant').map(t=>t.content));
   const userTurns=(turns||[]).filter(t=>t.role==='user').length;
-  const readiness=Math.min(92,35+(userTurns*15));
-  const editorialMove=readiness>=78?'write':(userTurns===0?'reflect':'explore');
+  const wantsMore=micheleMessageWantsToKeepTalking(userMessage);
+  const explicitWrite=micheleMessageExplicitlyAsksToWrite(userMessage);
+  const readiness=Math.min(explicitWrite?92:74,35+(userTurns*10));
+  const editorialMove=explicitWrite&&!wantsMore?'write':(userTurns===0?'reflect':'explore');
   const question=micheleNextFallbackQuestion(chapter,userMessage,asked.map(content=>({role:'assistant',content})));
   return {
-    reply:editorialMove==='write'?'I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.':question,
+    reply:editorialMove==='write'?'I have enough to shape this now. Click Write Chapter when you want me to turn this into the fresh manuscript.':question,
     readyToRewrite:editorialMove==='write',
     readinessScore:readiness,
     editorialMove,
@@ -11103,9 +13336,11 @@ async function michelePlanBookConversationTurn({chapter,userMessage,session,turn
   const selectedMode=micheleEditorialMode(userMessage,mode||session?.mode||'interview');
   const fallback=micheleConversationPlannerFallback({chapter,userMessage,session,turns});
   const asksForAnswer=micheleMessageRequestsEditorialAnswer(userMessage);
+  const wantsToKeepTalking=micheleMessageWantsToKeepTalking(userMessage);
+  const explicitWrite=micheleMessageExplicitlyAsksToWrite(userMessage);
   const priorUserTurns=(turns||[]).filter(t=>t.role==='user').length;
   const sessionReadiness=Number(session?.readinessScore||0);
-  const likelyReady=sessionReadiness>=78||priorUserTurns>=4||/\b(write it|write this|rewrite|i'?m ready|go ahead|do it|create revision|all of the above)\b/i.test(userMessage);
+  const likelyReady=!wantsToKeepTalking&&explicitWrite;
   try{
     const raw=await withMicheleModelTimeout(callValModel({json:true,temperature:selectedMode==='interview'?0.62:0.35,maxTokens:selectedMode==='interview'?900:1800,system:[
       VAL_SYSTEM_PROMPT,
@@ -11130,6 +13365,8 @@ async function michelePlanBookConversationTurn({chapter,userMessage,session,turn
       'If Michele asks what chapter to work on, mention last completed and current chapter briefly, then ask whether to continue the current chapter, move to the next, or work on transitions/book-wide threads.',
       'Begin each new chapter conversation with an observation, not a bare question: “I noticed…” or “I think the center may be…” then ask if that reading is right.',
       'Do not over-interview. If readiness is 75 or higher, prefer editorialMove=write unless there is a serious missing fact.',
+      'If Michele asks for more questions, says keep talking, or says she is not ready, keep the conversation going even if you have enough to write.',
+      'Only choose editorialMove=write when Michele explicitly asks VAL to write or rewrite now. Do not treat “all of the above” as permission to write.',
       'If likelyReady is true, choose editorialMove=write unless Michele explicitly asks to keep talking.',
       'Ask only one question when editorialMove is reflect, challenge, or explore. Ask no new substantive question when editorialMove is write.',
       'Return strict JSON with keys: reply, editorialMove, readyToRewrite, readinessScore, currentGoal, storyBeats, emotionalThreads, sceneDetails, humorThreads, readerTakeaways, rewriteDirection.',
@@ -11140,6 +13377,8 @@ async function michelePlanBookConversationTurn({chapter,userMessage,session,turn
       mode:selectedMode,
       voiceMode:!!voiceMode,
       asksForEditorialAnswer:asksForAnswer,
+      wantsToKeepTalking,
+      explicitWrite,
       likelyReady,
       currentReadinessScore:sessionReadiness,
       priorUserTurnCount:priorUserTurns,
@@ -11169,11 +13408,13 @@ async function michelePlanBookConversationTurn({chapter,userMessage,session,turn
     let editorialMove=String(parsed.editorialMove||fallback.editorialMove||'explore').toLowerCase().trim();
     if(!['reflect','challenge','explore','write'].includes(editorialMove)) editorialMove=fallback.editorialMove||'explore';
     let readinessScore=Math.max(0,Math.min(100,Number(parsed.readinessScore||fallback.readinessScore||0)));
+    if(wantsToKeepTalking&&readinessScore>74) readinessScore=74;
     if(likelyReady&&readinessScore<78) readinessScore=82;
-    const readyToRewrite=!!parsed.readyToRewrite || readinessScore>=78 || editorialMove==='write';
+    let readyToRewrite=!wantsToKeepTalking && (explicitWrite || (editorialMove==='write'&&!!parsed.readyToRewrite));
     if(readyToRewrite&&editorialMove!=='write') editorialMove='write';
+    if(wantsToKeepTalking&&editorialMove==='write') editorialMove='explore';
     if(readyToRewrite&&/\?\s*$/.test(reply)&&!asksForAnswer){
-      reply='I have enough to shape this now. I’m ready to write the revision unless there is one last thing you want protected.';
+      reply='I have enough to shape this now. Click Write Chapter when you want me to turn this into the fresh manuscript.';
     }
     if(voiceMode) reply=micheleVoiceSizedReply(reply);
     return {
@@ -12140,6 +14381,49 @@ async function micheleBookSessionTurn({sessionId='',chapterId='',message='',mode
     session:publicBookConversationSession(nextSession,turns)
   };
 }
+async function micheleBookSessionCapture({sessionId='',chapterId='',message='',mode='interview',inputType='voice_passive'}){
+  const userMessage=String(message||'').replace(/\s+/g,' ').trim();
+  if(!userMessage) throw new Error('Missing Michele voice note.');
+  const project=await ensureMicheleBookProject();
+  let storedChapters=await listMicheleStoredChaptersForConversation(project).catch(()=>[]);
+  if(!storedChapters.length) storedChapters=(await syncMicheleBookFromDocs()).chapters;
+  const fallbackChapter=await getMicheleStoredChapterForConversation(chapterId);
+  const chapter=micheleFindChapterForMessage(userMessage,storedChapters,fallbackChapter)||fallbackChapter||storedChapters[0];
+  if(!chapter) throw new Error('No current chapter found.');
+  let session=null;
+  if(sessionId){
+    if(pgPool){const r=await dbQuery("select * from book_conversation_sessions where id=$1 and tenant_id=$2 and user_id=$3 and status='active' limit 1",[sessionId,tenantId(),currentUserId()]);session=normalizeBookConversationSession(r.rows[0]);}
+    else session=normalizeBookConversationSession((valStore().bookConversationSessions||[]).find(s=>s.id===sessionId&&s.tenantId===tenantId()&&s.userId===currentUserId()&&s.status==='active'));
+  }
+  if(!session||session.chapterId!==chapter.id) session=await getOrCreateMicheleBookSession({project,chapter,mode:mode||'interview'});
+  await appendMicheleBookTurn({sessionId:session.id,role:'user',content:userMessage,inputType,metadata:{chapterId:chapter.id,mode,passiveCapture:true}});
+  const captureLine=`Voice room note: ${userMessage}`;
+  const nextSession=await updateMicheleBookSessionState(session,{
+    mode:mode||session.mode||'interview',
+    currentGoal:'listen to Michele and Jessa talk through the chapter before rewriting',
+    storyBeats:[captureLine],
+    sceneDetails:[captureLine],
+    rewriteDirection:[session.rewriteDirection||'',captureLine].filter(Boolean).join('\n'),
+    readinessScore:Math.min(74,Math.max(Number(session.readinessScore||0),35)+4),
+    metadata:{
+      passiveVoiceCaptures:Number(session.metadata?.passiveVoiceCaptures||0)+1,
+      lastPassiveCaptureAt:new Date().toISOString(),
+      readyToRewrite:false,
+      editorialMove:'listen'
+    }
+  });
+  const turns=await listMicheleBookSessionTurns(session.id,24);
+  await saveMemoryItem({kind:'michele_book_voice_room_note',summary:`Voice note captured for ${micheleChapterLabel(chapter)}`,rawText:userMessage.slice(0,6000),importance:3,metadata:{source:'michele_book_voice_capture',sessionId:session.id,chapterId:chapter.id,chapterNumber:chapter.chapterNumber,mode}}).catch(()=>{});
+  return {
+    ok:true,
+    captured:true,
+    sessionId:session.id,
+    captureCount:Number(nextSession.metadata?.passiveVoiceCaptures||1),
+    suggestedInstruction:nextSession.rewriteDirection||captureLine,
+    chapter:safeMicheleChapter(chapter),
+    session:publicBookConversationSession(nextSession,turns)
+  };
+}
 async function micheleBookDraftResponse({chapterId,response}){
   if(!String(response||'').trim()) throw new Error('Missing Michele response.');
   const synced=await syncMicheleBookFromDocs();
@@ -12308,6 +14592,10 @@ app.post('/api/michele/book/converse',async(req,res)=>{
 app.post('/api/michele/book/session/turn',async(req,res)=>{
   try{res.json(await micheleBookSessionTurn({sessionId:req.body.sessionId||'',chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',mode:req.body.mode||'',voiceMode:!!req.body.voiceMode,inputType:req.body.inputType||''}));}
   catch(e){await auditLog({req,action:'michele_book_session_turn_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
+});
+app.post('/api/michele/book/session/capture',async(req,res)=>{
+  try{res.json(await micheleBookSessionCapture({sessionId:req.body.sessionId||'',chapterId:req.body.chapterId||'',message:req.body.message||req.body.text||'',mode:req.body.mode||'',inputType:req.body.inputType||'voice_passive'}));}
+  catch(e){await auditLog({req,action:'michele_book_session_capture_failed',resourceType:'book',metadata:{error:e.message},success:false}).catch(()=>{});res.status(200).json({ok:false,gentleMessage:gentleBookError(e)});}
 });
 app.post('/api/michele/book/draft',async(req,res)=>{
   try{res.json(await micheleBookDraftResponse({chapterId:req.body.chapterId||'',response:req.body.response||req.body.text||''}));}
@@ -13031,7 +15319,6 @@ async function runAgencyEngineForObservations(evidenceItem,observations=[]){
 }
 function publicAgencyMove(row={}){
   if(!row)return null;
-  if(jessaLooksLikeBadDashboardArtifact([row.title,row.why,row.whatChanged||row.what_changed,row.ifIgnored||row.if_ignored,JSON.stringify(row.metadataJson||row.metadata_json||row.metadata||{})].filter(Boolean).join('\n')))return null;
   return {
     id:row.id,
     moveType:row.moveType||row.move_type||'wait',
@@ -13070,7 +15357,6 @@ async function listAgencyMoves({limit=80}={}){
 }
 function publicRelationshipProfile(row={}){
   if(!row)return null;
-  if(jessaLooksLikeBadDashboardArtifact([row.displayName||row.display_name,row.summary,row.profileKey||row.profile_key,JSON.stringify(row.metadataJson||row.metadata_json||row.metadata||{})].filter(Boolean).join('\n')))return null;
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
@@ -13108,6 +15394,325 @@ async function listRelationshipProfiles({limit=80}={}){
   }
   return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
 }
+async function listProjectProfiles({limit=80}={}){
+  const capped=Math.max(1,Math.min(Number(limit)||80,200));
+  return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
+}
+const RELATIONSHIP_INDEX_TEMPERATURE_MODEL = {
+  needs_attention: {
+    label: 'Needs attention',
+    temperature: 'Needs clarity',
+    scoreRange: [0,54],
+    meaning: 'Trust, clarity, or follow-through needs executive care before action.',
+    observers: ['GHL/CRM','calendar','email','transcripts','Teach VAL']
+  },
+  waiting: {
+    label: 'Waiting',
+    temperature: 'Waiting',
+    scoreRange: [45,75],
+    meaning: 'A known loop is open; the next move should preserve clarity without creating pressure.',
+    observers: ['GHL/CRM','email','calendar','Teach VAL']
+  },
+  strategic: {
+    label: 'Strategic',
+    temperature: 'Strategic',
+    scoreRange: [80,100],
+    meaning: 'This relationship creates meaningful leverage and should be handled deliberately.',
+    observers: ['GHL/CRM','LinkedIn','Apollo','Outscraper','Teach VAL']
+  },
+  warm: {
+    label: 'Warm',
+    temperature: 'Warm',
+    scoreRange: [55,79],
+    meaning: 'The relationship is healthy enough for thoughtful continuation.',
+    observers: ['GHL/CRM','LinkedIn','calendar','email','Teach VAL']
+  },
+  new: {
+    label: 'New',
+    temperature: 'New',
+    scoreRange: [45,70],
+    meaning: 'Identity is known, but VAL needs more evidence before forming strong judgment.',
+    observers: ['GHL/CRM','calendar','email']
+  }
+};
+function relationshipIndexTemperatureEvidence(profile={}){
+  const evidence=[];
+  const add=(state,observer,signal,weight,summary)=>{
+    if(!signal||!summary)return;
+    evidence.push({state,observer,signal,weight,summary});
+  };
+  add('warm','GHL/CRM','relationship_status',0.5,profile.relationshipStatus||profile.relationship_status||'Relationship profile is present.');
+  add('needs_attention','transcripts','risk_count',0.9,(Number(profile.riskCount)||0)>0?`${Number(profile.riskCount)||0} relationship risk signal${Number(profile.riskCount)===1?'':'s'}.`:null);
+  add('waiting','email','open_loop_count',0.82,(Number(profile.openLoopCount)||0)>0?`${Number(profile.openLoopCount)||0} open loop${Number(profile.openLoopCount)===1?'':'s'} waiting.`:null);
+  add('strategic','relationship_observers','opportunity_count',0.74,(Number(profile.opportunityCount)||0)>1?`${Number(profile.opportunityCount)||0} opportunity signals.`:null);
+  add('new','GHL/CRM','low_observation_count',0.4,(Number(profile.observationCount)||0)<=1?'Only one or fewer observations are attached.':null);
+  add('strategic','relationship_index','confidence',0.6,Number(profile.confidence||0)>=0.82?'High confidence relationship profile.':null);
+  if(!evidence.length)add('warm','relationship_index','default_warm',0.3,'No risk or waiting loop is currently strong enough to move this relationship.');
+  return evidence;
+}
+function relationshipIndexStateFromEvidence(evidence=[]){
+  const totals=evidence.reduce((scores,item)=>{
+    const state=item.state||'warm';
+    scores[state]=(scores[state]||0)+Number(item.weight||0);
+    return scores;
+  },{});
+  const priority=['needs_attention','waiting','strategic','new','warm'];
+  return priority.sort((a,b)=>(totals[b]||0)-(totals[a]||0)||priority.indexOf(a)-priority.indexOf(b))[0]||'warm';
+}
+function relationshipIndexTemperatureConflict(evidence=[],selectedState='warm'){
+  const totals=evidence.reduce((scores,item)=>{
+    const state=item.state||'warm';
+    scores[state]=(scores[state]||0)+Number(item.weight||0);
+    return scores;
+  },{});
+  const challengers=Object.entries(totals)
+    .filter(([state,score])=>state!==selectedState&&score>=0.7)
+    .sort((a,b)=>b[1]-a[1]);
+  if(!challengers.length)return null;
+  const [state,score]=challengers[0];
+  const selectedScore=Number(totals[selectedState]||0);
+  return {
+    status:'review_recommended',
+    selectedState,
+    challengerState:state,
+    selectedScore:Number(selectedScore.toFixed(2)),
+    challengerScore:Number(score.toFixed(2)),
+    reason:'Relationship temperature has credible evidence for more than one state.'
+  };
+}
+function relationshipIndexState(profile={}){
+  return relationshipIndexStateFromEvidence(relationshipIndexTemperatureEvidence(profile));
+}
+function relationshipIndexTemperature(profile={}){
+  const score=55+(Number(profile.opportunityCount)||0)*8+(Number(profile.confidence)||0)*20-(Number(profile.riskCount)||0)*10;
+  return Math.max(0,Math.min(100,Math.round(score)));
+}
+function relationshipIndexTemperatureContract(state='warm'){
+  return RELATIONSHIP_INDEX_TEMPERATURE_MODEL[state]||RELATIONSHIP_INDEX_TEMPERATURE_MODEL.warm;
+}
+function relationshipIndexItemFromProfile(profile={}){
+  const temperatureEvidence=relationshipIndexTemperatureEvidence(profile);
+  const state=relationshipIndexStateFromEvidence(temperatureEvidence);
+  const temperatureConflict=relationshipIndexTemperatureConflict(temperatureEvidence,state);
+  const temperatureContract=relationshipIndexTemperatureContract(state);
+  const metadata=profile.metadata||{};
+  const signal=(profile.risks?.[0]?.content)||(profile.openLoops?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.relationshipSignals?.[0]?.content)||profile.summary||'Relationship context is available for review.';
+  const name=profile.displayName||profile.name||'Unnamed relationship';
+  const contactId=profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id||resolvedCrmContactId(profile)||'';
+  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^email:/,''):'';
+  const email=metadata.email||profile.email||profileKeyEmail||'';
+  const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
+  return {
+    id:String(id),
+    query:{name,email,targetId:id,contactId},
+    name,
+    initials:name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'R',
+    role:profile.relationshipStatus||profile.profileType||'Relationship',
+    company:metadata.company||profile.organizationId||'Relationship',
+    temperature:temperatureContract.temperature,
+    temperatureScore:relationshipIndexTemperature(profile),
+    trajectory:profile.relationshipStatus||state.replace('_',' '),
+    relationshipState:state,
+    relationshipStateLabel:temperatureContract.label,
+    temperatureMeaning:temperatureContract.meaning,
+    temperatureObservers:temperatureContract.observers,
+    temperatureScoreRange:temperatureContract.scoreRange,
+    temperatureEvidence,
+    temperatureConflict,
+    sourceEvidence:profile.summary||'Canonical relationship profile from VAL relationship index.',
+    confidence:Number(profile.confidence||0.6),
+    lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
+    signal:dashboardShortText(signal,'Relationship signal available.',120),
+    identity:name,
+    contact:[email,metadata.phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
+    wisdom:profile.summary||'Review the relationship file before acting.',
+    evidence:dashboardShortText(signal,profile.summary||'',220),
+    patterns:'VAL is reading this from the canonical relationship index.',
+    meaning:profile.summary||'This relationship has enough observed context to appear in the index.',
+    certainty:'Open the brief to resolve identity and review the relationship dossier before acting.',
+    linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
+    sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
+    href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
+  };
+}
+function projectIndexItemFromProfile(profile={}){
+  const metadata=profile.metadata||{};
+  const intake=metadata.intake||{};
+  const uploadedFiles=Array.isArray(metadata.uploadedFiles)?metadata.uploadedFiles:[];
+  const risks=(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const opportunities=(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const openLoops=(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const signals=(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const name=profile.displayName||profile.name||metadata.projectName||metadata.project||'Unnamed project';
+  const id=profile.projectId||profile.profileKey||profile.id||stableKey(name);
+  const status=profile.relationshipStatus||metadata.status||profile.status||'Observed';
+  const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
+  const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
+  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
+  const uploadedFileCount=uploadedFiles.length;
+  const sourceDetails={
+    files:uploadedFiles,
+    websiteSource:intake.websiteSource||'',
+    documents:intake.documents||'',
+    relationships:intake.relationships||'',
+    rawContext:intake.rawContext||''
+  };
+  return {
+    id:String(id),
+    projectId:profile.projectId||profile.profileKey||profile.id||'',
+    profileKey:profile.profileKey||'',
+    name,
+    initials:name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'P',
+    status,
+    signal:dashboardShortText(signals[0]||profile.summary||nextMove,'Project signal available.',140),
+    reality:profile.summary||'Canonical project profile from VAL relationship/project index.',
+    momentum,
+    momentumEvidence:dashboardShortText(opportunities[0]||signals[0]||profile.summary,'Project movement is visible in stored VAL evidence.',220),
+    decision,
+    decisionEvidence:dashboardShortText(risks[0]||openLoops[0]||'No urgent project risk is currently singled out by VAL.', 'Review project context before adding work.',220),
+    nextMove:dashboardShortText(nextMove,'Review project file.',120),
+    nextMoveEvidence:dashboardShortText(openLoops[0]||risks[0]||opportunities[0]||profile.summary,'Use the project dossier before creating new work.',220),
+    sourceReceipts:'Canonical project index · '+[
+      uploadedFileCount?uploadedFileCount+' uploaded project files':null,
+      profile.observationCount?profile.observationCount+' observations':'observations pending',
+      profile.openLoopCount?profile.openLoopCount+' open loops':'no open loops flagged',
+      profile.riskCount?profile.riskCount+' risks':'no risks flagged',
+      profile.opportunityCount?profile.opportunityCount+' opportunities':'no opportunities flagged'
+    ].filter(Boolean).join(' · '),
+    confidence:Number(profile.confidence||0.6),
+    lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
+    sourceDetails,
+    href:'./dashboard.html?view=projects&projectId='+encodeURIComponent(id)
+  };
+}
+function projectDossierFromProfile(profile={}){
+  const item=projectIndexItemFromProfile(profile);
+  return {
+    id:item.id,
+    dossierType:'project',
+    projectCardVersion:'VAL_PHASE_13C_PROJECT_DOSSIER_V1',
+    identity:{
+      id:item.id,
+      projectId:item.projectId,
+      profileKey:item.profileKey,
+      name:item.name,
+      status:item.status
+    },
+    currentReality:{
+      summary:item.reality,
+      status:item.status,
+      signal:item.signal
+    },
+    momentum:{
+      summary:item.momentum,
+      evidence:item.momentumEvidence
+    },
+    decisionPoint:{
+      summary:item.decision,
+      evidence:item.decisionEvidence
+    },
+    nextMove:{
+      summary:item.nextMove,
+      evidence:item.nextMoveEvidence
+    },
+    sourceReceipts:{
+      summary:item.sourceReceipts,
+      confidence:item.confidence,
+      lastChangedAt:item.lastChangedAt,
+      details:item.sourceDetails
+    },
+    actions:{
+      items:[
+        {id:'open_project_file',label:'Open project file',type:'local_review',safe:true,observerScope:['hearth','chat','meeting_prep']},
+        {id:'ask_priority',label:'Ask what matters now',type:'workspace',target:'alignment',safe:true,observerScope:['hearth']},
+        {id:'show_alternatives',label:'Show alternatives',type:'workspace',target:'leverage',safe:true,observerScope:['hearth']}
+      ]
+    },
+    card:item
+  };
+}
+async function projectPreparedWorkForDossier(item={}){
+  const projectId=String(item.projectId||item.id||'').toLowerCase();
+  const projectName=String(item.name||'').toLowerCase();
+  const tasks=await loadTasks().catch(()=>[]);
+  return tasks.filter(task=>{
+    if(task.completed)return false;
+    if(String(task.source||'')!=='transcript_prepared_work')return false;
+    const taskProjectId=String(task.projectId||'').toLowerCase();
+    const taskProjectName=String(task.projectName||'').toLowerCase();
+    return (projectId&&taskProjectId&&taskProjectId===projectId)||(projectName&&taskProjectName&&taskProjectName===projectName);
+  }).slice(0,8).map(task=>({
+    id:task.id,
+    title:task.title,
+    summary:String(task.notes||'').split('\n\n')[0]||task.title,
+    completionStatus:task.completionStatus||'ready_for_review',
+    executionLevel:task.executionLevel||'',
+    executionLevelLabel:String(task.executionLevel||'').replace(/^level_\d+_/,'').replace(/_/g,' ')||'Transcript prepared work',
+    transcriptId:task.transcriptId||'',
+    projectId:task.projectId||'',
+    projectName:task.projectName||'',
+    preparedWorkIds:Array.isArray(task.preparedWorkIds)?task.preparedWorkIds:[],
+    noExternalAction:task.noExternalAction!==false,
+    createdAt:task.createdAt||''
+  }));
+}
+function projectCreatePayload(body={}, files=[]){
+  const name=String(body.name||body.projectName||'').replace(/\s+/g,' ').trim();
+  const summary=String(body.summary||body.description||body.currentReality||'').trim();
+  const projectId=String(body.projectId||stableKey(name)).replace(/[^a-z0-9:_-]/gi,'-').toLowerCase();
+  const intake={
+    websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
+    documents:String(body.documents||body.documentsAndContracts||body.contracts||'').trim(),
+    relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
+    rawContext:String(body.rawContext||body.raw_context||body.notes||'').trim()
+  };
+  const sourceTypes=Object.entries(intake).filter(([,value])=>value).map(([key])=>key);
+  const projectFiles=(files||[]).filter(file=>/documentsAndContracts|documents|contracts|projectFiles/i.test(String(file.fieldname||'')));
+  if(projectFiles.length&&!sourceTypes.includes('documents'))sourceTypes.push('documents');
+  if(projectFiles.length&&!sourceTypes.includes('documentFiles'))sourceTypes.push('documentFiles');
+  intake.documentFiles=projectFiles.map(file=>({fileName:file.originalname||'project-source-file',mimeType:file.mimetype||'',size:file.size||0}));
+  return {name,summary,projectId,intake,sourceTypes,projectFiles};
+}
+async function saveProjectSourceFiles({files=[],payload={},profileKey=''}={}){
+  const savedFiles=[];
+  for(const file of (files||[]).slice(0,10)){
+    const text=(await extractUploadedText(file)).trim();
+    if(!text) throw new Error(`No readable text found in ${file.originalname}`);
+    const docType=inferBookDocTypeFromName(file.originalname,'knowledge_document');
+    const metadata={
+      source:'hearth_project_source_upload',
+      uploadedVia:'hearth_project_source_upload',
+      fileName:file.originalname,
+      mimeType:file.mimetype,
+      size:file.size,
+      projectId:payload.projectId,
+      projectName:payload.name,
+      profileKey,
+      docType,
+      noExternalAction:true
+    };
+    const saved=await saveTranscript({
+      type:'knowledge_document',
+      title:file.originalname,
+      transcript:text,
+      rawText:text,
+      timestamp:new Date().toISOString(),
+      source:'hearth_project_source_upload',
+      importance:4,
+      metadata
+    });
+    savedFiles.push({
+      id:saved?.id||'',
+      fileName:file.originalname,
+      mimeType:file.mimetype,
+      size:file.size,
+      chars:text.length,
+      docType,
+      source:'hearth_project_source_upload'
+    });
+  }
+  return savedFiles;
+}
 async function listDashboardEvidenceItems({limit=180}={}){
   if(DEMO_MODE)return (transcriptDemoArray('evidenceItems')||[]).slice().sort((a,b)=>interactionDate(b.occurredAt||b.capturedAt||b.createdAt)-interactionDate(a.occurredAt||a.capturedAt||a.createdAt)).slice(0,limit);
   await valDbReady;
@@ -13116,89 +15721,6 @@ async function listDashboardEvidenceItems({limit=180}={}){
     return r.rows.map(transcriptPgRow);
   }
   return transcriptFileArray(valStore(),'evidenceItems').slice().sort((a,b)=>interactionDate(b.occurredAt||b.capturedAt||b.createdAt)-interactionDate(a.occurredAt||a.capturedAt||a.createdAt)).slice(0,limit);
-}
-async function listEvidenceObservationsForItems(ids=[]){
-  ids=ids.map(String).filter(Boolean);
-  if(!ids.length)return [];
-  if(DEMO_MODE)return (transcriptDemoArray('evidenceObservations')||[]).filter(o=>ids.includes(String(o.evidenceItemId||o.evidence_item_id||'')));
-  await valDbReady;
-  if(pgPool){
-    const r=await dbQuery('select * from evidence_observations where tenant_id=$1 and evidence_item_id=any($2::text[]) order by created_at desc',[tenantId(),ids]);
-    return r.rows.map(transcriptPgRow);
-  }
-  return transcriptFileArray(valStore(),'evidenceObservations').filter(o=>ids.includes(String(o.evidenceItemId||o.evidence_item_id||'')));
-}
-function evidenceReviewShort(text='',max=900){
-  const clean=String(text||'').replace(/\s+/g,' ').trim();
-  return clean.length>max?clean.slice(0,max-1).trim()+'…':clean;
-}
-function publicEvidenceReviewItem(item={},observations=[],moves=[]){
-  const entities=evidenceJsonValue(item.entitiesJson||item.entities_json||item.entities,{});
-  const participants=evidenceJsonValue(item.participantsJson||item.participants_json,[]);
-  const id=item.id||'';
-  const obs=observations.filter(o=>String(o.evidenceItemId||o.evidence_item_id||'')===String(id)).map(o=>({
-    id:o.id,
-    type:o.observationType||o.observation_type||'observation',
-    title:String(o.observationType||o.observation_type||'observation').replace(/_/g,' '),
-    summary:o.content||'',
-    quote:o.exactQuote||o.exact_quote||'',
-    confidence:Number(o.confidence||0),
-    personId:o.personId||o.person_id||'',
-    projectId:o.projectId||o.project_id||'',
-    dueAt:o.dueAt||o.due_at||'',
-    createdAt:o.createdAt||o.created_at||''
-  }));
-  const linkedMoves=moves.filter(m=>(m.sourceEvidenceIds||[]).map(String).includes(String(id))).map(m=>({
-    id:m.id,
-    type:'VAL move',
-    title:m.title||m.moveType||'Suggested move',
-    summary:m.why||m.whatChanged||'',
-    confidence:Number(m.confidence||0),
-    kind:m.priorityBand||'move',
-    projectId:m.projectId||'',
-    personId:m.personId||''
-  }));
-  const impacts=[...linkedMoves];
-  if(entities.project)impacts.push({type:'project',title:String(entities.project),summary:'Source metadata links this evidence to a project.',confidence:Number(item.confidence||0)});
-  if(entities.classification)impacts.push({type:'classification',title:String(entities.classification).replace(/_/g,' '),summary:'Email/source classifier label attached to this evidence.',confidence:Number(item.confidence||0)});
-  participants.slice(0,4).forEach(p=>impacts.push({type:'person',title:p.name||p.email||p.matchedContactName||'Participant',summary:p.email||p.role||'Participant found in source receipt.',confidence:p.confidence==='high'?1:.55}));
-  return {
-    id,
-    sourceType:item.sourceType||item.source_type||'source',
-    sourceId:item.sourceId||item.source_id||'',
-    sourceUrl:item.sourceUrl||item.source_url||'',
-    title:item.title||item.summary||'Evidence receipt',
-    summary:item.summary||evidenceReviewShort(item.rawText||item.raw_text||'',220),
-    receipt:evidenceReviewShort(item.rawText||item.raw_text||item.summary||'',1400),
-    confidence:Number(item.confidence||0),
-    status:item.status||'captured',
-    occurredAt:item.occurredAt||item.occurred_at||'',
-    capturedAt:item.capturedAt||item.captured_at||'',
-    createdAt:item.createdAt||item.created_at||'',
-    observations:obs,
-    impacts:impacts.slice(0,10),
-    metadata:evidenceJsonValue(item.metadataJson||item.metadata_json||item.metadata,{})
-  };
-}
-async function buildEvidenceReview({limit=80}={}){
-  const evidence=await listDashboardEvidenceItems({limit});
-  const ids=evidence.map(e=>e.id).filter(Boolean);
-  const [observations,moves]=await Promise.all([
-    listEvidenceObservationsForItems(ids).catch(()=>[]),
-    listAgencyMoves({limit:160}).catch(()=>[])
-  ]);
-  const items=evidence.map(e=>publicEvidenceReviewItem(e,observations,moves));
-  return {
-    ok:true,
-    generatedAt:new Date().toISOString(),
-    summary:{
-      evidenceItems:items.length,
-      interpretations:observations.length,
-      linkedMoves:moves.filter(m=>(m.sourceEvidenceIds||[]).some(id=>ids.includes(String(id)))).length,
-      needsReview:items.filter(i=>!i.observations.length||Number(i.confidence||0)<.7).length
-    },
-    items
-  };
 }
 async function executiveBriefingCounts(){
   if(DEMO_MODE){
@@ -13371,12 +15893,53 @@ function dashboardProjectsFromEvidence(evidenceItems=[]){
 function dashboardProfileScore(profile={}){
   return (Number(profile.openLoopCount)||0)*10+(Number(profile.riskCount)||0)*12+(Number(profile.opportunityCount)||0)*12+(Number(profile.observationCount)||0);
 }
+function canonicalRelationshipDossierForEntity(entity={}){
+  const existing=entity.relationshipDossier||entity.relationship_dossier||null;
+  if(existing?.identityResolution?.status==='resolved'&&existing?.identity?.crmContactId)return existing;
+  const crmContactId=resolvedCrmContactId(entity);
+  if(!crmContactId)return null;
+  return buildRelationshipDossier({contactId:crmContactId,contact:{...entity,contactId:crmContactId},...entity});
+}
 function dashboardEntityFromProfile(profile={}){
   const state=profileVelocity(profile);
   const topSignal=(profile.risks?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.openLoops?.[0]?.content)||profile.summary;
-  return {id:profile.id||profile.profileKey,name:profile.displayName,state,summary:dashboardShortText(topSignal,profile.summary||state,140),score:dashboardProfileScore(profile),profileKey:profile.profileKey,profileType:profile.profileType,lastObservedAt:profile.lastObservedAt,openLoops:(profile.openLoops||[]).map(x=>dashboardShortText(x.content||x, '', 140)),risks:(profile.risks||[]).map(x=>dashboardShortText(x.content||x, '', 140)),opportunities:(profile.opportunities||[]).map(x=>dashboardShortText(x.content||x, '', 140)),confidence:profile.confidence,target:{type:profile.profileType,id:profile.id||profile.profileKey}};
+  const row={id:profile.id||profile.profileKey,contactId:profile.contactId||profile.crmContactId||profile.crm_contact_id||'',source:profile.source||'',name:profile.displayName,state,summary:dashboardShortText(topSignal,profile.summary||state,140),score:dashboardProfileScore(profile),profileKey:profile.profileKey,profileType:profile.profileType,lastObservedAt:profile.lastObservedAt,openLoops:(profile.openLoops||[]).map(x=>dashboardShortText(x.content||x, '', 140)),risks:(profile.risks||[]).map(x=>dashboardShortText(x.content||x, '', 140)),opportunities:(profile.opportunities||[]).map(x=>dashboardShortText(x.content||x, '', 140)),relationshipSignals:(profile.relationshipSignals||[]).map(x=>dashboardShortText(x.content||x, '', 140)),confidence:profile.confidence,target:{type:profile.profileType,id:profile.id||profile.profileKey}};
+  if(profile.profileType==='person')row.relationshipDossier=canonicalRelationshipDossierForEntity({...profile,...row});
+  return row;
 }
-function dashboardConclusionFromMove(move={},profilesById=new Map()){
+function dashboardEvidenceTargetMeta(ids=[],evidenceById=new Map()){
+  const out={portalPhrases:[]};
+  for(const id of Array.isArray(ids)?ids:[]){
+    const evidence=evidenceById.get(String(id));
+    if(!evidence)continue;
+    const entities=evidenceJsonValue(evidence.entitiesJson||evidence.entities_json,{})||{};
+    const participants=evidenceJsonValue(evidence.participantsJson||evidence.participants_json,[])||[];
+    out.opportunityId=out.opportunityId||entities.opportunityId||entities.opportunity_id||'';
+    out.projectId=out.projectId||entities.projectId||entities.project_id||entities.project||entities.projectName||entities.project_name||'';
+    [entities.opportunityName,entities.opportunity_name,entities.project,entities.projectName,entities.project_name,evidence.title].filter(Boolean).forEach(value=>out.portalPhrases.push(dashboardShortText(value,'',80)));
+    const participant=Array.isArray(participants)?participants.find(p=>p.contactId||p.matchedContactId||p.personId):null;
+    out.contactId=out.contactId||entities.contactId||entities.contact_id||participant?.contactId||participant?.matchedContactId||participant?.personId||'';
+    if(participant)([participant.name,participant.displayName,participant.matchedContactName].filter(Boolean)).forEach(value=>out.portalPhrases.push(dashboardShortText(value,'',80)));
+    if(out.opportunityId&&out.projectId&&out.contactId)break;
+  }
+  out.portalPhrases=[...new Set(out.portalPhrases.filter(Boolean))].slice(0,5);
+  return out;
+}
+function dashboardTargetFromSignal(signal={},fallbackTarget={},evidenceById=new Map()){
+  const sourceEvidenceIds=Array.isArray(signal.sourceEvidenceIds)?signal.sourceEvidenceIds:(Array.isArray(signal.evidenceIds)?signal.evidenceIds:[]);
+  const metadata=evidenceJsonValue(signal.metadataJson||signal.metadata,{})||{};
+  const evidenceMeta=dashboardEvidenceTargetMeta(sourceEvidenceIds,evidenceById);
+  const opportunityId=signal.opportunityId||metadata.opportunityId||metadata.opportunity_id||evidenceMeta.opportunityId||'';
+  if(opportunityId)return {type:'opportunity',id:String(opportunityId)};
+  const draftId=signal.draftId||metadata.draftId||metadata.draft_id||'';
+  if(draftId)return {type:'draft',id:String(draftId)};
+  const contactId=signal.contactId||signal.personId||metadata.contactId||metadata.contact_id||evidenceMeta.contactId||'';
+  if(contactId)return {type:'person',id:String(contactId)};
+  const projectId=signal.projectId||metadata.projectId||metadata.project_id||evidenceMeta.projectId||'';
+  if(projectId)return {type:'project',id:String(projectId)};
+  return fallbackTarget||{type:'move',id:signal.id||''};
+}
+function dashboardConclusionFromMove(move={},profilesById=new Map(),evidenceById=new Map()){
   const rawTitle=dashboardCleanText(move.title||'');
   const rawWhy=dashboardCleanText(move.whatChanged||move.why||'');
   const type=move.moveType||'wait';
@@ -13393,7 +15956,10 @@ function dashboardConclusionFromMove(move={},profilesById=new Map()){
   const title=dashboardShortText(`${verb}: ${subject}`, rawTitle||'Review this signal', 92);
   const why=dashboardShortText(rawWhy||move.why||`VAL found a ${type.replace(/_/g,' ')} signal.`, '', 220);
   const impact=move.priorityBand==='top_recommended'?'Highest':move.priorityBand==='also_important'?'Important':move.priorityBand==='watching'?'Watching':'Quiet';
-  return {...move,title,why,summary:why,impact,target:{type:profile?.profileType||'move',id:move.id},evidenceIds:move.sourceEvidenceIds||[],observationIds:move.sourceObservationIds||[]};
+  const evidenceIds=move.sourceEvidenceIds||[];
+  const target=dashboardTargetFromSignal(move,{type:profile?.profileType||'move',id:profile?.id||profile?.profileKey||move.id},evidenceById);
+  const targetMeta=dashboardEvidenceTargetMeta(evidenceIds,evidenceById);
+  return {...move,...targetMeta,title,why,summary:why,impact,target,evidenceIds,observationIds:move.sourceObservationIds||[]};
 }
 function dashboardDraftQuality(draft={}){
   const body=String(draft.body||''),subject=String(draft.subject||'');
@@ -13412,7 +15978,8 @@ function dashboardReadyDraft(draft={}){
   const quality=dashboardDraftQuality(draft);
   if(!quality.ready)return null;
   const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
-  return {id:draft.id,title:dashboardShortText(label,'Draft ready',80),summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),view:'drafts',target:{type:'draft',id:draft.id},draftType:draft.draftType,status:draft.status,quality};
+  const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
+  return {id:draft.id,title:dashboardShortText(label,'Draft ready',80),summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),view:'drafts',target:{type:'draft',id:draft.id},draftType:draft.draftType,status:draft.status,quality,portalPhrases:[...new Set(portalPhrases)].slice(0,5)};
 }
 function dashboardCardEvidenceFromMove(move={}){
   const items=[];
@@ -13439,6 +16006,7 @@ function dashboardNormalizeCardItem(kind,item={},fallback={}){
     ...(Array.isArray(item.observationIds)?item.observationIds:[])
   ].filter(Boolean);
   const createdAt=item.createdAt||item.created_at||item.lastObservedAt||item.occurredAt||item.capturedAt||fallback.createdAt||'';
+  const portalPhrases=[...(Array.isArray(item.portalPhrases)?item.portalPhrases:[]),item.name,item.contactName,item.projectName,item.opportunityName,item.subject].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
   return {
     ...item,
     id:item.id||fallback.id||uuid('card_item'),
@@ -13455,6 +16023,7 @@ function dashboardNormalizeCardItem(kind,item={},fallback={}){
     evidence,
     evidence_count:evidence.length+(Array.isArray(item.evidenceIds)?item.evidenceIds.length:0)+(Array.isArray(item.observationIds)?item.observationIds.length:0),
     available_actions:Array.isArray(item.available_actions)?item.available_actions:dashboardCardActionSet(kind,item),
+    portalPhrases:[...new Set(portalPhrases)].slice(0,6),
     target
   };
 }
@@ -13474,7 +16043,8 @@ function dashboardDedupeCardItems(items=[]){
 function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[]}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
-  const conclusions=moves.map(m=>dashboardConclusionFromMove(m,profilesById)).filter(m=>dashboardCleanText(m.title));
+  const evidenceById=new Map((Array.isArray(evidenceItems)?evidenceItems:[]).map(e=>[String(e.id||e.sourceId||e.source_id||''),e]).filter(row=>row[0]));
+  const conclusions=moves.map(m=>dashboardConclusionFromMove(m,profilesById,evidenceById)).filter(m=>dashboardCleanText(m.title));
   const profilePeople=profiles.filter(p=>p.profileType==='person').map(dashboardEntityFromProfile);
   const profileProjects=profiles.filter(p=>p.profileType==='project').map(dashboardEntityFromProfile);
   const people=dashboardMergeEntityRows([...(onboarding?.people||[]),...profilePeople,...dashboardPeopleFromEvidence(evidenceItems)],{type:'person',limit:12});
@@ -13492,7 +16062,7 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
   }).slice(0,4);
   const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
   const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[...(onboarding?.ready||[]),...readyDrafts].slice(0,8))).slice(0,5);
-  const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
+  const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
   return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest}};
@@ -13503,7 +16073,11 @@ function teachValOnboardingReflection(items=[]){
   const cat=(pattern)=>memories.filter(m=>pattern.test(String(m.category||m.kind||'').toLowerCase()));
   const people=uniqueNamedRows(cat(/important_people|relationship|people|contact|client|partner/).map(m=>({id:m.id,name:m.title,state:'Held from onboarding',summary:m.detail||m.summary,source:'teach_val_onboarding',confidence:Number(m.metadata?.confidence||0.86)})),'name',8);
   const projects=uniqueNamedRows(cat(/current_projects|project/).map(m=>({id:m.id,name:m.title,state:'Front of mind',summary:m.detail||m.summary,source:'teach_val_onboarding',openLoopCount:0,riskCount:0,opportunityCount:0,lastObservedAt:m.createdAt})),'name',6);
-  const preferences=cat(/work_preferences|preference|things_to_remember/);
+  const preferences=cat(/work_preferences|preference|things_to_remember|working_agreements|linkedin_strategy/);
+  const workingAgreements=cat(/working_agreements/);
+  const linkedinStrategy=cat(/linkedin_strategy/);
+  const supportCircle=cat(/support_circle/);
+  const documentExamples=cat(/documents_and_examples/);
   const risks=cat(/frustration|process_gaps|risk|blocker/);
   const opportunities=cat(/opportunit/);
   const sacred=preferences[0]||people[0]||projects[0]||opportunities[0]||memories[0];
@@ -13523,18 +16097,28 @@ function teachValOnboardingReflection(items=[]){
     {title:`VAL learned ${memories.length} reviewed onboarding truth${memories.length===1?'':'s'} and promoted them into working memory.`,type:'decision'},
     people.length?{title:`People now front of mind: ${people.slice(0,3).map(p=>p.name).join(', ')}.`,type:'relationship_signal'}:null,
     projects.length?{title:`Projects now being watched: ${projects.slice(0,3).map(p=>p.name).join(', ')}.`,type:'opportunity'}:null,
-    preferences.length?{title:"Your working preferences are now part of VAL's operating context.",type:'preference'}:null
+    preferences.length?{title:"Your working preferences are now part of VAL's operating context.",type:'preference'}:null,
+    workingAgreements.length?{title:'Working agreements are waiting in VAL OS review.',type:'preference'}:null,
+    linkedinStrategy.length?{title:'LinkedIn strategy is held as draft-only visibility context.',type:'preference'}:null,
+    supportCircle.length?{title:`Support circle context added for ${supportCircle.length} item${supportCircle.length===1?'':'s'}.`,type:'relationship_signal'}:null,
+    documentExamples.length?{title:`Document and example references added for ${documentExamples.length} item${documentExamples.length===1?'':'s'}.`,type:'need'}:null
   ].filter(Boolean);
   const momentum=[
     {title:'Knowledge Increased',detail:`VAL is holding ${memories.length} onboarding item${memories.length===1?'':'s'} as active context.`,state:'up'},
     people.length?{title:'Relationships Front Of Mind',detail:people.slice(0,3).map(p=>p.name).join(', '),state:'up'}:null,
     projects.length?{title:'Projects Now Watched',detail:projects.slice(0,3).map(p=>p.name).join(', '),state:'watch'}:null,
+    workingAgreements.length?{title:'Operating Agreements Waiting',detail:'Review these in VAL OS before they become behavior.',state:'watch'}:null,
+    linkedinStrategy.length?{title:'LinkedIn Visibility Guarded',detail:'Draft, copy, and open only. No auto-publishing.',state:'watch'}:null,
     risks.length?{title:'Trust Guardrails Active',detail:`VAL is watching ${risks.length} risk, friction, or process signal${risks.length===1?'':'s'} you named.`,state:'risk'}:null
   ].filter(Boolean);
   const ready=[
     {title:'Onboarding memory is active in VAL',view:'teach_val'},
     people.length?{title:`${people.length} important relationship${people.length===1?'':'s'} ready for review`,view:'relationships'}:null,
     projects.length?{title:`${projects.length} project${projects.length===1?'':'s'} ready to anchor dashboard context`,view:'projects'}:null,
+    workingAgreements.length?{title:`${workingAgreements.length} working agreement${workingAgreements.length===1?'':'s'} ready for VAL OS review`,view:'val_os'}:null,
+    linkedinStrategy.length?{title:'LinkedIn strategy ready for draft-only review',view:'val_os'}:null,
+    supportCircle.length?{title:'Support circle ready to connect to relationships',view:'relationships'}:null,
+    documentExamples.length?{title:'Document examples ready to organize as references',view:'documents'}:null,
     {title:'Update what VAL knows anytime',view:'teach_val'}
   ].filter(Boolean);
   return {active:true,count:memories.length,whatChanged,people,projects,momentum,ready,recommendedMove:highest,learnedAt:memories[0]?.createdAt||''};
@@ -13584,14 +16168,18 @@ async function buildExecutiveBriefing(){
     down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
-  return {ok:true,generatedAt:new Date().toISOString(),whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
+  const dailyWitness=buildDailyWitnessGreeting({moves,profiles,onboardingMemory,evidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
+  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
+  const relationshipDossiers=(briefing.people||[]).map(p=>p.relationshipDossier).filter(Boolean).slice(0,4).map(relationshipDossierPromptContext).filter(Boolean);
   return [
+    briefing.dailyWitness?.display_greeting?`Daily Witness Greeting: ${briefing.dailyWitness.display_greeting.replace(/\n/g,' / ')}`:'',
     `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
     briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
     briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
+    relationshipDossiers.length?'Relationship Dossiers:\n'+relationshipDossiers.join('\n\n'):'',
     briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
     briefing.watching?.length?'Watching: '+briefing.watching.slice(0,5).map(m=>m.title).join('; '):''
   ].filter(Boolean).join('\n');
@@ -13664,6 +16252,83 @@ async function saveEvidenceLink(payload={}){
   }
   return row;
 }
+
+async function listEvidenceLinks({sourceType='',sourceId='',targetType='',targetId='',relationship='',limit=80}={}){
+  const capped=Math.max(1,Math.min(Number(limit)||80,200));
+  const matches=row=>{
+    if(sourceType&&row.sourceType!==sourceType&&row.source_type!==sourceType)return false;
+    if(sourceId&&String(row.sourceId||row.source_id||'')!==String(sourceId))return false;
+    if(targetType&&row.targetType!==targetType&&row.target_type!==targetType)return false;
+    if(targetId&&String(row.targetId||row.target_id||'')!==String(targetId))return false;
+    if(relationship&&String(row.relationship||'')!==String(relationship))return false;
+    return true;
+  };
+  if(DEMO_MODE)return (transcriptDemoArray('evidenceLinks')||[]).filter(matches).slice(0,capped);
+  await valDbReady;
+  if(pgPool){
+    const clauses=['tenant_id=$1','user_id=$2'],params=[tenantId(),VAL_USER_ID];
+    if(sourceType){params.push(sourceType);clauses.push(`source_type=$${params.length}`);}
+    if(sourceId){params.push(String(sourceId));clauses.push(`source_id=$${params.length}`);}
+    if(targetType){params.push(targetType);clauses.push(`target_type=$${params.length}`);}
+    if(targetId){params.push(String(targetId));clauses.push(`target_id=$${params.length}`);}
+    if(relationship){params.push(relationship);clauses.push(`relationship=$${params.length}`);}
+    params.push(capped);
+    const r=await dbQuery(`select * from val_evidence_links where ${clauses.join(' and ')} order by created_at desc limit $${params.length}`,params);
+    return r.rows.map(transcriptPgRow);
+  }
+  return transcriptFileArray(valStore(),'evidenceLinks').filter(matches).slice(0,capped);
+}
+
+async function saveRelationshipProjectLink(input={}){
+  const projectId=String(input.projectId||input.project_id||'').trim();
+  const relationshipId=String(input.relationshipId||input.relationship_id||input.contactId||input.contact_id||input.personId||input.person_id||input.email||input.name||'').trim();
+  if(!projectId||!relationshipId)return null;
+  const existing=(await listEvidenceLinks({sourceType:'relationship_profile',sourceId:relationshipId,targetType:'project_profile',targetId:projectId,relationship:'linked_to_project',limit:1}).catch(()=>[]))[0];
+  if(existing)return existing;
+  return saveEvidenceLink({
+    sourceType:'relationship_profile',
+    sourceId:relationshipId,
+    sourceLabel:input.relationshipName||input.name||input.email||relationshipId,
+    targetType:'project_profile',
+    targetId:projectId,
+    relationship:'linked_to_project',
+    summary:input.summary||`${input.relationshipName||input.name||relationshipId} is linked to ${input.projectName||projectId}.`,
+    confidence:input.confidence||0.72,
+    metadata:{
+      source:input.source||'relationship_project_link',
+      projectName:input.projectName||'',
+      relationshipName:input.relationshipName||input.name||'',
+      email:input.email||'',
+      contactId:input.contactId||input.contact_id||'',
+      noExternalAction:true
+    }
+  });
+}
+
+async function saveCalendarProjectLink(input={}){
+  const projectId=String(input.projectId||input.project_id||'').trim();
+  const calendarEventId=String(input.calendarEventId||input.eventId||input.id||'').trim();
+  if(!projectId||!calendarEventId)return null;
+  const existing=(await listEvidenceLinks({sourceType:'calendar_event',sourceId:calendarEventId,targetType:'project_profile',targetId:projectId,relationship:'meeting_context_for_project',limit:1}).catch(()=>[]))[0];
+  if(existing)return existing;
+  return saveEvidenceLink({
+    sourceType:'calendar_event',
+    sourceId:calendarEventId,
+    sourceLabel:input.title||input.summary||calendarEventId,
+    targetType:'project_profile',
+    targetId:projectId,
+    relationship:'meeting_context_for_project',
+    summary:input.summary||`${input.title||'Calendar event'} is context for ${input.projectName||projectId}.`,
+    confidence:input.confidence||0.68,
+    metadata:{
+      source:input.source||'calendar_project_link',
+      projectName:input.projectName||'',
+      attendees:Array.isArray(input.attendees)?input.attendees:[],
+      noExternalAction:true
+    }
+  });
+}
+
 async function clearEvidenceLinksForTranscript(transcriptId){
   if(!transcriptId) return;
   if(DEMO_MODE){
@@ -13939,32 +16604,12 @@ function cleanTranscriptSummaryForUi(summary,rawText=''){
   let clean=dashboardCleanText(executive);
   const valConversation=valConversationSummaryFromText(rawText);
   if(valConversation&&(!clean||/^User:\s*/i.test(clean)||transcriptLooksLikeProcessingPrompt(clean)))clean=valConversation;
-  if(transcriptSummaryLooksLikeExcerpt(clean,rawText))clean='';
   if(!clean||transcriptLooksLikeProcessingPrompt(clean)){
     const lines=String(rawText||'').split(/\n+/).map(x=>dashboardCleanText(x)).filter(Boolean);
-    const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40&&!transcriptSummaryLooksLikeExcerpt(line,rawText));
-    clean=useful?dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360):transcriptPendingSummary(rawText);
+    const useful=lines.find(line=>!transcriptLooksLikeProcessingPrompt(line)&&line.length>40)||lines.find(line=>line.length>20)||'Transcript saved. Open it to review the conversation.';
+    clean=dashboardShortText(useful,'Transcript saved. Open it to review the conversation.',360);
   }
-  if(transcriptSummaryLooksLikeExcerpt(clean,rawText))clean=transcriptPendingSummary(rawText);
   return dashboardShortText(clean,'Transcript saved. Open it to review the conversation.',420);
-}
-function transcriptUtteranceText(line=''){
-  return dashboardCleanText(String(line||'')
-    .replace(/^\s*[^|\n]{1,90}\|\s*(?:\d{1,2}:)?\d{2}(?::\d{2})?\s*/,'')
-    .replace(/^\s*[^:\n]{1,90}:\s*/,''));
-}
-function transcriptSummaryLooksLikeExcerpt(summary='',rawText=''){
-  const clean=dashboardCleanText(summary);
-  if(!clean||clean.length>260)return false;
-  const utterances=String(rawText||'').split(/\n+/).map(transcriptUtteranceText).filter(Boolean).slice(0,14);
-  return utterances.some(line=>line.length>=12&&(clean===line||clean.includes(line)||line.includes(clean)));
-}
-function transcriptPendingSummary(rawText=''){
-  const speakers=[...new Set(String(rawText||'').split(/\n+/).map(line=>{
-    const m=String(line||'').match(/^\s*([^|\n:]{2,90})\s*(?:\||:)/);
-    return m?dashboardCleanText(m[1]).replace(/\s*\d+$/,''):'';
-  }).filter(name=>name&&!/^\d|speaker|participant$/i.test(name)).slice(0,4))];
-  return 'Transcript captured'+(speakers.length?' with '+speakers.join(', '):'')+'. The full summary is still processing, so VAL is showing the raw transcript instead of pretending a transcript line is a summary.';
 }
 function valConversationSummaryFromText(rawText=''){
   const raw=String(rawText||'');
@@ -13980,14 +16625,8 @@ function valConversationSummaryFromText(rawText=''){
 function cleanTranscriptForUi(t={}){
   const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
   const title=cleanTranscriptTitleForUi(t.title||t.meetingTitle||'',raw,t.createdAt||t.meetingDatetime||'');
-  const deterministic=deterministicTranscriptNotes(raw);
-  let cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
-  if((transcriptSummaryLooksLikeExcerpt(cleanSummary,raw)||transcriptSmallTalk(cleanSummary))&&deterministic.executiveSummary)cleanSummary=dashboardShortText(deterministic.executiveSummary,'',420);
-  const summaryObj={...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary};
-  if((!summaryObj.relationshipUpdates||!summaryObj.relationshipUpdates.length)&&deterministic.keyPoints.length)summaryObj.relationshipUpdates=deterministic.keyPoints;
-  let tasks=Array.isArray(t.tasks)?t.tasks:[];
-  if(!tasks.length&&deterministic.tasks.length)tasks=deterministic.tasks.map((task,i)=>({...task,taskId:`suggested_${i}`,status:'suggested',needsApproval:true,virtual:true}));
-  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:summaryObj,tasks,taskCount:tasks.length||t.taskCount||0};
+  const cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
+  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
 }
 function isHardTranscriptProcessingFailure(t={}){
   const processing=String(t.processingStatus||t.status||'').toLowerCase();
@@ -14149,46 +16788,14 @@ function isTranscriptLikeType(type=''){
   const kind=String(type||'').toLowerCase();
   return !kind||['transcript','processed_transcript','voice_session','meeting_transcript','call_transcript','webhook'].includes(kind)||/(^|_)(transcript|recording)($|_)/.test(kind);
 }
-function jessaLooksLikeRandomTranscriptArtifact(text=''){
-  const raw=String(text||'');
-  if(/\b[A-Za-z0-9_-]{14,}\b/.test(raw)&&raw.length<1200)return true;
-  if(/\b(donor gift|DDV|come here and you're|donation rather than a donor gift|501\(c\)\(4\)|set the cold email outreach|burns the domain|nonprofit piece)\b/i.test(raw))return true;
-  if(/^(NOPE|Tom|DDV\b)/i.test(raw.trim()))return true;
-  return false;
-}
-function jessaLooksLikeBadDashboardArtifact(value=''){
-  if(!jessaRequiresKrispTranscripts())return false;
-  const raw=String(value||'');
-  if(jessaLooksLikeRandomTranscriptArtifact(raw))return true;
-  if(/\b(Close loop:\s*[A-Za-z0-9_-]{10,}|Draft for Jessa Grace\s*\||Speaker\s*\d+|michele julian|julianmethod)\b/i.test(raw))return true;
-  return false;
-}
-function jessaTrustedTranscriptRecord(record={}){
-  if(!jessaRequiresKrispTranscripts())return true;
-  const metadata=record.metadata||record.metadataJson||record.metadata_json||{};
-  const source=String(record.source||record.type||record.kind||metadata.source||metadata.provider||'');
-  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
-  const hay=[record.id||record.transcriptId||record.transcript_id||'',record.title||record.meetingTitle||record.meeting_title||'',raw,source,JSON.stringify(metadata||{})].join('\n');
-  if(jessaLooksLikeRandomTranscriptArtifact(hay))return false;
-  if(hasKrispTranscriptUrl(hay)||/\bkrisp\b/i.test(source)||metadata.krispDetected===true)return true;
-  const speakerTurns=(raw.match(/^\s*[^|:\n]{2,80}\s*(?:\||:)\s*(?:(?:\d{1,2}:)?\d{1,2}:\d{2}\s*)?.{12,}/gm)||[]).length;
-  return raw.length>=1800&&speakerTurns>=4;
-}
 function isNonTranscriptArtifact(record={}){
   const type=String(record.type||record.kind||record.metadata?.type||'').toLowerCase();
   const title=String(record.title||record.meetingTitle||record.metadata?.title||'');
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'');
   const combined=`${title}\n${raw}`;
-  const markdownActionSummary=/^\s*##\s*(Action Items|Key Points|Decisions|Summary)\b/im.test(raw)
-    && /(?:^|\n)\s*-\s*\[\s*\]\s+.+/m.test(raw)
-    && !/^\s*([^:\n]{2,80})\s*(?:\||:)\s*(?:\d{1,2}:)?\d{2}\b/m.test(raw);
-  const generatedMeetingNotes=/^\s*(Action Items|Key Points|Decisions|Summary)\s*:?\s*$/im.test(raw)
-    && /\b(Jessa|VAL|Ashley|client|user)\s+(?:to|will|should|needs?|wants?)\b/i.test(raw)
-    && !/^\s*([^:\n]{2,80})\s*(?:\||:)\s*(?:\d{1,2}:)?\d{2}\b/m.test(raw);
   if(['chat_memory','document_sent','planning','task','task_plan','draft','email_draft','relationship_memory','transcript_insight'].includes(type))return true;
   if(/\[(chat|relationship)_memory\]/i.test(combined))return true;
   if(/^\s*(planning|task)\s*:/i.test(title))return true;
-  if(markdownActionSummary||generatedMeetingNotes)return true;
   if(/\bHelp me brainstorm and plan this task\b/i.test(combined))return true;
   if(/\bThis task is really about\b/i.test(combined))return true;
   if(/\bGoal of this task\b/i.test(combined)&&/\bFor each step\b/i.test(combined))return true;
@@ -14212,7 +16819,6 @@ function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
   if(!raw) return false;
-  if(!jessaTrustedTranscriptRecord(record)) return false;
   if(isNonTranscriptArtifact(record)) return false;
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
@@ -14222,7 +16828,7 @@ function isUsableTranscriptArchiveRecord(record={}){
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
   if(!raw) return false;
-  return isUsableTranscriptArchiveRecord({id:row.transcriptId||row.transcript_id||'',type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,source:row.source||'',metadata:{source:row.source||'',krispDetected:row.krispDetected||row.krisp_detected}});
+  return isUsableTranscriptArchiveRecord({type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,metadata:{source:row.source||''}});
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
@@ -14321,45 +16927,6 @@ async function purgeJessaRecoveredNonKrispTranscripts(){
   const store=valStore();
   const archive=(store.transcripts||[]).filter(recoveredTranscriptWithoutKrisp);
   const index=transcriptFileArray(store,'transcriptIndex').filter(recoveredTranscriptWithoutKrisp);
-  ids=[...new Set([...archive.map(r=>r.id),...index.map(r=>r.transcriptId)].filter(Boolean))];
-  if(ids.length){
-    store.transcripts=(store.transcripts||[]).filter(row=>!ids.includes(row.id));
-    store.transcriptIndex=transcriptFileArray(store,'transcriptIndex').filter(row=>!ids.includes(row.transcriptId));
-    ['transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog'].forEach(key=>{store[key]=transcriptFileArray(store,key).filter(row=>!ids.includes(row.transcriptId));});
-    store.meetingTranscriptLinks=(store.meetingTranscriptLinks||[]).filter(row=>!ids.includes(row.transcriptId));
-    store.valDecisions=transcriptFileArray(store,'valDecisions').filter(row=>!(row.sourceType==='transcript'&&ids.includes(row.sourceId)));
-    store.memoryItems=(store.memoryItems||[]).filter(row=>!ids.includes(row.metadata?.transcriptId));
-    saveValStore(store);
-  }
-  return {deleted:ids.length,ids};
-}
-async function purgeJessaTranscriptArtifacts(){
-  if(!jessaRequiresKrispTranscripts())return {deleted:0,ids:[]};
-  await valDbReady;
-  let ids=[];
-  if(pgPool){
-    const indexed=(await dbQuery('select transcript_id,meeting_title,raw_transcript,source from transcripts where user_id=$1 order by created_at desc limit 500',[VAL_USER_ID])).rows;
-    const archived=(await dbQuery('select id,title,raw_text,metadata,type from val_transcripts where user_id=$1 order by created_at desc limit 500',[VAL_USER_ID])).rows;
-    ids=[...indexed.filter(row=>isNonTranscriptArtifact({type:'transcript',title:row.meeting_title,rawText:row.raw_transcript,metadata:{source:row.source}})).map(row=>row.transcript_id),...archived.filter(row=>isNonTranscriptArtifact({type:row.type,title:row.title,rawText:row.raw_text,metadata:row.metadata})).map(row=>row.id)];
-    ids=[...new Set(ids.filter(Boolean))];
-    if(ids.length){
-      await dbQuery('delete from transcript_action_log where transcript_id=any($1::text[])',[ids]).catch(()=>{});
-      await dbQuery('delete from transcript_contact_updates where transcript_id=any($1::text[])',[ids]).catch(()=>{});
-      await dbQuery('delete from transcript_tasks where transcript_id=any($1::text[])',[ids]).catch(()=>{});
-      await dbQuery('delete from transcript_summaries where transcript_id=any($1::text[])',[ids]).catch(()=>{});
-      await dbQuery('delete from transcript_participants where transcript_id=any($1::text[])',[ids]).catch(()=>{});
-      await dbQuery('delete from meeting_transcript_links where transcript_id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
-      await dbQuery("delete from val_decisions where source_type='transcript' and source_id=any($1::text[]) and user_id=$2",[ids,VAL_USER_ID]).catch(()=>{});
-      await dbQuery("delete from val_evidence_links where (source_type='transcript' and source_id=any($1::text[])) or (target_type like 'transcript%' and target_id=any($1::text[]))",[ids]).catch(()=>{});
-      await dbQuery("delete from val_memory_items where user_id=$2 and (metadata->>'transcriptId')=any($1::text[])",[ids,VAL_USER_ID]).catch(()=>{});
-      await dbQuery('delete from transcripts where transcript_id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
-      await dbQuery('delete from val_transcripts where id=any($1::text[]) and user_id=$2',[ids,VAL_USER_ID]).catch(()=>{});
-    }
-    return {deleted:ids.length,ids};
-  }
-  const store=valStore();
-  const archive=(store.transcripts||[]).filter(row=>isNonTranscriptArtifact(row));
-  const index=transcriptFileArray(store,'transcriptIndex').filter(row=>isNonTranscriptArtifact({type:'transcript',title:row.meetingTitle,rawText:row.rawTranscript,metadata:{source:row.source}}));
   ids=[...new Set([...archive.map(r=>r.id),...index.map(r=>r.transcriptId)].filter(Boolean))];
   if(ids.length){
     store.transcripts=(store.transcripts||[]).filter(row=>!ids.includes(row.id));
@@ -14869,13 +17436,18 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
+  const preparedMessages=messages.map(m=>{
+    let content=String(m.content||'');
+    if(json&&!/\bjson\b/i.test(content)) content += '\n\nReturn valid JSON.';
+    return {
+      role:m.role === 'assistant' ? 'assistant' : 'user',
+      content
+    };
+  });
   const body = {
     model:openAiModel,
     instructions:[system,HUMAN_VOICE_RULES].filter(Boolean).join('\n\n'),
-    input:messages.map(m=>({
-      role:m.role === 'assistant' ? 'assistant' : 'user',
-      content:String(m.content||'')
-    })),
+    input:preparedMessages,
     max_output_tokens:maxTokens,
     temperature
   };
@@ -17659,16 +20231,9 @@ async function executeValGhlAction(input={}){
     return {ok:true,action,contactId,tags,result:data,content:`${method==='DELETE'?'Removed':'Added'} tag${tags.length===1?'':'s'} ${tags.join(', ')} ${method==='DELETE'?'from':'to'} GHL contact ${contactId}.`};
   }
   if(action==='contact.note.create'){
-    let contactId=String(p.contactId||p.id||'').trim();
+    const contactId=String(p.contactId||p.id||'').trim();
     const body=String(p.body||p.note||p.text||'').trim();
-    if(!contactId&&(p.name||p.contactName||p.query)){
-      const q=String(p.name||p.contactName||p.query||'').trim();
-      const found=await ghlStrict('GET',`/contacts/?locationId=&query=${encodeURIComponent(q)}&limit=5`);
-      const contacts=(found.contacts||found.data||[]).map(compactContactResult);
-      if(contacts.length!==1) throw new Error(`Adding a contact note by name requires exactly one GHL contact match. Found ${contacts.length} for "${q}".`);
-      contactId=contacts[0].id;
-    }
-    if(!contactId) throw new Error('Adding a contact note requires contactId or one exact contact name match.');
+    if(!contactId) throw new Error('Adding a contact note requires contactId.');
     if(!body) throw new Error('Adding a contact note requires note text.');
     const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body});
     return {ok:true,action,contactId,note:data.note||data,content:`Added note to GHL contact ${contactId}.`};
@@ -17725,26 +20290,7 @@ async function executeValGhlAction(input={}){
 function likelyGhlMutationRequest(text=''){
   const q=String(text||'').toLowerCase();
   if(!/\b(ghl|go high level|gohighlevel|crm|contact|opportunit|pipeline|tag|note|task)\b/.test(q)) return false;
-  return /\b(create|add|update|edit|change|tag|untag|remove tag|note|not\s+in\s+ghl|task|upsert|find|search|look up|load|show)\b/.test(q);
-}
-function deterministicGhlActionFromText(text=''){
-  const raw=String(text||'').trim();
-  const note=raw.match(/\badd\s+a\s+not(?:e)?\s+in\s+ghl\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
-    || raw.match(/\badd\s+a\s+ghl\s+not(?:e)?\s+for\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
-    || raw.match(/\badd\s+a\s+ghl\s+not(?:e)?\s+to\s+(.+?)\s+(?:that\s+says|saying|with\s+the\s+note)\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i)
-    || raw.match(/\badd\s+a\s+not(?:e)?\s+to\s+ghl\s+contact\s+(.+?)\s+that\s+says\s+['"“”‘’]?([\s\S]+?)['"“”‘’]?\s*$/i);
-  if(note){
-    return {
-      shouldExecute:true,
-      action:'contact.note.create',
-      params:{
-        contactName:String(note[1]||'').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g,''),
-        body:String(note[2]||'').trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g,'')
-      },
-      deterministic:true
-    };
-  }
-  return null;
+  return /\b(create|add|update|edit|change|tag|untag|remove tag|note|task|upsert|find|search|look up|load|show)\b/.test(q);
 }
 function valOsExternalActionPacketRows(){
   const store=valStore();
@@ -17795,49 +20341,29 @@ function saveValOsExternalActionPacket(packet={}){
   saveValStore(store);
   return idx>=0?rows[idx]:clean;
 }
-function saveValOsAudit(event={}){
-  const now=new Date().toISOString();
-  const row={
-    id:event.id||uuid('vos_audit'),
-    tenantId:tenantId(),
-    userId:currentUserId(),
-    eventType:String(event.eventType||event.type||'val_os_event').slice(0,120),
-    resourceType:String(event.resourceType||'val_os').slice(0,120),
-    resourceId:String(event.resourceId||'').slice(0,220),
-    summary:String(event.summary||'VAL OS event recorded.').slice(0,1200),
-    metadata:redactSecurityValue(event.metadata||{}),
-    createdAt:event.createdAt||now
-  };
-  const store=valStore();
-  store.valOsAuditTrail=store.valOsAuditTrail||[];
-  store.valOsAuditTrail.unshift(row);
-  store.valOsAuditTrail=store.valOsAuditTrail.slice(0,500);
-  saveValStore(store);
-  return row;
-}
 function buildGhlExternalActionPacket(actionRequest={},sourceText=''){
   const {action,params}=normalizeGhlActionRequest(actionRequest);
   const p=params||{};
   const affected=[
     p.contactId||p.id?`Contact ${p.contactId||p.id}`:'',
-    p.contactName||p.name||p.fullName?`Name ${p.contactName||p.name||p.fullName}`:'',
     p.opportunityId?`Opportunity ${p.opportunityId}`:'',
     p.email?`Email ${p.email}`:'',
+    p.name||p.fullName?`Name ${p.name||p.fullName}`:'',
     p.title||p.task?`Task ${p.title||p.task}`:''
   ].filter(Boolean).join(' · ')||'GHL record shown in request';
   const willDo=[
     `Provider: GHL / CRM`,
     `Action: ${action.replace(/\./g,' ')}`,
     `Affected record: ${affected}`,
-    p.note||p.body||p.text?`Text: ${String(p.note||p.body||p.text).slice(0,500)}`:'',
+    p.note||p.body?`Text: ${String(p.note||p.body).slice(0,500)}`:'',
     p.tags?`Tags: ${Array.isArray(p.tags)?p.tags.join(', '):p.tags}`:''
   ].filter(Boolean).join('\n');
   return normalizeValOsExternalActionPacket({
     provider:'GHL',
     action,
     actionLabel:action.replace(/\./g,' '),
-    title:`Approve GHL action: ${action.replace(/\./g,' ')}`,
-    humanSummary:'VAL prepared this GHL action from your request. Approve once and VAL will do exactly this action.',
+    title:`Approve GHL MCP action: ${action.replace(/\./g,' ')}`,
+    humanSummary:'VAL prepared this GHL MCP action packet from Co-Work. Approve once and VAL will do exactly this action.',
     affectedRecord:affected,
     willDo,
     willNotDo:[
@@ -17847,17 +20373,21 @@ function buildGhlExternalActionPacket(actionRequest={},sourceText=''){
       'VAL will not do anything beyond this one approved GHL action.'
     ],
     rollbackPlan:'Use the GHL record, receipt, and audit trail to correct the note, task, tag, contact, or opportunity if needed.',
-    request:{provider:'ghl',action,params:p,sourceText:String(sourceText||'').slice(0,1200)}
+    request:{provider:'ghl',capability:'ghl_mcp_cowork_action_packet',action,params:p,sourceText:String(sourceText||'').slice(0,1200)}
   });
 }
 function valOsExternalActionEditableValue(key,value,previous){
   const raw=String(value??'').trim();
-  if(Array.isArray(previous)||key==='tags')return raw.split(/[,|\n]/).map(x=>x.trim()).filter(Boolean).slice(0,25);
+  if(Array.isArray(previous)||key==='tags'){
+    return raw.split(/[,|\n]/).map(x=>x.trim()).filter(Boolean).slice(0,25);
+  }
   if(previous&&typeof previous==='object'){
     try{
       const parsed=JSON.parse(raw);
       return parsed&&typeof parsed==='object'?parsed:previous;
-    }catch(e){return previous;}
+    }catch(e){
+      return previous;
+    }
   }
   if(typeof previous==='number'&&raw!==''&&!Number.isNaN(Number(raw)))return Number(raw);
   if(typeof previous==='boolean')return /^(true|yes|1)$/i.test(raw);
@@ -17909,7 +20439,14 @@ async function approveValOsExternalActionPacket(req,id){
     externalActionTaken:true,
     executedAt:new Date().toISOString()
   };
-  const saved=saveValOsExternalActionPacket({...packet,status:'executed',receipt,approvedAt:new Date().toISOString(),executedAt:receipt.executedAt,externalActionTaken:true});
+  const saved=saveValOsExternalActionPacket({
+    ...packet,
+    status:'executed',
+    receipt,
+    approvedAt:new Date().toISOString(),
+    executedAt:receipt.executedAt,
+    externalActionTaken:true
+  });
   const audit=saveValOsAudit({eventType:'external_action_packet_executed',resourceId:packet.id,summary:`Executed ${packet.provider} action: ${packet.actionLabel||packet.action}.`,metadata:{packetId:packet.id,provider:packet.provider,action:packet.action,externalActionTaken:true}});
   await auditLog({req,action:'val_os_external_action_packet_executed',resourceType:'val_os_external_action_packet',resourceId:packet.id,metadata:{provider:packet.provider,action:packet.action,externalActionTaken:true},success:true}).catch(()=>{});
   return {ok:true,packet:saved,receipt,audit};
@@ -17924,7 +20461,7 @@ async function inferGhlActionFromChat(text){
     'Return {"shouldExecute":false} unless the user is clearly asking to execute or retrieve a CRM action.',
     'Do not infer sending email, triggering workflows, deleting contacts, or changing automation settings.',
     'For contact.create/contact.upsert params may include firstName,lastName,name,email,phone,companyName,source,tags,note,city,state,country,website,customFields.',
-    'For updates/tags/tasks/opportunities include the needed IDs when supplied. For contact.note.create, if an ID is missing but a contact name is supplied, return contact.note.create with params.contactName or params.name and the note body. Do not guess a contact ID.'
+    'For updates/tags/notes/tasks/opportunities include the needed IDs when supplied. If an ID is missing but an email/name is supplied for tagging/note/task/update, return contact.search instead.'
   ].join('\n');
   const raw=await callValModel({system,user:String(text||''),maxTokens:700,temperature:0,json:true}).catch(()=>null);
   if(!raw) return null;
@@ -17983,17 +20520,6 @@ GOALL Agency lead intelligence: when the user asks to research a lead, identify 
 Document protocol: when drafting or sending proposals, scopes, emails, agreements, or PDF-ready documents, use only Confirmation Mode or Document Mode. In Confirmation Mode, confirm the recipient email before drafting/sending. In Document Mode, output exactly three blocks: DRAFT or FINAL, recipient email only, full document content. The first line of the document content must be Proposal: {Topic}, Subject: {Email Subject}, or Scope: {Topic}. FINAL is only used after explicit approval and confirmed recipient email; FINAL document content ends with: To send this now, click the Send button in the top right of this chat.
 
 Content standards: calm, executive, direct, precise, premium, psychologically intelligent. No emojis. No hype. Do not overpromise or invent pricing/scope. Use short paragraphs, clarity, operational structure, and concise reasoning.
-
-Deep conversational standard for every user-facing voice or chat response:
-- Sound like a present, emotionally intelligent partner, not a form, workflow, ticketing system, or status API.
-- First show that you understood the human meaning of what the user said. Then, if needed, name what you did or can do.
-- If the user corrects you, respond relationally before operationally. Own the miss lightly and warmly. Example: "Oh. I should have known that, Jessa. Of course that is you. And yes, you are still the most important person on any list. I will not save that as an outside contact."
-- If the user says not to save, remember, file, send, schedule, or act, do not do it. Acknowledge the preference and reassure them.
-- If the user gives personal context, interpret it like a trusted executive partner: what it means, why it matters, and what it changes for VAL.
-- Avoid generic receipt language like "Saved. I will use this context..." unless the user asked for a receipt. Prefer natural language: "Got it. I will treat that as context for how I support you going forward."
-- Ask a short follow-up when the context is emotionally or operationally ambiguous.
-- Be warm, specific, and occasionally lightly playful, while staying premium and calm.
-- Actionability still matters: after understanding, offer the clean next move.
 
 Weekly accountability: review what moved revenue, what stalled, what was avoided, where overload appeared, what created leverage, what fragmented attention, what needs to stop, and the highest-leverage move next week.
 
@@ -18121,17 +20647,7 @@ async function saveTranscriptEvidenceObservations({sourceId,title,transcript,par
   };
   for(const item of (Array.isArray(parsed.keyDecisions)?parsed.keyDecisions:[]).slice(0,20))push('decision',item,{confidence:0.8});
   for(const item of (Array.isArray(parsed.openQuestions)?parsed.openQuestions:[]).slice(0,20))push('question',item,{confidence:0.8,status:'open'});
-  const observationTypeForObject=item=>{
-    const category=String(item?.category||item?.type||'').toLowerCase();
-    if(/risk/.test(category))return 'risk';
-    if(/opportunity/.test(category))return 'opportunity';
-    if(/preference/.test(category))return 'preference';
-    if(/deadline|timeline|future meeting/.test(category))return 'deadline';
-    if(/idea/.test(category))return 'idea';
-    if(/project|fact|relationship|contact|dependency|goal/.test(category))return 'relationship_signal';
-    return item?.observationType||item?.type||'relationship_signal';
-  };
-  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,40))push(observationTypeForObject(item),item,{confidence:0.75});
+  for(const item of (Array.isArray(parsed.relationshipUpdates)?parsed.relationshipUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item,{confidence:0.75});
   for(const item of (Array.isArray(parsed.tasks)?parsed.tasks:Array.isArray(parsed.actionItems)?parsed.actionItems:[]).slice(0,30))push(item?.observationType||item?.type||'task',item,{confidence:0.75,status:'open'});
   for(const item of (Array.isArray(parsed.contactUpdates)?parsed.contactUpdates:[]).slice(0,20))push(item?.observationType||item?.type||'relationship_signal',item.reason||item.newValue||item,{confidence:Math.max(0.5,Number(item.confidence)||0.5)});
   for(const item of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,12))push('follow_up',item.body||item.message||item.subject||item,{confidence:Math.max(0.5,Number(item.confidence)||0.75),status:'draft_needed'});
@@ -18209,192 +20725,31 @@ function fallbackTranscriptSummary(transcript,notes='Processing fallback summary
   const lines=raw.split(/\n+/).map(line=>dashboardCleanText(line)).filter(Boolean);
   const usefulLines=lines.filter(line=>!transcriptLooksLikeProcessingPrompt(line));
   const text=(usefulLines.join(' ')||raw).replace(/\s+/g,' ').trim();
-  const deterministic=deterministicTranscriptNotes(raw);
   return {
-    executiveSummary:deterministic.executiveSummary||dashboardShortText(text,'Summary unavailable.',900),
+    executiveSummary:dashboardShortText(text,'Summary unavailable.',900),
     clientSummary:'',
     internalNotes:notes,
     keyDecisions:lines.filter(line=>/\b(decided|agreed|approved|selected|chose)\b/i.test(line)).slice(0,10),
     openQuestions:lines.filter(line=>/\?$/.test(line)).slice(0,10),
-    relationshipUpdates:deterministic.keyPoints,
-    tasks:deterministic.tasks,
+    relationshipUpdates:[],
+    tasks:lines.filter(line=>/\b(I|we)\s+(will|need to|can|should)|\b(follow up|send|schedule|review|prepare|update|introduce)\b/i.test(line)&&!/\b(already|completed|finished|sent)\b/i.test(line)).slice(0,12).map(line=>({taskTitle:cleanTaskTitle(line),taskDescription:'Commitment extracted by the deterministic fallback processor.',assignedToName:'',dueDate:null,priority:'medium',confidence:0.55,sourceQuote:line})),
     contactUpdates:[],
     followupDrafts:[]
   };
 }
-function transcriptTimedSegments(raw=''){
-  const lines=String(raw||'').split(/\n+/),segments=[];let current=null;
-  const flush=()=>{if(current&&current.text.trim())segments.push({...current,text:dashboardCleanText(current.text)});current=null;};
-  for(const line of lines){
-    const clean=String(line||'').trim();if(!clean)continue;
-    const m=clean.match(/^\s*([^|\n]{2,90})\s*\|\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s*(.*)$/);
-    if(m){flush();current={speaker:dashboardCleanText(m[1]),time:m[2],text:m[3]||''};continue;}
-    if(current)current.text+=' '+clean;else segments.push({speaker:'',time:'',text:dashboardCleanText(clean)});
-  }
-  flush();
-  return segments.filter(s=>s.text&&!transcriptLooksLikeProcessingPrompt(s.text));
-}
-function transcriptBusinessSignal(text=''){
-  return /\b(ghl|go\s*high\s*level|deliverability|delivery|email|rsvp|meeting reminder|reminder email|warm(?:ing)?|spam|opened?|sent|statistics|stats|snapshot|button|text jessa|following morning|diagnos|workflow|contacts?|attendance|opportunity|risk|agreed|confirmed|decided|review|check|send|write|create|add|evaluate)\b/i.test(String(text||''));
-}
-function transcriptSmallTalk(text=''){
-  return /\b(good morning|how are you|weather|heat wave|storm|brown|blue|violet|beautiful|purple|sweaty|grossness|parking|mouse pad|i'm working|where are you|waiting for you|pop up|not here yet|get up)\b/i.test(String(text||''));
-}
-function deterministicTranscriptNotes(raw=''){
-  const segments=transcriptTimedSegments(raw),business=segments.filter(s=>transcriptBusinessSignal(s.text)&&!transcriptSmallTalk(s.text));
-  const full=segments.map(s=>`${s.speaker?`${s.speaker} `:''}${s.time?`${s.time} `:''}${s.text}`).join(' ');
-  const explicitTasks=[];
-  const explicitRe=/\b([A-Z][a-z]+)\s+to\s+([^.\n]{12,180})(?:\.|\n|$)/g;
-  let match;
-  while((match=explicitRe.exec(full))&&explicitTasks.length<12){
-    const owner=match[1],body=dashboardCleanText(match[2]);
-    if(transcriptBusinessSignal(body))explicitTasks.push({taskTitle:`${owner} to ${body}`,taskDescription:'Commitment extracted from transcript notes.',assignedToName:owner,dueDate:null,priority:'medium',confidence:0.82,sourceQuote:`${owner} to ${body}`});
-  }
-  for(const seg of business){
-    if(explicitTasks.length>=12)break;
-    const text=seg.text;
-    const action=text.match(/\b(?:I|we|you|Ashley|Jessa)\s+(?:will|need to|needs to|should|can|could|want to|wants to|agreed to|confirmed|offered to)\s+([^.!?]{12,180})/i)||text.match(/\b(send|write|create|add|review|check|evaluate|text|draft)\s+([^.!?]{12,180})/i);
-    if(!action)continue;
-    const phrase=dashboardCleanText(action[1]&&action[2]?`${action[1]} ${action[2]}`:action[1]);
-    if(!phrase||transcriptSmallTalk(phrase)||!transcriptBusinessSignal(phrase))continue;
-    const owner=/ashley/i.test(text)?'Ashley':(/jessa/i.test(text)||/^\s*i\b/i.test(text)?(seg.speaker||'Jessa'):'');
-    const sourceQuote=dashboardShortText(`${seg.time?seg.time+' ':''}${text}`,'',240);
-    if(explicitTasks.some(t=>looseNameScore(t.sourceQuote,sourceQuote)>0.7||t.taskTitle.toLowerCase().includes(phrase.slice(0,28).toLowerCase())))continue;
-    explicitTasks.push({taskTitle:cleanTaskTitle(`${owner?owner+' to ':''}${phrase}`),taskDescription:'Commitment extracted from transcript context.',assignedToName:owner,dueDate:null,priority:'medium',confidence:0.72,sourceQuote});
-  }
-  const keyPoints=business.map(seg=>dashboardShortText(`${seg.text}${seg.time?' '+seg.time:''}`,'',240)).filter((v,i,a)=>v&&a.findIndex(x=>x.slice(0,80)===v.slice(0,80))===i).slice(0,8);
-  const executiveSummary=keyPoints.length?dashboardShortText(keyPoints.slice(0,3).join(' '),'',700):'';
-  return {executiveSummary,keyPoints,tasks:explicitTasks};
-}
-const TRANSCRIPT_OBJECT_TYPES=['Meeting Goal','Decision','Decision Needed','Action Item','Risk','Idea','Question','Relationship Insight','Personal Preference','Project Update','Important Fact','Task Dependency','Contact Information','Timeline','Future Meeting'];
-function transcriptObjectText(value){
-  if(!value)return '';
-  if(typeof value==='string')return dashboardCleanText(value);
-  return dashboardCleanText(value.title||value.summary||value.decision||value.question||value.action||value.fact||value.update||value.risk||value.idea||value.preference||value.dependency||value.timeline||value.meeting||value.content||value.text||'');
-}
-function normalizeTranscriptObject(category,value={}){
-  const text=transcriptObjectText(value);
-  if(!text)return null;
-  const quote=value.sourceQuote||value.supportingQuote||value.quote||value.evidence||'';
-  return {
-    category,
-    title:dashboardShortText(value.title||value.decision||value.question||value.action||text,'',180),
-    summary:dashboardShortText(value.summary||value.reason||value.discussion||value.context||text,'',520),
-    owner:value.owner||value.assignedToName||value.person||value.contactName||null,
-    speaker:value.speaker||value.speakerName||null,
-    timestamp:value.timestamp||value.time||value.timecode||null,
-    relatedPeople:Array.isArray(value.relatedPeople)?value.relatedPeople:(value.relatedPerson?[value.relatedPerson]:[]),
-    relatedProject:value.relatedProject||value.project||null,
-    relatedCompany:value.relatedCompany||value.company||null,
-    status:value.status||null,
-    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.72)),
-    sourceQuote:quote
-  };
-}
-function transcriptActionIsSpecific(item={}){
-  const title=dashboardCleanText(item.taskTitle||item.title||item.action||'');
-  const description=dashboardCleanText(item.taskDescription||item.description||item.summary||'');
-  const quote=dashboardCleanText(item.sourceQuote||item.supportingQuote||item.quote||'');
-  const text=[title,description,quote].filter(Boolean).join(' ');
-  if(title.length<18)return false;
-  const vaguePronoun=/\b(this|that|these|those|it|thing|stuff|whatever)\b/i;
-  const concreteAnchor=/\b(Michelle|Jessa|Julian|VAL|Chapter\s*\d+|GoHighLevel|GHL|Facebook|calendar|invite|passport|ticket|button|talk button|followup|follow-up|email|document|draft|meeting|project|contact|HopeMakers|Grace Intelligence|Help by Shopping)\b/i;
-  if(/\b(check that|send something|send it|send from high level|do that|follow up on that|look into it|handle this|circle back|write the revision|write the revisionless|draft as a response|send this email|move that button|get that check)\b/i.test(title))return false;
-  if(vaguePronoun.test(title)&&!concreteAnchor.test(title))return false;
-  if(/\b(Speaker\s*\d+|Unknown|Unclear)\b/i.test(title))return false;
-  if(/\b(i chose|you chose|you wanted|now i'm ready|unless there'?s|one last thing|all of these things|what you actively have chosen)\b/i.test(text))return false;
-  if(!/\b(send|draft|write|create|add|check|review|confirm|schedule|reschedule|update|monitor|ask|prepare|share|verify|call|email|text|move|discuss|rework|use|break|watch|buy|program|tweak|make)\b/i.test(title))return false;
-  if(!/\b(email|reminder|GoHighLevel|GHL|RSVP|recipient|list|deliverability|meeting|follow[-\s]?up|draft|document|statistics|stats|task|project|contact|Michelle|Julian|VAL|Chapter|button|talk button|passport|ticket|calendar|invite|Ashley|Jessa|Greg|Westwood|HopeMakers)\b/i.test(text))return false;
-  return true;
-}
-function normalizeTranscriptTask(item={}){
-  const title=cleanTaskTitle(item.taskTitle||item.title||item.action||item.nextAction||'');
-  const task={...item,taskTitle:title,taskDescription:item.taskDescription||item.description||item.summary||item.reason||'',assignedToName:item.assignedToName||item.owner||item.person||item.contactName||'',dueDate:item.dueDate||item.deadline||item.due_at||null,priority:item.priority||'medium',confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.72)),sourceQuote:item.sourceQuote||item.supportingQuote||item.quote||item.evidence||''};
-  return transcriptActionIsSpecific(task)?task:null;
-}
-function transcriptProviderActionItems(payload={}){
-  const metadata=payload.metadata||{};
-  return uniqueTranscriptActionItems([
-    ...(Array.isArray(payload.actionItems)?payload.actionItems:[]),
-    ...(Array.isArray(payload.action_items)?payload.action_items:[]),
-    ...(Array.isArray(payload.tasks)?payload.tasks:[]),
-    ...(Array.isArray(metadata.providerActionItems)?metadata.providerActionItems:[]),
-    ...transcriptActionItemsFromPayloadValue(metadata.providerNoteText||'')
-  ].map(transcriptActionItemFromValue).filter(Boolean));
-}
-function mergeTranscriptTaskLists(primary=[],secondary=[]){
-  const merged=[],seen=new Set();
-  for(const item of [...(primary||[]),...(secondary||[])]){
-    const normalized=normalizeTranscriptTask(item);
-    if(!normalized)continue;
-    const key=String(normalized.taskTitle||'').toLowerCase().replace(/\W+/g,' ').trim().slice(0,120);
-    if(!key||seen.has(key))continue;
-    seen.add(key);
-    merged.push(normalized);
-  }
-  return merged.slice(0,20);
-}
-function normalizeTranscriptAnalysis(parsed={},raw=''){
-  const out={...parsed};
-  const objectGroups=[
-    ['Meeting Goal',(out.meetingGoals||out.meetingGoal)?[].concat(out.meetingGoals||out.meetingGoal):[]],
-    ['Decision',out.decisions||out.keyDecisions||[]],
-    ['Decision Needed',out.decisionNeeded||out.decisionsNeeded||[]],
-    ['Question',out.openQuestions||out.questions||[]],
-    ['Risk',out.risks||[]],
-    ['Idea',out.ideas||[]],
-    ['Relationship Insight',out.relationshipInsights||out.relationshipUpdates||[]],
-    ['Personal Preference',out.personalPreferences||[]],
-    ['Project Update',out.projectUpdates||out.projectsUpdated||[]],
-    ['Important Fact',out.importantFacts||out.facts||[]],
-    ['Task Dependency',out.taskDependencies||[]],
-    ['Contact Information',out.contactInformation||out.contactUpdates||[]],
-    ['Timeline',out.timelines||out.timeline||[]],
-    ['Future Meeting',out.futureMeetings||[]]
-  ];
-  const objects=[];
-  for(const [category,items] of objectGroups){
-    for(const item of (Array.isArray(items)?items:[items]).filter(Boolean)){
-      const normalized=normalizeTranscriptObject(category,item);
-      if(normalized)objects.push(normalized);
-    }
-  }
-  out.keyDecisions=objects.filter(o=>o.category==='Decision');
-  out.openQuestions=objects.filter(o=>o.category==='Decision Needed'||o.category==='Question');
-  out.relationshipUpdates=objects.filter(o=>!['Decision','Decision Needed','Question'].includes(o.category));
-  const taskItems=[...(Array.isArray(out.tasks)?out.tasks:[]),...(Array.isArray(out.actionItems)?out.actionItems:[])];
-  out.tasks=taskItems.map(normalizeTranscriptTask).filter(Boolean).slice(0,20);
-  out.structuredObjects=objects;
-  if(!out.clientSummary&&out.whatChanged)out.clientSummary=out.whatChanged;
-  if(!out.internalNotes&&objects.length)out.internalNotes=`Extracted ${objects.length} structured meeting object${objects.length===1?'':'s'} from direct transcript evidence.`;
-  return mergeTranscriptDeterministicNotes(out,raw);
-}
-function mergeTranscriptDeterministicNotes(parsed={},raw=''){
-  const deterministic=deterministicTranscriptNotes(raw);
-  const out={...parsed};
-  const existingTasks=Array.isArray(out.tasks)?out.tasks:(Array.isArray(out.actionItems)?out.actionItems:[]);
-  const existingPoints=[...(Array.isArray(out.relationshipUpdates)?out.relationshipUpdates:[]),out.clientSummary,out.internalNotes].filter(Boolean);
-  if((existingTasks.length<1||existingTasks.every(t=>/deterministic fallback processor|transcript fragment/i.test([t.taskDescription,t.taskTitle].filter(Boolean).join(' '))))&&deterministic.tasks.length)out.tasks=deterministic.tasks;
-  if(existingPoints.length<2&&deterministic.keyPoints.length)out.relationshipUpdates=deterministic.keyPoints;
-  if((!out.executiveSummary||transcriptSummaryLooksLikeExcerpt(out.executiveSummary,raw)||transcriptSmallTalk(out.executiveSummary))&&deterministic.executiveSummary)out.executiveSummary=deterministic.executiveSummary;
-  return out;
-}
 async function processTranscriptPayload(payload){
   const transcript=String(payload.transcript||payload.rawText||'').trim();if(!transcript)throw new Error('Missing transcript');
-  const providerTasks=transcriptProviderActionItems(payload);
   const title=transcriptDisplayTitleFromPayload(payload,transcript),sourceId=payload.savedTranscriptId||payload.id||payload.transcriptId||payload.sourceId;if(!sourceId)throw new Error('Transcript must be saved before processing');
   await updateTranscriptIndexStatus(sourceId,{meetingTitle:title,calendarEventId:payload.meetingMatch?.calendarEventId||payload.meetingMatch?.meetingEventId||payload.calendarEventId||payload.calendar_event_id||'',meetingDatetime:payload.meetingMatch?.startTime||payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||null});
   await clearTranscriptStaging(sourceId);await updateTranscriptIndexStatus(sourceId,{processingStatus:'matching_participants',summaryStatus:'pending'});
   const participants=await matchTranscriptParticipants(payload,sourceId,transcript).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','participant_matching','failed',e.message).catch(()=>{});return [];});
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'summarizing'});
-  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Do not summarize the transcript as prose. Classify direct evidence into structured meeting objects that another employee could act on without hearing the meeting.','Allowed object types: '+TRANSCRIPT_OBJECT_TYPES.join(', ')+'.','Ignore greetings, weather, audio checks, small talk, and setup chatter unless it changes the business meaning. The overview must describe what changed because of the meeting.','Required keys: executiveSummary, clientSummary, internalNotes, meetingGoals, decisions, decisionNeeded, openQuestions, risks, ideas, relationshipInsights, personalPreferences, projectUpdates, importantFacts, taskDependencies, contactInformation, timelines, futureMeetings, tasks, contactUpdates, followupDrafts.','Every object must include: title, summary, speaker, timestamp, owner, relatedPeople, relatedProject, relatedCompany, confidence (0-1), sourceQuote copied exactly from the transcript. Use null or [] when unknown.','tasks are only true action items. They must include taskTitle, taskDescription, assignedToName, dueDate, priority, confidence, sourceQuote. A task must pass this test: could another employee complete it without hearing the meeting? If not, omit it.','Think like the transcript chat: identify the real commitment, owner, object, and context. The taskTitle should read like a clean Actions item, not a copied transcript fragment.','Rewrite pronouns and fragments into concrete tasks only when the source evidence supports the full meaning. Example: output "Jessa will move Michelle’s talk button to the top", not "move that button to the top instead". Example: output "Michelle and Julian will discuss the three Chapter 4 improvement areas", not "write the revision".','Reject tasks that are only interface chatter, unclear pronouns, incomplete excerpts, or broad discussion topics without an owner/action. Do not output "send this email", "write the revision", "draft as a response", "get that check", or speaker-number tasks.','Never guess identity, owner, project, company, deadline, or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
+  const system=[VAL_SYSTEM_PROMPT,'Create safe, auditable transcript intelligence. Return strict JSON only.','Required keys: executiveSummary, clientSummary, internalNotes, keyDecisions, openQuestions, relationshipUpdates, tasks, contactUpdates, followupDrafts.','tasks: taskTitle, taskDescription, assignedToName, dueDate, priority, confidence (0-1), sourceQuote copied exactly from transcript.','contactUpdates: contactName, contactId if known, fieldToUpdate, oldValue, newValue, reason, confidence (0-1), sourceQuote copied exactly.','Never guess identity or assignment. Use null and low confidence when unclear. Do not extract completed work as a task.'].join('\n');
   let parsed={},modelFailed='';
-  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nProvider-supplied action items from Krisp or webhook notes:\n${providerTasks.length?JSON.stringify(providerTasks.slice(0,20)):'None supplied.'}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
+  try{const raw=await callValModel({system,user:`Meeting: ${title}\n\nTranscript:\n${transcript.slice(0,30000)}`,maxTokens:2600,temperature:0.15,json:true});parsed=JSON.parse(raw);}
   catch(e){
     modelFailed=e.message;parsed=fallbackTranscriptSummary(transcript,'Automated fallback summary; model processing needs review.');
   }
-  parsed=normalizeTranscriptAnalysis(parsed,transcript);
-  parsed.tasks=mergeTranscriptTaskLists(parsed.tasks,providerTasks);
   const summary=await saveTranscriptSummary(sourceId,parsed);await updateTranscriptIndexStatus(sourceId,{summaryStatus:modelFailed?'fallback_complete':'complete',processingStatus:'extracting_actions'});
   const observations=await saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary}).catch(e=>{logTranscriptAction(sourceId,'failed_action','evidence_observations','failed',e.message).catch(()=>{});return [];});
   const canonicalPipeline=await saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations}).catch(e=>{logTranscriptAction(sourceId,'failed_action','canonical_pipeline','failed',e.message).catch(()=>{});return null;});
@@ -18472,50 +20827,6 @@ function transcriptTextFromNoteValue(value,depth=0){
     return ['note','notes','summary','meetingNote','meeting_note','generatedNote','generated_note','memo','sections','items','bullets','actionItems','action_items'].map(k=>transcriptTextFromNoteValue(value[k],depth+1)).filter(Boolean).join('\n');
   }
   return '';
-}
-function transcriptActionItemFromValue(value){
-  if(!value)return null;
-  if(typeof value==='string')return {taskTitle:cleanAutoTaskTitle(value),taskDescription:'Provider-supplied action item.',sourceQuote:value,confidence:0.86};
-  if(typeof value!=='object')return null;
-  const title=value.taskTitle||value.title||value.action||value.text||value.content||value.summary||value.description||value.name||'';
-  if(!title)return null;
-  return {
-    taskTitle:cleanAutoTaskTitle(title),
-    taskDescription:value.taskDescription||value.description||value.notes||value.note||value.context||value.summary||'Provider-supplied action item.',
-    assignedToName:value.assignedToName||value.assignee||value.owner||value.person||value.name||value.responsible||'',
-    dueDate:value.dueDate||value.due_date||value.deadline||value.date||null,
-    priority:value.priority||'medium',
-    confidence:Math.max(0,Math.min(1,Number(value.confidence)||0.86)),
-    sourceQuote:value.sourceQuote||value.quote||value.evidence||value.text||value.content||title
-  };
-}
-function transcriptActionItemsFromPayloadValue(value,depth=0){
-  if(depth>4||!value)return [];
-  if(Array.isArray(value))return value.flatMap(item=>transcriptActionItemsFromPayloadValue(item,depth+1));
-  if(typeof value==='string')return splitAutoTaskText(value).map(line=>transcriptActionItemFromValue(line)).filter(Boolean);
-  if(typeof value!=='object')return [];
-  const directKeys=['actionItems','action_items','actions','tasks','taskItems','task_items','todos','toDos','to_dos','followUps','followups','nextSteps','next_steps'];
-  const direct=directKeys.flatMap(key=>transcriptActionItemsFromPayloadValue(value[key],depth+1));
-  if(direct.length)return direct;
-  const nestedKeys=['sections','items','bullets','children','blocks','content'];
-  const hasNested=nestedKeys.some(key=>value[key]!==undefined);
-  const standalone=transcriptActionItemFromValue(value);
-  if(standalone&&!hasNested)return [standalone];
-  const title=String(value.title||value.heading||value.name||value.label||'');
-  const sectionText=transcriptTextFromNoteValue(value);
-  if(/\b(action items?|tasks?|to[-\s]?dos?|next steps?|follow[-\s]?ups?)\b/i.test(title)&&sectionText){
-    return splitAutoTaskText(sectionText).map(line=>transcriptActionItemFromValue(line)).filter(Boolean);
-  }
-  return nestedKeys.flatMap(key=>transcriptActionItemsFromPayloadValue(value[key],depth+1));
-}
-function uniqueTranscriptActionItems(items=[]){
-  const seen=new Set();
-  return (items||[]).filter(Boolean).filter(item=>{
-    const key=String(item.taskTitle||item.title||item.sourceQuote||'').toLowerCase().replace(/\W+/g,' ').trim().slice(0,120);
-    if(!key||seen.has(key))return false;
-    seen.add(key);
-    return true;
-  }).slice(0,30);
 }
 function transcriptTurnSpeaker(turn={}){
   const speaker=turn.speaker||turn.speakerName||turn.speaker_name||turn.name||turn.author||turn.participant||turn.user||turn.person||{};
@@ -18599,11 +20910,6 @@ function normalizedTranscriptWebhookPayload(body={}){
   const transcriptTurns=transcriptTurnsFromValue(root).concat(transcriptTurnsFromValue(transcriptObject)).filter(Boolean);
   const segmentText=[...new Set(transcriptTurns)].join('\n');
   const noteText=transcriptTextFromNoteValue(note)||transcriptFirstString(root.summary,root.notes,root.note,root.meetingNote,root.meeting_note,root.generatedNote,root.generated_note,meeting.summary,meeting.notes,meeting.note);
-  const providerActionItems=uniqueTranscriptActionItems([
-    ...transcriptActionItemsFromPayloadValue(root.actionItems||root.action_items||root.actions||root.tasks||root.taskItems||root.task_items||root.todos||root.nextSteps||root.next_steps),
-    ...transcriptActionItemsFromPayloadValue(note),
-    ...transcriptActionItemsFromPayloadValue(noteText)
-  ]);
   const transcriptText=transcriptFirstString(root.transcript,root.rawText,root.raw_text,root.rawContent,root.raw_content,root.rawMeeting,root.raw_meeting,root.transcriptText,root.transcript_text,root.text,root.content,root.body,root.plainText,root.plain_text,root.fullText,root.full_text,transcriptObject.text,transcriptObject.content,transcriptObject.plainText,transcriptObject.fullText,meeting.transcript,meeting.text,meeting.rawContent,meeting.raw_content,segmentText,noteText);
   const rawTitle=transcriptFirstString(root.title,root.meetingTitle,root.meeting_title,root.meetingName,root.meeting_name,root.callTitle,root.call_title,root.callName,root.call_name,root.name,transcriptObject.title,meeting.title,meeting.name,note.title,note.name,body.title);
   const source=transcriptFirstString(root.source,root.provider,root.platform,body.source)||(/krisp/i.test(JSON.stringify(body).slice(0,2000))?'krisp':'webhook');
@@ -18613,12 +20919,13 @@ function normalizedTranscriptWebhookPayload(body={}){
     if(/^(transcript|raw_?text|transcript_?text|text|content|body|plain_?text|full_?text|segments|sentences|utterances|speaker_?turns|turns|items|entries|paragraphs)$/i.test(key))continue;
     sourcePayloadMetadata[key]=value&&typeof value==='object'?JSON.parse(JSON.stringify(value,(nestedKey,nestedValue)=>/^(transcript|raw_?text|transcript_?text|text|content|body|segments|sentences)$/i.test(nestedKey)?undefined:nestedValue)):value;
   }
-  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript',providerNoteText:noteText,providerActionItems};
+  const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript'};
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
+    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
@@ -18633,6 +20940,7 @@ app.get('/api/val/transcripts',async(req,res)=>{
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
   try{
+    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const data=await transcriptIndexData();
     const review=transcriptReviewData(data);
     const validIds=new Set((data.transcripts||[]).filter(isUsableTranscriptIndexRow).map(row=>String(row.transcriptId)));
@@ -18645,6 +20953,7 @@ app.get('/api/val/transcripts/review',async(req,res)=>{
 });
 app.get('/api/val/transcripts/intake-status',async(req,res)=>{
   try{
+    const purge=await purgeJessaRecoveredNonKrispTranscripts().catch(e=>({deleted:0,error:e.message}));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||3650));
     const [visibleData,rawIndex,legacyRows,memoryRows,auditRows,meetingLinks]=await Promise.all([
       transcriptIndexData().catch(()=>({transcripts:[]})),
@@ -18678,8 +20987,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
         webhookAcceptedWithoutTranscriptText:noTextWebhookAudit.length,
         krispLinkedRows:krispLinkedRows.length,
         meetingLinks,
-        purgedRecoveredTrash:0,
-        purgedTranscriptArtifacts:0
+        purgedRecoveredTrash:purge.deleted||0
       },
       latestRawTranscript:latestRaw?{id:latestRaw.transcriptId||latestRaw.id||'',title:latestRaw.meetingTitle||latestRaw.title||'',source:latestRaw.source||latestRaw.type||'',createdAt:latestRaw.createdAt||latestRaw.created_at||'',characters:String(latestRaw.rawTranscript||latestRaw.raw_transcript||latestRaw.rawText||'').length}:null,
       hiddenSamples:hiddenIndex.concat(hiddenLegacy).slice(0,8).map(row=>({id:row.transcriptId||row.id||'',title:row.meetingTitle||row.title||'',source:row.source||row.type||'',reason:isNonTranscriptArtifact({title:row.meetingTitle||row.title||'',rawText:row.rawTranscript||row.raw_transcript||row.rawText||'',type:row.type||'transcript'})?'filtered as prompt/artifact':'filtered as unusable transcript',createdAt:row.createdAt||row.created_at||''})),
@@ -18692,6 +21000,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
 });
 app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
   try{
+    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
     const limit=Math.max(1,Math.min(25,Number(req.body?.limit)||20));
@@ -18718,6 +21027,7 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
+    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=await attachCanonicalTranscriptDetail(transcriptDetailFromIndex(data,data.transcripts[0]));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
@@ -18725,149 +21035,6 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-function transcriptChatWantsTaskCreation(question=''){
-  return /\b(add|create|save|put|turn|make|file)\b[\s\S]{0,80}\b(tasks?|actions?|to[-\s]?dos?|open loops?)\b/i.test(question)
-    || /\b(add|create|save)\s+(these|those|them|all of (these|those))\b/i.test(question)
-    || /\bput (these|those|them) in (my )?(tasks?|actions?)\b/i.test(question);
-}
-function transcriptChatRefersToPriorList(question=''){
-  return /\b(these|those|them|the above|that list|all of (these|those|them)|the tasks you listed|the ones you listed|individual tasks)\b/i.test(question);
-}
-function transcriptChatDirectTaskTitle(question=''){
-  const text=String(question||'').trim();
-  if(!text) return '';
-  if(transcriptChatRefersToPriorList(text)||/\b(all|every|from (this|the) transcript|task list|tasks and assignees|action items?)\b/i.test(text)) return '';
-  const quoted=text.match(/['"“”]([^'"“”]{4,160})['"“”]/);
-  if(quoted?.[1]) return cleanAutoTaskTitle(quoted[1]);
-  const patterns=[
-    /\b(?:add|create|save|file)\s+(?:a|an|one)?\s*(?:new\s*)?(?:action item|task|to[-\s]?do)\s+(?:to\s+)?(.{4,180})$/i,
-    /\b(?:add|create|save|file)\s+(.{4,180})\s+(?:as|to)\s+(?:a|an|my)?\s*(?:action item|task|to[-\s]?do)\b/i
-  ];
-  for(const pattern of patterns){
-    const match=text.match(pattern);
-    if(match?.[1]){
-      return cleanAutoTaskTitle(match[1].replace(/\bfor this (contact|person|relationship|transcript)\b\.?$/i,''));
-    }
-  }
-  return '';
-}
-async function createDirectTranscriptChatTask({transcript,question,title}){
-  const taskTitle=cleanAutoTaskTitle(title);
-  if(!taskTitle) return null;
-  const contactName=transcript.contactName||transcript.primaryContactName||transcript.matchedContactName||'';
-  const task={
-    id:uuid('task'),
-    title:taskTitle,
-    contactName,
-    dueDate:null,
-    notes:[
-      'User-created from transcript chat.',
-      transcript.title?`Transcript: ${transcript.title}`:'',
-      question?`User request: ${question}`:''
-    ].filter(Boolean).join('\n\n'),
-    details:[{
-      text:`Created directly from transcript chat${transcript.title?`: ${transcript.title}`:''}.`,
-      ts:new Date().toISOString(),
-      transcriptId:transcript.id||'',
-      transcriptTitle:transcript.title||''
-    }],
-    completed:false,
-    source:'transcript_chat',
-    sourceId:transcript.id||'',
-    transcriptId:transcript.id||'',
-    transcriptTitle:transcript.title||'',
-    createdAt:new Date().toISOString()
-  };
-  await saveTask(task);
-  await saveEvidenceLink({sourceType:'transcript',sourceId:transcript.id||'',sourceLabel:transcript.title||'',targetType:'task',targetId:task.id,relationship:'user_created_task_from_chat',summary:task.title,confidence:1,metadata:{contactName}}).catch(()=>{});
-  return task;
-}
-function transcriptChatTaskProjectName(item={},transcript={}){
-  return item.relatedProject||item.project||item.projectName||item.related_project||transcript.projectName||transcript.relatedProject||'';
-}
-function compactTranscriptChatHistory(history=[]){
-  return (Array.isArray(history)?history:[]).slice(-8).map(m=>({
-    role:String(m.role||'').slice(0,20),
-    content:String(m.content||'').slice(0,4000)
-  })).filter(m=>m.content);
-}
-async function extractTranscriptTasksForChat({transcript,question,history=[]}){
-  const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
-  const chatHistory=compactTranscriptChatHistory(history);
-  const usePriorList=transcriptChatRefersToPriorList(question)&&chatHistory.some(m=>m.role==='assistant');
-  const knownTasks=[
-    ...(Array.isArray(transcript.tasks)?transcript.tasks:[]),
-    ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[]),
-    ...(Array.isArray(transcript.summary?.tasks)?transcript.summary.tasks:[])
-  ].filter(Boolean);
-  const system=[
-    VAL_SYSTEM_PROMPT,
-    'You convert a selected transcript into durable task records.',
-    'Return strict JSON only: {"tasks":[...]}',
-    'Each task must be specific enough for another competent person to complete without hearing the transcript.',
-    'Every task must include: taskTitle, taskDescription, assignedToName, dueDate, priority, relatedProject, sourceQuote, confidence.',
-    usePriorList?'The user is referring to the previous chat answer. Convert ONLY the tasks in recent transcript chat history. Do not use older staged transcript-page task candidates.':'Use the transcript and any provided user request to identify tasks.',
-    usePriorList?'If recent chat history listed 10 tasks, create those 10 tasks unless one cannot be verified against the transcript.':'',
-    'Still verify each task against the transcript before creating it.',
-    'Use null for dueDate when no timing is stated. Use empty string for assignedToName only if the transcript truly does not identify an owner.',
-    'Do not create vague tasks like "follow up" or "send it". Rewrite only when the source evidence supports the full concrete action.',
-    'Do not invent external facts. Do not create completed work as a task.'
-  ].join('\n');
-  const user=[
-    'Transcript title: '+(transcript.title||'Transcript'),
-    'User request: '+question,
-    chatHistory.length?'Recent transcript chat history:\n'+JSON.stringify(chatHistory):'',
-    (!usePriorList&&knownTasks.length)?'Older staged transcript-page task candidates. Use only if they are concrete and verified:\n'+JSON.stringify(knownTasks.slice(0,20)):'',
-    'Transcript:\n'+transcriptText.slice(0,30000)
-  ].filter(Boolean).join('\n\n');
-  let parsed={tasks:[]};
-  try{
-    const raw=await callValModel({system,user,maxTokens:2200,temperature:0.12,json:true});
-    parsed=JSON.parse(raw);
-  }catch(e){
-    parsed={tasks:deterministicTranscriptNotes(transcriptText).tasks||[],modelError:e.message};
-  }
-  const candidates=Array.isArray(parsed.tasks)?parsed.tasks:[];
-  return candidates.map(item=>{
-    const normalized=normalizeTranscriptTask(item);
-    if(!normalized)return null;
-    return {...normalized,relatedProject:transcriptChatTaskProjectName(item,transcript)};
-  }).filter(Boolean).slice(0,20);
-}
-async function createTranscriptChatTasks({transcript,question,history=[]}){
-  const tasks=await extractTranscriptTasksForChat({transcript,question,history});
-  const created=[];
-  const transcriptText=String(transcript.transcriptText||transcript.rawTranscript||'');
-  for(const item of tasks){
-    const staged={
-      taskId:uuid('tr_task'),
-      transcriptId:transcript.id,
-      assignedToContactId:'',
-      assignedToName:item.assignedToName||'',
-      taskTitle:contextualTaskTitle(transcript.title,item.taskTitle||item.title),
-      taskDescription:item.taskDescription||item.description||'Created from transcript chat.',
-      dueDate:item.dueDate||null,
-      priority:item.priority||'medium',
-      confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.78)),
-      status:'staged',
-      needsApproval:false,
-      sourceQuote:transcriptSupportingQuote(transcriptText,item.sourceQuote||item.evidence||item.taskTitle),
-      calendarEventId:transcript.calendarEventId||transcript.meetingId||'',
-      calendarEventTitle:transcript.title||'Transcript',
-      createdAt:new Date().toISOString()
-    };
-    if(!staged.taskTitle)continue;
-    await saveStagedTranscriptTask(staged);
-    const task=await promoteTranscriptTask(staged);
-    if(item.relatedProject){
-      task.details=[...(task.details||[]),{projectName:item.relatedProject,source:'transcript_chat'}];
-      task.notes=[task.notes,`Related project: ${item.relatedProject}`].filter(Boolean).join('\n\n');
-      await saveTask(task);
-    }
-    created.push(task);
-  }
-  return created;
-}
 app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId),question=String(req.body.question||req.body.message||'').trim();
@@ -18880,20 +21047,6 @@ app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
       if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
-    if(transcriptChatWantsTaskCreation(question)){
-      const directTitle=transcriptChatDirectTaskTitle(question);
-      if(directTitle){
-        const task=await createDirectTranscriptChatTask({transcript,question,title:directTitle});
-        await auditLog({req,action:'transcript_chat_direct_task_created',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,taskTitle:task?.title||directTitle},success:!!task}).catch(()=>{});
-        const content=task
-          ? `Added 1 action item to Actions: ${task.title}`
-          : 'I could not create that action item because the task title was unclear.';
-        return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:task?1:0,tasks:task?[task]:[]}});
-      }
-      const content='I can see the task list, but automatic transcript-to-Action creation is paused while VAL repairs transcript filtering. I will not add tasks from this transcript until the source records are clean.';
-      await auditLog({req,action:'transcript_chat_task_creation_paused',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240)},success:true}).catch(()=>{});
-      return res.json({ok:true,message:{role:'assistant',content},transcript:{id:transcript.id,title:transcript.title},actionsCreated:{type:'tasks',count:0,tasks:[],paused:true}});
-    }
     const summary=transcript.summary?.executiveSummary||transcript.summaryPreview||'';
     const system=[
       VAL_SYSTEM_PROMPT,
@@ -19013,19 +21166,6 @@ app.post('/api/val/transcripts/repair',async(req,res)=>{
     await auditLog({req,action:'transcript_repair_requested',resourceType:'transcript_processing',metadata:{requestedLimit:limit,found:stuck.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length},success:true}).catch(()=>{});
     res.json({ok:true,found:stuck.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length,results});
   }catch(e){console.error('[transcripts] repair failed',e);res.status(500).json({ok:false,error:e.message});}
-});
-app.post('/api/val/transcripts/reprocess',async(req,res)=>{
-  try{
-    const limit=Math.max(1,Math.min(25,Number(req.body?.limit)||10));
-    const transcriptId=String(req.body?.transcriptId||req.body?.id||'').trim();
-    const data=await transcriptIndexData(transcriptId);
-    const candidates=(data.transcripts||[]).filter(isUsableTranscriptIndexRow).slice(0,transcriptId?1:limit);
-    if(transcriptId&&!candidates.length)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const results=[];
-    for(const row of candidates)results.push(await processExistingTranscriptRecord(row));
-    await auditLog({req,action:'transcript_reprocess_requested',resourceType:'transcript_processing',resourceId:transcriptId,metadata:{requestedTranscriptId:transcriptId,requestedLimit:limit,found:candidates.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length},success:true}).catch(()=>{});
-    res.json({ok:true,found:candidates.length,processed:results.filter(r=>r.ok).length,failed:results.filter(r=>!r.ok).length,results});
-  }catch(e){console.error('[transcripts] reprocess failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/process',async(req,res)=>{
   let saved=null,body=null,transcriptText='',title='Processed transcript',meetingMatch=null;
@@ -19150,6 +21290,183 @@ app.post('/api/val/meetings/:meetingId/process-after-meeting',async(req,res)=>{
     res.json({ok:true,meeting:context.meeting,contactResolution:context.contactResolution,processedTranscripts:processed,openLoops:context.openLoops,tasks:context.tasks,sourcesChecked:context.sourcesChecked});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+
+function timelineJsonValue(value,fallback){
+  if(value==null)return fallback;
+  if(typeof value==='string'){try{return JSON.parse(value);}catch(e){return fallback;}}
+  return value;
+}
+function timelineCompact(value,limit=260){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+function timelineSourceExcerpt(item={}){
+  const refs=timelineJsonValue(item.source_refs_json||item.sourceRefsJson||item.sourceRefs,[]);
+  const fromRef=Array.isArray(refs)?refs.find(ref=>ref?.quote_or_summary||ref?.quoteOrSummary||ref?.quote||ref?.summary):null;
+  return timelineCompact(item.source_quote||item.sourceQuote||fromRef?.quote_or_summary||fromRef?.quoteOrSummary||fromRef?.quote||fromRef?.summary||item.summary,360);
+}
+function timelineRelationshipsFromItem(item={},transcript={}){
+  const targets=timelineJsonValue(item.link_targets_json||item.linkTargetsJson||item.linkTargets,[]);
+  const fromTargets=Array.isArray(targets)?targets.map(target=>target.name||target.displayName||target.email||target.contactName).filter(Boolean):[];
+  const fromTranscript=Array.isArray(transcript.people)?transcript.people:Array.isArray(transcript.metadata?.participants)?transcript.metadata.participants.map(p=>p.name||p.email).filter(Boolean):[];
+  return [...new Set(fromTargets.concat(fromTranscript).map(value=>timelineCompact(value,80)).filter(Boolean))].slice(0,4);
+}
+function timelineProjectFromItem(item={},transcript={}){
+  const targets=timelineJsonValue(item.link_targets_json||item.linkTargetsJson||item.linkTargets,[]);
+  const projectTarget=Array.isArray(targets)?targets.find(target=>/project/i.test(String(target.type||target.targetType||target.kind||''))):null;
+  const metadata=timelineJsonValue(item.metadata_json||item.metadataJson,{});
+  return timelineCompact(projectTarget?.name||projectTarget?.title||metadata.projectName||metadata.project_hint||metadata.projectHint||transcript.metadata?.projectName||transcript.projectName||'',160);
+}
+function timelineTaskReviewFields(item={},sourceExcerpt=''){
+  const text=[item.title,item.summary,sourceExcerpt].join(' ');
+  const speaker=(sourceExcerpt.match(/^\s*([^:\n]{2,40}):/)||[])[1]||'';
+  const due=(text.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|before [^.]+|by [^.]+?)(?:[. ]|$)/i)||[])[0]||'';
+  return {
+    owner:speaker?timelineCompact(speaker,80):'Needs owner review',
+    dueDate:due?timelineCompact(due,80):'Needs due-date review'
+  };
+}
+function timelineProposalAnchorStatus({eventTitle='',project='',relationships=[]}={}){
+  const eventAnchored=!!eventTitle && !/match needed|needs?_?event|transcript event match/i.test(String(eventTitle));
+  const relationshipAnchored=Array.isArray(relationships)&&relationships.length>0;
+  const projectAnchored=!!project;
+  return {
+    event:{status:eventAnchored?'anchored':'needs_match',label:eventAnchored?`Event: ${timelineCompact(eventTitle,120)}`:'Needs event match'},
+    relationships:{status:relationshipAnchored?'anchored':'needs_match',label:relationshipAnchored?`Relationships: ${relationships.map(r=>timelineCompact(r,60)).join(', ')}`:'Needs relationship match'},
+    project:{status:projectAnchored?'anchored':'needs_match',label:projectAnchored?`Project: ${timelineCompact(project,100)}`:'Needs project match'},
+    canApprove:eventAnchored&&relationshipAnchored&&projectAnchored
+  };
+}
+function timelineNamesFromText(text=''){
+  const names=[];
+  const blocked=/^(Jessa|VAL|Timeline|Transcript|Project|Event|Needs|The|This|That|Because|Before|After|Review|Expansion|Renewal|Sponsor|Friday)$/;
+  String(text||'').replace(/\b([A-Z][a-z]{2,24})(?=:|\s)/g,(_,name)=>{if(!blocked.test(name))names.push(name);return _;});
+  return [...new Set(names)].slice(0,4);
+}
+function timelineProjectHintsFromText(text=''){
+  const hints=[];
+  String(text||'').replace(/\b([A-Z][A-Za-z0-9]*(?:Day|Bridge|Core|Pilot|Project|Expansion|Renewal|Advisory)(?:\s+[A-Z][A-Za-z0-9]+){0,2})\b/g,(_,hint)=>{hints.push(timelineCompact(hint,120));return _;});
+  return [...new Set(hints)].slice(0,3);
+}
+function timelineWordSet(value=''){
+  return new Set(String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(word=>word.length>2&&!['the','and','for','with','that','this','needs','will','send','follow'].includes(word)));
+}
+function timelineOverlapScore(a='',b=''){
+  const aw=timelineWordSet(a),bw=timelineWordSet(b);
+  if(!aw.size||!bw.size)return 0;
+  let overlap=0;for(const word of aw)if(bw.has(word))overlap++;
+  return overlap/Math.max(aw.size,bw.size);
+}
+function timelineCandidateFromProfile(profile={},text='',kind='relationship'){
+  const label=profile.displayName||profile.name||profile.identity?.name||profile.projectId||profile.profileKey||profile.id||'Candidate';
+  const score=timelineOverlapScore(text,[label,profile.summary,profile.signal,profile.reality,profile.nextMove].join(' '));
+  if(score<0.12)return null;
+  return {
+    id:String(profile.id||profile.profileKey||label),
+    label,
+    confidence:Math.min(0.86,Math.max(0.46,score+0.38)),
+    reason:kind==='project'?'Stored project profile overlaps with transcript source text. Confirm before attaching project context.':'Stored relationship profile overlaps with transcript source text. Confirm before attaching relationship context.',
+    status:'needs_review'
+  };
+}
+function dedupeTimelineCandidates(candidates=[]){
+  const seen=new Set(),out=[];
+  for(const candidate of candidates){
+    const key=timelineCompact(candidate.label||candidate.id||'',120).toLowerCase();
+    if(!key||seen.has(key))continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
+}
+function timelineCandidateFromEvent(event={},text=''){
+  const label=event.title||event.summary||event.id||'Calendar event';
+  const score=timelineOverlapScore(text,[label,event.summary,(event.attendees||[]).map(a=>[a.name,a.email].filter(Boolean).join(' ')).join(' ')].join(' '));
+  if(score<0.12)return null;
+  return {
+    id:String(event.id||event.eventId||label),
+    label,
+    confidence:Math.min(0.84,Math.max(0.44,score+0.36)),
+    reason:'Calendar event overlaps with transcript title/source text. Confirm before attaching event context.',
+    status:'needs_review'
+  };
+}
+function timelineProposalMatchCandidates({item={},transcript={},eventTitle='',project='',relationships=[],sourceExcerpt='',calendarEvents=[],relationshipProfiles=[],projectProfiles=[]}={}){
+  const text=[item.title,item.summary,sourceExcerpt,transcript.title,transcript.meetingTitle,transcript.metadata?.meetingTitle].join(' ');
+  const eventCandidates=(calendarEvents||[]).map(event=>timelineCandidateFromEvent(event,text)).filter(Boolean).sort((a,b)=>b.confidence-a.confidence).slice(0,3);
+  if(eventTitle && /match needed|needs?_?event|transcript event match/i.test(eventTitle)){
+    eventCandidates.push({id:'transcript-title-event',label:transcript.title||item.title||'Transcript event candidate',confidence:0.38,reason:'Transcript title is available, but no calendar event is confirmed yet.',status:'needs_review'});
+  }
+  const storedRelationshipCandidates=(relationshipProfiles||[]).filter(profile=>profile.profileType!=='project').map(profile=>timelineCandidateFromProfile(profile,text,'relationship')).filter(Boolean);
+  const textRelationshipCandidates=timelineNamesFromText(text).filter(name=>!relationships.includes(name)).map(name=>({id:`person-${timelineCompact(name,60).toLowerCase()}`,label:name,confidence:0.42,reason:'Name appears in transcript source text but needs relationship/CRM confirmation.',status:'needs_review'}));
+  const relationshipCandidates=dedupeTimelineCandidates([...storedRelationshipCandidates,...textRelationshipCandidates].sort((a,b)=>b.confidence-a.confidence)).slice(0,3);
+  const storedProjectCandidates=(projectProfiles||[]).map(profile=>timelineCandidateFromProfile(profile,text,'project')).filter(Boolean);
+  const textProjectCandidates=timelineProjectHintsFromText(text).filter(name=>name!==project).map(name=>({id:`project-${timelineCompact(name,60).toLowerCase()}`,label:name,confidence:0.4,reason:'Project-like name appears in transcript source text and needs confirmation.',status:'needs_review'}));
+  const projectCandidates=dedupeTimelineCandidates([...storedProjectCandidates,...textProjectCandidates].sort((a,b)=>b.confidence-a.confidence)).slice(0,3);
+  return {event:dedupeTimelineCandidates(eventCandidates).slice(0,3),relationships:relationshipCandidates,project:projectCandidates};
+}
+function timelineReviewFromTranscriptItem(item={},transcriptLookup=new Map(),context={}){
+  const category=String(item.category||item.itemType||item.item_type||'').toLowerCase();
+  const isTask=['commitment','contextual_task'].includes(category);
+  const isNote=['relationship_signal','project_signal','teach_val_candidate'].includes(category);
+  if(!isTask&&!isNote)return null;
+  const transcriptId=String(item.transcriptId||item.transcript_id||'');
+  const transcript=transcriptLookup.get(transcriptId)||{};
+  const sourceExcerpt=timelineSourceExcerpt(item);
+  if(!transcriptId||!sourceExcerpt)return null;
+  const title=timelineCompact(item.title||item.summary||(isTask?'Transcript follow-through':'Transcript note'),180);
+  const summary=timelineCompact(item.summary||sourceExcerpt,500);
+  const taskReview=timelineTaskReviewFields(item,sourceExcerpt);
+  const eventTitle=transcript.metadata?.meetingTitle||transcript.meetingTitle||transcript.meeting_title||transcript.title||'Transcript event match needed';
+  const project=timelineProjectFromItem(item,transcript);
+  const relationships=timelineRelationshipsFromItem(item,transcript);
+  const anchorStatus=timelineProposalAnchorStatus({eventTitle,project,relationships});
+  const matchCandidates=timelineProposalMatchCandidates({item,transcript,eventTitle,project,relationships,sourceExcerpt,calendarEvents:context.calendarEvents||[],relationshipProfiles:context.relationshipProfiles||[],projectProfiles:context.projectProfiles||[]});
+  return {
+    id:timelineCompact(item.id||`${transcriptId}:${category}:${title}`,220),
+    type:isTask?'task':'note',
+    status:'needs_approval',
+    transcriptId,
+    transcriptTitle:transcript.title||transcript.meetingTitle||transcript.meeting_title||'Transcript source',
+    eventTitle,
+    project,
+    relationships,
+    anchorStatus,
+    matchCandidates,
+    title,
+    sourceExcerpt,
+    whyItMatters:isTask?'Transcript contains a possible commitment or follow-through item. Confirm owner, due date, project, relationship, and source meaning before creating work.':summary,
+    approvalBoundary:'Review only. No durable note, task, CRM update, memory, message, or external action is created from this proposal.',
+    owner:isTask?taskReview.owner:'',
+    dueDate:isTask?taskReview.dueDate:'',
+    confidence:Math.max(0,Math.min(1,Number(item.confidence)||0.62))
+  };
+}
+function dedupeTimelineTranscriptReviews(reviews=[]){
+  const seen=new Set(),out=[];
+  for(const review of reviews){
+    const key=[review.type,review.transcriptId,timelineCompact(review.sourceExcerpt,220).toLowerCase()].join('|');
+    if(seen.has(key))continue;
+    seen.add(key);
+    out.push(review);
+  }
+  return out;
+}
+async function timelineTranscriptIntelligenceReviews(transcripts=[],calendarEvents=[]){
+  const transcriptLookup=new Map((transcripts||[]).map(t=>[String(t.id||t.transcriptId||''),t]));
+  let rows=[];
+  const [relationshipProfilesForMatches,projectProfilesForMatches]=await Promise.all([
+    listRelationshipProfiles({limit:80}).catch(()=>[]),
+    listProjectProfiles({limit:80}).catch(()=>[])
+  ]);
+  const activeUserId=currentUserId();
+  if(pgPool){
+    const result=await dbQuery(`select * from transcript_intelligence_items where tenant_id=$1 and user_id=$2 and status='candidate' order by created_at desc limit 30`,[tenantId(),activeUserId]).catch(()=>({rows:[]}));
+    rows=result.rows||[];
+  }else{
+    rows=(valStore().transcriptIntelligenceItems||[]).filter(row=>row.tenantId===tenantId()&&row.userId===activeUserId&&(!row.status||row.status==='candidate')).slice(0,30);
+  }
+  return dedupeTimelineTranscriptReviews(rows.map(row=>timelineReviewFromTranscriptItem(row,transcriptLookup,{calendarEvents,relationshipProfiles:relationshipProfilesForMatches,projectProfiles:projectProfilesForMatches})).filter(Boolean)).slice(0,8);
+}
 app.get('/api/val/context-debug',async(req,res)=>{
   try{
     const days=Math.min(Math.max(Number(req.query.days)||30,1),365);
@@ -19158,8 +21475,342 @@ app.get('/api/val/context-debug',async(req,res)=>{
     ]);
     const now=new Date(),past=new Date(now);past.setDate(past.getDate()-days);const future=new Date(now);future.setDate(future.getDate()+14);
     const calendar=await loadContextCalendarEvents(past,future).catch(e=>({events:[],errors:[e.message]}));
-    res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length},calendarErrors:calendar.errors||[],sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
+    const eventTranscriptId=(event={})=>String(event.metadata?.transcriptId||event.metadata?.transcript_id||event.transcriptId||event.transcript_id||'');
+    const transcriptMeetingId=(transcript={})=>String(transcript.metadata?.meetingId||transcript.metadata?.calendarEventId||transcript.calendarEventId||transcript.meetingId||'');
+    const taskMatches=(task={},event={},transcript={})=>{
+      const hay=[task.title,task.notes,task.contactName,JSON.stringify(task.details||[])].join(' ').toLowerCase();
+      return [event.title,event.summary,transcript.title,transcript.metadata?.contactName].filter(Boolean).some(value=>hay.includes(String(value).toLowerCase()));
+    };
+    const draftMatches=(draft={},event={},transcript={})=>{
+      const hay=[draft.subject,draft.body,draft.contactName,draft.sourceContext?.transcriptId,draft.sourceContext?.calendarEventId].join(' ').toLowerCase();
+      return [event.title,event.summary,transcript.title,transcript.id,transcript.metadata?.contactName].filter(Boolean).some(value=>hay.includes(String(value).toLowerCase()));
+    };
+    const timelineEvents=(calendar.events||[]).slice(0,12).map(event=>{
+      const transcriptId=eventTranscriptId(event);
+      const transcript=(transcripts||[]).find(t=>(transcriptId&&String(t.id)===transcriptId)||transcriptMeetingId(t)===String(event.id));
+      const eventTasks=(tasks||[]).filter(task=>taskMatches(task,event,transcript||{})).slice(0,4);
+      const eventDrafts=(drafts||[]).filter(draft=>draftMatches(draft,event,transcript||{})).slice(0,3);
+      return {
+        id:event.id||'',
+        title:event.title||event.summary||'Calendar event',
+        startTime:event.startTime||event.start||'',
+        source:event.source||event.calendarName||'calendar',
+        attendeeCount:Array.isArray(event.attendees)?event.attendees.length:0,
+        transcriptId:transcript?.id||transcriptId||'',
+        transcriptTitle:transcript?.title||'',
+        transcriptStatus:transcript?'attached':(transcriptId?'missing_record':'needs_review'),
+        summaryStatus:transcript?.metadata?.summary?'ready':'not_ready',
+        taskCount:eventTasks.length,
+        draftCount:eventDrafts.length,
+        relationshipCount:Array.isArray(event.attendees)?event.attendees.filter(a=>a.email||a.name).length:0,
+        projectCount:0,
+        reviewNeeded:!transcript,
+        reviewStage:transcript?'ready_to_extract':'needs_matching',
+        noteReadiness:transcript?(transcript.metadata?.summary?'Summary evidence ready for note review.':'Matched transcript needs proposed notes review.'):'Blocked until transcript is matched to this event.',
+        taskReadiness:transcript?(eventTasks.length?`${eventTasks.length} existing task${eventTasks.length===1?'':'s'} need source-excerpt review.`:'No tasks proposed yet; extract only specific commitments.'):'No task creation until the transcript is matched.',
+        qualityChecklist:[
+          'calendar event',
+          'attendees',
+          'relationships',
+          'projects',
+          'source excerpt',
+          'owner and due date'
+        ],
+        nextReview:transcript?'Review source tasks before creating new work.':'Attach transcript to this event before creating notes, tasks, or drafts.',
+        tasks:eventTasks.map(t=>({id:t.id,title:t.title,status:t.completed?'complete':'open'})),
+        drafts:eventDrafts.map(d=>({id:d.id,subject:d.subject,status:d.status||'draft'}))
+      };
+    });
+    const unmatchedTranscripts=(transcripts||[]).filter(t=>!timelineEvents.some(ev=>ev.transcriptId&&ev.transcriptId===t.id)).slice(0,8).map(t=>({id:t.id,title:t.title||'Transcript',createdAt:t.createdAt||'',status:'needs_event_match',reviewStage:'needs_matching',noteReadiness:'No notes until this transcript is anchored to the right event, people, and project.',taskReadiness:'No task creation until matching is reviewed.',nextReview:'Match this transcript to a prior calendar event before creating notes, tasks, or drafts.'}));
+    const liveTranscriptReviews=await timelineTranscriptIntelligenceReviews(transcripts, calendar.events || []).catch(()=>[]);
+    const proposedTranscriptReviews=liveTranscriptReviews.length?liveTranscriptReviews:(DEMO_MODE?realD3DayTranscriptReviewCandidates():[]);
+    res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+const valConversationIdentity = registerValConversationIdentityRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  ownerEmails:Array.from(OWNER_EMAILS||[]),
+  fetchGmailMessages,
+  fetchUnifiedOutlookEmails,
+  resolveContactFromContext,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valExecutiveInbox = registerValExecutiveInboxRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  conversationService:valConversationIdentity,
+  listTeachValCoreMemory,
+  generateDraftWithModel:({system,user,maxTokens,temperature,json})=>callValModel({system,user,maxTokens,temperature,json}),
+  saveReviewDraft:(payload)=>saveInternalDraft({
+    ...payload,
+    provider:'internal',
+    status:payload.status||'ready_for_review',
+    sourceContext:{...(payload.sourceContext||{}),source:'executive_inbox_review_only',noExternalAction:true,noProviderDraftCreated:true}
+  }),
+  listReviewDrafts:async({limit=50,status='',source='executive_inbox_review_only'}={})=>{
+    const drafts=await listDrafts(status||'');
+    return drafts
+      .filter(d=>String(d.sourceContext?.source||'')===source)
+      .slice(0,Math.max(1,Math.min(Number(limit)||50,100)));
+  },
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valMeetingPrep = registerValMeetingPrepRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  loadContextCalendarEvents,
+  resolveContactFromContext,
+  resolveMeetingContext,
+  saveCalendarProjectLink,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+async function getTranscriptForValIntelligence(transcriptId){
+  const id=String(transcriptId||'');
+  if(!id)return null;
+  const data=await transcriptIndexData(id).catch(()=>({transcripts:[]}));
+  if(data.transcripts?.[0])return data.transcripts[0];
+  const archived=await recentTranscripts(3650).catch(()=>[]);
+  return archived.find(row=>String(row.id||row.transcriptId||'')===id)||null;
+}
+const valTranscriptIntelligence = registerValTranscriptIntelligenceRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  getTranscript:getTranscriptForValIntelligence,
+  transcriptIndexData,
+  resolveMeetingContext,
+  meetingPrepService:valMeetingPrep,
+  resolveIdentity:valConversationIdentity.resolveIdentity,
+  listRelationshipContacts:listRelationshipContactsForTranscript,
+  createContinuationTask:async(task)=>{
+    await saveTask(task);
+    return {ok:true,task,no_external_action:true};
+  },
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valCommitments = registerValCommitmentsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  listRelationshipContacts:listRelationshipContactsForTranscript,
+  saveDraft:saveInternalDraft,
+  saveTask,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valDocuments = registerValDocumentsRoutes(app,{
+  getStore:valStore,
+  listDrafts,
+  listTranscriptRuns:async()=>valTranscriptIntelligence.listReadyForYouCandidates({limit:120}).then(rows=>rows.map(row=>row.run).filter(Boolean)),
+  listMemoryItems:()=>recentMemoryItems(3650,1000),
+  listProjectProfiles,
+  searchGoogleDocs,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valReadyForYou = registerValReadyForYouRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  executiveInboxService:valExecutiveInbox,
+  meetingPrepService:valMeetingPrep,
+  transcriptIntelligenceService:valTranscriptIntelligence,
+  listDrafts,
+  loadTasks,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valReviewUpdates = registerValReviewUpdatesRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+async function executeGmailDraftPacket({packet,payload}){
+  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
+  if((status.missingScopes||[]).length)throw new Error('Gmail compose scope missing');
+  const token=await getGoogleToken();
+  if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
+  const to=payload.to||(/@/.test(packet.targetId||'')?packet.targetId:'');
+  const body=payload.body||payload.bodyPreview||'';
+  const lines=[`To: ${to}`,`Subject: ${payload.subject||''}`,'',body];
+  const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
+  const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/drafts',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message:{raw,threadId:payload.threadId||packet.targetId||undefined}})});
+  const d=await readJsonResponse(r);
+  if(!r.ok)throw new Error(d.error?.message||`Gmail draft failed (${r.status})`);
+  return {providerResponseId:d.id||d.message?.id||'',providerResponseSummary:'Created Gmail draft. Nothing was sent.',raw:d};
+}
+async function executeOutlookDraftPacket({packet,payload}){
+  const token=await getMicrosoftToken();
+  if(!token)throw new Error('Microsoft auth required');
+  const to=payload.to||(/@/.test(packet.targetId||'')?packet.targetId:'');
+  const draftPayload={
+    subject:payload.subject||'',
+    body:{contentType:'Text',content:payload.body||payload.bodyPreview||''},
+    toRecipients:to?[{emailAddress:{address:to}}]:[]
+  };
+  const r=await fetch('https://graph.microsoft.com/v1.0/me/messages',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(draftPayload)});
+  const d=await readJsonResponse(r);
+  if(!r.ok)throw new Error(d.error?.message||`Outlook draft failed (${r.status})`);
+  return {providerResponseId:d.id||'',providerResponseSummary:'Created Outlook draft. Nothing was sent.',raw:d};
+}
+async function executeEmailSendPacket({packet,payload}){
+  const provider=String(payload.provider||packet.targetSystem||'gmail').toLowerCase();
+  const to=String(payload.to||'').trim();
+  const subject=String(payload.subject||'').trim();
+  const body=String(payload.body||payload.bodyPreview||'').trim();
+  if(!to)throw new Error('Email send requires a recipient.');
+  if(!subject)throw new Error('Email send requires a subject.');
+  if(!body)throw new Error('Email send requires a body.');
+  if(provider.includes('outlook')||provider.includes('microsoft')){
+    const token=await getMicrosoftToken();
+    if(!token)throw new Error('Microsoft auth required');
+    const message={
+      subject,
+      body:{contentType:'Text',content:body},
+      toRecipients:[{emailAddress:{address:to}}]
+    };
+    const r=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message,saveToSentItems:true})});
+    if(!r.ok){
+      const d=await readJsonResponse(r);
+      throw new Error(d.error?.message||`Outlook send failed (${r.status})`);
+    }
+    return {providerResponseId:packet.id,providerResponseSummary:`Sent Outlook email to ${to}.`,raw:{provider:'outlook',status:202}};
+  }
+  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.send']);
+  if((status.missingScopes||[]).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
+  const token=await getGoogleToken();
+  if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
+  const lines=[`To: ${to}`,`Subject: ${subject}`,'',body];
+  const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
+  const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||packet.targetId||undefined})});
+  const d=await readJsonResponse(r);
+  if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
+  return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}.`,raw:d};
+}
+async function executeCrmNotePacket({packet,payload}){
+  const contactId=String(packet.targetId||payload.contactId||'').trim();
+  const body=String(payload.note||payload.body||packet.whyThisActionExists||'').trim();
+  if(!contactId)throw new Error('CRM note requires target contact id.');
+  if(!body)throw new Error('CRM note requires note body.');
+  const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/notes`,{body});
+  return {providerResponseId:data.id||data.note?.id||'',providerResponseSummary:`Created CRM note for ${contactId}.`,raw:data};
+}
+async function executeCrmTaskPacket({packet,payload}){
+  const contactId=String(packet.targetId||payload.contactId||'').trim();
+  const title=String(payload.title||packet.whyThisActionExists||'VAL follow-up').trim();
+  if(!contactId)throw new Error('CRM task requires target contact id.');
+  if(!title)throw new Error('CRM task requires title.');
+  const data=await ghlStrict('POST',`/contacts/${encodeURIComponent(contactId)}/tasks`,compactObject({title,body:payload.why||payload.body||payload.notes,dueDate:payload.dueDate,assignedTo:payload.assignedTo}));
+  return {providerResponseId:data.id||data.task?.id||'',providerResponseSummary:`Created CRM task for ${contactId}: ${title}.`,raw:data};
+}
+async function executeCalendarHoldPacket({packet,payload}){
+  const start=parseTaskDate(payload.start||payload.scheduledStart);
+  const duration=Number(payload.durationMinutes||45);
+  if(!start)throw new Error('Calendar hold requires valid start.');
+  const end=parseTaskDate(payload.end||payload.scheduledEnd)||addMinutes(start,duration);
+  if(!start||!end||end<=start)throw new Error('Calendar hold requires valid start and end.');
+  const provider=pickTaskProvider(payload.provider||'auto');
+  const api=calendarProviders[provider];
+  if(!api?.createTaskBlock)throw new Error(`Calendar provider not supported: ${provider}`);
+  const task={id:packet.id,title:payload.holdReason||payload.title||packet.whyThisActionExists||'VAL hold',notes:payload.notes||payload.body||''};
+  const created=await api.createTaskBlock(task,{start,end,calendarId:payload.calendarId||'primary',durationMinutes:duration,focus:true});
+  return {providerResponseId:created.eventId||'',providerResponseSummary:`Created private ${created.provider||provider} calendar hold.`,raw:created};
+}
+const valExternalActions = registerValExternalActionsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  listDrafts,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  executedBy:()=>currentUserId(),
+  executionAdapters:{
+    create_gmail_draft:executeGmailDraftPacket,
+    create_outlook_draft:executeOutlookDraftPacket,
+    send_email:executeEmailSendPacket,
+    create_crm_note:executeCrmNotePacket,
+    create_crm_task:executeCrmTaskPacket,
+    create_calendar_hold:executeCalendarHoldPacket
+  },
+  auditLog,
+  logger:console
+});
+registerValExecutiveInstructionRoutes(app,{
+  valDbReady:()=>valDbReady,
+  auditLog
+});
+const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console,
+  loaders:{
+    loadTasks,
+    listTeachValCoreMemory,
+    listRelationshipProfiles,
+    listRecentConversationSummaries:valConversationIdentity.listRecentConversationSummaries,
+    buildConversationContext:valConversationIdentity.buildConversationContext,
+    resolveIdentity:valConversationIdentity.resolveIdentity,
+    listHighSignalClassifications:valExecutiveInbox.listHighSignalClassifications,
+    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates
+  }
 });
 function bookDocTypeLabel(type){
   const labels={manuscript:'Manuscript',chapter:'Chapter',outline:'Outline',transcript:'Transcript notes',launch_notes:'Launch notes',prompt_notes:'Prompt notes',knowledge_document:'Knowledge document'};
@@ -19328,6 +21979,227 @@ app.get('/api/relationships/review',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+app.get('/api/relationships/index',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
+    if(DEMO_MODE){
+      const profiles=(await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').slice(0,limit);
+      return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
+    }
+    const profiles=await listRelationshipProfiles({limit});
+    res.json({ok:true,source:'relationship_profiles',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/projects/index',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
+    const profiles=await listProjectProfiles({limit});
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
+      generatedAt:new Date().toISOString(),
+      count:profiles.length,
+      projects:profiles.map(projectIndexItemFromProfile)
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/projects/dossier',async(req,res)=>{
+  try{
+    const projectId=String(req.query.projectId||req.query.targetId||req.query.id||'').trim();
+    const name=String(req.query.name||req.query.q||'').trim().toLowerCase();
+    const profiles=await listProjectProfiles({limit:200});
+    const found=profiles.find(profile=>{
+      const item=projectIndexItemFromProfile(profile);
+      return (
+        (projectId && [item.id,item.projectId,item.profileKey,profile.id].filter(Boolean).map(String).includes(projectId)) ||
+        (name && String(item.name||'').toLowerCase()===name)
+      );
+    });
+    if(!found){
+      return res.status(404).json({ok:false,error:'project_dossier_not_found',projectId,name:req.query.name||''});
+    }
+    const dossier=projectDossierFromProfile(found);
+    const preparedWork=await projectPreparedWorkForDossier(dossier.card||{});
+    dossier.sourceReceipts.preparedWork=preparedWork;
+    dossier.card.preparedWork=preparedWork;
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
+      dossier
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/projects/links',async(req,res)=>{
+  try{
+    const projectId=String(req.query.projectId||req.query.id||'').trim();
+    const relationshipId=String(req.query.relationshipId||req.query.contactId||req.query.personId||'').trim();
+    const calendarEventId=String(req.query.calendarEventId||req.query.eventId||'').trim();
+    const links=projectId
+      ? await listEvidenceLinks({targetType:'project_profile',targetId:projectId,limit:120})
+      : relationshipId
+        ? await listEvidenceLinks({sourceType:'relationship_profile',sourceId:relationshipId,relationship:'linked_to_project',limit:120})
+        : calendarEventId
+          ? await listEvidenceLinks({sourceType:'calendar_event',sourceId:calendarEventId,relationship:'meeting_context_for_project',limit:120})
+          : [];
+    res.json({ok:true,projectId,relationshipId,calendarEventId,count:links.length,links,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/projects/link-relationship',async(req,res)=>{
+  try{
+    const link=await saveRelationshipProjectLink({...req.body,source:'hearth_relationship_project_link'});
+    if(!link)return res.status(400).json({ok:false,error:'projectId and relationship/contact identifier are required.'});
+    res.json({ok:true,link,message:'Relationship linked to project locally. No CRM update, message, task, calendar change, or external action happened.',noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/projects/link-calendar-event',async(req,res)=>{
+  try{
+    const link=await saveCalendarProjectLink({...req.body,source:'hearth_calendar_project_link'});
+    if(!link)return res.status(400).json({ok:false,error:'projectId and calendarEventId are required.'});
+    const projectSourceReview=await valReviewUpdates.createProjectSourceInterpretation({
+      projectId:req.body.projectId,
+      projectName:req.body.projectName||req.body.name||req.body.projectId,
+      sourceType:'calendar_project_link',
+      sourceId:req.body.calendarEventId||req.body.eventId||req.body.id,
+      sourceTitle:req.body.title||req.body.summary||'Calendar meeting linked to project',
+      summary:link.summary||'Calendar meeting linked to project for review.',
+      confidence:link.confidence||0.66
+    }).catch(error=>({ok:false,error:error.message,no_external_action:true}));
+    res.json({ok:true,link,projectSourceReview,message:'Calendar event linked to project locally and queued for project-source review. No calendar write, invite, CRM update, message, task, relationship update, project judgment, or external action happened.',noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/projects/create',upload.any(),async(req,res)=>{
+  try{
+    const payload=projectCreatePayload(req.body||{},req.files||[]);
+    if(!payload.name)return res.status(400).json({ok:false,error:'Project name is required.'});
+    const profileKey=`project:${payload.projectId||stableKey(payload.name)}`;
+    const uploadedFiles=await saveProjectSourceFiles({files:payload.projectFiles,payload,profileKey});
+    const row=await saveRelationshipProfile({
+      profileType:'project',
+      profileKey,
+      projectId:payload.projectId,
+      displayName:payload.name,
+      summary:payload.summary||'New project created from Hearth intake.',
+      relationshipStatus:'intake',
+      confidence:0.55,
+      lastObservedAt:new Date().toISOString(),
+      metadataJson:{
+        source:'hearth_project_intake',
+        intake:payload.intake,
+        uploadedFiles,
+        sourceTypes:payload.sourceTypes,
+        createdFrom:'hearth_projects_drawer',
+        noExternalAction:true
+      }
+    });
+    const profile=publicRelationshipProfile(row);
+    const project=projectIndexItemFromProfile(profile);
+    const intakeMemory=await saveMemoryItem({
+      kind:'project_intake',
+      summary:'Project intake: '+payload.name,
+      rawText:JSON.stringify({name:payload.name,summary:payload.summary,intake:payload.intake,uploadedFiles},null,2).slice(0,12000),
+      importance:4,
+      metadata:{source:'hearth_project_intake',projectId:project.id,profileKey,sourceTypes:payload.sourceTypes,uploadedFiles,noExternalAction:true}
+    }).catch(()=>{});
+    const projectSourceReview=await valReviewUpdates.createProjectSourceInterpretation({
+      projectId:project.id,
+      projectName:project.name,
+      sourceType:'hearth_project_intake',
+      sourceId:intakeMemory?.id||project.id,
+      sourceTitle:'Project intake: '+payload.name,
+      summary:[payload.summary,payload.intake.websiteSource,payload.intake.documents,payload.intake.relationships,payload.intake.rawContext,uploadedFiles.length?uploadedFiles.length+' uploaded project files':''].filter(Boolean).join(' | ')||'Project intake source requires review before it becomes project judgment.',
+      rawText:JSON.stringify({name:payload.name,summary:payload.summary,intake:payload.intake,uploadedFiles},null,2),
+      confidence:0.68
+    }).catch(error=>({ok:false,error:error.message,no_external_action:true}));
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
+      project,
+      dossier:projectDossierFromProfile(profile),
+      uploadedFiles,
+      projectSourceReview,
+      message:'Project created from Hearth intake. VAL stored the project shell, source notes, and uploaded project files locally, then queued project source for review. No scraping, CRM update, contract parsing, task, relationship update, project judgment, message, or external action happened.',
+      noExternalAction:true
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+function relationshipDossierInputFromQuery(query={}){
+  const targetId=String(query.targetId||'').trim();
+  const explicitContactId=String(query.contactId||query.id||'').trim();
+  const targetLooksLikeProfileKey=/@/.test(targetId);
+  return {
+    name:query.name||query.q||'',
+    email:query.email||'',
+    targetId,
+    contactId:explicitContactId || (targetId && !targetLooksLikeProfileKey ? targetId : '')
+  };
+}
+app.get('/api/relationships/dossier',async(req,res)=>{
+  try{
+    const input=relationshipDossierInputFromQuery(req.query||{});
+    if(DEMO_MODE){
+      const rows=demoState(req,res).relationships||[];
+      const found=rows.find(r=>
+        (input.contactId&&String(r.id||r.contactId||'')===String(input.contactId))||
+        (input.email&&String(r.email||'').toLowerCase()===String(input.email).toLowerCase())||
+        (input.name&&String(r.name||'').toLowerCase().includes(String(input.name).toLowerCase()))
+      )||rows[0]||{};
+      return res.json({ok:true,dossier:buildRelationshipDossier(found),source:'demo_relationships'});
+    }
+    let contact=null;
+    if(input.contactId){
+      try{contact=compactContactCandidate(await ghl('GET',`/contacts/${encodeURIComponent(input.contactId)}`),'ghl_contact');}catch(e){}
+    }
+    if(input.contactId&&!contact){
+      const briefing=await buildExecutiveBriefing().catch(()=>null);
+      contact=(briefing?.people||[]).find(p=>String(p.id||p.contactId||p.profileKey||'')===String(input.contactId))||null;
+    }
+    let resolution=null;
+    if(!contact){
+      resolution=await resolveContactFromContext(input);
+      contact=resolution.contact||null;
+    }
+    const crmContactId=resolvedCrmContactId(contact);
+    if(!crmContactId){
+      return res.status(409).json({
+        ok:false,
+        error:'relationship_identity_unresolved',
+        message:'A canonical Relationship Dossier requires a resolved CRM/GHL contact ID.',
+        input,
+        resolutionStatus:resolution?.status||'unresolved',
+        confidence:resolution?.confidence||0,
+        matches:(resolution?.matches||[]).slice(0,5).map(c=>({name:c.name,email:c.email,source:c.source,confidence:c.confidence,contactId:resolvedCrmContactId(c)}))
+      });
+    }
+    const timeline=await buildContactTimeline(contact,50).catch(()=>({timeline:[],openLoops:[],sourcesChecked:[]}));
+    const dossier=buildRelationshipDossier({
+      contactId:crmContactId,
+      contact:timeline.contact||contact,
+      openLoops:timeline.openLoops||[],
+      evidence:timeline.timeline||[],
+      summary:contact?.summary||contact?.reason||'Relationship context assembled from VAL sources.',
+      recommendedAction:contact?.recommendedAction||'Review the relationship file before acting.',
+      confidence:contact?.confidence||0.65,
+      sourceRefs:(timeline.timeline||[]).map(item=>({source_type:item.type,source_id:item.sourceId,quote_or_summary:item.summary,confidence:0.7})).slice(0,10)
+    });
+    res.json({ok:true,dossier,sourcesChecked:timeline.sourcesChecked||[],source:'relationship_dossier'});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.post('/api/val/intelligence/backfill',async(req,res)=>{
   try{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
@@ -19367,29 +22239,214 @@ app.post('/api/relationships/actions',async(req,res)=>{
   try{
     const action=String(req.body.action||'').trim();
     const contact=req.body.contact||{};
+    const dossier=req.body.dossier||contact.relationshipDossier||{};
+    const identity=dossier.identity||{};
+    const observation=dossier.observation||{};
+    const interpretation=dossier.interpretation||{};
+    const meaning=dossier.meaning||{};
+    const wisdom=dossier.wisdom||{};
     if(!contact.name&&!contact.email) return res.status(400).json({ok:false,error:'Missing contact'});
+    if(action==='open_evidence'){
+      return res.json({
+        ok:true,
+        action,
+        status:'evidence_ready',
+        message:'Evidence opened for review. No CRM record was changed.',
+        evidence:observation.evidence||contact.evidence||[],
+        openLoops:observation.openLoops||contact.openLoops||[],
+        noExternalAction:true
+      });
+    }
+    if(action==='ask_about_pattern'||action==='ask_why_matters'){
+      const section=action==='ask_about_pattern'?'patterns':'meaning';
+      const prompt=String(req.body.prompt||'').trim();
+      const content=[
+        action==='ask_about_pattern'?'What appears to be changing:':'Why this matters:',
+        action==='ask_about_pattern'?(interpretation.pattern||interpretation.momentum||contact.reason||'VAL does not have a durable relationship pattern yet.'):(meaning.whyItMatters||meaning.executiveValue||contact.reason||'VAL does not have enough meaning evidence yet.'),
+        '',
+        'Evidence VAL is using:',
+        observation.summary||contact.reason||'No evidence summary supplied.',
+        '',
+        'Restraint:',
+        'This is an interpretation for judgment only. No task, message, CRM update, or memory was created.'
+      ].join('\n');
+      return res.json({ok:true,action,section,status:'answered',content,prompt,noExternalAction:true});
+    }
+    if(action==='teach_wisdom'){
+      return res.json({
+        ok:true,
+        action,
+        status:'teach_val_review_required',
+        message:'Teach VAL review is ready. Nothing was saved to durable memory yet.',
+        teachingCandidate:{
+          kind:'relationship_wisdom_correction',
+          title:`Refine relationship wisdom for ${identity.name||contact.name||contact.email}`,
+          currentWisdom:wisdom.oneThingToRemember||contact.recommendedAction||'',
+          relationshipContactId:identity.crmContactId||contact.contactId||contact.id||'',
+          source:'relationship_dossier_section_action',
+          requiresApproval:true
+        },
+        noExternalAction:true
+      });
+    }
+    if(action==='review_linkedin_activity'){
+      const brief=dossier.relationshipBrief||{};
+      const receipts=brief.sourceReceipts||{};
+      const posts=Array.isArray(receipts.linkedInLatestPosts)?receipts.linkedInLatestPosts:(Array.isArray(dossier.linkedInLatestPosts)?dossier.linkedInLatestPosts:[]);
+      const latest=posts[0]||null;
+      return res.json({
+        ok:true,
+        action,
+        status:'linkedin_activity_ready',
+        content:[
+          `LinkedIn activity for ${identity.name||contact.name||contact.email}:`,
+          latest?(latest.summary||latest.title||latest.text||'A recent LinkedIn signal is attached.'):'No recent LinkedIn post is attached yet.',
+          '',
+          'Boundary:',
+          'VAL is showing known context only. No post, comment, scrape, message, CRM write, or external action happened.'
+        ].join('\n'),
+        latestLinkedInPost:latest,
+        noExternalAction:true
+      });
+    }
+    if(action==='refresh_relationship_observers'){
+      const crmContactId=identity.crmContactId||contact.contactId||contact.id||'';
+      const observers=[
+        {id:'ghl_crm',label:'GHL/CRM Contact',status:crmContactId?'ready':'needs_contact_id'},
+        {id:'linkedin',label:'LinkedIn Observer',status:(identity.linkedinUrl||identity.linkedin_url||dossier.linkedinUrl||dossier.linkedin_url)?'ready':'needs_linkedin_url'},
+        {id:'apollo',label:'Apollo Observer',status:'ready_if_configured'},
+        {id:'outscraper',label:'Outscraper Observer',status:'ready_if_configured'}
+      ];
+      return res.json({
+        ok:true,
+        action,
+        status:'observer_refresh_preview',
+        message:'Relationship observers are ready for review. No enrichment job, scrape, CRM write, post, message, or import ran from this click.',
+        observers,
+        contactId:crmContactId,
+        noExternalAction:true
+      });
+    }
+    if(action==='find_relationship_introductions'){
+      const crmContactId=identity.crmContactId||contact.contactId||contact.id||'';
+      const currentContact={
+        contactId:crmContactId,
+        crmContactId,
+        name:identity.name||contact.name||contact.email||'',
+        email:identity.email||contact.email||'',
+        company:identity.company||contact.company||'',
+        role:identity.role||contact.role||'',
+        needs:[...(Array.isArray(observation.openLoops)?observation.openLoops:[]),...(Array.isArray(contact.openLoops)?contact.openLoops:[]),...(Array.isArray(interpretation.risks)?interpretation.risks:[])].filter(Boolean),
+        offers:[...(Array.isArray(interpretation.opportunities)?interpretation.opportunities:[]),...(Array.isArray(contact.opportunitySignals)?contact.opportunitySignals:[]),meaning.whyItMatters,meaning.executiveValue,contact.reason,contact.summary].filter(Boolean),
+        evidence:[...(Array.isArray(observation.evidence)?observation.evidence:[]),...(Array.isArray(contact.evidence)?contact.evidence:[])]
+      };
+      let crmContacts=Array.isArray(req.body.crmContacts)?req.body.crmContacts:[];
+      if(!crmContacts.length&&DEMO_MODE){
+        const demo=demoState(req,res);
+        crmContacts=Array.isArray(demo.relationships)?demo.relationships:[];
+      }
+      if(!crmContacts.length){
+        const briefing=await buildExecutiveBriefing().catch(()=>({}));
+        crmContacts=Array.isArray(briefing.people)?briefing.people:[];
+      }
+      const introResult=relationshipIntroCandidates({currentContact,crmContacts,limit:req.body.limit||6});
+      const directional=(introResult.candidates||[]).reduce((out,candidate)=>{
+        const direction=candidate.direction||{};
+        if(direction.whoNeedsThisPerson>0||direction.primary==='who_needs_this_person') out.whoNeedsThisPerson.push(candidate);
+        if(direction.whoThisPersonNeeds>0||direction.primary==='who_this_person_needs') out.whoThisPersonNeeds.push(candidate);
+        return out;
+      },{whoNeedsThisPerson:[],whoThisPersonNeeds:[]});
+      const reviewSurface=relationshipIntroReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
+      return res.json({
+        ok:true,
+        action,
+        status:'relationship_introductions_ready',
+        message:'VAL prepared introduction candidates in both directions. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
+        contactId:crmContactId,
+        whoNeedsThisPerson:directional.whoNeedsThisPerson,
+        whoThisPersonNeeds:directional.whoThisPersonNeeds,
+        candidates:introResult.candidates||[],
+        reviewSurface,
+        unknowns:introResult.unknowns||[],
+        requiresApproval:true,
+        noExternalAction:true
+      });
+    }
+    if(action==='draft_intro_candidate'){
+      const candidate=req.body.candidate||req.body.introCandidate||{};
+      const prepared=relationshipIntroDraft(candidate);
+      if(!prepared.ok)return res.status(400).json({ok:false,error:prepared.error||'Introduction candidate is not ready to draft.',noExternalAction:true});
+      const draft=await saveInternalDraft({
+        draftType:prepared.draftType,
+        provider:prepared.provider,
+        subject:req.body.subject||prepared.subject,
+        body:req.body.body||prepared.body,
+        status:'draft',
+        sourceContext:{...prepared.sourceContext,contact,dossier}
+      });
+      return res.json({
+        ok:true,
+        action,
+        status:'introduction_draft_created',
+        message:'Internal introduction draft created for review. No email, LinkedIn message, calendar event, scrape, import, or CRM write happened.',
+        draft,
+        contactIds:prepared.sourceContext.contactIds,
+        requiresApproval:true,
+        noExternalAction:true
+      });
+    }
+    const effectiveAction=action==='create_task_from_loop'?'create_task':action;
     if(action==='draft_message'){
       const draft=await saveInternalDraft({draftType:'relationship_outreach',provider:'internal',subject:req.body.subject||contact.draftOutreach?.subject||`Follow-up with ${contact.name||contact.email}`,body:req.body.body||contact.draftOutreach?.body||draftRelationshipOutreach(contact).body,sourceContext:{source:'relationship_review',contact}});
       return res.json({ok:true,draft});
     }
-    if(action==='create_task'){
-      const defaultDue=new Date(Date.now()+2*24*60*60*1000).toISOString();
-      const task={id:uuid('task'),title:req.body.title||contact.recommendedAction||`Follow up with ${contact.name||contact.email}`,contactName:contact.name||contact.email||'',contactId:contact.contactId||contact.id||'',dueDate:req.body.dueDate||defaultDue,priority:req.body.priority||((contact.score||0)>=70?'high':'medium'),notes:req.body.notes||`${contact.reason||'Created from Relationship Review.'}\n\nRecommended action: ${contact.recommendedAction||'Review relationship history.'}`,details:[{text:'Created from Relationship Review',ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString()};
-      await saveTask(task);
-      return res.json({ok:true,task});
+    if(action==='draft_linkedin_comment'){
+      const brief=dossier.relationshipBrief||{};
+      const receipts=brief.sourceReceipts||{};
+      const posts=Array.isArray(receipts.linkedInLatestPosts)?receipts.linkedInLatestPosts:(Array.isArray(dossier.linkedInLatestPosts)?dossier.linkedInLatestPosts:[]);
+      const latest=posts[0]||{};
+      const signal=latest.summary||latest.title||latest.text||contact.linkedinSignal||'Recent LinkedIn activity may be worth a thoughtful response.';
+      const body=[
+        `Draft LinkedIn comment for ${identity.name||contact.name||contact.email}:`,
+        '',
+        `I really appreciate this perspective${identity.name?`, ${identity.name.split(' ')[0]}`:''}. The part that stands out is how much clarity and follow-through matter when good ideas start becoming real work.`,
+        '',
+        'Context VAL used:',
+        signal,
+        '',
+        'Boundary: review this draft before using it. VAL did not post, comment, message, scrape live data, or change CRM.'
+      ].join('\n');
+      const draft=await saveInternalDraft({draftType:'linkedin_comment_draft',provider:'internal',subject:req.body.subject||`LinkedIn comment for ${identity.name||contact.name||contact.email}`,body:req.body.body||body,sourceContext:{source:'relationship_review_linkedin_signal',contact,dossier,latestLinkedInPost:latest,noExternalAction:true}});
+      return res.json({ok:true,action,status:'linkedin_comment_drafted',draft,noExternalAction:true});
     }
-    if(action==='remember_context'){
-      const note=String(req.body.note||'').trim();
-      if(!note) return res.status(400).json({ok:false,error:'Missing context note'});
-      const contactName=contact.name||contact.email||'this relationship';
-      await saveMemoryItem({
-        kind:'relationship_context_note',
-        summary:`Relationship context: ${contactName}`,
-        rawText:note,
-        importance:4,
-        metadata:{source:'relationship_review',action,contact,identityKey:personKey(contact.name,contact.email)}
-      });
-      return res.json({ok:true,status:'remembered',message:`Saved context for ${contactName}. VAL will use it in relationship review, meeting prep, and chat.`});
+    if(action==='draft_linkedin_dm'){
+      const brief=dossier.relationshipBrief||{};
+      const receipts=brief.sourceReceipts||{};
+      const posts=Array.isArray(receipts.linkedInLatestPosts)?receipts.linkedInLatestPosts:(Array.isArray(dossier.linkedInLatestPosts)?dossier.linkedInLatestPosts:[]);
+      const latest=posts[0]||{};
+      const firstName=String(identity.name||contact.name||'').split(' ')[0]||'there';
+      const signal=latest.summary||latest.title||latest.text||contact.linkedinSignal||meaning.whyItMatters||'Recent relationship context may be worth a private follow-up.';
+      const body=[
+        `Draft LinkedIn DM for ${identity.name||contact.name||contact.email}:`,
+        '',
+        `Hi ${firstName} - I saw your post and wanted to say I appreciated the clarity in it. It connected with something I have been thinking about too: how much good execution depends on protecting the right conversations, not just moving faster.`,
+        '',
+        'No need to respond quickly. I just wanted to name that it landed.',
+        '',
+        'Context VAL used:',
+        signal,
+        '',
+        'Boundary: review this draft before using it. VAL did not send, post, comment, scrape live data, or change CRM.'
+      ].join('\n');
+      const draft=await saveInternalDraft({draftType:'linkedin_dm_draft',provider:'internal',subject:req.body.subject||`LinkedIn DM for ${identity.name||contact.name||contact.email}`,body:req.body.body||body,sourceContext:{source:'relationship_review_linkedin_signal',contact,dossier,latestLinkedInPost:latest,noExternalAction:true}});
+      return res.json({ok:true,action,status:'linkedin_dm_drafted',draft,noExternalAction:true});
+    }
+    if(effectiveAction==='create_task'){
+      const defaultDue=new Date(Date.now()+2*24*60*60*1000).toISOString();
+      const loop=(observation.openLoops||contact.openLoops||[])[0];
+      const task={id:uuid('task'),title:req.body.title||loop||contact.recommendedAction||`Follow up with ${contact.name||contact.email}`,contactName:contact.name||contact.email||'',contactId:identity.crmContactId||contact.contactId||contact.id||'',dueDate:req.body.dueDate||defaultDue,priority:req.body.priority||((contact.score||0)>=70?'high':'medium'),notes:req.body.notes||`${contact.reason||meaning.whyItMatters||'Created from Relationship Review.'}\n\nRecommended action: ${contact.recommendedAction||'Review relationship history.'}`,details:[{text:`Created from Relationship Review: ${action}`,ts:new Date().toISOString()}],completed:false,createdAt:new Date().toISOString(),source:'relationship_dossier',sourceAction:action,noExternalAction:true};
+      await saveTask(task);
+      return res.json({ok:true,action,status:'task_created',message:'Local VAL task created from the relationship dossier. No CRM task, message, or opportunity was created.',task,noExternalAction:true});
     }
     if(['mark_vip','snooze','not_important'].includes(action)){
       const until=action==='snooze'?(req.body.until||new Date(Date.now()+7*24*60*60*1000).toISOString()):'';
@@ -19418,136 +22475,6 @@ app.get('/api/executive-briefing',async(req,res)=>{
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Executive Briefing is not used for Michele book/editor mode.'});
     res.json(await buildExecutiveBriefing());
   }catch(e){res.status(500).json({ok:false,error:e.message});}
-});
-app.get('/api/evidence/review',async(req,res)=>{
-  try{res.json(await buildEvidenceReview({limit:Math.min(Number(req.query.limit)||80,160)}));}
-  catch(e){res.status(500).json({ok:false,error:e.message});}
-});
-function projectCabinetKey(name=''){
-  return String(name||'project').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'project';
-}
-function projectCabinetCanonicalName(name=''){
-  const raw=String(name||'').trim();
-  const key=projectCabinetKey(raw);
-  if(!raw)return '';
-  if(/^(jessa-?val|jessa-val-production|val-core|baby-val|val-platform)$/i.test(key))return 'VAL';
-  if(/^(helpbyshopping|help-by-shopping|helpby-shopping)$/i.test(key))return 'Help by Shopping';
-  if(/^(hopemakers|hope-makers)$/i.test(key))return 'HopeMakers';
-  if(/^(grace-intelligence|graceintelligence)$/i.test(key))return 'Grace Intelligence';
-  if(/^goall$/i.test(key))return 'GOALL';
-  return raw;
-}
-function projectCabinetText(row={}){
-  return [
-    row.title,row.name,row.displayName,row.summary,row.rawText,row.notes,row.contactName,row.kind,row.type,row.sourceType,
-    JSON.stringify(row.metadata||row.metadataJson||row.entitiesJson||row.sourceContext||row.preparedPayload||{})
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-function projectCabinetMatches(project,item){
-  const hay=projectCabinetText(item);
-  if(!hay)return false;
-  return (project.aliases||[]).some(alias=>{
-    const clean=String(alias||'').toLowerCase().trim();
-    if(!clean)return false;
-    if(clean==='val')return /\b(jessa[_ -]?val|baby val|val platform|val project|project val)\b/i.test(hay);
-    const normalized=clean.replace(/[^a-z0-9]+/g,'');
-    return hay.includes(clean)||hay.replace(/[^a-z0-9]+/g,'').includes(normalized);
-  });
-}
-function projectCabinetPublicRow(row={},fallbackType='source'){
-  return {
-    id:row.id||row.sourceId||uuid('proj-row'),
-    title:row.title||row.displayName||row.summary||row.kind||fallbackType,
-    summary:row.summary||row.notes||row.why||row.whatChanged||row.rawText||row.content||'',
-    kind:row.kind||row.moveType||row.sourceType||row.type||fallbackType,
-    createdAt:row.createdAt||row.updatedAt||row.occurredAt||row.capturedAt||row.dueAt||row.dueDate||'',
-    dueDate:row.dueDate||row.dueAt||'',
-    status:row.status||''
-  };
-}
-function projectCabinetAdd(map,name,source='observed',summary=''){
-  name=projectCabinetCanonicalName(name);
-  if(!name||name.length<2)return null;
-  const key=projectCabinetKey(name);
-  if(!map.has(key))map.set(key,{key,name,aliases:Array.from(new Set([name,key,name.replace(/\s+/g,''),name.replace(/&/g,'and')])),source,status:'Active',summary});
-  else{
-    const p=map.get(key);
-    p.summary=p.summary||summary;
-    [name,key,name.replace(/\s+/g,''),name.replace(/&/g,'and')].forEach(a=>{if(a&&!p.aliases.includes(a))p.aliases.push(a);});
-  }
-  return map.get(key);
-}
-async function buildProjectCabinet(){
-  const [profiles,tasks,memory,evidence,moves,transcripts,conversations,drafts,emailData]=await Promise.all([
-    listRelationshipProfiles({limit:180}).catch(()=>[]),
-    loadTasks().catch(()=>[]),
-    recentMemoryItems(3650,800).catch(()=>[]),
-    listDashboardEvidenceItems({limit:300}).catch(()=>[]),
-    listAgencyMoves({limit:160}).catch(()=>[]),
-    recentTranscripts(3650).catch(()=>[]),
-    recentConversationTextRows(3650,250).catch(()=>[]),
-    listDrafts().catch(()=>[]),
-    emailIntelligencePayload({query:{}},{force:false}).catch(()=>({emails:[]}))
-  ]);
-  const map=new Map();
-  ['GOALL','HopeMakers','Grace Intelligence','VAL','Help by Shopping'].forEach(name=>projectCabinetAdd(map,name,'jessa_standard'));
-  [CLIENT_CONFIG.projectName,CLIENT_CONFIG.brandName].filter(Boolean).forEach(name=>projectCabinetAdd(map,name,'deployment'));
-  profiles.filter(p=>p.profileType==='project').forEach(p=>projectCabinetAdd(map,p.displayName||p.projectId||p.profileKey,'profile',p.summary||''));
-  tasks.forEach(t=>{
-    const meta=t.metadata||{};
-    const projectName=t.projectName||t.project||meta.projectName||meta.project;
-    if(projectName)projectCabinetAdd(map,projectName,'task');
-  });
-  memory.forEach(m=>{
-    const meta=m.metadata||{};
-    const name=meta.projectName||meta.project||meta.projectKey||(/project context:\s*([^\n]+)/i.exec(m.summary||'')||[])[1];
-    if(name)projectCabinetAdd(map,name,'memory',m.summary||'');
-  });
-  evidence.forEach(e=>{
-    const entities=e.entitiesJson||e.entities||e.metadataJson?.entities||{};
-    if(entities.project)projectCabinetAdd(map,entities.project,'evidence',e.summary||e.title||'');
-  });
-  const projects=Array.from(map.values()).map(project=>{
-    const projectProfiles=profiles.filter(p=>p.profileType==='project'&&(projectCabinetKey(p.displayName||p.projectId||p.profileKey)===project.key||projectCabinetMatches(project,p)));
-    const profile=projectProfiles[0]||{};
-    const projectTasks=tasks.filter(t=>!t.completed&&projectCabinetMatches(project,t)).slice(0,20).map(t=>projectCabinetPublicRow(t,'task'));
-    const projectMemory=memory.filter(m=>projectCabinetMatches(project,m)).slice(0,18);
-    const projectEvidence=evidence.filter(e=>projectCabinetMatches(project,e)).slice(0,18);
-    const projectMoves=moves.filter(m=>projectCabinetMatches(project,m)||projectCabinetKey(m.projectId||'')===project.key).slice(0,12);
-    const projectTranscripts=transcripts.filter(t=>projectCabinetMatches(project,t)).slice(0,10);
-    const projectConversations=conversations.filter(c=>projectCabinetMatches(project,c)).slice(0,10);
-    const projectDrafts=drafts.filter(d=>projectCabinetMatches(project,d)).slice(0,8);
-    const projectEmails=(emailData.emails||[]).filter(e=>projectCabinetMatches(project,e)).slice(0,8);
-    const profileUpdates=[]
-      .concat((profile.openLoops||[]).map(x=>({kind:'open_loop',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})))
-      .concat((profile.risks||[]).map(x=>({kind:'risk',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})))
-      .concat((profile.opportunities||[]).map(x=>({kind:'opportunity',summary:x.content||x.summary||String(x),createdAt:profile.updatedAt||profile.lastObservedAt||''})));
-    const updates=profileUpdates.concat(projectMoves).concat(projectEvidence).slice(0,18).map(x=>projectCabinetPublicRow(x,'update'));
-    const documents=projectMemory.filter(m=>!/transcript|conversation|chat/i.test(String(m.kind||''))).slice(0,14).map(x=>projectCabinetPublicRow(x,'document'));
-    const sourceConversations=projectTranscripts.map(x=>projectCabinetPublicRow(x,'transcript'))
-      .concat(projectConversations.map(x=>projectCabinetPublicRow(x,'conversation')))
-      .concat(projectEmails.map(x=>projectCabinetPublicRow(x,'email')))
-      .concat(projectDrafts.map(x=>projectCabinetPublicRow(x,'draft'))).slice(0,18);
-    const nextMove=(projectTasks[0]?.title)||updates[0]?.summary||profile.openLoops?.[0]?.content||profile.summary||'Ask VAL to identify the next clean project move.';
-    const summary=profile.summary||project.summary||documents[0]?.summary||updates[0]?.summary||'VAL has created a project file. Add context or connect source material to make this drawer more useful.';
-    return {
-      key:project.key,
-      name:project.name,
-      status:profile.relationshipStatus||project.status||'Active',
-      summary,
-      nextMove,
-      counts:{openTasks:projectTasks.length,updates:updates.length,documents:documents.length,conversations:sourceConversations.length},
-      tasks:projectTasks,
-      updates,
-      documents,
-      conversations:sourceConversations
-    };
-  }).sort((a,b)=>(b.counts.openTasks+b.counts.updates+b.counts.documents+b.counts.conversations)-(a.counts.openTasks+a.counts.updates+a.counts.documents+a.counts.conversations)||a.name.localeCompare(b.name));
-  return {ok:true,projects,generatedAt:new Date().toISOString()};
-}
-app.get('/api/projects/cabinet',async(req,res)=>{
-  try{res.json(await buildProjectCabinet());}
-  catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/homepage-cards/action',async(req,res)=>{
   try{
@@ -19611,6 +22538,31 @@ app.post('/api/homepage-cards/action',async(req,res)=>{
       opportunity_update_requested:'Opportunity movement request logged for review.',
       evidence_review_logged:'Evidence review logged.'
     };
+    const metadata=item.metadataJson||item.metadata||item.readinessJson||{};
+    const artifact=item.preparedArtifact||item.prepared_artifact||metadata.preparedArtifact||metadata.prepared_artifact||{};
+    const preparedArtifactKind=String(item.preparedArtifactKind||item.prepared_artifact_kind||artifact.kind||metadata.preparedArtifactKind||metadata.prepared_artifact_kind||'').trim();
+    if(preparedArtifactKind&&['review_prepared_work','approve','edit_before_approving','reject'].includes(action)){
+      const packet=valExternalActions.preparePacketFromPreparedArtifact?await valExternalActions.preparePacketFromPreparedArtifact(item):null;
+      if(!packet)return res.status(400).json({ok:false,error:'Prepared work could not be mapped to an external action packet'});
+      let packetResult=packet;
+      let status='external_packet_ready';
+      let message='Prepared-work packet is ready for review. No external action was taken.';
+      if(action==='approve'){
+        packetResult=await valExternalActions.approve(packet.id,{note:'Approved from prepared-work review surface. Local approval only.'});
+        status='external_packet_approved_local_only';
+        message='Approval recorded on the exact action packet. Nothing has been sent, published, scheduled, or changed externally.';
+      }else if(action==='edit_before_approving'){
+        packetResult=await valExternalActions.edit(packet.id,{note:'Edit requested from prepared-work review surface.'});
+        status='external_packet_edit_requested';
+        message='Packet is ready to refine before approval. No external action was taken.';
+      }else if(action==='reject'){
+        packetResult=await valExternalActions.reject(packet.id,{reason:'Declined from prepared-work review surface.'});
+        status='external_packet_rejected';
+        message='Prepared work was declined on the exact action packet. No external action was taken.';
+      }
+      await auditLog({req,action:'homepage_prepared_work_packet_review',resourceType:'val_external_action_packet',resourceId:packet.id,metadata:{cardType,homepageAction:action,preparedArtifactKind,packetStatus:packetResult?.status,externalActionTaken:false,executionAvailable:false},success:true}).catch(()=>{});
+      return res.json({ok:true,action,cardType,status,message,packet:packetResult,packet_id:packet.id,no_external_action:true,execution_available:false});
+    }
     if(taskActions.includes(action)){
       const dueDate=req.body.dueDate||new Date(Date.now()+2*24*60*60*1000).toISOString();
       const defaultTitle=action==='schedule_meeting'?`Schedule meeting: ${title}`:action==='schedule_work_block'||action==='schedule_time'?`Schedule time: ${title}`:action==='follow_up'||action==='create_follow_up_task'?`Follow up: ${title}`:title||'Review VAL signal';
@@ -19648,171 +22600,6 @@ app.post('/api/homepage-cards/action',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
-function activeChatContextFromBody(body={},dashboard={}){
-  const ctx=body.context||dashboard.activeContext||dashboard.contact||dashboard.project||dashboard.evidence||null;
-  return ctx&&typeof ctx==='object'?ctx:null;
-}
-function chatContextTitle(ctx={}){
-  const item=ctx.item||ctx.contact||ctx.project||ctx.evidence||ctx;
-  return dashboardCleanText(item.title||item.name||item.subject||item.summary||ctx.title||ctx.label||'this context','this context');
-}
-function chatContextSummary(ctx={}){
-  const item=ctx.item||ctx.contact||ctx.project||ctx.evidence||ctx;
-  return dashboardCleanText([
-    item.summary||item.reason_it_matters||item.why||item.notes||item.description||'',
-    item.snippet||item.content||item.rawText||'',
-    ctx.label?`Workspace: ${ctx.label}`:'',
-    ctx.kind?`Context kind: ${ctx.kind}`:''
-  ].filter(Boolean).join('\n\n'),'');
-}
-function chatContextEntityName(ctx={}){
-  const item=ctx.contact||ctx.item||ctx.project||ctx.evidence||ctx;
-  return dashboardCleanText(item.name||item.contactName||item.person||item.company||'','');
-}
-function chatContextIntent(text=''){
-  const lower=String(text||'').toLowerCase();
-  if(/\b(show|list|explain)\b[\s\S]{0,50}\bevidence\b/.test(lower))return 'show_evidence';
-  if(/\b(create|add|make|save|turn)\b[\s\S]{0,50}\b(task|action item|to[- ]?do|todo|follow[- ]?up)\b/.test(lower))return 'create_task';
-  if(/\b(draft|write|compose|prepare)\b[\s\S]{0,60}\b(email|reply|response|message|update)\b/.test(lower))return 'draft_email';
-  if(/\b(send)\b[\s\S]{0,60}\b(email|reply|message)\b/.test(lower))return 'draft_email';
-  if(/\b(schedule|calendar|appointment|meeting|reminder|block time|follow[- ]?up)\b/.test(lower)&&/\b(create|add|make|schedule|calendar|remind|appointment|meeting|time)\b/.test(lower))return 'schedule';
-  if(/\b(update|remember|save|teach|add)\b[\s\S]{0,60}\b(memory|context|val|note|relationship|person|contact)\b/.test(lower))return 'update_memory';
-  if(/\b(add|attach|file|save)\b[\s\S]{0,60}\b(project|drawer|cabinet)\b/.test(lower))return 'add_to_project';
-  return '';
-}
-function chatContextCorrection(text=''){
-  const lower=String(text||'').toLowerCase();
-  const noSave=/\b(don't|dont|do not|no need to|shouldn't|should not|not necessary to|nothing to)\b[\s\S]{0,80}\b(save|remember|add|update|file|store)\b/.test(lower)
-    || /\b(save|remember|add|update|file|store)\b[\s\S]{0,80}\b(nothing|don't|dont|do not|no need|shouldn't|should not)\b/.test(lower);
-  const selfIdentity=/\b(this is actually me|that's actually me|that is actually me|this is me|that's me|that is me|my own contact|my profile|my own profile)\b/.test(lower);
-  const wrongAssociation=/\b(wrong|incorrect|not right|misread|misunderstood|bad match|wrong person|not this person|not about this contact)\b/.test(lower);
-  if(noSave&&selfIdentity)return 'self_no_save';
-  if(noSave)return 'do_not_save';
-  if(selfIdentity)return 'self_identity';
-  if(wrongAssociation)return 'wrong_association';
-  return '';
-}
-function requestedTaskTitle(text='',ctx={}){
-  const quoted=String(text||'').match(/['"“”]([^'"“”]{4,160})['"“”]/);
-  if(quoted&&quoted[1])return dashboardCleanText(quoted[1]);
-  const title=chatContextTitle(ctx);
-  if(/\breschedule\b/i.test(text))return `Reschedule follow-up: ${title}`;
-  if(/\bfollow[- ]?up\b/i.test(text))return `Follow up: ${title}`;
-  if(/\bschedule|calendar|appointment|meeting\b/i.test(text))return `Schedule: ${title}`;
-  return `Review: ${title}`;
-}
-function valUserFirstName(){
-  const name=(currentValUser()?.name||CLIENT_CONFIG.clientName||'').trim();
-  return String(name||'there').split(/\s+/)[0]||'there';
-}
-function conversationalContextReply(type,{title='',entityName='',task=null,draft=null}={}){
-  const first=valUserFirstName();
-  if(type==='self_no_save'){
-    return [
-      `Oh. I should have known that, ${first}. Of course that is you.`,
-      'And honestly, yes: you are still the most important person on any list.',
-      'I will not save that as an outside contact or add anything from this correction. I will just hold the correction in this conversation and move more carefully.'
-    ].join('\n\n');
-  }
-  if(type==='do_not_save'){
-    return [
-      'Got it. I will not save anything from that.',
-      'Thank you for catching the difference between "use this for the conversation" and "store this as memory." That distinction matters.'
-    ].join('\n\n');
-  }
-  if(type==='self_identity'){
-    return [
-      `Oh. I should have recognized that as you, ${first}.`,
-      'I will treat this as owner context, not an outside relationship. If you want, I can show what source made it appear as a separate contact.'
-    ].join('\n\n');
-  }
-  if(type==='wrong_association'){
-    return [
-      'You are right to stop me there.',
-      `I may be associating ${title||'this'} with the wrong person or context. I will not act on that interpretation unless you confirm it.`
-    ].join('\n\n');
-  }
-  if(type==='task'){
-    return [
-      `Yes. I turned that into an action item: ${task?.title||title}.`,
-      entityName?`I linked it to ${entityName} so it does not float around without context.`:'I kept the source context attached so it does not become a vague loose end.',
-      'Nothing external happened. It is waiting in Actions.'
-    ].join('\n\n');
-  }
-  if(type==='schedule'){
-    return [
-      `Yes. I made this a scheduling action: ${task?.title||title}.`,
-      'I am keeping it internal for now, so no calendar invite, guest, or meeting link goes out without your approval.'
-    ].join('\n\n');
-  }
-  if(type==='draft'){
-    return [
-      `I drafted it and kept it for approval: ${draft?.subject||title}.`,
-      'Nothing was sent. I will let you shape the tone before it leaves your world.'
-    ].join('\n\n');
-  }
-  if(type==='memory'){
-    return [
-      'Got it. I will remember that as context, not as a random note.',
-      title?`I am connecting it to ${title} so it can actually help me support you later.`:'I will use it to support you more accurately later.'
-    ].join('\n\n');
-  }
-  if(type==='evidence_empty'){
-    return [
-      `I do not have a clean display receipt for ${title||'this'} yet.`,
-      'That does not mean the context is useless. It means I should be careful and not overstate certainty.'
-    ].join('\n\n');
-  }
-  return '';
-}
-async function handleContextualChatCommand({context,lastUser}){
-  if(!context)return null;
-  const correction=chatContextCorrection(lastUser);
-  if(correction){
-    const title=chatContextTitle(context);
-    const type=correction==='self_no_save'?'self_no_save':correction;
-    return {content:conversationalContextReply(type,{title}),extra:{contextualCorrection:correction}};
-  }
-  const intent=chatContextIntent(lastUser);
-  if(!intent)return null;
-  const title=chatContextTitle(context);
-  const summary=chatContextSummary(context);
-  const entityName=chatContextEntityName(context);
-  const item=context.item||context.contact||context.project||context.evidence||{};
-  const sourceContext={source:'contextual_chat',channel:context.channel||'general_chat',intent,contextKind:context.kind||'',surface:context.surface||'',label:context.label||'',title,entityName,itemId:item.id||item.source_id||item.sourceId||'',cardType:context.cardType||context.type||'',sourceType:item.source_type||item.sourceType||item.type||'',sourceId:item.source_id||item.sourceId||''};
-  if(intent==='show_evidence'){
-    const evidence=Array.isArray(item.evidence)?item.evidence:[];
-    const ids=[].concat(item.evidenceIds||[],item.observationIds||[],item.source_ids||[]).filter(Boolean);
-    const lines=evidence.slice(0,8).map((e,i)=>`${i+1}. ${dashboardCleanText(e.title||e.type||'Evidence')} — ${dashboardCleanText(e.summary||e.id||'Stored source record')}`);
-    const idLines=!lines.length&&ids.length?ids.slice(0,8).map((id,i)=>`${i+1}. Source ID: ${id}`):[];
-    return {content:lines.length||idLines.length?[`Here is what I can see behind ${title}.`,(lines.length?lines:idLines).join('\n')].join('\n\n'):conversationalContextReply('evidence_empty',{title}),extra:{contextualIntent:intent,evidence:evidence.slice(0,8),sourceIds:ids.slice(0,12)}};
-  }
-  if(intent==='create_task'||intent==='schedule'){
-    const taskTitle=requestedTaskTitle(lastUser,context);
-    const task={id:uuid('task'),title:taskTitle,contactName:entityName,dueDate:new Date(Date.now()+24*60*60*1000).toISOString(),notes:[summary,`Created from contextual chat for ${title}.`,intent==='schedule'?'Scheduling requested. Confirm a calendar block from Actions before anything external is created.':''].filter(Boolean).join('\n\n'),details:[{text:`Created from contextual chat: ${intent}`,ts:new Date().toISOString(),sourceContext}],completed:false,createdAt:new Date().toISOString(),source:'contextual_chat'};
-    await saveTask(task);
-    return {content:conversationalContextReply(intent==='schedule'?'schedule':'task',{title,entityName,task}),extra:{contextualIntent:intent,createdTasks:[task]}};
-  }
-  if(intent==='draft_email'){
-    const subject=/\bfollow[- ]?up\b/i.test(lastUser)?`Follow-up: ${title}`:`Draft: ${title}`;
-    const body=[
-      entityName?`Hi ${String(entityName).split(/\s+/)[0]},`:'Hi,',
-      '',
-      summary||`I wanted to follow up on ${title}.`,
-      '',
-      'Best,',
-      currentValUser().name||CLIENT_CONFIG.clientName||'Jessa'
-    ].join('\n');
-    const draft=await saveInternalDraft({draftType:'contextual_chat_email',provider:'internal',subject,body,status:'draft',sourceContext:{...sourceContext,replyAll:true,to:item.email||item.matchedEmail||'',cc:''}});
-    return {content:conversationalContextReply('draft',{title,entityName,draft}),extra:{contextualIntent:intent,draft}};
-  }
-  if(intent==='update_memory'||intent==='add_to_project'){
-    const kind=intent==='add_to_project'?'project_context_note':'contextual_chat_memory';
-    const memory=await saveMemoryItem({kind,summary:`${intent==='add_to_project'?'Project context':'Context'}: ${title}`,rawText:[summary,lastUser].filter(Boolean).join('\n\n'),importance:4,metadata:sourceContext});
-    return {content:conversationalContextReply('memory',{title,entityName}),extra:{contextualIntent:intent,memory}};
-  }
-  return null;
-}
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
@@ -19834,6 +22621,7 @@ app.post('/api/val/intelligence',async(req,res)=>{
 app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
+    const projectContext=req.body.projectContext&&typeof req.body.projectContext==='object'?req.body.projectContext:null;
     const conversationId=String(req.body.conversationId||'').trim()||uuid('chat');
     const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
     async function sendChat(content,extra={}){
@@ -19841,16 +22629,32 @@ app.post('/api/val/chat',async(req,res)=>{
       const fullMessages=messages.concat({role:'assistant',content});
       try{
         if(!DEMO_MODE&&process.env.DATABASE_URL&&!pgPool) throw new Error('Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
-        saved=await saveConversation({id:conversationId,title:conversationTitle,source:req.body.channel||'chat',messages:fullMessages,metadata:{channel:req.body.channel||'chat',savedBy:'chat_route'}});
+        saved=await saveConversation({id:conversationId,title:conversationTitle,source:req.body.channel||'chat',messages:fullMessages,metadata:{channel:req.body.channel||'chat',savedBy:'chat_route',projectContext:projectContext||undefined,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||''}});
+        if(projectContext?.projectId||projectContext?.projectName){
+          const projectChatMemory=await saveMemoryItem({
+            kind:'project_chat_context',
+            summary:'Project Co-Work: '+(projectContext.projectName||projectContext.projectId||conversationTitle),
+            rawText:fullMessages.map(m=>`${m.role||'user'}: ${m.content||''}`).join('\n\n').slice(0,12000),
+            importance:3,
+            metadata:{source:'hearth_cowork',conversationId:saved?.id||conversationId,projectId:projectContext.projectId||'',projectName:projectContext.projectName||'',projectProfileId:projectContext.projectProfileId||'',noExternalAction:true}
+          }).catch(()=>{});
+          await valReviewUpdates.createProjectSourceInterpretation({
+            projectId:projectContext.projectId||projectContext.projectProfileId||projectContext.projectName,
+            projectName:projectContext.projectName||projectContext.projectId||'Project',
+            sourceType:'project_chat_context',
+            sourceId:projectChatMemory?.id||saved?.id||conversationId,
+            sourceTitle:conversationTitle,
+            summary:'Project Co-Work context captured for review: '+(lastUser||conversationTitle),
+            rawText:fullMessages.map(m=>`${m.role||'user'}: ${m.content||''}`).join('\n\n').slice(0,12000),
+            confidence:0.72
+          }).catch(()=>{});
+        }
       }catch(saveError){
         saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
       }
       return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
-    const activeContext=activeChatContextFromBody(req.body,dashboard);
-    const contextualCommand=await handleContextualChatCommand({context:activeContext,lastUser}).catch(e=>({content:`I tried to act on this context, but the action did not complete: ${e.message}`,extra:{contextualIntentError:e.message}}));
-    if(contextualCommand)return sendChat(contextualCommand.content,contextualCommand.extra||{});
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
     if(presenceIntent?.requiresConfirmation){
       return sendChat([
@@ -19884,16 +22688,16 @@ app.post('/api/val/chat',async(req,res)=>{
       const result=await createOrUpdateGoallTestContact();
       return sendChat(goallTestContactSummary(result),{ghlContact:result});
     }
-    const inferredGhlAction=deterministicGhlActionFromText(lastUser)||await inferGhlActionFromChat(lastUser);
+    const inferredGhlAction=await inferGhlActionFromChat(lastUser);
     if(inferredGhlAction){
       const packet=saveValOsExternalActionPacket(buildGhlExternalActionPacket(inferredGhlAction,lastUser));
       return sendChat([
-        'I prepared the GHL action and need one approval before I touch the external system.',
+        'I prepared the GHL MCP action packet and need one approval before I touch the external system.',
         '',
         packet.willDo,
         '',
-        'Approve it below and I will do exactly this, then show a receipt.'
-      ].join('\n'),{externalActionPacket:packet});
+        'Approve it below and I will do exactly this, then show a receipt. Until then, this is prepared Co-Work only.'
+      ].join('\n'),{externalActionPacket:packet,ghlMcpCoworkActionPacket:true,noExternalAction:true});
     }
     if(isGoogleDocRewriteRequest(lastUser)){
       try{
@@ -19934,7 +22738,7 @@ app.post('/api/val/chat',async(req,res)=>{
       isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
     ]);
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, and saved memory when relevant. Do not pretend to know facts that are not present. When the user asks why, what matters, what changed, what VAL is worried about, or what VAL is excited about, ground the answer in Executive Briefing, agency moves, relationship velocity, and cited evidence/observations when present.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
@@ -19953,7 +22757,21 @@ async function extractUploadedText(file){
   if(mime.startsWith('text/')||['.txt','.md','.markdown','.html','.htm','.json','.csv','.tsv'].includes(ext)) return file.buffer.toString('utf8');
   if(mime==='application/pdf'||ext==='.pdf') return (await pdfParse(file.buffer)).text||'';
   if(mime==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'||ext==='.docx') return (await mammoth.extractRawText({buffer:file.buffer})).value||'';
-  throw new Error('Unsupported file type. Upload TXT, MD, HTML, JSON, CSV, PDF, or DOCX.');
+  if(mime==='application/msword'||ext==='.doc'){
+    const tempDir=await fs.promises.mkdtemp(path.join(os.tmpdir(),'val-doc-upload-'));
+    const inputPath=path.join(tempDir,name.replace(/[^\w.-]+/g,'_')||'upload.doc');
+    const outputPath=inputPath.replace(/\.doc$/i,'.txt')+'.txt';
+    try{
+      await fs.promises.writeFile(inputPath,file.buffer);
+      await execFileAsync('/usr/bin/textutil',['-convert','txt','-output',outputPath,inputPath],{timeout:15000});
+      return await fs.promises.readFile(outputPath,'utf8');
+    }catch(e){
+      throw new Error('Legacy .doc files could not be read on this server. Save the file as .docx or .txt and upload it again.');
+    }finally{
+      await fs.promises.rm(tempDir,{recursive:true,force:true}).catch(()=>{});
+    }
+  }
+  throw new Error('Unsupported file type. Upload TXT, DOC, DOCX, MD, HTML, JSON, CSV, PDF, or TSV.');
 }
 app.post('/api/val/files',upload.any(),async(req,res)=>{
   try{
@@ -20016,8 +22834,6 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
 const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{
   console.log(`VAL proxy running on port ${PORT}`);
-  setTimeout(()=>purgeJessaTranscriptArtifacts().catch(e=>console.error('Transcript artifact purge failed:',e.message)),5000);
-  setTimeout(()=>purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('Recovered transcript purge failed:',e.message)),7000);
   setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
   setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
 });

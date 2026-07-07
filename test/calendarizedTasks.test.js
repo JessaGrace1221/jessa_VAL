@@ -59,5 +59,5 @@ test('command center highlights open loops needing calendar time',()=>{
   assert.match(commandCenter,/Open Loops/);
   assert.match(commandCenter,/unscheduled/);
   assert.match(commandCenter,/scheduledToday/);
-  assert.match(commandCenter,/Calendarize Tasks/);
+  assert.match(commandCenter,/commitments:'openCommitmentsPage'/);
 });

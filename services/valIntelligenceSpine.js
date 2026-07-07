@@ -1,0 +1,693 @@
+const {createValPromptRegistry} = require('./valPromptRegistry');
+
+const DEFAULT_OBSERVERS = [
+  {observerName:'Executive Inbox',promptKey:'executive_inbox'},
+  {observerName:'Relationship',promptKey:'relationship_project_understanding'},
+  {observerName:'Project',promptKey:'relationship_project_understanding'},
+  {observerName:'Capacity',promptKey:'chief_of_staff'},
+  {observerName:'Courage',promptKey:'chief_of_staff'},
+  {observerName:'Delight',promptKey:'chief_of_staff'},
+  {observerName:'Opportunity',promptKey:'crm'},
+  {observerName:'Momentum',promptKey:'momentum'},
+  {observerName:'Meaning',promptKey:'momentum'},
+  {observerName:'Commitment',promptKey:'transcript_intake'},
+  {observerName:'Calendar',promptKey:'calendar_meeting_prep'},
+  {observerName:'Environment',promptKey:'event_intelligence_pass'}
+];
+
+function safeArray(value){ return Array.isArray(value) ? value : []; }
+function compactText(value,limit=500){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+function jsonValue(value,fallback){
+  if(value==null) return fallback;
+  if(typeof value==='string'){
+    try{return JSON.parse(value);}catch(_){return fallback;}
+  }
+  return value;
+}
+function iso(value){
+  if(!value) return '';
+  if(value instanceof Date) return value.toISOString();
+  if(value.toISOString) return value.toISOString();
+  return String(value);
+}
+function normalizeSourceRef(ref={}){
+  return {
+    source_type:String(ref.source_type||ref.sourceType||ref.type||'unknown'),
+    source_id:String(ref.source_id||ref.sourceId||ref.id||''),
+    quote_or_summary:compactText(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||'',900),
+    confidence:Math.max(0,Math.min(1,Number(ref.confidence)||0)),
+    created_at:ref.created_at||ref.createdAt||new Date().toISOString()
+  };
+}
+function sourceRefsFromRows(rows=[],sourceType='unknown',summaryKey='summary',idKey='id',limit=8){
+  return safeArray(rows).slice(0,limit).map(row=>normalizeSourceRef({
+    sourceType,
+    sourceId:row[idKey]||row.id||row.sourceId||'',
+    quoteOrSummary:row[summaryKey]||row.title||row.displayName||row.rawText||row.raw_text||'',
+    confidence:row.confidence||0.65,
+    createdAt:row.createdAt||row.created_at||row.updatedAt||row.updated_at||''
+  }));
+}
+function rowToObject(row={}){
+  const out={};
+  for(const [k,v] of Object.entries(row||{})) out[k]=v instanceof Date?v.toISOString():v;
+  return out;
+}
+function parseRecord(row){
+  if(!row) return null;
+  const out=rowToObject(row);
+  for(const key of Object.keys(out)){
+    if(/_json$/.test(key)) out[key]=jsonValue(out[key],out[key]);
+  }
+  return out;
+}
+
+function createValIntelligenceSpine({
+  dbQuery,
+  hasPg=()=>false,
+  getStore=()=>({}),
+  saveStore=()=>{},
+  uuid=(prefix)=>`${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`,
+  tenantId=()=>'default',
+  userId=()=>'default',
+  logger=console,
+  promptRegistry=createValPromptRegistry(),
+  loaders={}
+}={}){
+  function now(){ return new Date().toISOString(); }
+  function spineStore(){
+    const store=getStore()||{};
+    for(const key of ['eventIntelligenceRuns','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems']){
+      if(!Array.isArray(store[key])) store[key]=[];
+    }
+    return store;
+  }
+  function currentScope(){
+    return {tenantId:tenantId(),userId:userId()};
+  }
+  async function pgInsert(table,row,columns,returning='*'){
+    const values=columns.map(c=>row[c]);
+    const params=columns.map((_,i)=>`$${i+1}`).join(',');
+    const names=columns.map(c=>c.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())).join(',');
+    const r=await dbQuery(`insert into ${table} (${names}) values (${params}) returning ${returning}`,values);
+    return r?.rows?.[0] ? parseRecord(r.rows[0]) : row;
+  }
+  async function pgList(table,{where='',params=[],limit=30,order='created_at desc'}={}){
+    const lim=Math.max(1,Math.min(Number(limit)||30,200));
+    const r=await dbQuery(`select * from ${table} ${where?`where ${where}`:''} order by ${order} limit ${lim}`,params);
+    return (r?.rows||[]).map(parseRecord);
+  }
+  async function saveEventRun(row){
+    const clean={...row};
+    if(hasPg()){
+      return pgInsert('event_intelligence_runs',clean,[
+        'id','tenantId','userId','eventType','eventSourceType','eventSourceId','status','contextPacketJson','unknownsJson','sourceRefsJson','resultJson','errorMessage','createdAt','completedAt'
+      ]);
+    }
+    const store=spineStore();
+    store.eventIntelligenceRuns.unshift(clean);
+    saveStore(store);
+    return clean;
+  }
+  async function updateEventRun(id,patch){
+    if(hasPg()){
+      const r=await dbQuery(`update event_intelligence_runs set status=$1,result_json=$2,unknowns_json=$3,source_refs_json=$4,error_message=$5,completed_at=$6 where id=$7 and tenant_id=$8 and user_id=$9 returning *`,[
+        patch.status||'completed',JSON.stringify(patch.resultJson||{}),JSON.stringify(patch.unknownsJson||[]),JSON.stringify(patch.sourceRefsJson||[]),patch.errorMessage||null,patch.completedAt||now(),id,tenantId(),userId()
+      ]);
+      return r?.rows?.[0]?parseRecord(r.rows[0]):null;
+    }
+    const store=spineStore();
+    const row=store.eventIntelligenceRuns.find(r=>r.id===id);
+    if(row) Object.assign(row,patch);
+    saveStore(store);
+    return row;
+  }
+  async function saveObserverRun(row){
+    if(hasPg()){
+      return pgInsert('observer_runs',row,[
+        'id','tenantId','userId','eventRunId','observerName','promptKey','promptSource','status','contextPacketJson','outputJson','confidence','conviction','unknownsJson','evidenceRefsJson','closingStatement','errorMessage','createdAt'
+      ]);
+    }
+    const store=spineStore();store.observerRuns.unshift(row);saveStore(store);return row;
+  }
+  async function saveRoundTableRun(row){
+    if(hasPg()){
+      return pgInsert('round_table_runs',row,[
+        'id','tenantId','userId','eventRunId','observerRunIds','agreementsJson','conflictsJson','candidateTensionsJson','opposingViewsJson','uncertaintyJson','outputJson','sourceRefsJson','createdAt'
+      ]);
+    }
+    const store=spineStore();store.roundTableRuns.unshift(row);saveStore(store);return row;
+  }
+  async function saveChiefRecommendation(row){
+    if(hasPg()){
+      return pgInsert('chief_of_staff_recommendations',row,[
+        'id','tenantId','userId','eventRunId','roundTableRunId','status','title','recommendation','why','confidence','opposingView','anxietyVsMomentumJson','nextCandidatesJson','observerRunIds','sourceRefsJson','userFeedbackJson','createdAt','updatedAt','completedAt'
+      ]);
+    }
+    const store=spineStore();store.chiefOfStaffRecommendations.unshift(row);saveStore(store);return row;
+  }
+  async function saveMomentumSnapshot(row){
+    if(hasPg()){
+      return pgInsert('momentum_snapshots',row,[
+        'id','tenantId','userId','eventRunId','summary','direction','velocityJson','dimensionsJson','invisibleMomentumJson','meaningJson','sourceRefsJson','createdAt'
+      ]);
+    }
+    const store=spineStore();store.momentumSnapshots.unshift(row);saveStore(store);return row;
+  }
+  async function saveReadyForYouItem(row){
+    if(hasPg()){
+      return pgInsert('ready_for_you_items',row,[
+        'id','tenantId','userId','eventRunId','status','title','itemType','readinessJson','whatValPrepared','whatUserNeedsToDo','sourceRefsJson','metadataJson','createdAt','updatedAt'
+      ]);
+    }
+    const store=spineStore();store.readyForYouItems.unshift(row);saveStore(store);return row;
+  }
+  async function listEventRuns({limit=30}={}){
+    if(hasPg()) return pgList('event_intelligence_runs',{where:'tenant_id=$1 and user_id=$2',params:[tenantId(),userId()],limit});
+    return spineStore().eventIntelligenceRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,limit);
+  }
+  async function listObserverRuns({limit=30,eventRunId='',observerName=''}={}){
+    if(hasPg()){
+      const params=[tenantId(),userId()];
+      let where='tenant_id=$1 and user_id=$2';
+      if(eventRunId){params.push(eventRunId);where+=` and event_run_id=$${params.length}`;}
+      if(observerName){params.push(observerName);where+=` and observer_name=$${params.length}`;}
+      return pgList('observer_runs',{where,params,limit});
+    }
+    return spineStore().observerRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&(!eventRunId||r.eventRunId===eventRunId)&&(!observerName||r.observerName===observerName)).slice(0,limit);
+  }
+  async function listRoundTableRuns({limit=30,eventRunId=''}={}){
+    if(hasPg()){
+      const params=[tenantId(),userId()];
+      let where='tenant_id=$1 and user_id=$2';
+      if(eventRunId){params.push(eventRunId);where+=` and event_run_id=$${params.length}`;}
+      return pgList('round_table_runs',{where,params,limit});
+    }
+    return spineStore().roundTableRuns.filter(r=>r.tenantId===tenantId()&&r.userId===userId()&&(!eventRunId||r.eventRunId===eventRunId)).slice(0,limit);
+  }
+  async function listChiefRecommendations({limit=10}={}){
+    if(hasPg()) return pgList('chief_of_staff_recommendations',{where:'tenant_id=$1 and user_id=$2',params:[tenantId(),userId()],limit});
+    return spineStore().chiefOfStaffRecommendations.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,limit);
+  }
+  async function selectRows(table,sql,params,mapper=x=>x){
+    try{
+      if(hasPg()){
+        const r=await dbQuery(sql,params);
+        return (r?.rows||[]).map(row=>mapper(rowToObject(row)));
+      }
+    }catch(e){
+      logger.warn?.(`[val-spine] ${table} unavailable: ${e.message}`);
+    }
+    return null;
+  }
+  async function buildSharedContextPacket({event={},req=null,includeExternal=false}={}){
+    const unknowns=[];
+    const scope=currentScope();
+    const context={generatedAt:now(),tenantId:scope.tenantId,userId:scope.userId,event,currentTime:{iso:now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'unknown'}};
+    const addUnknown=(source,reason)=>unknowns.push({source,reason,recorded_at:now()});
+
+    try{
+      context.teachVal=await (loaders.listTeachValCoreMemory ? loaders.listTeachValCoreMemory({limit:40}) : Promise.resolve([]));
+      if(!context.teachVal.length)addUnknown('teach_val','No Teach VAL core memory available yet.');
+    }catch(e){context.teachVal=[];addUnknown('teach_val',e.message);}
+
+    try{
+      const rows=await selectRows('transcripts',`select id,title,executive_summary,raw_text,created_at from transcripts where tenant_id=$1 and user_id=$2 order by created_at desc limit 8`,[tenantId(),userId()],row=>({id:row.id,title:row.title||'',summary:row.executive_summary||compactText(row.raw_text,600),createdAt:iso(row.created_at)}));
+      context.recentTranscripts=rows || safeArray(getStore().transcripts).slice(0,8);
+      if(!context.recentTranscripts.length)addUnknown('recent_transcripts','No recent transcript rows were available.');
+    }catch(e){context.recentTranscripts=[];addUnknown('recent_transcripts',e.message);}
+
+    try{
+      const conversations=await (loaders.listRecentConversationSummaries ? loaders.listRecentConversationSummaries({limit:12}) : Promise.resolve([]));
+      context.conversationsSummary={available:!!conversations.length,conversations};
+      context.emailsSummary=conversations.length
+        ? {available:true,stubbed:false,summary:`${conversations.length} durable conversation record${conversations.length===1?'':'s'} available.`,conversations}
+        : {available:false,stubbed:false,summary:'No durable conversation records have been synced yet.'};
+      if(!conversations.length)addUnknown('emails_summary','No durable synced email conversations were available. Run /api/val/email/sync after Gmail/Outlook are connected.');
+    }catch(e){
+      context.conversationsSummary={available:false,conversations:[]};
+      context.emailsSummary={available:false,stubbed:false,summary:'Conversation summary builder failed.',error:e.message};
+      addUnknown('emails_summary',e.message);
+    }
+    if(event.conversationId||event.messageId||(event.provider&&event.threadId)){
+      try{
+        context.conversationContext=await (loaders.buildConversationContext ? loaders.buildConversationContext(event) : Promise.resolve(null));
+      }catch(e){
+        context.conversationContext=null;
+        addUnknown('conversation_context',e.message);
+      }
+    }
+    const identityInput=event.identity||event.person||event.sender||event.from||null;
+    if(identityInput){
+      try{
+        context.identityResolution=await (loaders.resolveIdentity ? loaders.resolveIdentity(identityInput) : Promise.resolve(null));
+      }catch(e){
+        context.identityResolution=null;
+        addUnknown('identity_resolution',e.message);
+      }
+    }
+    try{
+      context.highSignalConversationClassifications=await (loaders.listHighSignalClassifications ? loaders.listHighSignalClassifications({limit:10}) : Promise.resolve([]));
+      if(!context.highSignalConversationClassifications.length)addUnknown('conversation_classifications','No high-signal Executive Inbox classifications are available yet.');
+    }catch(e){
+      context.highSignalConversationClassifications=[];
+      addUnknown('conversation_classifications',e.message);
+    }
+    try{
+      context.readyForYouDraftCandidates=await (loaders.listReadyForYouDraftCandidates ? loaders.listReadyForYouDraftCandidates({limit:8}) : Promise.resolve([]));
+    }catch(e){
+      context.readyForYouDraftCandidates=[];
+      addUnknown('ready_for_you_draft_candidates',e.message);
+    }
+
+    try{
+      const rows=await selectRows('calendar',`select id,source,title,start_time,end_time,attendees from val_calendar_events where tenant_id=$1 and user_id=$2 and start_time >= now() - interval '1 day' order by start_time asc limit 12`,[tenantId(),userId()],row=>({id:row.id,source:row.source,title:row.title,startTime:iso(row.start_time),endTime:iso(row.end_time),attendees:jsonValue(row.attendees,[])}));
+      context.calendarSummary={events:rows || safeArray(getStore().calendarEvents).slice(0,12)};
+      if(!context.calendarSummary.events.length)addUnknown('calendar_summary','No stored VAL calendar events were available. Google/Outlook/GHL calendar routes may still fetch on demand.');
+    }catch(e){context.calendarSummary={events:[]};addUnknown('calendar_summary',e.message);}
+
+    try{
+      const tasks=await (loaders.loadTasks ? loaders.loadTasks() : Promise.resolve(safeArray(getStore().tasks)));
+      context.tasksSummary={total:tasks.length,open:tasks.filter(t=>!t.completed).slice(0,20),overdue:tasks.filter(t=>!t.completed&&t.dueDate&&new Date(t.dueDate)<new Date()).slice(0,10)};
+    }catch(e){context.tasksSummary={total:0,open:[],overdue:[]};addUnknown('tasks_summary',e.message);}
+
+    try{
+      const relationships=await (loaders.listRelationshipProfiles ? loaders.listRelationshipProfiles({limit:40}) : Promise.resolve([]));
+      context.relationshipsSummary=relationships.filter(r=>r.profileType!=='project').slice(0,30);
+      context.projectsSummary=relationships.filter(r=>r.profileType==='project').slice(0,20);
+      if(!context.relationshipsSummary.length)addUnknown('relationships_summary','No relationship profiles available yet.');
+      if(!context.projectsSummary.length)addUnknown('projects_summary','No project profiles available yet.');
+    }catch(e){context.relationshipsSummary=[];context.projectsSummary=[];addUnknown('relationships_projects',e.message);}
+
+    context.crmSummary={available:false,stubbed:!includeExternal,summary:includeExternal?'CRM summary loader was requested but no Phase 1 persistent CRM summary exists.':'CRM/GHL is intentionally not fetched by default in Phase 1 to avoid noisy external calls.'};
+    addUnknown('crm_summary','Persistent CRM summary model is not implemented yet; GHL context remains request-time.');
+
+    try{
+      context.recentRecommendations=await listChiefRecommendations({limit:8});
+    }catch(e){context.recentRecommendations=[];addUnknown('recent_recommendations',e.message);}
+
+    try{
+      const rows=await selectRows('user_feedback',`select kind,summary,raw_text,metadata,created_at from val_memory_items where tenant_id=$1 and user_id=$2 and kind in ('homepage_card_decision','relationship_preference') order by created_at desc limit 20`,[tenantId(),userId()],row=>({kind:row.kind,summary:row.summary,rawText:row.raw_text,metadata:jsonValue(row.metadata,{}),createdAt:iso(row.created_at)}));
+      context.userFeedback=rows || safeArray(getStore().memoryItems).filter(m=>['homepage_card_decision','relationship_preference'].includes(m.kind)).slice(0,20);
+    }catch(e){context.userFeedback=[];addUnknown('user_feedback',e.message);}
+
+    const refs=[
+      ...sourceRefsFromRows(context.teachVal,'teach_val_memory','summary','id',6),
+      ...sourceRefsFromRows(context.recentTranscripts,'transcript','summary','id',6),
+      ...sourceRefsFromRows(context.relationshipsSummary,'relationship_profile','summary','id',6),
+      ...sourceRefsFromRows(context.projectsSummary,'project_profile','summary','id',4),
+      ...sourceRefsFromRows(context.conversationsSummary?.conversations||[],'unified_conversation','subject','id',6),
+      ...sourceRefsFromRows(context.highSignalConversationClassifications||[],'conversation_classification','whyNow','id',6),
+      ...sourceRefsFromRows(context.tasksSummary.open,'task','title','id',6),
+      ...sourceRefsFromRows(context.calendarSummary.events,'calendar_event','title','id',4)
+    ];
+    context.unknowns=unknowns;
+    context.sourceRefs=refs;
+    return context;
+  }
+  function observerKind(name){
+    return String(name||'').toLowerCase().replace(/\s+/g,'_');
+  }
+  function countSignals(context){
+    const openTasks=context.tasksSummary?.open?.length||0;
+    const overdue=context.tasksSummary?.overdue?.length||0;
+    const relationships=context.relationshipsSummary?.length||0;
+    const projects=context.projectsSummary?.length||0;
+    const transcripts=context.recentTranscripts?.length||0;
+    const calendar=context.calendarSummary?.events?.length||0;
+    return {openTasks,overdue,relationships,projects,transcripts,calendar,unknowns:context.unknowns?.length||0};
+  }
+  function buildObserverOutput(observerName,context){
+    const kind=observerKind(observerName);
+    const c=countSignals(context);
+    const baseUnknowns=safeArray(context.unknowns).filter(u=>{
+      if(kind==='executive_inbox')return /email/i.test(u.source);
+      if(kind==='calendar')return /calendar/i.test(u.source);
+      if(kind==='opportunity')return /crm/i.test(u.source);
+      return true;
+    }).slice(0,6);
+    let observation='No strong signal detected yet.';
+    let attentionSignals=[];
+    let confidence=0.55, conviction=0.45, closing='I do not have enough evidence to pound the table.';
+    if(kind==='executive_inbox'){
+      const convs=context.conversationsSummary?.conversations||[];
+      observation=convs.length?`${convs.length} durable conversation record${convs.length===1?' is':'s are'} available for inbox judgment.`:'No durable conversation records are available yet.';
+      attentionSignals=convs.length?[convs[0].subject||'recent conversation','conversation state','relationship temperature']:['email sync','conversation state'];
+      confidence=convs.length?0.58:0.35;
+      conviction=convs.length?0.52:0.3;
+      closing=convs.length?'I believe Executive Inbox can begin reasoning from durable conversations, but should stay humble until classifications mature.':'I believe Executive Inbox needs synced conversation data before it should speak loudly.';
+    }else if(kind==='relationship'){
+      const top=context.relationshipsSummary?.[0];
+      observation=top?`${top.displayName||top.profileKey} has the strongest stored relationship signal right now.`:'No relationship profile has enough stored signal yet.';
+      attentionSignals=top?[top.displayName||top.profileKey,'relationship open loops','trust signals']:[];
+      confidence=top?Math.max(0.55,Number(top.confidence||0.6)):0.4;
+      conviction=top?0.68:0.35;
+      closing=top?`I believe ${top.displayName||top.profileKey} deserves attention from the relationship lens.`:'I cannot yet protect a relationship truth without more evidence.';
+    }else if(kind==='project'){
+      const top=context.projectsSummary?.[0];
+      observation=top?`${top.displayName||top.profileKey} is the clearest stored project signal.`:'No durable project profile is available yet.';
+      attentionSignals=top?[top.displayName||top.profileKey,'project movement','project blockers']:[];
+      confidence=top?Math.max(0.55,Number(top.confidence||0.6)):0.38;
+      conviction=top?0.66:0.32;
+      closing=top?`I believe ${top.displayName||top.profileKey} is where project context is most visible.`:'I need first-class project context before I can argue strongly.';
+    }else if(kind==='capacity'){
+      const load=c.overdue+c.calendar;
+      observation=load>=5?'The current stored load suggests decision quality may need protection.':'Stored workload does not show a severe capacity signal yet.';
+      attentionSignals=load>=5?['decision quality','overdue commitments','calendar load']:[];
+      confidence=0.6;conviction=load>=5?0.78:0.42;
+      closing=load>=5?'I believe protecting decision quality may matter more than increasing output.':'I am not seeing enough load evidence to recommend slowing down.';
+    }else if(kind==='courage'){
+      observation=c.overdue>0?'Overdue tasks may include postponed commitments, but I need richer cause data before calling this avoidance.':'No repeated postponement pattern is durable yet.';
+      attentionSignals=c.overdue>0?['overdue commitments','possible postponement']:[];
+      confidence=c.overdue>0?0.52:0.35;conviction=c.overdue>0?0.58:0.25;
+      closing='I will only challenge the user when the evidence shows repeated postponement, not when work is simply unfinished.';
+    }else if(kind==='delight'){
+      observation='No explicit delight or recovery preference model exists yet.';
+      attentionSignals=['recovery preferences','small replenishing actions'];
+      confidence=0.25;conviction=0.28;
+      closing='I believe delight belongs in the system, but I need user-confirmed preferences before speaking specifically.';
+    }else if(kind==='opportunity'){
+      observation='CRM opportunity context is not persistently summarized in Phase 1.';
+      attentionSignals=['CRM opportunity summaries','relationship graph','mutual value'];
+      confidence=0.3;conviction=0.32;
+      closing='I believe opportunity judgment needs CRM identity resolution and relationship graph data.';
+    }else if(kind==='momentum'){
+      const active=c.openTasks+c.relationships+c.projects+c.transcripts;
+      observation=active?`There are ${active} stored signals of movement across tasks, relationships, projects, and transcripts.`:'Momentum cannot be measured yet because stored signals are thin.';
+      attentionSignals=active?['movement across systems','invisible momentum','meaning']:[];
+      confidence=active?0.62:0.35;conviction=active?0.64:0.3;
+      closing=active?'I believe momentum should be measured by whether future movement becomes easier.':'I cannot distinguish movement from noise yet.';
+    }else if(kind==='meaning'){
+      const teach=context.teachVal?.[0];
+      observation=teach?`Teach VAL memory is available and can begin anchoring meaning: ${teach.title||teach.summary}`:'Meaning requires more Teach VAL and project purpose context.';
+      attentionSignals=teach?['Teach VAL purpose memory','mission alignment']:[];
+      confidence=teach?0.58:0.3;conviction=teach?0.6:0.25;
+      closing=teach?'I believe meaning should quietly check whether movement still belongs to the life being built.':'I need more confirmed meaning context before weighing in strongly.';
+    }else if(kind==='commitment'){
+      observation=c.openTasks?`${c.openTasks} open tasks are visible as commitments.`:'No open task commitments are visible.';
+      attentionSignals=c.openTasks?['open commitments','follow-through','task context']:[];
+      confidence=c.openTasks?0.7:0.4;conviction=c.overdue?0.75:0.5;
+      closing=c.openTasks?'I believe commitments should be honored without letting anxiety define priority.':'I do not see enough commitment data to press.';
+    }else if(kind==='calendar'){
+      observation=c.calendar?`${c.calendar} stored calendar events are visible in the current packet.`:'No stored calendar events are visible.';
+      attentionSignals=c.calendar?['time blocks','meeting preparation','calendar constraints']:[];
+      confidence=c.calendar?0.62:0.35;conviction=c.calendar?0.58:0.28;
+      closing=c.calendar?'I believe time should be treated as a strategic asset.':'I need calendar evidence before I can protect time.';
+    }else if(kind==='environment'){
+      observation='Environment context such as weather, location, travel, and local conditions is not connected yet.';
+      attentionSignals=['weather','location','travel','external conditions'];
+      confidence=0.2;conviction=0.2;
+      closing='I cannot responsibly infer environment without a connected source.';
+    }
+    return {
+      observer:observerName,
+      executive_question:`What truth is ${observerName} responsible for protecting right now?`,
+      observation,
+      evidence:sourceRefsFromRows(context.sourceRefs||[],'source_ref','quote_or_summary','source_id',6),
+      confidence,
+      conviction,
+      supports:[],
+      conflicts_with:[],
+      attention_signals:attentionSignals,
+      unknowns:baseUnknowns,
+      closing_statement:closing
+    };
+  }
+  async function runObserver({observerName,promptKey,contextPacket,eventRunId='',output=null}={}){
+    const scope=currentScope();
+    const prompt=promptRegistry.getPrompt(promptKey||'event_intelligence_pass');
+    const generated=output || buildObserverOutput(observerName,contextPacket||{});
+    const row={
+      id:uuid('observer'),
+      tenantId:scope.tenantId,
+      userId:scope.userId,
+      eventRunId,
+      observerName,
+      promptKey:promptKey||'event_intelligence_pass',
+      promptSource:prompt.sourcePath||'',
+      status:'completed',
+      contextPacketJson:contextPacket||{},
+      outputJson:generated,
+      confidence:Number(generated.confidence||0),
+      conviction:Number(generated.conviction||0),
+      unknownsJson:safeArray(generated.unknowns),
+      evidenceRefsJson:safeArray(generated.evidence).map(normalizeSourceRef),
+      closingStatement:generated.closing_statement||'',
+      errorMessage:'',
+      createdAt:now()
+    };
+    const saved=await saveObserverRun(row);
+    logger.log?.(`[val-spine] observer stored ${saved.id} ${observerName}`);
+    return saved;
+  }
+  function buildRoundTableOutput(observerRuns=[]){
+    const runs=safeArray(observerRuns);
+    const high=runs.filter(r=>Number(r.conviction||0)>=0.65);
+    const low=runs.filter(r=>Number(r.confidence||0)<0.4);
+    const agreements=high.slice(0,5).map(r=>({observer:r.observerName,statement:r.closingStatement||r.outputJson?.observation||'',conviction:Number(r.conviction||0)}));
+    const conflicts=[];
+    const capacity=runs.find(r=>r.observerName==='Capacity');
+    const commitment=runs.find(r=>r.observerName==='Commitment');
+    const project=runs.find(r=>r.observerName==='Project');
+    if(capacity&&Number(capacity.conviction||0)>0.7&&(commitment||project)){
+      conflicts.push({between:['Capacity',commitment?'Commitment':'Project'],tension:'Capacity may be protecting decision quality while work-oriented observers see movement or commitments.',severity:'medium'});
+    }
+    const candidateTensions=runs
+      .filter(r=>safeArray(r.outputJson?.attention_signals).length)
+      .sort((a,b)=>Number(b.conviction||0)-Number(a.conviction||0))
+      .slice(0,6)
+      .map(r=>({observer:r.observerName,signal:r.outputJson.attention_signals[0],conviction:Number(r.conviction||0),confidence:Number(r.confidence||0)}));
+    const opposingViews=candidateTensions.slice(1,4).map(t=>({observer:t.observer,view:`${t.observer} would prioritize ${t.signal}.`,conviction:t.conviction}));
+    const uncertainty=low.concat(runs.flatMap(r=>safeArray(r.unknownsJson).map(u=>({observer:r.observerName,...u})))).slice(0,12);
+    return {
+      agreements,
+      conflicts,
+      candidate_tensions:candidateTensions,
+      opposing_views:opposingViews,
+      uncertainty,
+      synthesis:`${candidateTensions.length} candidate attention signals surfaced from ${runs.length} observers.`
+    };
+  }
+  async function runRoundTable({eventRunId='',observerRuns=[]}={}){
+    if(!observerRuns.length&&eventRunId) observerRuns=await listObserverRuns({eventRunId,limit:50});
+    const scope=currentScope();
+    const output=buildRoundTableOutput(observerRuns);
+    const row={
+      id:uuid('roundtable'),
+      tenantId:scope.tenantId,
+      userId:scope.userId,
+      eventRunId,
+      observerRunIds:observerRuns.map(r=>r.id),
+      agreementsJson:output.agreements,
+      conflictsJson:output.conflicts,
+      candidateTensionsJson:output.candidate_tensions,
+      opposingViewsJson:output.opposing_views,
+      uncertaintyJson:output.uncertainty,
+      outputJson:output,
+      sourceRefsJson:observerRuns.flatMap(r=>safeArray(r.evidenceRefsJson)).slice(0,12),
+      createdAt:now()
+    };
+    const saved=await saveRoundTableRun(row);
+    logger.log?.(`[val-spine] round table stored ${saved.id}`);
+    return saved;
+  }
+  async function getRoundTable(id){
+    if(!id)return null;
+    if(hasPg()){
+      const r=await dbQuery('select * from round_table_runs where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[id,tenantId(),userId()]);
+      return r?.rows?.[0]?parseRecord(r.rows[0]):null;
+    }
+    return spineStore().roundTableRuns.find(r=>r.id===id&&r.tenantId===tenantId()&&r.userId===userId())||null;
+  }
+  function buildChiefOutput(roundTable,observerRuns=[]){
+    const tensions=safeArray(roundTable?.candidateTensionsJson||roundTable?.candidate_tensions_json||roundTable?.outputJson?.candidate_tensions);
+    const capacity=tensions.find(t=>t.observer==='Capacity');
+    const top=capacity&&capacity.conviction>=0.74?capacity:(tensions[0]||null);
+    const title=top?`Attend to ${top.signal}`:'Gather better evidence before choosing the next move';
+    const recommendation=top
+      ? (top.observer==='Capacity'
+        ? `Protect decision quality first: ${top.signal}. Then reassess the work queue.`
+        : `Place attention on ${top.signal}.`)
+      : 'Run the intelligence pass again after more evidence is available.';
+    const opposing=safeArray(roundTable?.opposingViewsJson||roundTable?.opposing_views_json||roundTable?.outputJson?.opposing_views)[0];
+    return {
+      title,
+      recommendation,
+      why:top?`${top.observer} had the strongest current conviction. The Round Table did not average the observers; it selected the signal most aligned with long-term momentum and current capacity.`:'The current evidence is too thin for a strong executive recommendation.',
+      confidence:top?Math.max(0.35,Math.min(0.92,(Number(top.confidence||0)+Number(top.conviction||0))/2)):0.28,
+      opposingView:opposing?`What almost won instead: ${opposing.view}`:'No strong opposing view emerged.',
+      anxietyVsMomentum:{
+        anxiety_signal:'Urgency may be over-weighted when evidence is thin.',
+        momentum_signal:top?top.signal:'insufficient evidence',
+        reasoning:'The recommendation should distinguish what is asking for attention from what is worthy of it.'
+      },
+      nextCandidates:tensions.slice(1,6).map(t=>({title:`Consider ${t.signal}`,observer:t.observer,confidence:t.confidence,conviction:t.conviction})),
+      sourceRefs:observerRuns.flatMap(r=>safeArray(r.evidenceRefsJson)).slice(0,12)
+    };
+  }
+  async function recommendChiefOfStaff({roundTableRunId='',eventRunId='',observerRuns=[]}={}){
+    let roundTable=roundTableRunId?await getRoundTable(roundTableRunId):null;
+    if(!roundTable){
+      const latest=await listRoundTableRuns({eventRunId,limit:1});
+      roundTable=latest[0]||null;
+    }
+    if(!roundTable) throw new Error('No Round Table run is available. Run /api/val/events/intelligence-pass first.');
+    if(!observerRuns.length&&roundTable.eventRunId) observerRuns=await listObserverRuns({eventRunId:roundTable.eventRunId,limit:50});
+    const output=buildChiefOutput(roundTable,observerRuns);
+    const scope=currentScope();
+    const row={
+      id:uuid('chief'),
+      tenantId:scope.tenantId,
+      userId:scope.userId,
+      eventRunId:roundTable.eventRunId||eventRunId||'',
+      roundTableRunId:roundTable.id,
+      status:'active',
+      title:output.title,
+      recommendation:output.recommendation,
+      why:output.why,
+      confidence:output.confidence,
+      opposingView:output.opposingView,
+      anxietyVsMomentumJson:output.anxietyVsMomentum,
+      nextCandidatesJson:output.nextCandidates,
+      observerRunIds:roundTable.observerRunIds||roundTable.observer_run_ids||[],
+      sourceRefsJson:output.sourceRefs,
+      userFeedbackJson:{},
+      createdAt:now(),
+      updatedAt:now(),
+      completedAt:null
+    };
+    const saved=await saveChiefRecommendation(row);
+    logger.log?.(`[val-spine] chief recommendation stored ${saved.id}`);
+    return saved;
+  }
+  async function completeChiefRecommendation(id,{feedback={},completionNote='',outcome='completed'}={}){
+    if(hasPg()){
+      const r=await dbQuery(`update chief_of_staff_recommendations set status=$1,user_feedback_json=$2,completed_at=now(),updated_at=now() where id=$3 and tenant_id=$4 and user_id=$5 returning *`,[outcome,JSON.stringify({feedback,completionNote,outcome,recordedAt:now()}),id,tenantId(),userId()]);
+      return r?.rows?.[0]?parseRecord(r.rows[0]):null;
+    }
+    const store=spineStore();
+    const row=store.chiefOfStaffRecommendations.find(r=>r.id===id&&r.tenantId===tenantId()&&r.userId===userId());
+    if(row)Object.assign(row,{status:outcome,userFeedbackJson:{feedback,completionNote,outcome,recordedAt:now()},completedAt:now(),updatedAt:now()});
+    saveStore(store);
+    return row;
+  }
+  async function createMomentumSnapshot({eventRunId='',observerRuns=[]}={}){
+    const momentum=observerRuns.find(r=>r.observerName==='Momentum')?.outputJson||{};
+    const meaning=observerRuns.find(r=>r.observerName==='Meaning')?.outputJson||{};
+    const summary=momentum.observation||'Momentum has not been measured yet.';
+    return saveMomentumSnapshot({
+      id:uuid('momentum'),
+      tenantId:tenantId(),
+      userId:userId(),
+      eventRunId,
+      summary,
+      direction:Number(momentum.conviction||0)>0.6?'rising':'unknown',
+      velocityJson:{current:Number(momentum.conviction||0),basis:'observer conviction'},
+      dimensionsJson:{momentum,meaning},
+      invisibleMomentumJson:{note:'Invisible momentum is stored as a Phase 1 placeholder until completion and relationship-change signals are richer.'},
+      meaningJson:{observation:meaning.observation||'',confidence:meaning.confidence||0},
+      sourceRefsJson:safeArray(momentum.evidence).map(normalizeSourceRef),
+      createdAt:now()
+    });
+  }
+  async function createReadyForYouItems({eventRunId='',contextPacket={}}={}){
+    const drafts=safeArray(getStore().drafts).filter(d=>!d.status||['draft','ready_for_review'].includes(d.status)).slice(0,3);
+    const rows=[];
+    for(const draft of drafts){
+      rows.push(await saveReadyForYouItem({
+        id:uuid('ready'),
+        tenantId:tenantId(),
+        userId:userId(),
+        eventRunId,
+        status:'ready',
+        title:draft.subject||draft.title||'Draft ready for review',
+        itemType:'draft',
+        readinessJson:{status:'ready',why:'Existing internal draft is available for human review.'},
+        whatValPrepared:compactText(draft.body||draft.content||'Draft content prepared.',700),
+        whatUserNeedsToDo:'Review whether this represents you before anything is sent.',
+        sourceRefsJson:[normalizeSourceRef({sourceType:'draft',sourceId:draft.id,quoteOrSummary:draft.subject||draft.title||'',confidence:0.7})],
+        metadataJson:{source:'phase_1_ready_for_you',stubbed:drafts.length===0,contextGeneratedAt:contextPacket.generatedAt||''},
+        createdAt:now(),
+        updatedAt:now()
+      }));
+    }
+    for(const candidate of safeArray(contextPacket.readyForYouDraftCandidates).slice(0,5)){
+      const readiness=candidate.draftReadiness||candidate.draft_readiness||{};
+      const brief=candidate.draftBrief||candidate.draft_brief||{};
+      const generatedDraft=candidate.generatedDraft||candidate.generated_draft||null;
+      const isGenerated=!!generatedDraft;
+      const writerOutput=generatedDraft?.sourceContext?.writerOutput||{};
+      rows.push(await saveReadyForYouItem({
+        id:uuid('ready'),
+        tenantId:tenantId(),
+        userId:userId(),
+        eventRunId,
+        status:readiness.status||candidate.status||'ready_for_review',
+        title:isGenerated?(generatedDraft.subject||writerOutput.subject||'Email draft ready for review'):(brief.single_purpose||'Conversation needs human judgment'),
+        itemType:isGenerated?'email_review_only_draft':'email_draft_readiness',
+        readinessJson:readiness,
+        whatValPrepared:isGenerated?compactText(generatedDraft.body||writerOutput.body||'Review-only email draft prepared. No external draft was created.',900):'VAL evaluated the conversation and prepared draft readiness/brief context. No external draft was created.',
+        whatUserNeedsToDo:readiness.status==='needs_context'?'Provide the missing context before VAL drafts.':'Review whether this represents you before anything is sent.',
+        sourceRefsJson:isGenerated?[normalizeSourceRef({sourceType:'draft',sourceId:generatedDraft.id,quoteOrSummary:generatedDraft.subject||writerOutput.subject||'Review-only email draft',confidence:0.75})]:safeArray(candidate.sourceRefs||candidate.source_refs).slice(0,8),
+        metadataJson:{source:isGenerated?'executive_inbox_review_only':'executive_inbox_draft_readiness',evaluationId:candidate.id||'',conversationId:candidate.conversationId||'',draftId:generatedDraft?.id||'',noExternalAction:true},
+        createdAt:now(),
+        updatedAt:now()
+      }));
+    }
+    return rows;
+  }
+  async function runIntelligencePass({event={},observerSuite=DEFAULT_OBSERVERS,req=null,includeExternal=false}={}){
+    const scope=currentScope();
+    const contextPacket=await buildSharedContextPacket({event,req,includeExternal});
+    const eventRun=await saveEventRun({
+      id:uuid('eventrun'),
+      tenantId:scope.tenantId,
+      userId:scope.userId,
+      eventType:event.type||event.eventType||'manual',
+      eventSourceType:event.sourceType||event.source_type||'manual',
+      eventSourceId:event.sourceId||event.source_id||'',
+      status:'running',
+      contextPacketJson:contextPacket,
+      unknownsJson:contextPacket.unknowns||[],
+      sourceRefsJson:contextPacket.sourceRefs||[],
+      resultJson:{},
+      errorMessage:'',
+      createdAt:now(),
+      completedAt:null
+    });
+    logger.log?.(`[val-spine] intelligence pass started ${eventRun.id}`);
+    const observerRuns=[];
+    for(const observer of observerSuite){
+      observerRuns.push(await runObserver({...observer,contextPacket,eventRunId:eventRun.id}));
+    }
+    const roundTable=await runRoundTable({eventRunId:eventRun.id,observerRuns});
+    const recommendation=await recommendChiefOfStaff({roundTableRunId:roundTable.id,observerRuns});
+    const momentumSnapshot=await createMomentumSnapshot({eventRunId:eventRun.id,observerRuns});
+    const readyForYouItems=await createReadyForYouItems({eventRunId:eventRun.id,contextPacket});
+    const completed=await updateEventRun(eventRun.id,{
+      status:'completed',
+      resultJson:{observerRunIds:observerRuns.map(r=>r.id),roundTableRunId:roundTable.id,chiefRecommendationId:recommendation.id,momentumSnapshotId:momentumSnapshot.id,readyForYouItemIds:readyForYouItems.map(r=>r.id)},
+      unknownsJson:contextPacket.unknowns||[],
+      sourceRefsJson:contextPacket.sourceRefs||[],
+      completedAt:now()
+    });
+    return {ok:true,eventRun:completed||eventRun,contextPacket,observerRuns,roundTable,recommendation,momentumSnapshot,readyForYouItems,stubbed:{emailThreadPersistence:true,persistentCrmSummary:true,environment:true}};
+  }
+  return {
+    DEFAULT_OBSERVERS,
+    normalizeSourceRef,
+    buildSharedContextPacket,
+    runObserver,
+    runRoundTable,
+    recommendChiefOfStaff,
+    completeChiefRecommendation,
+    runIntelligencePass,
+    listObserverRuns,
+    listRoundTableRuns,
+    listChiefRecommendations
+  };
+}
+
+module.exports = {createValIntelligenceSpine,DEFAULT_OBSERVERS,normalizeSourceRef};

@@ -16,14 +16,13 @@ test('adds Inbox Command provider abstraction and natural language search',()=>{
   assert.match(server,/app\.post\('\/api\/email\/inbox-command'/);
 });
 
-test('Inbox Command supports safe draft actions before explicit approved sending',()=>{
+test('Inbox Command supports safe draft actions without direct sending',()=>{
   assert.match(server,/async function inboxCommandAction/);
   assert.match(server,/draftType:'email_reply'/);
   assert.match(server,/draftType:'email_forward'/);
   assert.match(server,/requiresApproval:true/);
-  assert.match(server,/app\.post\('\/api\/gmail\/send-approved-draft'/);
-  assert.match(server,/if\(payload\.approved!==true\)return res\.status\(400\)\.json\(\{ok:false,error:'Approval required before sending email'\}\)/);
-  assert.match(dashboard,/approved:true/);
+  assert.match(server,/async function executeEmailSendPacket/);
+  assert.doesNotMatch(server,/inboxCommandAction[\s\S]{0,2400}gmail\/v1\/users\/me\/messages\/send/);
 });
 
 test('Inbox Command is available in Executive Inbox and global chat',()=>{

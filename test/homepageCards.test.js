@@ -10,6 +10,8 @@ const commandCenter=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 
 test('homepage cards expose a strict six-card intelligence contract',()=>{
   assert.match(server,/function dashboardNormalizeCardItem/);
+  assert.match(server,/function dashboardTargetFromSignal/);
+  assert.match(server,/function dashboardEvidenceTargetMeta/);
   assert.match(server,/function dashboardNormalizeCardCollection/);
   assert.match(server,/function dashboardDedupeCardItems/);
   assert.match(server,/dashboardNormalizeCardCollection\('what_changed'/);
@@ -23,6 +25,11 @@ test('homepage cards expose a strict six-card intelligence contract',()=>{
   assert.match(server,/source_ids/);
   assert.match(server,/evidence_count/);
   assert.match(server,/available_actions/);
+  assert.match(server,/opportunityId/);
+  assert.match(server,/portalPhrases/);
+  assert.match(server,/entities\.opportunityName/);
+  assert.match(server,/participant\.matchedContactName/);
+  assert.match(server,/return \{type:'opportunity'/);
 });
 
 test('homepage card actions are explicit and approval-safe',()=>{
@@ -82,4 +89,6 @@ test('demo homepage seed data can populate every launch card',()=>{
   assert.match(server,/demo-project-northstar/);
   assert.match(server,/demo-project-healthbridge/);
   assert.match(server,/agencyMoveSources:\[\]/);
+  assert.match(server,/P\.S\. Ready to make this yours\? Sign up for VAL here:/);
+  assert.match(server,/https:\/\/graceintelligence\.com\/val/);
 });

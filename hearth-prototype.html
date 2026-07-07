@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VAL - Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./hearth-prototype.css">
+</head>
+<body>
+<main class="hearth-shell" data-state="quiet" data-distance="presence">
+  <div class="hearth-light" aria-hidden="true"></div>
+
+  <header class="hearth-topline">
+    <a class="val-mark" href="./dashboard.html" aria-label="Back to VAL Home">VAL</a>
+    <nav class="state-switcher" aria-label="Prototype-only home states" data-prototype-only="true">
+      <span>Prototype states</span>
+      <button type="button" class="active" data-state-option="quiet">Quiet</button>
+      <button type="button" data-state-option="protective">Protective</button>
+      <button type="button" data-state-option="celebratory">Completion</button>
+      <button type="button" data-state-option="evening">Evening</button>
+    </nav>
+    <span class="sun-mark" aria-hidden="true"></span>
+  </header>
+
+  <section class="hearth" aria-labelledby="hearth-title">
+    <p class="hearth-kicker">VAL Home</p>
+    <h1 id="hearth-title">Good morning, Jessa.</h1>
+    <div class="hearth-lines" aria-live="polite">
+      <p data-line="witness">Today has room to think.</p>
+      <p data-line="orientation">There is one meaningful commitment this afternoon, and everything else can stay quiet for now.</p>
+      <p data-line="permission">Protect that space.</p>
+    </div>
+    <button class="lean-button" type="button" aria-expanded="false" aria-controls="hearth-evidence">
+      Why I am saying this today
+    </button>
+  </section>
+
+  <section class="hearth-evidence" id="hearth-evidence" aria-label="Why VAL is saying this today">
+    <div>
+      <p class="evidence-label">Yesterday contained</p>
+      <ul>
+        <li>Three client conversations.</li>
+        <li>One decision that carried more emotional weight than it looked like.</li>
+        <li>The Frisson follow-up already organized for review.</li>
+      </ul>
+    </div>
+    <div>
+      <p class="evidence-label">Today stands here</p>
+      <ul>
+        <li>One meaningful afternoon commitment.</li>
+        <li>No urgent draft requiring your first attention.</li>
+        <li>Enough open space to think before producing.</li>
+      </ul>
+      <button class="fresh-desk-button" type="button">Fresh desk</button>
+    </div>
+  </section>
+
+  <aside class="desk-companions" aria-label="Desk companions">
+    <p class="companions-label">Desk companions</p>
+    <button class="next-meeting-card" type="button">
+      <span class="calendar-page-top">
+        <b>Jul</b>
+        <strong>04</strong>
+      </span>
+      <span class="calendar-page-body">
+        <span class="calendar-kicker">Next</span>
+        <strong>2:30 PM</strong>
+        <span>Acme proposal review</span>
+        <small>Meeting prep is ready</small>
+      </span>
+    </button>
+    <button class="calendar-tab" type="button" aria-expanded="false" aria-controls="full-calendar-panel">
+      Open full calendar
+    </button>
+    <button class="cowork-notebook" type="button">
+      <span class="val-presence-mark" aria-hidden="true">
+        <span class="val-presence-orbit"></span>
+        <span class="val-presence-core">VAL</span>
+      </span>
+      <span class="notebook-copy">
+        <span class="calendar-kicker">VAL</span>
+        <strong>Co-Work with VAL</strong>
+        <span>Think through something together.</span>
+        <small>Open Co-Work</small>
+      </span>
+    </button>
+    <button class="linkedin-widget" type="button" aria-label="Open LinkedIn visibility drafts">
+      <span class="linkedin-logo" aria-hidden="true">in</span>
+      <span class="linkedin-widget-copy">
+        <span class="calendar-kicker">LinkedIn</span>
+        <strong><b data-linkedin-ready-count>0</b> Posts Ready</strong>
+        <small>Comments and posts to copy manually</small>
+      </span>
+    </button>
+    <button class="teach-pen" type="button">
+      <span>Teach VAL</span>
+    </button>
+  </aside>
+
+  <section class="living-rooms" aria-label="VAL living rooms">
+    <article class="living-room velocity" data-room="velocity">
+      <p><span class="room-symbol"></span>Velocity</p>
+      <h2>One meaningful reply</h2>
+      <span class="room-copy">It is waiting when you are ready.</span>
+      <button class="room-action" type="button" data-open-room="velocity">See what's waiting <b>&rarr;</b></button>
+    </article>
+    <article class="living-room alignment" data-room="alignment">
+      <p><span class="room-symbol"></span>Alignment</p>
+      <h2>Protected attention</h2>
+      <span class="room-copy">Your attention is protected today.</span>
+      <button class="room-action" type="button" data-open-room="alignment">See today's priorities <b>&rarr;</b></button>
+    </article>
+    <article class="living-room leverage" data-room="leverage">
+      <p><span class="room-symbol"></span>Leverage</p>
+      <span class="prepared-count" data-prepared-count>0 prepared</span>
+      <h2>Prepared</h2>
+      <span class="room-copy">The follow-up work is already shaped.</span>
+      <button class="room-action" type="button" data-open-room="leverage">Review what's ready <b>&rarr;</b></button>
+    </article>
+  </section>
+
+  <section class="desk-workspace" id="desk-workspace" aria-label="Velocity decision workspace" aria-hidden="true">
+    <div class="workspace-panel">
+      <button class="return-button" type="button" aria-label="Close card and return to the desk">Close card</button>
+      <p class="workspace-kicker">Velocity</p>
+      <h2>While you were away, one reply became meaningful.</h2>
+      <p class="workspace-meaning">
+        Greg answered the question that has been holding the proposal in place. It is not urgent, but it is now ready for your judgment.
+      </p>
+      <div class="judgment-sequence" aria-label="Judgment sequence">
+        <span>Meaning</span>
+        <span>Evidence</span>
+        <span>Recommendation</span>
+        <span>Agency</span>
+      </div>
+      <div class="workspace-grid">
+        <div class="paper meaning-paper">
+          <span>Meaning</span>
+          <p>Most of the movement can stay quiet. This reply changes the next step, not the whole day.</p>
+        </div>
+        <div class="paper understanding-paper">
+          <span>Understanding</span>
+          <ul>
+            <li>Reply received after yesterday's client conversation.</li>
+            <li>Proposal language is already drafted.</li>
+            <li>No other thread needs first attention.</li>
+          </ul>
+        </div>
+        <div class="paper recommendation-paper">
+          <span>Recommendation</span>
+          <p>I would review this before the afternoon commitment, then leave the rest of the morning open.</p>
+        </div>
+      </div>
+      <div class="scraper-criteria-panel" aria-label="Scraper criteria" hidden></div>
+      <div class="scraper-preview-list" aria-label="Lead preview list" hidden></div>
+      <div class="workspace-input-panel" aria-label="Co-Work input" hidden></div>
+      <p class="agency-note">VAL will wait for your judgment before anything moves.</p>
+      <div class="workspace-actions" aria-label="Suggested actions">
+        <button type="button">Review reply</button>
+        <button type="button">Approve draft</button>
+        <button type="button">Teach VAL</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="full-calendar-panel" id="full-calendar-panel" aria-label="Full calendar" aria-hidden="true">
+    <div class="calendar-panel-inner">
+      <button class="close-calendar-button" type="button">Close calendar</button>
+      <p class="calendar-panel-kicker">Agenda book</p>
+      <h2>Today</h2>
+      <div class="agenda-list">
+        <button class="agenda-item active" type="button">
+          <span>2:30 PM</span>
+          <strong>Acme proposal review</strong>
+          <small>Prep ready: CRM context, Apollo research, Outscraper signals</small>
+        </button>
+        <button class="agenda-item" type="button">
+          <span>4:15 PM</span>
+          <strong>Internal review</strong>
+          <small>No prep needed yet</small>
+        </button>
+        <button class="agenda-item quiet" type="button">
+          <span>Tomorrow</span>
+          <strong>Frisson follow-up</strong>
+          <small>Prepared work held for morning</small>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <section class="retrieval-system" aria-label="Supporting systems">
+    <button class="drawer-pull" type="button" aria-expanded="false" aria-controls="drawer-tray">
+      Open drawers
+    </button>
+    <button class="close-all-drawers" type="button" hidden>Close all drawers</button>
+    <div class="drawer-tray" id="drawer-tray" aria-hidden="true">
+      <p class="drawer-kicker">Retrieval</p>
+      <div class="drawer-grid">
+        <button type="button" class="drawer-link relationship-drawer-link" data-drawer-tone="rose-sage" aria-expanded="false" aria-controls="relationship-detail">
+          <span>Relationships</span>
+          <small>People, memory, conversations</small>
+        </button>
+        <button type="button" class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail">
+          <span>Projects</span>
+          <small>Dossiers, momentum, decisions</small>
+        </button>
+        <button type="button" class="drawer-link timeline-drawer-link" data-drawer-tone="olive-blush" aria-expanded="false" aria-controls="timeline-detail">
+          <span>Timeline &amp; Tasks</span>
+          <small>Calendar, transcripts, follow-through</small>
+        </button>
+        <button type="button" class="drawer-link correspondence-drawer-link" data-drawer-tone="blush-sage" aria-expanded="false" aria-controls="correspondence-detail">
+          <span>Executive Inbox</span>
+          <small>Important replies and drafts</small>
+        </button>
+        <button type="button" class="drawer-link commitment-drawer-link" data-drawer-tone="moss-rose" aria-expanded="false" aria-controls="commitment-detail">
+          <span>Commitments</span>
+          <small>Promises, next steps, follow-through</small>
+        </button>
+        <button type="button" class="drawer-link document-drawer-link" data-drawer-tone="rose-mist" aria-expanded="false" aria-controls="document-detail">
+          <span>Documents</span>
+          <small>Prepared work and source material</small>
+        </button>
+        <button type="button" class="drawer-link source-drawer-link" data-drawer-tone="sage-clay" aria-expanded="false" aria-controls="source-detail">
+          <span>Lead Intelligence</span>
+          <small>Client scrapers and GHL handoff</small>
+        </button>
+        <button type="button" class="drawer-link val-drawer-link" data-drawer-tone="clay-green" aria-expanded="false" aria-controls="val-detail">
+          <span>VAL</span>
+          <small>Onboarding, agreements, memory, connections</small>
+        </button>
+      </div>
+      <div class="source-detail val-detail" id="val-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">VAL</p>
+            <h3>Witnessing Session</h3>
+            <p>This is not setup. This is where VAL begins learning who it is partnering with, what it notices, and what it must protect before work leaves the system.</p>
+          </div>
+          <button type="button" class="close-val-detail">Close</button>
+        </div>
+        <div class="val-witnessing-entry" aria-label="Begin VAL Witnessing Session">
+          <p>VAL begins with one question, not a setup checklist.</p>
+          <div class="val-entry-actions">
+            <button type="button" data-val-action="start_onboarding">Begin Witnessing Session</button>
+            <button type="button" data-workflow-action="valWitnessingResume">Pick Up Where We Left Off</button>
+            <button type="button" data-workflow-action="valWitnessingFresh">Start Fresh</button>
+            <button type="button" data-val-action="connections">Connect AI</button>
+          </div>
+          <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
+        </div>
+      </div>
+      <div class="source-detail document-detail" id="document-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Documents</p>
+            <h3>Reference library</h3>
+            <p>Every uploaded, generated, CRM, email, or Google Docs artifact should live here, organized by relationship and project so VAL can use it as evidence.</p>
+          </div>
+          <button type="button" class="close-document-detail">Close</button>
+        </div>
+        <div class="document-status-panel" aria-label="Document source rules">
+          <article>
+            <span>Sources</span>
+            <strong>All documents belong here</strong>
+            <p>User uploads, VAL-created drafts, CRM files, email attachments, and Google Docs are normalized into one reviewable library.</p>
+          </article>
+          <article>
+            <span>Organization</span>
+            <strong>Relationship and project first</strong>
+            <p>Documents stay attached to the people and projects they inform, not stranded in a generic file list.</p>
+          </article>
+          <article>
+            <span>Reference Rule</span>
+            <strong>Evidence for judgment</strong>
+            <p>VAL must use linked documents when preparing relationship briefs, project dossiers, drafts, and decisions.</p>
+          </article>
+        </div>
+        <div class="document-workbench" aria-label="Document library">
+          <section class="document-library" aria-label="Documents list">
+            <div class="timeline-status-header">
+              <span>Library</span>
+              <strong data-document-count>Checking documents</strong>
+            </div>
+            <div class="document-search-grid" aria-label="Document search">
+              <label>
+                Search
+                <input type="search" data-document-search placeholder="Relationship, project, or name">
+              </label>
+              <label>
+                Relationship
+                <select data-document-relationship-filter>
+                  <option value="">All relationships</option>
+                </select>
+              </label>
+              <label>
+                Project
+                <select data-document-project-filter>
+                  <option value="">All projects</option>
+                </select>
+              </label>
+            </div>
+            <div class="document-list" data-document-list></div>
+          </section>
+          <aside class="document-brief" aria-label="Document detail">
+            <div class="correspondence-brief-head">
+              <span data-document-field="status">Reference</span>
+              <h4 data-document-field="title">Select a document</h4>
+              <p data-document-field="summary">Documents, drafts, source material, and generated artifacts will appear here with relationship and project context.</p>
+            </div>
+            <dl class="correspondence-context">
+              <div><dt>Relationship</dt><dd data-document-field="relationship">Unlinked</dd></div>
+              <div><dt>Project</dt><dd data-document-field="project">Unlinked</dd></div>
+              <div><dt>Source</dt><dd data-document-field="source">No source selected.</dd></div>
+              <div><dt>Reference use</dt><dd data-document-field="reference">VAL should use this document when judging linked relationships and projects.</dd></div>
+              <div><dt>Needs</dt><dd data-document-field="needs">Review, update, send, or link missing context.</dd></div>
+            </dl>
+            <div class="document-preview" data-document-preview>
+              <span>Document Preview</span>
+              <p>No document selected yet.</p>
+            </div>
+            <div class="correspondence-actions" aria-label="Document actions">
+              <button type="button" data-document-action="cowork_document">Co-Work with VAL</button>
+              <button type="button" data-document-action="present">Present</button>
+              <button type="button" data-document-action="update">Update</button>
+              <button type="button" data-document-action="send">Send</button>
+              <button type="button" data-document-action="open_source">Open Source</button>
+              <button type="button" data-document-action="link_context">Link Context</button>
+            </div>
+            <p class="correspondence-safety-copy" data-document-status>Documents are reference material until the user approves an update, send, or external write.</p>
+          </aside>
+        </div>
+      </div>
+      <div class="source-detail relationship-detail" id="relationship-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Relationship Brief</p>
+            <h3 data-relationship-field="name">Aric Soyring</h3>
+            <p>VAL briefs relationships by identity, current reality, executive assessment, strategic importance, and the one thing not to forget.</p>
+          </div>
+          <button type="button" class="close-relationship-detail">Close</button>
+        </div>
+        <div class="relationship-folder-rail" aria-label="Relationship folders">
+          <button type="button" class="active" data-relationship-profile="aric">Aric Soyring</button>
+          <button type="button" data-relationship-profile="greg">Greg Niesen</button>
+          <button type="button" data-relationship-profile="lindsey">Lindsey Wincek</button>
+        </div>
+        <div class="relationship-index-tools" aria-label="Relationship index tools">
+          <label>
+            <span>Find</span>
+            <input type="search" data-relationship-search placeholder="Name, company, signal" autocomplete="off">
+          </label>
+          <label>
+            <span>Sort</span>
+            <select data-relationship-sort>
+              <option value="attention">Attention first</option>
+              <option value="warmest">Warmest</option>
+              <option value="changed">Recently changed</option>
+              <option value="alpha">A-Z</option>
+            </select>
+          </label>
+          <div class="relationship-state-filters" aria-label="Relationship state filters">
+            <button type="button" class="active" data-relationship-state-filter="all">All</button>
+            <button type="button" data-relationship-state-filter="needs_attention">Needs attention</button>
+            <button type="button" data-relationship-state-filter="warm">Warm</button>
+            <button type="button" data-relationship-state-filter="strategic">Strategic</button>
+            <button type="button" data-relationship-state-filter="new">New</button>
+            <button type="button" data-relationship-state-filter="waiting">Waiting</button>
+          </div>
+          <p class="relationship-index-source" data-relationship-index-source>Local preview · canonical index will appear when available</p>
+        </div>
+        <div class="relationship-rolodex" data-relationship-rolodex aria-label="All people"></div>
+        <div class="relationship-file">
+          <section class="relationship-identity" aria-label="Relationship identity">
+            <div class="relationship-portrait" aria-hidden="true" data-relationship-field="initials">AS</div>
+            <div>
+              <span>Identity</span>
+              <strong data-relationship-field="role">Strategic Partner</strong>
+              <p data-relationship-field="identity">Entrepreneur · Strategist · Idea to momentum</p>
+              <small data-relationship-field="contact">Acme Ventures · Minneapolis, MN · aric@acmeventures.com</small>
+              <div class="relationship-section-actions" data-relationship-section-actions="identity"></div>
+            </div>
+          </section>
+          <section class="relationship-wisdom" aria-label="Relationship wisdom">
+            <span>Executive Reminder</span>
+            <strong>If you remember one thing...</strong>
+            <p data-relationship-field="wisdom">Protect this relationship. Aric consistently creates momentum where you naturally create systems.</p>
+            <div class="relationship-section-actions" data-relationship-section-actions="wisdom"></div>
+          </section>
+          <div class="relationship-pyramid" aria-label="Relationship Brief">
+            <article>
+              <span>Current Reality</span>
+              <strong>What is happening now</strong>
+              <p data-relationship-field="evidence">Recent conversations moved Frisson forward, opened two partner paths, and left one proposal review waiting.</p>
+              <div class="relationship-section-actions" data-relationship-section-actions="evidence"></div>
+            </article>
+            <article>
+              <span>Executive Assessment</span>
+              <strong>What is changing</strong>
+              <p data-relationship-field="patterns">The relationship is shifting from collaborator to strategic thought partner.</p>
+              <div class="relationship-section-actions" data-relationship-section-actions="patterns"></div>
+            </article>
+            <article>
+              <span>Strategic Importance</span>
+              <strong>Why it matters</strong>
+              <p data-relationship-field="meaning">Aric creates leverage beyond individual projects by turning ideas into visible momentum.</p>
+              <div class="relationship-section-actions" data-relationship-section-actions="meaning"></div>
+            </article>
+          </div>
+          <div class="relationship-certainty" aria-label="Relationship certainty">
+            <span>Observer Notes</span>
+            <p data-relationship-field="certainty">You know why Aric matters, what changed recently, and why your next action should preserve trust rather than create urgency.</p>
+          </div>
+          <div class="relationship-temperature-review" data-relationship-temperature-review hidden>
+            <span>Temperature Review</span>
+            <p data-relationship-temperature-review-copy></p>
+            <button type="button" data-relationship-action="teach_temperature">Teach VAL temperature</button>
+          </div>
+          <div class="relationship-receipts" aria-label="Relationship source receipts">
+            <article>
+              <span>LinkedIn Signal</span>
+              <p data-relationship-field="linkedinSignal">Recent public activity suggests this relationship is still warm enough for a thoughtful comment or follow-up.</p>
+              <button type="button" data-relationship-action="review_linkedin_activity">Review LinkedIn activity</button>
+            </article>
+            <article>
+              <span>Source Receipts</span>
+              <p data-relationship-field="sourceReceipts">GHL contact resolved · LinkedIn watching · Apollo available · Outscraper available</p>
+              <button type="button" data-relationship-action="refresh_relationship_observers">Refresh observers</button>
+            </article>
+          </div>
+          <div class="relationship-project-panel" aria-label="Linked projects">
+            <div class="relationship-project-panel-header">
+              <span>Linked Projects</span>
+              <strong data-relationship-project-count>No linked projects yet</strong>
+            </div>
+            <div class="relationship-project-grid" data-relationship-project-panel></div>
+          </div>
+          <div class="relationship-document-panel" aria-label="Linked documents">
+            <div class="relationship-project-panel-header">
+              <span>Linked Documents</span>
+              <strong data-relationship-document-count>No linked documents yet</strong>
+            </div>
+            <div class="relationship-document-grid" data-relationship-document-panel></div>
+          </div>
+          <div class="relationship-actions" aria-label="Executive relationship actions">
+            <a href="./dashboard.html?view=relationships&targetType=person&targetId=aric-soyring" data-relationship-field="href" data-relationship-action="open_full_file">Open full file</a>
+            <button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL</button>
+            <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
+          </div>
+        </div>
+      </div>
+      <div class="source-detail project-detail" id="project-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Project Dossiers</p>
+            <h3 data-project-field="name">Projects</h3>
+            <p>VAL holds projects by current reality, momentum, decision point, next move, and the quiet source trail that explains why it matters now.</p>
+          </div>
+          <button type="button" class="close-project-detail">Close</button>
+        </div>
+        <p class="project-index-source" data-project-index-source>Local project preview · 3 projects</p>
+        <button type="button" class="project-create-toggle" data-project-create-toggle aria-expanded="false">New project</button>
+        <form class="project-create-form" data-project-create-form enctype="multipart/form-data" hidden>
+          <label>
+            <span>Project name</span>
+            <input type="text" name="name" placeholder="Frisson, client portal, book launch..." autocomplete="off" required>
+          </label>
+          <label>
+            <span>What is this project?</span>
+            <textarea name="summary" placeholder="Describe the current reality, purpose, and what VAL should understand first."></textarea>
+          </label>
+          <label>
+            <span>Website or source code</span>
+            <textarea name="websiteSource" placeholder="URLs, repo paths, source-code notes, sitemap clues, or what the codebase is called."></textarea>
+          </label>
+          <label class="project-file-upload">
+            <span>Documents and contracts</span>
+            <input type="file" name="documentsAndContracts" accept=".txt,.md,.markdown,.html,.htm,.json,.csv,.tsv,.pdf,.docx,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
+            <small data-project-file-receipt>No files selected</small>
+          </label>
+          <label>
+            <span>Document / contract notes</span>
+            <textarea name="documents" placeholder="Optional: contract purpose, clauses to watch, folder context, terms, dates, or questions."></textarea>
+          </label>
+          <label>
+            <span>People and relationships</span>
+            <textarea name="relationships" placeholder="Names, roles, relationship context, stakeholders, clients, partners, decision makers."></textarea>
+          </label>
+          <label>
+            <span>Raw context</span>
+            <textarea name="rawContext" placeholder="Anything else VAL should hold: risks, promises, constraints, links, pasted notes, open questions."></textarea>
+          </label>
+          <div class="project-create-actions">
+            <button type="submit">Create project</button>
+            <button type="button" data-project-create-cancel>Cancel</button>
+          </div>
+          <p class="project-create-status" data-project-create-status></p>
+        </form>
+        <div class="project-rolodex" data-project-rolodex aria-label="Projects"></div>
+        <div class="project-file">
+          <section class="project-identity" aria-label="Project identity">
+            <div class="project-mark" aria-hidden="true" data-project-field="initials">FR</div>
+            <div>
+              <span>Current Reality</span>
+              <strong data-project-field="status">Partner paths forming</strong>
+              <p data-project-field="reality">Frisson has enough relationship and lead context to decide which path deserves the next executive move.</p>
+            </div>
+          </section>
+          <div class="project-pyramid" aria-label="Project brief">
+            <article>
+              <span>Momentum</span>
+              <strong data-project-field="momentum">Visible movement</strong>
+              <p data-project-field="momentumEvidence">Relationship notes, partner candidates, and source material are converging.</p>
+            </article>
+            <article>
+              <span>Decision Point</span>
+              <strong data-project-field="decision">Choose the next narrow move</strong>
+              <p data-project-field="decisionEvidence">VAL should keep this from becoming a broad planning session.</p>
+            </article>
+            <article>
+              <span>Next Move</span>
+              <strong data-project-field="nextMove">Review the strongest path</strong>
+              <p data-project-field="nextMoveEvidence">Use relationships and prepared material before adding new work.</p>
+            </article>
+          </div>
+          <div class="project-certainty" aria-label="Project source receipts">
+            <span>Source Receipts</span>
+            <p data-project-field="sourceReceipts">Relationships · documents · decision notes · lead intelligence</p>
+          </div>
+          <div class="project-source-panel" aria-label="Given to VAL">
+            <div class="project-source-panel-header">
+              <span>Given to VAL</span>
+              <strong data-project-source-count>No source details attached yet</strong>
+            </div>
+            <div class="project-source-grid" data-project-source-panel></div>
+          </div>
+          <div class="project-graph-panel" aria-label="Project graph links">
+            <div class="project-source-panel-header">
+              <span>Project Graph</span>
+              <strong data-project-graph-count>No linked context yet</strong>
+            </div>
+            <div class="project-graph-grid" data-project-graph-panel></div>
+          </div>
+          <div class="project-review-panel" aria-label="Project review gate">
+            <div class="project-source-panel-header">
+              <span>Review Gate</span>
+              <strong data-project-review-count>No source reviews pending</strong>
+            </div>
+            <div class="project-review-grid" data-project-review-panel></div>
+          </div>
+          <div class="project-prepared-panel" aria-label="Project prepared work">
+            <div class="project-source-panel-header">
+              <span>Prepared Work</span>
+              <strong data-project-prepared-count>No prepared work waiting</strong>
+            </div>
+            <div class="project-prepared-grid" data-project-prepared-panel></div>
+          </div>
+          <div class="project-document-panel" aria-label="Project linked documents">
+            <div class="project-source-panel-header">
+              <span>Linked Documents</span>
+              <strong data-project-document-count>No linked documents yet</strong>
+            </div>
+            <div class="project-document-grid" data-project-document-panel></div>
+          </div>
+          <div class="project-actions" aria-label="Executive project actions">
+            <button type="button" data-project-action="open_project_file">Open project file</button>
+            <button type="button" data-project-action="cowork_project">Co-Work with VAL</button>
+            <button type="button" data-open-room="alignment" data-project-action="ask_priority">Ask what matters now</button>
+            <button type="button" data-open-room="leverage" data-project-action="show_alternatives">Show alternatives</button>
+          </div>
+        </div>
+      </div>
+      <div class="source-detail timeline-detail" id="timeline-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Timeline &amp; Tasks</p>
+            <h3>Calendar, transcripts, follow-through</h3>
+            <p>VAL should treat each meeting as an evidence spine: the calendar event holds the transcript, attendees, linked relationships, linked projects, tasks, drafts, and review status.</p>
+          </div>
+          <button type="button" class="close-timeline-detail">Close</button>
+        </div>
+        <div class="timeline-status-panel" aria-label="Timeline status">
+          <div class="timeline-status-header">
+            <span>Transcript Review Workflow</span>
+            <strong data-timeline-status-count>Checking timeline context</strong>
+          </div>
+          <div class="timeline-status-grid" data-timeline-status-panel>
+            <article>
+              <span>Needs Matching</span>
+              <strong>Attach first</strong>
+              <p>Match transcript to calendar event, attendees, project, and relationships before VAL extracts anything.</p>
+            </article>
+            <article>
+              <span>Ready to Extract</span>
+              <strong>Anchored evidence</strong>
+              <p>Only matched transcripts can move into proposed notes, proposed tasks, drafts, or meeting prep.</p>
+            </article>
+            <article>
+              <span>Proposed Notes</span>
+              <strong>Meaning, not mush</strong>
+              <p>Notes must name the decision, commitment, risk, opportunity, or relationship context they preserve.</p>
+            </article>
+            <article>
+              <span>Proposed Tasks</span>
+              <strong>Specific work</strong>
+              <p>Tasks must include source excerpt, owner, due date or review-needed date, project, relationship, and why it matters.</p>
+            </article>
+          </div>
+        </div>
+        <div class="timeline-principles timeline-quality-standard" aria-label="Transcript note and task quality standard">
+          <article>
+            <span>Useful Note</span>
+            <strong>Evidence plus judgment</strong>
+            <p>A note is useful only when it preserves what changed, who it affects, where it belongs, and the exact transcript evidence behind it.</p>
+          </article>
+          <article>
+            <span>Useful Task</span>
+            <strong>Executable, not vague</strong>
+            <p>A task is useful only when Jessa can open it later and know the work, owner, source quote, project, relationship, due date, and next action.</p>
+          </article>
+        </div>
+        <div class="timeline-event-panel" aria-label="Timeline events">
+          <div class="timeline-status-header">
+            <span>Review Queue</span>
+            <strong data-timeline-event-count>No events loaded yet</strong>
+          </div>
+          <div class="timeline-event-list" data-timeline-event-list></div>
+        </div>
+        <div class="timeline-review-panel" aria-label="Transcript proposed notes and tasks">
+          <div class="timeline-status-header">
+            <span>Proposed Notes &amp; Tasks</span>
+            <strong data-timeline-review-count>No proposals loaded yet</strong>
+          </div>
+          <div class="timeline-drawer-actions" aria-label="Timeline Co-Work">
+            <button type="button" data-timeline-action="cowork_timeline">Co-Work with VAL</button>
+          </div>
+          <div class="timeline-review-cards" data-timeline-review-cards></div>
+        </div>
+      </div>
+      <div class="source-detail correspondence-detail" id="correspondence-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Executive Inbox</p>
+            <h3>Important replies and drafts</h3>
+            <p>VAL brings forward the conversations that need attention, prepares private reply drafts, and keeps sending behind explicit approval.</p>
+          </div>
+          <button type="button" class="close-correspondence-detail">Close</button>
+        </div>
+        <div class="correspondence-status-panel" aria-label="Executive Inbox safety boundary">
+          <article>
+            <span>Review Boundary</span>
+            <strong>Prepare, then approve</strong>
+            <p>Drafting is internal prep work inside VAL. Sending, CRM changes, tasks, and durable memory are external consequences and stay gated.</p>
+          </article>
+          <article>
+            <span>Relationship Context</span>
+            <strong>Identity first</strong>
+            <p>Replies should connect to the right person, project, and source evidence before they represent Jessa externally.</p>
+          </article>
+          <article>
+            <span>Prepared Judgment</span>
+            <strong>Why this matters</strong>
+            <p>The drawer shows why a reply deserves review, what VAL prepared, and what only the user can decide.</p>
+          </article>
+        </div>
+        <div class="correspondence-workbench" aria-label="Executive Inbox workbench">
+          <section class="correspondence-queue" aria-label="Prepared Executive Inbox queue">
+            <div class="timeline-status-header">
+              <span>Prepared Replies</span>
+              <strong data-correspondence-count>Checking Executive Inbox</strong>
+            </div>
+            <div class="correspondence-list" data-correspondence-list></div>
+          </section>
+          <section class="correspondence-brief" aria-label="Correspondence brief">
+            <div class="correspondence-brief-head">
+              <span data-correspondence-field="status">Review-only</span>
+              <h4 data-correspondence-field="title">Select a prepared reply</h4>
+              <p data-correspondence-field="summary">Prepared replies and draft-readiness items will appear here with evidence and approval boundaries.</p>
+            </div>
+            <dl class="correspondence-context">
+              <div><dt>Why now</dt><dd data-correspondence-field="whyNow">No active correspondence selected.</dd></div>
+              <div><dt>Relationship / Project</dt><dd data-correspondence-field="context">Identity and project context will appear when known.</dd></div>
+              <div><dt>VAL prepared</dt><dd data-correspondence-field="prepared">No draft selected yet.</dd></div>
+              <div><dt>Needs from user</dt><dd data-correspondence-field="needs">Review, edit, approve, reject, or provide missing context.</dd></div>
+            </dl>
+            <div class="correspondence-draft-preview" data-correspondence-draft-preview>
+              <span>Draft Preview</span>
+              <p>No draft body selected yet.</p>
+            </div>
+            <div class="correspondence-evidence" data-correspondence-evidence>
+              <span>Evidence</span>
+              <p>Source excerpts will appear here.</p>
+            </div>
+            <div class="correspondence-actions" aria-label="Correspondence review actions">
+              <button type="button" data-correspondence-action="cowork_correspondence">Co-Work with VAL</button>
+              <button type="button" data-correspondence-action="review">Review in Leverage</button>
+              <button type="button" data-correspondence-action="generate">Prepare draft</button>
+              <button type="button" data-correspondence-action="revise">Tighten draft</button>
+              <button type="button" data-correspondence-action="send">Send draft</button>
+            </div>
+            <p class="correspondence-safety-copy" data-correspondence-safety>Drafting is private preparation inside VAL. Sending represents Jessa externally and still requires explicit approval.</p>
+          </section>
+        </div>
+      </div>
+      <div class="source-detail commitment-detail" id="commitment-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Commitments</p>
+            <h3>Accountability ledger</h3>
+            <p>VAL distills transcripts and email into one executive question: who owes whom what, by when, and what should happen next?</p>
+          </div>
+          <button type="button" class="close-commitment-detail">Close</button>
+        </div>
+        <div class="commitment-summary-grid" aria-label="Commitment summary">
+          <article><span>You owe</span><strong data-commitment-summary="you_owe">0</strong><p>Promises or follow-through waiting on Jessa.</p></article>
+          <article><span>Others owe you</span><strong data-commitment-summary="others_owe_you">0</strong><p>Commitments waiting on someone else.</p></article>
+          <article><span>Overdue</span><strong data-commitment-summary="overdue">0</strong><p>Follow-through that may be cooling trust.</p></article>
+          <article><span>Ready for approval</span><strong data-commitment-summary="ready_for_approval">0</strong><p>Drafts or tasks VAL already prepared.</p></article>
+        </div>
+        <div class="commitment-workbench" aria-label="Commitments ledger">
+          <section class="commitment-board" aria-label="Commitment board">
+            <div class="commitment-tabs" aria-label="Commitment filters">
+              <button type="button" class="active" data-commitment-filter="all">All</button>
+              <button type="button" data-commitment-filter="user">You owe</button>
+              <button type="button" data-commitment-filter="contact">Others owe you</button>
+              <button type="button" data-commitment-filter="mutual">Mutual</button>
+              <button type="button" data-commitment-filter="overdue">Overdue</button>
+              <button type="button" data-commitment-filter="drafted">Ready for approval</button>
+              <button type="button" data-commitment-filter="needs_resolution">Needs resolution</button>
+              <button type="button" data-commitment-filter="complete">Completed</button>
+            </div>
+            <div class="commitment-list" data-commitment-list></div>
+          </section>
+          <aside class="commitment-brief" aria-label="Commitment detail">
+            <div class="correspondence-brief-head">
+              <span data-commitment-field="status">Open</span>
+              <h4 data-commitment-field="title">Select a commitment</h4>
+              <p data-commitment-field="description">Promises, next steps, and follow-through will appear here with evidence and ownership.</p>
+            </div>
+            <dl class="correspondence-context">
+              <div><dt>Owner</dt><dd data-commitment-field="owner">Unknown</dd></div>
+              <div><dt>Counterparty</dt><dd data-commitment-field="counterparty">Unknown</dd></div>
+              <div><dt>Due</dt><dd data-commitment-field="due">No due date</dd></div>
+              <div><dt>Source</dt><dd data-commitment-field="source">No source selected.</dd></div>
+              <div><dt>Risk</dt><dd data-commitment-field="risk">Medium</dd></div>
+              <div><dt>Next action</dt><dd data-commitment-field="next">Review commitment.</dd></div>
+            </dl>
+            <div class="correspondence-evidence" data-commitment-evidence>
+              <span>Evidence</span>
+              <p>Source quote will appear here.</p>
+            </div>
+            <div class="correspondence-actions" aria-label="Commitment actions">
+              <button type="button" data-commitment-action="cowork_commitment">Co-Work with VAL</button>
+              <button type="button" data-commitment-action="draft_email">Draft Email</button>
+              <button type="button" data-commitment-action="create_task">Create Task</button>
+              <button type="button" data-commitment-action="schedule">Schedule</button>
+              <button type="button" data-commitment-action="complete">Mark Complete</button>
+              <button type="button" data-commitment-action="delegate">Delegate</button>
+              <button type="button" data-commitment-action="dismiss">Dismiss</button>
+              <button type="button" data-commitment-action="show_source">Show Source</button>
+              <button type="button" data-commitment-action="resolve_contact">Resolve Contact</button>
+            </div>
+            <p class="correspondence-safety-copy" data-commitment-status>Commitments are accountability records. Drafts and tasks require visible user action; sends still require approval.</p>
+          </aside>
+        </div>
+      </div>
+      <div class="source-detail" id="source-detail" aria-hidden="true">
+        <div class="source-detail-header">
+          <div>
+            <p class="drawer-kicker">Lead Intelligence</p>
+            <h3>Open a client scraper</h3>
+            <p>Choose the lead set, run the scrape, review the preview, then push only approved records into GHL.</p>
+          </div>
+          <button type="button" class="close-source-detail">Close</button>
+        </div>
+        <div class="lead-intelligence-hero">
+          <div>
+            <span>Jessa VAL</span>
+            <strong>Two scrapers are ready to run.</strong>
+            <small>Nothing is added to GHL until the preview is reviewed and approved.</small>
+          </div>
+          <a href="./dashboard.html" class="source-action primary">Open Pipeline</a>
+        </div>
+        <div class="source-list">
+          <article class="source-card lead-scraper-card active">
+            <span>Organizations / Non-Profits</span>
+            <strong>Find mission-aligned organizations</strong>
+            <small>Set market, criteria, and result count. VAL checks public sources and GHL duplicates first.</small>
+            <div class="scraper-steps" aria-label="Organizations and non-profits scraper steps">
+              <i>Criteria</i><i>Preview</i><i>Approve</i><i>GHL</i>
+            </div>
+            <button type="button" data-open-scraper="organizations">Start organization scrape</button>
+          </article>
+          <article class="source-card lead-scraper-card active">
+            <span>Partners</span>
+            <strong>Find strategic partner candidates</strong>
+            <small>Choose partner type and market. VAL scores potential reach and partnership fit.</small>
+            <div class="scraper-steps" aria-label="Partners scraper steps">
+              <i>Type</i><i>Preview</i><i>Select</i><i>GHL</i>
+            </div>
+            <button type="button" data-open-scraper="partners">Run partner scrape</button>
+          </article>
+          <article class="source-card lead-scraper-card sync">
+            <span>Approval Gate</span>
+            <strong>Preview before import</strong>
+            <small>The user selects approved leads before VAL creates contacts, tags, fields, notes, and opportunities.</small>
+            <button type="button" data-open-scraper="approval">View approval flow</button>
+          </article>
+          <article class="source-card lead-scraper-card quiet">
+            <span>Connections</span>
+            <strong>Sources and CRM must be ready</strong>
+            <small>Outscraper, enrichment tools, and GHL credentials are checked before the workflow runs.</small>
+            <button type="button" data-open-scraper="connections">Check connections</button>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="./hearth-prototype.js?v=timeline-match-audit-receipts"></script>
+</body>
+</html>

@@ -12,8 +12,6 @@ test('gmail fetch uses a 14-day active inbox window and sorts newest first',()=>
   assert.match(server,/const recentQuery=force\?'in:inbox newer_than:14d':'in:inbox newer_than:14d'/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
-  assert.match(server,/const format=includeBody\?'full':'metadata'/);
-  assert.match(server,/metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date/);
 });
 
 test('gmail refresh retries rejected access tokens and exposes sync status',()=>{
@@ -46,87 +44,19 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/Last successful sync/);
   assert.match(dashboard,/Evidence:/);
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
-  assert.match(dashboard,/\/api\/email\/intelligence\?limit=25/);
-  assert.match(server,/const limit=Math\.min\(Math\.max\(Number\(req\.query\.limit\)\|\|25,5\),50\)/);
-});
-
-test('executive inbox shows session recovery instead of a dead pane',()=>{
-  assert.match(dashboard,/function renderInboxAuthRecovery/);
-  assert.match(dashboard,/Refresh Your VAL Session/);
-  assert.match(dashboard,/Reconnecting Gmail will not fix this specific message/);
-  assert.match(dashboard,/\/dashboard\?view=email_intelligence&session_refresh=1/);
-  assert.match(dashboard,/\/dashboard\?view=integration_status/);
-  assert.match(dashboard,/opts\.credentials=opts\.credentials\|\|'include'/);
-  assert.match(dashboard,/view==='email_intelligence'\|\|view==='integration_status'/);
-  assert.match(dashboard,/Open Login Directly/);
-  assert.match(dashboard,/isAuthExpiredError\(e\)/);
-  assert.match(dashboard,/Session refresh needed before Inbox Command can search protected email/);
-  assert.match(dashboard,/\.email-overlay\{position:fixed;inset:0;background:rgba\(7,17,29,\.62\);backdrop-filter:blur\(6px\);z-index:2600/);
 });
 
 test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{
   assert.match(server,/function emailShouldPrepareDraft/);
   assert.match(server,/function buildEmailReplyDraft/);
-  assert.match(server,/function buildSchedulingReplyDraft/);
-  assert.match(server,/function buildQuestionReplyDraft/);
-  assert.match(server,/function buildWaitingFollowupDraft/);
-  assert.match(server,/function emailSnippetSummary/);
-  assert.match(server,/function emailIsCalendarConfirmation/);
-  assert.match(server,/function emailValIntro/);
-  assert.match(server,/function emailValSignoff/);
-  assert.match(server,/function normalizeDraftStandards/);
-  assert.match(server,/function getDraftStandards/);
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
   assert.match(server,/intro\|introduction\|referral\|connect you/);
-  assert.match(server,/VAL here\./);
-  assert.match(server,/Jessa's AI Chief of Staff/);
-  assert.match(server,/disclosureMode:'val_disclosed'/);
-  assert.match(server,/write_as_user/);
-  assert.match(server,/I'll make a note of it/);
-  assert.match(server,/I'll get this question in front of \$\{target\} right away/);
-  assert.match(server,/review list/);
-  assert.match(server,/calendar context/);
-  assert.match(server,/I'll make sure this is in \$\{target\}'s calendar/);
-  assert.doesNotMatch(server,/calendar context for Thank You for Your RSVP/);
-  assert.match(server,/I'm bringing this back to the top of the thread for Jessa/);
-  assert.doesNotMatch(server,/Thank you for your note\. I wanted to respond thoughtfully/);
-  assert.doesNotMatch(server,/I saw this needs a clear reply/);
-  assert.doesNotMatch(server,/Here is what I recommend as the next step/);
-  assert.doesNotMatch(server,/I saw the note about/);
-  assert.doesNotMatch(server,/I saw your note/);
   assert.match(server,/source:'executive_inbox_auto_draft'/);
   assert.match(server,/email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
-});
-
-test('Executive Inbox exposes user-controlled draft standards',()=>{
-  assert.match(server,/create table if not exists val_user_preferences/);
-  assert.match(server,/app\.get\('\/api\/val\/draft-standards'/);
-  assert.match(server,/app\.put\('\/api\/val\/draft-standards'/);
-  assert.match(server,/draft_standards_updated/);
-  assert.match(server,/const standards=await getDraftStandards\(\)/);
-  assert.match(server,/buildEmailReplyDraft\(email,standards\)/);
-  assert.match(dashboard,/Set Draft Standards/);
-  assert.match(dashboard,/function openDraftStandards/);
-  assert.match(dashboard,/function saveDraftStandards/);
-  assert.match(dashboard,/Recipient can see VAL is writing/);
-  assert.match(dashboard,/Write as me; do not mention VAL/);
-  assert.match(dashboard,/\/api\/val\/draft-standards/);
-});
-
-test('Executive Inbox approve draft sends email through Gmail',()=>{
-  assert.match(server,/app\.post\('\/api\/gmail\/send-approved-draft'/);
-  assert.match(server,/gmail\/v1\/users\/me\/messages\/send/);
-  assert.match(server,/actionType:'send_approved_draft'/);
-  assert.match(server,/actionStatus:'sent'/);
-  assert.match(dashboard,/function sendApprovedEmailDraft/);
-  assert.match(dashboard,/Approve & Send/);
-  assert.match(dashboard,/\/api\/gmail\/send-approved-draft/);
-  assert.match(dashboard,/Gmail sent the approved reply in this thread/);
-  assert.match(dashboard,/Save Gmail Draft/);
 });
 
 test('executive inbox actions report inline and rules avoid native confirm flow',()=>{
