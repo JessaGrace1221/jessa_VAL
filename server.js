@@ -2761,9 +2761,12 @@ async function dbQuery(sql,params){
   try{
     return await pgPool.query(sql,params);
   }catch(e){
-    console.error('Postgres unavailable, falling back to file store:',e.message);
-    try{ await pgPool.end(); }catch(_){}
-    pgPool = null;
+    console.error('Postgres query failed:',e.message);
+    if(['ECONNREFUSED','ECONNRESET','ENOTFOUND','ETIMEDOUT','57P01','57P02','57P03','08000','08003','08006'].includes(e.code)){
+      console.error('Postgres unavailable, falling back to file store:',e.message);
+      try{ await pgPool.end(); }catch(_){}
+      pgPool = null;
+    }
     return {rows:[],rowCount:0};
   }
 }
