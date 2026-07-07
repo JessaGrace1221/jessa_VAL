@@ -161,6 +161,7 @@ let activeMeetingContactCandidates = {};
 let activeValOnboardingSessionId = '';
 let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
+let currentCalendarEvents = [];
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], leverage: []};
 let workspaceReturnTarget = 'home';
@@ -5826,8 +5827,32 @@ function hearthPacketSourceFromContext(source = {}, node = null){
 function hearthPacketShouldSkip(action = '', packetName = ''){
   const command = String(action || '').split(':')[0];
   if(!canUseApi) return true;
-  if(!packetName || !hearthServerPacketNames.has(packetName)) return true;
   return ['cancel','calendar','relationshipAllPeople','projectAllProjects'].includes(command);
+}
+
+function localHearthMetadataPacket({packetName = '', action = '', node = null, source = {}} = {}){
+  const packet = {
+    ok:true,
+    status:hearthServerPacketNames.has(packetName) ? 'not_checked' : 'metadata_only',
+    packetName,
+    source:hearthPacketSourceFromContext(source, node),
+    click:{
+      action,
+      contract:node?.dataset?.valClickContract || '',
+      promptRule:node?.dataset?.valPromptRule || '',
+      allowedActions:node?.dataset?.valAllowedActions || '',
+      neverDo:node?.dataset?.valNeverDo || ''
+    },
+    receipt:{
+      id:'client_packet_' + Date.now().toString(36),
+      sourceReceipts:[],
+      downstreamConsumers:[],
+      summary:'This click has a client-side packet contract. Server hydration is not wired for this packet yet.'
+    }
+  };
+  lastHearthPacketReceipt = packet;
+  renderHearthPacketReceiptStrip(packet);
+  return packet;
 }
 
 function hearthPacketMissingLines(packet = {}){
@@ -5862,6 +5887,10 @@ function showHearthPacketBlocked(packet = {}, action = ''){
 async function ensureHearthClickPacket({node = null, packetName = '', action = '', source = {}, allowBlockedForInspection = false} = {}){
   const resolvedPacketName = packetName || node?.dataset?.valVariablePacket || '';
   if(hearthPacketShouldSkip(action, resolvedPacketName)) return {ok:true,status:'not_checked'};
+  if(!resolvedPacketName || !hearthServerPacketNames.has(resolvedPacketName)){
+    const packet = localHearthMetadataPacket({packetName:resolvedPacketName, action, node, source});
+    return {ok:true,packet,status:packet.status};
+  }
   const payload = {
     packetName: resolvedPacketName,
     source: hearthPacketSourceFromContext(source, node),
@@ -8577,6 +8606,7 @@ function calendarEventSubtitle(event = {}){
 function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
   if(!agendaList) return;
   const visibleEvents = Array.isArray(events) ? events.slice(0, 8) : [];
+  currentCalendarEvents = visibleEvents;
   if(!visibleEvents.length){
     agendaList.innerHTML = '<button class="agenda-item quiet" type="button"><span>Calendar</span><strong>No upcoming events loaded</strong><small>' + escapeHtml((errors && errors[0]) || 'Connect Google Calendar or Outlook to show your schedule here.') + '</small></button>';
     return;
@@ -9158,6 +9188,80 @@ async function createMeetingContactCandidate(key){
       label: 'Meeting contact create error'
     });
   }
+}
+
+function calendarPacketSourceFromEvent(event = {}, index = 0){
+  const title = event.title || event.summary || 'Calendar event';
+  return {
+    sourceId: event.id || event.eventId || event.calendarEventId || event.start || 'calendar_event_' + index,
+    sourceType: 'calendar_event',
+    sourceLabel: title,
+    calendarToday: currentCalendarEvents.length ? {events:currentCalendarEvents.slice(0,8), source:'calendar_sidebar'} : {selected:title},
+    calendarUpcoming: currentCalendarEvents,
+    calendarEvents: currentCalendarEvents,
+    currentCalendarEvent: event,
+    sourceItem: {
+      id:event.id || event.eventId || event.calendarEventId || event.start || 'calendar_event_' + index,
+      title,
+      sourceType:'calendar_event',
+      sourceId:event.id || event.eventId || event.calendarEventId || event.start || '',
+      sourceRefs:[{source_type:event.source || 'calendar', source_id:event.id || event.eventId || event.start || '', quote_or_summary:title}]
+    }
+  };
+}
+
+async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0){
+  const event = currentCalendarEvents[eventIndex] || currentCalendarEvents[0] || {};
+  const preflight = await ensureHearthClickPacket({
+    node,
+    packetName:'timeline_packet',
+    action:'calendar:meeting_prep',
+    source:calendarPacketSourceFromEvent(event, eventIndex)
+  });
+  if(!preflight.ok) return;
+  await openMeetingPrep();
+}
+
+async function openCalendarPanelWithPacket(node = calendarTab){
+  const event = currentCalendarEvents[0] || {};
+  const preflight = await ensureHearthClickPacket({
+    node,
+    packetName:'timeline_packet',
+    action:'calendar:open_panel',
+    source:calendarPacketSourceFromEvent(event, 0)
+  });
+  if(!preflight.ok) return;
+  openCalendarPanel();
+}
+
+async function openCoworkSessionWithPacket(node = coworkNotebook){
+  const preflight = await ensureHearthClickPacket({node, packetName:'cowork_packet', action:'cowork:open'});
+  if(!preflight.ok) return;
+  openCoworkSession();
+}
+
+async function openTeachValSessionWithPacket(node = teachPen){
+  const preflight = await ensureHearthClickPacket({node, packetName:'val_os_packet', action:'teach:open'});
+  if(!preflight.ok) return;
+  openTeachValSession();
+}
+
+async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
+  const item = linkedinVisibilityItems[0] || {};
+  const preflight = await ensureHearthClickPacket({
+    node,
+    packetName:'relationship_packet',
+    action:'linkedin:visibility',
+    source:{
+      relationshipName:item.contact || '',
+      sourceType:'linkedin_visibility',
+      sourceLabel:item.contact ? item.contact + ' LinkedIn visibility' : 'LinkedIn visibility',
+      sourceItem:item
+    },
+    allowBlockedForInspection:true
+  });
+  if(!preflight.ok) return;
+  openLinkedInEngagementWorkspace();
 }
 
 function homeWorkspacePayload(action){
@@ -10092,25 +10196,32 @@ closeSourceDetail.addEventListener('click', () => {
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
 });
 
-nextMeetingCard.addEventListener('click', openMeetingPrep);
+nextMeetingCard.addEventListener('click', () => openMeetingPrepWithPacket(nextMeetingCard, 0));
 agendaItems.forEach((item) => {
   item.addEventListener('click', () => {
-    if(item.classList.contains('active')) openMeetingPrep();
+    if(item.classList.contains('active')) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
   });
 });
-coworkNotebook.addEventListener('click', openCoworkSession);
-teachPen.addEventListener('click', openTeachValSession);
-linkedinWidget?.addEventListener('click', openLinkedInEngagementWorkspace);
+coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(coworkNotebook));
+teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
+linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
 updateLinkedInWidget();
 calendarTab.addEventListener('click', () => {
   if(hearth.classList.contains('calendar-open')){
     closeCalendarPanel();
   } else {
-    openCalendarPanel();
+    openCalendarPanelWithPacket(calendarTab);
   }
 });
 closeCalendarButton.addEventListener('click', closeCalendarPanel);
 fullCalendarPanel?.addEventListener('click', (event) => {
+  const agendaButton = event.target.closest('[data-calendar-event-index]');
+  if(agendaButton){
+    event.preventDefault();
+    event.stopPropagation();
+    openMeetingPrepWithPacket(agendaButton, Number(agendaButton.dataset.calendarEventIndex || 0));
+    return;
+  }
   const googleButton = event.target.closest('[data-google-oauth]');
   if(googleButton){
     event.preventDefault();

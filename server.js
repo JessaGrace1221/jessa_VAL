@@ -22391,7 +22391,7 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
     relationships:{current:relationship,linked_to_project:relationship?[relationship]:[],moving_project:relationship?[relationship]:[]},
     projects:{current:project,linked_to_relationship:project?[project]:[],active:projects},
     emails:{current:source.email||homeCard?.email||{},thread:{current:{messages:source.threadMessages||[],summary:source.threadSummary||homeCard?.snippet||homeCard?.summary||'',relationship_temperature:'unknown'}}},
-    calendar:{today:source.calendarToday||{},upcoming:source.calendarUpcoming||[],relevant_events:source.calendarEvents||[],current_event:{attendee_resolution:{},internal_context:{},relationship_intelligence:{},follow_up_preparation:{}}},
+    calendar:{today:source.calendarToday||{},upcoming:source.calendarUpcoming||[],relevant_events:source.calendarEvents||[],current_event:{event:source.currentCalendarEvent||{},attendee_resolution:source.currentCalendarEvent?.attendees||{},internal_context:source.currentCalendarEvent||{},relationship_intelligence:source.currentCalendarEvent||{},follow_up_preparation:{status:'review_only',source:'hearth_packet_builder'}}},
     recent_transcripts:{relationship_updates:[],open_loops:[]},
     documents:{current:documentRows[0]||null,linked_to_relationship:documentRows.filter(doc=>relationship&&String(doc.relationship||'').toLowerCase().includes(String(relationship.displayName||relationship.name||'').toLowerCase())).slice(0,12),linked_to_project:documentRows.filter(doc=>project&&String(doc.project||'').toLowerCase().includes(String(project.displayName||project.name||'').toLowerCase())).slice(0,12)},
     tasks:{open:openCommitments},
