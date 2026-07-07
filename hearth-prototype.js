@@ -9257,8 +9257,7 @@ async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
       sourceType:'linkedin_visibility',
       sourceLabel:item.contact ? item.contact + ' LinkedIn visibility' : 'LinkedIn visibility',
       sourceItem:item
-    },
-    allowBlockedForInspection:true
+    }
   });
   if(!preflight.ok) return;
   openLinkedInEngagementWorkspace();

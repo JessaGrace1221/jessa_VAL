@@ -22371,6 +22371,13 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
   const currentEvidence=source.evidenceItem||homeSourceItem||homeCard||evidenceItems.find(item=>String(item.id||item.sourceId||item.source_id||'')===String(source.sourceId||source.id||''))||null;
   const openCommitments=Array.isArray(commitments.commitments)?commitments.commitments:[];
   const documentRows=Array.isArray(documents.documents)?documents.documents:[];
+  const currentCalendarEvent=source.currentCalendarEvent||{};
+  const attendeeResolution=Array.isArray(currentCalendarEvent.attendees)&&currentCalendarEvent.attendees.length
+    ? currentCalendarEvent.attendees
+    : {status:'none_attached',source:'calendar_event',message:'No attendees were attached to this calendar event.'};
+  const transcriptOpenLoops=source.transcriptOpenLoops||[{status:'none_found',source:'hearth_packet_builder',message:'No transcript open loops are attached to this selected calendar event yet.'}];
+  const emailThreadSummary=source.threadSummary||homeCard?.snippet||homeCard?.summary||{status:'none_attached',source:'hearth_packet_builder',message:'No email thread summary is attached to this selected calendar event yet.'};
+  const openTasks=openCommitments.length?openCommitments:[{status:'none_found',source:'commitments',message:'No open tasks are attached to this selected source yet.'}];
   const confidence=homeSourceItem?.confidence??homeCard?.confidence??{status:'not_supplied',source:'hearth_packet_builder',message:'Selected Home source did not include a numeric confidence score.'};
   const uncertainty=Array.isArray(briefing?.unknowns)&&briefing.unknowns.length
     ? briefing.unknowns
@@ -22390,11 +22397,11 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
     home:{card:{current:homeCard,sourceItem:homeSourceItem,sourceType:homeSourceType,sourceId:homeSourceId,sourceRefs:homeSourceRefs}},
     relationships:{current:relationship,linked_to_project:relationship?[relationship]:[],moving_project:relationship?[relationship]:[]},
     projects:{current:project,linked_to_relationship:project?[project]:[],active:projects},
-    emails:{current:source.email||homeCard?.email||{},thread:{current:{messages:source.threadMessages||[],summary:source.threadSummary||homeCard?.snippet||homeCard?.summary||'',relationship_temperature:'unknown'}}},
-    calendar:{today:source.calendarToday||{},upcoming:source.calendarUpcoming||[],relevant_events:source.calendarEvents||[],current_event:{event:source.currentCalendarEvent||{},attendee_resolution:source.currentCalendarEvent?.attendees||{},internal_context:source.currentCalendarEvent||{},relationship_intelligence:source.currentCalendarEvent||{},follow_up_preparation:{status:'review_only',source:'hearth_packet_builder'}}},
-    recent_transcripts:{relationship_updates:[],open_loops:[]},
+    emails:{current:source.email||homeCard?.email||{},thread:{current:{messages:source.threadMessages||[],summary:emailThreadSummary,relationship_temperature:'unknown'}}},
+    calendar:{today:source.calendarToday||{},upcoming:source.calendarUpcoming||[],relevant_events:source.calendarEvents||[],current_event:{event:currentCalendarEvent,attendee_resolution:attendeeResolution,internal_context:currentCalendarEvent,relationship_intelligence:currentCalendarEvent,follow_up_preparation:{status:'review_only',source:'hearth_packet_builder'}}},
+    recent_transcripts:{relationship_updates:[],open_loops:transcriptOpenLoops},
     documents:{current:documentRows[0]||null,linked_to_relationship:documentRows.filter(doc=>relationship&&String(doc.relationship||'').toLowerCase().includes(String(relationship.displayName||relationship.name||'').toLowerCase())).slice(0,12),linked_to_project:documentRows.filter(doc=>project&&String(doc.project||'').toLowerCase().includes(String(project.displayName||project.name||'').toLowerCase())).slice(0,12)},
-    tasks:{open:openCommitments},
+    tasks:{open:openTasks},
     drafts:{current:drafts[0]||null,items:drafts},
     evidence:{current_item:currentEvidence,current_item_source_type:currentEvidence?.sourceType||currentEvidence?.source_type||source.sourceType||'',current_item_source_id:currentEvidence?.sourceId||currentEvidence?.source_id||source.sourceId||'',items:evidenceItems},
     source_reviews:{pending:[]},
