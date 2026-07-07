@@ -9,6 +9,7 @@ const hearthHtml = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'ut
 const hearthCss = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const reviewRoutes = fs.readFileSync(path.join(root, 'services', 'valReviewUpdatesRoutes.js'), 'utf8');
+const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
 
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
   assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
@@ -770,6 +771,40 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
   assert.match(hearthHtml, /hearth-prototype\.js\?v=autocorrect-20260707/);
+});
+
+test('Hearth click surfaces have prompt and variable packet contracts', () => {
+  for(const required of [
+    'surface -> trigger -> variable packet -> prompt/rule -> source-of-source -> allowed actions -> never-do -> receipt',
+    'home_source_packet',
+    'relationship_packet',
+    'project_packet',
+    'email_packet',
+    'commitment_packet',
+    'document_packet',
+    'timeline_packet',
+    'lead_intelligence_packet',
+    'val_os_packet',
+    'cowork_packet',
+    'data-open-room="velocity"',
+    'data-open-room="alignment"',
+    'data-open-room="leverage"',
+    'data-relationship-action',
+    'data-project-action',
+    'data-timeline-action',
+    'data-correspondence-action',
+    'data-commitment-action',
+    'data-document-action',
+    'data-open-scraper',
+    'data-val-action',
+    'data-workflow-action',
+    'data-home-action',
+    'Autocorrect suggestion',
+    'Do not send the whole registry into a click',
+    'Do not combine Observe + Judge + Act in one prompt'
+  ]){
+    assert.ok(hearthClickContracts.includes(required), 'Missing Hearth click contract entry: ' + required);
+  }
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
