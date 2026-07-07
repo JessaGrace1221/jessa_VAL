@@ -5388,6 +5388,10 @@ function briefingItems(items){
 }
 
 function itemTitle(item, fallback){
+  if(isEmailSourceItem(item)){
+    const email = homeEmailPayload(item);
+    return compactSentence(email.subject && !/^Review:\s+/i.test(email.subject) ? email.subject : '', 'Email needing attention');
+  }
   return compactSentence(item?.title || item?.name || item?.summary || fallback, fallback);
 }
 
