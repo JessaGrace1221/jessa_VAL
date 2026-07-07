@@ -30,6 +30,7 @@ const scraperCriteriaPanel = document.querySelector('.scraper-criteria-panel');
 const scraperPreviewList = document.querySelector('.scraper-preview-list');
 const workspaceInputPanel = document.querySelector('.workspace-input-panel');
 const workspacePacketReceipt = document.querySelector('[data-workspace-packet-receipt]');
+const calendarPacketReceipt = document.querySelector('[data-calendar-packet-receipt]');
 let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
@@ -4993,17 +4994,46 @@ function renderWorkspace(roomName){
   return true;
 }
 
+function meetingPrepEventTitle(event = activeMeetingPrepEvent){
+  return event?.title || event?.summary || meetingPrep.event.title || 'Calendar event';
+}
+
+function meetingPrepEventTime(event = activeMeetingPrepEvent){
+  const raw = event?.start || event?.startTime;
+  if(!raw) return '';
+  const date = new Date(raw);
+  if(Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], {weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+
+function meetingPrepEventDescription(event = activeMeetingPrepEvent){
+  return event?.description || event?.notes || event?.location || event?.meetingLink || '';
+}
+
 function renderMeetingPrep(){
+  const event = activeMeetingPrepEvent || meetingPrep.event;
+  const eventTitle = meetingPrepEventTitle(event);
+  const eventTime = meetingPrepEventTime(event);
+  const eventDescription = meetingPrepEventDescription(event);
   workspaceKicker.textContent = meetingPrep.lens;
-  workspaceTitle.textContent = meetingPrep.title;
-  workspaceMeaning.textContent = meetingPrep.meaning;
+  workspaceTitle.textContent = eventTitle + ' prep is being assembled.';
+  workspaceMeaning.textContent = 'VAL is preparing only the context attached to this calendar event.';
   renderJudgmentSequence({lens: 'Meeting Prep'}, 'meeting');
   renderPaperLabels({lens: 'Meeting Prep'}, 'meeting');
   renderAgencyNote({lens: 'Meeting Prep'}, 'meeting');
-  workspacePapers.meaning.textContent = meetingPrep.meaning;
-  workspacePapers.understanding.innerHTML = meetingPrep.understanding.map((item) => '<li>' + item + '</li>').join('');
-  workspacePapers.recommendation.textContent = meetingPrep.recommendation;
-  workspaceActions.innerHTML = meetingPrep.actions.map((action) => '<button type="button">' + action + '</button>').join('');
+  workspacePapers.meaning.textContent = 'Calendar source: ' + eventTitle + (eventTime ? ' at ' + eventTime : '') + '.';
+  workspacePapers.understanding.innerHTML = [
+    eventDescription ? 'Event context: ' + eventDescription : 'No event description is attached.',
+    event?.attendees?.length ? 'Attendees attached: ' + event.attendees.length : 'No attendees are attached to this event.',
+    'VAL will not pull unrelated meeting prep into this card.'
+  ].map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
+  workspacePapers.recommendation.textContent = 'Review this event-specific prep, then decide whether to create follow-up tasks or relationship context.';
+  workspaceActions.innerHTML = renderWorkspaceActionButtons([
+    {label:'Open full calendar', workflow:'calendar'},
+    {label:'Create follow-up task', workflow:'task'},
+    {label:'Close and return to desk', workflow:'cancel:meeting'}
+  ]);
+  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
   deskWorkspace.setAttribute('aria-label', 'Meeting prep workspace');
 }
 
@@ -5040,6 +5070,7 @@ function renderMeetingPrepUnderstanding(items = []){
 }
 
 function renderMeetingPrepResult(result){
+  const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = result.brief || {};
   const prep = brief.briefJson || {};
   const firstFive = brief.firstFiveMinutesJson || {};
@@ -5048,9 +5079,10 @@ function renderMeetingPrepResult(result){
   const attendeeLines = meetingPrepAttendeeIdentityLines(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : []);
   setWorkspaceContent({
     lens: 'Meeting Prep',
-    title: prep.meeting_title || meetingPrep.title,
-    meaning: prep.concise_brief || meetingPrep.meaning,
+    title: prep.meeting_title || meetingPrepEventTitle(event),
+    meaning: prep.concise_brief || ('VAL prepared context for ' + meetingPrepEventTitle(event) + '.'),
     understanding: [
+      'Calendar source: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
       firstFive.first_sentence_option ? 'Opening: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
       ...attendeeLines,
       questions[0]?.text ? 'First question: ' + questions[0].text : 'Suggested questions are prepared.',
@@ -5058,7 +5090,7 @@ function renderMeetingPrepResult(result){
     ],
     recommendation: (prep.what_val_recommends_preparing || []).join(' / ') || meetingPrep.recommendation,
     actions: [
-      {label: 'Open Acme in GHL', workflow: 'pipeline'},
+      {label: 'Open relationship context', workflow: 'pipeline'},
       {label: 'Prepare follow-up', workflow: 'teach'},
       {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
@@ -5073,25 +5105,26 @@ function renderMeetingPrepResult(result){
 }
 
 async function runMeetingPrep(){
+  const event = activeMeetingPrepEvent || meetingPrep.event;
   if(mockScrapers || !canUseApi){
     renderMeetingPrep();
     return;
   }
   setWorkspaceContent({
     lens: 'Meeting Prep',
-    title: 'VAL is preparing the Acme meeting.',
-    meaning: 'This should reduce what you have to hold before the conversation.',
+    title: 'VAL is preparing ' + meetingPrepEventTitle(event) + '.',
+    meaning: 'This should reduce what you have to hold before this calendar event.',
     understanding: [
-      'Calendar context is being assembled.',
+      'Calendar source: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
       'Internal relationship and CRM context are being checked.',
-      'Apollo and Outscraper enrichment are planned only if they improve judgment.'
+      'External enrichment is planned only if it improves judgment for this event.'
     ],
     recommendation: 'Let VAL assemble the brief, then review the parts that affect your judgment.',
     actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
     label: 'Meeting prep loading workspace'
   });
   try{
-    const result = await postJson('/api/val/calendar/meeting-prep', {event: meetingPrep.event});
+    const result = await postJson('/api/val/calendar/meeting-prep', {event});
     renderMeetingPrepResult(result);
   }catch(error){
     setWorkspaceContent({
@@ -5157,18 +5190,18 @@ function packetReceiptSummary(packet = {}){
   };
 }
 
-function renderHearthPacketReceiptStrip(packet = null){
-  if(!workspacePacketReceipt) return;
+function renderPacketReceiptInto(target, packet = null){
+  if(!target) return;
   if(!packet || !packet.packetName){
-    workspacePacketReceipt.hidden = true;
-    workspacePacketReceipt.innerHTML = '';
+    target.hidden = true;
+    target.innerHTML = '';
     return;
   }
   const summary = packetReceiptSummary(packet);
   const status = summary.status || 'checked';
-  workspacePacketReceipt.hidden = false;
-  workspacePacketReceipt.dataset.packetStatus = status;
-  workspacePacketReceipt.innerHTML = [
+  target.hidden = false;
+  target.dataset.packetStatus = status;
+  target.innerHTML = [
     '<div>',
       '<span>Packet receipt</span>',
       '<strong>' + escapeHtml(summary.packetName) + '</strong>',
@@ -5181,6 +5214,14 @@ function renderHearthPacketReceiptStrip(packet = null){
       summary.downstreamConsumers.length ? '<li>Feeds: ' + escapeHtml(summary.downstreamConsumers.slice(0, 4).join(', ')) + '</li>' : '',
       summary.sourceLabels.length ? '<li>Source proof: ' + escapeHtml(summary.sourceLabels.join(', ')) + '</li>' : ''
     ].filter(Boolean).join('') + '</ul>';
+}
+
+function renderHearthPacketReceiptStrip(packet = null){
+  renderPacketReceiptInto(workspacePacketReceipt, packet);
+}
+
+function renderCalendarPacketReceiptStrip(packet = null){
+  renderPacketReceiptInto(calendarPacketReceipt, packet);
 }
 
 function lensSequenceLabels(workspace = {}, roomName = ''){
@@ -5802,6 +5843,7 @@ const hearthServerPacketNames = new Set([
   'val_os_packet'
 ]);
 let lastHearthPacketReceipt = null;
+let activeMeetingPrepEvent = null;
 
 function hearthPacketSourceFromContext(source = {}, node = null){
   const nodeSource = node?.dataset || {};
@@ -9212,6 +9254,7 @@ function calendarPacketSourceFromEvent(event = {}, index = 0){
 
 async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0){
   const event = currentCalendarEvents[eventIndex] || currentCalendarEvents[0] || {};
+  activeMeetingPrepEvent = event;
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'timeline_packet',
@@ -9231,6 +9274,7 @@ async function openCalendarPanelWithPacket(node = calendarTab){
     source:calendarPacketSourceFromEvent(event, 0)
   });
   if(!preflight.ok) return;
+  renderCalendarPacketReceiptStrip(lastHearthPacketReceipt);
   openCalendarPanel();
 }
 
@@ -9739,6 +9783,7 @@ function closeCalendarPanel(){
   hearth.classList.remove('calendar-open');
   calendarTab.setAttribute('aria-expanded', 'false');
   fullCalendarPanel.setAttribute('aria-hidden', 'true');
+  renderCalendarPacketReceiptStrip(null);
 }
 
 leanButton.addEventListener('click', () => {

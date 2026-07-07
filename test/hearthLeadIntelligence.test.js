@@ -654,7 +654,10 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function renderCalendarAgenda/);
   assert.match(hearthJs, /hydrateCalendarPanel\(\);/);
   assert.match(hearthJs, /function renderMeetingPrepResult/);
-  assert.match(hearthJs, /Apollo and Outscraper enrichment are planned only if they improve judgment/);
+  assert.match(hearthJs, /activeMeetingPrepEvent/);
+  assert.match(hearthJs, /External enrichment is planned only if it improves judgment for this event/);
+  assert.match(hearthJs, /postJson\('\/api\/val\/calendar\/meeting-prep', \{event\}\)/);
+  assert.match(hearthHtml, /data-calendar-packet-receipt/);
   assert.match(hearthJs, /Close and return to desk/);
   assert.match(hearthJs, /function meetingPrepAttendeeIdentityLines/);
   assert.match(hearthJs, /not in GHL yet\. Create the contact before VAL attaches relationship context/);
@@ -810,7 +813,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=desk-preflight-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=calendar-prep-source-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
