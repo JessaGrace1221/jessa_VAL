@@ -504,6 +504,9 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/let RUNTIME_OPENAI_MODEL = ''/);
   assert.match(server,/app\.post\('\/api\/dev\/openai-runtime'/);
   assert.match(server,/app\.post\('\/api\/dev\/openai-runtime\/test'/);
+  assert.doesNotMatch(server,/if\(IS_PRODUCTION\) return res\.status\(404\)\.json\(\{ok:false,error:'Not available in production\.'\}\)/);
+  assert.match(server,/production:IS_PRODUCTION/);
+  assert.match(server,/OpenAI is connected for production Witnessing/);
   assert.match(server,/RUNTIME_OPENAI_KEY \|\| resolveIntegrationSecret\('openai','api_key',OPENAI_KEY\)/);
   assert.match(server,/RUNTIME_OPENAI_MODEL \|\| resolveIntegrationSecret\('openai','preferred_model',OPENAI_CHAT_MODEL\)/);
   assert.doesNotMatch(server,/cardFrames/);

@@ -7834,7 +7834,9 @@ async function refreshRuntimeOpenAIStatus(){
   try{
     const data = await getJson('/api/dev/openai-runtime');
     status.textContent = data.connected
-      ? 'OpenAI is available for this local server. Model: ' + (data.model || 'default') + (data.runtimeConnected ? ' (runtime key).' : ' (environment key).')
+      ? (data.production
+        ? 'OpenAI is available for production Witnessing. Model: ' + (data.model || 'default') + '.'
+        : 'OpenAI is available for this local server. Model: ' + (data.model || 'default') + (data.runtimeConnected ? ' (runtime key).' : ' (environment key).'))
       : 'OpenAI is not connected in this local server yet.';
   }catch(error){
     status.textContent = 'Runtime OpenAI connection is not available here: ' + error.message;
@@ -7848,7 +7850,9 @@ async function ensureRuntimeOpenAIForWitnessing(){
     if(data.connected) return true;
     openValConnectionsWorkspace();
     const status = workspaceInputPanel.querySelector('[data-openai-runtime-status]');
-    if(status) status.textContent = 'Connect OpenAI before starting Witnessing. The live observer is not available in this local server yet.';
+    if(status) status.textContent = data.production
+      ? 'Connect OpenAI in production settings before starting Witnessing.'
+      : 'Connect OpenAI before starting Witnessing. The live observer is not available in this local server yet.';
     return false;
   }catch(error){
     return true;

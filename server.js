@@ -7502,8 +7502,9 @@ app.post('/api/tenant-api-keys/providers/:provider/approval',requirePermission('
 });
 app.get('/api/dev/openai-runtime',async(req,res)=>{
   try{
-    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
-    res.json({ok:true,connected:!!(RUNTIME_OPENAI_KEY||OPENAI_KEY),runtimeConnected:!!RUNTIME_OPENAI_KEY,envConnected:!!OPENAI_KEY,model:RUNTIME_OPENAI_MODEL||OPENAI_CHAT_MODEL});
+    const key=await resolveOpenAIKey();
+    const model=await resolveOpenAIModel();
+    res.json({ok:true,connected:!!key,runtimeConnected:!!RUNTIME_OPENAI_KEY,envConnected:!!OPENAI_KEY,production:IS_PRODUCTION,model:model||OPENAI_CHAT_MODEL});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 async function testRuntimeOpenAIResponses({apiKey='',model=''}={}){
@@ -7541,7 +7542,7 @@ async function testRuntimeOpenAIResponses({apiKey='',model=''}={}){
 }
 app.post('/api/dev/openai-runtime',async(req,res)=>{
   try{
-    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
+    if(IS_PRODUCTION) return res.status(400).json({ok:false,error:'OpenAI is managed by the production Railway or Settings connection. It is already available here when configured; temporary runtime keys are local-development only.'});
     const apiKey=String(req.body.apiKey||req.body.key||'').trim();
     const model=String(req.body.model||req.body.preferredModel||'').trim();
     if(!apiKey&&!model) return res.status(400).json({ok:false,error:'Paste an OpenAI API key or set a model.'});
@@ -7562,9 +7563,8 @@ app.post('/api/dev/openai-runtime',async(req,res)=>{
 });
 app.post('/api/dev/openai-runtime/test',async(req,res)=>{
   try{
-    if(IS_PRODUCTION) return res.status(404).json({ok:false,error:'Not available in production.'});
     const result=await testRuntimeOpenAIResponses();
-    res.json({ok:true,status:'connected',model:result.model,message:'OpenAI is connected for Witnessing.',details:''});
+    res.json({ok:true,status:'connected',model:result.model,message:IS_PRODUCTION?'OpenAI is connected for production Witnessing.':'OpenAI is connected for Witnessing.',details:''});
   }catch(e){res.status(400).json({ok:false,status:'failed',error:e.message});}
 });
 app.get('/api/integrations/credentials',async(req,res)=>{
