@@ -770,7 +770,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=click-contracts-full-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=click-contracts-complete-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -813,7 +813,10 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   assert.match(hearthJs, /const hearthClickContractRegistry = \[/);
   assert.match(hearthJs, /\.living-room \.room-action\[data-open-room="alignment"\]/);
   assert.match(hearthJs, /nav\.close_context/);
+  assert.match(hearthJs, /nav\.source_action/);
   assert.match(hearthJs, /workspace\.static_action/);
+  assert.match(hearthJs, /\.workspace-actions button/);
+  assert.match(hearthJs, /\.source-action/);
   assert.match(hearthJs, /root\.matches\(entry\.selector\)/);
   assert.match(hearthJs, /\[data-relationship-search\]/);
   assert.match(hearthJs, /\[data-calendar-event-index\]/);
