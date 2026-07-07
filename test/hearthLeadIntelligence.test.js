@@ -813,7 +813,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=calendar-prep-source-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=drawer-packet-receipts-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -935,6 +935,25 @@ test('Hearth packet contracts require the deep source web behind every click', (
   packetNames.forEach((packetName) => {
     assert.match(hearthJs, new RegExp(packetName + ': \\{'), 'Missing completeness registry entry for ' + packetName);
   });
+});
+
+test('Hearth drawer openings show index packet receipts before item actions', () => {
+  assert.match(hearthHtml, /data-drawer-packet-receipt/);
+  assert.match(hearthJs, /function drawerIndexPacketReceipt/);
+  assert.match(hearthJs, /status:'index_context'/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(packet\)/);
+  for(const action of [
+    'drawer:relationships',
+    'drawer:projects',
+    'drawer:timeline',
+    'drawer:executive_inbox',
+    'drawer:commitments',
+    'drawer:documents',
+    'drawer:lead_intelligence',
+    'drawer:val_os'
+  ]){
+    assert.match(hearthJs, new RegExp(action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
 });
 
 test('Hearth packet hydration audit distinguishes live providers from builder gaps', () => {

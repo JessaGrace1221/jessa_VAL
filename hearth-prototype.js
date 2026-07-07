@@ -31,6 +31,7 @@ const scraperPreviewList = document.querySelector('.scraper-preview-list');
 const workspaceInputPanel = document.querySelector('.workspace-input-panel');
 const workspacePacketReceipt = document.querySelector('[data-workspace-packet-receipt]');
 const calendarPacketReceipt = document.querySelector('[data-calendar-packet-receipt]');
+const drawerPacketReceipt = document.querySelector('[data-drawer-packet-receipt]');
 let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
@@ -4460,6 +4461,7 @@ function closeDrawer(){
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail')?.setAttribute('aria-hidden', 'true');
+  renderDrawerPacketReceiptStrip(null);
   updateCloseAllDrawersButton();
 }
 
@@ -5224,6 +5226,10 @@ function renderCalendarPacketReceiptStrip(packet = null){
   renderPacketReceiptInto(calendarPacketReceipt, packet);
 }
 
+function renderDrawerPacketReceiptStrip(packet = null){
+  renderPacketReceiptInto(drawerPacketReceipt, packet);
+}
+
 function lensSequenceLabels(workspace = {}, roomName = ''){
   const lens = String(workspace.lens || roomName || '').toLowerCase();
   if(/temperature/.test(lens)) return ['Current read', 'Correction', 'Evidence', 'Decision'];
@@ -5894,6 +5900,41 @@ function localHearthMetadataPacket({packetName = '', action = '', node = null, s
   };
   lastHearthPacketReceipt = packet;
   renderHearthPacketReceiptStrip(packet);
+  return packet;
+}
+
+function drawerIndexPacketReceipt({node = null, packetName = '', action = '', label = '', sourceType = 'drawer_index', downstreamConsumers = []} = {}){
+  const sourceLabel = label || node?.innerText?.trim?.() || action || 'Drawer index';
+  const packet = {
+    ok:true,
+    status:'index_context',
+    packetName,
+    source:hearthPacketSourceFromContext({
+      sourceId:action || packetName || sourceType,
+      sourceType,
+      sourceLabel,
+      sourceItem:{id:action || packetName || sourceType, title:sourceLabel, sourceType}
+    }, node),
+    click:{
+      action,
+      contract:node?.dataset?.valClickContract || '',
+      promptRule:node?.dataset?.valPromptRule || '',
+      allowedActions:node?.dataset?.valAllowedActions || '',
+      neverDo:node?.dataset?.valNeverDo || ''
+    },
+    receipt:{
+      id:'drawer_packet_' + Date.now().toString(36),
+      sourceReceipts:[{
+        label:sourceLabel,
+        sourceType,
+        key:action || packetName || sourceType
+      }],
+      downstreamConsumers,
+      summary:'This drawer opened with an index-level packet. Select a specific row or action for source-specific packet hydration.'
+    }
+  };
+  lastHearthPacketReceipt = packet;
+  renderDrawerPacketReceiptStrip(packet);
   return packet;
 }
 
@@ -9826,8 +9867,11 @@ valDrawerLink?.addEventListener('click', () => {
   valDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#val-detail')?.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
+    drawerIndexPacketReceipt({node:valDrawerLink, packetName:'val_os_packet', action:'drawer:val_os', label:'VAL drawer', downstreamConsumers:['val_drawer','teach_val','connections','approval_gate']});
     hydrateValDrawer();
     bringDrawerTargetIntoView(document.querySelector('button[data-workflow-action="valWitnessingResume"]') || document.querySelector('#val-detail'));
+  } else {
+    renderDrawerPacketReceiptStrip(null);
   }
 });
 
@@ -9851,6 +9895,11 @@ sourceDrawerLink.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('source-open');
   sourceDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#source-detail').setAttribute('aria-hidden', String(!isOpen));
+  if(isOpen){
+    drawerIndexPacketReceipt({node:sourceDrawerLink, packetName:'lead_intelligence_packet', action:'drawer:lead_intelligence', label:'Lead Intelligence drawer', downstreamConsumers:['lead_intelligence_drawer','preview_gate','ghl_handoff']});
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 relationshipDrawerLink.addEventListener('click', () => {
@@ -9873,7 +9922,12 @@ relationshipDrawerLink.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('relationship-open');
   relationshipDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#relationship-detail').setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) openRelationshipIndex();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:relationshipDrawerLink, packetName:'relationship_packet', action:'drawer:relationships', label:'Relationships drawer', downstreamConsumers:['relationship_drawer','project_packet','email_packet','home_source_packet']});
+    openRelationshipIndex();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 projectDrawerLink.addEventListener('click', () => {
@@ -9896,7 +9950,12 @@ projectDrawerLink.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('project-open');
   projectDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#project-detail').setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) openProjectIndex();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Projects drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
+    openProjectIndex();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 timelineDrawerLink?.addEventListener('click', () => {
@@ -9919,7 +9978,12 @@ timelineDrawerLink?.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('timeline-open');
   timelineDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) hydrateTimelineStatus();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:timelineDrawerLink, packetName:'timeline_packet', action:'drawer:timeline', label:'Timeline & Tasks drawer', downstreamConsumers:['timeline_drawer','meeting_prep','relationship_packet','project_packet']});
+    hydrateTimelineStatus();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 correspondenceDrawerLink?.addEventListener('click', () => {
@@ -9942,7 +10006,12 @@ correspondenceDrawerLink?.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('correspondence-open');
   correspondenceDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) hydrateCorrespondenceDrawer();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:correspondenceDrawerLink, packetName:'email_packet', action:'drawer:executive_inbox', label:'Executive Inbox drawer', downstreamConsumers:['executive_inbox','relationship_packet','project_packet','commitment_packet']});
+    hydrateCorrespondenceDrawer();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 commitmentDrawerLink?.addEventListener('click', () => {
@@ -9965,7 +10034,12 @@ commitmentDrawerLink?.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('commitment-open');
   commitmentDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) hydrateCommitmentDrawer();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:commitmentDrawerLink, packetName:'commitment_packet', action:'drawer:commitments', label:'Commitments drawer', downstreamConsumers:['commitment_drawer','timeline_packet','email_packet','relationship_packet','project_packet']});
+    hydrateCommitmentDrawer();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 documentDrawerLink?.addEventListener('click', () => {
@@ -9988,7 +10062,12 @@ documentDrawerLink?.addEventListener('click', () => {
   const isOpen = drawerTray.classList.toggle('document-open');
   documentDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen) hydrateDocumentDrawer();
+  if(isOpen){
+    drawerIndexPacketReceipt({node:documentDrawerLink, packetName:'document_packet', action:'drawer:documents', label:'Documents drawer', downstreamConsumers:['document_drawer','relationship_packet','project_packet','email_packet']});
+    hydrateDocumentDrawer();
+  } else {
+    renderDrawerPacketReceiptStrip(null);
+  }
 });
 
 closeRelationshipDetail.addEventListener('click', () => {
