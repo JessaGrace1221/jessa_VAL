@@ -21902,6 +21902,179 @@ const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
     listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates
   }
 });
+
+const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
+  relationship_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{onboarding.first_understanding}}','teach_val_memory','listTeachValCoreMemory / onboardingReflection'],
+    ['{{relationships.current}}','relationship_dossier','GET /api/relationships/dossier'],
+    ['{{relationships.current.source_receipts}}','relationship_dossier','buildContactTimeline + sourceRefs'],
+    ['{{relationships.current.current_thread_history}}','email_identity','valConversationIdentity.buildConversationContext'],
+    ['{{projects.linked_to_relationship}}','project_links','GET /api/projects/links?relationshipId=...'],
+    ['{{emails.thread.current.summary}}','email_identity','valConversationIdentity.buildConversationContext'],
+    ['{{calendar.relevant_events}}','meeting_context','resolveMeetingContext'],
+    ['{{recent_transcripts.relationship_updates}}','transcript_intelligence','valTranscriptIntelligence + evidence observations'],
+    ['{{documents.linked_to_relationship}}','documents','GET /api/val/documents/reference?relationship=...'],
+    ['{{tasks.open}}','commitments','GET /api/val/commitments']
+  ],
+  project_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{onboarding.first_understanding}}','teach_val_memory','listTeachValCoreMemory / onboardingReflection'],
+    ['{{projects.current}}','project_dossier','GET /api/projects/dossier'],
+    ['{{projects.current.blockers}}','project_dossier','projectDossierFromProfile + source reviews'],
+    ['{{projects.current.momentum}}','project_dossier','projectDossierFromProfile + Executive Briefing'],
+    ['{{relationships.moving_project}}','relationship_index','GET /api/relationships/index + project links'],
+    ['{{emails.current.project_match}}','email_identity','conversation classifications + project match'],
+    ['{{calendar.relevant_events}}','meeting_context','resolveMeetingContext + /api/projects/links'],
+    ['{{recent_transcripts.open_loops}}','transcript_intelligence','valTranscriptIntelligence'],
+    ['{{documents.linked_to_project}}','documents','GET /api/val/documents/reference?project=...'],
+    ['{{tasks.open}}','commitments','GET /api/val/commitments']
+  ],
+  email_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{emails.current}}','email_identity','email_messages / valConversationIdentity.messagesForConversation'],
+    ['{{emails.thread.current.messages}}','email_identity','valConversationIdentity.messagesForConversation'],
+    ['{{emails.thread.current.summary}}','email_identity','valConversationIdentity.buildConversationContext'],
+    ['{{emails.current.relationship_match}}','email_identity','valConversationIdentity.resolveIdentity'],
+    ['{{emails.current.project_match}}','email_project_match','conversation classifications / evidence targets'],
+    ['{{emails.current.commitments}}','commitments','valCommitments emailSeeds'],
+    ['{{relationships.current}}','relationship_dossier','GET /api/relationships/dossier'],
+    ['{{projects.current}}','project_dossier','GET /api/projects/dossier'],
+    ['{{calendar.relevant_events}}','meeting_context','resolveMeetingContext'],
+    ['{{tasks.open}}','commitments','GET /api/val/commitments'],
+    ['{{drafts.current}}','drafts','listDrafts']
+  ],
+  timeline_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{calendar.today}}','calendar','Google/Outlook/GHL calendar providers'],
+    ['{{calendar.upcoming}}','calendar','Google/Outlook/GHL calendar providers'],
+    ['{{calendar.current_event.attendee_resolution}}','meeting_context','resolveMeetingContext'],
+    ['{{calendar.current_event.internal_context}}','meeting_prep','valMeetingPrep / resolveMeetingContext'],
+    ['{{recent_transcripts.open_loops}}','transcript_intelligence','valTranscriptIntelligence'],
+    ['{{emails.thread.current.summary}}','email_identity','valConversationIdentity.buildConversationContext'],
+    ['{{tasks.open}}','commitments','GET /api/val/commitments']
+  ],
+  home_source_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{onboarding.first_understanding}}','executive_briefing','buildExecutiveBriefing.onboardingReflection'],
+    ['{{home.card.current}}','executive_briefing','buildExecutiveBriefing dashboardEntities'],
+    ['{{home.card.sourceItem}}','executive_briefing','dashboardNormalizeCardItem'],
+    ['{{home.card.sourceType}}','executive_briefing','dashboardNormalizeCardItem.source_type'],
+    ['{{home.card.sourceId}}','executive_briefing','dashboardNormalizeCardItem.source_id'],
+    ['{{home.card.sourceRefs}}','evidence','dashboardEvidenceLookupMap / evidence source ids'],
+    ['{{val.confidence}}','executive_briefing','dashboardNormalizeCardItem.confidence'],
+    ['{{val.uncertainty}}','contract_gap','No unified packet builder fail-closed unknowns yet']
+  ],
+  workflow_scoped_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{event.type}}','contract_gap','Workflow click event is client-side; no server packet builder yet'],
+    ['{{evidence.current_item}}','contract_gap','Needs selected source handoff into packet builder'],
+    ['{{rules.val_os.behavior_packet}}','val_os','VAL OS instructions + behavior packet docs/routes'],
+    ['{{val.external_action_allowed}}','external_actions','valExternalActions approval gates']
+  ],
+  val_os_packet: [
+    ['{{teach_val.reviewed_memory}}','teach_val_memory','listTeachValCoreMemory'],
+    ['{{teach_val.context_imports}}','teach_val_memory','Teach VAL import/session stores'],
+    ['{{onboarding.first_understanding}}','executive_briefing','buildExecutiveBriefing.onboardingReflection'],
+    ['{{onboarding.connected_source_readiness}}','connections','Google/Microsoft/GHL connection status'],
+    ['{{rules.val_os.behavior_packet}}','val_os','VAL OS instruction compiler contract'],
+    ['{{rules.val_os.approval_packet}}','external_actions','valExternalActions approval packets']
+  ]
+};
+
+function hearthHydrationProviderMap(){
+  return {
+    teach_val_memory:{status:'available',route:'internal',description:'Teach VAL reviewed memory is loaded by listTeachValCoreMemory and Executive Briefing onboardingReflection.'},
+    executive_briefing:{status:'available',route:'/api/executive-briefing',description:'Home cards and onboarding reflection are assembled by buildExecutiveBriefing.'},
+    relationship_dossier:{status:'available',route:'/api/relationships/dossier',description:'Canonical relationship dossiers resolve identity and contact timeline sources.'},
+    relationship_index:{status:'available',route:'/api/relationships/index',description:'Relationship index is backed by relationship_profiles.'},
+    project_dossier:{status:'available',route:'/api/projects/dossier',description:'Project dossiers are backed by project relationship_profiles and prepared work.'},
+    project_links:{status:'available',route:'/api/projects/links',description:'Evidence links connect projects to relationships and calendar events.'},
+    email_identity:{status:'available',route:'/api/val/context/resolve-contact',description:'Conversation identity stores email messages, threads, and classifications.'},
+    email_project_match:{status:'partial',route:'conversation classifications / evidence target metadata',description:'Project match exists through evidence/briefing metadata but needs a unified packet builder.'},
+    meeting_context:{status:'available',route:'/api/val/context/resolve-meeting',description:'Meeting context resolves attendees, email, transcripts, tasks, memory, and sources checked.'},
+    meeting_prep:{status:'available',route:'/api/val/calendar/meeting-prep',description:'Meeting prep stores internal context, source refs, questions, and follow-up preparation.'},
+    transcript_intelligence:{status:'available',route:'/api/val/transcripts/migrate',description:'Transcript intelligence feeds observations, open loops, prepared work, and relationship updates.'},
+    documents:{status:'available',route:'/api/val/documents/reference',description:'Document references can be filtered by relationship or project.'},
+    commitments:{status:'available',route:'/api/val/commitments',description:'Commitments combine transcript and email-derived open loops.'},
+    drafts:{status:'available',route:'internal listDrafts',description:'Drafts include prepared email/review artifacts and source context.'},
+    calendar:{status:'partial',route:'Google/Outlook/GHL calendar providers',description:'Calendar providers exist, but a unified Hearth packet builder still needs fail-closed source readiness.'},
+    connections:{status:'partial',route:'Google/Microsoft/GHL status helpers',description:'Connection status exists but is not yet normalized into every Hearth packet.'},
+    val_os:{status:'partial',route:'VAL OS docs/routes',description:'Behavior packet contract exists; hot-reloadable builder remains incomplete.'},
+    external_actions:{status:'available',route:'/api/val/external-actions',description:'External action packets and approvals are gated and receipted.'},
+    evidence:{status:'available',route:'internal evidence_items / evidence_observations',description:'Executive Briefing and source refs read evidence items.'},
+    contract_gap:{status:'gap',route:'none',description:'Required by the packet contract but not yet hydrated by a unified Hearth packet builder.'}
+  };
+}
+
+function hearthHydrationStatus(items,providers){
+  const statuses=items.map(item=>providers[item[1]]?.status||'gap');
+  if(statuses.every(status=>status==='available'))return 'available';
+  if(statuses.some(status=>status==='gap'))return 'gap';
+  return 'partial';
+}
+
+async function buildHearthPacketHydrationAudit(){
+  const providers=hearthHydrationProviderMap();
+  const [briefing,relationships,projects,commitments,documents,drafts,teachVal]=await Promise.all([
+    buildExecutiveBriefing().catch(error=>({ok:false,error:error.message})),
+    listRelationshipProfiles({limit:120}).catch(()=>[]),
+    listProjectProfiles({limit:120}).catch(()=>[]),
+    valCommitments.list({limit:120}).catch(error=>({ok:false,error:error.message,commitments:[]})),
+    valDocuments.list({limit:120}).catch(error=>({ok:false,error:error.message,documents:[]})),
+    listDrafts('').catch(()=>[]),
+    listTeachValCoreMemory({limit:120}).catch(()=>[])
+  ]);
+  const liveCounts={
+    executiveBriefing:briefing?.ok!==false?1:0,
+    relationships:Array.isArray(relationships)?relationships.length:0,
+    projects:Array.isArray(projects)?projects.length:0,
+    commitments:Array.isArray(commitments?.commitments)?commitments.commitments.length:0,
+    documents:Array.isArray(documents?.documents)?documents.documents.length:0,
+    drafts:Array.isArray(drafts)?drafts.length:0,
+    teachValMemory:Array.isArray(teachVal)?teachVal.length:0,
+    homeCards:[
+      ...(briefing?.whatChanged||[]),
+      briefing?.highestLeverageMove,
+      ...(briefing?.momentum||[]),
+      ...(briefing?.readyForYou||[])
+    ].filter(Boolean).length
+  };
+  const packets=Object.fromEntries(Object.entries(HEARTH_PACKET_HYDRATION_REQUIREMENTS).map(([packet,requirements])=>{
+    const variables=requirements.map(([variable,provider,source])=>({
+      variable,
+      provider,
+      source,
+      status:providers[provider]?.status||'gap',
+      route:providers[provider]?.route||'none',
+      description:providers[provider]?.description||''
+    }));
+    return [packet,{
+      status:hearthHydrationStatus(requirements,providers),
+      variables,
+      gaps:variables.filter(item=>item.status==='gap').map(item=>item.variable),
+      partials:variables.filter(item=>item.status==='partial').map(item=>item.variable)
+    }];
+  }));
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    purpose:'Audit whether Hearth packet variables have real hydration providers, not just click-contract names.',
+    liveCounts,
+    providers,
+    packets,
+    nextBuilderGap:'Add a unified Hearth packet builder that assembles these variables per click and fails closed when required providers are unavailable.'
+  };
+}
+
+app.get('/api/hearth/packet-hydration-audit',async(req,res)=>{
+  try{
+    res.json(await buildHearthPacketHydrationAudit());
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
 function bookDocTypeLabel(type){
   const labels={manuscript:'Manuscript',chapter:'Chapter',outline:'Outline',transcript:'Transcript notes',launch_notes:'Launch notes',prompt_notes:'Prompt notes',knowledge_document:'Knowledge document'};
   return labels[type]||String(type||'Book memory').replace(/_/g,' ');

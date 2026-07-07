@@ -11,6 +11,7 @@ const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const reviewRoutes = fs.readFileSync(path.join(root, 'services', 'valReviewUpdatesRoutes.js'), 'utf8');
 const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
 const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_COMPLETENESS_CONTRACT.md'), 'utf8');
+const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_HYDRATION_AUDIT.md'), 'utf8');
 
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
   assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
@@ -893,6 +894,46 @@ test('Hearth packet contracts require the deep source web behind every click', (
   packetNames.forEach((packetName) => {
     assert.match(hearthJs, new RegExp(packetName + ': \\{'), 'Missing completeness registry entry for ' + packetName);
   });
+});
+
+test('Hearth packet hydration audit distinguishes live providers from builder gaps', () => {
+  [
+    'GET /api/hearth/packet-hydration-audit',
+    'available',
+    'partial',
+    'gap',
+    'unified Hearth packet builder'
+  ].forEach((required) => assert.ok(hearthPacketHydrationAudit.includes(required), 'Missing Hearth hydration audit doc entry: ' + required));
+
+  [
+    /const HEARTH_PACKET_HYDRATION_REQUIREMENTS = \{/,
+    /relationship_packet: \[/,
+    /project_packet: \[/,
+    /email_packet: \[/,
+    /timeline_packet: \[/,
+    /home_source_packet: \[/,
+    /workflow_scoped_packet: \[/,
+    /function hearthHydrationProviderMap\(\)/,
+    /function buildHearthPacketHydrationAudit\(\)/,
+    /app\.get\('\/api\/hearth\/packet-hydration-audit'/,
+    /listRelationshipProfiles\(\{limit:120\}\)/,
+    /listProjectProfiles\(\{limit:120\}\)/,
+    /valCommitments\.list\(\{limit:120\}\)/,
+    /valDocuments\.list\(\{limit:120\}\)/,
+    /listTeachValCoreMemory\(\{limit:120\}\)/,
+    /contract_gap:\{status:'gap'/,
+    /nextBuilderGap:'Add a unified Hearth packet builder/
+  ].forEach((pattern) => assert.match(server, pattern));
+
+  [
+    '{{relationships.current.current_thread_history}}',
+    '{{projects.linked_to_relationship}}',
+    '{{emails.thread.current.messages}}',
+    '{{calendar.current_event.internal_context}}',
+    '{{home.card.sourceRefs}}',
+    '{{evidence.current_item}}',
+    '{{rules.val_os.behavior_packet}}'
+  ].forEach((variable) => assert.match(server, new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
