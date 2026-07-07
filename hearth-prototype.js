@@ -4671,7 +4671,8 @@ function setRoomCopy(state){
         '<button type="button" data-home-room-item="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
-          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
+          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '"' +
+          ' onclick="return window.openHearthHomeItemFromButton ? window.openHearthHomeItemFromButton(this,event) : false;">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
@@ -4746,6 +4747,8 @@ function openHomeItemWorkspaceFromButton(button, event){
   openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
   return true;
 }
+
+window.openHearthHomeItemFromButton = openHomeItemWorkspaceFromButton;
 
 function setState(nextState){
   const state = states[nextState] || states.quiet;
