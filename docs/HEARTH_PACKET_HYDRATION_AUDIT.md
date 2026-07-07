@@ -69,10 +69,26 @@ The app now has:
 It now has:
 
 - a first unified Hearth packet builder
+- client-side preflight wired for server-hydrated action packets
+- client/server variable parity checks for all server-enforced packets
 - fail-closed status for action-gated packets
 - per-click receipts showing whether the packet was ready, partial, or blocked
 
 It does not yet have:
 
-- client-side preflight wired before every workflow action
+- server hydration for every display/navigation metadata packet
 - durable per-click packet receipts stored for later review
+
+## Variable Parity
+
+The client registry now matches the server-enforced variable list for:
+
+- `relationship_packet`
+- `project_packet`
+- `email_packet`
+- `timeline_packet`
+- `home_source_packet`
+- `workflow_scoped_packet`
+- `val_os_packet`
+
+Client-only packets such as navigation, drawer index, source display, document, commitment, lead intelligence, Co-Work, and text-field packets still function as click metadata until the server builder hydrates them directly. They should not be described as fully confirmed packet flows yet.

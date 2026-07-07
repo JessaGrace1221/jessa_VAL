@@ -211,7 +211,7 @@ const hearthPacketCompletenessRegistry = {
     requiredLayers: ['witnessing_root','calendar','transcripts','emails','tasks','relationships','projects','val_os_rules'],
     sourceWeb: ['calendar_event','attendee_resolution','meeting_source_confidence','source_receipts'],
     graphLinks: ['calendar.current_event.relationship_intelligence','calendar.current_event.internal_context','calendar.current_event.follow_up_preparation','recent_transcripts.open_loops','emails.thread.current','tasks.open'],
-    requiredVariables: ['{{calendar.today}}','{{calendar.upcoming}}','{{calendar.current_event.attendee_resolution}}','{{calendar.current_event.internal_context}}','{{recent_transcripts.open_loops}}','{{emails.thread.current.summary}}','{{tasks.open}}']
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{calendar.today}}','{{calendar.upcoming}}','{{calendar.current_event.attendee_resolution}}','{{calendar.current_event.internal_context}}','{{recent_transcripts.open_loops}}','{{emails.thread.current.summary}}','{{tasks.open}}']
   },
   cowork_packet: {
     requiredLayers: ['witnessing_root','active_workspace','active_source','allowed_actions','val_os_rules'],
@@ -229,13 +229,13 @@ const hearthPacketCompletenessRegistry = {
     requiredLayers: ['witnessing_root','relationship','projects','emails','calendar','transcripts','documents','commitments','val_os_rules'],
     sourceWeb: ['relationship_profile','relationship_timeline_events','evidence_observations','source_receipts','source_of_source'],
     graphLinks: ['projects.linked_to_relationship','emails.thread.current.relationship_temperature','calendar.current_event.relationship_intelligence','recent_transcripts.relationship_updates','documents.linked_to_relationship','tasks.open'],
-    requiredVariables: ['{{relationships.current}}','{{relationships.current.source_receipts}}','{{relationships.current.current_thread_history}}','{{projects.linked_to_relationship}}','{{emails.thread.current.summary}}','{{calendar.relevant_events}}','{{recent_transcripts.relationship_updates}}','{{documents.linked_to_relationship}}','{{tasks.open}}']
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{relationships.current}}','{{relationships.current.source_receipts}}','{{relationships.current.current_thread_history}}','{{projects.linked_to_relationship}}','{{emails.thread.current.summary}}','{{calendar.relevant_events}}','{{recent_transcripts.relationship_updates}}','{{documents.linked_to_relationship}}','{{tasks.open}}']
   },
   project_packet: {
     requiredLayers: ['witnessing_root','project','relationships','emails','calendar','transcripts','documents','commitments','prepared_work','val_os_rules'],
     sourceWeb: ['project_profile','project_source','evidence_observations','source_reviews','source_of_source'],
     graphLinks: ['relationships.moving_project','relationships.linked_to_project','emails.current.project_match','calendar.relevant_events','recent_transcripts.open_loops','documents.linked_to_project','tasks.open','drafts.current'],
-    requiredVariables: ['{{projects.current}}','{{projects.current.blockers}}','{{projects.current.momentum}}','{{relationships.moving_project}}','{{emails.current.project_match}}','{{calendar.relevant_events}}','{{recent_transcripts.open_loops}}','{{documents.linked_to_project}}','{{tasks.open}}']
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{projects.current}}','{{projects.current.blockers}}','{{projects.current.momentum}}','{{relationships.moving_project}}','{{emails.current.project_match}}','{{calendar.relevant_events}}','{{recent_transcripts.open_loops}}','{{documents.linked_to_project}}','{{tasks.open}}']
   },
   home_source_packet: {
     requiredLayers: ['witnessing_root','home_card','selected_source','source_of_source','relationships','projects','emails','calendar','transcripts','tasks','val_os_rules'],
@@ -259,7 +259,7 @@ const hearthPacketCompletenessRegistry = {
     requiredLayers: ['witnessing_root','email','thread','relationship','project','calendar','transcripts','commitments','drafts','approval_gates','val_os_rules'],
     sourceWeb: ['email_message','email_thread','sender_resolution','source_receipts','source_of_source'],
     graphLinks: ['emails.current.relationship_match','emails.current.project_match','emails.current.commitments','emails.thread.current.messages','calendar.relevant_events','recent_transcripts.relationship_updates','tasks.open','drafts.current'],
-    requiredVariables: ['{{emails.current}}','{{emails.thread.current.messages}}','{{emails.thread.current.summary}}','{{emails.current.relationship_match}}','{{emails.current.project_match}}','{{emails.current.commitments}}','{{relationships.current}}','{{projects.current}}','{{calendar.relevant_events}}','{{tasks.open}}','{{drafts.current}}']
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{emails.current}}','{{emails.thread.current.messages}}','{{emails.thread.current.summary}}','{{emails.current.relationship_match}}','{{emails.current.project_match}}','{{emails.current.commitments}}','{{relationships.current}}','{{projects.current}}','{{calendar.relevant_events}}','{{tasks.open}}','{{drafts.current}}']
   },
   commitment_packet: {
     requiredLayers: ['witnessing_root','commitment','tasks','emails','calendar','transcripts','relationships','projects','approval_gates','val_os_rules'],
@@ -283,7 +283,7 @@ const hearthPacketCompletenessRegistry = {
     requiredLayers: ['witnessing_root','active_workflow','active_source','allowed_actions','approval_gates','val_os_rules'],
     sourceWeb: ['workflow_action','workflow_source','source_receipts'],
     graphLinks: ['current_relationship','current_project','current_email_thread','current_calendar_event','current_transcript','current_document','tasks.open'],
-    requiredVariables: ['{{event.type}}','{{evidence.current_item}}','{{rules.val_os.behavior_packet}}','{{val.external_action_allowed}}']
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{event.type}}','{{evidence.current_item}}','{{rules.val_os.behavior_packet}}','{{val.external_action_allowed}}']
   },
   user_text_field_packet: {
     requiredLayers: ['user_input','witnessing_root','val_os_rules'],

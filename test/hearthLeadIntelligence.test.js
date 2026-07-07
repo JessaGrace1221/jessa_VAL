@@ -13,6 +13,41 @@ const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLI
 const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_COMPLETENESS_CONTRACT.md'), 'utf8');
 const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_HYDRATION_AUDIT.md'), 'utf8');
 
+function extractObjectLiteral(source, marker){
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, 'Missing object marker: ' + marker);
+  const brace = source.indexOf('{', start);
+  assert.notEqual(brace, -1, 'Missing object brace for: ' + marker);
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for(let index = brace; index < source.length; index += 1){
+    const char = source[index];
+    if(quote){
+      if(escaped){
+        escaped = false;
+      }else if(char === '\\'){
+        escaped = true;
+      }else if(char === quote){
+        quote = '';
+      }
+      continue;
+    }
+    if(char === '"' || char === "'" || char === '`'){
+      quote = char;
+      continue;
+    }
+    if(char === '{') depth += 1;
+    if(char === '}'){
+      depth -= 1;
+      if(depth === 0){
+        return Function('return ' + source.slice(brace, index + 1))();
+      }
+    }
+  }
+  assert.fail('Unclosed object literal for: ' + marker);
+}
+
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
   assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
   assert.match(hearthJs, /importUrl:\s*'\/api\/val\/leads\/import-approved'/);
@@ -972,6 +1007,18 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
+});
+
+test('Hearth client packet variables match server-enforced packet variables', () => {
+  const clientPackets = extractObjectLiteral(hearthJs, 'const hearthPacketCompletenessRegistry = ');
+  const serverPackets = extractObjectLiteral(server, 'const HEARTH_PACKET_HYDRATION_REQUIREMENTS = ');
+  Object.entries(serverPackets).forEach(([packetName, serverRequirements]) => {
+    assert.ok(clientPackets[packetName], 'Client registry is missing server packet ' + packetName);
+    const clientVariables = new Set(clientPackets[packetName].requiredVariables || []);
+    serverRequirements.map((row) => row[0]).forEach((variable) => {
+      assert.ok(clientVariables.has(variable), packetName + ' client registry missing ' + variable);
+    });
+  });
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
