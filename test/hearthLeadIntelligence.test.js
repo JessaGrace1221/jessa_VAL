@@ -1019,6 +1019,9 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /handleWorkflowAction\(action, node = null\)/,
     /handleHomeRoomAction\(action, node = null\)/,
     /handlePrimaryAction\(button\)/,
+    /room\.querySelector\(/,
+    /\.room-action/,
+    /if\(actionButton\) handlePrimaryAction\(actionButton\)/,
     /routeWorkspaceActionClick\(event\)/,
     /handleWorkflowAction\(drawerWorkflowAction\.dataset\.workflowAction, drawerWorkflowAction\)/,
     /handleHomeRoomAction\(homeActionButton\.dataset\.homeAction, homeActionButton\)/,
@@ -1027,6 +1030,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
+  assert.match(server, /status:'not_supplied',source:'hearth_packet_builder',message:'Selected Home source did not include a numeric confidence score.'/);
 });
 
 test('Hearth client packet variables match server-enforced packet variables', () => {

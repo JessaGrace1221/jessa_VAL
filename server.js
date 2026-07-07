@@ -22371,6 +22371,7 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
   const currentEvidence=source.evidenceItem||homeSourceItem||homeCard||evidenceItems.find(item=>String(item.id||item.sourceId||item.source_id||'')===String(source.sourceId||source.id||''))||null;
   const openCommitments=Array.isArray(commitments.commitments)?commitments.commitments:[];
   const documentRows=Array.isArray(documents.documents)?documents.documents:[];
+  const confidence=homeSourceItem?.confidence??homeCard?.confidence??{status:'not_supplied',source:'hearth_packet_builder',message:'Selected Home source did not include a numeric confidence score.'};
   const uncertainty=Array.isArray(briefing?.unknowns)&&briefing.unknowns.length
     ? briefing.unknowns
     : [{status:'no_explicit_uncertainty',source:'hearth_packet_builder',message:'No additional uncertainty was reported for this selected Home source.'}];
@@ -22384,7 +22385,7 @@ async function buildHearthPacketContext({packetName='',source={},click={} }={}){
     teach_val:{reviewed_memory:teachVal,context_imports:teachVal.filter(item=>/import|witness|onboarding/i.test(String(item.kind||item.category||'')))},
     onboarding:{first_understanding:briefing?.onboardingReflection||{},connected_source_readiness:connectionReadiness},
     user:{preferences:teachVal.filter(item=>/preference|working_agreement|style/i.test(String(item.category||item.kind||''))),do_not_do:teachVal.filter(item=>/do_not|boundary|risk/i.test(String(item.category||item.kind||'')))},
-    val:{do_not_do:[],review_only_mode:true,external_action_allowed:false,confidence:homeSourceItem?.confidence??homeCard?.confidence??null,uncertainty},
+    val:{do_not_do:[],review_only_mode:true,external_action_allowed:false,confidence,uncertainty},
     rules:{val_os:{behavior_packet:{status:'partial',source:'VAL OS contract; hot-reload builder pending'},approval_packet:{status:'available',source:'external action packet gate'}}},
     home:{card:{current:homeCard,sourceItem:homeSourceItem,sourceType:homeSourceType,sourceId:homeSourceId,sourceRefs:homeSourceRefs}},
     relationships:{current:relationship,linked_to_project:relationship?[relationship]:[],moving_project:relationship?[relationship]:[]},

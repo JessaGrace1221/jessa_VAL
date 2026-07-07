@@ -10311,13 +10311,15 @@ roomButtons.forEach((button) => {
 rooms.forEach((room) => {
   room.addEventListener('click', (event) => {
     if(event.target.closest('button')) return;
-    openWorkspace(room.dataset.room);
+    const actionButton = room.querySelector('.room-action');
+    if(actionButton) handlePrimaryAction(actionButton);
   });
 
   room.addEventListener('keydown', (event) => {
     if(event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    openWorkspace(room.dataset.room);
+    const actionButton = room.querySelector('.room-action');
+    if(actionButton) handlePrimaryAction(actionButton);
   });
 });
 
