@@ -22109,19 +22109,31 @@ function hearthSelectHomeCard(briefing={},source={}){
 let hearthPacketBaseContextCache = null;
 let hearthPacketBaseContextInflight = null;
 
+function hearthPacketTimeoutValue(label,fallback){
+  if(Array.isArray(fallback))return fallback;
+  return {...(fallback&&typeof fallback==='object'?fallback:{}),ok:false,status:'timeout',source:label};
+}
+
+function withHearthPacketTimeout(label,promise,fallback,ms=4500){
+  return Promise.race([
+    promise,
+    new Promise(resolve=>setTimeout(()=>resolve(hearthPacketTimeoutValue(label,fallback)),ms))
+  ]);
+}
+
 async function loadHearthPacketBaseContext(){
   const now=Date.now();
   if(hearthPacketBaseContextCache&&now-hearthPacketBaseContextCache.loadedAt<15000)return hearthPacketBaseContextCache.value;
   if(hearthPacketBaseContextInflight)return hearthPacketBaseContextInflight;
   hearthPacketBaseContextInflight=Promise.all([
-    buildExecutiveBriefing().catch(error=>({ok:false,error:error.message})),
-    listTeachValCoreMemory({limit:120}).catch(()=>[]),
-    listDrafts('').catch(()=>[]),
-    valCommitments.list({limit:120}).catch(error=>({ok:false,error:error.message,commitments:[]})),
-    valDocuments.list({limit:120}).catch(error=>({ok:false,error:error.message,documents:[]})),
-    listRelationshipProfiles({limit:120}).catch(()=>[]),
-    listProjectProfiles({limit:120}).catch(()=>[]),
-    listDashboardEvidenceItems({limit:180}).catch(()=>[])
+    withHearthPacketTimeout('executive_briefing',buildExecutiveBriefing().catch(error=>({ok:false,error:error.message})),{}),
+    withHearthPacketTimeout('teach_val_memory',listTeachValCoreMemory({limit:120}).catch(()=>[]),[]),
+    withHearthPacketTimeout('drafts',listDrafts('').catch(()=>[]),[]),
+    withHearthPacketTimeout('commitments',valCommitments.list({limit:120}).catch(error=>({ok:false,error:error.message,commitments:[]})),{commitments:[]}),
+    withHearthPacketTimeout('documents',valDocuments.list({limit:120}).catch(error=>({ok:false,error:error.message,documents:[]})),{documents:[]}),
+    withHearthPacketTimeout('relationships',listRelationshipProfiles({limit:120}).catch(()=>[]),[]),
+    withHearthPacketTimeout('projects',listProjectProfiles({limit:120}).catch(()=>[]),[]),
+    withHearthPacketTimeout('evidence',listDashboardEvidenceItems({limit:180}).catch(()=>[]),[])
   ]).then(([briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems])=>{
     const value={briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems};
     hearthPacketBaseContextCache={loadedAt:Date.now(),value};
