@@ -942,6 +942,7 @@ test('Hearth drawer openings show index packet receipts before item actions', ()
   assert.match(hearthJs, /function drawerIndexPacketReceipt/);
   assert.match(hearthJs, /status:'index_context'/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(packet\)/);
+  assert.match(hearthJs, /const sourceReceipts = sourceLabel \? \[\{/);
   for(const action of [
     'drawer:relationships',
     'drawer:projects',

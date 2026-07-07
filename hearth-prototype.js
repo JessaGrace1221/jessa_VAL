@@ -5879,11 +5879,18 @@ function hearthPacketShouldSkip(action = '', packetName = ''){
 }
 
 function localHearthMetadataPacket({packetName = '', action = '', node = null, source = {}} = {}){
+  const resolvedSource = hearthPacketSourceFromContext(source, node);
+  const sourceLabel = resolvedSource.sourceLabel || resolvedSource.sourceItem?.title || resolvedSource.sourceItem?.name || resolvedSource.sourceId || action || packetName || 'Client-side source';
+  const sourceReceipts = sourceLabel ? [{
+    label:sourceLabel,
+    sourceType:resolvedSource.sourceType || resolvedSource.sourceItem?.sourceType || 'client_context',
+    key:resolvedSource.sourceId || resolvedSource.sourceItem?.id || action || packetName || 'client_context'
+  }] : [];
   const packet = {
     ok:true,
     status:hearthServerPacketNames.has(packetName) ? 'not_checked' : 'metadata_only',
     packetName,
-    source:hearthPacketSourceFromContext(source, node),
+    source:resolvedSource,
     click:{
       action,
       contract:node?.dataset?.valClickContract || '',
@@ -5893,7 +5900,7 @@ function localHearthMetadataPacket({packetName = '', action = '', node = null, s
     },
     receipt:{
       id:'client_packet_' + Date.now().toString(36),
-      sourceReceipts:[],
+      sourceReceipts,
       downstreamConsumers:[],
       summary:'This click has a client-side packet contract. Server hydration is not wired for this packet yet.'
     }
