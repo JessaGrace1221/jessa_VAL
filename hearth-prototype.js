@@ -10112,10 +10112,13 @@ closeValDetail?.addEventListener('click', () => {
   document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
 });
 
-documentList?.addEventListener('click', (event) => {
+documentList?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-document-item]');
   if(!button) return;
   const selected = currentDocumentItems.find((item) => item.id === button.dataset.documentItem);
+  const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:select', source:{documentId:selected?.id || button.dataset.documentItem || '', sourceLabel:selected?.title || 'Document row', sourceType:'document', sourceItem:selected || null}});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   renderDocumentBrief(selected);
 });
 
@@ -10124,7 +10127,13 @@ documentRelationshipFilter?.addEventListener('change', () => renderDocumentBrief
 documentProjectFilter?.addEventListener('change', () => renderDocumentBrief(filteredDocumentItems()[0] || null));
 
 document.querySelectorAll('[data-document-action]').forEach((button) => {
-  button.addEventListener('click', () => handleDocumentAction(button.dataset.documentAction));
+  button.addEventListener('click', async () => {
+    const item = activeDocumentItem || {};
+    const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:button.dataset.documentAction, source:{documentId:item.id || '', sourceLabel:item.title || 'Document action', sourceType:item.type || 'document', sourceItem:item}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    handleDocumentAction(button.dataset.documentAction);
+  });
 });
 
 projectCreateToggle?.addEventListener('click', () => {
@@ -10231,6 +10240,9 @@ drawerTray.addEventListener('click', async (event) => {
   if(commitmentFilter){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:commitmentFilter, packetName:'commitment_packet', action:'commitment:filter:' + (commitmentFilter.dataset.commitmentFilter || 'all'), source:{commitmentId:activeCommitmentItem?.id || '', sourceLabel:'Commitments filter', sourceType:'commitment_filter', sourceItem:activeCommitmentItem || null}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     activeCommitmentFilter = commitmentFilter.dataset.commitmentFilter || 'all';
     commitmentFilterButtons.forEach((button) => {
       const isActive = button === commitmentFilter;
@@ -10245,6 +10257,9 @@ drawerTray.addEventListener('click', async (event) => {
   if(commitmentAction){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:commitmentAction, packetName:'commitment_packet', action:commitmentAction.dataset.commitmentAction, source:{commitmentId:activeCommitmentItem?.id || '', sourceLabel:activeCommitmentItem?.title || 'Commitment action', sourceType:'commitment', sourceItem:activeCommitmentItem || null}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     await handleCommitmentAction(commitmentAction.dataset.commitmentAction);
     return;
   }
@@ -10269,6 +10284,9 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const selected = currentCommitmentItems.find((item) => item.id === commitmentItem.dataset.commitmentItem);
+    const preflight = await ensureHearthClickPacket({node:commitmentItem, packetName:'commitment_packet', action:'commitment:select', source:{commitmentId:selected?.id || commitmentItem.dataset.commitmentItem || '', sourceLabel:selected?.title || 'Commitment row', sourceType:'commitment', sourceItem:selected || null}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(selected) renderCommitmentBrief(selected);
     return;
   }
@@ -10361,7 +10379,12 @@ fullCalendarPanel?.addEventListener('click', (event) => {
 });
 
 scraperButtons.forEach((button) => {
-  button.addEventListener('click', () => openScraper(button.dataset.openScraper));
+  button.addEventListener('click', async () => {
+    const type = button.dataset.openScraper || '';
+    const preflight = await ensureHearthClickPacket({node:button, packetName:'lead_intelligence_packet', action:'lead_intelligence:open:' + type, source:{sourceId:type, sourceType:'lead_intelligence_workflow', sourceLabel:button.innerText || type, sourceItem:{id:type, title:button.innerText || type}}});
+    if(!preflight.ok) return;
+    openScraper(type);
+  });
 });
 
 async function routeWorkspaceActionClick(event){
@@ -10524,6 +10547,9 @@ scraperPreviewList.addEventListener('click', async (event) => {
   const nextStatus = choice.dataset.previewChoice;
   const index = Number(lead.dataset.leadIndex);
   const activeSession = scraperSessions[activeScraperType];
+  const selectedLead = activeSession?.previewLeads?.[index] || null;
+  const preflight = await ensureHearthClickPacket({node:choice, packetName:'lead_intelligence_packet', action:'lead_intelligence:preview_choice:' + nextStatus, source:{sourceId:selectedLead?.id || String(index), sourceType:'lead_preview_row', sourceLabel:selectedLead?.name || selectedLead?.company || 'Lead preview row', sourceItem:selectedLead}});
+  if(!preflight.ok) return;
   lead.dataset.leadReview = nextStatus;
   lead.querySelectorAll('[data-preview-choice]').forEach((button) => {
     button.classList.toggle('active', button === choice);
