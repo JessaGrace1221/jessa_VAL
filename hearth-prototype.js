@@ -9032,6 +9032,7 @@ leanButton.addEventListener('click', () => {
 freshDeskButton.addEventListener('click', clearRoomAttendance);
 
 drawerPull.addEventListener('click', () => {
+  hideWorkspaceForDrawerNavigation();
   const isOpen = retrievalSystem.classList.toggle('open');
   hearth.classList.toggle('drawer-open', isOpen);
   drawerPull.setAttribute('aria-expanded', String(isOpen));
