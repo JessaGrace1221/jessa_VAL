@@ -76,8 +76,12 @@ test('clean dashboard exposes Google connection as a first-run user action',()=>
   assert.match(server,/app\.get\('\/witnessing-dashboard'/);
   assert.match(hearth,/Connect inbox\/calendar/);
   assert.match(hearth,/data-calendar-source-status/);
+  assert.match(hearth,/data-google-oauth/);
   assert.match(hearthJs,/\/api\/setup-health/);
-  assert.match(hearthJs,/href="\/auth\/google"/);
+  assert.match(hearthJs,/function connectGoogleOAuth/);
+  assert.match(hearthJs,/window\.location\.assign\('\/auth\/google'\)/);
+  assert.match(hearthJs,/fullCalendarPanel\?\.addEventListener\('click'/);
+  assert.match(hearthJs,/workspaceInputPanel\.addEventListener\('click'/);
   assert.match(cleanDashboard,/Connect Google/);
   assert.match(cleanDashboard,/href="\/auth\/google"/);
   assert.match(cleanDashboard,/id="google-connection-status"/);

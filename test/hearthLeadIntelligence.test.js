@@ -897,6 +897,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /function handleValAction/);
   assert.match(hearthJs, /function refreshGoogleConnectionStatus/);
   assert.match(hearthJs, /function refreshCalendarSourceStatus/);
+  assert.match(hearthJs, /function connectGoogleOAuth/);
+  assert.match(hearthJs, /window\.location\.assign\('\/auth\/google'\)/);
+  assert.match(hearthJs, /fullCalendarPanel\?\.addEventListener\('click'/);
+  assert.match(hearthJs, /data-google-oauth/);
   assert.match(hearthJs, /\/api\/setup-health/);
   assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);

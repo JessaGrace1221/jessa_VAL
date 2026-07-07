@@ -7815,7 +7815,7 @@ function openValConnectionsWorkspace(){
         '<small>VAL never displays Google tokens or secrets here.</small>',
       '</div>',
       '<div class="val-conversation-actions">',
-        '<a class="val-source-link" href="/auth/google">Connect Google</a>',
+        '<button type="button" class="val-source-link" data-google-oauth>Connect Google</button>',
         '<button type="button" data-workflow-action="valGoogle:refresh">Refresh status</button>',
       '</div>',
     '</div>',
@@ -7844,7 +7844,7 @@ function openValConnectionsWorkspace(){
 
 async function refreshGoogleConnectionStatus(){
   const status = workspaceInputPanel.querySelector('[data-google-connection-status]');
-  const link = workspaceInputPanel.querySelector('.val-source-link[href="/auth/google"]');
+  const link = workspaceInputPanel.querySelector('[data-google-oauth]');
   if(!status || !canUseApi) return;
   try{
     const data = await getJson('/api/setup-health');
@@ -7871,11 +7871,15 @@ async function refreshCalendarSourceStatus(){
     calendarSourceStatus.classList.toggle('failed', !connected && !!google.error);
     calendarSourceStatus.innerHTML = '<strong>' + escapeHtml(connected ? 'Google Calendar is connected.' : 'Connect Google Calendar to test live meeting prep.') + '</strong>'
       + '<span>' + escapeHtml(connected ? 'Use this panel to inspect calendar-driven prep, then test Timeline & Tasks from the drawers.' : (google.setupMessage || google.error || 'VAL needs Google authorization before live calendar context can be used.')) + '</span>'
-      + '<button type="button" data-workflow-action="valConnections:google">' + escapeHtml(connected ? 'Reconnect Google' : 'Connect Google') + '</button>';
+      + '<button type="button" data-google-oauth>' + escapeHtml(connected ? 'Reconnect Google' : 'Connect Google') + '</button>';
   }catch(error){
     calendarSourceStatus.classList.add('failed');
-    calendarSourceStatus.innerHTML = '<strong>Could not check Google Calendar.</strong><span>' + escapeHtml(error.message || 'Try again from VAL connections.') + '</span><button type="button" data-workflow-action="valConnections:google">Open connections</button>';
+    calendarSourceStatus.innerHTML = '<strong>Could not check Google Calendar.</strong><span>' + escapeHtml(error.message || 'Try again from VAL connections.') + '</span><button type="button" data-google-oauth>Connect Google</button>';
   }
+}
+
+function connectGoogleOAuth(){
+  window.location.assign('/auth/google');
 }
 
 async function refreshRuntimeOpenAIStatus(){
@@ -9232,6 +9236,21 @@ calendarTab.addEventListener('click', () => {
   }
 });
 closeCalendarButton.addEventListener('click', closeCalendarPanel);
+fullCalendarPanel?.addEventListener('click', (event) => {
+  const googleButton = event.target.closest('[data-google-oauth]');
+  if(googleButton){
+    event.preventDefault();
+    event.stopPropagation();
+    connectGoogleOAuth();
+    return;
+  }
+  const actionButton = event.target.closest('[data-workflow-action]');
+  if(actionButton){
+    event.preventDefault();
+    event.stopPropagation();
+    handleWorkflowAction(actionButton.dataset.workflowAction);
+  }
+});
 
 scraperButtons.forEach((button) => {
   button.addEventListener('click', () => openScraper(button.dataset.openScraper));
@@ -9255,6 +9274,13 @@ function routeWorkspaceActionClick(event){
 
 workspaceActions.addEventListener('click', routeWorkspaceActionClick);
 workspaceInputPanel.addEventListener('click', (event) => {
+  const googleButton = event.target.closest('[data-google-oauth]');
+  if(googleButton){
+    event.preventDefault();
+    event.stopPropagation();
+    connectGoogleOAuth();
+    return;
+  }
   const actionButton = event.target.closest('[data-workflow-action]');
   if(actionButton){
     event.preventDefault();
