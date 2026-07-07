@@ -32,8 +32,13 @@ Runtime enforcement:
   - `data-val-prompt-rule`
   - `data-val-allowed-actions`
   - `data-val-never-do`
+  - `data-val-required-layers`
+  - `data-val-source-web`
+  - `data-val-graph-links`
+  - `data-val-required-variables`
 - Dynamic controls are annotated through a `MutationObserver`.
 - Chrome audits can inspect these attributes before clicking.
+- Packet completeness is governed by [HEARTH_PACKET_COMPLETENESS_CONTRACT.md](./HEARTH_PACKET_COMPLETENESS_CONTRACT.md). The runtime source of truth is `hearthPacketCompletenessRegistry`.
 
 Global rule:
 

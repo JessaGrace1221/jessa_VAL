@@ -164,6 +164,135 @@ let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connecti
 const homeRoomQueues = {velocity: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
+const hearthPacketCompletenessRegistry = {
+  navigation_packet: {
+    requiredLayers: ['witnessing_root','active_user','val_os_rules','navigation_context'],
+    sourceWeb: ['current_route','return_target','source_receipt'],
+    graphLinks: ['none'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{user.preferences}}','{{val.do_not_do}}']
+  },
+  active_context_packet: {
+    requiredLayers: ['witnessing_root','active_surface','active_entity','val_os_rules'],
+    sourceWeb: ['current_workspace','return_target','opened_source_receipts'],
+    graphLinks: ['current_relationship','current_project','current_calendar_event','current_email_thread'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{evidence.current_item}}','{{val.review_only_mode}}']
+  },
+  workspace_seed_packet: {
+    requiredLayers: ['witnessing_root','active_surface','active_workspace','allowed_actions'],
+    sourceWeb: ['workspace_seed','visible_recommendation','source_receipt'],
+    graphLinks: ['current_relationship','current_project','current_email_thread','current_calendar_event'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{evidence.current_item}}','{{rules.val_os.behavior_packet}}']
+  },
+  source_navigation_packet: {
+    requiredLayers: ['witnessing_root','active_source','source_of_source','val_os_rules'],
+    sourceWeb: ['source_type','source_id','source_url','source_receipt'],
+    graphLinks: ['source_relationships','source_projects','source_calendar_events','source_email_threads','source_transcripts'],
+    requiredVariables: ['{{evidence.current_item}}','{{evidence.current_item.source_type}}','{{evidence.current_item.source_id}}','{{val.external_action_allowed}}']
+  },
+  home_state_packet: {
+    requiredLayers: ['witnessing_root','prototype_state','val_os_rules'],
+    sourceWeb: ['display_state','session_state'],
+    graphLinks: ['none'],
+    requiredVariables: ['{{onboarding.first_understanding}}','{{user.current_capacity_context}}','{{val.review_only_mode}}']
+  },
+  home_presence_packet: {
+    requiredLayers: ['witnessing_root','daily_witness','capacity_context','val_os_rules'],
+    sourceWeb: ['homepage_context_packet','daily_witness_internal_understanding','source_receipts'],
+    graphLinks: ['calendar.today','recent_transcripts','emails.thread.current','tasks.open','projects.active','relationships.list'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{calendar.today}}','{{recent_transcripts.capacity_and_tone_context}}','{{emails.thread.current.summary}}','{{tasks.open}}']
+  },
+  home_session_packet: {
+    requiredLayers: ['witnessing_root','session_state','val_os_rules'],
+    sourceWeb: ['browser_session','held_context_marks'],
+    graphLinks: ['current_workspace','current_room'],
+    requiredVariables: ['{{user.id}}','{{val.review_only_mode}}','{{rules.val_os.behavior_packet}}']
+  },
+  timeline_packet: {
+    requiredLayers: ['witnessing_root','calendar','transcripts','emails','tasks','relationships','projects','val_os_rules'],
+    sourceWeb: ['calendar_event','attendee_resolution','meeting_source_confidence','source_receipts'],
+    graphLinks: ['calendar.current_event.relationship_intelligence','calendar.current_event.internal_context','calendar.current_event.follow_up_preparation','recent_transcripts.open_loops','emails.thread.current','tasks.open'],
+    requiredVariables: ['{{calendar.today}}','{{calendar.upcoming}}','{{calendar.current_event.attendee_resolution}}','{{calendar.current_event.internal_context}}','{{recent_transcripts.open_loops}}','{{emails.thread.current.summary}}','{{tasks.open}}']
+  },
+  cowork_packet: {
+    requiredLayers: ['witnessing_root','active_workspace','active_source','allowed_actions','val_os_rules'],
+    sourceWeb: ['selected_workspace','visible_context','source_receipts'],
+    graphLinks: ['current_relationship','current_project','current_email_thread','current_calendar_event','current_transcript','current_document'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{evidence.current_item}}','{{rules.val_os.behavior_packet}}','{{val.external_action_allowed}}']
+  },
+  val_os_packet: {
+    requiredLayers: ['witnessing_root','teach_val','onboarding','connections','val_os_rules','approval_gates'],
+    sourceWeb: ['witnessing_session','teach_val_imports','connected_source_readiness','behavior_packet_receipts'],
+    graphLinks: ['important_people.list','projects.active','relationships.list','emails.thread.current','calendar.today','recent_transcripts.relationship_updates','tasks.open'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{teach_val.context_imports}}','{{onboarding.first_understanding}}','{{onboarding.connected_source_readiness}}','{{rules.val_os.behavior_packet}}','{{rules.val_os.approval_packet}}']
+  },
+  relationship_packet: {
+    requiredLayers: ['witnessing_root','relationship','projects','emails','calendar','transcripts','documents','commitments','val_os_rules'],
+    sourceWeb: ['relationship_profile','relationship_timeline_events','evidence_observations','source_receipts','source_of_source'],
+    graphLinks: ['projects.linked_to_relationship','emails.thread.current.relationship_temperature','calendar.current_event.relationship_intelligence','recent_transcripts.relationship_updates','documents.linked_to_relationship','tasks.open'],
+    requiredVariables: ['{{relationships.current}}','{{relationships.current.source_receipts}}','{{relationships.current.current_thread_history}}','{{projects.linked_to_relationship}}','{{emails.thread.current.summary}}','{{calendar.relevant_events}}','{{recent_transcripts.relationship_updates}}','{{documents.linked_to_relationship}}','{{tasks.open}}']
+  },
+  project_packet: {
+    requiredLayers: ['witnessing_root','project','relationships','emails','calendar','transcripts','documents','commitments','prepared_work','val_os_rules'],
+    sourceWeb: ['project_profile','project_source','evidence_observations','source_reviews','source_of_source'],
+    graphLinks: ['relationships.moving_project','relationships.linked_to_project','emails.current.project_match','calendar.relevant_events','recent_transcripts.open_loops','documents.linked_to_project','tasks.open','drafts.current'],
+    requiredVariables: ['{{projects.current}}','{{projects.current.blockers}}','{{projects.current.momentum}}','{{relationships.moving_project}}','{{emails.current.project_match}}','{{calendar.relevant_events}}','{{recent_transcripts.open_loops}}','{{documents.linked_to_project}}','{{tasks.open}}']
+  },
+  home_source_packet: {
+    requiredLayers: ['witnessing_root','home_card','selected_source','source_of_source','relationships','projects','emails','calendar','transcripts','tasks','val_os_rules'],
+    sourceWeb: ['home.card.current','home.card.sourceItem','home.card.sourceRefs','source_receipts','source_confidence'],
+    graphLinks: ['source_relationships','source_projects','source_email_threads','source_calendar_events','source_transcripts','source_tasks','prepared_work'],
+    requiredVariables: ['{{home.card.current}}','{{home.card.sourceItem}}','{{home.card.sourceType}}','{{home.card.sourceId}}','{{home.card.sourceRefs}}','{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{val.confidence}}','{{val.uncertainty}}']
+  },
+  source_display_packet: {
+    requiredLayers: ['selected_source','source_receipt'],
+    sourceWeb: ['source_type','source_id','source_summary'],
+    graphLinks: ['none'],
+    requiredVariables: ['{{evidence.current_item.source_type}}','{{evidence.current_item.source_id}}','{{evidence.current_item.source_quote}}']
+  },
+  drawer_index_packet: {
+    requiredLayers: ['witnessing_root','drawer_index','source_counts','val_os_rules'],
+    sourceWeb: ['drawer_state','connected_source_readiness'],
+    graphLinks: ['relationships.list','projects.active','calendar.today','emails.thread.current','tasks.open','documents.current'],
+    requiredVariables: ['{{onboarding.connected_source_readiness}}','{{relationships.list}}','{{projects.active}}','{{calendar.today}}','{{tasks.open}}']
+  },
+  email_packet: {
+    requiredLayers: ['witnessing_root','email','thread','relationship','project','calendar','transcripts','commitments','drafts','approval_gates','val_os_rules'],
+    sourceWeb: ['email_message','email_thread','sender_resolution','source_receipts','source_of_source'],
+    graphLinks: ['emails.current.relationship_match','emails.current.project_match','emails.current.commitments','emails.thread.current.messages','calendar.relevant_events','recent_transcripts.relationship_updates','tasks.open','drafts.current'],
+    requiredVariables: ['{{emails.current}}','{{emails.thread.current.messages}}','{{emails.thread.current.summary}}','{{emails.current.relationship_match}}','{{emails.current.project_match}}','{{emails.current.commitments}}','{{relationships.current}}','{{projects.current}}','{{calendar.relevant_events}}','{{tasks.open}}','{{drafts.current}}']
+  },
+  commitment_packet: {
+    requiredLayers: ['witnessing_root','commitment','tasks','emails','calendar','transcripts','relationships','projects','approval_gates','val_os_rules'],
+    sourceWeb: ['task_record','originating_source','source_receipts','due_date_basis'],
+    graphLinks: ['tasks.open','emails.current.commitments','calendar.relevant_events','recent_transcripts.open_loops','relationships.current','projects.current'],
+    requiredVariables: ['{{tasks.open}}','{{emails.current.commitments}}','{{calendar.relevant_events}}','{{recent_transcripts.open_loops}}','{{relationships.current}}','{{projects.current}}','{{val.external_action_allowed}}']
+  },
+  document_packet: {
+    requiredLayers: ['witnessing_root','document','relationships','projects','emails','calendar','transcripts','approval_gates','val_os_rules'],
+    sourceWeb: ['document_source','document_links','source_receipts'],
+    graphLinks: ['documents.linked_to_relationship','documents.linked_to_project','relationships.current','projects.current','emails.thread.current','recent_transcripts.open_loops'],
+    requiredVariables: ['{{documents.current}}','{{documents.linked_to_relationship}}','{{documents.linked_to_project}}','{{relationships.current}}','{{projects.current}}','{{emails.thread.current.summary}}','{{recent_transcripts.open_loops}}']
+  },
+  lead_intelligence_packet: {
+    requiredLayers: ['witnessing_root','lead_source','relationship','project','approval_gates','val_os_rules'],
+    sourceWeb: ['scraper_criteria','preview_rows','approve_or_hold_state','source_receipts'],
+    graphLinks: ['relationships.list','projects.active','crm.contacts','crm.opportunities','source_reviews.pending'],
+    requiredVariables: ['{{relationships.list}}','{{projects.active}}','{{crm.contacts}}','{{crm.opportunities}}','{{source_reviews.pending}}','{{val.external_action_allowed}}']
+  },
+  workflow_scoped_packet: {
+    requiredLayers: ['witnessing_root','active_workflow','active_source','allowed_actions','approval_gates','val_os_rules'],
+    sourceWeb: ['workflow_action','workflow_source','source_receipts'],
+    graphLinks: ['current_relationship','current_project','current_email_thread','current_calendar_event','current_transcript','current_document','tasks.open'],
+    requiredVariables: ['{{event.type}}','{{evidence.current_item}}','{{rules.val_os.behavior_packet}}','{{val.external_action_allowed}}']
+  },
+  user_text_field_packet: {
+    requiredLayers: ['user_input','witnessing_root','val_os_rules'],
+    sourceWeb: ['typed_text','field_context'],
+    graphLinks: ['active_workspace'],
+    requiredVariables: ['{{user.communication_style}}','{{user.do_not_sound_like}}','{{val.do_not_do}}']
+  }
+};
+
 const hearthClickContractRegistry = [
   {selector:'.val-mark', contract:'nav.val_home', packet:'navigation_packet', rule:'VAL home navigation rule', actions:'Return to canonical VAL dashboard shell', never:'Do not alter source data or memory'},
   {selector:'.return-button,.close-calendar-button,.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail', contract:'nav.close_context', packet:'active_context_packet', rule:'Close active context without mutation', actions:'Close active card/detail and return to prior Hearth context', never:'Do not save, send, import, or mutate while closing'},
@@ -207,6 +336,11 @@ function applyHearthClickContracts(root = document){
       node.dataset.valPromptRule = entry.rule;
       node.dataset.valAllowedActions = entry.actions;
       node.dataset.valNeverDo = entry.never;
+      const packetContract = hearthPacketCompletenessRegistry[entry.packet] || {};
+      node.dataset.valRequiredLayers = (packetContract.requiredLayers || []).join(',');
+      node.dataset.valSourceWeb = (packetContract.sourceWeb || []).join(',');
+      node.dataset.valGraphLinks = (packetContract.graphLinks || []).join(',');
+      node.dataset.valRequiredVariables = (packetContract.requiredVariables || []).join(',');
     });
   });
 }

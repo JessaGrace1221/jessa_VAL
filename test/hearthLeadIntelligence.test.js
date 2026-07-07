@@ -10,6 +10,7 @@ const hearthCss = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const reviewRoutes = fs.readFileSync(path.join(root, 'services', 'valReviewUpdatesRoutes.js'), 'utf8');
 const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
+const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_COMPLETENESS_CONTRACT.md'), 'utf8');
 
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
   assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
@@ -770,7 +771,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=click-contracts-workflow-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=packet-completeness-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -781,6 +782,10 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
     'data-val-prompt-rule',
     'data-val-allowed-actions',
     'data-val-never-do',
+    'data-val-required-layers',
+    'data-val-source-web',
+    'data-val-graph-links',
+    'data-val-required-variables',
     'home_source_packet',
     'relationship_packet',
     'project_packet',
@@ -811,6 +816,7 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
     assert.ok(hearthClickContracts.includes(required), 'Missing Hearth click contract entry: ' + required);
   }
   assert.match(hearthJs, /const hearthClickContractRegistry = \[/);
+  assert.match(hearthJs, /const hearthPacketCompletenessRegistry = \{/);
   assert.match(hearthJs, /\.living-room \.room-action\[data-open-room="alignment"\]/);
   assert.match(hearthJs, /nav\.close_context/);
   assert.match(hearthJs, /nav\.source_action/);
@@ -828,8 +834,65 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   assert.match(hearthJs, /node\.dataset\.valPromptRule = entry\.rule/);
   assert.match(hearthJs, /node\.dataset\.valAllowedActions = entry\.actions/);
   assert.match(hearthJs, /node\.dataset\.valNeverDo = entry\.never/);
+  assert.match(hearthJs, /node\.dataset\.valRequiredLayers = \(packetContract\.requiredLayers \|\| \[\]\)\.join\(','\)/);
+  assert.match(hearthJs, /node\.dataset\.valSourceWeb = \(packetContract\.sourceWeb \|\| \[\]\)\.join\(','\)/);
+  assert.match(hearthJs, /node\.dataset\.valGraphLinks = \(packetContract\.graphLinks \|\| \[\]\)\.join\(','\)/);
+  assert.match(hearthJs, /node\.dataset\.valRequiredVariables = \(packetContract\.requiredVariables \|\| \[\]\)\.join\(','\)/);
   assert.match(hearthJs, /observeHearthClickContracts\(\)/);
   assert.doesNotMatch(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
+});
+
+test('Hearth packet contracts require the deep source web behind every click', () => {
+  [
+    'click -> packet name -> Witnessing root -> selected surface/entity -> source evidence -> source-of-source -> graph links -> allowed actions -> approval gates -> receipt',
+    'Every meaningful packet must include the Witnessing root',
+    'relationship_packet',
+    'project_packet',
+    'email_packet',
+    'home_source_packet',
+    'workflow_scoped_packet',
+    'projects.linked_to_relationship',
+    'relationships.linked_to_project',
+    'emails.thread.current.messages',
+    'calendar.relevant_events',
+    'recent_transcripts.relationship_updates',
+    'recent_transcripts.open_loops',
+    'documents.linked_to_relationship',
+    'documents.linked_to_project',
+    'tasks.open',
+    'source-of-source'
+  ].forEach((required) => assert.ok(hearthPacketCompleteness.includes(required), 'Missing packet completeness contract: ' + required));
+
+  [
+    'relationship_packet',
+    'project_packet',
+    'email_packet',
+    'timeline_packet',
+    'home_source_packet',
+    'workflow_scoped_packet',
+    'val_os_packet'
+  ].forEach((packetName) => {
+    assert.match(hearthJs, new RegExp(packetName + ': \\{[\\s\\S]*?witnessing_root[\\s\\S]*?requiredVariables', 'm'));
+  });
+
+  [
+    '{{teach_val.reviewed_memory}}',
+    '{{onboarding.first_understanding}}',
+    '{{relationships.current}}',
+    '{{projects.current}}',
+    '{{emails.thread.current.messages}}',
+    '{{calendar.relevant_events}}',
+    '{{recent_transcripts.relationship_updates}}',
+    '{{recent_transcripts.open_loops}}',
+    '{{tasks.open}}',
+    '{{rules.val_os.behavior_packet}}',
+    '{{val.external_action_allowed}}'
+  ].forEach((variable) => assert.match(hearthJs, new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
+
+  const packetNames = Array.from(hearthJs.matchAll(/packet:'([^']+)'/g)).map((match) => match[1]);
+  packetNames.forEach((packetName) => {
+    assert.match(hearthJs, new RegExp(packetName + ': \\{'), 'Missing completeness registry entry for ' + packetName);
+  });
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
