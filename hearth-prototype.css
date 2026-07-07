@@ -703,7 +703,7 @@ button,a{font:inherit}
   margin-top:10px;
   padding-right:3px;
 }
-.room-item-list button{
+.room-item-list [data-home-room-source]{
   display:grid;
   grid-template-columns:18px minmax(0,1fr);
   grid-template-areas:
@@ -721,10 +721,6 @@ button,a{font:inherit}
   background:rgba(255,249,239,.07);
   color:rgba(255,249,239,.88);
   text-align:left;
-}
-.room-item-list button:hover{
-  border-color:rgba(255,249,239,.22);
-  background:rgba(255,249,239,.11);
 }
 .room-item-list span{
   grid-area:index;
@@ -752,7 +748,7 @@ button,a{font:inherit}
   color:rgba(255,249,239,.58);
   font-size:.62rem;
 }
-.living-room button:not([data-home-room-item]){
+.living-room button{
   margin-top:10px;
   min-height:32px;
   padding:0;

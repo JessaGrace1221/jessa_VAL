@@ -709,7 +709,9 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /function sourceOfSourceLines/);
   assert.match(hearthJs, /data-source-type/);
   assert.match(hearthJs, /data-source-id/);
-  assert.match(hearthJs, /list\.querySelectorAll\('\[data-home-room-item\]'\)\.forEach/);
+  assert.match(hearthJs, /function homeSourceContextLines/);
+  assert.match(hearthJs, /data-home-room-source/);
+  assert.doesNotMatch(hearthJs, /list\.querySelectorAll\('\[data-home-room-item\]'\)\.forEach/);
   assert.match(hearthJs, /Source-of-source/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
@@ -762,7 +764,7 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
   assert.match(hearthJs, /const homeRoomQueues/);
   assert.match(hearthJs, /function setHomeRoomQueue/);
   assert.match(hearthJs, /function openHomeItemCowork/);
-  assert.match(hearthJs, /data-home-room-item/);
+  assert.match(hearthJs, /data-home-room-source/);
   assert.match(hearthJs, /Co-Work with VAL about/);
   assert.match(hearthJs, /can move now/);
   assert.match(hearthJs, /answered something that matters/);
@@ -773,7 +775,7 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
   assert.match(hearthJs, /Review the decision/);
   assert.match(hearthCss, /\.room-item-list/);
   assert.match(hearthCss, /max-height:116px/);
-  assert.match(hearthCss, /\.living-room button:not\(\[data-home-room-item\]\)/);
+  assert.match(hearthCss, /\.room-item-list \[data-home-room-source\]/);
 });
 
 test('Hearth prototype can visually exercise named live-card language without live data', () => {
@@ -905,7 +907,7 @@ test('Hearth offers a quiet fresh-desk gesture for clearing session room marks',
 
 test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets usable', () => {
   assert.match(hearthCss, /\.hearth-evidence\.open\{opacity:1;transform:translateY\(0\);max-height:330px;padding-bottom:24px\}/);
-  assert.match(hearthCss, /\.living-room button:not\(\[data-home-room-item\]\)\{/);
+  assert.match(hearthCss, /\.living-room button\{/);
   assert.match(hearthCss, /min-height:32px/);
   assert.match(hearthCss, /\.drawer-pull\{/);
   assert.match(hearthCss, /min-height:34px/);

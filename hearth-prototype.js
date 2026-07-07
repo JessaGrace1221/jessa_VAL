@@ -4668,22 +4668,16 @@ function setRoomCopy(state){
       list.className = 'room-item-list';
       list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
       list.innerHTML = queue.map((item, index) => (
-        '<button type="button" data-home-room-item="' + name + '" data-home-room-index="' + index + '"' +
+        '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
-          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '"' +
-          ' onclick="return window.openHearthHomeItemFromButton ? window.openHearthHomeItemFromButton(this,event) : false;">' +
+          ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
-        '</button>'
+        '</div>'
       )).join('');
       room.insertBefore(list, actionButton);
-      list.querySelectorAll('[data-home-room-item]').forEach((button) => {
-        button.addEventListener('click', (event) => {
-          openHomeItemWorkspaceFromButton(button, event);
-        });
-      });
     }
     actionButton.innerHTML = content.card.action + ' <b>&rarr;</b>';
     actionButton.dataset.actionType = content.card.primaryAction?.type || 'workspace';
@@ -4711,16 +4705,12 @@ function openHomeItemCowork(roomName, index){
   const sourceItem = item.sourceItem || item;
   const roomLabel = roomName === 'leverage' ? 'prepared work' : 'movement';
   const sourceLabel = sourceActionLabel(sourceItem, roomName === 'leverage' ? 'Open prepared work' : 'Open source context');
-  const identity = sourceIdentityForItem(sourceItem);
   const workspace = {
     lens: roomName === 'leverage' ? 'Leverage Item' : 'Velocity Item',
     title: item.title,
     meaning: item.summary || itemMeaning(sourceItem, 'VAL opened this Home item with its current context attached.'),
     understanding: [
-      'Home source: ' + (identity.label || item.title),
-      identity.type ? 'Source type: ' + identity.type : '',
-      identity.id ? 'Source id: ' + identity.id : '',
-      ...sourceOfSourceLines(sourceItem),
+      ...homeSourceContextLines(sourceItem, item.title),
       sourceItem.confidence != null ? 'Confidence: ' + Math.round(Number(sourceItem.confidence) * 100) + '%' : '',
       'Priority ' + item.priority + ' in ' + (roomName === 'leverage' ? 'Leverage' : 'Velocity') + '.'
     ].filter(Boolean),
@@ -4735,6 +4725,16 @@ function openHomeItemCowork(roomName, index){
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.toggle('active-room', room.dataset.room === roomName);
   });
+}
+
+function homeSourceContextLines(item = {}, fallbackTitle = 'Source context'){
+  const identity = sourceIdentityForItem(item);
+  return [
+    'Home source: ' + (identity.label || fallbackTitle),
+    identity.type ? 'Source type: ' + identity.type : '',
+    identity.id ? 'Source id: ' + identity.id : '',
+    ...sourceOfSourceLines(item)
+  ].filter(Boolean);
 }
 
 function openHomeItemWorkspaceFromButton(button, event){
@@ -6023,6 +6023,7 @@ function hydrateRoomsFromBriefing(briefing){
         title: titleText,
         meaning: meaningText,
         understanding: workspaceUnderstanding(ready, [
+          ...homeSourceContextLines(ready, titleText),
           ready.reason_it_matters || ready.summary,
           preparedArtifactKind(ready) ? 'Prepared artifact: ' + preparedArtifactKind(ready).replace(/_/g, ' ') : '',
           ready.target?.type ? 'Source type: ' + ready.target.type : ''
@@ -6095,6 +6096,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
       title: titleText,
       meaning: meaningText,
       understanding: workspaceUnderstanding(ready, [
+        ...homeSourceContextLines(ready, titleText),
         ready.summary,
         ready.metadata?.completionStatus ? 'Completion status: ' + String(ready.metadata.completionStatus).replace(/_/g, ' ') : '',
         Array.isArray(ready.metadata?.remainingContextNeeded) && ready.metadata.remainingContextNeeded.length ? 'Needs context: ' + ready.metadata.remainingContextNeeded.join('; ') : '',
