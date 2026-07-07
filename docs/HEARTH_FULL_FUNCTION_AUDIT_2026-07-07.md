@@ -70,3 +70,51 @@ Remaining caution:
 - `node --test test/hearthLeadIntelligence.test.js`
 - Chrome local Hearth click audit with screenshot verification.
 - Railway deployment `ed960f98-9b05-47ed-9e10-81e4aad57745` on commit `33e01f5` succeeded with the Lead Intelligence drawer isolation fix.
+
+## Source And Action Audit Pass
+
+Additional audit rules checked live in Chrome against `https://jessaval-production.up.railway.app/`:
+
+1. The information shown on a card must come from the same source opened by the card CTA.
+2. CTAs must preserve the source and source-of-source context.
+3. Workspaces should show buttons only for the suggested actions that apply to that source.
+
+Production test access:
+
+- Temporary no-login Hearth test mode is ON through `VAL_PUBLIC_HEARTH_TEST_MODE=1`.
+- Health check confirmed `publicHearthTestMode: true` and `demoMode: false`.
+- Turn this off after live testing with `railway variables --set VAL_PUBLIC_HEARTH_TEST_MODE=0`.
+
+Findings and fixes:
+
+- Home queue entries were clickable buttons even though they were source evidence, not suggested actions. They also did not reliably open the source workspace in live Chrome. I converted them to non-clickable source rows with `data-home-room-source`, `data-source-type`, `data-source-id`, and `data-source-label`.
+- The Leverage card was initially prioritizing broad prepared-work summaries over the concrete draft. I changed Leverage selection to prefer concrete actionable items, so the card now surfaces `Draft for colin@finserve360.com`.
+- The Leverage workspace opened the right draft but lacked complete provenance. I added shared source-context lines so it shows `Home source`, `Source type`, `Source id`, and `Source-of-source`.
+- Draft items with `sourceType: draft` were not getting prepared-work actions unless `preparedArtifactKind` was present. I changed action selection so draft sources get `Open prepared draft`, `Refine prepared work`, and `Approve prepared work`.
+- Inline source portal buttons were appearing inside workspace copy, creating extra buttons beyond the suggested actions. I suppressed inline portals for briefing workspaces so the visible buttons are the actual action set.
+- Static script cache keys were stale during production verification. I bumped the Hearth script query key with each deployed source/action change so Chrome loads the current behavior.
+
+Live Chrome proof after deployment `056d7028-986d-4f3c-be95-64840ab37c44` on commit `448a2d4`:
+
+- The production script loaded as `hearth-prototype.js?v=source-action-audit-actions-20260707`.
+- Old queue action buttons count: `0`.
+- Source rows render as `DIV` rows, including the Leverage row with `sourceType: draft`, `sourceId: draft_email_cf62948eec809b19ba2afc4b`, and text `Draft for colin@finserve360.com`.
+- Clicking `Review what's ready` opened `Leverage decision workspace`.
+- Workspace contained `Home source`, `Source type`, `Source id`, and `Source-of-source`.
+- Workspace had no generic Co-Work input.
+- Visible workspace action buttons were: `Open prepared draft`, `Refine prepared work`, and `Approve prepared work` plus the standard `Close card` control.
+
+Verification for this pass:
+
+- `node --check hearth-prototype.js`
+- `node --test test/hearthLeadIntelligence.test.js`
+- Railway deployments verified successful:
+  - `45d88806-7b85-4141-b099-ce896df63630` for temporary public Hearth test mode.
+  - `046f63fd-04b2-42cc-8182-6910378a446a` for source-scoped Home actions.
+  - `64afb436-0f3b-4822-901a-3fdafb259bc8` for reliable queue click handling attempt.
+  - `66e2b8a7-23f1-4914-85de-37fc82e931a8` for actionable Leverage prioritization.
+  - `7f926add-1723-4d2b-9f6b-7a68e72bfc91` for shared workspace-shell routing.
+  - `5869d56a-a294-4919-af45-7990c62990a8` for script cache refresh.
+  - `19417007-27f8-41e0-96b8-8e98368f5eeb` for explicit source item click contract.
+  - `8b6579d5-baac-4ced-bb38-e6c217d90eb3` for source-only queue rows.
+  - `056d7028-986d-4f3c-be95-64840ab37c44` for suggested-action-only source workspaces.
