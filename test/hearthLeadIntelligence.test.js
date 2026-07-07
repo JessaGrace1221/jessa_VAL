@@ -810,7 +810,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=packet-completeness-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=desk-preflight-20260707/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
