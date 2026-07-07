@@ -12,6 +12,7 @@ const reviewRoutes = fs.readFileSync(path.join(root, 'services', 'valReviewUpdat
 const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
 const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_COMPLETENESS_CONTRACT.md'), 'utf8');
 const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_HYDRATION_AUDIT.md'), 'utf8');
+const hearthTruthLineageMap = fs.readFileSync(path.join(root, 'docs', 'HEARTH_TRUTH_LINEAGE_MAP.md'), 'utf8');
 
 function extractObjectLiteral(source, marker){
   const start = source.indexOf(marker);
@@ -1019,6 +1020,25 @@ test('Hearth client packet variables match server-enforced packet variables', ()
       assert.ok(clientVariables.has(variable), packetName + ' client registry missing ' + variable);
     });
   });
+});
+
+test('Hearth truth lineage map traces clicks to variables and feeder sources', () => {
+  [
+    '# Hearth Truth Lineage Map',
+    'truth source -> normalizer/provider -> packet variable -> click purpose',
+    '| Click purpose | Trigger family | Variable packet feeding click | Variables in that packet | Things that feed those variables |',
+    'New email arrives',
+    'Teach VAL conversation',
+    '`relationship_packet`',
+    '`project_packet`',
+    '`email_packet`',
+    '`timeline_packet`',
+    '`home_source_packet`',
+    '`workflow_scoped_packet`',
+    '`val_os_packet`',
+    'Metadata-only packets until server hydration is added',
+    'When we add or change a truth line'
+  ].forEach((required) => assert.ok(hearthTruthLineageMap.includes(required), 'Missing truth lineage map entry: ' + required));
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
