@@ -9215,7 +9215,7 @@ async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0)
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'timeline_packet',
-    action:'calendar:meeting_prep',
+    action:'timeline:meeting_prep',
     source:calendarPacketSourceFromEvent(event, eventIndex)
   });
   if(!preflight.ok) return;
@@ -9227,7 +9227,7 @@ async function openCalendarPanelWithPacket(node = calendarTab){
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'timeline_packet',
-    action:'calendar:open_panel',
+    action:'timeline:open_panel',
     source:calendarPacketSourceFromEvent(event, 0)
   });
   if(!preflight.ok) return;
