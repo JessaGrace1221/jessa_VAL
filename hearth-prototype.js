@@ -4680,9 +4680,7 @@ function setRoomCopy(state){
       room.insertBefore(list, actionButton);
       list.querySelectorAll('[data-home-room-item]').forEach((button) => {
         button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
+          openHomeItemWorkspaceFromButton(button, event);
         });
       });
     }
@@ -4730,14 +4728,23 @@ function openHomeItemCowork(roomName, index){
     sourceItem,
     cardType: roomName === 'leverage' ? 'ready_for_you_queue_item' : 'what_changed_queue_item'
   };
-  closeCalendarPanel();
   setWorkspaceContent({...workspace, label: 'Home ' + roomLabel + ' source workspace'});
   activeHomeWorkspace = {roomName, workspace};
-  hearth.dataset.distance = 'judgment';
-  deskWorkspace.setAttribute('aria-hidden', 'false');
+  openWorkspaceShell('Home ' + roomLabel + ' source workspace', {returnTarget:'home'});
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.toggle('active-room', room.dataset.room === roomName);
   });
+}
+
+function openHomeItemWorkspaceFromButton(button, event){
+  if(!button || !button.dataset.homeRoomItem) return false;
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+    if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+  }
+  openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
+  return true;
 }
 
 function setState(nextState){
@@ -9724,11 +9731,15 @@ rooms.forEach((room) => {
   room.addEventListener('click', (event) => {
     const itemButton = event.target.closest('[data-home-room-item]');
     if(!itemButton) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openHomeItemCowork(itemButton.dataset.homeRoomItem, itemButton.dataset.homeRoomIndex);
+    openHomeItemWorkspaceFromButton(itemButton, event);
   });
 });
+
+document.addEventListener('click', (event) => {
+  const itemButton = event.target.closest('[data-home-room-item]');
+  if(!itemButton) return;
+  openHomeItemWorkspaceFromButton(itemButton, event);
+}, true);
 
 rooms.forEach((room) => {
   room.addEventListener('click', (event) => {
