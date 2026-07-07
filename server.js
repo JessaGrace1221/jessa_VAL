@@ -3072,7 +3072,7 @@ async function saveTeachValSession(session){
   if(pgPool){
     await dbQuery(`insert into teach_val_onboarding_sessions (id,tenant_id,user_id,status,state_json,created_at,updated_at)
       values ($1,$2,$3,$4,$5,coalesce($6::timestamptz,now()),now())
-      on conflict (id) do update set status=excluded.status,state_json=excluded.state_json,updated_at=now()`,[clean.id,clean.tenantId,clean.userId,clean.status,JSON.stringify(clean.state),clean.createdAt]);
+      on conflict (id) do update set tenant_id=excluded.tenant_id,user_id=excluded.user_id,status=excluded.status,state_json=excluded.state_json,updated_at=now()`,[clean.id,clean.tenantId,clean.userId,clean.status,JSON.stringify(clean.state),clean.createdAt]);
     return getTeachValSession(clean.id);
   }
   const {store,rows}=teachValStoreArray('teachValOnboardingSessions');
@@ -3100,7 +3100,7 @@ async function saveTeachValImport(record){
   if(pgPool){
     await dbQuery(`insert into teach_val_imports (id,session_id,tenant_id,user_id,category,prompt_used,raw_response,structured_json,items_json,reviewed,status,created_at,updated_at)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,coalesce($12::timestamptz,now()),now())
-      on conflict (id) do update set prompt_used=excluded.prompt_used,raw_response=excluded.raw_response,structured_json=excluded.structured_json,items_json=excluded.items_json,reviewed=excluded.reviewed,status=excluded.status,updated_at=now()`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.promptUsed,row.rawResponse,JSON.stringify(row.structuredSummary||{}),JSON.stringify(row.extractedItems||[]),row.reviewed,row.status,row.createdAt]);
+      on conflict (id) do update set session_id=excluded.session_id,tenant_id=excluded.tenant_id,user_id=excluded.user_id,category=excluded.category,prompt_used=excluded.prompt_used,raw_response=excluded.raw_response,structured_json=excluded.structured_json,items_json=excluded.items_json,reviewed=excluded.reviewed,status=excluded.status,updated_at=now()`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.promptUsed,row.rawResponse,JSON.stringify(row.structuredSummary||{}),JSON.stringify(row.extractedItems||[]),row.reviewed,row.status,row.createdAt]);
     return teachValImportRow((await dbQuery('select * from teach_val_imports where id=$1',[row.id])).rows[0]);
   }
   const {store,rows}=teachValStoreArray('teachValImports');
@@ -3127,7 +3127,7 @@ async function insertTeachValMemoryItems(items){
     if(pgPool){
       await dbQuery(`insert into teach_val_memory_items (id,session_id,tenant_id,user_id,category,title,summary,source,confidence,data_json,created_at)
         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
-        on conflict (id) do nothing`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.title,row.summary,row.source,row.confidence,JSON.stringify(row.data||{})]);
+        on conflict (id) do update set session_id=excluded.session_id,tenant_id=excluded.tenant_id,user_id=excluded.user_id,category=excluded.category,title=excluded.title,summary=excluded.summary,source=excluded.source,confidence=excluded.confidence,data_json=excluded.data_json`,[row.id,row.sessionId,row.tenantId,row.userId,row.category,row.title,row.summary,row.source,row.confidence,JSON.stringify(row.data||{})]);
     }else{
       const {store,rows}=teachValStoreArray('teachValMemoryItems');
       rows.push({id:row.id,sessionId:row.sessionId,tenantId:row.tenantId,userId:row.userId,category:row.category,title:row.title,summary:row.summary,source:row.source,confidence:row.confidence,data:row.data,createdAt:row.createdAt});

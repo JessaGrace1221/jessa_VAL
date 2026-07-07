@@ -971,6 +971,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(server, /async function teachValWitnessingSessionIsComplete/);
   assert.match(server, /witness_partnership_agreement/);
   assert.match(server, /restoreJessaRealWitnessingSessionBackup\(\) \|\| existing/);
+  assert.match(server, /on conflict \(id\) do update set tenant_id=excluded\.tenant_id,user_id=excluded\.user_id,status=excluded\.status/);
+  assert.match(server, /on conflict \(id\) do update set session_id=excluded\.session_id,tenant_id=excluded\.tenant_id,user_id=excluded\.user_id,category=excluded\.category/);
   assert.match(hearthJs, /valAiImportPromptCards/);
   assert.match(hearthJs, /ChatGPT \/ Claude import/);
   assert.match(hearthJs, /ai_history_import/);
