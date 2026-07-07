@@ -6455,6 +6455,30 @@ async function initValDb(){
       metadata_json jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists hearth_packet_receipts (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      packet_name text not null,
+      click_action text,
+      click_contract text,
+      status text not null,
+      ok boolean not null default false,
+      action_gated boolean not null default false,
+      allowed_to_proceed boolean not null default false,
+      missing_required_json jsonb not null default '[]',
+      provider_gaps_json jsonb not null default '[]',
+      provider_partials_json jsonb not null default '[]',
+      variables_json jsonb not null default '[]',
+      source_receipts_json jsonb not null default '[]',
+      downstream_consumers_json jsonb not null default '[]',
+      receipt_json jsonb not null default '{}',
+      request_source_json jsonb not null default '{}',
+      request_click_json jsonb not null default '{}',
+      ip_address text,
+      user_agent text,
+      created_at timestamptz not null default now()
+    );
     create index if not exists val_tasks_user_completed_idx on val_tasks(user_id,completed,due_date);
     create index if not exists val_messages_conversation_idx on val_messages(conversation_id,created_at);
     create index if not exists tenant_feature_flags_tenant_idx on tenant_feature_flags(tenant_id,feature_key);
@@ -6492,6 +6516,8 @@ async function initValDb(){
     create index if not exists meeting_transcript_links_lookup_idx on meeting_transcript_links(tenant_id,user_id,meeting_event_id,created_at desc);
     create index if not exists val_calendar_events_lookup_idx on val_calendar_events(tenant_id,user_id,start_time desc);
     create index if not exists val_task_calendar_blocks_lookup_idx on val_task_calendar_blocks(tenant_id,user_id,scheduling_status,scheduled_start);
+    create index if not exists hearth_packet_receipts_lookup_idx on hearth_packet_receipts(tenant_id,user_id,created_at desc);
+    create index if not exists hearth_packet_receipts_packet_idx on hearth_packet_receipts(tenant_id,user_id,packet_name,status,created_at desc);
   `);
   await ensureValIntelligenceSpineTables({dbQuery,logger:console});
   await ensureValConversationIdentityTables({dbQuery,logger:console});
@@ -21984,6 +22010,49 @@ const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
 
 const HEARTH_PACKET_ACTION_GATED = new Set(['workflow_scoped_packet','home_source_packet','email_packet','commitment_packet','project_packet','relationship_packet','timeline_packet']);
 
+const HEARTH_PACKET_DOWNSTREAM_CONSUMERS = {
+  relationship_packet:['relationship_drawer','project_packet','email_packet','home_source_packet','cowork_packet','document_packet','commitment_packet'],
+  project_packet:['project_drawer','relationship_packet','email_packet','home_source_packet','cowork_packet','document_packet','commitment_packet'],
+  email_packet:['executive_inbox','relationship_packet','project_packet','commitment_packet','home_source_packet','cowork_packet'],
+  timeline_packet:['timeline_drawer','meeting_prep','relationship_packet','project_packet','commitment_packet','home_source_packet'],
+  home_source_packet:['home_velocity','home_alignment','home_leverage','source_display_packet','workflow_scoped_packet','cowork_packet'],
+  workflow_scoped_packet:['active_workflow','cowork_packet','approval_gate','packet_receipt'],
+  val_os_packet:['val_drawer','teach_val','connections','all_action_packets','approval_gate']
+};
+
+const HEARTH_CLICK_PURPOSES = {
+  relationship_packet:['Relationships drawer/index','Relationship row/profile','Relationship action','LinkedIn support visibility'],
+  project_packet:['Projects drawer/index','Project row/profile','Project action/review'],
+  email_packet:['Executive Inbox drawer/item/action','Email-derived Home card','Draft/reply review'],
+  timeline_packet:['Calendar sidebar / meeting prep','Timeline drawer','Timeline action/review'],
+  home_source_packet:['Velocity card','Alignment card','Leverage card','Home dynamic action'],
+  workflow_scoped_packet:['Shared workflow action','Workspace action dispatch'],
+  val_os_packet:['VAL drawer/actions/connections','Witnessing Session','Teach VAL']
+};
+
+function buildHearthTruthLineageRegistry(){
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    sourceDoc:'docs/HEARTH_TRUTH_LINEAGE_MAP.md',
+    rule:'truth source -> normalizer/provider -> packet variable -> click purpose -> prompt/rule -> visible action buttons -> receipt -> downstream packet updates',
+    packets:Object.fromEntries(Object.entries(HEARTH_PACKET_HYDRATION_REQUIREMENTS).map(([packetName,requirements])=>[
+      packetName,
+      {
+        clickPurposes:HEARTH_CLICK_PURPOSES[packetName]||[],
+        actionGated:HEARTH_PACKET_ACTION_GATED.has(packetName),
+        downstreamConsumers:HEARTH_PACKET_DOWNSTREAM_CONSUMERS[packetName]||[],
+        variables:requirements.map(([variable,provider,source])=>({
+          variable,
+          provider,
+          feeds:HEARTH_PACKET_DOWNSTREAM_CONSUMERS[packetName]||[],
+          source
+        }))
+      }
+    ]))
+  };
+}
+
 function hearthHydrationProviderMap(){
   return {
     teach_val_memory:{status:'available',route:'internal',description:'Teach VAL reviewed memory is loaded by listTeachValCoreMemory and Executive Briefing onboardingReflection.'},
@@ -22094,6 +22163,130 @@ function hearthPacketHasValue(value){
   if(Array.isArray(value))return value.length>0;
   if(typeof value==='object')return Object.keys(value).length>0;
   return String(value).trim()!=='';
+}
+
+function hearthPacketSourceKey(value){
+  if(!value||typeof value!=='object')return '';
+  const type=value.sourceType||value.source_type||value.type||value.kind||value.provider||'';
+  const id=value.sourceId||value.source_id||value.id||value.messageId||value.message_id||value.threadId||value.thread_id||value.contactId||value.projectId||'';
+  return [type,id].filter(Boolean).join(':');
+}
+
+function hearthPacketSourceReceiptsFromContext(context={}){
+  const candidates=[
+    context.evidence?.current_item,
+    context.home?.card?.current,
+    context.home?.card?.sourceItem,
+    context.relationships?.current,
+    context.projects?.current,
+    context.emails?.current,
+    context.drafts?.current,
+    context.documents?.current,
+    ...(Array.isArray(context.home?.card?.sourceRefs)?context.home.card.sourceRefs:[]),
+    ...(Array.isArray(context.evidence?.items)?context.evidence.items.slice(0,12):[])
+  ].filter(Boolean);
+  const seen=new Set();
+  return candidates.map((item)=>{
+    const key=hearthPacketSourceKey(item)||String(item.title||item.name||item.summary||'').slice(0,120);
+    if(!key||seen.has(key))return null;
+    seen.add(key);
+    return {
+      key,
+      sourceType:item.sourceType||item.source_type||item.type||item.kind||'unknown',
+      sourceId:item.sourceId||item.source_id||item.id||item.messageId||item.threadId||'',
+      label:item.title||item.name||item.subject||item.summary||item.sourceLabel||'Source receipt',
+      confidence:item.confidence??item.score??null
+    };
+  }).filter(Boolean);
+}
+
+function hearthPacketReceiptRow(packet={},req=null){
+  const id=uuid('hearth_receipt');
+  const sourceReceipts=hearthPacketSourceReceiptsFromContext(packet.context||{});
+  return {
+    id,
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    packetName:packet.packetName||'',
+    clickAction:packet.click?.action||packet.click?.workflowAction||packet.click?.homeAction||packet.source?.action||'',
+    clickContract:packet.click?.contract||'',
+    status:packet.status||'unknown',
+    ok:packet.ok!==false,
+    actionGated:!!packet.actionGated,
+    allowedToProceed:!!packet.receipt?.allowedToProceed,
+    missingRequired:packet.missingRequired||[],
+    providerGaps:packet.providerGaps||[],
+    providerPartials:packet.providerPartials||[],
+    variables:packet.variables||[],
+    sourceReceipts,
+    downstreamConsumers:HEARTH_PACKET_DOWNSTREAM_CONSUMERS[packet.packetName]||[],
+    receipt:packet.receipt||{},
+    requestSource:packet.source||{},
+    requestClick:packet.click||{},
+    ipAddress:req?requestIp(req):'',
+    userAgent:req?requestUserAgent(req):'',
+    createdAt:new Date().toISOString()
+  };
+}
+
+async function saveHearthPacketReceipt(packet={},req=null){
+  const row=hearthPacketReceiptRow(packet,req);
+  if(pgPool){
+    await dbQuery(`insert into hearth_packet_receipts
+      (id,tenant_id,user_id,packet_name,click_action,click_contract,status,ok,action_gated,allowed_to_proceed,missing_required_json,provider_gaps_json,provider_partials_json,variables_json,source_receipts_json,downstream_consumers_json,receipt_json,request_source_json,request_click_json,ip_address,user_agent,created_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,[
+      row.id,row.tenantId,row.userId,row.packetName,row.clickAction,row.clickContract,row.status,row.ok,row.actionGated,row.allowedToProceed,
+      JSON.stringify(row.missingRequired),JSON.stringify(row.providerGaps),JSON.stringify(row.providerPartials),JSON.stringify(row.variables),JSON.stringify(row.sourceReceipts),JSON.stringify(row.downstreamConsumers),JSON.stringify(row.receipt),JSON.stringify(row.requestSource),JSON.stringify(row.requestClick),row.ipAddress,row.userAgent,row.createdAt
+    ]);
+  }else{
+    const store=valStore();
+    store.hearthPacketReceipts=store.hearthPacketReceipts||[];
+    store.hearthPacketReceipts.unshift(row);
+    store.hearthPacketReceipts=store.hearthPacketReceipts.slice(0,500);
+    saveValStore(store);
+  }
+  return row;
+}
+
+function hearthPacketReceiptFromDb(row={}){
+  const parse=(value,fallback)=>{try{return typeof value==='string'?JSON.parse(value):(value??fallback);}catch(_){return fallback;}};
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId,
+    userId:row.user_id||row.userId,
+    packetName:row.packet_name||row.packetName,
+    clickAction:row.click_action||row.clickAction,
+    clickContract:row.click_contract||row.clickContract,
+    status:row.status,
+    ok:row.ok,
+    actionGated:row.action_gated??row.actionGated,
+    allowedToProceed:row.allowed_to_proceed??row.allowedToProceed,
+    missingRequired:parse(row.missing_required_json??row.missingRequired,[]),
+    providerGaps:parse(row.provider_gaps_json??row.providerGaps,[]),
+    providerPartials:parse(row.provider_partials_json??row.providerPartials,[]),
+    variables:parse(row.variables_json??row.variables,[]),
+    sourceReceipts:parse(row.source_receipts_json??row.sourceReceipts,[]),
+    downstreamConsumers:parse(row.downstream_consumers_json??row.downstreamConsumers,[]),
+    receipt:parse(row.receipt_json??row.receipt,{}),
+    createdAt:row.created_at||row.createdAt
+  };
+}
+
+async function listHearthPacketReceipts({limit=50,packetName='',status=''}={}){
+  const cleanLimit=Math.min(Math.max(Number(limit)||50,1),200);
+  if(pgPool){
+    const filters=['tenant_id=$1','user_id=$2'];
+    const params=[tenantId(),currentUserId()];
+    if(packetName){params.push(packetName);filters.push(`packet_name=$${params.length}`);}
+    if(status){params.push(status);filters.push(`status=$${params.length}`);}
+    params.push(cleanLimit);
+    const r=await dbQuery(`select * from hearth_packet_receipts where ${filters.join(' and ')} order by created_at desc limit $${params.length}`,params);
+    return (r.rows||[]).map(hearthPacketReceiptFromDb);
+  }
+  const store=valStore();
+  return (store.hearthPacketReceipts||[])
+    .filter(row=>(!packetName||row.packetName===packetName)&&(!status||row.status===status))
+    .slice(0,cleanLimit);
 }
 
 function hearthSelectHomeCard(briefing={},source={}){
@@ -22234,9 +22427,35 @@ app.get('/api/hearth/packet-hydration-audit',async(req,res)=>{
   }
 });
 
+app.get('/api/hearth/truth-lineage',async(req,res)=>{
+  try{
+    res.json(buildHearthTruthLineageRegistry());
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
+app.get('/api/hearth/packet-receipts',async(req,res)=>{
+  try{
+    const receipts=await listHearthPacketReceipts({limit:req.query.limit,packetName:req.query.packetName||'',status:req.query.status||''});
+    res.json({ok:true,receipts});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
 app.post('/api/hearth/build-packet',async(req,res)=>{
   try{
-    res.json(await buildHearthPacket(req.body||{}));
+    const packet=await buildHearthPacket(req.body||{});
+    try{
+      const saved=await saveHearthPacketReceipt(packet,req);
+      packet.receiptId=saved.id;
+      packet.receipt={...(packet.receipt||{}),id:saved.id,sourceReceipts:saved.sourceReceipts,downstreamConsumers:saved.downstreamConsumers};
+    }catch(saveError){
+      packet.receiptSaveError=saveError.message;
+      console.warn('[hearth] packet receipt save failed',saveError.message);
+    }
+    res.json(packet);
   }catch(e){
     res.status(500).json({ok:false,status:'error',error:e.message});
   }

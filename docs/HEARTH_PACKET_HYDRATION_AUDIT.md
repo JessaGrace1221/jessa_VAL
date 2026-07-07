@@ -8,6 +8,10 @@ The packet completeness contract says what every click must know. The hydration 
 
 `GET /api/hearth/packet-hydration-audit`
 
+`GET /api/hearth/truth-lineage`
+
+`GET /api/hearth/packet-receipts`
+
 `POST /api/hearth/build-packet`
 
 The endpoint returns:
@@ -47,10 +51,13 @@ It returns:
 - `providerPartials`
 - `context`
 - `receipt`
+- `receiptId`
 
 Action-gated packets fail closed. That means VAL may show the user what is missing, but it should not continue into an action workflow as if the context were complete.
 
 The builder timeboxes provider reads so a slow source cannot freeze a click. If a provider cannot respond in time, the packet returns the safest available `partial` or `blocked` state.
+
+Every packet build records a durable receipt in `hearth_packet_receipts` when Postgres is available, or in the local VAL store fallback when it is not. Receipts include packet status, variables, missing variables, provider gaps, source receipts, downstream consumers, and the clicked action/contract.
 
 ## Status Meanings
 
@@ -71,13 +78,15 @@ It now has:
 - a first unified Hearth packet builder
 - client-side preflight wired for server-hydrated action packets
 - client/server variable parity checks for all server-enforced packets
+- machine-readable truth lineage at `GET /api/hearth/truth-lineage`
+- durable packet receipt storage at `GET /api/hearth/packet-receipts`
 - fail-closed status for action-gated packets
 - per-click receipts showing whether the packet was ready, partial, or blocked
 
 It does not yet have:
 
 - server hydration for every display/navigation metadata packet
-- durable per-click packet receipts stored for later review
+- a user-facing packet receipt browser in the Hearth UI
 
 ## Variable Parity
 
