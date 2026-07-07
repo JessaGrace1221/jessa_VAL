@@ -21982,6 +21982,8 @@ const HEARTH_PACKET_HYDRATION_REQUIREMENTS = {
   ]
 };
 
+const HEARTH_PACKET_ACTION_GATED = new Set(['workflow_scoped_packet','home_source_packet','email_packet','commitment_packet','project_packet','relationship_packet','timeline_packet']);
+
 function hearthHydrationProviderMap(){
   return {
     teach_val_memory:{status:'available',route:'internal',description:'Teach VAL reviewed memory is loaded by listTeachValCoreMemory and Executive Briefing onboardingReflection.'},
@@ -22075,11 +22077,134 @@ async function buildHearthPacketHydrationAudit(){
   };
 }
 
+function hearthPacketVariableValue(variable,context={}){
+  const key=String(variable||'');
+  const path=key.replace(/^\{\{|\}\}$/g,'').split('.');
+  let value=context;
+  for(const part of path){
+    if(value==null)return undefined;
+    value=value[part];
+  }
+  return value;
+}
+
+function hearthPacketHasValue(value){
+  if(value==null)return false;
+  if(Array.isArray(value))return value.length>0;
+  if(typeof value==='object')return Object.keys(value).length>0;
+  return String(value).trim()!=='';
+}
+
+function hearthSelectHomeCard(briefing={},source={}){
+  const id=String(source.sourceId||source.source_id||source.id||'');
+  const cards=[
+    ...(briefing.whatChanged||[]),
+    briefing.highestLeverageMove,
+    ...(briefing.momentum||[]),
+    ...(briefing.readyForYou||[])
+  ].filter(Boolean);
+  return cards.find(card=>id&&[card.id,card.source_id,card.sourceId,card.target?.id].filter(Boolean).map(String).includes(id))||cards[0]||null;
+}
+
+async function buildHearthPacketContext({packetName='',source={},click={} }={}){
+  const [briefing,teachVal,drafts,commitments,documents,relationships,projects,evidenceItems]=await Promise.all([
+    buildExecutiveBriefing().catch(error=>({ok:false,error:error.message})),
+    listTeachValCoreMemory({limit:120}).catch(()=>[]),
+    listDrafts('').catch(()=>[]),
+    valCommitments.list({limit:120}).catch(error=>({ok:false,error:error.message,commitments:[]})),
+    valDocuments.list({limit:120}).catch(error=>({ok:false,error:error.message,documents:[]})),
+    listRelationshipProfiles({limit:120}).catch(()=>[]),
+    listProjectProfiles({limit:120}).catch(()=>[]),
+    listDashboardEvidenceItems({limit:180}).catch(()=>[])
+  ]);
+  const homeCard=hearthSelectHomeCard(briefing||{},source||{});
+  const relationshipId=source.relationshipId||source.contactId||source.personId||source.targetId||source.id||'';
+  const projectId=source.projectId||source.targetId||source.id||'';
+  const relationship=relationships.find(profile=>relationshipId&&[profile.id,profile.contactId,profile.personId,profile.profileKey,profile.email].filter(Boolean).map(String).includes(String(relationshipId)))||relationships[0]||null;
+  const project=projects.find(profile=>projectId&&[profile.id,profile.projectId,profile.profileKey,profile.displayName].filter(Boolean).map(String).includes(String(projectId)))||projects[0]||null;
+  const currentEvidence=source.evidenceItem||source.sourceItem||homeCard||evidenceItems.find(item=>String(item.id||item.sourceId||item.source_id||'')===String(source.sourceId||source.id||''))||null;
+  const openCommitments=Array.isArray(commitments.commitments)?commitments.commitments:[];
+  const documentRows=Array.isArray(documents.documents)?documents.documents:[];
+  const connectionReadiness={
+    google:await getGoogleConnectionStatus([]).catch(error=>({connected:false,error:error.message})),
+    microsoft:{connected:!!(await getMicrosoftToken().catch(()=>''))},
+    ghl:{configured:!!GHL_API_KEY}
+  };
+  return {
+    event:{type:click.action||click.workflowAction||click.homeAction||source.action||''},
+    teach_val:{reviewed_memory:teachVal,context_imports:teachVal.filter(item=>/import|witness|onboarding/i.test(String(item.kind||item.category||'')))},
+    onboarding:{first_understanding:briefing?.onboardingReflection||{},connected_source_readiness:connectionReadiness},
+    user:{preferences:teachVal.filter(item=>/preference|working_agreement|style/i.test(String(item.category||item.kind||''))),do_not_do:teachVal.filter(item=>/do_not|boundary|risk/i.test(String(item.category||item.kind||'')))},
+    val:{do_not_do:[],review_only_mode:true,external_action_allowed:false,confidence:homeCard?.confidence||null,uncertainty:briefing?.unknowns||[]},
+    rules:{val_os:{behavior_packet:{status:'partial',source:'VAL OS contract; hot-reload builder pending'},approval_packet:{status:'available',source:'external action packet gate'}}},
+    home:{card:{current:homeCard,sourceItem:homeCard,sourceType:homeCard?.source_type||homeCard?.sourceType||'',sourceId:homeCard?.source_id||homeCard?.sourceId||homeCard?.id||'',sourceRefs:homeCard?.evidence||homeCard?.sourceRefs||[]}},
+    relationships:{current:relationship,linked_to_project:relationship?[relationship]:[],moving_project:relationship?[relationship]:[]},
+    projects:{current:project,linked_to_relationship:project?[project]:[],active:projects},
+    emails:{current:source.email||homeCard?.email||{},thread:{current:{messages:source.threadMessages||[],summary:source.threadSummary||homeCard?.snippet||homeCard?.summary||'',relationship_temperature:'unknown'}}},
+    calendar:{today:source.calendarToday||{},upcoming:source.calendarUpcoming||[],relevant_events:source.calendarEvents||[],current_event:{attendee_resolution:{},internal_context:{},relationship_intelligence:{},follow_up_preparation:{}}},
+    recent_transcripts:{relationship_updates:[],open_loops:[]},
+    documents:{current:documentRows[0]||null,linked_to_relationship:documentRows.filter(doc=>relationship&&String(doc.relationship||'').toLowerCase().includes(String(relationship.displayName||relationship.name||'').toLowerCase())).slice(0,12),linked_to_project:documentRows.filter(doc=>project&&String(doc.project||'').toLowerCase().includes(String(project.displayName||project.name||'').toLowerCase())).slice(0,12)},
+    tasks:{open:openCommitments},
+    drafts:{current:drafts[0]||null,items:drafts},
+    evidence:{current_item:currentEvidence,current_item_source_type:currentEvidence?.sourceType||currentEvidence?.source_type||source.sourceType||'',current_item_source_id:currentEvidence?.sourceId||currentEvidence?.source_id||source.sourceId||'',items:evidenceItems},
+    source_reviews:{pending:[]},
+    crm:{contacts:relationships,opportunities:[]},
+    click:{packetName,source,click}
+  };
+}
+
+async function buildHearthPacket({packetName='',source={},click={},mode='preflight'}={}){
+  packetName=String(packetName||'').trim();
+  const requirements=HEARTH_PACKET_HYDRATION_REQUIREMENTS[packetName];
+  if(!requirements)return {ok:false,status:'blocked',packetName,error:'unknown_packet',message:'Hearth packet builder does not know this packet.'};
+  const providers=hearthHydrationProviderMap();
+  const context=await buildHearthPacketContext({packetName,source,click});
+  const variables=requirements.map(([variable,provider,sourceLabel])=>{
+    const value=hearthPacketVariableValue(variable,context);
+    const providerStatus=providers[provider]?.status||'gap';
+    const present=hearthPacketHasValue(value);
+    return {variable,provider,source:sourceLabel,providerStatus,present,route:providers[provider]?.route||'none'};
+  });
+  const providerGaps=variables.filter(item=>item.providerStatus==='gap').map(item=>item.variable);
+  const providerPartials=variables.filter(item=>item.providerStatus==='partial').map(item=>item.variable);
+  const missingRequired=variables.filter(item=>!item.present).map(item=>item.variable);
+  const actionGated=HEARTH_PACKET_ACTION_GATED.has(packetName);
+  const status=providerGaps.length||missingRequired.length&&actionGated?'blocked':(providerPartials.length||missingRequired.length?'partial':'ready');
+  return {
+    ok:status!=='blocked',
+    status,
+    mode,
+    packetName,
+    actionGated,
+    generatedAt:new Date().toISOString(),
+    source,
+    click,
+    variables,
+    missingRequired,
+    providerGaps,
+    providerPartials,
+    context,
+    receipt:{
+      summary:status==='ready'?'Packet is hydrated for this click.':status==='partial'?'Packet has partial hydration; keep action review-only.':'Packet is blocked until required context is available.',
+      noExternalAction:true,
+      allowedToProceed:status==='ready'||status==='partial'&&!actionGated
+    }
+  };
+}
+
 app.get('/api/hearth/packet-hydration-audit',async(req,res)=>{
   try{
     res.json(await buildHearthPacketHydrationAudit());
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
+  }
+});
+
+app.post('/api/hearth/build-packet',async(req,res)=>{
+  try{
+    res.json(await buildHearthPacket(req.body||{}));
+  }catch(e){
+    res.status(500).json({ok:false,status:'error',error:e.message});
   }
 });
 

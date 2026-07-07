@@ -899,10 +899,12 @@ test('Hearth packet contracts require the deep source web behind every click', (
 test('Hearth packet hydration audit distinguishes live providers from builder gaps', () => {
   [
     'GET /api/hearth/packet-hydration-audit',
+    'POST /api/hearth/build-packet',
     'available',
     'partial',
     'gap',
-    'unified Hearth packet builder'
+    'unified Hearth packet builder',
+    'Action-gated packets fail closed'
   ].forEach((required) => assert.ok(hearthPacketHydrationAudit.includes(required), 'Missing Hearth hydration audit doc entry: ' + required));
 
   [
@@ -915,10 +917,17 @@ test('Hearth packet hydration audit distinguishes live providers from builder ga
     /workflow_scoped_packet: \[/,
     /function hearthHydrationProviderMap\(\)/,
     /function buildHearthPacketHydrationAudit\(\)/,
+    /const HEARTH_PACKET_ACTION_GATED = new Set/,
+    /function buildHearthPacketContext/,
+    /async function buildHearthPacket/,
     /app\.get\('\/api\/hearth\/packet-hydration-audit'/,
+    /app\.post\('\/api\/hearth\/build-packet'/,
     /liveDataWarnings/,
     /no_live_project_profiles/,
     /no_live_commitments/,
+    /missingRequired/,
+    /providerGaps/,
+    /allowedToProceed/,
     /listRelationshipProfiles\(\{limit:120\}\)/,
     /listProjectProfiles\(\{limit:120\}\)/,
     /valCommitments\.list\(\{limit:120\}\)/,
@@ -937,6 +946,9 @@ test('Hearth packet hydration audit distinguishes live providers from builder ga
     '{{evidence.current_item}}',
     '{{rules.val_os.behavior_packet}}'
   ].forEach((variable) => assert.match(server, new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
+
+  assert.match(server, /status==='ready'\|\|status==='partial'&&!actionGated/);
+  assert.match(server, /Packet is blocked until required context is available/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {
