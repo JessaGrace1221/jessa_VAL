@@ -605,6 +605,10 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
 
 test('Hearth calendar prep is connected to the meeting prep backend contract', () => {
   assert.match(hearthJs, /\/api\/val\/calendar\/meeting-prep/);
+  assert.match(hearthJs, /\/api\/calendar\/sidebar/);
+  assert.match(hearthJs, /function hydrateCalendarPanel/);
+  assert.match(hearthJs, /function renderCalendarAgenda/);
+  assert.match(hearthJs, /hydrateCalendarPanel\(\);/);
   assert.match(hearthJs, /function renderMeetingPrepResult/);
   assert.match(hearthJs, /Apollo and Outscraper enrichment are planned only if they improve judgment/);
   assert.match(hearthJs, /Close and return to desk/);
@@ -671,6 +675,19 @@ test('Hearth room workspaces route live judgment actions safely', () => {
   assert.match(hearthJs, /homeAction: 'edit_before_approving'/);
   assert.match(hearthJs, /homeAction: 'review_evidence'/);
   assert.match(hearthJs, /No external action was taken from this workspace/);
+});
+
+test('Hearth keeps email-derived Home judgments in Executive Inbox action language', () => {
+  assert.match(hearthJs, /function isEmailSourceItem/);
+  assert.match(hearthJs, /function homeEmailPayload/);
+  assert.match(hearthJs, /function homeEmailActions/);
+  assert.match(hearthJs, /Draft reply/);
+  assert.match(hearthJs, /Create task/);
+  assert.match(hearthJs, /Open Executive Inbox/);
+  assert.match(hearthJs, /\/api\/email\/inbox-command\/action/);
+  assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'email_intelligence'/);
+  assert.match(hearthJs, /if\(isEmailSourceItem\(item\)\) return 'Open email'/);
+  assert.match(hearthJs, /Nothing is sent, archived, or changed in Gmail from this click/);
 });
 
 test('Hearth source actions open the most specific executive surface available', () => {

@@ -132,6 +132,7 @@ const closeSourceDetail = document.querySelector('.close-source-detail');
 const scraperButtons = Array.from(document.querySelectorAll('[data-open-scraper]'));
 const nextMeetingCard = document.querySelector('.next-meeting-card');
 const agendaItems = Array.from(document.querySelectorAll('.agenda-item'));
+const agendaList = document.querySelector('.agenda-list');
 const calendarTab = document.querySelector('.calendar-tab');
 const closeCalendarButton = document.querySelector('.close-calendar-button');
 const fullCalendarPanel = document.querySelector('#full-calendar-panel');
@@ -5576,6 +5577,7 @@ function primaryPortalPhrase(item){
 function sourceActionLabel(item, fallback = 'Open source view'){
   const target = item?.target || {};
   const kind = preparedArtifactKind(item);
+  if(isEmailSourceItem(item)) return 'Open email';
   if(kind === 'proposal_draft') return 'Review proposal draft';
   if(kind === 'html_page_draft') return 'Review page draft';
   if(kind === 'calendar_invite_draft') return 'Review calendar invite';
@@ -5597,6 +5599,12 @@ function targetProfile(item){
   const target = item?.target || {};
   const kind = preparedArtifactKind(item);
   const raw = String(kind || target.type || item?.targetType || item?.source_type || item?.sourceType || item?.review_type || item?.reviewType || item?.draftType || '').toLowerCase();
+  if(isEmailSourceItem(item)) return {
+    key: 'email',
+    noun: 'email thread',
+    whyOpen: 'The email subject and source context explain why this is appearing on Home.',
+    reviewPosture: 'Open the email if needed, then either draft a reply or create a follow-up task with a due date.'
+  };
   if(/opportunity|pipeline|deal/.test(raw) || item?.opportunityId || item?.metadata?.opportunityId || item?.metadataJson?.opportunityId) return {
     key: 'opportunity',
     noun: 'GHL opportunity',
@@ -5639,6 +5647,67 @@ function targetProfile(item){
     whyOpen: 'The source context is available if you want to inspect the judgment.',
     reviewPosture: 'Open it only if the meaning is not already clear enough to decide.'
   };
+}
+
+function isEmailSourceItem(item = {}){
+  const target = item?.target || {};
+  const metadata = item?.metadata || item?.metadataJson || {};
+  const haystack = [
+    item?.provider,
+    item?.source,
+    item?.sourceType,
+    item?.source_type,
+    item?.reviewType,
+    item?.review_type,
+    item?.type,
+    item?.itemType,
+    item?.cardType,
+    target.type,
+    metadata.provider,
+    metadata.source,
+    metadata.sourceType,
+    metadata.source_type,
+    metadata.reviewType,
+    metadata.review_type,
+    item?.title,
+    item?.summary,
+    item?.reason_it_matters,
+    item?.reason,
+    item?.recommendedAction
+  ].filter(Boolean).join(' ').toLowerCase();
+  return !!(item?.messageId || item?.threadId || metadata.messageId || metadata.threadId || /\b(gmail|email|inbox|message|thread|reply|fwd:|fw:)\b/.test(haystack));
+}
+
+function homeEmailPayload(item = {}){
+  const metadata = item.metadata || item.metadataJson || {};
+  const target = item.target || {};
+  const from = item.from || metadata.from || target.from || {};
+  return {
+    provider: item.provider || metadata.provider || 'gmail',
+    messageId: item.messageId || metadata.messageId || target.messageId || item.id || '',
+    threadId: item.threadId || metadata.threadId || target.threadId || '',
+    subject: item.subject || metadata.subject || item.title || target.label || '',
+    snippet: item.snippet || item.bodyPreview || item.summary || item.reason_it_matters || item.reason || '',
+    bodyPreview: item.bodyPreview || item.snippet || item.summary || '',
+    reason: item.reason || item.reason_it_matters || item.summary || '',
+    recommendedAction: item.recommendedAction || metadata.recommendedAction || '',
+    from: {
+      name: from.name || item.contactName || metadata.contactName || target.name || '',
+      email: from.email || item.contactEmail || metadata.contactEmail || target.email || ''
+    },
+    webLink: item.webLink || metadata.webLink || target.url || ''
+  };
+}
+
+function homeEmailActions(item, sourceLabel = 'Open email'){
+  if(!isEmailSourceItem(item)) return null;
+  return [
+    {label: sourceLabel, homeAction: 'open_source'},
+    {label: 'Draft reply', homeAction: 'draft_email_reply'},
+    {label: 'Create task', homeAction: 'create_email_task'},
+    {label: 'Open Executive Inbox', homeAction: 'open_executive_inbox'},
+    {label: 'Teach VAL', workflow: 'teach'}
+  ];
 }
 
 function workspaceUnderstanding(item, baseLines = []){
@@ -5802,6 +5871,13 @@ function hydrateRoomsFromBriefing(briefing){
     const cardTitle = roomCardObservation(highest, titleText, 'alignment');
     const cardSummary = roomCardImplication(highest, meaningText, 'alignment');
     const sourceLabel = sourceActionLabel(highest, 'Open the thing needing attention');
+    const actions = homeEmailActions(highest, sourceLabel) || [
+      {label: sourceLabel, homeAction: 'open_source'},
+      {label: 'Accept', homeAction: 'approve'},
+      {label: 'Adjust', homeAction: 'edit_before_approving'},
+      {label: 'Show alternatives', homeAction: 'summarize_project'},
+      {label: 'Teach VAL', workflow: 'teach'}
+    ];
     updateRoomFromBriefing('alignment', {
       card: {
         observation: cardTitle,
@@ -5819,13 +5895,7 @@ function hydrateRoomsFromBriefing(briefing){
           highest?.ifIgnored ? 'If ignored: ' + highest.ifIgnored : theme.why,
         ]),
         recommendation: workspaceRecommendation(highest, 'Does this still feel true to you? If not, teach VAL what it missed.'),
-        actions: [
-          {label: sourceLabel, homeAction: 'open_source'},
-          {label: 'Accept', homeAction: 'approve'},
-          {label: 'Adjust', homeAction: 'edit_before_approving'},
-          {label: 'Show alternatives', homeAction: 'summarize_project'},
-          {label: 'Teach VAL', workflow: 'teach'}
-        ],
+        actions,
         confidence: highest?.confidence,
         restraintReason: 'Alignment owns the judgment question, not every supporting detail.',
         sourceItem: highest || theme,
@@ -7878,6 +7948,74 @@ async function refreshCalendarSourceStatus(){
   }
 }
 
+function formatCalendarTime(value = ''){
+  if(!value) return '';
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return String(value);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const day = date.toDateString() === today.toDateString()
+    ? ''
+    : (date.toDateString() === tomorrow.toDateString() ? 'Tomorrow, ' : date.toLocaleDateString([], {month:'short', day:'numeric'}) + ', ');
+  return day + date.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+}
+
+function calendarEventSubtitle(event = {}){
+  const attendees = Array.isArray(event.attendees) ? event.attendees.filter(Boolean).length : 0;
+  const source = event.source ? String(event.source).replace(/^\w/, (c) => c.toUpperCase()) : 'Calendar';
+  const bits = [
+    source,
+    attendees ? attendees + ' attendee' + (attendees === 1 ? '' : 's') : '',
+    event.location || event.meetingLink ? 'Location attached' : ''
+  ].filter(Boolean);
+  return bits.join(' · ') || 'Calendar context';
+}
+
+function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
+  if(!agendaList) return;
+  const visibleEvents = Array.isArray(events) ? events.slice(0, 8) : [];
+  if(!visibleEvents.length){
+    agendaList.innerHTML = '<button class="agenda-item quiet" type="button"><span>Calendar</span><strong>No upcoming events loaded</strong><small>' + escapeHtml((errors && errors[0]) || 'Connect Google Calendar or Outlook to show your schedule here.') + '</small></button>';
+    return;
+  }
+  agendaList.innerHTML = visibleEvents.map((event, index) => (
+    '<button class="agenda-item' + (index === 0 ? ' active' : '') + '" type="button" data-calendar-event-index="' + index + '">' +
+      '<span>' + escapeHtml(formatCalendarTime(event.start)) + '</span>' +
+      '<strong>' + escapeHtml(event.title || event.summary || '(No title)') + '</strong>' +
+      '<small>' + escapeHtml(calendarEventSubtitle(event)) + '</small>' +
+    '</button>'
+  )).join('');
+  if(nextMeetingCard && visibleEvents[0]){
+    const first = visibleEvents[0];
+    const start = new Date(first.start || Date.now());
+    const month = Number.isNaN(start.getTime()) ? '' : start.toLocaleDateString([], {month:'short'});
+    const day = Number.isNaN(start.getTime()) ? '' : start.toLocaleDateString([], {day:'2-digit'});
+    const time = Number.isNaN(start.getTime()) ? 'Next' : start.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    const top = nextMeetingCard.querySelector('.calendar-page-top');
+    const body = nextMeetingCard.querySelector('.calendar-page-body');
+    if(top) top.innerHTML = '<b>' + escapeHtml(month) + '</b><strong>' + escapeHtml(day) + '</strong>';
+    if(body) body.innerHTML = '<span class="calendar-kicker">Next</span><strong>' + escapeHtml(time) + '</strong><span>' + escapeHtml(first.title || '(No title)') + '</span><small>' + escapeHtml(source === 'google' ? 'Google Calendar connected' : calendarEventSubtitle(first)) + '</small>';
+  }
+}
+
+async function hydrateCalendarPanel(){
+  if(!canUseApi){
+    renderCalendarAgenda([], 'prototype', ['Live calendar is unavailable in static prototype mode.']);
+    return;
+  }
+  try{
+    const data = await getJson('/api/calendar/sidebar');
+    renderCalendarAgenda(data.events || [], data.source || 'calendar', data.errors || []);
+    if(data.needsReconnect && calendarSourceStatus){
+      calendarSourceStatus.classList.add('failed');
+      calendarSourceStatus.innerHTML = '<strong>Calendar needs reconnection.</strong><span>' + escapeHtml((data.errors || [])[0] || 'Reconnect your calendar to show live events.') + '</span><button type="button" data-google-oauth>Reconnect Google</button>';
+    }
+  }catch(error){
+    renderCalendarAgenda([], 'error', [error.message || 'Calendar could not load.']);
+  }
+}
+
 function connectGoogleOAuth(){
   window.location.assign('/auth/google');
 }
@@ -8298,6 +8436,14 @@ async function handleWorkflowAction(action){
     openCalendarPanel();
     return;
   }
+  if(command === 'drafts'){
+    window.open('./dashboard.html?view=drafts', '_blank', 'noopener');
+    return;
+  }
+  if(command === 'commitments'){
+    window.open('./dashboard.html?view=commitments', '_blank', 'noopener');
+    return;
+  }
   if(command === 'cowork'){
     await runCowork(type);
     return;
@@ -8423,6 +8569,7 @@ function homeWorkspacePayload(action){
 
 function routeViewForTarget(type, item){
   const normalized = String(preparedArtifactKind(item) || type || item.view || item.source_type || item.sourceType || item.review_type || item.reviewType || item.draftType || '').toLowerCase();
+  if(isEmailSourceItem(item)) return 'email_intelligence';
   if(/draft|prepared|reply|proposal|follow/.test(normalized)) return 'drafts';
   if(/opportunity|pipeline|deal|ghl/.test(normalized)) return 'opportunities';
   if(/contact|person|relationship|people/.test(normalized)) return 'relationships';
@@ -8436,6 +8583,7 @@ function routeViewForTarget(type, item){
 
 function normalizedTargetType(type, item){
   const normalized = String(preparedArtifactKind(item) || type || item.source_type || item.sourceType || item.review_type || item.reviewType || '').toLowerCase();
+  if(isEmailSourceItem(item)) return 'email';
   if(/draft|prepared|reply|proposal|follow/.test(normalized)) return 'draft';
   if(/opportunity|pipeline|deal/.test(normalized)) return 'opportunity';
   if(/contact|person|relationship|people/.test(normalized)) return 'person';
@@ -8454,6 +8602,10 @@ function sourceRouteForItem(item, workspace){
     return externalUrl;
   }
   const rawType = preparedArtifactKind(item) || target.type || item.targetType || item.source_type || item.sourceType || item.review_type || item.reviewType || workspace.cardType;
+  if(isEmailSourceItem(item)){
+    const email = homeEmailPayload(item);
+    if(email.webLink) return email.webLink;
+  }
   const targetType = normalizedTargetType(rawType, item);
   const targetId = target.id || item.targetId || item.opportunityId || metadata.opportunityId || item.draftId || artifact.id || artifact.artifactId || item.contactId || metadata.contactId || item.projectId || metadata.projectId || item.source_id || item.sourceId || item.id || '';
   const params = new URLSearchParams();
@@ -8470,6 +8622,7 @@ function sourceDestinationLabel(item, workspace = {}){
   const target = item?.target || {};
   const rawType = preparedArtifactKind(item) || target.type || item?.targetType || item?.source_type || item?.sourceType || item?.review_type || item?.reviewType || workspace.cardType;
   const view = routeViewForTarget(rawType, item || {});
+  if(view === 'email_intelligence') return 'Executive Inbox';
   if(view === 'opportunities') return 'GHL opportunity';
   if(view === 'drafts') return 'prepared draft';
   if(view === 'relationships') return 'relationship file';
@@ -8523,6 +8676,85 @@ function openHomeSourceView(){
     window.open(route, '_blank', 'noopener');
   }
   renderSourceOpenReceipt(workspace, route);
+}
+
+function openExecutiveInboxForHomeEmail(item = {}){
+  const email = homeEmailPayload(item);
+  const params = new URLSearchParams();
+  params.set('view', 'email_intelligence');
+  if(email.subject) params.set('query', email.subject);
+  if(email.messageId) params.set('targetId', email.messageId);
+  window.open('./dashboard.html?' + params.toString(), '_blank', 'noopener');
+}
+
+async function runHomeEmailAction(action){
+  const workspace = activeHomeWorkspace && activeHomeWorkspace.workspace ? activeHomeWorkspace.workspace : {};
+  const item = workspace.sourceItem || {};
+  const email = homeEmailPayload(item);
+  if(action === 'open_executive_inbox'){
+    openExecutiveInboxForHomeEmail(item);
+    renderHomeActionResult(action, {
+      status: 'source_opened',
+      message: 'Executive Inbox opened with this email subject as the context.'
+    });
+    return;
+  }
+  const apiAction = action === 'draft_email_reply' ? 'draft_reply' : 'create_task';
+  setWorkspaceContent({
+    lens: 'Executive Inbox',
+    title: action === 'draft_email_reply' ? 'VAL is preparing a reply draft.' : 'VAL is creating a follow-up task.',
+    meaning: 'This stays inside VAL for review. Nothing is sent, archived, or changed in Gmail from this click.',
+    understanding: [
+      email.subject || itemTitle(item, 'Email needing attention'),
+      email.from?.email || email.from?.name ? 'From: ' + (email.from.name || email.from.email) : '',
+      email.reason || email.snippet || 'Source email context is attached.'
+    ].filter(Boolean),
+    recommendation: action === 'draft_email_reply'
+      ? 'Review the draft before creating a provider draft or sending anything.'
+      : 'Add a due date before relying on this as committed follow-through.',
+    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+    label: 'Home email action loading'
+  });
+  try{
+    const result = await postJson('/api/email/inbox-command/action', {
+      action: apiAction,
+      email,
+      title: action === 'create_email_task' ? 'Reply/follow up: ' + (email.subject || itemTitle(item, 'email')) : undefined
+    });
+    const created = result.draft || result.task || {};
+    setWorkspaceContent({
+      lens: 'Executive Inbox Receipt',
+      title: result.draft ? 'Reply draft created for review.' : 'Follow-up task created.',
+      meaning: result.draft ? 'VAL created an internal reply draft only. It did not send email.' : 'VAL created a local task from the email context.',
+      understanding: [
+        created.subject || created.title || email.subject,
+        result.requiresApproval ? 'Approval is required before anything leaves VAL.' : 'No external action was taken.',
+        email.webLink ? 'Source email link is still available.' : ''
+      ].filter(Boolean),
+      recommendation: result.draft ? 'Open Drafts or Executive Inbox to edit, approve, or discard the draft.' : 'Open Commitments/Tasks to set or adjust the due date.',
+      actions: [
+        {label: result.draft ? 'Open Drafts' : 'Open Commitments', workflow: result.draft ? 'drafts' : 'commitments'},
+        {label: 'Open Executive Inbox', homeAction: 'open_executive_inbox'},
+        {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      ],
+      label: 'Home email action receipt'
+    });
+    activeHomeWorkspace = {roomName: roomNameFromWorkspace(workspace, 'alignment'), workspace};
+  }catch(error){
+    setWorkspaceContent({
+      lens: 'Executive Inbox',
+      title: 'Email action needs review.',
+      meaning: 'VAL did not send anything or change Gmail.',
+      understanding: [error.message || 'The email action could not complete.', email.subject || 'Email context stayed attached.'],
+      recommendation: 'Open Executive Inbox and run the action from the full email surface.',
+      actions: [
+        {label: 'Open Executive Inbox', homeAction: 'open_executive_inbox'},
+        {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      ],
+      label: 'Home email action error'
+    });
+    activeHomeWorkspace = {roomName: roomNameFromWorkspace(workspace, 'alignment'), workspace};
+  }
 }
 
 function homeActionPosture(action, workspace = {}){
@@ -8596,6 +8828,10 @@ function renderHomeActionResult(action, result){
 async function handleHomeRoomAction(action){
   if(action === 'open_source'){
     openHomeSourceView();
+    return;
+  }
+  if(action === 'open_executive_inbox' || action === 'draft_email_reply' || action === 'create_email_task'){
+    await runHomeEmailAction(action);
     return;
   }
   const payload = homeWorkspacePayload(action);
@@ -8773,6 +9009,7 @@ function openCalendarPanel(){
   calendarTab.setAttribute('aria-expanded', 'true');
   fullCalendarPanel.setAttribute('aria-hidden', 'false');
   refreshCalendarSourceStatus();
+  hydrateCalendarPanel();
 }
 
 function closeCalendarPanel(){
@@ -9435,6 +9672,7 @@ returnButton.addEventListener('click', closeWorkspace);
 
 setState(hearth.dataset.state || 'quiet');
 hydrateHomePresence();
+hydrateCalendarPanel();
 
 if(location.hash === '#valWitnessingResume'){
   setTimeout(() => {
