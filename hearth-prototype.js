@@ -10436,11 +10436,11 @@ valDrawerLink?.addEventListener('click', () => {
   }
 });
 
-valDetail?.addEventListener('click', async (event) => {
+async function handleValDetailWorkflowClick(event){
   const workflowButton = event.target.closest('[data-workflow-action]');
-  if(!workflowButton) return;
+  if(!workflowButton || !workflowButton.closest('#val-detail')) return false;
   const action = workflowButton.dataset.workflowAction || '';
-  if(!action.startsWith('val')) return;
+  if(!action.startsWith('val')) return false;
   event.preventDefault();
   event.stopPropagation();
   const preflight = await ensureHearthClickPacket({
@@ -10458,18 +10458,26 @@ valDetail?.addEventListener('click', async (event) => {
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   if(action === 'valConnections:review' || action === 'valConnections'){
     openValConnectionsWorkspace();
-    return;
+    return true;
   }
   if(action === 'valWitnessingResume'){
     await openValWitnessingSession('meeting_val', {resume:true});
-    return;
+    return true;
   }
   if(action === 'valWitnessingFresh'){
     await openValWitnessingSession('meeting_val', {fresh:true});
-    return;
+    return true;
   }
   await handleWorkflowAction(action, workflowButton);
-});
+  return true;
+}
+
+valDetail?.addEventListener('click', handleValDetailWorkflowClick);
+document.addEventListener('click', (event) => {
+  if(event.target.closest('#val-detail [data-workflow-action^="val"]')){
+    handleValDetailWorkflowClick(event);
+  }
+}, true);
 
 sourceDrawerLink.addEventListener('click', () => {
   ensureDrawerTrayOpen();
