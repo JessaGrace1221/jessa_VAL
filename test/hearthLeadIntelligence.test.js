@@ -907,8 +907,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=lead-intelligence-preview-timeout-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-preview-timeout-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=workspace-hidden-fix-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=workspace-hidden-fix-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1328,6 +1328,8 @@ test('Hearth returns from workspaces with a quiet desk-settling motion', () => {
   assert.match(hearthCss, /\.hearth-shell\.desk-settling \.hearth-light/);
   assert.match(hearthCss, /@keyframes desk-return-glow/);
   assert.match(hearthCss, /@keyframes desk-return-rooms/);
+  assert.match(hearthCss, /\.hearth-shell \.desk-workspace\[aria-hidden="true"\]/);
+  assert.match(hearthCss, /visibility:hidden/);
 });
 
 test('Hearth rooms quietly remember when a user has held their context', () => {

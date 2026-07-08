@@ -771,6 +771,14 @@ button,a{font:inherit}
   pointer-events:none;
   transition:opacity .56s ease,transform .72s cubic-bezier(.2,.7,.15,1),filter .56s ease;
 }
+.hearth-shell .desk-workspace[aria-hidden="true"]{
+  visibility:hidden;
+  opacity:0;
+  pointer-events:none;
+}
+.hearth-shell .desk-workspace[aria-hidden="false"]{
+  visibility:visible;
+}
 .hearth-shell.calendar-open .desk-companions,
 .hearth-shell.calendar-prep-open .desk-companions,
 .hearth-shell[data-distance="judgment"] .desk-companions{
