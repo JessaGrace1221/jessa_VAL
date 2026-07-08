@@ -10776,6 +10776,7 @@ function openWorkspace(roomName){
 
 async function handlePrimaryAction(button){
   const roomName = button?.dataset?.openRoom || '';
+  const isHomeExecutiveMode = ['velocity','alignment','leverage'].includes(roomName);
   const roomWorkspace = roomName && currentState.rooms?.[roomName]?.workspace ? currentState.rooms[roomName].workspace : {};
   const roomSourceItem = roomWorkspace.sourceItem || {};
   const roomIdentity = sourceIdentityForItem(roomSourceItem);
@@ -10789,7 +10790,8 @@ async function handlePrimaryAction(button){
       sourceLabel: roomIdentity.label,
       sourceItem: roomSourceItem,
       homeCard: roomWorkspace
-    }
+    },
+    allowBlockedForInspection: isHomeExecutiveMode
   });
   if(!preflight.ok) return;
   const actionType = button.dataset.actionType || 'workspace';

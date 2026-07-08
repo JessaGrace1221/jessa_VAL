@@ -1236,6 +1236,7 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     hearthJs.indexOf("if(roomName === 'velocity')") < hearthJs.indexOf("if(actionType === 'openInternal'"),
     'Home executive modes must resolve before generic internal navigation'
   );
+  assert.match(hearthJs, /allowBlockedForInspection: isHomeExecutiveMode/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
   assert.match(hearthJs, /How can I help with /);
   assert.match(hearthJs, /Approved and ' \+ verb/);
