@@ -3354,7 +3354,7 @@ function renderCorrespondenceList(){
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   if(!item) return [];
-  const actions = ['cowork_correspondence', 'review'];
+  const actions = ['cowork_correspondence', 'review', 'not_executive_contact'];
   if(item.conversationId) actions.push('generate');
   if(item.draftId) actions.push('revise');
   return actions;
@@ -3462,6 +3462,24 @@ function correspondenceSendPayload(item = activeCorrespondenceItem){
   };
 }
 
+function correspondenceSuppressionContact(item = activeCorrespondenceItem){
+  if(!item) return {};
+  const source = item.raw?.sourceContext || item.raw?.source_context || {};
+  const conversation = source.conversationContext || {};
+  const latestInbound = conversation.latest_inbound || conversation.current_message || {};
+  const from = latestInbound.from || latestInbound.sender || {};
+  const senderEmail = from.email || source.from?.email || source.senderEmail || source.classification?.from?.email || '';
+  const senderName = from.name || source.from?.name || source.senderName || source.classification?.from?.name || '';
+  return {
+    email: senderEmail || item.recipientEmail || source.recipientEmail || '',
+    name: senderName || item.recipientName || source.recipientName || '',
+    reason: 'User marked this sender as not an executive contact from the Hearth Executive Inbox.',
+    conversationId: item.conversationId || source.conversationId || '',
+    threadId: item.threadId || source.threadId || '',
+    sourceItemId: item.id || ''
+  };
+}
+
 function correspondenceExecutionMessage(result = {}){
   if(result.executed){
     const summary = result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'Draft sent.';
@@ -3529,6 +3547,21 @@ function openCorrespondenceReviewWorkspace(item = activeCorrespondenceItem){
 async function handleCorrespondenceAction(action){
   const item = activeCorrespondenceItem;
   if(!item) return;
+  if(action === 'not_executive_contact'){
+    const contact = correspondenceSuppressionContact(item);
+    if(!contact.email && !contact.name){
+      if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs an email or name before it can suppress this sender. Nothing was changed.';
+      return;
+    }
+    if(canUseApi){
+      await postJson('/api/val/executive-inbox/not-executive-contact', contact);
+    }
+    currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact. VAL will keep this sender out of Executive Inbox and relationship context unless you explicitly reverse it.';
+    return;
+  }
   if(action === 'cowork_correspondence'){
     openContextualCoworkSession({
       returnTarget: 'correspondence',
@@ -3614,7 +3647,7 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review';
+  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review' || correspondenceActionId === 'not_executive_contact';
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);

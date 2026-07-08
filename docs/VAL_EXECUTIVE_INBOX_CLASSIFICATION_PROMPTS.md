@@ -94,6 +94,56 @@ Every important conversation should answer:
 - Can VAL prepare something?
 - Can it safely wait?
 
+## Executive Inbox Admission Rules
+
+Before classification, every sender must pass Executive Inbox admission.
+
+Executive Inbox is not unread email. Executive Inbox is only communication requiring executive judgment.
+
+### Hard Exclusion: One-Sided Sender
+
+If all of the following are true, the sender is `inbox_noise`:
+
+- more than 3 inbound emails exist from that sender
+- 0 sent emails from the user exist to that sender
+- the user has not explicitly marked the sender as executive-relevant
+
+Result:
+
+- do not create a Relationship
+- do not place the sender in Executive Inbox
+- do not build deep relationship context
+- do not draft a reply
+- route as `suppressed`
+
+This is not a vague heuristic. It is an admission rule.
+
+### One-Click User Suppression
+
+Every Executive Inbox item must support an obvious user action:
+
+```text
+Not executive contact
+```
+
+When clicked, VAL records that sender as `manual_not_executive_contact`.
+
+Result:
+
+- never surface that sender in Executive Inbox again
+- never use that sender to create or enrich a Relationship
+- never borrow context from that sender for Home, Meeting Prep, Co-Work, or Relationship drawers
+- keep the raw email available only in source history/search
+- reverse only if the user explicitly changes the contact's status
+
+### Three Admission States
+
+| State | Meaning | Packet behavior |
+|---|---|---|
+| `noise` | VAL has seen it, but it has not earned cognitive space. | No executive packet. No draft. No relationship context. |
+| `contact` | The sender exists, but has not earned durable relationship understanding. | Lightweight identity only. |
+| `relationship` | The sender has earned durable understanding through evidence or explicit user action. | Relationship, project, timeline, trust, and open-loop packets may be built. |
+
 ## Priority Levels
 
 Use these levels:

@@ -240,6 +240,18 @@ function createValConversationIdentityService({
     if(/\b(following up|checking in|haven't heard|waiting)\b/.test(text))return 'waiting';
     return messages.length?'neutral':'unknown';
   }
+  function senderMetricsFor(messages=[],current={}){
+    const senderEmail=normalizeEmail(current?.from?.email||current?.sender?.email);
+    if(!senderEmail)return {senderEmail:'',inboundFromSenderCount:0,outboundToSenderCount:0};
+    let inboundFromSenderCount=0,outboundToSenderCount=0;
+    for(const message of messages){
+      const fromEmail=normalizeEmail(message.from?.email||message.sender?.email);
+      const recipients=[...safeArray(message.to||message.recipients),...safeArray(message.cc),...safeArray(message.bcc)].map(personRef).map(p=>p.email).filter(Boolean);
+      if(message.direction==='inbound'&&fromEmail===senderEmail)inboundFromSenderCount+=1;
+      if(message.direction==='outbound'&&recipients.includes(senderEmail))outboundToSenderCount+=1;
+    }
+    return {senderEmail,inboundFromSenderCount,outboundToSenderCount};
+  }
   async function saveClassification(context){
     const id=uuid('cclass');
     if(hasPg()){
@@ -261,6 +273,7 @@ function createValConversationIdentityService({
     const commitments=extractCommitments(messages);
     const state=inferState(messages,questions,commitments);
     const temp=inferTemperature(messages);
+    const senderMetrics=senderMetricsFor(messages,inbound||current);
     const context={
       ok:true,
       conversationId:current?.unifiedConversationId||input.conversationId||'',
@@ -271,6 +284,8 @@ function createValConversationIdentityService({
       thread_summary:messages.length?`${messages.length} message${messages.length===1?'':'s'} about ${current?.subject||messages[0]?.subject||'this conversation'}.`:'No durable messages found for this conversation.',
       latest_inbound:inbound,
       latest_outbound:outbound,
+      sender_email:senderMetrics.senderEmail,
+      sender_metrics:senderMetrics,
       waiting_on_user:state.waitingOnUser,
       waiting_on_other:state.waitingOnOther,
       open_questions:questions,

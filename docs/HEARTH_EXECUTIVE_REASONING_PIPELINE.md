@@ -49,6 +49,26 @@ A fact can be true, sourced, and packet-ready, and still not deserve the user's 
 
 VAL should not show something merely because it exists. VAL should show it because it has passed a reasoning gate.
 
+## v1 Attention Admission Rule
+
+For v1, source data must earn cognitive space before it can feed Home, Executive Inbox, Relationships, Projects, Co-Work, or Meeting Prep.
+
+The clearest Executive Inbox boundary is:
+
+```text
+More than 3 inbound emails from a sender + 0 sent emails from the user to that sender = inbox_noise.
+```
+
+Unless the user explicitly upgrades that sender, this rule means:
+
+- no Executive Inbox item
+- no Relationship packet
+- no deep context
+- no draft
+- no Home card
+
+If the user clicks `Not executive contact`, the manual suppression is stronger than all automatic relevance signals until the user explicitly reverses it.
+
 ## Reasoning Pipeline
 
 Every meaningful piece of information should pass through this pipeline:

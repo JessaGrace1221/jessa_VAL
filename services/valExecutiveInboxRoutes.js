@@ -23,6 +23,15 @@ function registerValExecutiveInboxRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.post('/api/val/executive-inbox/not-executive-contact',async(req,res)=>{
+    try{
+      await waitForDb();
+      const result=await service.markNotExecutiveContact(req.body||{});
+      await auditLog({req,action:'executive_inbox_not_executive_contact_marked',resourceType:'executive_contact_suppression',resourceId:result.suppression?.id||result.suppression?.key||'',metadata:{key:result.suppression?.key,email:result.suppression?.email,reason:result.suppression?.reason},success:true}).catch(()=>{});
+      res.json(result);
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.post('/api/val/email/draft-readiness',async(req,res)=>{
     try{
       await waitForDb();

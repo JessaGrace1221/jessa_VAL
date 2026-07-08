@@ -1,5 +1,6 @@
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+function normalizeEmail(value){const email=String(value||'').trim().toLowerCase();return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function rowObject(row={}){
   const out={};
@@ -45,9 +46,80 @@ function detectExecutiveMeaning(context={}){
   if(/\b(overwhelmed|too much|burnout|capacity|exhausted|drained)\b/.test(text))meanings.push('protect_capacity');
   return meanings[0]||'protect_momentum';
 }
+function senderEmailFromContext(context={}){
+  return normalizeEmail(context.sender_email||context.senderEmail||context.current_message?.from?.email||context.latest_inbound?.from?.email||context.latest_inbound?.sender?.email||context.from?.email);
+}
+function executiveContactSuppressionKey(sender={}){
+  const email=normalizeEmail(sender.email||sender.senderEmail||sender.from?.email||sender);
+  if(email)return `email:${email}`;
+  const name=compactText(sender.name||sender.displayName||sender.senderName||'',120).toLowerCase();
+  return name?`name:${name}`:'';
+}
+function inboundOutboundMetrics(context={}){
+  const metrics=context.sender_metrics||context.senderMetrics||context.participant_metrics||context.participantMetrics||{};
+  const inbound=Number(metrics.inbound_from_sender_count??metrics.inboundFromSenderCount??metrics.inbound_count??metrics.inboundCount??context.inbound_from_sender_count??context.inboundFromSenderCount??0)||0;
+  const outbound=Number(metrics.outbound_to_sender_count??metrics.outboundToSenderCount??metrics.outbound_count??metrics.outboundCount??context.outbound_to_sender_count??context.outboundToSenderCount??0)||0;
+  return {inboundFromSenderCount:inbound,outboundToSenderCount:outbound};
+}
+function hasManualExecutiveOverride(context={}){
+  return !!(context.executive_contact_override||context.manual_executive_contact||context.user_marked_important||context.starred_by_user||context.manually_starred||context.relationship_override==='include');
+}
+function executiveInboxAdmissionDecision({context={},identity={},suppressedContacts=[]}={}){
+  const senderEmail=senderEmailFromContext(context);
+  const key=executiveContactSuppressionKey({email:senderEmail,name:context.current_message?.from?.name||context.latest_inbound?.from?.name||''});
+  const suppressionKeys=new Set(safeArray(suppressedContacts).map(item=>typeof item==='string'?item:executiveContactSuppressionKey(item)).filter(Boolean));
+  if((key&&suppressionKeys.has(key))||context.not_executive_contact||context.never_executive_contact){
+    return {
+      admitted:false,
+      state:'noise',
+      reason:'The user marked this sender as not an executive contact. VAL must not surface or borrow context from this contact.',
+      rule:'manual_not_executive_contact',
+      key
+    };
+  }
+  const metrics=inboundOutboundMetrics(context);
+  if(metrics.inboundFromSenderCount>3&&metrics.outboundToSenderCount===0&&!hasManualExecutiveOverride(context)){
+    return {
+      admitted:false,
+      state:'noise',
+      reason:'More than three inbound emails from this sender and zero sent replies from the user. This is inbox noise, not an executive relationship.',
+      rule:'more_than_three_inbound_zero_sent',
+      key,
+      metrics
+    };
+  }
+  const hasRelationshipEvidence=hasManualExecutiveOverride(context)||identity.match_status==='matched'||identity.match_status==='probable_match'||!!context.calendar_evidence||!!context.transcript_evidence||!!context.task_evidence;
+  return {
+    admitted:true,
+    state:hasRelationshipEvidence?'relationship':'contact',
+    reason:hasRelationshipEvidence?'Sender has evidence of executive relevance.':'Sender may exist as a lightweight contact, but has not earned deep relationship context.',
+    rule:'admitted_by_relevance_evidence',
+    key,
+    metrics
+  };
+}
 function classifyHeuristically({context={},identity={},teachVal=[]}={}){
   const text=textHaystack(context);
   const unknowns=[...safeArray(context.unknowns)];
+  const admission=executiveInboxAdmissionDecision({context,identity,suppressedContacts:context.suppressedExecutiveContacts||context.notExecutiveContacts||[]});
+  if(!admission.admitted){
+    return {
+      conversation_state:'complete',
+      relationship_temperature:'unknown',
+      executive_meaning:'protect_attention',
+      priority_level:'suppressed',
+      why_now:admission.reason,
+      if_ignored:'Nothing important is lost by keeping this sender out of Executive Inbox unless the user explicitly reverses the suppression.',
+      if_delayed:'Delay is acceptable. VAL should not spend cognitive space on this contact.',
+      false_urgency_check:{possible_false_urgency:true,reason:'The sender did not pass Executive Inbox admission, regardless of urgency language.'},
+      routing:{bucket:'inbox_noise',suggested_owner:'none',reason:admission.reason},
+      approval_policy:'do_not_prepare',
+      unknowns:[...unknowns,{source:'executive_inbox_admission',reason:admission.reason,rule:admission.rule}],
+      confidence:0.92,
+      source_refs:sourceRefsFromContext(context),
+      executive_inbox_admission:admission
+    };
+  }
   const executiveMeaning=detectExecutiveMeaning(context);
   let score=0;
   if(context.waiting_on_user)score+=3;
@@ -88,7 +160,8 @@ function classifyHeuristically({context={},identity={},teachVal=[]}={}){
     approval_policy:approvalPolicy,
     unknowns,
     confidence:Math.max(0.25,Math.min(0.9,0.35+(score*0.07)+(identity.match_status==='matched'?0.08:0)+(teachVal.length?0.04:0))),
-    source_refs:sourceRefsFromContext(context)
+    source_refs:sourceRefsFromContext(context),
+    executive_inbox_admission:admission
   };
 }
 function inferDraftType(classification={},context={}){
@@ -377,6 +450,8 @@ function createValExecutiveInboxService({
   generateDraftWithModel,
   saveReviewDraft,
   listReviewDrafts,
+  listSuppressedExecutiveContacts,
+  saveSuppressedExecutiveContact,
   logger=console
 }={}){
   function store(){
@@ -384,7 +459,39 @@ function createValExecutiveInboxService({
     if(!Array.isArray(s.conversationClassifications))s.conversationClassifications=[];
     if(!Array.isArray(s.emailDraftEvaluations))s.emailDraftEvaluations=[];
     if(!Array.isArray(s.reviewOnlyEmailDrafts))s.reviewOnlyEmailDrafts=[];
+    if(!Array.isArray(s.suppressedExecutiveContacts))s.suppressedExecutiveContacts=[];
     return s;
+  }
+  async function getSuppressedExecutiveContacts(){
+    if(typeof listSuppressedExecutiveContacts==='function')return safeArray(await listSuppressedExecutiveContacts());
+    return store().suppressedExecutiveContacts.filter(r=>r.tenantId===tenantId()&&r.userId===userId());
+  }
+  async function markNotExecutiveContact(input={}){
+    const sender=input.sender||input.contact||input.from||{};
+    const email=normalizeEmail(input.email||sender.email);
+    const name=compactText(input.name||sender.name||sender.displayName||'',180);
+    const key=executiveContactSuppressionKey({email,name});
+    if(!key)throw new Error('email or name is required to suppress an executive contact.');
+    const row={
+      id:input.id||uuid('notexec'),
+      tenantId:tenantId(),
+      userId:userId(),
+      key,
+      email,
+      name,
+      reason:compactText(input.reason||'User marked this sender as not an executive contact.',400),
+      rule:'manual_not_executive_contact',
+      source:'user_one_click',
+      createdAt:new Date().toISOString(),
+      updatedAt:new Date().toISOString()
+    };
+    if(typeof saveSuppressedExecutiveContact==='function')return {ok:true,suppression:await saveSuppressedExecutiveContact(row)};
+    const s=store();
+    const existing=s.suppressedExecutiveContacts.find(item=>item.tenantId===tenantId()&&item.userId===userId()&&item.key===key);
+    if(existing)Object.assign(existing,row,{id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString()});
+    else s.suppressedExecutiveContacts.unshift(row);
+    saveStore(s);
+    return {ok:true,suppression:existing||row};
   }
   async function saveClassification(context,classification){
     const id=uuid('cclass');
@@ -411,6 +518,7 @@ function createValExecutiveInboxService({
       identity=await conversationService.resolveIdentity(sender).catch(e=>({ok:false,match_status:'unknown',unknowns:[{source:'identity_resolution',reason:e.message}]}));
     }
     const teachVal=await listTeachValCoreMemory({limit:30}).catch(e=>([{title:'Teach VAL unavailable',summary:e.message}]));
+    context.suppressedExecutiveContacts=await getSuppressedExecutiveContacts().catch(()=>[]);
     const classification=classifyHeuristically({context,identity,teachVal});
     classification.identity_resolution=identity;
     classification.teach_val_signals=safeArray(teachVal).slice(0,6);
@@ -578,7 +686,7 @@ function createValExecutiveInboxService({
       ...rows
     ].slice(0,lim);
   }
-  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listHighSignalClassifications,listReadyForYouDraftCandidates};
+  return {classifyConversation,classifyBatch,draftReadiness,draftBrief,draftQa,generateDraft,reviseDraft,reviewDrafts,listHighSignalClassifications,listReadyForYouDraftCandidates,markNotExecutiveContact};
 }
 
-module.exports={createValExecutiveInboxService,classifyHeuristically,createDraftReadiness,createDraftBrief,runDraftQa,qaCheckGeneratedDraft,normalizeDraftWriterOutput};
+module.exports={createValExecutiveInboxService,classifyHeuristically,createDraftReadiness,createDraftBrief,runDraftQa,qaCheckGeneratedDraft,normalizeDraftWriterOutput,executiveInboxAdmissionDecision,executiveContactSuppressionKey};

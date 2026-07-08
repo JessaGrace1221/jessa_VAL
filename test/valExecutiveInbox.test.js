@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {createValExecutiveInboxService}=require('../services/valExecutiveInbox');
+const {createValExecutiveInboxService, executiveInboxAdmissionDecision}=require('../services/valExecutiveInbox');
 const {VAL_CONVERSATION_IDENTITY_SQL}=require('../services/valConversationIdentitySchema');
 
 const root=path.join(__dirname,'..');
@@ -21,12 +21,75 @@ test('executive inbox routes are backend-only and mounted',()=>{
   assert.match(server,/registerValExecutiveInboxRoutes/);
   assert.match(routes,/\/api\/val\/executive-inbox\/classify-conversation/);
   assert.match(routes,/\/api\/val\/executive-inbox\/classify-batch/);
+  assert.match(routes,/\/api\/val\/executive-inbox\/not-executive-contact/);
   assert.match(routes,/\/api\/val\/email\/draft-readiness/);
   assert.match(routes,/\/api\/val\/email\/draft-brief/);
   assert.match(routes,/\/api\/val\/email\/draft-qa/);
   assert.match(routes,/\/api\/val\/email\/generate-draft/);
   assert.match(routes,/\/api\/val\/email\/revise-draft/);
   assert.match(routes,/\/api\/val\/email\/review-drafts/);
+});
+
+test('executive inbox hard-excludes one-sided senders and manual not-executive contacts',async()=>{
+  const oneSided=executiveInboxAdmissionDecision({
+    context:{
+      current_message:{from:{name:'Cold Vendor',email:'vendor@example.com'}},
+      latest_inbound:{from:{name:'Cold Vendor',email:'vendor@example.com'}},
+      sender_metrics:{inboundFromSenderCount:4,outboundToSenderCount:0}
+    },
+    identity:{match_status:'no_match'}
+  });
+  assert.equal(oneSided.admitted,false);
+  assert.equal(oneSided.state,'noise');
+  assert.equal(oneSided.rule,'more_than_three_inbound_zero_sent');
+
+  let store={};
+  const service=createValExecutiveInboxService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_noise`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    conversationService:{
+      buildConversationContext:async()=>({
+        conversationId:'uc_noise',
+        threadId:'thread_noise',
+        current_message:{messageId:'noise_4',direction:'inbound',from:{name:'Vendor',email:'vendor@example.com'},subject:'Quick bump',bodyPreview:'Just checking in again.'},
+        latest_inbound:{messageId:'noise_4',direction:'inbound',from:{name:'Vendor',email:'vendor@example.com'},subject:'Quick bump',bodyPreview:'Just checking in again.'},
+        latest_outbound:null,
+        thread_summary:'4 inbound messages from Vendor.',
+        sender_metrics:{inboundFromSenderCount:4,outboundToSenderCount:0},
+        waiting_on_user:true,
+        waiting_on_other:false,
+        open_questions:[],
+        commitments:[],
+        conversation_state:'waiting_on_user',
+        relationship_temperature:'waiting',
+        unknowns:[],
+        source_refs:[]
+      }),
+      resolveIdentity:async()=>({ok:true,match_status:'no_match',unknowns:[]})
+    },
+    listTeachValCoreMemory:async()=>[],
+    logger:{log(){}}
+  });
+  const classified=await service.classifyConversation({conversationId:'uc_noise'});
+  assert.equal(classified.classification.priority_level,'suppressed');
+  assert.equal(classified.classification.routing.bucket,'inbox_noise');
+  assert.equal(classified.classification.executive_inbox_admission.rule,'more_than_three_inbound_zero_sent');
+  const readiness=await service.draftReadiness({conversationId:'uc_noise'});
+  assert.equal(readiness.readiness.status,'do_not_draft');
+
+  const suppression=await service.markNotExecutiveContact({email:'person@example.com',name:'Not Exec'});
+  assert.equal(suppression.ok,true);
+  const manual=executiveInboxAdmissionDecision({
+    context:{current_message:{from:{email:'person@example.com',name:'Not Exec'}},sender_metrics:{inboundFromSenderCount:1,outboundToSenderCount:1}},
+    identity:{match_status:'matched'},
+    suppressedContacts:store.suppressedExecutiveContacts
+  });
+  assert.equal(manual.admitted,false);
+  assert.equal(manual.rule,'manual_not_executive_contact');
 });
 
 test('intelligence spine reads high-signal classifications and draft candidates',()=>{

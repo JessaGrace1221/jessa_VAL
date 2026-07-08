@@ -464,6 +464,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /Sending represents Jessa externally/);
   assert.match(hearthHtml, /data-correspondence-action="generate"/);
   assert.match(hearthHtml, /data-correspondence-action="revise"/);
+  assert.match(hearthHtml, /data-correspondence-action="not_executive_contact"/);
+  assert.match(hearthHtml, />Not executive contact</);
   assert.doesNotMatch(hearthHtml, /data-correspondence-action="send"/);
   assert.doesNotMatch(hearthHtml, /Send draft/);
   assert.doesNotMatch(hearthHtml, /<a href="\.\/inbox\.html" class="drawer-link" data-drawer-tone="blush-sage">/);
@@ -483,6 +485,12 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /runCorrespondenceActionClick\(button, event\)/);
   assert.match(hearthJs, /function showCorrespondenceLocalBoundary/);
   assert.match(hearthJs, /function correspondenceSuggestedActions/);
+  assert.match(hearthJs, /function correspondenceSuppressionContact/);
+  assert.match(hearthJs, /const senderEmail = from\.email \|\| source\.from\?\.email \|\| source\.senderEmail/);
+  assert.match(hearthJs, /email: senderEmail \|\| item\.recipientEmail/);
+  assert.match(hearthJs, /\/api\/val\/executive-inbox\/not-executive-contact/);
+  assert.match(hearthJs, /correspondenceActionId === 'not_executive_contact'/);
+  assert.match(hearthJs, /will keep this sender out of Executive Inbox and relationship context/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /action:'email:select'/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:\{email:selected/);
