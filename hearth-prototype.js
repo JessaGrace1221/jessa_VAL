@@ -6289,7 +6289,26 @@ async function ensureHearthClickPacket({node = null, packetName = '', action = '
     }
     return {ok:true,packet};
   }catch(error){
-    const packet = error.data || {packetName:resolvedPacketName,status:'blocked',receipt:{summary:error.message},missingRequired:[],providerGaps:['packet_builder_unavailable']};
+    const fallbackSourceLabel = payload.source.sourceLabel || payload.source.sourceItem?.name || payload.source.sourceItem?.title || payload.source.sourceId || action || resolvedPacketName;
+    const packet = {
+      ...(error.data || {}),
+      packetName:(error.data || {}).packetName || resolvedPacketName,
+      status:(error.data || {}).status || 'blocked',
+      source:(error.data || {}).source || payload.source,
+      click:(error.data || {}).click || payload.click,
+      receipt:{
+        ...((error.data || {}).receipt || {}),
+        id:(error.data || {}).receipt?.id || 'packet_error_' + Date.now().toString(36),
+        sourceReceipts:Array.isArray((error.data || {}).receipt?.sourceReceipts) && (error.data || {}).receipt.sourceReceipts.length
+          ? (error.data || {}).receipt.sourceReceipts
+          : [{label:fallbackSourceLabel, sourceType:payload.source.sourceType || 'client_context', key:payload.source.sourceId || action || resolvedPacketName}],
+        summary:(error.data || {}).receipt?.summary || error.message
+      },
+      missingRequired:Array.isArray((error.data || {}).missingRequired) ? error.data.missingRequired : [],
+      providerGaps:Array.isArray((error.data || {}).providerGaps) ? error.data.providerGaps : ['packet_builder_unavailable']
+    };
+    lastHearthPacketReceipt = packet;
+    renderHearthPacketReceiptStrip(packet);
     if(!allowBlockedForInspection) showHearthPacketBlocked(packet, action);
     return {ok:allowBlockedForInspection,packet,error};
   }finally{

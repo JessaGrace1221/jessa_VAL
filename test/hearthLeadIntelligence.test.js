@@ -1108,6 +1108,9 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /async function handleRelationshipActionClick/,
     /ensureHearthClickPacket\(\{node, packetName:'relationship_packet'/,
     /handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/,
+    /fallbackSourceLabel = payload\.source\.sourceLabel/,
+    /source:\(error\.data \|\| \{\}\)\.source \|\| payload\.source/,
+    /sourceReceipts:Array\.isArray\(\(error\.data \|\| \{\}\)\.receipt\?\.sourceReceipts\)/,
     /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
