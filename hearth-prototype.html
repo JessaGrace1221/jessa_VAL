@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=timeline-proposal-source-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=timeline-cowork-visible-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -629,6 +629,9 @@
             <p>A task is useful only when Jessa can open it later and know the work, owner, source quote, project, relationship, due date, and next action.</p>
           </article>
         </div>
+        <div class="timeline-drawer-actions" aria-label="Timeline Co-Work">
+          <button type="button" data-timeline-action="cowork_timeline">Co-Work with VAL</button>
+        </div>
         <div class="timeline-event-panel" aria-label="Timeline events">
           <div class="timeline-status-header">
             <span>Review Queue</span>
@@ -640,9 +643,6 @@
           <div class="timeline-status-header">
             <span>Proposed Notes &amp; Tasks</span>
             <strong data-timeline-review-count>No proposals loaded yet</strong>
-          </div>
-          <div class="timeline-drawer-actions" aria-label="Timeline Co-Work">
-            <button type="button" data-timeline-action="cowork_timeline">Co-Work with VAL</button>
           </div>
           <div class="timeline-review-cards" data-timeline-review-cards></div>
         </div>
@@ -826,6 +826,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=timeline-proposal-source-20260708"></script>
+<script src="./hearth-prototype.js?v=timeline-cowork-visible-20260708"></script>
 </body>
 </html>
