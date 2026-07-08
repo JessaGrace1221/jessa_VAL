@@ -9,6 +9,8 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valExecutiveInboxRoutes.js'),'utf8');
 const spine=fs.readFileSync(path.join(root,'services','valIntelligenceSpine.js'),'utf8');
+const roundTableDoc=fs.readFileSync(path.join(root,'docs','VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md'),'utf8');
+const lineageDoc=fs.readFileSync(path.join(root,'docs','HEARTH_TRUTH_LINEAGE_MAP.md'),'utf8');
 
 test('conversation classification schema stores executive inbox fields and draft evaluations',()=>{
   for(const field of ['executive_meaning','priority_level','why_now','if_ignored','if_delayed','false_urgency_check_json','routing_json','approval_policy']){
@@ -28,6 +30,25 @@ test('executive inbox routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/email\/generate-draft/);
   assert.match(routes,/\/api\/val\/email\/revise-draft/);
   assert.match(routes,/\/api\/val\/email\/review-drafts/);
+});
+
+test('executive inbox round table doc defines packets rules and downstream feeds',()=>{
+  assert.match(roundTableDoc,/Executive Inbox Round Table/);
+  assert.match(roundTableDoc,/Email Admission Packet/);
+  assert.match(roundTableDoc,/Email Judgment Packet/);
+  assert.match(roundTableDoc,/Email Rule Packet/);
+  assert.match(roundTableDoc,/External Action Packet/);
+  assert.match(roundTableDoc,/more than 3 inbound emails from a sender/);
+  assert.match(roundTableDoc,/0 sent emails from the user to that sender/);
+  assert.match(roundTableDoc,/Not executive contact/);
+  assert.match(roundTableDoc,/forward_sender/);
+  assert.match(roundTableDoc,/abc@companyemail\.com/);
+  assert.match(roundTableDoc,/Approved outbound email feeds/);
+  assert.match(roundTableDoc,/Relationship timeline/);
+  assert.match(roundTableDoc,/Project timeline/);
+  assert.match(roundTableDoc,/Rule Learning/);
+  assert.match(roundTableDoc,/Draft Learning/);
+  assert.match(lineageDoc,/VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES\.md/);
 });
 
 test('executive inbox hard-excludes one-sided senders and manual not-executive contacts',async()=>{

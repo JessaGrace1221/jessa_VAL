@@ -65,6 +65,8 @@ If an item lacks the required reasoning proof, it stays out of Home even when th
 
 Fallback drawer routing is a navigation guard only. It is not signal-quality proof and must not be used to justify Home admission.
 
+Executive Inbox has an additional communication-specific contract in `VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md`. That document defines the Executive Inbox Round Table, Email Admission Packet, Email Judgment Packet, Email Rule Packet, Draft Packet, External Action Packet, and downstream observer feed rules.
+
 ## Core Truth Graph
 
 ```mermaid
