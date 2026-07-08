@@ -569,6 +569,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /\/api\/val\/documents\?limit=120/);
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /function filteredDocumentItems/);
+  assert.match(hearthJs, /function scrollDocumentActionsIntoView/);
   assert.match(hearthJs, /function documentSuggestedActions/);
   assert.match(hearthJs, /function documentSource/);
   assert.match(hearthJs, /function documentActionNeedsLiveConfirmation/);
@@ -898,8 +899,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=commitments-actions-summary-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=commitments-actions-summary-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=documents-action-scroll-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=documents-action-scroll-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
