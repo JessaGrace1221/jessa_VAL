@@ -1213,6 +1213,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /function localHearthMetadataPacket/,
     /metadata_only/,
     /if\(hearthPacketShouldSkip\(action, resolvedPacketName\)\)\{[\s\S]{0,160}localHearthMetadataPacket\(\{packetName:resolvedPacketName, action, node, source\}\)/,
+    /'linkedin'/,
     /function openMeetingPrepWithPacket/,
     /function openCalendarPanelWithPacket/,
     /function openCoworkSessionWithPacket/,

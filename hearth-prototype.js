@@ -6812,7 +6812,7 @@ function hearthPacketSourceFromContext(source = {}, node = null){
 function hearthPacketShouldSkip(action = '', packetName = ''){
   const command = String(action || '').split(':')[0];
   if(!canUseApi) return true;
-  return ['cancel','calendar','relationshipAllPeople','projectAllProjects'].includes(command);
+  return ['cancel','calendar','linkedin','relationshipAllPeople','projectAllProjects'].includes(command);
 }
 
 function localHearthMetadataPacket({packetName = '', action = '', node = null, source = {}} = {}){
