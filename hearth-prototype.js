@@ -10253,7 +10253,7 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const selected = currentCorrespondenceItems.find((item) => item.id === correspondenceItem.dataset.correspondenceItem);
-    const preflight = await ensureHearthClickPacket({node:correspondenceItem, packetName:'email_packet', action:'email:select', source:{email:selected || null, sourceId:selected?.id || correspondenceItem.dataset.correspondenceItem || '', sourceType:'executive_inbox_item', sourceLabel:selected?.title || 'Executive Inbox item', sourceItem:selected || null}});
+    const preflight = await ensureHearthClickPacket({node:correspondenceItem, packetName:'email_packet', action:'email:select', allowBlockedForInspection:true, source:{email:selected || null, sourceId:selected?.id || correspondenceItem.dataset.correspondenceItem || '', sourceType:'executive_inbox_item', sourceLabel:selected?.title || 'Executive Inbox item', sourceItem:selected || null}});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(selected) renderCorrespondenceBrief(selected);

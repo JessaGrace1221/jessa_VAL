@@ -419,6 +419,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function correspondenceSuggestedActions/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /action:'email:select'/);
+  assert.match(hearthJs, /allowBlockedForInspection:true, source:\{email:selected/);
   assert.match(hearthJs, /private preparation inside VAL/);
   assert.match(hearthJs, /represents Jessa externally/);
   assert.match(hearthJs, /function sendPacketForDraft/);
@@ -815,7 +816,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-safe-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-select-inspect-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
