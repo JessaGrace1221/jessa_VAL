@@ -4149,7 +4149,7 @@ async function handleRelationshipActionClick(actionId = '', node = null){
   const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:actionId, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, actionId)});
   if(!preflight.ok) return;
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-  handleRelationshipAction(actionId);
+  await handleRelationshipAction(actionId);
 }
 
 function relationshipSource(profile = activeRelationshipProfile, action = ''){

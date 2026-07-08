@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-direct-actions-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-direct-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-actions-top-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-actions-top-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1525,6 +1525,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /function relationshipSource/);
   assert.match(hearthJs, /async function handleRelationshipActionClick/);
   assert.match(hearthJs, /handleRelationshipActionClick\(this\.dataset\.relationshipAction,this\)/);
+  assert.match(hearthJs, /await handleRelationshipAction\(actionId\)/);
   assert.match(hearthJs, /const explicitSourceLabel = packet\.source\?\.sourceLabel/);
   assert.match(hearthJs, /sourceType: 'relationship_profile'/);
   assert.match(hearthJs, /sourceReceipts: person\.sourceReceipts/);
@@ -1549,6 +1550,10 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:30/);
   assert.match(hearthCss, /\.drawer-tray\{\n  position:absolute;\n  z-index:6/);
   assert.match(hearthJs, /if\(hearth\.classList\.contains\('drawer-open'\)\) return;\n    handlePrimaryAction\(button\)/);
+  assert.ok(
+    hearthHtml.indexOf('class="relationship-actions"') < hearthHtml.indexOf('class="relationship-receipts"'),
+    'Relationship suggested actions should appear before receipt/link panels so the next move is reachable without deep scrolling.'
+  );
 });
 
 test('Relationship drawer reads the canonical relationship dossier when available', () => {
