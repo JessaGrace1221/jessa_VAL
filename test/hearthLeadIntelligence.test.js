@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-receipt-scoped-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-receipt-scoped-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-local-packet-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-local-packet-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1087,6 +1087,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /Source proof:/,
     /function localHearthMetadataPacket/,
     /metadata_only/,
+    /if\(hearthPacketShouldSkip\(action, resolvedPacketName\)\)\{[\s\S]{0,160}localHearthMetadataPacket\(\{packetName:resolvedPacketName, action, node, source\}\)/,
     /function openMeetingPrepWithPacket/,
     /function openCalendarPanelWithPacket/,
     /function openCoworkSessionWithPacket/,

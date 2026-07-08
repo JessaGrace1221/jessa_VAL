@@ -6256,7 +6256,10 @@ function showHearthPacketBlocked(packet = {}, action = ''){
 
 async function ensureHearthClickPacket({node = null, packetName = '', action = '', source = {}, allowBlockedForInspection = false} = {}){
   const resolvedPacketName = packetName || node?.dataset?.valVariablePacket || '';
-  if(hearthPacketShouldSkip(action, resolvedPacketName)) return {ok:true,status:'not_checked'};
+  if(hearthPacketShouldSkip(action, resolvedPacketName)){
+    const packet = localHearthMetadataPacket({packetName:resolvedPacketName, action, node, source});
+    return {ok:true,packet,status:packet.status};
+  }
   if(!resolvedPacketName || !hearthServerPacketNames.has(resolvedPacketName)){
     const packet = localHearthMetadataPacket({packetName:resolvedPacketName, action, node, source});
     return {ok:true,packet,status:packet.status};
