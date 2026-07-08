@@ -7646,8 +7646,8 @@ function clarityActionLabel(action = {}, workspace = {}){
   const sourceLabel = sourceActionLabel(workspace.sourceItem || {}, 'Open source behind ' + title);
   const label = compactSentence(spec.label || 'Review');
   const normalizedLabel = label.toLowerCase();
-  if(normalizedLabel === ['review', 'evidence'].join(' ')) return {...spec, label: 'Show why VAL believes this'};
-  if(normalizedLabel === ['open', 'source', 'context'].join(' ') || normalizedLabel === ['open', 'source', 'view'].join(' ')) return {...spec, label: sourceLabel};
+  if(normalizedLabel === ['review', 'evidence'].join(' ') || normalizedLabel === 'show why val believes this') return {...spec, label: 'Show evidence behind ' + title};
+  if(normalizedLabel === ['open', 'source', 'context'].join(' ') || normalizedLabel === ['open', 'source', 'view'].join(' ') || normalizedLabel === 'open source behind this judgment') return {...spec, label: sourceLabel};
   if(normalizedLabel === ['suggested', 'next', 'step'].join(' ') || normalizedLabel === ['suggested', 'next', 'moves'].join(' ')) return {...spec, label: 'Choose the next move for ' + title};
   if(/^review$/i.test(label)) return {...spec, label: 'Review ' + title};
   return spec;

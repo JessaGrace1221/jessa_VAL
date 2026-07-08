@@ -916,8 +916,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-clarity-standard-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-clarity-standard-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-clarity-standard-v2-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-clarity-standard-v2-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1317,6 +1317,7 @@ test('Hearth workspaces enforce the VAL Clarity Standard before rendering', () =
   assert.match(hearthJs, /coworkPromptFromWorkspace/);
   assert.match(hearthJs, /Help me decide what to trust, review, approve, do, or teach VAL next/);
   assert.match(hearthJs, /Show why VAL believes this/);
+  assert.match(hearthJs, /Show evidence behind ' \+ title/);
   assert.match(hearthJs, /Open source behind this judgment/);
   assert.match(hearthJs, /normalizeWorkspaceForClarity\(content\.workspace\)/);
 });
