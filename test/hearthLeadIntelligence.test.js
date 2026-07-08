@@ -319,7 +319,7 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /function renderTimelineReviewCards/);
   assert.match(hearthJs, /The event queue may show transcript review needs, but no proposal packet is loaded here yet/);
   assert.match(hearthHtml, /data-timeline-action="cowork_timeline"/);
-  assert.ok(hearthHtml.indexOf('data-timeline-action="cowork_timeline"') < hearthHtml.indexOf('data-timeline-event-list'));
+  assert.ok(hearthHtml.indexOf('data-timeline-action="cowork_timeline"') < hearthHtml.indexOf('class="timeline-status-panel"'));
   assert.match(hearthJs, /function openTimelineCoworkSession/);
   assert.match(hearthJs, /returnTarget: 'timeline'/);
   assert.match(hearthJs, /restoreTimelineWindow/);
@@ -884,8 +884,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=timeline-cowork-visible-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-cowork-visible-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=timeline-cowork-header-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-cowork-header-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
