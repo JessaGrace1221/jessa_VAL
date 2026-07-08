@@ -4024,6 +4024,18 @@ function relationshipProfileFromUnresolvedIdentity(data = {}, fallback = {}){
   };
 }
 
+function relationshipDossierMatchesFallback(dossier = {}, fallback = {}){
+  const expectedName = String(fallback.name || fallback.query?.name || '').trim().toLowerCase();
+  const expectedEmail = String(fallback.query?.email || fallback.email || '').trim().toLowerCase();
+  const identity = dossier.identity || {};
+  const briefIdentity = dossier.relationshipBrief?.identity || {};
+  const returnedName = String(identity.name || briefIdentity.name || '').trim().toLowerCase();
+  const returnedEmail = String(identity.email || briefIdentity.email || '').trim().toLowerCase();
+  if(expectedEmail && returnedEmail) return expectedEmail === returnedEmail;
+  if(!expectedName || !returnedName) return false;
+  return expectedName === returnedName;
+}
+
 function preferredRelationshipActions(actions = []){
   const preferred = ['search_ghl_contacts','review_new_contact_candidate','open_full_file','ask_alignment','draft_message','draft_linkedin_comment','draft_linkedin_dm','create_task','brainstorm','review_linkedin_activity','find_relationship_introductions','refresh_relationship_observers'];
   return preferred.map((id) => actions.find((action) => action.id === id)).filter(Boolean);
@@ -4624,6 +4636,10 @@ async function loadRelationshipDossier(profileId = 'aric'){
   try{
     const data = await getJson('/api/relationships/dossier?' + params.toString());
     if(data?.dossier){
+      if(!relationshipDossierMatchesFallback(data.dossier, fallback)){
+        console.warn('[hearth] relationship dossier identity mismatch; keeping selected fallback', fallback.name);
+        return;
+      }
       renderRelationshipProfile(profileId, relationshipProfileFromDossier(data.dossier, fallback));
     }
   }catch(error){

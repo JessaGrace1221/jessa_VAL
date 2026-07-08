@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=drawer-hit-targets-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=drawer-hit-targets-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-identity-guard-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-identity-guard-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1555,6 +1555,9 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /\/api\/relationships\/dossier\?/);
   assert.match(hearthJs, /function relationshipProfileFromDossier/);
   assert.match(hearthJs, /function relationshipProfileFromUnresolvedIdentity/);
+  assert.match(hearthJs, /function relationshipDossierMatchesFallback/);
+  assert.match(hearthJs, /relationship dossier identity mismatch; keeping selected fallback/);
+  assert.match(hearthJs, /if\(!relationshipDossierMatchesFallback\(data\.dossier, fallback\)\)/);
   assert.match(hearthJs, /relationship_identity_unresolved/);
   assert.match(hearthJs, /Create or match the contact before VAL attaches relationship context/);
   assert.match(hearthJs, /Search GHL contacts/);
