@@ -3901,6 +3901,34 @@ function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
   hydrateRelationshipProjectLinks(profile);
   hydrateRelationshipDocuments(profile);
   setRelationshipDetailMode('brief');
+  ensureRelationshipProfileReceipt(profile);
+}
+
+function relationshipProfileReceiptPacket(profile = activeRelationshipProfile){
+  const source = relationshipSource(profile, 'relationship:open_profile');
+  const sourceLabel = source.sourceLabel || profile?.name || 'Relationship';
+  return {
+    ok:true,
+    status:'not_checked',
+    packetName:'relationship_packet',
+    source,
+    click:{action:'relationship:open_profile'},
+    receipt:{
+      id:'relationship_packet_' + Date.now().toString(36),
+      sourceReceipts:[{label:sourceLabel, sourceType:'relationship_profile', key:source.sourceId || profile?.profileId || sourceLabel}],
+      downstreamConsumers:['relationship_brief','project_packet','email_packet','home_source_packet'],
+      summary:'This Relationship brief is showing a source-scoped client packet while live hydration is unavailable or mismatched.'
+    }
+  };
+}
+
+function ensureRelationshipProfileReceipt(profile = activeRelationshipProfile){
+  if(!profile?.name || !drawerPacketReceipt || drawerPacketReceipt.hidden) return;
+  const currentReceipt = drawerPacketReceipt.textContent || '';
+  if(currentReceipt.includes(profile.name)) return;
+  const packet = relationshipProfileReceiptPacket(profile);
+  lastHearthPacketReceipt = packet;
+  renderDrawerPacketReceiptStrip(packet);
 }
 
 function relationshipRouteUrl(route = ''){

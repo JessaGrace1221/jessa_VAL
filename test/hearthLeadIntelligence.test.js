@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-proof-guard-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-proof-guard-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-render-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-render-proof-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1549,6 +1549,10 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /relationshipFolderButtons\.forEach/);
   assert.match(hearthJs, /async function openRelationshipProfileFromFolder/);
   assert.match(hearthJs, /renderRelationshipProfile\(profileId, \{\.\.\.profile, profileId\}\)/);
+  assert.match(hearthJs, /function ensureRelationshipProfileReceipt/);
+  assert.match(hearthJs, /function relationshipProfileReceiptPacket/);
+  assert.match(hearthJs, /ensureRelationshipProfileReceipt\(profile\)/);
+  assert.match(hearthJs, /if\(currentReceipt\.includes\(profile\.name\)\) return/);
   assert.match(hearthJs, /receiptMatchesSelection/);
   assert.match(hearthJs, /localHearthMetadataPacket\(\{packetName:'relationship_packet', action:'relationship:open_profile', node, source:selectedSource\}\)/);
   assert.match(hearthHtml, /openRelationshipProfileFromFolder\(this\.dataset\.relationshipProfile,this\)/);
