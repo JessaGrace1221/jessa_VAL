@@ -849,6 +849,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /const linkedinVisibilityItems/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
+  assert.match(hearthJs, /openWorkspaceShell\('LinkedIn visibility workspace', \{returnTarget:'home'\}\)/);
   assert.match(hearthJs, /data-linkedin-copy/);
   assert.match(hearthJs, /data-linkedin-link/);
   assert.match(hearthJs, /VAL never auto-publishes LinkedIn posts, comments, or DMs/);
@@ -979,8 +980,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=mobile-board-observers-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=mobile-board-observers-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=linkedin-widget-open-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=linkedin-widget-open-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

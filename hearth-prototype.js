@@ -7158,7 +7158,6 @@ function renderLinkedInEngagementList(){
 }
 
 function openLinkedInEngagementWorkspace(){
-  closeCalendarPanel();
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
     title: linkedinVisibilityItems.length + ' LinkedIn posts are ready for support.',
@@ -7177,11 +7176,7 @@ function openLinkedInEngagementWorkspace(){
     label: 'LinkedIn visibility workspace'
   });
   renderLinkedInEngagementList();
-  hearth.dataset.distance = 'judgment';
-  deskWorkspace.setAttribute('aria-hidden', 'false');
-  document.querySelectorAll('.living-room').forEach((room) => {
-    room.classList.remove('active-room');
-  });
+  openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
 }
 
 function primaryPortalPhrase(item){
