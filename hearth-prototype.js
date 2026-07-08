@@ -3425,6 +3425,72 @@ function setCommitmentField(field, value){
   if(node) node.textContent = value || '';
 }
 
+function commitmentSuggestedActions(item = activeCommitmentItem){
+  if(!item) return [];
+  const actions = ['cowork_commitment'];
+  const explicit = Array.isArray(item.suggested_actions) ? item.suggested_actions : Array.isArray(item.suggestedActions) ? item.suggestedActions : [];
+  const push = (action) => {
+    if(action && !actions.includes(action)) actions.push(action);
+  };
+  explicit.forEach(push);
+  if(item.suggested_action_type) push(item.suggested_action_type);
+  if(item.owner_type === 'user'){
+    push('draft_email');
+    push('create_task');
+  }
+  if(item.owner_type === 'contact'){
+    push('draft_email');
+  }
+  if(item.status === 'needs_resolution' || item.owner_type === 'unknown') push('resolve_contact');
+  if(item.task_id || item.due_at || item.suggested_action_type === 'schedule') push('schedule');
+  if(item.status === 'drafted' || item.task_id || item.draft_id) push('show_source');
+  push('show_source');
+  if(item.status === 'ready_for_completion' || item.can_complete === true || item.canComplete === true) push('complete');
+  if(item.can_delegate === true || item.canDelegate === true) push('delegate');
+  if(item.dismissable === true || item.can_dismiss === true || item.canDismiss === true) push('dismiss');
+  return actions.filter((action) => [
+    'cowork_commitment',
+    'draft_email',
+    'create_task',
+    'schedule',
+    'complete',
+    'delegate',
+    'dismiss',
+    'show_source',
+    'resolve_contact'
+  ].includes(action));
+}
+
+function commitmentSource(item = activeCommitmentItem, action = ''){
+  const selected = item || activeCommitmentItem || null;
+  return {
+    commitment: selected,
+    commitmentId: selected?.id || '',
+    sourceId: selected?.id || '',
+    sourceType: selected?.source_type ? 'commitment_' + selected.source_type : 'commitment',
+    sourceLabel: selected?.title || 'Commitment',
+    sourceItem: selected,
+    ownerType: selected?.owner_type || '',
+    ownerName: selected?.owner_name || '',
+    counterpartyName: selected?.counterparty_name || '',
+    relationshipId: selected?.relationship_id || selected?.relationshipId || selected?.contact_id || selected?.contactId || '',
+    projectId: selected?.project_id || selected?.projectId || '',
+    emailThreadId: selected?.thread_id || selected?.threadId || selected?.conversation_id || selected?.conversationId || '',
+    transcriptId: selected?.transcript_id || selected?.transcriptId || '',
+    calendarEventId: selected?.calendar_event_id || selected?.calendarEventId || '',
+    taskId: selected?.task_id || selected?.taskId || '',
+    draftId: selected?.draft_id || selected?.draftId || '',
+    sourceTitle: selected?.source_title || '',
+    sourceQuote: selected?.evidence_quote || selected?.evidence_summary || '',
+    suggestedActions: commitmentSuggestedActions(selected),
+    requestedAction: action
+  };
+}
+
+function commitmentActionNeedsLiveConfirmation(action = ''){
+  return ['draft_email','create_task','schedule','complete','delegate','dismiss'].includes(action);
+}
+
 function renderCommitmentList(){
   if(!commitmentList) return;
   commitmentList.innerHTML = '';
@@ -3440,7 +3506,9 @@ function renderCommitmentList(){
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.commitmentItem = item.id;
-    button.setAttribute('aria-pressed', String(activeCommitmentItem?.id === item.id));
+    const isActive = activeCommitmentItem?.id === item.id;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
     const meta = [commitmentLabel(item.owner_type), item.source_type, item.status, 'Risk: ' + commitmentLabel(item.risk_level)].filter(Boolean).join(' · ');
     button.innerHTML = '<span>' + escapeHtml(meta) + '</span><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(item.evidence_quote || item.description || '') + '</p><small>' + escapeHtml((item.owner_name || 'Unknown') + ' · ' + commitmentDueLabel(item.due_at)) + '</small>';
     commitmentList.appendChild(button);
@@ -3465,7 +3533,10 @@ function renderCommitmentBrief(item = activeCommitmentItem){
   }
   if(commitmentStatus) commitmentStatus.textContent = selected ? 'Selected commitment is evidence-backed. Drafts and tasks stay local until you act; sends still require approval.' : 'Commitments are accountability records. Drafts and tasks require visible user action; sends still require approval.';
   document.querySelectorAll('[data-commitment-action]').forEach((button) => {
-    button.disabled = !selected;
+    const allowed = commitmentSuggestedActions(selected).includes(button.dataset.commitmentAction);
+    button.hidden = !allowed;
+    button.disabled = !selected || !allowed;
+    button.setAttribute('aria-hidden', String(!allowed));
   });
 }
 
@@ -3511,17 +3582,12 @@ async function handleCommitmentAction(action){
       helper: 'This Co-Work note is tagged to the selected commitment. Sends, task changes, and status updates stay approval-gated.',
       backWorkflow: 'cancel:commitment'
     });
+    renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
     return;
   }
-  if(String(item.id || '').startsWith('local-') && !['schedule','show_source','resolve_contact'].includes(action)){
-    if(['complete','dismiss','delegate'].includes(action)){
-      const status = action === 'complete' ? 'complete' : action === 'dismiss' ? 'dismissed' : 'delegated';
-      activeCommitmentItem = {...item, status};
-      currentCommitmentItems = currentCommitmentItems.map((row) => row.id === item.id ? activeCommitmentItem : row);
-      renderCommitmentBrief(activeCommitmentItem);
-    }
+  if(String(item.id || '').startsWith('local-') && commitmentActionNeedsLiveConfirmation(action)){
     if(commitmentStatus){
-      commitmentStatus.textContent = 'Local preview recorded the commitment action for this session only. Live commitments will create linked drafts/tasks/status updates through the VAL service.';
+      commitmentStatus.textContent = 'Local preview only: VAL can prepare this action for review, but no draft, task, schedule change, status update, delegation, dismissal, send, CRM update, or calendar change happened.';
     }
     return;
   }
@@ -3575,6 +3641,7 @@ async function handleCommitmentAction(action){
         label:'Commitment scheduling workspace'
       });
       openWorkspaceShell('Commitment scheduling workspace', {returnTarget:'commitment'});
+      renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
       return;
     }
     if(action === 'show_source'){
@@ -10304,7 +10371,7 @@ drawerTray.addEventListener('click', async (event) => {
   if(commitmentFilter){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:commitmentFilter, packetName:'commitment_packet', action:'commitment:filter:' + (commitmentFilter.dataset.commitmentFilter || 'all'), source:{commitmentId:activeCommitmentItem?.id || '', sourceLabel:'Commitments filter', sourceType:'commitment_filter', sourceItem:activeCommitmentItem || null}});
+    const preflight = await ensureHearthClickPacket({node:commitmentFilter, packetName:'commitment_packet', action:'commitment:filter:' + (commitmentFilter.dataset.commitmentFilter || 'all'), allowBlockedForInspection:true, source:{...commitmentSource(activeCommitmentItem, 'commitment:filter'), sourceLabel:'Commitments filter', sourceType:'commitment_filter'}});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     activeCommitmentFilter = commitmentFilter.dataset.commitmentFilter || 'all';
@@ -10321,10 +10388,15 @@ drawerTray.addEventListener('click', async (event) => {
   if(commitmentAction){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:commitmentAction, packetName:'commitment_packet', action:commitmentAction.dataset.commitmentAction, source:{commitmentId:activeCommitmentItem?.id || '', sourceLabel:activeCommitmentItem?.title || 'Commitment action', sourceType:'commitment', sourceItem:activeCommitmentItem || null}});
+    const action = commitmentAction.dataset.commitmentAction;
+    const preflight = await ensureHearthClickPacket({node:commitmentAction, packetName:'commitment_packet', action:'commitment:' + action, allowBlockedForInspection:true, source:commitmentSource(activeCommitmentItem, action)});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    await handleCommitmentAction(commitmentAction.dataset.commitmentAction);
+    if(preflight.packet?.status === 'blocked' && commitmentActionNeedsLiveConfirmation(action)){
+      if(commitmentStatus) commitmentStatus.textContent = 'VAL checked the commitment packet and needs more source context before this action can create or change anything. Receipt is shown above; no external action happened.';
+      return;
+    }
+    await handleCommitmentAction(action);
     return;
   }
   const valAction = event.target.closest('[data-val-action]');
@@ -10348,7 +10420,7 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const selected = currentCommitmentItems.find((item) => item.id === commitmentItem.dataset.commitmentItem);
-    const preflight = await ensureHearthClickPacket({node:commitmentItem, packetName:'commitment_packet', action:'commitment:select', source:{commitmentId:selected?.id || commitmentItem.dataset.commitmentItem || '', sourceLabel:selected?.title || 'Commitment row', sourceType:'commitment', sourceItem:selected || null}});
+    const preflight = await ensureHearthClickPacket({node:commitmentItem, packetName:'commitment_packet', action:'commitment:select', allowBlockedForInspection:true, source:commitmentSource(selected, 'commitment:select')});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(selected) renderCommitmentBrief(selected);

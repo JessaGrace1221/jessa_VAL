@@ -465,11 +465,22 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.doesNotMatch(hearthHtml, /<a href="\.\/dashboard\.html" class="drawer-link commitment-drawer-link"/);
   assert.match(hearthJs, /const commitmentDrawerLink/);
   assert.match(hearthJs, /function hydrateCommitmentDrawer/);
+  assert.match(hearthJs, /function commitmentSuggestedActions/);
+  assert.match(hearthJs, /function commitmentSource/);
+  assert.match(hearthJs, /function commitmentActionNeedsLiveConfirmation/);
+  assert.match(hearthJs, /suggestedActions: commitmentSuggestedActions/);
+  assert.match(hearthJs, /button\.hidden = !allowed/);
+  assert.match(hearthJs, /button\.classList\.toggle\('active', isActive\)/);
   assert.match(hearthJs, /\/api\/val\/commitments\?limit=120/);
   assert.match(hearthJs, /\/api\/val\/commitments\/' \+ encodeURIComponent\(item\.id\) \+ '\/draft-email/);
   assert.match(hearthJs, /function restoreCommitmentWindow/);
   assert.match(hearthJs, /workspaceReturnTarget === 'commitment'/);
   assert.match(hearthJs, /action === 'cowork_commitment'/);
+  assert.match(hearthJs, /action:'commitment:' \+ action/);
+  assert.match(hearthJs, /allowBlockedForInspection:true, source:commitmentSource/);
+  assert.match(hearthJs, /preflight\.packet\?\.status === 'blocked' && commitmentActionNeedsLiveConfirmation/);
+  assert.match(hearthJs, /no draft, task, schedule change, status update, delegation, dismissal, send, CRM update, or calendar change happened/);
+  assert.match(hearthJs, /renderHearthPacketReceiptStrip\(lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /commitment-open/);
   assert.match(hearthCss, /\.drawer-tray\.commitment-open \.commitment-detail/);
   assert.match(hearthCss, /\.commitment-summary-grid/);
@@ -826,7 +837,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-workspace-receipt-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=commitment-source-actions-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
