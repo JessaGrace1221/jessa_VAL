@@ -4976,14 +4976,14 @@ button.drawer-link{
 /* System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan. */
 :root{
   --frost-open-surface:
-    linear-gradient(135deg,rgba(255,255,252,.94),rgba(248,250,244,.84) 54%,rgba(235,241,226,.72)),
-    rgba(255,255,252,.74);
+    linear-gradient(135deg,rgba(255,255,252,.86),rgba(248,250,244,.76) 54%,rgba(235,241,226,.62)),
+    rgba(255,255,252,.6);
   --frost-open-card:
-    linear-gradient(180deg,rgba(255,255,252,.82),rgba(248,250,244,.66)),
-    rgba(255,255,252,.58);
+    linear-gradient(180deg,rgba(255,255,252,.82),rgba(248,250,244,.68)),
+    rgba(255,255,252,.62);
   --frost-open-card-strong:
-    linear-gradient(180deg,rgba(255,255,252,.9),rgba(248,250,244,.74)),
-    rgba(255,255,252,.68);
+    linear-gradient(180deg,rgba(255,255,252,.88),rgba(248,250,244,.74)),
+    rgba(255,255,252,.66);
   --frost-open-line:rgba(91,105,79,.16);
   --frost-open-shadow:0 20px 54px rgba(18,24,18,.12);
   --frost-open-soft-shadow:0 12px 28px rgba(18,24,18,.08);
@@ -5013,7 +5013,7 @@ button.drawer-link{
 .close-document-detail,
 .close-project-detail{
   border-color:rgba(91,105,79,.18);
-  background:linear-gradient(180deg,rgba(255,255,252,.86),rgba(248,250,244,.68));
+  background:linear-gradient(180deg,rgba(255,255,252,.78),rgba(248,250,244,.56));
   color:var(--frost-open-ink);
   box-shadow:0 10px 26px rgba(18,24,18,.1),inset 0 1px 0 rgba(255,255,255,.68);
 }
@@ -5144,15 +5144,15 @@ button.drawer-link{
 .drawer-tray :is([aria-pressed="true"],.active,.sync,.connected,.ready-review,[data-review-decision="approved"]),
 .workspace-panel :is([aria-pressed="true"],.active,.connected,.ready-review,[data-review-decision="approved"]){
   background:
-    linear-gradient(180deg,rgba(255,255,252,.9),rgba(238,246,230,.74)),
-    rgba(232,241,220,.62);
+    linear-gradient(180deg,rgba(255,255,252,.86),rgba(238,246,230,.68)),
+    rgba(232,241,220,.54);
   border-color:rgba(91,105,79,.26);
 }
 .drawer-tray :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]),
 .workspace-panel :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]){
   background:
-    linear-gradient(180deg,rgba(255,255,252,.9),rgba(252,241,237,.72)),
-    rgba(255,255,252,.62);
+    linear-gradient(180deg,rgba(255,255,252,.86),rgba(252,241,237,.66)),
+    rgba(255,255,252,.54);
   border-color:rgba(177,112,100,.22);
 }
 .drawer-tray :is(h2,h3,h4,strong,b),
