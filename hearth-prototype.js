@@ -9293,6 +9293,11 @@ async function handleValAction(action){
 }
 
 async function handleWorkflowAction(action, node = null){
+  const [command,type,...rest] = String(action || '').split(':');
+  if(command === 'project'){
+    await handleProjectActionClick(type, node);
+    return;
+  }
   const workflowPacket = node?.dataset?.valVariablePacket || 'workflow_scoped_packet';
   const workflowSource = workflowPacket === 'lead_intelligence_packet'
     ? activeLeadIntelligenceSource(action, {sourceType:'lead_intelligence_workflow_action', sourceLabel:node?.innerText || 'Lead Intelligence action'})
@@ -9302,7 +9307,6 @@ async function handleWorkflowAction(action, node = null){
   if(workflowPacket === 'lead_intelligence_packet'){
     renderHearthPacketReceiptStrip(workflowPreflight.packet || lastHearthPacketReceipt);
   }
-  const [command,type,...rest] = String(action || '').split(':');
   if(command === 'relationshipAllPeople'){
     closeWorkspace();
     restoreRelationshipWindow();

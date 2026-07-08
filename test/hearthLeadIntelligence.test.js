@@ -1134,6 +1134,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /sourceReceipts:Array\.isArray\(\(error\.data \|\| \{\}\)\.receipt\?\.sourceReceipts\)/,
     /async function handleProjectActionClick/,
     /ensureHearthClickPacket\(\{node, packetName:'project_packet'/,
+    /if\(command === 'project'\)\{[\s\S]{0,120}await handleProjectActionClick\(type, node\);/,
     /handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
