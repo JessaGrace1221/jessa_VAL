@@ -3136,7 +3136,9 @@ function renderCorrespondenceList(){
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.correspondenceItem = item.id;
-    button.setAttribute('aria-pressed', String(activeCorrespondenceItem?.id === item.id));
+    const isActive = activeCorrespondenceItem?.id === item.id;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
     const label = document.createElement('span');
     label.textContent = item.status === 'needs_context' ? 'Needs Context' : 'Ready For Review';
     const title = document.createElement('strong');
@@ -3148,6 +3150,14 @@ function renderCorrespondenceList(){
     button.append(label, title, summary, small);
     correspondenceList.appendChild(button);
   });
+}
+
+function correspondenceSuggestedActions(item = activeCorrespondenceItem){
+  if(!item) return [];
+  const actions = ['cowork_correspondence', 'review'];
+  if(item.conversationId) actions.push('generate');
+  if(item.draftId) actions.push('revise');
+  return actions;
 }
 
 function setCorrespondenceField(field, value){
@@ -3175,7 +3185,10 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   }
   if(correspondenceSafety) correspondenceSafety.textContent = 'Drafting is private preparation inside VAL. Sending represents Jessa externally and still requires explicit approval.';
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
-    button.disabled = !selected;
+    const allowed = correspondenceSuggestedActions(selected).includes(button.dataset.correspondenceAction);
+    button.hidden = !allowed;
+    button.disabled = !selected || !allowed;
+    button.setAttribute('aria-hidden', String(!allowed));
   });
 }
 
@@ -10230,7 +10243,7 @@ drawerTray.addEventListener('click', async (event) => {
   if(correspondenceAction){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceAction.dataset.correspondenceAction});
+    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceAction.dataset.correspondenceAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
     if(!preflight.ok) return;
     await handleCorrespondenceAction(correspondenceAction.dataset.correspondenceAction);
     return;
@@ -10240,6 +10253,9 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const selected = currentCorrespondenceItems.find((item) => item.id === correspondenceItem.dataset.correspondenceItem);
+    const preflight = await ensureHearthClickPacket({node:correspondenceItem, packetName:'email_packet', action:'email:select', source:{email:selected || null, sourceId:selected?.id || correspondenceItem.dataset.correspondenceItem || '', sourceType:'executive_inbox_item', sourceLabel:selected?.title || 'Executive Inbox item', sourceItem:selected || null}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(selected) renderCorrespondenceBrief(selected);
     return;
   }

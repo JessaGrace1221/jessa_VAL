@@ -403,8 +403,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /Sending represents Jessa externally/);
   assert.match(hearthHtml, /data-correspondence-action="generate"/);
   assert.match(hearthHtml, /data-correspondence-action="revise"/);
-  assert.match(hearthHtml, /data-correspondence-action="send"/);
-  assert.match(hearthHtml, /Send draft/);
+  assert.doesNotMatch(hearthHtml, /data-correspondence-action="send"/);
+  assert.doesNotMatch(hearthHtml, /Send draft/);
   assert.doesNotMatch(hearthHtml, /<a href="\.\/inbox\.html" class="drawer-link" data-drawer-tone="blush-sage">/);
   assert.match(hearthJs, /const correspondenceDrawerLink/);
   assert.match(hearthJs, /function hydrateCorrespondenceDrawer/);
@@ -416,7 +416,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /openWorkspaceShell\('Executive Inbox review workspace', \{returnTarget:'correspondence'\}\)/);
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
   assert.match(hearthJs, /function showCorrespondenceLocalBoundary/);
-  assert.match(hearthJs, /button\.disabled = !selected/);
+  assert.match(hearthJs, /function correspondenceSuggestedActions/);
+  assert.match(hearthJs, /button\.hidden = !allowed/);
+  assert.match(hearthJs, /action:'email:select'/);
   assert.match(hearthJs, /private preparation inside VAL/);
   assert.match(hearthJs, /represents Jessa externally/);
   assert.match(hearthJs, /function sendPacketForDraft/);
@@ -813,7 +815,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=local-packet-source-proof-20260707/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-safe-actions-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
