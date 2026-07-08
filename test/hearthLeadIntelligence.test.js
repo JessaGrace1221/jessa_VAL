@@ -850,10 +850,19 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /data-source-id/);
   assert.match(hearthJs, /function homeSourceContextLines/);
   assert.match(hearthJs, /data-home-room-source/);
+  assert.match(hearthJs, /data-home-room-item/);
+  assert.match(hearthJs, /openHomeItemWorkspaceFromButton\(homeItem, event\)/);
+  assert.match(hearthJs, /Home row source-specific decision rule/);
   assert.doesNotMatch(hearthJs, /list\.querySelectorAll\('\[data-home-room-item\]'\)\.forEach/);
   assert.match(hearthJs, /Source-of-source/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
+  assert.match(hearthJs, /function executiveHomeBriefTitle/);
+  assert.match(hearthJs, /function executiveHomeMeaning/);
+  assert.match(hearthJs, /function executiveHomeUnderstanding/);
+  assert.match(hearthJs, /function executiveHomeRecommendation/);
+  assert.match(hearthJs, /Working memory changed: test what VAL now believes/);
+  assert.match(hearthJs, /The executive shift is that future recommendations may now follow those truths/);
   assert.match(hearthJs, /function isConcreteHomeActionItem/);
   assert.match(hearthJs, /roomName === 'leverage' \? allItems\.filter\(isConcreteHomeActionItem\)/);
   assert.match(hearthJs, /leverageItems\.find\(isConcreteHomeActionItem\)/);
@@ -907,8 +916,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-source-in-hearth-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-source-in-hearth-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-row-executive-brief-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-row-executive-brief-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -977,7 +986,7 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   assert.match(hearthJs, /node\.dataset\.valGraphLinks = \(packetContract\.graphLinks \|\| \[\]\)\.join\(','\)/);
   assert.match(hearthJs, /node\.dataset\.valRequiredVariables = \(packetContract\.requiredVariables \|\| \[\]\)\.join\(','\)/);
   assert.match(hearthJs, /observeHearthClickContracts\(\)/);
-  assert.doesNotMatch(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
+  assert.match(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
 });
 
 test('Hearth packet contracts require the deep source web behind every click', () => {
@@ -1303,8 +1312,8 @@ test('Hearth judgment receipts preserve the originating lens and source context'
   assert.match(hearthJs, /sourceActionLabel\(item, 'Open source context'\)/);
   assert.match(hearthJs, /homeAction: 'open_source'/);
   assert.match(hearthJs, /function openHomeSourceView\(\)/);
-  assert.match(hearthJs, /Source context for /);
-  assert.match(hearthJs, /VAL kept this source inside Hearth/);
+  assert.match(hearthJs, /executiveHomeBriefTitle\(item, originalTitle, roomName\)/);
+  assert.match(hearthJs, /executiveHomeMeaning\(item, workspace\.meaning, roomName\)/);
   const openHomeSourceViewBody = hearthJs.slice(
     hearthJs.indexOf('function openHomeSourceView()'),
     hearthJs.indexOf('function openExecutiveInboxForHomeEmail')
@@ -1319,9 +1328,9 @@ test('Hearth judgment receipts preserve the originating lens and source context'
 test('Hearth source openings keep the desk oriented after opening a target', () => {
   assert.match(hearthJs, /function sourceDestinationLabel/);
   assert.match(hearthJs, /function renderSourceOpenReceipt/);
-  assert.match(hearthJs, /Source context for /);
-  assert.match(hearthJs, /VAL kept this source inside Hearth/);
-  assert.match(hearthJs, /Internal route held for reference/);
+  assert.match(hearthJs, /Source surface: /);
+  assert.match(hearthJs, /Route retained inside Hearth/);
+  assert.match(hearthJs, /packetReceipt: \{\}/);
   assert.match(hearthJs, /No CRM write, send, import, or durable memory action was taken/);
   assert.match(hearthJs, /Review evidence/);
   assert.match(hearthJs, /GHL opportunity/);
@@ -1345,7 +1354,7 @@ test('Hearth rooms quietly remember when a user has held their context', () => {
   assert.match(hearthJs, /room-attended/);
   assert.match(hearthJs, /room-has-been-held/);
   assert.match(hearthJs, /roomAttendedLabel/);
-  assert.match(hearthJs, /markRoomAttended\(roomNameFromWorkspace\(workspace\), 'source'\)/);
+  assert.match(hearthJs, /markRoomAttended\(roomName, 'source'\)/);
   assert.match(hearthCss, /\.room-attended/);
   assert.match(hearthCss, /\.living-room\.room-has-been-held/);
 });

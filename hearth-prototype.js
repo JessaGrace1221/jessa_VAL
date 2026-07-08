@@ -313,7 +313,7 @@ const hearthClickContractRegistry = [
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer workspace rule', actions:'Open source, review evidence, source-specific action', never:'Do not blend unrelated Home items'},
   {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge rule', actions:'Open source, draft reply/create task for email, review evidence', never:'Do not open a different relationship/project than the card named'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
-  {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
+  {selector:'[data-home-room-source]', contract:'home.source_row', packet:'home_source_packet', rule:'Home row source-specific decision rule', actions:'Open only that row source with its own evidence and suggested next action', never:'Do not fall back to the parent Home card or show unrelated rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
   {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, search, sort, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
@@ -5306,14 +5306,14 @@ function setRoomCopy(state){
       list.className = 'room-item-list';
       list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
       list.innerHTML = queue.map((item, index) => (
-        '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
+        '<button type="button" role="listitem" data-home-room-source="' + name + '" data-home-room-item="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
           ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
-        '</div>'
+        '</button>'
       )).join('');
       room.insertBefore(list, actionButton);
     }
@@ -5345,14 +5345,14 @@ function openHomeItemCowork(roomName, index){
   const sourceLabel = sourceActionLabel(sourceItem, roomName === 'leverage' ? 'Open prepared work' : 'Open source context');
   const workspace = {
     lens: roomName === 'leverage' ? 'Leverage Item' : 'Velocity Item',
-    title: item.title,
-    meaning: item.summary || itemMeaning(sourceItem, 'VAL opened this Home item with its current context attached.'),
+    title: executiveHomeBriefTitle(sourceItem, item.title, roomName),
+    meaning: executiveHomeMeaning(sourceItem, item.summary, roomName),
     understanding: [
-      ...homeSourceContextLines(sourceItem, item.title),
+      ...executiveHomeUnderstanding(sourceItem, item.title, roomName),
       sourceItem.confidence != null ? 'Confidence: ' + Math.round(Number(sourceItem.confidence) * 100) + '%' : '',
       'Priority ' + item.priority + ' in ' + (roomName === 'leverage' ? 'Leverage' : 'Velocity') + '.'
     ].filter(Boolean),
-    recommendation: suggestedRecommendationForHomeItem(sourceItem, roomName),
+    recommendation: executiveHomeRecommendation(sourceItem, roomName),
     actions: suggestedHomeActionsForItem(sourceItem, roomName, sourceLabel),
     sourceItem,
     cardType: roomName === 'leverage' ? 'ready_for_you_queue_item' : 'what_changed_queue_item'
@@ -5373,6 +5373,65 @@ function homeSourceContextLines(item = {}, fallbackTitle = 'Source context'){
     identity.id ? 'Source id: ' + identity.id : '',
     ...sourceOfSourceLines(item)
   ].filter(Boolean);
+}
+
+function executiveHomeBriefTitle(item = {}, fallbackTitle = 'Meaningful movement', roomName = ''){
+  if(isEmailSourceItem(item)){
+    return 'Email decision: ' + itemTitle(item, fallbackTitle);
+  }
+  const title = itemTitle(item, fallbackTitle);
+  const profile = targetProfile(item);
+  if(roomName === 'leverage') return title;
+  if(profile.key === 'source' && /VAL learned \d+/i.test(title)) return 'Working memory changed: test what VAL now believes.';
+  return title;
+}
+
+function executiveHomeMeaning(item = {}, fallbackSummary = '', roomName = ''){
+  if(isEmailSourceItem(item)){
+    const email = homeEmailPayload(item);
+    return compactSentence(email.reason || email.snippet || fallbackSummary, 'This email may need a reply or a dated follow-up task.');
+  }
+  const title = itemTitle(item, fallbackSummary);
+  const meaning = itemMeaning(item, fallbackSummary);
+  if(/VAL learned \d+/i.test(title)){
+    return 'VAL promoted onboarding learning into working memory. The executive shift is that future recommendations may now follow those truths, so the useful move is to spot-check a live workflow and correct any bad assumption immediately.';
+  }
+  if(meaning && !/^something changed that may affect the next step\.?$/i.test(meaning)) return meaning;
+  const profile = targetProfile(item);
+  if(profile.key === 'relationship') return 'A relationship signal changed. Decide whether this person needs a reply, a follow-up task, or simply continued watching.';
+  if(profile.key === 'project') return 'A project signal changed. Decide what should move, pause, or be protected today.';
+  if(profile.key === 'meeting') return 'A calendar signal changed. Decide whether this meeting needs prep, a follow-up, or a next step.';
+  if(profile.key === 'opportunity') return 'A pipeline signal changed. Decide the next owner, next date, and next move.';
+  if(roomName === 'leverage') return 'VAL prepared something you can review, refine, or approve without rebuilding the context.';
+  return 'A source changed, but VAL does not yet have enough human-readable context attached. Treat this as a review gap, not an action-ready recommendation.';
+}
+
+function executiveHomeUnderstanding(item = {}, fallbackTitle = 'Source context', roomName = ''){
+  const identity = sourceIdentityForItem(item);
+  const profile = targetProfile(item);
+  const title = itemTitle(item, fallbackTitle);
+  const meaning = executiveHomeMeaning(item, '', roomName);
+  if(/VAL learned \d+/i.test(title)){
+    return [
+      'Shift: working memory was updated from onboarding review.',
+      'Why it matters: this can change what VAL prioritizes, drafts, and protects next.',
+      'Decision needed: test one live workflow and teach VAL if the recommendation feels off.',
+      ...sourceOfSourceLines(item)
+    ];
+  }
+  return [
+    'Source: ' + (identity.label || title),
+    profile.noun ? 'Surface: ' + profile.noun : '',
+    meaning ? 'Executive meaning: ' + meaning : '',
+    ...sourceOfSourceLines(item)
+  ].filter(Boolean);
+}
+
+function executiveHomeRecommendation(item = {}, roomName = ''){
+  if(isEmailSourceItem(item)) return 'Open the email only if you need more context, then draft the reply or create a follow-up task with a due date.';
+  const title = itemTitle(item, '');
+  if(/VAL learned \d+/i.test(title)) return 'Do one live spot-check now: open the source evidence, verify the memory change is useful, then teach VAL the correction if the next recommendation is wrong.';
+  return suggestedRecommendationForHomeItem(item, roomName);
 }
 
 async function openHomeItemWorkspaceFromButton(button, event){
@@ -9992,33 +10051,34 @@ function renderSourceOpenReceipt(priorWorkspace, route){
   const item = workspace.sourceItem || {};
   const destination = sourceDestinationLabel(item, workspace);
   const originalTitle = itemTitle(item, workspace.title || 'Source context');
+  const roomName = roomNameFromWorkspace(workspace, 'source');
   setWorkspaceContent({
     lens: workspace.lens ? workspace.lens + ' Source' : 'Source Opened',
-    title: 'Source context for ' + originalTitle + '.',
-    meaning: 'VAL kept this source inside Hearth so the Home card does not jump to the old dashboard or blend unrelated context.',
+    title: executiveHomeBriefTitle(item, originalTitle, roomName),
+    meaning: executiveHomeMeaning(item, workspace.meaning, roomName),
     understanding: [
-      originalTitle,
-      'Resolved source surface: ' + destination + '.',
-      route ? 'Internal route held for reference: ' + route : '',
-      ...sourceOfSourceLines(item),
+      'Source surface: ' + destination + '.',
+      route ? 'Route retained inside Hearth: ' + route : '',
+      ...executiveHomeUnderstanding(item, originalTitle, roomName),
       'No CRM write, send, import, or durable memory action was taken.'
     ].filter(Boolean),
-    recommendation: suggestedRecommendationForHomeItem(item, roomNameFromWorkspace(workspace, 'source')),
+    recommendation: executiveHomeRecommendation(item, roomName),
     actions: [
       {label: 'Review evidence', homeAction: 'review_evidence'},
       {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
-    label: 'Source opened receipt'
+    label: 'Source opened receipt',
+    packetReceipt: {}
   });
   activeHomeWorkspace = {
-    roomName: roomNameFromWorkspace(workspace, 'source'),
+    roomName,
     workspace: {
       ...workspace,
       sourceItem: item,
       cardType: workspace.cardType || 'homepage_card'
     }
   };
-  markRoomAttended(roomNameFromWorkspace(workspace), 'source');
+  markRoomAttended(roomName, 'source');
 }
 
 function openHomeSourceView(){
@@ -11248,8 +11308,13 @@ roomButtons.forEach((button) => {
 });
 
 rooms.forEach((room) => {
-  room.addEventListener('click', (event) => {
+  room.addEventListener('click', async (event) => {
     if(hearth.classList.contains('drawer-open')) return;
+    const homeItem = event.target.closest('[data-home-room-item]');
+    if(homeItem){
+      await openHomeItemWorkspaceFromButton(homeItem, event);
+      return;
+    }
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
     if(actionButton) handlePrimaryAction(actionButton);
