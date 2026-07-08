@@ -13,6 +13,7 @@ const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLI
 const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_COMPLETENESS_CONTRACT.md'), 'utf8');
 const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_HYDRATION_AUDIT.md'), 'utf8');
 const hearthTruthLineageMap = fs.readFileSync(path.join(root, 'docs', 'HEARTH_TRUTH_LINEAGE_MAP.md'), 'utf8');
+const hearthExecutiveReasoningPipeline = fs.readFileSync(path.join(root, 'docs', 'HEARTH_EXECUTIVE_REASONING_PIPELINE.md'), 'utf8');
 
 function extractObjectLiteral(source, marker){
   const start = source.indexOf(marker);
@@ -865,9 +866,9 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /Working memory changed: test what VAL now believes/);
   assert.match(hearthJs, /The executive shift is that future recommendations may now follow those truths/);
   assert.match(hearthJs, /function isConcreteHomeActionItem/);
-  assert.match(hearthJs, /roomName === 'leverage' \? allItems\.filter\(isConcreteHomeActionItem\)/);
-  assert.match(hearthJs, /leverageItems\.find\(isConcreteHomeActionItem\)/);
-  assert.match(hearthJs, /queueItems\.find\(isConcreteHomeActionItem\)/);
+  assert.match(hearthJs, /function homeAdmissionFilter/);
+  assert.match(hearthJs, /const admittedLeverageItems = homeAdmissionFilter\('leverage', leverageItems\)/);
+  assert.match(hearthJs, /const admittedQueueItems = homeAdmissionFilter\('leverage', queueItems\)/);
   assert.doesNotMatch(hearthJs, /Co-Work with VAL about ' \+ item\.title/);
 });
 
@@ -917,8 +918,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=velocity-exact-source-routing-20260708b/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=velocity-exact-source-routing-20260708b/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-admission-gate-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-admission-gate-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1218,8 +1219,54 @@ test('Hearth truth lineage map traces clicks to variables and feeder sources', (
     '`workflow_scoped_packet`',
     '`val_os_packet`',
     'Metadata-only packets until server hydration is added',
+    '## Home Admission Boundary',
+    'Fallback drawer routing is a navigation guard only.',
     'When we add or change a truth line'
   ].forEach((required) => assert.ok(hearthTruthLineageMap.includes(required), 'Missing truth lineage map entry: ' + required));
+});
+
+test('Hearth executive reasoning pipeline defines v1 Home admission gates', () => {
+  [
+    '# Hearth Executive Reasoning Pipeline',
+    'Truth\n  -> Normalize\n  -> Observe\n  -> Classify\n  -> Judge\n  -> Prioritize\n  -> Prepare\n  -> Can VAL Act?\n  -> Execute\n  -> Learn\n  -> Reflect\n  -> Remember',
+    '## v1 Operating Rule',
+    'Velocity items that passed the Velocity Round Table',
+    'Alignment items with a complete Why Now Packet',
+    'Leverage items with a Prepared Work Packet and Can VAL Act status',
+    'If an item lacks the required reasoning proof for its Home mode, it must stay out of Home.',
+    '## Chief of Staff Test',
+    '## Architecture Layer Boundary'
+  ].forEach((required) => assert.ok(hearthExecutiveReasoningPipeline.includes(required), 'Missing executive reasoning pipeline entry: ' + required));
+});
+
+test('Hearth Home applies v1 admission before rendering Velocity Alignment and Leverage', () => {
+  [
+    /function velocityRoundTablePassed/,
+    /function hasCompleteWhyNowPacket/,
+    /function hasPreparedWorkPacketAndActionStatus/,
+    /function homeAdmissionResult/,
+    /function homeAdmissionFilter/,
+    /function clearHomeRoomForAdmission/,
+    /Velocity Round Table/,
+    /Why Now Packet/,
+    /Prepared Work Packet \+ Can VAL Act/,
+    /missing_velocity_round_table_proof/,
+    /missing_why_now_packet/,
+    /missing_prepared_work_or_action_status/,
+    /homeAdmissionFilter\('velocity', velocityItems\)/,
+    /homeAdmissionFilter\('alignment', highest \? \[highest\] : \[\]\)/,
+    /homeAdmissionFilter\('leverage', leverageItems\)/,
+    /setHomeRoomQueue\('velocity', admittedVelocityItems\)/,
+    /setHomeRoomQueue\('alignment', admittedHighest \? \[admittedHighest\] : \[\]\)/,
+    /setHomeRoomQueue\('leverage', admittedLeverageItems\)/,
+    /if\(!changed\) clearHomeRoomForAdmission\('velocity'\)/,
+    /if\(!admittedHighest\) clearHomeRoomForAdmission\('alignment'\)/,
+    /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
+    /No meaningful movement earned Home/,
+    /No priority needs your judgment first/,
+    /No prepared work is waiting for approval/
+  ].forEach((pattern) => assert.match(hearthJs, pattern));
+  assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {

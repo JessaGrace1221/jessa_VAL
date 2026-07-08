@@ -7210,6 +7210,69 @@ function updateRoomFromBriefing(roomName, content){
   currentState.rooms[roomName] = roomContent(content.card, content.workspace);
 }
 
+function clearHomeRoomForAdmission(roomName){
+  const empty = {
+    velocity: {
+      card: {
+        observation: 'No meaningful movement earned Home.',
+        implication: 'VAL is keeping true but low-value activity out of your attention.',
+        invitation: 'Keep the desk clear',
+        title: 'No meaningful movement earned Home.',
+        summary: 'VAL is keeping true but low-value activity out of your attention.',
+        action: 'Open Velocity'
+      },
+      workspace: {
+        lens: 'Velocity',
+        title: 'No Velocity item passed the v1 admission gate.',
+        meaning: 'No changed item currently has both meaningful movement and exact source proof.',
+        understanding: ['Items that are merely reviewed, synced, imported, counted, or loosely observed stay out of Home.'],
+        recommendation: 'Keep Home quiet until a Velocity Round Table item earns attention.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    },
+    alignment: {
+      card: {
+        observation: 'No priority needs your judgment first.',
+        implication: 'Nothing has a complete Why Now Packet right now.',
+        invitation: 'Keep attention unbroken',
+        title: 'No priority needs your judgment first.',
+        summary: 'Nothing has a complete Why Now Packet right now.',
+        action: 'Open Alignment'
+      },
+      workspace: {
+        lens: 'Alignment',
+        title: 'No Alignment item passed the v1 admission gate.',
+        meaning: 'VAL is not promoting a priority without complete Why Now reasoning.',
+        understanding: ['Alignment needs why now, decision/action needed, cost if delayed or timing basis, evidence refs, and confidence.'],
+        recommendation: 'Keep judgment free until one priority earns the top slot.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    },
+    leverage: {
+      card: {
+        observation: 'No prepared work is waiting for approval.',
+        implication: 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
+        invitation: 'Nothing to approve',
+        title: 'No prepared work is waiting for approval.',
+        summary: 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
+        action: 'Open Leverage'
+      },
+      workspace: {
+        lens: 'Leverage',
+        title: 'No Leverage item passed the v1 admission gate.',
+        meaning: 'VAL is not showing loose opportunities as prepared work.',
+        understanding: ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
+        recommendation: 'Prepared work will appear here only when it is real enough to review or approve.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    }
+  };
+  if(empty[roomName]) updateRoomFromBriefing(roomName, empty[roomName]);
+}
+
 function homeQueueItem(item, index, roomName){
   const artifactCopy = roomName === 'leverage' ? preparedArtifactHomeCopy(item) : null;
   const identity = sourceIdentityForItem(item);
@@ -7242,22 +7305,186 @@ function isConcreteHomeActionItem(item = {}){
   );
 }
 
+function homeAdmissionText(item = {}){
+  return [
+    item.title,
+    item.name,
+    item.summary,
+    item.reason,
+    item.reason_it_matters,
+    item.why,
+    item.whatChanged,
+    item.what_changed,
+    item.ifIgnored,
+    item.if_ignored
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function homeAdmissionMetadata(item = {}){
+  return item.metadata || item.metadataJson || item.homeAdmission || item.admission || {};
+}
+
+function homeAdmissionExplicitPass(item = {}, key){
+  const metadata = homeAdmissionMetadata(item);
+  const explicit = item[key] ?? metadata[key] ?? item.homeAdmission?.[key] ?? metadata.homeAdmission?.[key];
+  return explicit === true || explicit === 'true' || explicit === 'passed';
+}
+
+function homeAdmissionSourceProof(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const type = String(identity.type || '').toLowerCase();
+  const id = String(identity.id || '').trim();
+  const refs = sourceOfSourceLines(item).filter((line) => !/supporting source needs review/i.test(line));
+  const routeableTypes = new Set(['email','draft','person','relationship','project','meeting','calendar','document','transcript','commitment','task','opportunity','prepared_work']);
+  const reviewedReceipt = refs.length > 0 || Boolean(item.sourceRefs || item.sourceRefsJson || item.source_refs || item.evidence_count || item.evidence);
+  const routeable = routeableTypes.has(type) || isEmailSourceItem(item) || Boolean(preparedArtifactKind(item));
+  const exactRecord = routeable && Boolean(id);
+  return {
+    type,
+    id,
+    refs,
+    routeable,
+    reviewedReceipt,
+    exactRecord,
+    passed: routeable && (exactRecord || reviewedReceipt)
+  };
+}
+
+function isHomeAdmissionNoise(item = {}){
+  const text = homeAdmissionText(item);
+  const identity = sourceIdentityForItem(item);
+  const type = String(identity.type || '').toLowerCase();
+  return (
+    /val learned \d+ reviewed onboarding truths/.test(text) ||
+    /people now front of mind/.test(text) ||
+    /projects now being watched/.test(text) ||
+    /working preferences are now part/.test(text) ||
+    /source-provider|sync completion|imported|synced|reviewed memory count/.test(text) ||
+    ((type === 'movement' || type === 'what_changed' || type === 'source') && !homeAdmissionSourceProof(item).exactRecord)
+  );
+}
+
+function homeAdmissionMeaningful(item = {}){
+  const text = homeAdmissionText(item);
+  if(!text || isHomeAdmissionNoise(item)) return false;
+  return /(changed|moved|risk|block|blocked|deadline|waiting|reply|follow.?up|proposal|decision|trust|relationship|project|commitment|opportunity|approval|prepared|draft|scheduled|due|open loop|attention)/i.test(text);
+}
+
+function velocityRoundTablePassed(item = {}){
+  if(homeAdmissionExplicitPass(item, 'velocityRoundTablePassed')) return true;
+  const proof = homeAdmissionSourceProof(item);
+  return proof.passed && homeAdmissionMeaningful(item);
+}
+
+function whyNowPacketForHomeItem(item = {}){
+  const sourceProof = homeAdmissionSourceProof(item);
+  const whyNow = item.whyNow || item.why_now || item.reason_it_matters || item.why || item.summary || '';
+  const decisionNeeded = item.decisionNeeded || item.decision_needed || item.action_needed || item.actionNeeded || item.moveType || '';
+  const costIfDelayed = item.costIfDelayed || item.cost_if_delayed || item.ifIgnored || item.if_ignored || '';
+  const evidenceRefs = sourceProof.refs;
+  const confidence = Number(item.confidence);
+  return {
+    priority: item.priority || item.priorityBand || item.importanceScore || '',
+    why_now: whyNow,
+    blocked_project_or_person: item.projectId || item.personId || item.contactId || item.target?.label || item.target?.name || '',
+    deadline_or_timing_basis: item.deadline || item.dueAt || item.due_at || item.timestamp || item.updatedAt || '',
+    cost_if_delayed: costIfDelayed,
+    decision_needed: decisionNeeded || whyNow,
+    action_needed: item.actionNeeded || item.action_needed || item.moveType || decisionNeeded || '',
+    evidence_refs: evidenceRefs,
+    confidence
+  };
+}
+
+function hasCompleteWhyNowPacket(item = {}){
+  if(homeAdmissionExplicitPass(item, 'whyNowPacketComplete')) return true;
+  const packet = item.whyNowPacket || item.why_now_packet || whyNowPacketForHomeItem(item);
+  return Boolean(
+    packet.why_now &&
+    (packet.decision_needed || packet.action_needed) &&
+    (packet.cost_if_delayed || packet.deadline_or_timing_basis || packet.blocked_project_or_person) &&
+    Array.isArray(packet.evidence_refs) && packet.evidence_refs.length &&
+    Number.isFinite(Number(packet.confidence))
+  );
+}
+
+function preparedWorkPacketForHomeItem(item = {}){
+  const metadata = homeAdmissionMetadata(item);
+  const artifactKind = preparedArtifactKind(item);
+  const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const canAct = item.canValAct || item.can_val_act || metadata.canValAct || metadata.can_val_act || item.canValActStatus || metadata.canValActStatus || '';
+  return {
+    prepared_work_type: artifactKind || artifact.kind || item.preparedArtifactKind || metadata.preparedArtifactKind || '',
+    trigger_source_id: item.sourceId || item.source_id || item.id || item.target?.id || metadata.sourceId || metadata.source_id || '',
+    work_product: artifact.body || artifact.content || item.draftBody || item.summary || item.title || '',
+    approval_needed: item.approvalNeeded ?? metadata.approvalNeeded ?? true,
+    execution_path: item.executionPath || item.execution_path || metadata.executionPath || metadata.execution_path || item.target?.type || artifact.kind || '',
+    can_val_act_status: String(canAct || (artifactKind || artifact.kind ? 'approval_required' : '')).toLowerCase()
+  };
+}
+
+function hasPreparedWorkPacketAndActionStatus(item = {}){
+  if(homeAdmissionExplicitPass(item, 'preparedWorkPacketComplete')) return true;
+  const packet = item.preparedWorkPacket || item.prepared_work_packet || preparedWorkPacketForHomeItem(item);
+  return Boolean(
+    packet.prepared_work_type &&
+    packet.trigger_source_id &&
+    packet.work_product &&
+    packet.can_val_act_status
+  );
+}
+
+function homeAdmissionResult(roomName, item = {}){
+  if(roomName === 'velocity'){
+    return {
+      passed: velocityRoundTablePassed(item),
+      proof: 'Velocity Round Table',
+      reason: velocityRoundTablePassed(item) ? 'meaningful_movement_with_source' : 'missing_velocity_round_table_proof'
+    };
+  }
+  if(roomName === 'alignment'){
+    return {
+      passed: hasCompleteWhyNowPacket(item),
+      proof: 'Why Now Packet',
+      reason: hasCompleteWhyNowPacket(item) ? 'complete_why_now_packet' : 'missing_why_now_packet'
+    };
+  }
+  if(roomName === 'leverage'){
+    return {
+      passed: hasPreparedWorkPacketAndActionStatus(item),
+      proof: 'Prepared Work Packet + Can VAL Act',
+      reason: hasPreparedWorkPacketAndActionStatus(item) ? 'prepared_work_with_action_status' : 'missing_prepared_work_or_action_status'
+    };
+  }
+  return {passed:true, proof:'not_home_mode', reason:'not_home_mode'};
+}
+
+function homeAdmissionFilter(roomName, items = []){
+  return briefingItems(items).filter((item) => homeAdmissionResult(roomName, item).passed);
+}
+
 function setHomeRoomQueue(roomName, items){
-  const allItems = briefingItems(items);
-  const scopedItems = roomName === 'leverage' ? allItems.filter(isConcreteHomeActionItem) : allItems;
-  homeRoomQueues[roomName] = (scopedItems.length ? scopedItems : allItems).map((item, index) => homeQueueItem(item, index, roomName));
+  const admittedItems = homeAdmissionFilter(roomName, items);
+  homeRoomQueues[roomName] = admittedItems.map((item, index) => homeQueueItem(item, index, roomName));
 }
 
 function hydrateRoomsFromBriefing(briefing){
   const velocityItems = briefingItems(briefing.whatChanged).concat(briefingItems(briefing.momentum));
-  const changed = firstBriefingItem(velocityItems);
+  const admittedVelocityItems = homeAdmissionFilter('velocity', velocityItems);
+  const changed = firstBriefingItem(admittedVelocityItems);
   const highest = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
   const leverageItems = briefingItems(briefing.readyForYou).concat(briefingItems(briefing.watching));
-  const ready = leverageItems.find(isConcreteHomeActionItem) || firstBriefingItem(leverageItems) || highest || null;
+  const admittedAlignmentItems = homeAdmissionFilter('alignment', highest ? [highest] : []);
+  const admittedLeverageItems = homeAdmissionFilter('leverage', leverageItems);
+  const admittedHighest = firstBriefingItem(admittedAlignmentItems);
+  const ready = firstBriefingItem(admittedLeverageItems) || null;
   const theme = briefing.todayTheme || {};
-  setHomeRoomQueue('velocity', velocityItems);
-  setHomeRoomQueue('alignment', highest ? [highest] : (theme.title ? [theme] : []));
-  setHomeRoomQueue('leverage', leverageItems);
+  setHomeRoomQueue('velocity', admittedVelocityItems);
+  setHomeRoomQueue('alignment', admittedHighest ? [admittedHighest] : []);
+  setHomeRoomQueue('leverage', admittedLeverageItems);
+  if(!changed) clearHomeRoomForAdmission('velocity');
+  if(!admittedHighest) clearHomeRoomForAdmission('alignment');
+  if(!ready) clearHomeRoomForAdmission('leverage');
 
   if(changed){
     const titleText = itemTitle(changed, 'Meaningful movement');
@@ -7289,13 +7516,13 @@ function hydrateRoomsFromBriefing(briefing){
     });
   }
 
-  if(highest || theme.title){
-    const titleText = itemTitle(highest, theme.title || 'Protected attention');
-    const meaningText = itemMeaning(highest, theme.why || 'This is where your judgment appears most valuable.');
-    const cardTitle = roomCardObservation(highest, titleText, 'alignment');
-    const cardSummary = roomCardImplication(highest, meaningText, 'alignment');
-    const sourceLabel = sourceActionLabel(highest, 'Open the thing needing attention');
-    const actions = suggestedHomeActionsForItem(highest || theme, 'alignment', sourceLabel);
+  if(admittedHighest){
+    const titleText = itemTitle(admittedHighest, 'Protected attention');
+    const meaningText = itemMeaning(admittedHighest, 'This is where your judgment appears most valuable.');
+    const cardTitle = roomCardObservation(admittedHighest, titleText, 'alignment');
+    const cardSummary = roomCardImplication(admittedHighest, meaningText, 'alignment');
+    const sourceLabel = sourceActionLabel(admittedHighest, 'Open the thing needing attention');
+    const actions = suggestedHomeActionsForItem(admittedHighest, 'alignment', sourceLabel);
     updateRoomFromBriefing('alignment', {
       card: {
         observation: cardTitle,
@@ -7309,14 +7536,14 @@ function hydrateRoomsFromBriefing(briefing){
         lens: 'Alignment',
         title: titleText,
         meaning: meaningText,
-        understanding: workspaceUnderstanding(highest, [
-          highest?.ifIgnored ? 'If ignored: ' + highest.ifIgnored : theme.why,
+        understanding: workspaceUnderstanding(admittedHighest, [
+          admittedHighest?.ifIgnored ? 'If ignored: ' + admittedHighest.ifIgnored : theme.why,
         ]),
-        recommendation: workspaceRecommendation(highest, 'Does this still feel true to you? If not, teach VAL what it missed.'),
+        recommendation: workspaceRecommendation(admittedHighest, 'Does this still feel true to you? If not, teach VAL what it missed.'),
         actions,
-        confidence: highest?.confidence,
+        confidence: admittedHighest?.confidence,
         restraintReason: 'Alignment owns the judgment question, not every supporting detail.',
-        sourceItem: highest || theme,
+        sourceItem: admittedHighest,
         cardType: 'highest_leverage'
       })
     });
@@ -7391,11 +7618,16 @@ function hydrateLeverageFromReadyForYou(result = {}){
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
   const queueItems = (items.length ? items : allBuilt).map(normalizeReadyForYouItem).filter((item) => item?.id);
-  setHomeRoomQueue('leverage', queueItems);
+  const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
+  setHomeRoomQueue('leverage', admittedQueueItems);
   const preparedCount = Number(result.preparedCount != null ? result.preparedCount : (allBuilt.length || items.length));
   updatePreparedCount(preparedCount);
-  const ready = queueItems.find(isConcreteHomeActionItem) || queueItems[0] || normalizeReadyForYouItem(items[0] || allBuilt[0] || null);
-  if(!ready || !ready.id) return;
+  const ready = firstBriefingItem(admittedQueueItems);
+  if(!ready || !ready.id){
+    clearHomeRoomForAdmission('leverage');
+    setRoomCopy(currentState);
+    return;
+  }
   const artifactCopy = preparedArtifactHomeCopy(ready);
   const titleText = artifactCopy?.workspaceTitle || itemTitle(ready, 'Prepared work is ready');
   const meaningText = artifactCopy?.workspaceMeaning || itemMeaning(ready, 'VAL has prepared something for review.');

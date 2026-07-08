@@ -51,6 +51,20 @@ Metadata-only packets until server hydration is added:
 
 Metadata-only does not mean unimportant. It means the runtime click is annotated, but `/api/hearth/build-packet` does not yet hydrate that packet directly.
 
+## Home Admission Boundary
+
+Truth lineage is necessary, but it does not earn Home placement.
+
+Before any truth appears in Velocity, Alignment, or Leverage, it must pass the v1 operating rule in `HEARTH_EXECUTIVE_REASONING_PIPELINE.md`:
+
+- Velocity items must pass the Velocity Round Table.
+- Alignment items must carry a complete Why Now Packet.
+- Leverage items must carry a Prepared Work Packet and Can VAL Act status.
+
+If an item lacks the required reasoning proof, it stays out of Home even when the source is true, packet-ready, and routeable.
+
+Fallback drawer routing is a navigation guard only. It is not signal-quality proof and must not be used to justify Home admission.
+
 ## Core Truth Graph
 
 ```mermaid
@@ -290,4 +304,3 @@ When we add or change a truth line:
 5. Add downstream packets/surfaces that receive the truth.
 6. Add the receipt/approval boundary.
 7. Add a test or audit check if the line is server-enforced.
-
