@@ -5402,10 +5402,11 @@ function packetReceiptSummary(packet = {}){
   const receipt = packet.receipt || {};
   const sourceReceipts = Array.isArray(receipt.sourceReceipts) ? receipt.sourceReceipts : [];
   const downstreamConsumers = Array.isArray(receipt.downstreamConsumers) ? receipt.downstreamConsumers : [];
-  const sourceLabels = sourceReceipts
+  const explicitSourceLabel = packet.source?.sourceLabel || packet.source?.sourceItem?.name || packet.source?.sourceItem?.title || '';
+  const sourceLabels = (explicitSourceLabel ? [explicitSourceLabel] : sourceReceipts
     .map((item) => item.label || item.sourceLabel || item.source_type || item.sourceType || item.key || item.variable)
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, 3));
   return {
     packetName: packet.packetName || receipt.packetName || '',
     status: packet.status || receipt.status || '',

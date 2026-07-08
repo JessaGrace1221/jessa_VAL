@@ -860,7 +860,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-scoped-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-receipt-proof-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1523,6 +1523,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /Relationship full file workspace/);
   assert.match(hearthJs, /openRelationshipFullFile\(profile\)/);
   assert.match(hearthJs, /function relationshipSource/);
+  assert.match(hearthJs, /const explicitSourceLabel = packet\.source\?\.sourceLabel/);
   assert.match(hearthJs, /sourceType: 'relationship_profile'/);
   assert.match(hearthJs, /sourceReceipts: person\.sourceReceipts/);
   assert.match(hearthJs, /function relationshipSuggestedActions/);
