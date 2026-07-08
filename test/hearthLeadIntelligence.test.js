@@ -132,6 +132,14 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function openProjectIndex/);
   assert.match(hearthJs, /function renderProjectRolodex/);
   assert.match(hearthJs, /function renderProjectProfile/);
+  assert.match(hearthJs, /function projectSource/);
+  assert.match(hearthJs, /function projectProfileReceiptPacket/);
+  assert.match(hearthJs, /function ensureProjectProfileReceipt/);
+  assert.match(hearthJs, /ensureProjectProfileReceipt\(project\)/);
+  assert.match(hearthJs, /function openProjectProfileFromDrawer/);
+  assert.match(hearthJs, /source:selectedSource/);
+  assert.match(hearthJs, /function handleProjectActionClick/);
+  assert.match(hearthJs, /source:projectSource\(activeProjectProfile, actionId\)/);
   assert.match(hearthJs, /button\.setAttribute\('aria-pressed', String\(activeProjectProfile\?\.id === project\.id\)\)/);
   assert.match(hearthJs, /button\.dataset\.projectOpenProfile === project\.id/);
   assert.match(hearthJs, /function hydrateProjectIndex/);
@@ -171,11 +179,12 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function loadProjectDossier/);
   assert.match(hearthJs, /\/api\/projects\/dossier\?/);
   assert.match(hearthJs, /function projectProfileFromDossier/);
-  assert.match(hearthJs, /loadProjectDossier\(projectProfileButton\.dataset\.projectOpenProfile\)/);
+  assert.match(hearthJs, /await openProjectProfileFromDrawer\(projectProfileButton\.dataset\.projectOpenProfile, projectProfileButton\)/);
   assert.match(hearthJs, /projectIndexSourceLabel = data\.source === 'demo_project_profiles' \? 'Demo project index' : 'Canonical project index'/);
   assert.match(hearthJs, /Canonical project index is connected\. No project profiles have enough evidence to appear here yet/);
   assert.match(hearthJs, /projectOpenProfile/);
   assert.match(hearthJs, /function handleProjectAction/);
+  assert.match(hearthJs, /await handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/);
   assert.match(hearthJs, /Project Judgment/);
   assert.match(hearthJs, /No task, CRM update, message, scrape, or import happened from this click/);
   assert.match(hearthJs, /priority is ready to judge/);
@@ -859,8 +868,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-render-proof-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-render-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-render-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-render-proof-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1112,7 +1121,9 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /fallbackSourceLabel = payload\.source\.sourceLabel/,
     /source:\(error\.data \|\| \{\}\)\.source \|\| payload\.source/,
     /sourceReceipts:Array\.isArray\(\(error\.data \|\| \{\}\)\.receipt\?\.sourceReceipts\)/,
-    /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
+    /async function handleProjectActionClick/,
+    /ensureHearthClickPacket\(\{node, packetName:'project_packet'/,
+    /handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.match(server, /status:'not_supplied',source:'hearth_packet_builder',message:'Selected Home source did not include a numeric confidence score.'/);

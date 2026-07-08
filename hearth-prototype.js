@@ -2627,6 +2627,61 @@ function renderProjectProfile(projectId = 'frisson'){
   hydrateProjectDocuments(project);
   hydrateProjectGraphLinks(project);
   hydrateProjectReviewUpdates(project);
+  ensureProjectProfileReceipt(project);
+}
+
+function projectSource(project = activeProjectProfile, action = ''){
+  const item = project || activeProjectProfile || projectProfiles.frisson;
+  return {
+    sourceId: item.projectId || item.id || item.profileKey || item.name || 'project',
+    sourceType: 'project_profile',
+    sourceLabel: item.name || 'Project',
+    projectId: item.projectId || item.id || item.profileKey || '',
+    projectName: item.name || 'Project',
+    sourceItem: {
+      id:item.id || item.projectId || item.profileKey || item.name || 'project',
+      projectId:item.projectId || '',
+      name:item.name || 'Project',
+      status:item.status || '',
+      currentReality:item.reality || '',
+      momentum:item.momentum || '',
+      decision:item.decision || '',
+      nextMove:item.nextMove || '',
+      sourceReceipts:item.sourceReceipts || '',
+      sourceDetails:normalizedProjectSourceDetails(item),
+      graphLinks:item.graphLinks || [],
+      reviewUpdates:item.reviewUpdates || [],
+      preparedWork:item.preparedWork || [],
+      requestedAction:action
+    }
+  };
+}
+
+function projectProfileReceiptPacket(project = activeProjectProfile){
+  const source = projectSource(project, 'project:open_profile');
+  const sourceLabel = source.sourceLabel || project?.name || 'Project';
+  return {
+    ok:true,
+    status:'not_checked',
+    packetName:'project_packet',
+    source,
+    click:{action:'project:open_profile'},
+    receipt:{
+      id:'project_packet_' + Date.now().toString(36),
+      sourceReceipts:[{label:sourceLabel, sourceType:'project_profile', key:source.sourceId || project?.id || sourceLabel}],
+      downstreamConsumers:['project_brief','relationship_packet','email_packet','home_source_packet'],
+      summary:'This Project brief is showing a source-scoped client packet while live hydration is unavailable or mismatched.'
+    }
+  };
+}
+
+function ensureProjectProfileReceipt(project = activeProjectProfile){
+  if(!project?.name || !drawerPacketReceipt || drawerPacketReceipt.hidden) return;
+  const currentReceipt = drawerPacketReceipt.textContent || '';
+  if(currentReceipt.includes(project.name)) return;
+  const packet = projectProfileReceiptPacket(project);
+  lastHearthPacketReceipt = packet;
+  renderDrawerPacketReceiptStrip(packet);
 }
 
 function projectProfileFromDossier(dossier = {}, fallback = {}){
@@ -2680,6 +2735,21 @@ async function loadProjectDossier(projectId = 'frisson'){
   }catch(error){
     console.warn('[hearth] project dossier unavailable', error.message);
   }
+}
+
+async function openProjectProfileFromDrawer(projectId = '', node = null){
+  const project = projectIndexProfiles[projectId] || projectProfiles[projectId] || projectProfiles.frisson;
+  renderProjectProfile(projectId || project.id || 'frisson');
+  const selectedSource = projectSource(project, 'project:open_profile');
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'project:open_profile', allowBlockedForInspection:true, source:selectedSource});
+  if(!preflight.ok) return;
+  const selectedLabel = selectedSource.sourceLabel || project.name || projectId;
+  const receiptLabels = packetReceiptSummary(preflight.packet || {}).sourceLabels.join(' ');
+  const receiptMatchesSelection = selectedLabel && receiptLabels.toLowerCase().includes(String(selectedLabel).toLowerCase());
+  const packet = receiptMatchesSelection ? preflight.packet : projectProfileReceiptPacket(project);
+  lastHearthPacketReceipt = packet || lastHearthPacketReceipt;
+  renderDrawerPacketReceiptStrip(packet || lastHearthPacketReceipt);
+  loadProjectDossier(projectId || project.id || 'frisson');
 }
 
 async function createProjectFromDrawer(event){
@@ -3877,6 +3947,14 @@ function handleProjectAction(action){
       ]
     });
   }
+}
+
+async function handleProjectActionClick(actionId = '', node = null){
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:actionId, allowBlockedForInspection:true, source:projectSource(activeProjectProfile, actionId)});
+  if(!preflight.ok) return;
+  lastHearthPacketReceipt = preflight.packet || lastHearthPacketReceipt;
+  renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
+  await handleProjectAction(actionId);
 }
 
 function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
@@ -10708,8 +10786,9 @@ drawerTray.addEventListener('click', async (event) => {
   }
   const projectProfileButton = event.target.closest('[data-project-open-profile]');
   if(projectProfileButton){
-    await ensureHearthClickPacket({node:projectProfileButton, packetName:'project_packet', action:'project:open_profile', allowBlockedForInspection:true});
-    loadProjectDossier(projectProfileButton.dataset.projectOpenProfile);
+    event.preventDefault();
+    event.stopPropagation();
+    await openProjectProfileFromDrawer(projectProfileButton.dataset.projectOpenProfile, projectProfileButton);
     return;
   }
   const relationshipAction = event.target.closest('[data-relationship-action]');
@@ -10722,9 +10801,8 @@ drawerTray.addEventListener('click', async (event) => {
   const projectAction = event.target.closest('[data-project-action]');
   if(projectAction){
     event.preventDefault();
-    const preflight = await ensureHearthClickPacket({node:projectAction, packetName:'project_packet', action:projectAction.dataset.projectAction});
-    if(!preflight.ok) return;
-    handleProjectAction(projectAction.dataset.projectAction);
+    event.stopPropagation();
+    await handleProjectActionClick(projectAction.dataset.projectAction, projectAction);
     return;
   }
   const roomButton = event.target.closest('[data-open-room]');
