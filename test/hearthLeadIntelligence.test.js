@@ -860,7 +860,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-packets-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=explicit-workflow-packets-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -919,7 +919,8 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   assert.match(hearthJs, /function observeHearthClickContracts/);
   assert.match(hearthJs, /new MutationObserver/);
   assert.match(hearthJs, /node\.dataset\.valClickContract = entry\.contract/);
-  assert.match(hearthJs, /node\.dataset\.valVariablePacket = entry\.packet/);
+  assert.match(hearthJs, /if\(!node\.dataset\.valVariablePacket\) node\.dataset\.valVariablePacket = entry\.packet/);
+  assert.match(hearthJs, /spec\.packet \? ' data-val-variable-packet="' \+ escapeHtml\(spec\.packet\) \+ '"'/);
   assert.match(hearthJs, /node\.dataset\.valPromptRule = entry\.rule/);
   assert.match(hearthJs, /node\.dataset\.valAllowedActions = entry\.actions/);
   assert.match(hearthJs, /node\.dataset\.valNeverDo = entry\.never/);

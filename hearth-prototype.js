@@ -336,7 +336,7 @@ function applyHearthClickContracts(root = document){
     nodes.forEach((node) => {
       if(node.dataset.valClickContract) return;
       node.dataset.valClickContract = entry.contract;
-      node.dataset.valVariablePacket = entry.packet;
+      if(!node.dataset.valVariablePacket) node.dataset.valVariablePacket = entry.packet;
       node.dataset.valPromptRule = entry.rule;
       node.dataset.valAllowedActions = entry.actions;
       node.dataset.valNeverDo = entry.never;
