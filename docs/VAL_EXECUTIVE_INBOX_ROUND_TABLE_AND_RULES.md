@@ -4,11 +4,15 @@ Executive Inbox is not a mailbox. It is the communication judgment layer of VAL.
 
 Its job is to decide which conversations deserve executive attention, prepare the safest useful response, and send only through an explicit approval or a narrow user-created rule.
 
+Executive Inbox is one implementation of the platform-wide [VAL Reality Processing Pipeline](./VAL_REALITY_PROCESSING_PIPELINE.md).
+
+Email does not own admission. Email asks the global Executive Relevance Engine whether a source can become relationship context, project context, Home context, Meeting Prep context, Co-Work context, prepared work, or quiet evidence only.
+
 ## v1 Operating Rule
 
 Executive Inbox may only show an email conversation when all of these are true:
 
-1. The sender passed Executive Inbox admission.
+1. The sender/source passed the Executive Relevance Engine for Executive Inbox use.
 2. The conversation has a complete Email Judgment Packet.
 3. The recommended action is one of the allowed Executive Inbox actions.
 4. The draft or next action can be reviewed in a clean work surface.
@@ -80,11 +84,13 @@ The Executive Inbox Round Table answers one question:
 
 It is a reasoning engine, not a UI surface.
 
+It consumes Witness observations and Executive Relevance decisions. It should not reread the raw inbox or invent admission rules that conflict with the global pipeline.
+
 ### Participants
 
 | Participant | Question |
 |---|---|
-| Admission Gate | Has this sender earned cognitive space? |
+| Executive Relevance Engine | Has this sender/source earned cognitive space for this use? |
 | Relationship Observer | Is this a real relationship, a contact, or noise? |
 | Project Observer | Does this belong to an active project or initiative? |
 | Commitment Observer | Does anyone owe anyone anything? |
@@ -110,9 +116,11 @@ The Round Table must produce exactly one of these outcomes:
 | `suppressed_contact` | User marked sender as not executive. | Never surface unless reversed |
 | `rule_executed_or_prepared` | A saved rule handled or prepared the action. | Receipt only if useful |
 
-## Admission Rules
+## Executive Relevance Rules For Email
 
-Admission happens before classification, drafting, relationship context, project linking, Home cards, or Co-Work retrieval.
+Executive relevance happens before classification, drafting, relationship context, project linking, Home cards, or Co-Work retrieval.
+
+These email-specific rules extend the global engine in `VAL_REALITY_PROCESSING_PIPELINE.md`.
 
 ### Hard Exclusion: One-Sided Sender
 
@@ -148,7 +156,7 @@ Result:
 - keep raw source searchable only if the user searches source history
 - reverse only through an explicit user action
 
-### Relationship Admission
+### Relationship Eligibility
 
 A sender may become a Relationship only when at least one is true:
 
@@ -160,7 +168,7 @@ A sender may become a Relationship only when at least one is true:
 - they are tied to a task, commitment, project, proposal, or document
 - another important contact mentions them in a relevant context
 
-### Project Admission
+### Project Eligibility
 
 An email may feed a Project only when at least one is true:
 
@@ -200,7 +208,7 @@ Feeds:
 
 ### 2. Email Admission Packet
 
-Created before classification.
+Created from the global Executive Relevance Engine before classification.
 
 Required variables:
 
@@ -543,4 +551,3 @@ The next implementation pass should ensure:
 - outbound receipts feed Relationship, Project, Commitment, Draft Learning, Rule Learning, and Evidence
 - saved rules are available from a quiet settings/rules drawer, not the main action surface
 - rule suggestions appear only after repeated evidence and explicit confirmation
-

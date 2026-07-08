@@ -55,6 +55,8 @@ Every Intelligence Pass output that updates context should use this shape:
 | Namespace | Purpose | Status |
 |---|---|---|
 | `event` | The thing that just happened. | new |
+| `witness` | Plain observations of what actually happened, before judgment. | new |
+| `relevance` | Global Executive Relevance Engine decisions about cognitive space. | new |
 | `teach_val` | Root durable profile from Teach VAL. | existing/derived |
 | `user` | Identity, preferences, capacity, energy, decision rules. | existing/new |
 | `important_people` | People the user or VAL has identified as important. | derived/new |
@@ -87,6 +89,38 @@ Every Intelligence Pass output that updates context should use this shape:
 | Event summary | `{{event.summary}}` | derived | string | Intelligence Pass | Compact description. |
 | Event importance | `{{event.importance_hint}}` | new | enum | triage pass | `ignore`, `store`, `analyze`, `deep_analyze`, `prepare_action`. |
 | Source quote | `{{event.source_quote}}` | derived | string | event parser | Best quote for grounding. |
+
+## Witness Variables
+
+Witness variables are produced before observers or Round Tables interpret meaning.
+
+| Label | Variable | Status | Type | Updated by | Notes |
+|---|---|---|---|---|---|
+| Witness ID | `{{witness.id}}` | new | string | Witness layer | Stable observation record. |
+| Source event ID | `{{witness.event_id}}` | new | string | Witness layer | Links to the source event. |
+| What happened | `{{witness.observed}}` | new | array | Witness layer | Plain facts only. |
+| Actors | `{{witness.actors}}` | new | array | Witness layer | People/orgs involved. |
+| Objects | `{{witness.objects}}` | new | array | Witness layer | Documents, projects, meetings, tasks, attachments. |
+| Time references | `{{witness.time_refs}}` | new | array | Witness layer | Dates, deadlines, meeting times. |
+| Source refs | `{{witness.source_refs}}` | new | array | Witness layer | Evidence receipts for each observation. |
+| Confidence | `{{witness.confidence}}` | new | number | Witness layer | Accuracy of the observation, not importance. |
+
+## Executive Relevance Variables
+
+Relevance variables decide whether a source earns cognitive space before any card, drawer, packet, or chat can use it.
+
+| Label | Variable | Status | Type | Updated by | Notes |
+|---|---|---|---|---|---|
+| Relevance ID | `{{relevance.id}}` | new | string | Executive Relevance Engine | Stable decision record. |
+| Source event ID | `{{relevance.event_id}}` | new | string | Executive Relevance Engine | Links to source and witness. |
+| Relevance state | `{{relevance.state}}` | new | enum | Executive Relevance Engine | `discard_noise`, `store_evidence_only`, `quiet_context`, `contact_only`, `relationship_eligible`, `project_eligible`, `executive_attention`, `prepared_work_eligible`, `suppressed`. |
+| Allowed consumers | `{{relevance.allowed_consumers}}` | new | array | Executive Relevance Engine | Which systems may use it. |
+| Blocked consumers | `{{relevance.blocked_consumers}}` | new | array | Executive Relevance Engine | Which systems must not use it. |
+| Admission rule | `{{relevance.rule}}` | new | string | Executive Relevance Engine | Rule that admitted or blocked it. |
+| Reason | `{{relevance.reason}}` | new | string | Executive Relevance Engine | Plain-English explanation. |
+| Cost if ignored | `{{relevance.cost_if_ignored}}` | new | string | Executive Relevance Engine | Consequence, if any. |
+| Suppression key | `{{relevance.suppression_key}}` | new | string | Executive Relevance Engine | Sender/domain/source/person/project suppression key. |
+| Source refs | `{{relevance.source_refs}}` | new | array | Executive Relevance Engine | Evidence behind the decision. |
 
 ## Teach VAL Variables
 

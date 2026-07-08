@@ -11,6 +11,10 @@ const routes=fs.readFileSync(path.join(root,'services','valExecutiveInboxRoutes.
 const spine=fs.readFileSync(path.join(root,'services','valIntelligenceSpine.js'),'utf8');
 const roundTableDoc=fs.readFileSync(path.join(root,'docs','VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md'),'utf8');
 const lineageDoc=fs.readFileSync(path.join(root,'docs','HEARTH_TRUTH_LINEAGE_MAP.md'),'utf8');
+const realityPipelineDoc=fs.readFileSync(path.join(root,'docs','VAL_REALITY_PROCESSING_PIPELINE.md'),'utf8');
+const reasoningPipelineDoc=fs.readFileSync(path.join(root,'docs','HEARTH_EXECUTIVE_REASONING_PIPELINE.md'),'utf8');
+const contextRegistryDoc=fs.readFileSync(path.join(root,'docs','VAL_CONTEXT_REGISTRY.md'),'utf8');
+const productPhilosophyDoc=fs.readFileSync(path.join(root,'docs','VAL_PRODUCT_PHILOSOPHY_AND_INFORMATION_ARCHITECTURE.md'),'utf8');
 
 test('conversation classification schema stores executive inbox fields and draft evaluations',()=>{
   for(const field of ['executive_meaning','priority_level','why_now','if_ignored','if_delayed','false_urgency_check_json','routing_json','approval_policy']){
@@ -34,6 +38,9 @@ test('executive inbox routes are backend-only and mounted',()=>{
 
 test('executive inbox round table doc defines packets rules and downstream feeds',()=>{
   assert.match(roundTableDoc,/Executive Inbox Round Table/);
+  assert.match(roundTableDoc,/VAL Reality Processing Pipeline/);
+  assert.match(roundTableDoc,/Executive Relevance Engine/);
+  assert.match(roundTableDoc,/Witness observations/);
   assert.match(roundTableDoc,/Email Admission Packet/);
   assert.match(roundTableDoc,/Email Judgment Packet/);
   assert.match(roundTableDoc,/Email Rule Packet/);
@@ -49,6 +56,21 @@ test('executive inbox round table doc defines packets rules and downstream feeds
   assert.match(roundTableDoc,/Rule Learning/);
   assert.match(roundTableDoc,/Draft Learning/);
   assert.match(lineageDoc,/VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES\.md/);
+});
+
+test('reality processing pipeline defines witness and global relevance before round tables',()=>{
+  assert.match(realityPipelineDoc,/Source\s*\n  -> Witness\s*\n  -> Executive Relevance Engine\s*\n  -> Round Table/);
+  assert.match(realityPipelineDoc,/What actually happened\?/);
+  assert.match(realityPipelineDoc,/Has this earned cognitive space\?/);
+  assert.match(realityPipelineDoc,/Can this create a Relationship\?/);
+  assert.match(realityPipelineDoc,/Can this feed Velocity\?/);
+  assert.match(realityPipelineDoc,/Can this influence Meeting Prep\?/);
+  assert.match(realityPipelineDoc,/No Context Borrowing From Suppressed Or Unadmitted Sources/);
+  assert.match(reasoningPipelineDoc,/VAL_REALITY_PROCESSING_PIPELINE\.md/);
+  assert.match(reasoningPipelineDoc,/-> Witness/);
+  assert.match(productPhilosophyDoc,/Witness\s*\n  -> Executive Relevance Engine/);
+  assert.match(contextRegistryDoc,/\| `witness` \| Plain observations/);
+  assert.match(contextRegistryDoc,/\| `relevance` \| Global Executive Relevance Engine/);
 });
 
 test('executive inbox hard-excludes one-sided senders and manual not-executive contacts',async()=>{

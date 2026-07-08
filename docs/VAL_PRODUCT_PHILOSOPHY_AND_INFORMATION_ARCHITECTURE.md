@@ -22,6 +22,7 @@ Companion specs:
 - [VAL_DESIGN_PHILOSOPHY.md](./VAL_DESIGN_PHILOSOPHY.md)
 - [VAL_HOMEPAGE_WITNESS_SYSTEM.md](./VAL_HOMEPAGE_WITNESS_SYSTEM.md)
 - [VAL_CHIEF_OF_STAFF_DECISION_MODEL.md](./VAL_CHIEF_OF_STAFF_DECISION_MODEL.md)
+- [VAL_REALITY_PROCESSING_PIPELINE.md](./VAL_REALITY_PROCESSING_PIPELINE.md)
 - [VAL_MOMENTUM_CARD_PROMPTS.md](./VAL_MOMENTUM_CARD_PROMPTS.md)
 - [VAL_READY_FOR_YOU_CARD_PROMPTS.md](./VAL_READY_FOR_YOU_CARD_PROMPTS.md)
 - [VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md](./VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md)
@@ -51,6 +52,8 @@ Philosophically.
 ```text
 Reality
   -> Evidence
+  -> Witness
+  -> Executive Relevance Engine
   -> Observers
   -> Round Table
   -> Chief of Staff
@@ -66,6 +69,10 @@ The user should not need to see every layer.
 But every screen should honor the order.
 
 Evidence comes before opinion.
+
+Witness comes before judgment.
+
+Relevance comes before attention.
 
 Understanding comes before action.
 

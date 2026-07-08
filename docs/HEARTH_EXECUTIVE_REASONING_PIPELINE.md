@@ -4,6 +4,7 @@ Purpose: define the reasoning spine that decides what VAL observes, classifies, 
 
 This document sits above:
 
+- `VAL_REALITY_PROCESSING_PIPELINE.md`
 - `HEARTH_TRUTH_LINEAGE_MAP.md`
 - `HEARTH_CLICK_CONTRACTS.md`
 - `HEARTH_PACKET_COMPLETENESS_CONTRACT.md`
@@ -49,11 +50,13 @@ A fact can be true, sourced, and packet-ready, and still not deserve the user's 
 
 VAL should not show something merely because it exists. VAL should show it because it has passed a reasoning gate.
 
-## v1 Attention Admission Rule
+The platform-wide rule for that gate is defined in `VAL_REALITY_PROCESSING_PIPELINE.md`: source data is first witnessed, then admitted or held back by the Executive Relevance Engine, then interpreted by the appropriate Round Table.
+
+## v1 Executive Relevance Rule
 
 For v1, source data must earn cognitive space before it can feed Home, Executive Inbox, Relationships, Projects, Co-Work, or Meeting Prep.
 
-The clearest Executive Inbox boundary is:
+The clearest current boundary is:
 
 ```text
 More than 3 inbound emails from a sender + 0 sent emails from the user to that sender = inbox_noise.
@@ -76,6 +79,7 @@ Every meaningful piece of information should pass through this pipeline:
 ```text
 Truth
   -> Normalize
+  -> Witness
   -> Observe
   -> Classify
   -> Judge
@@ -96,6 +100,7 @@ Each stage exists to answer one executive question.
 |---|---|
 | Truth | What entered VAL? |
 | Normalize | What exactly is this? |
+| Witness | What actually happened? |
 | Observe | What changed, moved, appeared, or resolved? |
 | Classify | What kind of thing is this? |
 | Judge | Does this deserve attention? |
@@ -148,6 +153,17 @@ Can VAL route back to it exactly?
 ```
 
 ### 3. Observe
+
+Before observation, the Witness states what actually happened without interpretation.
+
+Witness examples:
+
+- Greg replied.
+- Proposal attached.
+- Signature requested by Friday.
+- User said this person is not an executive contact.
+
+The Witness does not recommend, rank, draft, or decide.
 
 Observers detect what happened without deciding what should happen.
 
