@@ -292,6 +292,8 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /function timelineProposalAnchorStatus/);
   assert.match(hearthJs, /const timelineMatchReviewOpen/);
   assert.match(hearthJs, /function renderTimelineMatchReview/);
+  assert.match(hearthJs, /function timelineReviewSource/);
+  assert.match(hearthJs, /function timelineMatchSource/);
   assert.match(hearthJs, /function acceptTimelineLocalMatch/);
   assert.match(hearthJs, /data-anchor-state/);
   assert.match(hearthJs, /Needs matching first/);
@@ -308,6 +310,12 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /function timelineProposalReviewPayload/);
   assert.match(hearthJs, /function syncTimelineReviewDecision/);
   assert.match(hearthJs, /function handleTimelineReviewAction/);
+  assert.match(hearthJs, /action:'timeline:match_review'/);
+  assert.match(hearthJs, /action:'timeline:match_accept:'/);
+  assert.match(hearthJs, /action:'timeline:review:'/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
+  assert.match(hearthJs, /source:timelineReviewSource/);
+  assert.match(hearthJs, /source:timelineMatchSource/);
   assert.match(hearthJs, /\/api\/val\/review-updates\/transcript-proposal/);
   assert.match(hearthJs, /review_update_recorded/);
   assert.match(hearthJs, /data-timeline-review-action="approved"/);
@@ -816,7 +824,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-select-inspect-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-packet-source-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

@@ -4714,6 +4714,35 @@ function renderTimelineMatchReview(item = {}, anchorStatus = {}){
   return '<div class="timeline-match-review" aria-label="Review proposal matches">' + rows + '<p>No note, task, CRM update, durable memory, message, or external action is created from match review.</p></div>';
 }
 
+function timelineReviewSource(reviewId = ''){
+  const review = currentTimelineReviewItems.find((item) => item.id === reviewId) || null;
+  return {
+    review,
+    sourceId: review?.id || reviewId || '',
+    sourceType: review?.type ? 'timeline_' + review.type + '_proposal' : 'timeline_proposal',
+    sourceLabel: review?.title || review?.eventTitle || review?.transcriptTitle || 'Timeline proposal',
+    sourceItem: review,
+    transcriptId: review?.transcriptId || '',
+    transcriptTitle: review?.transcriptTitle || '',
+    eventTitle: review?.eventTitle || '',
+    relationships: review?.relationships || [],
+    project: review?.project || ''
+  };
+}
+
+function timelineMatchSource(reviewId = '', category = '', index = ''){
+  const source = timelineReviewSource(reviewId);
+  const candidates = source.review?.matchCandidates?.[category] || [];
+  const candidate = candidates[Number(index)] || null;
+  return {
+    ...source,
+    sourceType: 'timeline_match_review',
+    sourceLabel: candidate?.label ? 'Timeline match: ' + candidate.label : source.sourceLabel,
+    matchCategory: category || '',
+    matchCandidate: candidate
+  };
+}
+
 function timelineProposalAnchorStatus(item = {}){
   const provided = item.anchorStatus || {};
   const relationships = Array.isArray(item.relationships) ? item.relationships : [];
@@ -4840,8 +4869,8 @@ function openTimelineCoworkSession(){
       proposals.length ? proposals.length + ' transcript proposal' + (proposals.length === 1 ? '' : 's') + ' currently loaded.' : 'No transcript proposals are loaded yet.',
       firstProposal?.title ? 'First proposal: ' + firstProposal.title : '',
       firstProposal?.eventTitle ? 'Event: ' + firstProposal.eventTitle : '',
-      firstProposal?.projectName ? 'Project: ' + firstProposal.projectName : '',
-      firstProposal?.relationshipNames?.length ? 'Relationships: ' + firstProposal.relationshipNames.join(', ') : ''
+      firstProposal?.project ? 'Project: ' + firstProposal.project : '',
+      firstProposal?.relationships?.length ? 'Relationships: ' + firstProposal.relationships.join(', ') : ''
     ].filter(Boolean),
     recommendation: 'Use this to decide what should become notes, tasks, drafts, commitments, or meeting prep before approving anything.',
     placeholder: 'What should VAL help you understand or prepare from the timeline, transcripts, or tasks?',
@@ -10199,8 +10228,10 @@ drawerTray.addEventListener('click', async (event) => {
   if(timelineAction){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction});
+    const firstReview = currentTimelineReviewItems[0] || null;
+    const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Timeline & Tasks', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
     if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(timelineAction.dataset.timelineAction === 'cowork_timeline') openTimelineCoworkSession();
     return;
   }
@@ -10208,6 +10239,9 @@ drawerTray.addEventListener('click', async (event) => {
   if(timelineMatchAccept){
     event.preventDefault();
     event.stopPropagation();
+    const preflight = await ensureHearthClickPacket({node:timelineMatchAccept, packetName:'timeline_packet', action:'timeline:match_accept:' + (timelineMatchAccept.dataset.timelineMatchCategory || ''), allowBlockedForInspection:true, source:timelineMatchSource(timelineMatchAccept.dataset.timelineMatchAccept, timelineMatchAccept.dataset.timelineMatchCategory, timelineMatchAccept.dataset.timelineMatchIndex)});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     acceptTimelineLocalMatch(timelineMatchAccept.dataset.timelineMatchAccept, timelineMatchAccept.dataset.timelineMatchCategory, timelineMatchAccept.dataset.timelineMatchIndex);
     return;
   }
@@ -10216,6 +10250,9 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const reviewId = timelineMatchReview.dataset.timelineMatchReview;
+    const preflight = await ensureHearthClickPacket({node:timelineMatchReview, packetName:'timeline_packet', action:'timeline:match_review', allowBlockedForInspection:true, source:timelineReviewSource(reviewId)});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     timelineMatchReviewOpen[reviewId] = !timelineMatchReviewOpen[reviewId];
     renderTimelineReviewCards(currentTimelineReviewItems);
     return;
@@ -10224,8 +10261,9 @@ drawerTray.addEventListener('click', async (event) => {
   if(timelineReviewAction){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:timelineReviewAction, packetName:'timeline_packet', action:timelineReviewAction.dataset.timelineReviewAction});
+    const preflight = await ensureHearthClickPacket({node:timelineReviewAction, packetName:'timeline_packet', action:'timeline:review:' + (timelineReviewAction.dataset.timelineReviewAction || ''), source:timelineReviewSource(timelineReviewAction.dataset.timelineReviewId)});
     if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     await handleTimelineReviewAction(timelineReviewAction.dataset.timelineReviewId, timelineReviewAction.dataset.timelineReviewAction);
     return;
   }
