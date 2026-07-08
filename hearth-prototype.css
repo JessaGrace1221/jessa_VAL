@@ -947,6 +947,7 @@ button,a{font:inherit}
   grid-template-columns:1.05fr 1.2fr 1.05fr;
   gap:12px;
 }
+.workspace-grid[hidden]{display:none!important}
 .paper{
   min-height:118px;
   padding:16px;
