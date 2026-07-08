@@ -3878,7 +3878,7 @@ function handleProjectAction(action){
 }
 
 function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
-  const profile = providedProfile || relationshipProfiles[profileId] || relationshipProfiles.aric;
+  const profile = {...(providedProfile || relationshipProfiles[profileId] || relationshipProfiles.aric), profileId};
   activeRelationshipProfile = profile;
   document.querySelectorAll('[data-relationship-field]').forEach((node) => {
     const field = node.dataset.relationshipField;
@@ -4029,23 +4029,47 @@ function preferredRelationshipActions(actions = []){
   return preferred.map((id) => actions.find((action) => action.id === id)).filter(Boolean);
 }
 
+function relationshipSuggestedActions(profile = {}){
+  if(profile.unresolvedIdentity){
+    return [
+      {id:'search_ghl_contacts',label:'Search GHL contacts',type:'identity_gate',willDo:'Show possible GHL matches for this person.',willNotDo:'No contact will be created or merged.'},
+      {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review the proposed contact before creation.',willNotDo:'VAL will not create a contact without review.'}
+    ];
+  }
+  const state = String(profile.relationshipState || profile.relationshipStateLabel || '').toLowerCase();
+  const evidence = [profile.evidence, profile.signal, profile.certainty, profile.linkedinSignal].join(' ').toLowerCase();
+  const actions = [
+    {id:'open_full_file',label:'Open full file',type:'route',route:profile.href,willDo:'Open the full relationship file.',willNotDo:'No external action will happen.'}
+  ];
+  if(state.includes('waiting') || evidence.includes('reply') || evidence.includes('proposal') || evidence.includes('loop')){
+    actions.push(
+      {id:'draft_message',label:'Draft reply',type:'endpoint',willDo:'Prepare a relationship-specific reply for review.',willNotDo:'Nothing will be sent.'},
+      {id:'create_task',label:'Create follow-up task',type:'endpoint',willDo:'Prepare a task connected to this relationship loop.',willNotDo:'No external system will be changed without approval.'},
+      {id:'ask_alignment',label:'Ask what matters now',type:'workspace',workspace:'alignment'}
+    );
+    return actions;
+  }
+  if(state.includes('strategic') || evidence.includes('partner') || evidence.includes('momentum')){
+    actions.push(
+      {id:'cowork_relationship',label:'Co-Work with VAL',type:'workspace',willDo:'Think with VAL using this relationship file.',willNotDo:'No email, CRM update, task, or post will happen.'},
+      {id:'find_relationship_introductions',label:'Review introductions',type:'endpoint',willDo:'Prepare review-only introduction candidates.',willNotDo:'No introduction will be sent.'},
+      {id:'review_linkedin_activity',label:'Review LinkedIn signal',type:'endpoint',willDo:'Show the latest known LinkedIn signal.',willNotDo:'No post, comment, scrape, message, or CRM change will happen.'}
+    );
+    return actions;
+  }
+  actions.push(
+    {id:'draft_message',label:'Draft check-in',type:'endpoint',willDo:'Prepare a warm relationship-specific check-in for review.',willNotDo:'Nothing will be sent.'},
+    {id:'create_task',label:'Create follow-up task',type:'endpoint',willDo:'Prepare a task connected to this relationship.',willNotDo:'No external system will be changed without approval.'},
+    {id:'teach_wisdom',label:'Teach VAL',type:'teach',willDo:'Open a teaching moment about this relationship.',willNotDo:'VAL will not save durable memory without review.'}
+  );
+  return actions;
+}
+
 function renderRelationshipActions(profile = {}){
   const container = document.querySelector('.relationship-actions');
   if(!container) return;
   const actions = preferredRelationshipActions(Array.isArray(profile.actions) ? profile.actions : []);
-  const safeActions = actions.length ? actions : [
-    {id:'open_full_file',label:'Open full file',type:'route',route:profile.href},
-    {id:'draft_message',label:'Draft Email',type:'endpoint',willDo:'Prepare a message for review.',willNotDo:'Nothing will be sent.'},
-    {id:'draft_linkedin_comment',label:'Draft LinkedIn Comment',type:'endpoint',willDo:'Prepare a thoughtful LinkedIn comment draft.',willNotDo:'No comment will be posted.'},
-    {id:'draft_linkedin_dm',label:'Draft LinkedIn DM',type:'endpoint',willDo:'Prepare a warm private LinkedIn note.',willNotDo:'No message will be sent.'},
-    {id:'create_task',label:'Create Task',type:'endpoint',willDo:'Prepare a VAL task connected to this relationship.',willNotDo:'No external system will be changed.'},
-    {id:'ask_alignment',label:'Ask what deserves attention',type:'workspace',workspace:'alignment'},
-    {id:'brainstorm',label:'Brainstorm',type:'endpoint',willDo:'Think through the relationship using the brief.',willNotDo:'No facts will be invented.'},
-    {id:'review_linkedin_activity',label:'Review LinkedIn',type:'endpoint',willDo:'Show the latest known LinkedIn signal.',willNotDo:'No post, comment, scrape, message, or CRM change will happen.'},
-    {id:'find_relationship_introductions',label:'Find Introductions',type:'endpoint',willDo:'Prepare review-only introduction candidates in both directions.',willNotDo:'No introduction will be sent and no contact will be exposed.'},
-    {id:'refresh_relationship_observers',label:'Refresh observers',type:'endpoint',willDo:'Preview which observers should refresh this brief.',willNotDo:'No scrape, import, overwrite, post, or CRM change will happen.'},
-    {id:'mark_vip',label:'Update Relationship',type:'endpoint',willDo:'Open a teaching moment for relationship importance.',willNotDo:'No CRM record will be changed from this click.'}
-  ];
+  const safeActions = actions.length ? actions : relationshipSuggestedActions(profile);
   const actionHtml = (action) => {
     const label = escapeHtml(action.label || 'Review');
     const title = escapeHtml([action.willDo, action.willNotDo].filter(Boolean).join(' '));
@@ -4056,10 +4080,7 @@ function renderRelationshipActions(profile = {}){
     return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '">' + label + '</button>';
   };
   const groups = [
-    {label:'Communicate', ids:['draft_message','draft_linkedin_comment','draft_linkedin_dm']},
-    {label:'Plan', ids:['create_task','ask_alignment']},
-    {label:'Think', ids:['brainstorm','open_full_file','review_linkedin_activity','find_relationship_introductions']},
-    {label:'Teach', ids:['search_ghl_contacts','review_new_contact_candidate','refresh_relationship_observers','mark_vip','not_important','snooze']}
+    {label:'Suggested next moves', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','teach_wisdom','open_full_file','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
   ];
   const groupedHtml = groups.map((group) => {
     const groupActions = safeActions.filter((action) => group.ids.includes(action.id));
@@ -4110,6 +4131,31 @@ function relationshipActionById(profile = {}, actionId = ''){
   const actions = Array.isArray(profile.actions) ? profile.actions : [];
   const sectionActions = relationshipAllSectionActions(profile);
   return actions.find((action) => action.id === actionId) || sectionActions.find((action) => action.id === actionId) || {id: actionId, label: actionId.replace(/_/g, ' ')};
+}
+
+function relationshipSource(profile = activeRelationshipProfile, action = ''){
+  const person = profile || activeRelationshipProfile || relationshipProfiles.aric;
+  return {
+    sourceId: person.contactId || person.crmContactId || person.id || person.profileId || person.name || 'relationship',
+    sourceType: 'relationship_profile',
+    sourceLabel: person.name || 'Relationship',
+    sourceItem: {
+      id: person.id || person.profileId || person.name || 'relationship',
+      name: person.name || 'Relationship',
+      company: person.company || '',
+      role: person.role || '',
+      state: person.relationshipStateLabel || person.relationshipState || '',
+      temperature: person.temperature || '',
+      signal: person.signal || '',
+      currentReality: person.evidence || '',
+      executiveAssessment: person.patterns || '',
+      strategicImportance: person.meaning || '',
+      sourceReceipts: person.sourceReceipts || '',
+      linkedProjects: person.projectLinks || [],
+      linkedDocuments: person.documentLinks || [],
+      requestedAction: action
+    }
+  };
 }
 
 function relationshipFirstName(profile = activeRelationshipProfile){
@@ -4180,7 +4226,8 @@ function showRelationshipReceipt({title, meaning, understanding = [], recommenda
     understanding,
     recommendation,
     actions: relationshipContextActions(actions),
-    label: 'Relationship action workspace'
+    label: 'Relationship action workspace',
+    packetReceipt: lastHearthPacketReceipt
   });
   openWorkspaceShell('Relationship action workspace', {returnTarget:'relationship'});
 }
@@ -10391,7 +10438,14 @@ document.querySelector('[data-project-create-cancel]')?.addEventListener('click'
 projectFileInput?.addEventListener('change', updateProjectFileReceipt);
 
 relationshipFolderButtons.forEach((button) => {
-  button.addEventListener('click', () => loadRelationshipDossier(button.dataset.relationshipProfile));
+  button.addEventListener('click', async () => {
+    const profileId = button.dataset.relationshipProfile;
+    const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
+    const preflight = await ensureHearthClickPacket({node:button, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    loadRelationshipDossier(profileId);
+  });
 });
 
 relationshipSearchInput?.addEventListener('input', () => {
@@ -10561,7 +10615,11 @@ drawerTray.addEventListener('click', async (event) => {
   }
   const relationshipProfileButton = event.target.closest('[data-relationship-open-profile]');
   if(relationshipProfileButton){
-    await ensureHearthClickPacket({node:relationshipProfileButton, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true});
+    const profileId = relationshipProfileButton.dataset.relationshipOpenProfile;
+    const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
+    const preflight = await ensureHearthClickPacket({node:relationshipProfileButton, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     loadRelationshipDossier(relationshipProfileButton.dataset.relationshipOpenProfile);
     return;
   }
@@ -10574,8 +10632,9 @@ drawerTray.addEventListener('click', async (event) => {
   const relationshipAction = event.target.closest('[data-relationship-action]');
   if(relationshipAction){
     event.preventDefault();
-    const preflight = await ensureHearthClickPacket({node:relationshipAction, packetName:'relationship_packet', action:relationshipAction.dataset.relationshipAction});
+    const preflight = await ensureHearthClickPacket({node:relationshipAction, packetName:'relationship_packet', action:relationshipAction.dataset.relationshipAction, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, relationshipAction.dataset.relationshipAction)});
     if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     handleRelationshipAction(relationshipAction.dataset.relationshipAction);
     return;
   }
