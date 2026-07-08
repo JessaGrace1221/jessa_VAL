@@ -19500,7 +19500,7 @@ async function discoverFrissonProspects(mode='organizations',body={}){
       leadProfile:'frisson'
     }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
     if(!scraped.configured){
-      return {ok:false,leadProfile:'frisson',prospectingMode:`frisson_${plan.mode}`,scraperType:frissonModeLabel(plan.mode),market:plan.market,organizationType:term,leads:[],error:scraped.error||'Outscraper is not configured',content:`Frisson ${frissonModeLabel(plan.mode)} scrape could not start.\n\n${cleanLeadLevelText(scraped.error||'Outscraper is not configured')}`};
+      return {ok:false,leadProfile:'frisson',prospectingMode:`frisson_${plan.mode}`,scraperType:frissonModeLabel(plan.mode),market:plan.market,organizationType:term,leads:[],error:scraped.error||'Outscraper is not configured',content:`Frisson ${frissonModeLabel(plan.mode)} scrape could not start.\n\n${scraped.error||'Outscraper is not configured'}`};
     }
     if(scraped.error) errors.push(`${term}: ${cleanLeadLevelText(scraped.error)}`);
     raw.push(...(scraped.leads||[]).map(lead=>({...lead,organizationType:term,industry:term,leadProfile:'frisson',scraperType:frissonModeLabel(plan.mode),source:'Frisson Lead Intelligence'})));
@@ -19802,7 +19802,7 @@ async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey){
 
 async function discoverOutscraperProspects({organizationType,employeeMinimum,market,limit,leadProfile}){
   const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
-  if(!outscraperKey) return {configured:false, leads:[], error:'OUTSCRAPER_API_KEY is not set'};
+  if(!outscraperKey) return {configured:false, leads:[], error:'Outscraper is not connected for this VAL environment. Add OUTSCRAPER_API_KEY to the running environment or save the Outscraper key in VAL connections, then restart/redeploy.'};
   const url=new URL(OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL);
   const query=leadProfile==='westwood'
     ? `${organizationType} non-government, non-municipal private businesses in ${market} that have contact email addresses available`

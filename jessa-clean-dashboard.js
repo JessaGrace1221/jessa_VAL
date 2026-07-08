@@ -88,8 +88,10 @@ async function previewFrissonScraper(type){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(scraperPayload(type))
     });
-    const data = await response.json().catch(() => ({}));
-    if(!response.ok) throw new Error(data.error || `Could not preview Frisson ${type}.`);
+    const rawText = await response.text();
+    let data = {};
+    try{data = rawText ? JSON.parse(rawText) : {};}catch{data = {content:rawText};}
+    if(!response.ok) throw new Error(data.content || data.error || rawText || `Could not preview Frisson ${type}.`);
     frissonPreviews[type] = data.ok && Array.isArray(data.leads) && data.leads.length ? data : null;
     const importButton = scraperCard(type)?.querySelector(`[data-frisson-import="${type}"]`);
     if(importButton) importButton.disabled = !(data.ok && Array.isArray(data.leads) && data.leads.length);
@@ -117,8 +119,10 @@ async function importFrissonScraper(type){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(preview)
     });
-    const data = await response.json().catch(() => ({}));
-    if(!response.ok) throw new Error(data.error || `Could not import Frisson ${type}.`);
+    const rawText = await response.text();
+    let data = {};
+    try{data = rawText ? JSON.parse(rawText) : {};}catch{data = {content:rawText};}
+    if(!response.ok) throw new Error(data.content || data.error || rawText || `Could not import Frisson ${type}.`);
     setScraperResult(data.content || JSON.stringify(data, null, 2), !data.ok);
   }catch(error){
     setScraperResult(error.message || `Could not import Frisson ${type}.`, true);
