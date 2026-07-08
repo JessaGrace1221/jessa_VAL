@@ -5996,7 +5996,10 @@ async function runMeetingPrep(){
 
 function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt,sourceItem,cardType,suppressClarityStandard}){
   activeHomeWorkspace = null;
-  const normalizedWorkspace = suppressClarityStandard ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType} : normalizeWorkspaceForClarity({lens,title,meaning,understanding,recommendation,actions,sourceItem,cardType});
+  const preserveHeldCoworkContext = /co-work|cowork/i.test(String(lens || '') + ' ' + String(title || ''));
+  const normalizedWorkspace = (suppressClarityStandard || preserveHeldCoworkContext)
+    ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType}
+    : normalizeWorkspaceForClarity({lens,title,meaning,understanding,recommendation,actions,sourceItem,cardType});
   activeClarityWorkspace = normalizedWorkspace;
   deskWorkspace.classList.remove('witnessing-mode');
   workspaceKicker.textContent = normalizedWorkspace.lens;

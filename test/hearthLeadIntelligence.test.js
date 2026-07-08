@@ -780,6 +780,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /value: ''/);
   assert.match(hearthJs, /Use this held context silently/);
   assert.match(hearthJs, /VAL is holding the Meeting Prep brief privately/);
+  assert.match(hearthJs, /preserveHeldCoworkContext = \/co-work\|cowork\/i/);
   assert.doesNotMatch(hearthJs, /value: initialValue \|\| ''/);
   assert.match(hearthCss, /\.workspace-grid\[hidden\]\{display:none!important\}/);
   assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
