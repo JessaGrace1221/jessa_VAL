@@ -6705,14 +6705,39 @@ function drawerIndexPacketReceipt({node = null, packetName = '', action = '', la
   return packet;
 }
 
+function hearthHumanContextLabel(value = ''){
+  const normalized = String(value || '').replace(/[{}]/g, '').trim();
+  const labels = {
+    'calendar.upcoming': 'upcoming calendar events',
+    'calendar.current_event.internal_context': 'relationship, email, and project context for this event',
+    'calendar.current_event.attendee_resolution': 'resolved attendee identities',
+    'calendar.today': 'today\'s calendar',
+    'recent_transcripts.open_loops': 'open loops from recent transcripts',
+    'emails.thread.current.summary': 'the current email thread summary',
+    'tasks.open': 'open tasks',
+    'relationships.current.current_thread_history': 'relationship history for this source',
+    'projects.linked_to_relationship': 'projects linked to this relationship',
+    'emails.thread.current.messages': 'current email thread messages',
+    'home.card.sourceRefs': 'source references for this Home card',
+    'evidence.current_item': 'evidence for this item',
+    'rules.val_os.behavior_packet': 'VAL behavior rules'
+  };
+  return labels[normalized] || normalized.replace(/\./g, ' ').replace(/_/g, ' ');
+}
+
+function hearthHumanContextList(items = [], limit = 6){
+  const labels = items.map(hearthHumanContextLabel).filter(Boolean);
+  return labels.slice(0, limit).join(', ') + (labels.length > limit ? ' +' + (labels.length - limit) + ' more' : '');
+}
+
 function hearthPacketMissingLines(packet = {}){
   const missing = Array.isArray(packet.missingRequired) ? packet.missingRequired : [];
   const gaps = Array.isArray(packet.providerGaps) ? packet.providerGaps : [];
   const partials = Array.isArray(packet.providerPartials) ? packet.providerPartials : [];
   return [
-    missing.length ? 'Missing context: ' + missing.slice(0, 6).join(', ') + (missing.length > 6 ? ' +' + (missing.length - 6) + ' more' : '') : '',
-    gaps.length ? 'Provider gaps: ' + gaps.join(', ') : '',
-    partials.length ? 'Partial providers: ' + partials.join(', ') : '',
+    missing.length ? 'Missing context: ' + hearthHumanContextList(missing) : '',
+    gaps.length ? 'Unavailable providers: ' + hearthHumanContextList(gaps) : '',
+    partials.length ? 'Partially available context: ' + hearthHumanContextList(partials) : '',
     packet.counts?.variables ? 'Checked ' + packet.counts.variables + ' required variables.' : ''
   ].filter(Boolean);
 }
@@ -10521,7 +10546,8 @@ async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0)
     node,
     packetName:'timeline_packet',
     action:'timeline:meeting_prep',
-    source:calendarPacketSourceFromEvent(event, eventIndex)
+    source:calendarPacketSourceFromEvent(event, eventIndex),
+    allowBlockedForInspection:true
   });
   if(!preflight.ok) return;
   await openMeetingPrep();
