@@ -744,6 +744,10 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
 });
 
 test('Hearth calendar prep is connected to the meeting prep backend contract', () => {
+  const meetingPrepResultBlock = hearthJs.slice(
+    hearthJs.indexOf('function renderMeetingPrepResult'),
+    hearthJs.indexOf('async function runMeetingPrep')
+  );
   assert.match(hearthJs, /\/api\/val\/calendar\/meeting-prep/);
   assert.match(hearthJs, /\/api\/calendar\/sidebar/);
   assert.match(hearthJs, /function hydrateCalendarPanel/);
@@ -753,6 +757,18 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /activeMeetingPrepEvent/);
   assert.match(hearthJs, /External enrichment is planned only if it improves judgment for this event/);
   assert.match(hearthJs, /postJson\('\/api\/val\/calendar\/meeting-prep', \{event\}\)/);
+  assert.match(hearthJs, /function meetingPrepQualityLine/);
+  assert.match(hearthJs, /function meetingPrepStakesLine/);
+  assert.match(hearthJs, /function meetingPrepSourceSummary/);
+  assert.match(hearthJs, /function meetingPrepActionsFromBrief/);
+  assert.match(hearthJs, /Quality gate:/);
+  assert.match(hearthJs, /Stakes:/);
+  assert.match(hearthJs, /Source confidence:/);
+  assert.match(hearthJs, /First five minutes:/);
+  assert.match(hearthJs, /Open Timeline & Tasks/);
+  assert.match(hearthJs, /if\(command === 'timeline'\)/);
+  assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
+  assert.doesNotMatch(meetingPrepResultBlock, /label: 'Prepare follow-up'/);
   assert.match(hearthHtml, /data-calendar-packet-receipt/);
   assert.match(hearthJs, /Close and return to desk/);
   assert.match(hearthJs, /function meetingPrepAttendeeIdentityLines/);
@@ -918,8 +934,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-admission-gate-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-admission-gate-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=meeting-prep-context-gate-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=meeting-prep-context-gate-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

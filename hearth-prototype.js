@@ -5673,38 +5673,122 @@ function renderMeetingPrepUnderstanding(items = []){
   }).join('');
 }
 
+function meetingPrepSourceLabel(label = ''){
+  return String(label || 'unknown').replace(/_/g, ' ');
+}
+
+function meetingPrepSourceSummary(brief = {}){
+  const labels = []
+    .concat(brief.meetingContextJson?.source_confidence_label || [])
+    .concat(brief.internalContextJson?.source_confidence_label || [])
+    .concat(Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson.map((question) => question.source_confidence_label) : [])
+    .concat(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson.map((attendee) => attendee.source_confidence_label) : [])
+    .filter(Boolean)
+    .map(meetingPrepSourceLabel);
+  return Array.from(new Set(labels)).slice(0,4).join(', ') || 'source confidence unavailable';
+}
+
+function meetingPrepQualityLine(brief = {}){
+  const gate = brief.qualityGateJson || {};
+  const issues = Array.isArray(gate.issues) ? gate.issues : [];
+  if(gate.quality === 'unusable') return 'Quality gate: not usable yet. Missing: ' + (issues.join(', ') || 'usable calendar context') + '.';
+  return 'Quality gate: ' + (gate.quality || 'unknown') + (issues.length ? ' with caution: ' + issues.join(', ') : '') + '.';
+}
+
+function meetingPrepAttendeeSummary(brief = {}){
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  if(!attendees.length) return 'Attendees: no attendee identity is attached yet.';
+  const resolved = attendees.filter((attendee) => attendee.crm_contact_id).length;
+  return 'Attendees: ' + resolved + ' resolved, ' + (attendees.length - resolved) + ' unresolved.';
+}
+
+function meetingPrepStakesLine(brief = {}){
+  const stakes = brief.meetingStakesJson || {};
+  const levels = [
+    stakes.relationship_stakes && 'relationship ' + stakes.relationship_stakes,
+    stakes.revenue_stakes && 'revenue ' + stakes.revenue_stakes,
+    stakes.trust_stakes && 'trust ' + stakes.trust_stakes,
+    stakes.opportunity_stakes && 'opportunity ' + stakes.opportunity_stakes
+  ].filter(Boolean);
+  return levels.length ? 'Stakes: ' + levels.join(', ') + '.' : 'Stakes: not enough evidence to judge yet.';
+}
+
+function meetingPrepFollowUpLine(followUp = {}){
+  if(!followUp || !Object.keys(followUp).length) return 'Follow-up: not prepared yet.';
+  if(followUp.likely_follow_up_needed) return 'Follow-up: likely needed after the meeting; approval required before anything is sent or created.';
+  return 'Follow-up: no action required yet.';
+}
+
+function meetingPrepActionsFromBrief(brief = {}){
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const firstResolved = attendees.find((attendee) => attendee.crm_contact_id);
+  const followUp = brief.followUpPreparationJson || {};
+  const actions = [];
+  if(firstResolved) actions.push({label: 'Open ' + (firstResolved.name || 'attendee') + ' relationship file', workflow: 'contactOpen:' + firstResolved.crm_contact_id});
+  if(followUp.likely_follow_up_needed) actions.push({label: 'Open Timeline & Tasks', workflow: 'timeline'});
+  actions.push({label: 'Open full calendar', workflow: 'calendar'});
+  actions.push({label: 'Close and return to desk', workflow: 'cancel:meeting'});
+  return actions;
+}
+
 function renderMeetingPrepResult(result){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = result.brief || {};
+  const gate = brief.qualityGateJson || {};
   const prep = brief.briefJson || {};
   const firstFive = brief.firstFiveMinutesJson || {};
   const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
   const followUp = brief.followUpPreparationJson || {};
   const attendeeLines = meetingPrepAttendeeIdentityLines(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : []);
+  if(gate.quality === 'unusable' || brief.status === 'needs_context' && !attendeeLines.length){
+    setWorkspaceContent({
+      lens: 'Meeting Prep',
+      title: meetingPrepEventTitle(event) + ' needs context before prep is useful.',
+      meaning: 'VAL found the calendar event, but it is not prep-worthy enough to interrupt you with a brief yet.',
+      understanding: [
+        meetingPrepQualityLine(brief),
+        meetingPrepAttendeeSummary(brief),
+        'Source confidence: ' + meetingPrepSourceSummary(brief) + '.',
+        'No calendar invite, CRM update, task, message, or memory write happened.'
+      ],
+      recommendation: 'Add the missing calendar context or open the full calendar. Otherwise this event should stay quiet.',
+      actions: [
+        {label:'Open full calendar', workflow:'calendar'},
+        {label:'Close and return to desk', workflow:'cancel:meeting'}
+      ],
+      label: 'Meeting prep needs context'
+    });
+    return;
+  }
   setWorkspaceContent({
     lens: 'Meeting Prep',
     title: prep.meeting_title || meetingPrepEventTitle(event),
     meaning: prep.concise_brief || ('VAL prepared context for ' + meetingPrepEventTitle(event) + '.'),
     understanding: [
+      meetingPrepQualityLine(brief),
       'Calendar source: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
-      firstFive.first_sentence_option ? 'Opening: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
+      meetingPrepStakesLine(brief),
+      meetingPrepAttendeeSummary(brief),
+      firstFive.first_sentence_option ? 'First five minutes: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
       ...attendeeLines,
       questions[0]?.text ? 'First question: ' + questions[0].text : 'Suggested questions are prepared.',
-      followUp.likely_follow_up_needed ? 'Follow-up preparation is likely needed after the meeting.' : 'No follow-up action is required yet.'
-    ],
-    recommendation: (prep.what_val_recommends_preparing || []).join(' / ') || meetingPrep.recommendation,
-    actions: [
-      {label: 'Open relationship context', workflow: 'pipeline'},
-      {label: 'Prepare follow-up', workflow: 'teach'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-    ],
+      meetingPrepFollowUpLine(followUp),
+      'Source confidence: ' + meetingPrepSourceSummary(brief) + '.',
+      Array.isArray(brief.unknownsJson) && brief.unknownsJson.length ? 'Unknowns: ' + brief.unknownsJson.map((item) => item.reason || item.source || item).slice(0,2).join('; ') + '.' : ''
+    ].filter(Boolean),
+    recommendation: (prep.what_val_recommends_preparing || []).join(' / ') || firstFive.early_question || meetingPrep.recommendation,
+    actions: meetingPrepActionsFromBrief(brief),
     label: 'Meeting prep workspace'
   });
   workspacePapers.understanding.innerHTML = renderMeetingPrepUnderstanding([
-    firstFive.first_sentence_option ? 'Opening: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
+    meetingPrepQualityLine(brief),
+    meetingPrepStakesLine(brief),
+    meetingPrepAttendeeSummary(brief),
+    firstFive.first_sentence_option ? 'First five minutes: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
     ...attendeeLines,
     questions[0]?.text ? 'First question: ' + questions[0].text : 'Suggested questions are prepared.',
-    followUp.likely_follow_up_needed ? 'Follow-up preparation is likely needed after the meeting.' : 'No follow-up action is required yet.'
+    meetingPrepFollowUpLine(followUp),
+    'Source confidence: ' + meetingPrepSourceSummary(brief) + '.'
   ]);
 }
 
@@ -10149,6 +10233,12 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'contactOpen'){
     openCanonicalRelationshipFile(type);
+    return;
+  }
+  if(command === 'timeline'){
+    closeWorkspace();
+    restoreTimelineWindow();
+    hydrateTimelineStatus();
     return;
   }
   if(command === 'preview'){
