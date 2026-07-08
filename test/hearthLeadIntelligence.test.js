@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-receipt-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=drawer-hit-targets-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=drawer-hit-targets-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1544,6 +1544,9 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.relationship-action-group/);
   assert.match(hearthCss, /\.relationship-actions\{[\s\S]{0,80}display:grid/);
   assert.match(hearthCss, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:30/);
+  assert.match(hearthCss, /\.drawer-tray\{\n  position:absolute;\n  z-index:6/);
+  assert.match(hearthJs, /if\(hearth\.classList\.contains\('drawer-open'\)\) return;\n    handlePrimaryAction\(button\)/);
 });
 
 test('Relationship drawer reads the canonical relationship dossier when available', () => {

@@ -10889,17 +10889,22 @@ switches.forEach((button) => {
 });
 
 roomButtons.forEach((button) => {
-  button.addEventListener('click', () => handlePrimaryAction(button));
+  button.addEventListener('click', () => {
+    if(hearth.classList.contains('drawer-open')) return;
+    handlePrimaryAction(button);
+  });
 });
 
 rooms.forEach((room) => {
   room.addEventListener('click', (event) => {
+    if(hearth.classList.contains('drawer-open')) return;
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
     if(actionButton) handlePrimaryAction(actionButton);
   });
 
   room.addEventListener('keydown', (event) => {
+    if(hearth.classList.contains('drawer-open')) return;
     if(event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     const actionButton = room.querySelector('.room-action');

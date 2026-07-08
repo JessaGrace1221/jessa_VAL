@@ -2014,7 +2014,7 @@ button,a{font:inherit}
   pointer-events:none;
 }
 .retrieval-system.open{
-  z-index:9;
+  z-index:30;
 }
 .retrieval-system::before{
   content:"";
@@ -2097,7 +2097,7 @@ button,a{font:inherit}
 }
 .drawer-tray{
   position:absolute;
-  z-index:2;
+  z-index:6;
   left:0;
   right:0;
   bottom:45px;
