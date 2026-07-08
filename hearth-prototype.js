@@ -9992,19 +9992,21 @@ function renderSourceOpenReceipt(priorWorkspace, route){
   const item = workspace.sourceItem || {};
   const destination = sourceDestinationLabel(item, workspace);
   const originalTitle = itemTitle(item, workspace.title || 'Source context');
-  const openedExternally = !mockScrapers;
   setWorkspaceContent({
     lens: workspace.lens ? workspace.lens + ' Source' : 'Source Opened',
-    title: openedExternally ? 'VAL opened the ' + destination + '.' : 'VAL held the ' + destination + ' route for review.',
-    meaning: openedExternally ? 'The source opened in a new tab so the desk can stay oriented here.' : 'Mock-safe mode kept you at the desk while preserving the exact source route.',
+    title: 'Source context for ' + originalTitle + '.',
+    meaning: 'VAL kept this source inside Hearth so the Home card does not jump to the old dashboard or blend unrelated context.',
     understanding: [
       originalTitle,
-      /^https?:\/\//i.test(route) ? 'Destination: external source link.' : 'Destination: VAL workspace route.',
+      'Resolved source surface: ' + destination + '.',
+      route ? 'Internal route held for reference: ' + route : '',
+      ...sourceOfSourceLines(item),
       'No CRM write, send, import, or durable memory action was taken.'
-    ],
-    recommendation: 'Use the source only as far as needed to trust the judgment, then return to the desk.',
+    ].filter(Boolean),
+    recommendation: suggestedRecommendationForHomeItem(item, roomNameFromWorkspace(workspace, 'source')),
     actions: [
-      {label: 'Open source again', homeAction: 'open_source'}
+      {label: 'Review evidence', homeAction: 'review_evidence'},
+      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
     label: 'Source opened receipt'
   });
@@ -10023,9 +10025,6 @@ function openHomeSourceView(){
   const workspace = activeHomeWorkspace && activeHomeWorkspace.workspace ? activeHomeWorkspace.workspace : {};
   const item = workspace.sourceItem || {};
   const route = sourceRouteForItem(item, workspace);
-  if(!mockScrapers){
-    window.open(route, '_blank', 'noopener');
-  }
   renderSourceOpenReceipt(workspace, route);
 }
 

@@ -907,8 +907,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-detail-capture-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-detail-capture-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-source-in-hearth-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-source-in-hearth-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1302,6 +1302,14 @@ test('Hearth judgment receipts preserve the originating lens and source context'
   assert.match(hearthJs, /priorWorkspace/);
   assert.match(hearthJs, /sourceActionLabel\(item, 'Open source context'\)/);
   assert.match(hearthJs, /homeAction: 'open_source'/);
+  assert.match(hearthJs, /function openHomeSourceView\(\)/);
+  assert.match(hearthJs, /Source context for /);
+  assert.match(hearthJs, /VAL kept this source inside Hearth/);
+  const openHomeSourceViewBody = hearthJs.slice(
+    hearthJs.indexOf('function openHomeSourceView()'),
+    hearthJs.indexOf('function openExecutiveInboxForHomeEmail')
+  );
+  assert.doesNotMatch(openHomeSourceViewBody, /window\.open/);
   assert.match(hearthJs, /No external action was taken from this workspace/);
   assert.match(hearthJs, /accepted your judgment/);
   assert.match(hearthJs, /is ready to adjust/);
@@ -1311,12 +1319,11 @@ test('Hearth judgment receipts preserve the originating lens and source context'
 test('Hearth source openings keep the desk oriented after opening a target', () => {
   assert.match(hearthJs, /function sourceDestinationLabel/);
   assert.match(hearthJs, /function renderSourceOpenReceipt/);
-  assert.match(hearthJs, /VAL opened the/);
-  assert.match(hearthJs, /The source opened in a new tab so the desk can stay oriented here/);
-  assert.match(hearthJs, /Mock-safe mode kept you at the desk while preserving the exact source route/);
+  assert.match(hearthJs, /Source context for /);
+  assert.match(hearthJs, /VAL kept this source inside Hearth/);
+  assert.match(hearthJs, /Internal route held for reference/);
   assert.match(hearthJs, /No CRM write, send, import, or durable memory action was taken/);
-  assert.match(hearthJs, /if\(!mockScrapers\)/);
-  assert.match(hearthJs, /Open source again/);
+  assert.match(hearthJs, /Review evidence/);
   assert.match(hearthJs, /GHL opportunity/);
   assert.match(hearthJs, /prepared draft/);
   assert.match(hearthJs, /relationship file/);
