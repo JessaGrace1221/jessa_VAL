@@ -3968,7 +3968,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     placeholder: placeholder || 'What should VAL help you think through here?',
     helper: helper || 'This Co-Work note stays tied to the active context. External actions still require a separate approval step.',
     mode: 'cowork',
-    value: ''
+    value: initialValue || ''
   });
   openWorkspaceShell(safeTitle, {returnTarget});
 }

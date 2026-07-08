@@ -775,6 +775,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /Suggested Questions/);
   assert.match(hearthJs, /workspaceActions\.innerHTML = renderWorkspaceActionButtons\(\[\{label:'Co-Work with VAL', workflow:'meetingPrepCowork'\}\]\)/);
   assert.match(hearthJs, /if\(command === 'meetingPrepCowork'\)/);
+  assert.match(hearthJs, /value: initialValue \|\| ''/);
   assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
   assert.doesNotMatch(meetingPrepResultBlock, /label: 'Prepare follow-up'/);
   assert.doesNotMatch(meetingPrepResultBlock, /Open full calendar/);
