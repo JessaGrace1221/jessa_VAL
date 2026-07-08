@@ -2944,10 +2944,11 @@ function documentSuggestedActions(item = activeDocumentItem){
   const hasBody = Boolean(String(item.body || item.summary || '').trim());
   const hasSource = Boolean(String(item.sourceUrl || item.url || '').trim());
   const hasRecipient = Boolean(String(item.recipientEmail || '').trim());
+  const isPreviewOnly = item.noExternalAction !== false || String(item.id || '').startsWith('local-');
   const needsLinks = !String(item.relationship || '').trim() || !String(item.project || '').trim();
   const editable = /draft|ready|prepared|proposal|copy|brief|report|html|document/.test([status,type,origin].join(' '));
   if(editable) push('update');
-  if(hasBody && hasRecipient) push('send');
+  if(hasBody && hasRecipient && !isPreviewOnly) push('send');
   if(hasSource) push('open_source');
   if(needsLinks || /onboarding|unlinked|reference/.test([status,origin,item.needs || ''].join(' ').toLowerCase())) push('link_context');
   return actions.filter((action) => [
