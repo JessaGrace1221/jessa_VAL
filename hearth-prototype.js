@@ -10715,9 +10715,11 @@ drawerTray.addEventListener('click', async (event) => {
   if(correspondenceAction){
     event.preventDefault();
     event.stopPropagation();
-    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceAction.dataset.correspondenceAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
+    const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
+    const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review';
+    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
     if(!preflight.ok) return;
-    await handleCorrespondenceAction(correspondenceAction.dataset.correspondenceAction);
+    await handleCorrespondenceAction(correspondenceActionId);
     return;
   }
   const correspondenceItem = event.target.closest('[data-correspondence-item]');

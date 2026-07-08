@@ -468,6 +468,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
   assert.match(hearthJs, /function scrollCorrespondenceActionsIntoView\(\)/);
   assert.match(hearthJs, /scrollCorrespondenceActionsIntoView\(\)/);
+  assert.match(hearthJs, /inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' \|\| correspondenceActionId === 'review'/);
+  assert.match(hearthJs, /allowBlockedForInspection:inspectOnlyAction/);
   assert.match(hearthJs, /function showCorrespondenceLocalBoundary/);
   assert.match(hearthJs, /function correspondenceSuggestedActions/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
@@ -891,8 +893,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-action-scroll-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-action-scroll-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-internal-review-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-internal-review-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
