@@ -3301,6 +3301,19 @@ function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   return actions;
 }
 
+function scrollCorrespondenceActionsIntoView(){
+  if(!drawerTray || !drawerTray.classList.contains('correspondence-open')) return;
+  window.requestAnimationFrame(() => {
+    const action = document.querySelector('#correspondence-detail [data-correspondence-action]:not([hidden])');
+    if(!action) return;
+    const trayRect = drawerTray.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    const safeBottom = Math.min(window.innerHeight - 18, trayRect.bottom - 18);
+    if(actionRect.bottom <= safeBottom && actionRect.top >= trayRect.top + 18) return;
+    drawerTray.scrollTop = Math.max(0, drawerTray.scrollTop + actionRect.bottom - safeBottom);
+  });
+}
+
 function setCorrespondenceField(field, value){
   const node = document.querySelector('[data-correspondence-field="' + field + '"]');
   if(node) node.textContent = value || '';
@@ -3331,6 +3344,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
     button.disabled = !selected || !allowed;
     button.setAttribute('aria-hidden', String(!allowed));
   });
+  scrollCorrespondenceActionsIntoView();
 }
 
 function showCorrespondenceLocalBoundary(action, item = activeCorrespondenceItem){
