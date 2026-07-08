@@ -10882,6 +10882,13 @@ async function routeWorkspaceActionClick(event){
     await handleHomeRoomAction(homeActionButton.dataset.homeAction, homeActionButton);
     return true;
   }
+  const projectActionButton = event.target.closest('[data-project-action]');
+  if(projectActionButton){
+    event.preventDefault();
+    event.stopPropagation();
+    await handleProjectActionClick(projectActionButton.dataset.projectAction, projectActionButton);
+    return true;
+  }
   const actionButton = event.target.closest('[data-workflow-action]');
   if(!actionButton) return false;
   event.preventDefault();

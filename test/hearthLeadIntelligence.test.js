@@ -879,8 +879,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-followup-actions-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-followup-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-workspace-route-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-workspace-route-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1138,6 +1138,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/,
     /spec\.projectAction \? ' data-project-action="'/,
     /handleProjectActionClick\(this\.dataset\.projectAction,this\)/,
+    /const projectActionButton = event\.target\.closest\('\[data-project-action\]'\);[\s\S]{0,180}await handleProjectActionClick\(projectActionButton\.dataset\.projectAction, projectActionButton\);/,
     /projectAction:'ask_priority'/,
     /projectAction:'show_alternatives'/,
     /projectAction:'open_project_file'/,
