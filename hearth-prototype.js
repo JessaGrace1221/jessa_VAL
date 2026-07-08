@@ -25,6 +25,7 @@ const workspacePapers = {
   recommendationLabel: document.querySelector('.recommendation-paper span'),
   recommendation: document.querySelector('.recommendation-paper p')
 };
+const workspaceGrid = document.querySelector('.workspace-grid');
 const workspaceActions = document.querySelector('.workspace-actions');
 const scraperCriteriaPanel = document.querySelector('.scraper-criteria-panel');
 const scraperPreviewList = document.querySelector('.scraper-preview-list');
@@ -162,6 +163,7 @@ let activeIntroDraftCandidate = null;
 let activeRelationshipTemperatureReviewUpdate = null;
 let activeProjectSourceReviewUpdate = null;
 let activeMeetingContactCandidates = {};
+let activeMeetingPrepBriefing = null;
 let activeValOnboardingSessionId = '';
 let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
@@ -5617,28 +5619,18 @@ function meetingPrepEventDescription(event = activeMeetingPrepEvent){
 function renderMeetingPrep(){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const eventTitle = meetingPrepEventTitle(event);
-  const eventTime = meetingPrepEventTime(event);
   const eventDescription = meetingPrepEventDescription(event);
-  workspaceKicker.textContent = meetingPrep.lens;
-  workspaceTitle.textContent = eventTitle + ' prep is being assembled.';
-  workspaceMeaning.textContent = 'VAL is preparing only the context attached to this calendar event.';
-  renderJudgmentSequence({lens: 'Meeting Prep'}, 'meeting');
-  renderPaperLabels({lens: 'Meeting Prep'}, 'meeting');
-  renderAgencyNote({lens: 'Meeting Prep'}, 'meeting');
-  workspacePapers.meaning.textContent = 'Calendar source: ' + eventTitle + (eventTime ? ' at ' + eventTime : '') + '.';
-  workspacePapers.understanding.innerHTML = [
-    eventDescription ? 'Event context: ' + eventDescription : 'No event description is attached.',
-    event?.attendees?.length ? 'Attendees attached: ' + event.attendees.length : 'No attendees are attached to this event.',
-    'VAL will not pull unrelated meeting prep into this card.'
-  ].map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
-  workspacePapers.recommendation.textContent = 'Review this event-specific prep, then decide whether to create follow-up tasks or relationship context.';
-  workspaceActions.innerHTML = renderWorkspaceActionButtons([
-    {label:'Open full calendar', workflow:'calendar'},
-    {label:'Create follow-up task', workflow:'task'},
-    {label:'Close and return to desk', workflow:'cancel:meeting'}
-  ]);
-  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
-  deskWorkspace.setAttribute('aria-label', 'Meeting prep workspace');
+  renderMeetingPrepExecutiveBrief(meetingPrepExecutiveBrief({
+    brief:{
+      meetingContextJson:{title:eventTitle,startTime:event.startTime||event.start||'',source:event.source||'hearth'},
+      attendeeIntelligenceJson:[],
+      internalContextJson:{},
+      briefJson:{meeting_title:eventTitle, likely_purpose:eventDescription || 'Prepare for the meeting from the calendar title and known relationship/project context.'},
+      suggestedQuestionsJson:[],
+      followUpPreparationJson:{},
+      sourceRefsJson:[]
+    }
+  }));
 }
 
 function meetingPrepAttendeeIdentityLines(attendees = []){
@@ -5721,15 +5713,7 @@ function meetingPrepFollowUpLine(followUp = {}){
 }
 
 function meetingPrepActionsFromBrief(brief = {}){
-  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
-  const firstResolved = attendees.find((attendee) => attendee.crm_contact_id);
-  const followUp = brief.followUpPreparationJson || {};
-  const actions = [];
-  if(firstResolved) actions.push({label: 'Open ' + (firstResolved.name || 'attendee') + ' relationship file', workflow: 'contactOpen:' + firstResolved.crm_contact_id});
-  if(followUp.likely_follow_up_needed) actions.push({label: 'Open Timeline & Tasks', workflow: 'timeline'});
-  actions.push({label: 'Open full calendar', workflow: 'calendar'});
-  actions.push({label: 'Close and return to desk', workflow: 'cancel:meeting'});
-  return actions;
+  return [{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}];
 }
 
 function meetingPrepHasUsefulContext(brief = {}){
@@ -5749,65 +5733,220 @@ function meetingPrepHasUsefulContext(brief = {}){
   );
 }
 
-function renderMeetingPrepResult(result){
+function meetingPrepBulletList(items = [], fallback = ''){
+  const list = (Array.isArray(items) ? items : [items]).map(compactSentence).filter(Boolean).slice(0, 6);
+  if(!list.length && fallback) list.push(fallback);
+  return list;
+}
+
+function meetingPrepLocalRelationshipContext(event = {}, brief = {}){
+  const text = [meetingPrepEventTitle(event), meetingPrepEventDescription(event), JSON.stringify(brief.meetingContextJson || {})].join(' ').toLowerCase();
+  if(/aric|frisson|helpbyshopping/.test(text)) return relationshipProfiles.aric;
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const aric = attendees.find((attendee) => /aric/i.test(String(attendee.name || attendee.email || '')));
+  return aric ? relationshipProfiles.aric : null;
+}
+
+function meetingPrepLocalProjectContext(event = {}, brief = {}){
+  const text = [meetingPrepEventTitle(event), meetingPrepEventDescription(event), JSON.stringify(brief.internalContextJson || {})].join(' ').toLowerCase();
+  if(/frisson|helpbyshopping|nonprofit/.test(text)) return projectProfiles.frisson;
+  const links = Array.isArray(brief.internalContextJson?.project_context_links) ? brief.internalContextJson.project_context_links : [];
+  const frisson = links.find((link) => /frisson/i.test(String(link.project_name || link.project_id || '')));
+  return frisson ? projectProfiles.frisson : null;
+}
+
+function meetingPrepReadiness(brief = {}, relationship = null, project = null){
+  let score = 42;
+  const prepared = [];
+  const missing = [];
+  if(brief.meetingContextJson?.title){score += 10; prepared.push('Calendar event reviewed');} else missing.push('Calendar event title');
+  if(relationship){score += 18; prepared.push('Relationship context reviewed');} else missing.push('Relationship file not matched yet');
+  if(project){score += 14; prepared.push('Project context reviewed');} else missing.push('Project context not matched yet');
+  if(Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson.some((attendee) => attendee.crm_contact_id)){score += 10; prepared.push('Attendee identity resolved');}
+  else missing.push('No resolved attendee identity');
+  if(Array.isArray(brief.internalContextJson?.openLoops) && brief.internalContextJson.openLoops.length){score += 8; prepared.push('Previous open loops reviewed');}
+  else missing.push('No previous call notes or open loops attached');
+  if(meetingPrepSourceSummary(brief) !== 'only the calendar title and time are available'){score += 8; prepared.push('Source confidence reviewed');}
+  else missing.push('No public profile or recent activity loaded yet');
+  return {
+    score: Math.max(15, Math.min(96, Math.round(score))),
+    label: score >= 82 ? 'You are well prepared.' : score >= 62 ? 'You have enough to enter well.' : 'VAL needs more context before this is fully prepared.',
+    prepared,
+    missing: missing.slice(0, 4)
+  };
+}
+
+function meetingPrepExecutiveBrief(result = {}){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = result.brief || {};
-  const gate = brief.qualityGateJson || {};
   const prep = brief.briefJson || {};
   const firstFive = brief.firstFiveMinutesJson || {};
   const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
   const followUp = brief.followUpPreparationJson || {};
-  const attendeeLines = meetingPrepAttendeeIdentityLines(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : []);
-  if(gate.quality === 'unusable' || brief.status === 'needs_context' && !attendeeLines.length || !meetingPrepHasUsefulContext(brief)){
-    setWorkspaceContent({
-      lens: 'Meeting Prep',
-      title: meetingPrepEventTitle(event) + ' needs context before prep is useful.',
-      meaning: 'VAL found the calendar event, but it is not prep-worthy enough to interrupt you with a brief yet.',
-      understanding: [
-        meetingPrepQualityLine(brief),
-        meetingPrepAttendeeSummary(brief),
-        'Source confidence: ' + meetingPrepSourceSummary(brief) + '.',
-        'No calendar invite, CRM update, task, message, or memory write happened.'
-      ],
-      recommendation: 'Add the missing calendar context or open the full calendar. Otherwise this event should stay quiet.',
-      actions: [
-        {label:'Open full calendar', workflow:'calendar'},
-        {label:'Close and return to desk', workflow:'cancel:meeting'}
-      ],
-      label: 'Meeting prep needs context'
-    });
-    return;
-  }
+  const relationship = meetingPrepLocalRelationshipContext(event, brief);
+  const project = meetingPrepLocalProjectContext(event, brief);
+  const readiness = meetingPrepReadiness(brief, relationship, project);
+  const eventTitle = prep.meeting_title || meetingPrepEventTitle(event);
+  const isFrisson = /frisson|aric|helpbyshopping/i.test([eventTitle, meetingPrepEventDescription(event), relationship?.name, project?.name].join(' '));
+  const purpose = isFrisson
+    ? 'Move Frisson from vision into execution by clarifying partnership structure, responsibilities, pilot path, and first implementation timeline.'
+    : compactSentence(prep.likely_purpose || prep.concise_brief || 'Clarify what this meeting needs to decide, protect, or move next.');
+  const success = isFrisson
+    ? ['Revenue model is clear', 'Ownership and responsibilities are named', 'Pilot nonprofit path is chosen', 'First implementation timeline is agreed']
+    : meetingPrepBulletList(prep.what_val_recommends_preparing, 'Leave with a clear next step and no hidden follow-up.');
+  const changed = isFrisson
+    ? ['Frisson has become the primary brand direction.', 'The work has shifted from broad consulting toward an executive AI platform.', 'The operating philosophy is clearer: alignment, stewardship, and leverage.', 'The nonprofit launch path is a practical first market.']
+    : meetingPrepBulletList(prep.recent_changes || brief.internalContextJson?.openLoops?.map((item) => item.summary || item.title || item.text || item), 'No meaningful prior changes are attached yet.');
+  const decisions = isFrisson
+    ? ['Revenue sharing model', 'Responsibilities after launch', 'Pilot nonprofit rollout', 'Client ownership', 'Technology roadmap']
+    : meetingPrepBulletList(['What outcome matters most today?', 'Who owns the next step?', 'What should happen after the conversation?']);
+  const remember = relationship
+    ? compactSentence(relationship.wisdom || relationship.meaning || 'Enter through relationship stewardship, not performance.')
+    : 'Keep this simple: be warm, clear, and honest about what is known and unknown.';
+  const risks = isFrisson
+    ? ['Do not spend most of the meeting refining ideas that are already aligned.', 'Protect time for execution decisions.']
+    : meetingPrepBulletList(prep.risks_or_sensitivities, 'Do not over-use thin context. Ask clean questions instead.');
+  const opportunities = isFrisson
+    ? ['If pilot organizations are agreed, VAL can help prepare the partnership document, implementation session, and rollout timeline.']
+    : meetingPrepBulletList(prep.possible_opportunities, 'If the next step becomes clear, VAL can help shape the follow-through after the meeting.');
+  const opening = isFrisson
+    ? 'I am excited because I think we have moved past whether Frisson is the right direction. Today I would love to leave with clarity on how we launch together.'
+    : (firstFive.first_sentence_option || 'I would love to start by naming what would make this conversation useful for you today.');
+  const questionTexts = questions.map((question) => question.text).filter(Boolean);
+  const suggestedQuestions = isFrisson
+    ? ['What part of this excites you most?', 'Where do you still feel uncertainty?', 'What would make this partnership feel effortless?', 'If we had our first five nonprofits, what would success look like?']
+    : meetingPrepBulletList(questionTexts, firstFive.early_question || 'What would make this meeting a good use of your time today?');
+  const followUpItems = followUp.likely_follow_up_needed || isFrisson
+    ? ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline']
+    : ['Capture what changed after the meeting before creating tasks or drafts.'];
+  const relationshipName = relationship?.name || (Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson[0]?.name) || 'Attendee identity not resolved yet';
+  return {
+    eventTitle,
+    time: meetingPrepEventTime(event),
+    readiness,
+    purpose,
+    success,
+    changed,
+    decisions,
+    remember,
+    risks,
+    opportunities,
+    opening,
+    questions: suggestedQuestions,
+    followUpItems,
+    people: relationship ? [
+      relationship.name + ' - ' + (relationship.role || 'relationship context'),
+      'Current relationship: ' + (relationship.relationshipStateLabel || relationship.temperature || 'known relationship'),
+      'Trajectory: ' + (relationship.trajectory || 'watch thoughtfully'),
+      'Stewardship: ' + compactSentence(relationship.wisdom || relationship.meaning || '')
+    ].filter(Boolean) : [
+      relationshipName,
+      'Relationship file has not been matched yet.',
+      'Use Co-Work to add what VAL should know before the call.'
+    ],
+    relationshipIntelligence: relationship ? [
+      compactSentence(relationship.identity || relationship.role || ''),
+      'What matters to them: ' + compactSentence(relationship.patterns || relationship.meaning || ''),
+      'Recent signal: ' + compactSentence(relationship.signal || relationship.evidence || ''),
+      'Public context: ' + compactSentence(relationship.linkedinSignal || 'LinkedIn and Outscraper signals should be refreshed only if useful for the relationship.')
+    ].filter(Boolean) : [
+      'Public profile and recent activity are not verified yet.',
+      'Outscraper should be used as relationship intelligence, not generic enrichment.'
+    ],
+    project: project ? [
+      project.name + ': ' + compactSentence(project.status || project.reality || ''),
+      'Current decision: ' + compactSentence(project.decision || project.nextMove || ''),
+      'Why it matters: ' + compactSentence(project.decisionEvidence || project.nextMoveEvidence || '')
+    ].filter(Boolean) : [],
+    missing: readiness.missing,
+    sourceConfidence: meetingPrepSourceSummary(brief),
+    coworkSeed: ''
+  };
+}
+
+function renderMeetingPrepList(items = []){
+  return '<ul>' + items.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul>';
+}
+
+function meetingPrepCoworkSeed(briefing = {}){
+  return [
+    'Co-work with me before this meeting.',
+    '',
+    'Meeting: ' + compactSentence(briefing.eventTitle, 'Meeting'),
+    briefing.time ? 'Time: ' + briefing.time : '',
+    'Readiness: ' + briefing.readiness?.score + '% - ' + (briefing.readiness?.label || ''),
+    '',
+    'Purpose: ' + briefing.purpose,
+    '',
+    'Success today:',
+    ...(briefing.success || []).map((item) => '- ' + item),
+    '',
+    'People:',
+    ...(briefing.people || []).map((item) => '- ' + item),
+    '',
+    'What changed since we last talked:',
+    ...(briefing.changed || []).map((item) => '- ' + item),
+    '',
+    'Likely decisions:',
+    ...(briefing.decisions || []).map((item) => '- ' + item),
+    '',
+    'Remember: ' + briefing.remember,
+    '',
+    'Risks:',
+    ...(briefing.risks || []).map((item) => '- ' + item),
+    '',
+    'Opportunities:',
+    ...(briefing.opportunities || []).map((item) => '- ' + item),
+    '',
+    'Suggested opening: "' + briefing.opening + '"',
+    '',
+    'Suggested questions:',
+    ...(briefing.questions || []).map((item, index) => (index + 1) + '. ' + item),
+    '',
+    'Likely follow-up:',
+    ...(briefing.followUpItems || []).map((item) => '- ' + item)
+  ].filter((line) => line !== '').join('\n');
+}
+
+function renderMeetingPrepExecutiveBrief(briefing = {}){
+  activeMeetingPrepBriefing = briefing;
+  activeMeetingPrepBriefing.coworkSeed = meetingPrepCoworkSeed(briefing);
   setWorkspaceContent({
     lens: 'Meeting Prep',
-    title: prep.meeting_title || meetingPrepEventTitle(event),
-    meaning: prep.concise_brief || ('VAL prepared context for ' + meetingPrepEventTitle(event) + '.'),
-    understanding: [
-      meetingPrepQualityLine(brief),
-      'Calendar source: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
-      meetingPrepStakesLine(brief),
-      meetingPrepAttendeeSummary(brief),
-      firstFive.first_sentence_option ? 'First five minutes: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
-      ...attendeeLines,
-      questions[0]?.text ? 'First question: ' + questions[0].text : 'Suggested questions are prepared.',
-      meetingPrepFollowUpLine(followUp),
-      'Source confidence: ' + meetingPrepSourceSummary(brief) + '.',
-      Array.isArray(brief.unknownsJson) && brief.unknownsJson.length ? 'Unknowns: ' + brief.unknownsJson.map((item) => item.reason || item.source || item).slice(0,2).join('; ') + '.' : ''
-    ].filter(Boolean),
-    recommendation: (prep.what_val_recommends_preparing || []).join(' / ') || firstFive.early_question || meetingPrep.recommendation,
-    actions: meetingPrepActionsFromBrief(brief),
-    label: 'Meeting prep workspace'
+    title: briefing.eventTitle || 'Meeting Prep',
+    meaning: briefing.purpose || 'Walk into the meeting prepared.',
+    understanding: ['Executive readiness: ' + briefing.readiness.score + '%', 'The briefing below is the useful prep; Co-Work is the only action.'],
+    recommendation: briefing.opening || 'Use Co-Work if you want VAL to help shape the conversation before you enter.',
+    actions: [{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}],
+    label: 'Meeting Prep executive briefing',
+    suppressClarityStandard:true
   });
-  workspacePapers.understanding.innerHTML = renderMeetingPrepUnderstanding([
-    meetingPrepQualityLine(brief),
-    meetingPrepStakesLine(brief),
-    meetingPrepAttendeeSummary(brief),
-    firstFive.first_sentence_option ? 'First five minutes: ' + firstFive.first_sentence_option : 'Opening guidance is prepared.',
-    ...attendeeLines,
-    questions[0]?.text ? 'First question: ' + questions[0].text : 'Suggested questions are prepared.',
-    meetingPrepFollowUpLine(followUp),
-    'Source confidence: ' + meetingPrepSourceSummary(brief) + '.'
-  ]);
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.add('meeting-prep-brief');
+  scraperPreviewList.innerHTML = [
+    '<section class="meeting-prep-readiness">',
+      '<div><span>Executive Readiness</span><strong>' + escapeHtml(String(briefing.readiness.score)) + '%</strong><p>' + escapeHtml(briefing.readiness.label) + '</p></div>',
+      '<div class="meeting-prep-meter" aria-label="Executive readiness ' + escapeHtml(String(briefing.readiness.score)) + ' percent"><i style="width:' + escapeHtml(String(briefing.readiness.score)) + '%"></i></div>',
+    '</section>',
+    '<section class="meeting-prep-section"><h3>The Purpose</h3><p>' + escapeHtml(briefing.purpose) + '</p><h4>Success today</h4>' + renderMeetingPrepList(briefing.success) + '</section>',
+    '<section class="meeting-prep-section"><h3>Who You Are Meeting</h3>' + renderMeetingPrepList(briefing.people) + '</section>',
+    '<section class="meeting-prep-section"><h3>What Changed Since You Last Spoke</h3>' + renderMeetingPrepList(briefing.changed) + '</section>',
+    '<section class="meeting-prep-section"><h3>Relationship Intelligence</h3>' + renderMeetingPrepList(briefing.relationshipIntelligence) + '</section>',
+    briefing.project.length ? '<section class="meeting-prep-section"><h3>Project Context</h3>' + renderMeetingPrepList(briefing.project) + '</section>' : '',
+    '<section class="meeting-prep-section"><h3>Likely Decisions</h3>' + renderMeetingPrepList(briefing.decisions.map((item) => '□ ' + item)) + '</section>',
+    '<section class="meeting-prep-section"><h3>Remember</h3><p>' + escapeHtml(briefing.remember) + '</p></section>',
+    '<section class="meeting-prep-two"><article><h3>Risks</h3>' + renderMeetingPrepList(briefing.risks) + '</article><article><h3>Opportunities</h3>' + renderMeetingPrepList(briefing.opportunities) + '</article></section>',
+    '<section class="meeting-prep-section meeting-prep-opening"><h3>Suggested Opening</h3><p>"' + escapeHtml(briefing.opening) + '"</p></section>',
+    '<section class="meeting-prep-section"><h3>Suggested Questions</h3><ol>' + briefing.questions.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ol></section>',
+    '<section class="meeting-prep-section"><h3>Likely Follow-Up</h3>' + renderMeetingPrepList(briefing.followUpItems) + '</section>',
+    briefing.missing.length ? '<section class="meeting-prep-section meeting-prep-missing"><h3>Still Missing</h3>' + renderMeetingPrepList(briefing.missing) + '</section>' : ''
+  ].filter(Boolean).join('');
+  workspaceActions.innerHTML = renderWorkspaceActionButtons([{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}]);
+}
+
+function renderMeetingPrepResult(result){
+  renderMeetingPrepExecutiveBrief(meetingPrepExecutiveBrief(result));
 }
 
 async function runMeetingPrep(){
@@ -5819,15 +5958,15 @@ async function runMeetingPrep(){
   setWorkspaceContent({
     lens: 'Meeting Prep',
     title: 'VAL is preparing ' + meetingPrepEventTitle(event) + '.',
-    meaning: 'This should reduce what you have to hold before this calendar event.',
+    meaning: 'VAL is assembling the two-minute executive brief for this meeting.',
     understanding: [
-      'Calendar source: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
-      'Internal relationship and CRM context are being checked.',
-      'External enrichment is planned only if it improves judgment for this event.'
+      'Meeting: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
+      'The final screen should tell you what matters, how to enter, what to ask, and what to watch.'
     ],
-    recommendation: 'Let VAL assemble the brief, then review the parts that affect your judgment.',
-    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
-    label: 'Meeting prep loading workspace'
+    recommendation: 'Use Co-Work if you want to talk through the meeting before the brief finishes.',
+    actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
+    label: 'Meeting prep loading workspace',
+    suppressClarityStandard:true
   });
   try{
     const result = await postJson('/api/val/calendar/meeting-prep', {event});
@@ -5840,14 +5979,12 @@ async function runMeetingPrep(){
       understanding: [
         error.message,
         'The calendar card remains available.',
-        'Internal context can still be reviewed from the desk.'
+        'Co-Work can still help you prepare from what is visible.'
       ],
-      recommendation: 'Open the full calendar or try again when the calendar connection is ready.',
-      actions: [
-        {label: 'Open full calendar', workflow: 'calendar'},
-        {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-      ],
-      label: 'Meeting prep error workspace'
+      recommendation: 'Use Co-Work to prepare manually from the meeting title and what you already know.',
+      actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
+      label: 'Meeting prep error workspace',
+      suppressClarityStandard:true
     });
   }
 }
@@ -5869,11 +6006,12 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   workspaceActions.innerHTML = renderWorkspaceActionButtons(normalizedWorkspace.actions);
   renderHearthPacketReceiptStrip(packetReceipt || null);
   deskWorkspace.setAttribute('aria-label', label || normalizedWorkspace.lens + ' workspace');
+  if(workspaceGrid) workspaceGrid.hidden = false;
   scraperCriteriaPanel.hidden = true;
   scraperCriteriaPanel.innerHTML = '';
   scraperPreviewList.hidden = true;
   scraperPreviewList.innerHTML = '';
-  scraperPreviewList.classList.remove('linkedin-preview-list');
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
   workspaceInputPanel.hidden = true;
   workspaceInputPanel.innerHTML = '';
   applyHearthClickContracts(deskWorkspace);
@@ -8192,6 +8330,43 @@ function openCoworkFromClarityWorkspace(){
   });
 }
 
+function openMeetingPrepCoworkSession(){
+  const event = activeMeetingPrepEvent || meetingPrep.event;
+  const briefing = activeMeetingPrepBriefing || {
+    eventTitle: meetingPrepEventTitle(event),
+    time: meetingPrepEventTime(event),
+    readiness:{score:40,label:'VAL has the meeting title, but the full prep is not assembled yet.'},
+    purpose:'Help me walk into this meeting prepared.',
+    success:['Name the useful outcome before the meeting starts.'],
+    people:['Use what I know about the people in this meeting.'],
+    changed:['Identify what changed since the last conversation.'],
+    decisions:['Clarify likely decisions.'],
+    remember:'Keep the relationship stewarded while moving the work forward.',
+    risks:['Do not over-use thin context.'],
+    opportunities:['Find the next useful move.'],
+    opening:'I would love to start by naming what would make this conversation useful today.',
+    questions:['What would make this meeting a good use of your time today?'],
+    followUpItems:['Capture what changed after the meeting.']
+  };
+  const seed = briefing.coworkSeed || meetingPrepCoworkSeed(briefing);
+  openContextualCoworkSession({
+    returnTarget: 'meeting',
+    title: 'Co-Work with VAL before ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting') + '.',
+    meaning: 'This chat is scoped to the Meeting Prep brief. Use it to sharpen how you enter the room.',
+    context: [
+      'Meeting: ' + compactSentence(briefing.eventTitle || meetingPrepEventTitle(event), 'Meeting'),
+      'Readiness: ' + (briefing.readiness?.score || 0) + '% - ' + (briefing.readiness?.label || ''),
+      'Purpose: ' + compactSentence(briefing.purpose || ''),
+      'Suggested opening: ' + compactSentence(briefing.opening || '')
+    ],
+    recommendation: 'Ask VAL to tighten the opening, choose the highest-leverage question, or role-play the first five minutes.',
+    placeholder: 'Help me walk into this meeting prepared...',
+    helper: 'The full Meeting Prep brief is already inserted below. Nothing external happens from Co-Work without approval.',
+    initialValue: seed,
+    backWorkflow: 'cancel:meeting'
+  });
+}
+
 async function runCowork(mode){
   const input = workspaceInputValue('cowork');
   const prompt = input || 'Help me think through the most useful next step from the Hearth.';
@@ -10099,6 +10274,10 @@ async function handleValAction(action){
 
 async function handleWorkflowAction(action, node = null){
   const [command,type,...rest] = String(action || '').split(':');
+  if(command === 'meetingPrepCowork'){
+    openMeetingPrepCoworkSession();
+    return;
+  }
   if(command === 'project'){
     await handleProjectActionClick(type, node);
     return;

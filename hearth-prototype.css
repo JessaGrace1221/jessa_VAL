@@ -1543,6 +1543,85 @@ button,a{font:inherit}
   background:rgba(120,86,72,.52);
   border-color:rgba(88,48,37,.16);
 }
+.meeting-prep-brief{
+  display:grid;
+  gap:12px;
+  max-height:min(56vh,620px);
+  overflow:auto;
+  padding:0 4px 2px 0;
+}
+.meeting-prep-readiness,
+.meeting-prep-section,
+.meeting-prep-two article{
+  border:1px solid rgba(79,48,38,.15);
+  border-radius:7px;
+  background:rgba(255,249,239,.46);
+  box-shadow:0 12px 28px rgba(79,48,38,.12);
+  padding:15px;
+}
+.meeting-prep-readiness{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:10px;
+}
+.meeting-prep-readiness span,
+.meeting-prep-section h3,
+.meeting-prep-section h4,
+.meeting-prep-two h3{
+  margin:0 0 8px;
+  font:700 .62rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(58,33,27,.62);
+}
+.meeting-prep-readiness strong{
+  display:block;
+  font:600 2.2rem/1 var(--serif);
+  color:rgba(34,19,15,.94);
+}
+.meeting-prep-readiness p,
+.meeting-prep-section p{
+  margin:0;
+  color:rgba(45,27,22,.84);
+  line-height:1.55;
+}
+.meeting-prep-meter{
+  height:10px;
+  border-radius:999px;
+  background:rgba(58,33,27,.16);
+  overflow:hidden;
+}
+.meeting-prep-meter i{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,rgba(75,75,129,.9),rgba(144,158,126,.9));
+}
+.meeting-prep-section ul,
+.meeting-prep-section ol,
+.meeting-prep-two ul{
+  display:grid;
+  gap:7px;
+  margin:0;
+  padding-left:18px;
+  color:rgba(45,27,22,.84);
+  line-height:1.45;
+}
+.meeting-prep-section h4{
+  margin-top:14px;
+}
+.meeting-prep-two{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.meeting-prep-opening p{
+  font:500 1.12rem/1.55 var(--serif);
+  color:rgba(34,19,15,.95);
+}
+.meeting-prep-missing{
+  background:rgba(255,249,239,.32);
+}
 .desk-workspace.witnessing-mode{
   top:24px;
   bottom:auto;
