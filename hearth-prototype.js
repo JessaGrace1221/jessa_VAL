@@ -167,7 +167,7 @@ let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
 let currentCalendarEvents = [];
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
-const homeRoomQueues = {velocity: [], leverage: []};
+const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
 const hearthPacketCompletenessRegistry = {
@@ -311,10 +311,10 @@ const hearthClickContractRegistry = [
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
   {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
-  {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer workspace rule', actions:'Open supporting source, show why VAL believes it, co-work from full card context', never:'Do not blend unrelated Home items'},
-  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge rule', actions:'Open supporting source, draft reply/create task for email, co-work from full card context', never:'Do not open a different relationship/project than the card named'},
+  {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
+  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge prompt', actions:'Open source, Draft reply/Create task for email, Review evidence', never:'Do not open a different relationship/project than the card named'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
-  {selector:'[data-home-room-source]', contract:'home.source_row', packet:'home_source_packet', rule:'Home row source-specific decision rule', actions:'Open only that row source with its own evidence and suggested next action', never:'Do not fall back to the parent Home card or show unrelated rows'},
+  {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
   {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, search, sort, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
@@ -5308,14 +5308,14 @@ function setRoomCopy(state){
       list.className = 'room-item-list';
       list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
       list.innerHTML = queue.map((item, index) => (
-        '<button type="button" role="listitem" data-home-room-source="' + name + '" data-home-room-item="' + name + '" data-home-room-index="' + index + '"' +
+        '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
           ' data-source-id="' + escapeHtml(item.sourceId || '') + '"' +
           ' data-source-label="' + escapeHtml(item.sourceLabel || item.title || '') + '">' +
           '<span>' + (index + 1) + '</span>' +
           '<strong>' + escapeHtml(item.title) + '</strong>' +
           '<small>' + escapeHtml(item.kind || item.summary || 'Open with VAL') + '</small>' +
-        '</button>'
+        '</div>'
       )).join('');
       room.insertBefore(list, actionButton);
     }
@@ -5378,6 +5378,112 @@ function homeSourceContextLines(item = {}, fallbackTitle = 'Supporting source'){
   ].filter(Boolean);
 }
 
+function homePacketDisplayFields(item = {}, roomName = 'velocity'){
+  const identity = sourceIdentityForItem(item);
+  const title = itemTitle(item, roomName === 'leverage' ? 'Prepared work' : 'Home item');
+  const meaning = itemMeaning(item, item.summary || item.reason || title);
+  const refs = sourceOfSourceLines(item);
+  const sourceType = identity.type || item.sourceType || item.source_type || item.type || 'source';
+  const timestamp = item.timestamp || item.createdAt || item.updatedAt || item.receivedAt || item.date || item.start || '';
+  const artifactKind = preparedArtifactKind(item);
+  const actionLabel = roomName === 'leverage'
+    ? (artifactKind ? 'Open and approve ' + artifactKind.replace(/_/g, ' ') : 'Open prepared work')
+    : roomName === 'alignment'
+      ? (isEmailSourceItem(item) ? 'Draft reply or create task' : 'Do this priority now')
+      : sourceActionLabel(item, 'Open ' + sourceType + ' source');
+  return {
+    what_changed: roomName === 'leverage'
+      ? (preparedArtifactHomeCopy(item)?.observation || title)
+      : title,
+    why_it_matters: meaning || 'VAL found this because it may affect attention, follow-through, or trust.',
+    what_val_now_knows: executiveHomeMeaning(item, meaning, roomName),
+    evidence_summary: refs.join(' ') || ((identity.label || title) + ' from ' + sourceType),
+    recommended_next_step: executiveHomeRecommendation(item, roomName),
+    primary_action_label: actionLabel,
+    cowork_context: [
+      'Home mode: ' + roomName,
+      'Event/context: ' + title,
+      'Why it matters: ' + (meaning || title),
+      'Evidence: ' + (refs.join(' | ') || identity.label || sourceType),
+      'Recommended next step: ' + executiveHomeRecommendation(item, roomName)
+    ].join('\n'),
+    source_type: sourceType,
+    source_label: identity.label || title,
+    source_id: identity.id || '',
+    timestamp,
+    sourceItem: item
+  };
+}
+
+function renderHomePacketRows(roomName, items = []){
+  if(!scraperPreviewList) return;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list');
+  scraperPreviewList.innerHTML = '<div class="home-packet-list" aria-label="' + escapeHtml(roomName) + ' packet list">' +
+    items.map((queueItem, index) => {
+      const fields = homePacketDisplayFields(queueItem.sourceItem || queueItem, roomName);
+      const primaryAction = roomName === 'leverage' ? 'open_prepared' : 'open_source';
+      return '<article class="home-packet-row">' +
+        '<div data-home-room-source="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '"' +
+          ' data-source-type="' + escapeHtml(fields.source_type) + '"' +
+          ' data-source-id="' + escapeHtml(fields.source_id) + '"' +
+          ' data-source-label="' + escapeHtml(fields.source_label) + '">' +
+          '<p class="home-packet-eyebrow">' + escapeHtml(fields.source_type) + (fields.timestamp ? ' · ' + escapeHtml(fields.timestamp) : '') + '</p>' +
+          '<h3>' + escapeHtml(fields.what_changed) + '</h3>' +
+          '<p>' + escapeHtml(fields.why_it_matters) + '</p>' +
+          '<small>' + escapeHtml(fields.evidence_summary) + '</small>' +
+        '</div>' +
+        '<div class="home-packet-actions">' +
+          '<button type="button" data-home-action="' + primaryAction + '" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">' + escapeHtml(fields.primary_action_label) + '</button>' +
+          '<button type="button" data-home-action="cowork_card_context" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">Co-Work with VAL</button>' +
+        '</div>' +
+      '</article>';
+    }).join('') +
+  '</div>';
+}
+
+function homeWorkspaceFromQueueItem(roomName, index){
+  const queueItem = (homeRoomQueues[roomName] || [])[Number(index)];
+  if(!queueItem) return null;
+  const item = queueItem.sourceItem || queueItem;
+  const fields = homePacketDisplayFields(item, roomName);
+  return {
+    lens: roomName === 'alignment' ? 'Alignment' : roomName === 'leverage' ? 'Leverage' : 'Velocity',
+    title: fields.what_changed,
+    meaning: fields.why_it_matters,
+    understanding: [
+      'What VAL now knows: ' + fields.what_val_now_knows,
+      'Evidence: ' + fields.evidence_summary,
+      fields.timestamp ? 'Timestamp/source receipt: ' + fields.timestamp : '',
+      fields.source_type ? 'Source type: ' + fields.source_type : ''
+    ].filter(Boolean),
+    recommendation: fields.recommended_next_step,
+    actions: roomName === 'leverage'
+      ? [
+          {label: fields.primary_action_label, homeAction: 'open_prepared'},
+          {label: 'Approve and execute', homeAction: 'approve_prepared'},
+          {label: 'Co-Work with VAL', homeAction: 'cowork_card_context'}
+        ]
+      : [
+          {label: fields.primary_action_label, homeAction: 'open_source'},
+          {label: 'Co-Work with VAL', homeAction: 'cowork_card_context'}
+        ],
+    sourceItem: item,
+    cardType: roomName === 'leverage' ? 'ready_for_you' : roomName === 'alignment' ? 'highest_leverage' : 'what_changed',
+    coworkContext: fields.cowork_context,
+    packetFields: fields,
+    packetReceipt: {}
+  };
+}
+
+function activateHomeQueueItem(roomName, index){
+  const workspace = homeWorkspaceFromQueueItem(roomName, index);
+  if(!workspace) return null;
+  activeHomeWorkspace = {roomName, workspace};
+  activeClarityWorkspace = workspace;
+  return workspace;
+}
+
 function executiveHomeBriefTitle(item = {}, fallbackTitle = 'Meaningful movement', roomName = ''){
   if(isEmailSourceItem(item)){
     return 'Email decision: ' + itemTitle(item, fallbackTitle);
@@ -5437,31 +5543,6 @@ function executiveHomeRecommendation(item = {}, roomName = ''){
   if(/VAL learned \d+/i.test(title)) return 'Do one live spot-check now: open the source evidence, verify the memory change is useful, then teach VAL the correction if the next recommendation is wrong.';
   return suggestedRecommendationForHomeItem(item, roomName);
 }
-
-async function openHomeItemWorkspaceFromButton(button, event){
-  if(!button || !button.dataset.homeRoomItem) return false;
-  if(event){
-    event.preventDefault();
-    event.stopPropagation();
-    if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
-  }
-  const preflight = await ensureHearthClickPacket({
-    node: button,
-    packetName: button.dataset.valVariablePacket || 'home_source_packet',
-    action: 'homeRoomItem:' + (button.dataset.homeRoomItem || ''),
-    source: {
-      sourceId: button.dataset.sourceId || '',
-      sourceType: button.dataset.sourceType || '',
-      sourceLabel: button.dataset.sourceLabel || '',
-      sourceItem: (homeRoomQueues[button.dataset.homeRoomItem] || [])[Number(button.dataset.homeRoomIndex)] || null
-    }
-  });
-  if(!preflight.ok) return true;
-  openHomeItemCowork(button.dataset.homeRoomItem, button.dataset.homeRoomIndex);
-  return true;
-}
-
-window.openHearthHomeItemFromButton = openHomeItemWorkspaceFromButton;
 
 function setState(nextState){
   const state = states[nextState] || states.quiet;
@@ -7146,6 +7227,7 @@ function hydrateRoomsFromBriefing(briefing){
   const ready = leverageItems.find(isConcreteHomeActionItem) || firstBriefingItem(leverageItems) || highest || null;
   const theme = briefing.todayTheme || {};
   setHomeRoomQueue('velocity', velocityItems);
+  setHomeRoomQueue('alignment', highest ? [highest] : (theme.title ? [theme] : []));
   setHomeRoomQueue('leverage', leverageItems);
 
   if(changed){
@@ -10279,6 +10361,93 @@ function openExecutiveInboxForHomeEmail(item = {}){
   window.open('./dashboard.html?' + params.toString(), '_blank', 'noopener');
 }
 
+function openHomeCardCowork(workspace){
+  const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
+  activeClarityWorkspace = active;
+  openContextualCoworkSession({
+    returnTarget: 'home',
+    title: 'Co-Work with VAL: ' + compactSentence(active.title, 'Home card'),
+    meaning: 'How can I help with ' + compactSentence(active.title, 'this Home card') + '?',
+    context: [
+      active.packetFields?.what_changed ? 'What happened: ' + active.packetFields.what_changed : '',
+      active.packetFields?.why_it_matters ? 'Why it matters: ' + active.packetFields.why_it_matters : '',
+      active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
+      active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
+      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
+    ].filter(Boolean),
+    recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
+    placeholder: 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
+    helper: 'This Co-Work chat is scoped to the active Home card packet and source refs only.',
+    initialValue: active.coworkContext || coworkPromptFromWorkspace(active),
+    backWorkflow: 'cancel:meeting'
+  });
+}
+
+function openVelocityAwarenessWorkspace(){
+  const items = homeRoomQueues.velocity || [];
+  setWorkspaceContent({
+    lens: 'Velocity',
+    title: 'What changed while you were away.',
+    meaning: items.length ? 'VAL found movement that may affect attention, trust, or follow-through.' : 'No meaningful movement is waiting right now.',
+    understanding: items.length
+      ? items.slice(0, 5).map((item) => {
+          const fields = homePacketDisplayFields(item.sourceItem || item, 'velocity');
+          return fields.what_changed + ' — ' + fields.source_type + ' — ' + fields.why_it_matters;
+        })
+      : ['No changed email, relationship, project, document, transcript, calendar, or commitment item is currently loaded.'],
+    recommendation: items.length ? 'Open only the source you want to inspect. Velocity is awareness, not action.' : 'Keep the desk clear until a new signal appears.',
+    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+    label: 'Velocity awareness workspace',
+    packetReceipt: {},
+    suppressClarityStandard: true
+  });
+  renderHomePacketRows('velocity', items);
+  openWorkspaceShell('Velocity awareness workspace', {returnTarget:'home'});
+}
+
+function openAlignmentExecutionWorkspace(){
+  const workspace = activateHomeQueueItem('alignment', 0) || (() => {
+    const content = currentState.rooms?.alignment?.workspace || {};
+    const item = content.sourceItem || {};
+    const fields = homePacketDisplayFields(item, 'alignment');
+    return {
+      ...content,
+      title: fields.what_changed || content.title,
+      meaning: fields.why_it_matters || content.meaning,
+      recommendation: fields.recommended_next_step || content.recommendation,
+      packetFields: fields,
+      coworkContext: fields.cowork_context,
+      sourceItem: item,
+      cardType: 'highest_leverage'
+    };
+  })();
+  activeHomeWorkspace = {roomName:'alignment', workspace};
+  activeClarityWorkspace = workspace;
+  openHomeCardCowork(workspace);
+}
+
+function openLeverageApprovalWorkspace(){
+  const items = homeRoomQueues.leverage || [];
+  setWorkspaceContent({
+    lens: 'Leverage',
+    title: 'Prepared work waiting for approval.',
+    meaning: items.length ? 'VAL prepared work you can inspect, edit, or approve for execution.' : 'No prepared work is waiting for approval right now.',
+    understanding: items.length
+      ? items.slice(0, 5).map((item) => {
+          const fields = homePacketDisplayFields(item.sourceItem || item, 'leverage');
+          return fields.what_changed + ' — triggered by ' + fields.source_type + ' — ' + fields.recommended_next_step;
+        })
+      : ['No prepared email, proposal, appointment, CRM update, task, document, or packet is currently loaded.'],
+    recommendation: items.length ? 'Open one prepared item, edit if needed, then approve only the external action tied to that item.' : 'Nothing needs approval from Leverage.',
+    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+    label: 'Leverage approval workspace',
+    packetReceipt: {},
+    suppressClarityStandard: true
+  });
+  renderHomePacketRows('leverage', items);
+  openWorkspaceShell('Leverage approval workspace', {returnTarget:'home'});
+}
+
 async function runHomeEmailAction(action){
   const workspace = activeHomeWorkspace && activeHomeWorkspace.workspace ? activeHomeWorkspace.workspace : {};
   const item = workspace.sourceItem || {};
@@ -10416,9 +10585,63 @@ function renderHomeActionResult(action, result){
   }
 }
 
+function preparedApprovalVerb(item = {}){
+  const kind = preparedArtifactKind(item);
+  const type = String(kind || sourceIdentityForItem(item).type || item.type || '').toLowerCase();
+  if(/calendar|appointment|invite/.test(type)) return 'scheduled';
+  if(/crm|opportunity|pipeline|contact/.test(type)) return 'updated';
+  if(/document|proposal|agreement|packet/.test(type)) return 'attached';
+  if(/task|commitment/.test(type)) return 'created';
+  if(/email|reply|introduction/.test(type)) return 'sent';
+  return 'approved';
+}
+
+function renderPreparedApprovalReceipt(){
+  const workspace = activeHomeWorkspace?.workspace || {};
+  const item = workspace.sourceItem || {};
+  const fields = workspace.packetFields || homePacketDisplayFields(item, 'leverage');
+  const verb = preparedApprovalVerb(item);
+  const receipt = verb === 'approved' ? 'Approved.' : 'Approved and ' + verb + '.';
+  setWorkspaceContent({
+    lens: 'Leverage Receipt',
+    title: receipt,
+    meaning: fields.what_changed + ' has cleared the user approval step for its prepared action.',
+    understanding: [
+      'Prepared work: ' + fields.what_changed,
+      'Triggered by: ' + fields.source_type + (fields.source_label ? ' - ' + fields.source_label : ''),
+      'Evidence: ' + fields.evidence_summary,
+      'External action class: ' + verb
+    ],
+    recommendation: 'Move to the next prepared item, or return to the desk if nothing else needs approval.',
+    actions: [
+      {label: 'Open next prepared item', workflow: 'cancel:meeting'},
+      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+    ],
+    label: 'Leverage approval receipt',
+    packetReceipt: {},
+    sourceItem: item,
+    suppressClarityStandard: true
+  });
+}
+
 async function handleHomeRoomAction(action, node = null){
+  if(node?.dataset?.homeRoomItemAction){
+    activateHomeQueueItem(node.dataset.homeRoomItemAction, node.dataset.homeRoomIndex);
+  }
   const homePreflight = await ensureHearthClickPacket({node, packetName:node?.dataset?.valVariablePacket || 'home_source_packet', action});
   if(!homePreflight.ok) return;
+  if(action === 'cowork_card_context'){
+    openHomeCardCowork(activeHomeWorkspace?.workspace || activeClarityWorkspace);
+    return;
+  }
+  if(action === 'open_prepared'){
+    openHomeSourceView();
+    return;
+  }
+  if(action === 'approve_prepared'){
+    renderPreparedApprovalReceipt();
+    return;
+  }
   if(action === 'open_source'){
     openHomeSourceView();
     return;
@@ -10577,6 +10800,18 @@ async function handlePrimaryAction(button){
   }
   if(actionType === 'openInternal' && target){
     window.open(target, '_blank', 'noopener');
+    return;
+  }
+  if(roomName === 'velocity'){
+    openVelocityAwarenessWorkspace();
+    return;
+  }
+  if(roomName === 'alignment'){
+    openAlignmentExecutionWorkspace();
+    return;
+  }
+  if(roomName === 'leverage'){
+    openLeverageApprovalWorkspace();
     return;
   }
   openWorkspace(button.dataset.openRoom);
@@ -11497,11 +11732,6 @@ roomButtons.forEach((button) => {
 rooms.forEach((room) => {
   room.addEventListener('click', async (event) => {
     if(hearth.classList.contains('drawer-open')) return;
-    const homeItem = event.target.closest('[data-home-room-item]');
-    if(homeItem){
-      await openHomeItemWorkspaceFromButton(homeItem, event);
-      return;
-    }
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
     if(actionButton) handlePrimaryAction(actionButton);

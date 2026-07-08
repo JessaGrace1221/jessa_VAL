@@ -850,10 +850,11 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /data-source-id/);
   assert.match(hearthJs, /function homeSourceContextLines/);
   assert.match(hearthJs, /data-home-room-source/);
-  assert.match(hearthJs, /data-home-room-item/);
-  assert.match(hearthJs, /openHomeItemWorkspaceFromButton\(homeItem, event\)/);
-  assert.match(hearthJs, /Home row source-specific decision rule/);
-  assert.doesNotMatch(hearthJs, /list\.querySelectorAll\('\[data-home-room-item\]'\)\.forEach/);
+  assert.doesNotMatch(hearthJs, /data-home-room-item="/);
+  assert.doesNotMatch(hearthJs, /openHomeItemWorkspaceFromButton/);
+  assert.match(hearthJs, /Source receipt display rule/);
+  assert.match(hearthJs, /data-home-room-item-action/);
+  assert.match(hearthJs, /activateHomeQueueItem\(node\.dataset\.homeRoomItemAction, node\.dataset\.homeRoomIndex\)/);
   assert.match(hearthJs, /Source-of-source/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
@@ -916,8 +917,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-clarity-standard-v2-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-clarity-standard-v2-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-modes-contract-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-modes-contract-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -986,7 +987,7 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
   assert.match(hearthJs, /node\.dataset\.valGraphLinks = \(packetContract\.graphLinks \|\| \[\]\)\.join\(','\)/);
   assert.match(hearthJs, /node\.dataset\.valRequiredVariables = \(packetContract\.requiredVariables \|\| \[\]\)\.join\(','\)/);
   assert.match(hearthJs, /observeHearthClickContracts\(\)/);
-  assert.match(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
+  assert.doesNotMatch(hearthJs, /event\.target\.closest\('\[data-home-room-item\]'\)/);
 });
 
 test('Hearth packet contracts require the deep source web behind every click', () => {
@@ -1227,7 +1228,13 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
   assert.match(hearthJs, /function roomCardImplication/);
   assert.match(hearthJs, /const homeRoomQueues/);
   assert.match(hearthJs, /function setHomeRoomQueue/);
-  assert.match(hearthJs, /function openHomeItemCowork/);
+  assert.match(hearthJs, /function homePacketDisplayFields/);
+  assert.match(hearthJs, /function openVelocityAwarenessWorkspace/);
+  assert.match(hearthJs, /function openAlignmentExecutionWorkspace/);
+  assert.match(hearthJs, /function openLeverageApprovalWorkspace/);
+  assert.match(hearthJs, /Velocity is awareness, not action/);
+  assert.match(hearthJs, /How can I help with /);
+  assert.match(hearthJs, /Approved and ' \+ verb/);
   assert.match(hearthJs, /data-home-room-source/);
   assert.match(hearthJs, /Co-Work with VAL about/);
   assert.match(hearthJs, /can move now/);
