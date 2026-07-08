@@ -4,6 +4,7 @@ const witness = document.querySelector('[data-line="witness"]');
 const orientation = document.querySelector('[data-line="orientation"]');
 const permission = document.querySelector('[data-line="permission"]');
 const evidence = document.querySelector('#hearth-evidence');
+const observerBoardButton = document.querySelector('.observer-board-button');
 const leanButton = document.querySelector('.lean-button');
 const freshDeskButton = document.querySelector('.fresh-desk-button');
 const switches = Array.from(document.querySelectorAll('[data-state-option]'));
@@ -252,6 +253,12 @@ const hearthPacketCompletenessRegistry = {
     graphLinks: ['source_relationships','source_projects','source_email_threads','source_calendar_events','source_transcripts','source_tasks','prepared_work'],
     requiredVariables: ['{{home.card.current}}','{{home.card.sourceItem}}','{{home.card.sourceType}}','{{home.card.sourceId}}','{{home.card.sourceRefs}}','{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{val.confidence}}','{{val.uncertainty}}']
   },
+  observer_board_packet: {
+    requiredLayers: ['witnessing_root','home_presence','observer_truths','chief_of_staff_synthesis','val_os_rules'],
+    sourceWeb: ['observer.current_truths','observer.evidence_receipts','home.executive_queue','source_receipts'],
+    graphLinks: ['calendar.today','emails.thread.current','relationships.list','projects.active','recent_transcripts','tasks.open','prepared_work'],
+    requiredVariables: ['{{teach_val.reviewed_memory}}','{{onboarding.first_understanding}}','{{observer.current_truths}}','{{observer.evidence_receipts}}','{{chief_of_staff.current_view}}','{{val.confidence}}','{{val.uncertainty}}']
+  },
   source_display_packet: {
     requiredLayers: ['selected_source','source_receipt'],
     sourceWeb: ['source_type','source_id','source_summary'],
@@ -303,7 +310,7 @@ const hearthPacketCompletenessRegistry = {
 };
 
 const hearthClickContractRegistry = [
-  {selector:'.val-mark', contract:'nav.val_home', packet:'navigation_packet', rule:'VAL home navigation rule', actions:'Return to canonical VAL dashboard shell', never:'Do not alter source data or memory'},
+  {selector:'.observer-board-button', contract:'home.board_of_observers', packet:'observer_board_packet', rule:'Board of Observers inspection rule', actions:'Open observer truths and Chief of Staff synthesis', never:'Do not mutate source data or memory'},
   {selector:'.return-button,.close-calendar-button,.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail', contract:'nav.close_context', packet:'active_context_packet', rule:'Close active context without mutation', actions:'Close active card/detail and return to prior Hearth context', never:'Do not save, send, import, or mutate while closing'},
   {selector:'.workspace-card button,.workspace-actions button:not([data-workflow-action])', contract:'workspace.static_action', packet:'workspace_seed_packet', rule:'Static workspace action rule', actions:'Open the matching review/approval/teaching workspace only', never:'Do not execute external action from static demo card'},
   {selector:'.source-action', contract:'nav.source_action', packet:'source_navigation_packet', rule:'Source navigation rule', actions:'Open the named source surface only', never:'Do not mutate source data or infer approval from navigation'},
@@ -443,17 +450,37 @@ const meetingPrep = {
   }
 };
 
+const observerBoardState = {
+  chiefOfStaff: {
+    view: 'VAL is protecting the morning for one meaningful judgment instead of letting many useful signals compete for first attention.',
+    why: 'Capacity, Calendar, and Alignment are all asking for focus. Executive Inbox and Relationships have useful movement, but nothing there currently needs to interrupt the first block of thought.',
+    next: 'Review the prepared reply when you are ready, then keep the larger morning intact.'
+  },
+  observers: [
+    {name: 'Executive Inbox', truth: 'No important human appears neglected this morning.', evidence: 'One meaningful reply is ready, but it is not demanding first attention.', stance: 'Complicates gently'},
+    {name: 'Relationships', truth: 'Trust is warm enough to be supported thoughtfully, not reactively.', evidence: 'LinkedIn Support Circle items are ready for comment review.', stance: 'Supports'},
+    {name: 'Project', truth: 'Prepared work has more leverage than new motion right now.', evidence: 'The proposal follow-up is already shaped for review.', stance: 'Supports'},
+    {name: 'Capacity', truth: 'Decision quality is the protected asset this morning.', evidence: 'There is open space before the afternoon commitment.', stance: 'Strong support'},
+    {name: 'Courage', truth: 'Nothing difficult appears to be hiding behind safe productivity yet.', evidence: 'No avoided conversation has enough evidence to lead the day.', stance: 'Watching'},
+    {name: 'Delight', truth: 'A calmer morning is allowed to count as progress.', evidence: 'There is room to think before producing.', stance: 'Supports'},
+    {name: 'Opportunity', truth: 'The best opportunity is already prepared, not newly discovered.', evidence: 'The follow-up work can move with a small review.', stance: 'Supports'},
+    {name: 'Momentum', truth: 'Momentum is present, but it does not need speed to stay alive.', evidence: 'The proposal can move again when the user chooses.', stance: 'Supports'},
+    {name: 'Meaning', truth: 'The deeper value today is protecting attention before output.', evidence: 'VAL has no reason to turn the morning into a task list.', stance: 'Supports'},
+    {name: 'Commitment', truth: 'The afternoon commitment deserves clean attention later.', evidence: 'The day has one meaningful scheduled commitment.', stance: 'Supports'},
+    {name: 'Calendar', truth: 'Time is a strategic asset today.', evidence: 'The calendar shows enough space to think before the 2:30 PM meeting.', stance: 'Strong support'},
+    {name: 'Environment', truth: 'No outside context is currently strong enough to change the recommendation.', evidence: 'Environment signals are quiet in this prototype state.', stance: 'Quiet'}
+  ]
+};
+
 const coworkSession = {
   lens: 'Co-Work with VAL',
-  title: 'What would you like to think through together?',
-  meaning: 'This is the open Co-Work space: a place for strategy, drafting, decisions, and working out loud with VAL.',
+  title: 'Co-Work w/ VAL',
+  meaning: 'What shall we accomplish together?',
   understanding: [
-    'VAL can use the current Home context as a starting point.',
-    'The conversation can become a draft, decision, project note, or teaching moment.',
-    'Nothing here needs to become a task unless you choose that.'
+    'What shall we accomplish together?'
   ],
-  recommendation: 'I would start with the one thought you do not want to carry alone, then let VAL shape the next useful artifact.',
-  actions: ['Start co-working', 'Draft with VAL', 'Think through a decision', 'Teach VAL']
+  recommendation: '',
+  actions: []
 };
 
 const teachValSession = {
@@ -5996,6 +6023,8 @@ async function runMeetingPrep(){
 
 function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt,sourceItem,cardType,suppressClarityStandard}){
   activeHomeWorkspace = null;
+  if(!/home co-work/i.test(String(label || ''))) deskWorkspace.classList.remove('home-cowork-mode');
+  if(!/board of observers/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('observer-board-mode');
   const preserveHeldCoworkContext = /co-work|cowork/i.test(String(lens || '') + ' ' + String(title || ''));
   const normalizedWorkspace = (suppressClarityStandard || preserveHeldCoworkContext)
     ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType}
@@ -6099,6 +6128,7 @@ function lensSequenceLabels(workspace = {}, roomName = ''){
   if(/alignment/.test(lens)) return ['Judgment', 'Fit', 'Tradeoff', 'Choice'];
   if(/relationship|introduction/.test(lens)) return ['Leverage', 'Fit', 'Review', 'Approval'];
   if(/leverage/.test(lens)) return ['Prepared', 'Review', 'Approve', 'Release'];
+  if(/board of observers/.test(lens)) return ['Truth', 'Evidence', 'Tension', 'Synthesis'];
   if(/meeting/.test(lens)) return ['Purpose', 'People', 'Opening', 'Follow-up'];
   if(/lead|scraper|approval|connection/.test(lens)) return ['Criteria', 'Preview', 'Approve', 'Import'];
   if(/co-work|cowork|notebook/.test(lens)) return ['Thought', 'Shape', 'Draft', 'Decide'];
@@ -6141,6 +6171,7 @@ function agencyNoteForLens(workspace = {}, roomName = ''){
   if(/alignment/.test(lens)) return 'VAL is offering a judgment, not making the decision for you.';
   if(/relationship|introduction/.test(lens)) return 'Introductions stay private until you review why both people belong in the same conversation.';
   if(/leverage/.test(lens)) return 'Prepared work waits here until you approve, refine, or release it.';
+  if(/board of observers/.test(lens)) return 'The Board makes VAL inspectable. It does not replace your judgment.';
   if(/meeting/.test(lens)) return 'Meeting prep stays private until you choose what to use.';
   if(/lead|scraper|approval|connection/.test(lens)) return 'Nothing enters GHL until the preview is reviewed and approved.';
   if(/co-work|cowork|notebook/.test(lens)) return 'Co-Work can become work only when you choose to shape it.';
@@ -11526,30 +11557,110 @@ async function openMeetingPrep(){
 
 function openCoworkSession(){
   closeCalendarPanel();
+  activeCoworkHeldContext = '';
   setWorkspaceContent({
     lens: coworkSession.lens,
     title: coworkSession.title,
     meaning: coworkSession.meaning,
     understanding: coworkSession.understanding,
     recommendation: coworkSession.recommendation,
-    actions: [
-      {label: 'Think with VAL', workflow: 'cowork:think'},
-      {label: 'Draft with VAL', workflow: 'cowork:draft'},
-      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
-    ],
-    label: 'Co-Work with VAL workspace'
+    actions: [],
+    label: 'Home Co-Work with VAL approval workspace',
+    suppressClarityStandard: true
   });
-  renderWorkspaceInput({
-    label: 'Open Co-Work',
-    placeholder: 'What would you like to think through with VAL?',
-    helper: 'VAL may prepare language, options, or a decision brief. Nothing is sent or changed externally from this Co-Work space.',
-    mode: 'cowork'
-  });
+  deskWorkspace.classList.add('home-cowork-mode');
+  renderHomeCoworkPreview();
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
+}
+
+function renderHomeCoworkPreview(){
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
+  scraperPreviewList.innerHTML = [
+    '<div class="home-cowork-preview" aria-label="Home Co-Work with VAL">',
+      '<p>Co-Work w/ VAL</p>',
+      '<span class="val-presence-mark home-cowork-mark" aria-hidden="true">',
+        '<span class="val-presence-orbit"></span>',
+        '<span class="val-presence-core">VAL</span>',
+      '</span>',
+      '<div class="home-cowork-context" data-home-cowork-context>',
+        '<strong>What shall we accomplish together?</strong>',
+      '</div>',
+    '</div>'
+  ].join('');
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = [
+    '<form class="home-cowork-chatbar" data-home-cowork-form>',
+      '<span class="home-cowork-spark" aria-hidden="true"></span>',
+      '<span class="home-cowork-divider" aria-hidden="true"></span>',
+      '<input data-workspace-input="cowork" aria-label="Tell VAL what you want to accomplish" autocomplete="on" autocorrect="on" spellcheck="true">',
+      '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
+      '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
+      '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
+      '<input type="file" data-workspace-file-input multiple hidden>',
+    '</form>'
+  ].join('');
+  enableValAutocorrect(workspaceInputPanel);
+}
+
+function openObserverBoard(){
+  const chief = observerBoardState.chiefOfStaff;
+  closeCalendarPanel();
+  setWorkspaceContent({
+    lens: 'Board of Observers',
+    title: 'Your Board of Observers',
+    meaning: chief.view,
+    understanding: [
+      'Each observer protects one executive truth.',
+      'The Board surfaces agreement, tension, and uncertainty before the Chief of Staff chooses what deserves attention.',
+      'This is meant to make VAL inspectable, correctable, and easier to trust.'
+    ],
+    recommendation: chief.next,
+    actions: [{label:'Close and return to desk', workflow:'cancel:board'}],
+    label: 'Board of Observers',
+    suppressClarityStandard: true
+  });
+  deskWorkspace.classList.add('observer-board-mode');
+  renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = [
+    '<section class="observer-chief-card" aria-label="Chief of Staff view">',
+      '<span>Chief of Staff view</span>',
+      '<p>' + escapeHtml(chief.why) + '</p>',
+    '</section>',
+    '<section class="observer-board-grid" aria-label="Observer current truths">',
+      observerBoardState.observers.map((observer) => [
+        '<article class="observer-truth-card">',
+          '<div>',
+            '<span>' + escapeHtml(observer.stance) + '</span>',
+            '<strong>' + escapeHtml(observer.name) + '</strong>',
+          '</div>',
+          '<p>' + escapeHtml(observer.truth) + '</p>',
+          '<small>Evidence: ' + escapeHtml(observer.evidence) + '</small>',
+        '</article>'
+      ].join('')).join(''),
+    '</section>',
+    '<p class="observer-board-note">If this read feels wrong, teach VAL. The Board should become more accurate through correction, not more certain without evidence.</p>'
+  ].join('');
+  hearth.dataset.distance = 'judgment';
+  deskWorkspace.setAttribute('aria-hidden', 'false');
+  openWorkspaceShell('Board of Observers', {returnTarget:'home'});
+}
+
+function orientHomeCoworkFromInput(){
+  const input = workspaceInputValue('cowork');
+  const context = workspaceInputPanel.querySelector('[data-home-cowork-context]') || scraperPreviewList.querySelector('[data-home-cowork-context]');
+  if(!input || !context) return;
+  activeCoworkHeldContext = '';
+  context.innerHTML = [
+    '<strong>VAL is finding the right context.</strong>',
+    '<span>' + escapeHtml(compactSentence(input, 'Ready to work together.')) + '</span>'
+  ].join('');
 }
 
 function openTeachValSession(){
@@ -11638,6 +11749,7 @@ function closeWorkspace(){
   hearth.dataset.distance = 'presence';
   hearth.classList.add('desk-settling');
   hearth.classList.remove('calendar-prep-open');
+  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
   deskWorkspace.setAttribute('aria-hidden', 'true');
   if(workspaceReturnTarget === 'relationship') restoreRelationshipWindow();
   if(workspaceReturnTarget === 'project') restoreProjectWindow();
@@ -11660,6 +11772,7 @@ function hideWorkspaceForDrawerNavigation(){
   activeHomeWorkspace = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.remove('calendar-prep-open');
+  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
   deskWorkspace.setAttribute('aria-hidden', 'true');
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
@@ -12294,9 +12407,19 @@ agendaItems.forEach((item) => {
     if(item.classList.contains('active')) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
   });
 });
+observerBoardButton?.addEventListener('click', openObserverBoard);
 coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(coworkNotebook));
 teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
+workspaceInputPanel.addEventListener('submit', (event) => {
+  if(!event.target.matches('[data-home-cowork-form]')) return;
+  event.preventDefault();
+  orientHomeCoworkFromInput();
+});
+workspaceInputPanel.addEventListener('input', (event) => {
+  if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;
+  orientHomeCoworkFromInput();
+});
 updateLinkedInWidget();
 calendarTab.addEventListener('click', () => {
   if(hearth.classList.contains('calendar-open')){

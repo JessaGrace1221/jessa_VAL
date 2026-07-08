@@ -7,14 +7,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=cowork-held-context-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=board-observers-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
   <div class="hearth-light" aria-hidden="true"></div>
 
   <header class="hearth-topline">
-    <a class="val-mark" href="./dashboard.html" aria-label="Back to VAL Home">VAL</a>
+    <div class="hearth-brand-cluster">
+      <button class="observer-board-button val-board-logo-button" type="button" aria-label="Meet with your Board of Observers" data-tooltip="Meet w/ your Board of Observers">
+        <img src="./assets/val-favicon.png" alt="VAL">
+      </button>
+    </div>
     <nav class="state-switcher" aria-label="Prototype-only home states" data-prototype-only="true">
       <span>Prototype states</span>
       <button type="button" class="active" data-state-option="quiet">Quiet</button>
@@ -826,6 +830,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=cowork-held-context-20260708"></script>
+<script src="./hearth-prototype.js?v=board-observers-20260708"></script>
 </body>
 </html>

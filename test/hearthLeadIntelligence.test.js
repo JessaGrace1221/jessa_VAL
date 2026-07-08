@@ -804,10 +804,29 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
 
 test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', () => {
   assert.match(hearthHtml, /class="workspace-input-panel"/);
+  assert.match(hearthHtml, /class="hearth-brand-cluster"/);
+  assert.match(hearthHtml, /class="observer-board-button val-board-logo-button"/);
+  assert.match(hearthHtml, /aria-label="Meet with your Board of Observers"/);
+  assert.match(hearthHtml, /data-tooltip="Meet w\/ your Board of Observers"/);
+  assert.match(hearthHtml, /<img src="\.\/assets\/val-favicon\.png" alt="VAL">/);
   assert.match(hearthHtml, /class="linkedin-widget"/);
   assert.match(hearthHtml, /data-linkedin-ready-count/);
   assert.match(hearthJs, /function runCowork/);
   assert.match(hearthJs, /\/api\/val\/chat/);
+  assert.match(hearthJs, /function renderHomeCoworkPreview/);
+  assert.match(hearthJs, /home-cowork-chatbar/);
+  assert.match(hearthJs, /What shall we accomplish together\?/);
+  assert.match(hearthJs, /activeCoworkHeldContext = ''/);
+  assert.match(hearthJs, /function orientHomeCoworkFromInput/);
+  assert.match(hearthJs, /VAL is finding the right context/);
+  assert.doesNotMatch(hearthJs, /data-home-cowork-submit/);
+  assert.match(hearthJs, /const observerBoardState/);
+  assert.match(hearthJs, /function openObserverBoard/);
+  assert.match(hearthJs, /title: 'Your Board of Observers'/);
+  assert.match(hearthJs, /Chief of Staff view/);
+  assert.match(hearthJs, /observer-truth-card/);
+  assert.match(hearthJs, /'Truth', 'Evidence', 'Tension', 'Synthesis'/);
+  assert.match(hearthJs, /observerBoardButton\?\.addEventListener\('click', openObserverBoard\)/);
   assert.match(hearthJs, /function runTeachVal/);
   assert.match(hearthJs, /\/api\/val\/executive-instructions\/extract/);
   assert.match(hearthJs, /\/api\/val\/review-updates\/build/);
@@ -819,6 +838,14 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function appendWorkspaceFiles/);
   assert.match(hearthJs, /function appendWorkspaceImageRequest/);
   assert.match(hearthCss, /\.workspace-input-tools/);
+  assert.match(hearthCss, /\.observer-board-button/);
+  assert.match(hearthCss, /\.observer-board-button img/);
+  assert.match(hearthCss, /observer-board-pulse/);
+  assert.match(hearthCss, /\.observer-board-mode \.workspace-panel/);
+  assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode/);
+  assert.match(hearthCss, /\.home-cowork-mark/);
+  assert.match(hearthCss, /\.home-cowork-context/);
+  assert.match(hearthCss, /\.home-cowork-chatbar/);
   assert.match(hearthJs, /const linkedinVisibilityItems/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
@@ -952,8 +979,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-held-context-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-held-context-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=board-observers-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=board-observers-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
