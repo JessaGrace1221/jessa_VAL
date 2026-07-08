@@ -7862,6 +7862,33 @@ function restoreDocumentWindow(){
   updateCloseAllDrawersButton();
 }
 
+function restoreLeadIntelligenceWindow(){
+  retrievalSystem.classList.add('open');
+  hearth.classList.add('drawer-open');
+  drawerPull.setAttribute('aria-expanded', 'true');
+  drawerTray.setAttribute('aria-hidden', 'false');
+  drawerTray.classList.add('source-open');
+  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
+  sourceDrawerLink.setAttribute('aria-expanded', 'true');
+  valDrawerLink?.setAttribute('aria-expanded', 'false');
+  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
+  projectDrawerLink.setAttribute('aria-expanded', 'false');
+  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
+  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
+  commitmentDrawerLink?.setAttribute('aria-expanded', 'false');
+  documentDrawerLink?.setAttribute('aria-expanded', 'false');
+  document.querySelector('#source-detail').setAttribute('aria-hidden', 'false');
+  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
+  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
+  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
+  scrollLeadIntelligenceActionsIntoView();
+  updateCloseAllDrawersButton();
+}
+
 function restoreValWindow(){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
@@ -8000,6 +8027,7 @@ function openWorkspaceShell(label, options = {}){
     if(options.returnTarget === 'correspondence') restoreCorrespondenceWindow();
     if(options.returnTarget === 'document') restoreDocumentWindow();
     if(options.returnTarget === 'commitment') restoreCommitmentWindow();
+    if(options.returnTarget === 'source') restoreLeadIntelligenceWindow();
     if(options.returnTarget === 'val') restoreValWindow();
   } else {
     closeDrawer();
@@ -8086,7 +8114,7 @@ function renderScraperUtility(type){
 function openScraper(type, stage = 'setup'){
   const rendered = renderScraperWorkflow(type, stage) || renderScraperUtility(type);
   if(!rendered) return;
-  openWorkspaceShell('Lead Intelligence workspace');
+  openWorkspaceShell('Lead Intelligence workspace', {returnTarget:'source'});
   renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
@@ -10303,6 +10331,7 @@ function closeWorkspace(){
   if(workspaceReturnTarget === 'correspondence') restoreCorrespondenceWindow();
   if(workspaceReturnTarget === 'commitment') restoreCommitmentWindow();
   if(workspaceReturnTarget === 'document') restoreDocumentWindow();
+  if(workspaceReturnTarget === 'source') restoreLeadIntelligenceWindow();
   if(workspaceReturnTarget === 'val') restoreValWindow();
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
