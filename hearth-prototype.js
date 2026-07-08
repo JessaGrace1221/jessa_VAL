@@ -5685,13 +5685,14 @@ function meetingPrepSourceSummary(brief = {}){
     .concat(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson.map((attendee) => attendee.source_confidence_label) : [])
     .filter(Boolean)
     .map(meetingPrepSourceLabel);
-  return Array.from(new Set(labels)).slice(0,4).join(', ') || 'source confidence unavailable';
+  return Array.from(new Set(labels)).slice(0,4).join(', ') || 'only the calendar title and time are available';
 }
 
 function meetingPrepQualityLine(brief = {}){
   const gate = brief.qualityGateJson || {};
   const issues = Array.isArray(gate.issues) ? gate.issues : [];
   if(gate.quality === 'unusable') return 'Quality gate: not usable yet. Missing: ' + (issues.join(', ') || 'usable calendar context') + '.';
+  if(!gate.quality || gate.quality === 'unknown') return 'Quality gate: not enough context to prepare reliably yet.';
   return 'Quality gate: ' + (gate.quality || 'unknown') + (issues.length ? ' with caution: ' + issues.join(', ') : '') + '.';
 }
 
@@ -5731,6 +5732,23 @@ function meetingPrepActionsFromBrief(brief = {}){
   return actions;
 }
 
+function meetingPrepHasUsefulContext(brief = {}){
+  const prep = brief.briefJson || {};
+  const stakes = brief.meetingStakesJson || {};
+  const firstFive = brief.firstFiveMinutesJson || {};
+  const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const sourceSummary = meetingPrepSourceSummary(brief);
+  return Boolean(
+    firstFive.first_sentence_option ||
+    questions.some((question) => question.text) ||
+    attendees.some((attendee) => attendee.crm_contact_id || attendee.relationship_status || attendee.open_loop) ||
+    prep.concise_brief && !/^VAL prepared context for/i.test(prep.concise_brief) ||
+    Object.values(stakes).some(Boolean) ||
+    sourceSummary !== 'only the calendar title and time are available'
+  );
+}
+
 function renderMeetingPrepResult(result){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = result.brief || {};
@@ -5740,7 +5758,7 @@ function renderMeetingPrepResult(result){
   const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
   const followUp = brief.followUpPreparationJson || {};
   const attendeeLines = meetingPrepAttendeeIdentityLines(Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : []);
-  if(gate.quality === 'unusable' || brief.status === 'needs_context' && !attendeeLines.length){
+  if(gate.quality === 'unusable' || brief.status === 'needs_context' && !attendeeLines.length || !meetingPrepHasUsefulContext(brief)){
     setWorkspaceContent({
       lens: 'Meeting Prep',
       title: meetingPrepEventTitle(event) + ' needs context before prep is useful.',

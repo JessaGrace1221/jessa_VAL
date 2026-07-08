@@ -761,6 +761,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function meetingPrepStakesLine/);
   assert.match(hearthJs, /function meetingPrepSourceSummary/);
   assert.match(hearthJs, /function meetingPrepActionsFromBrief/);
+  assert.match(hearthJs, /function meetingPrepHasUsefulContext/);
+  assert.match(hearthJs, /only the calendar title and time are available/);
   assert.match(hearthJs, /Quality gate:/);
   assert.match(hearthJs, /Stakes:/);
   assert.match(hearthJs, /Source confidence:/);
