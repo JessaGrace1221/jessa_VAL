@@ -4820,10 +4820,11 @@ function renderTimelineStatus(data = null){
   const counts = data?.counts || {};
   const events = Array.isArray(data?.timelineEvents) ? data.timelineEvents : [];
   const unmatched = Array.isArray(data?.unmatchedTranscripts) ? data.unmatchedTranscripts : [];
+  const proposals = Array.isArray(data?.proposedTranscriptReviews) ? data.proposedTranscriptReviews : [];
   const needsMatching = events.filter((event) => event.reviewStage === 'needs_matching' || event.reviewNeeded).length + unmatched.length;
   const readyToExtract = events.filter((event) => event.reviewStage === 'ready_to_extract' || event.transcriptStatus === 'attached').length;
-  const proposedTasks = events.reduce((sum, event) => sum + Number(event.taskCount || 0), 0);
-  const proposedNotes = events.filter((event) => event.transcriptStatus === 'attached').length;
+  const proposedTasks = proposals.filter((proposal) => proposal.type === 'task').length;
+  const proposedNotes = proposals.filter((proposal) => proposal.type !== 'task').length;
   const cards = [
     {
       label: 'Needs Matching',
@@ -4837,13 +4838,13 @@ function renderTimelineStatus(data = null){
     },
     {
       label: 'Proposed Notes',
-      value: data?.ok ? proposedNotes + ' source sets' : 'Meaning, not mush',
-      body: 'Notes must name the decision, commitment, risk, opportunity, or relationship context they preserve.'
+      value: data?.ok ? proposedNotes + ' proposal' + (proposedNotes === 1 ? '' : 's') : 'Meaning, not mush',
+      body: proposedNotes ? 'Notes must name the decision, commitment, risk, opportunity, or relationship context they preserve.' : 'No note proposal packet is loaded yet; keep review in the event queue until transcript evidence is extracted.'
     },
     {
       label: 'Proposed Tasks',
-      value: data?.ok ? proposedTasks + ' to source-check' : 'Specific work',
-      body: 'Tasks must include source excerpt, owner, due date or review-needed date, project, relationship, and why it matters.'
+      value: data?.ok ? proposedTasks + ' proposal' + (proposedTasks === 1 ? '' : 's') : 'Specific work',
+      body: proposedTasks ? 'Tasks must include source excerpt, owner, due date or review-needed date, project, relationship, and why it matters.' : 'No task proposal packet is loaded yet; do not imply a task exists until owner, due date, relationship, project, and source quote are present.'
     }
   ];
   timelineStatusCount.textContent = data?.ok ? 'Timeline context connected' : 'Local timeline structure';
@@ -4917,7 +4918,7 @@ function renderTimelineReviewCards(reviews = []){
   currentTimelineReviewItems = items;
   timelineReviewCount.textContent = items.length ? items.length + ' review proposal' + (items.length === 1 ? '' : 's') : 'No proposals loaded yet';
   if(!items.length){
-    timelineReviewCards.innerHTML = '<article class="empty"><span>Review-only</span><p>Once transcript evidence is anchored, proposed notes and tasks will appear here with source excerpts and approval boundaries.</p></article>';
+    timelineReviewCards.innerHTML = '<article class="empty"><span>Review-only</span><p>The event queue may show transcript review needs, but no proposal packet is loaded here yet. Notes and tasks appear only when source excerpts, relationships, project, owner, due date, and approval boundary can be inspected.</p></article>';
     return;
   }
   timelineReviewCards.innerHTML = items.map((item) => {

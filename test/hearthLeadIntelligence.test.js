@@ -309,11 +309,15 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /\/api\/val\/context-debug\?days=30/);
   assert.match(hearthJs, /timelineEvents/);
   assert.match(hearthJs, /unmatchedTranscripts/);
+  assert.match(hearthJs, /const proposals = Array\.isArray\(data\?\.proposedTranscriptReviews\) \? data\.proposedTranscriptReviews : \[\]/);
   assert.match(hearthJs, /needsMatching/);
   assert.match(hearthJs, /readyToExtract/);
-  assert.match(hearthJs, /proposedNotes/);
-  assert.match(hearthJs, /proposedTasks/);
+  assert.match(hearthJs, /const proposedTasks = proposals\.filter\(\(proposal\) => proposal\.type === 'task'\)\.length/);
+  assert.match(hearthJs, /const proposedNotes = proposals\.filter\(\(proposal\) => proposal\.type !== 'task'\)\.length/);
+  assert.match(hearthJs, /No note proposal packet is loaded yet/);
+  assert.match(hearthJs, /No task proposal packet is loaded yet/);
   assert.match(hearthJs, /function renderTimelineReviewCards/);
+  assert.match(hearthJs, /The event queue may show transcript review needs, but no proposal packet is loaded here yet/);
   assert.match(hearthHtml, /data-timeline-action="cowork_timeline"/);
   assert.match(hearthJs, /function openTimelineCoworkSession/);
   assert.match(hearthJs, /returnTarget: 'timeline'/);
@@ -879,8 +883,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-capture-route-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-capture-route-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=timeline-proposal-source-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-proposal-source-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
