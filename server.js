@@ -46,6 +46,12 @@ app.use(cors());
 app.use(express.json({limit:'50mb'}));
 app.use(express.urlencoded({extended:true,limit:'50mb'}));
 app.use(express.text({type:['text/*','application/xml','application/*+xml'],limit:'50mb'}));
+app.use((req,res,next)=>{
+  const [pathname,...queryParts]=String(req.url||'').split('?');
+  const normalizedPath=pathname.replace(/\/{2,}/g,'/');
+  if(normalizedPath!==pathname) req.url=normalizedPath+(queryParts.length?`?${queryParts.join('?')}`:'');
+  next();
+});
 app.set('trust proxy',1);
 const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:50*1024*1024}});
 
