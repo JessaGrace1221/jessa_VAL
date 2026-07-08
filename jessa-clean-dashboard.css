@@ -47,7 +47,7 @@ a{color:inherit}
 h1,h2,h3{font-family:Georgia, "Times New Roman", serif;font-weight:500;letter-spacing:0}
 h1{max-width:900px;margin:0;font-size:clamp(3.2rem,8vw,6.8rem);line-height:.94}
 .hero-copy{max-width:690px;margin:22px 0 0;color:var(--muted);font-size:1.1rem;line-height:1.65}
-.primary-actions{display:grid;grid-template-columns:repeat(2,minmax(0,420px));gap:14px;margin:28px 0 30px}
+.primary-actions{display:grid;grid-template-columns:repeat(3,minmax(0,360px));gap:14px;margin:28px 0 30px}
 button,a.primary-button,a.ghost-button{font:inherit}
 .action-card{
   min-height:132px;
@@ -79,6 +79,30 @@ h2{margin:0;font-size:clamp(2.2rem,5vw,4.3rem);line-height:1.05}
 }
 .quiet-card h3{margin:0 0 12px;font-size:1.65rem}
 .quiet-card p{color:var(--muted);line-height:1.62;margin:0 0 18px}
+.scraper-card label{display:grid;gap:7px;margin:0 0 14px;color:var(--muted);font-size:.9rem;font-weight:800}
+.scraper-card input{
+  width:100%;
+  min-height:44px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:rgba(255,255,252,.86);
+  color:var(--ink);
+  padding:0 13px;
+  font:inherit;
+}
+.scraper-result{
+  margin:18px 0 0;
+  padding:18px;
+  max-height:420px;
+  overflow:auto;
+  white-space:pre-wrap;
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:rgba(255,255,252,.8);
+  color:var(--ink);
+  font:500 .94rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.scraper-result.failed{border-color:rgba(155,47,47,.35);color:#713131}
 .connection-status{
   display:grid;
   grid-template-columns:12px minmax(0,1fr);

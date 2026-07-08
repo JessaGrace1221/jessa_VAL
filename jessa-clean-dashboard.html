@@ -28,6 +28,11 @@
         <strong>Connect Google</strong>
         <small>Authorize Gmail, Calendar, Drive, and Docs.</small>
       </button>
+      <button class="action-card" type="button" data-panel="lead-intelligence">
+        <span>03</span>
+        <strong>Frisson Lead Intelligence</strong>
+        <small>Run Organizations and Partners as separate approved scrapers.</small>
+      </button>
     </nav>
 
     <section class="panel active" id="protocol-panel" aria-label="Witnessing Session">
@@ -65,6 +70,56 @@
           </div>
         </article>
       </div>
+    </section>
+
+    <section class="panel" id="lead-intelligence-panel" aria-label="Frisson Lead Intelligence">
+      <div class="panel-heading">
+        <p class="eyebrow">Lead Intelligence</p>
+        <h2>Frisson Organizations and Partners stay separate.</h2>
+      </div>
+      <div class="quiet-grid two">
+        <article class="quiet-card scraper-card" data-frisson-scraper="organizations">
+          <h3>Frisson Organizations</h3>
+          <p>Find nonprofit organizations that may benefit from Frisson donor activation, shopping-based giving, partner revenue, fundraising support, volunteer engagement, and recurring community support.</p>
+          <label>
+            <span>Market or region</span>
+            <input type="text" data-scraper-field="market" value="United States">
+          </label>
+          <label>
+            <span>Category or keywords</span>
+            <input type="text" data-scraper-field="keywords" placeholder="animal rescues, food banks, youth programs">
+          </label>
+          <label>
+            <span>Limit</span>
+            <input type="number" data-scraper-field="limit" min="1" max="100" value="12">
+          </label>
+          <div class="button-row">
+            <button class="primary-button" type="button" data-frisson-preview="organizations">Preview organizations</button>
+            <button class="ghost-button" type="button" data-frisson-import="organizations" disabled>Import approved</button>
+          </div>
+        </article>
+        <article class="quiet-card scraper-card" data-frisson-scraper="partners">
+          <h3>Frisson Partners</h3>
+          <p>Find companies, consultants, advisors, agencies, and platforms that serve nonprofits and could become referral, revenue, or strategic partners for Frisson.</p>
+          <label>
+            <span>Market or region</span>
+            <input type="text" data-scraper-field="market" value="United States">
+          </label>
+          <label>
+            <span>Category or keywords</span>
+            <input type="text" data-scraper-field="keywords" placeholder="grant writers, nonprofit consultants, CSR consultants">
+          </label>
+          <label>
+            <span>Limit</span>
+            <input type="number" data-scraper-field="limit" min="1" max="100" value="12">
+          </label>
+          <div class="button-row">
+            <button class="primary-button" type="button" data-frisson-preview="partners">Preview partners</button>
+            <button class="ghost-button" type="button" data-frisson-import="partners" disabled>Import approved</button>
+          </div>
+        </article>
+      </div>
+      <pre class="scraper-result" id="frisson-scraper-result" aria-live="polite">No Frisson preview has run yet.</pre>
     </section>
   </main>
   <script src="./jessa-clean-dashboard.js"></script>

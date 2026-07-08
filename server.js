@@ -2605,6 +2605,9 @@ function platformKeyFallbackAllowed(provider=''){
   if(/^(0|false|no)$/i.test(explicit)) return false;
   const p=String(provider||'').toLowerCase();
   if(p==='openai'&&OPENAI_KEY&&!/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_OPENAI_KEY||''))) return true;
+  if(['outscraper','apollo','rocketreach'].includes(p) && !/^(1|true|yes)$/i.test(String(process.env.VAL_REQUIRE_TENANT_SCRAPER_KEYS||''))){
+    return true;
+  }
   return false;
 }
 async function resolveTenantApiKey(provider,{fallback='',allowPlatformFallback=platformKeyFallbackAllowed(),sourceLabel='runtime'}={}){
@@ -11699,6 +11702,62 @@ app.post('/api/val/leads/import-approved',async(req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 
+app.get('/api/frisson/custom-fields/status',async(req,res)=>{
+  try{
+    res.json(await frissonCustomFieldStatus());
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/frisson/organizations/discover-preview',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery({...req.body,leadProfile:'frisson',organizationType:'nonprofit organizations'}); 
+      const leads=(discovered.leads||[]).map(lead=>applyFrissonScoring(lead,'organizations'));
+      const result={...discovered,ok:true,leadProfile:'frisson',prospectingMode:'frisson_organizations',scraperType:'Organization',tag:'organization',leads,crmDestination:{pipeline:FRISSON_ORGANIZATION_PIPELINE_NAME,stage:FRISSON_ORGANIZATION_STAGE_NAME}};
+      result.content=withDemoCta(frissonPreviewText(result,'organizations'));
+      return res.json(result);
+    }
+    res.json(await withTimeout(discoverFrissonProspects('organizations',req.body||{}),GOALL_LEAD_DISCOVERY_TIMEOUT_MS,'Frisson organization scrape timed out before results returned'));
+  }catch(e){
+    res.json({ok:false,leadProfile:'frisson',prospectingMode:'frisson_organizations',scraperType:'Organization',leads:[],error:e.message,content:`Frisson organization scrape could not complete.\n\n${cleanLeadLevelText(e.message)}`});
+  }
+});
+
+app.post('/api/frisson/organizations/import-approved',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const leads=(req.body?.leads||[]).map(lead=>applyFrissonScoring(lead,'organizations'));
+      return res.json({ok:true,created:leads,failed:[],content:withDemoCta(`Pushed ${leads.length} approved demo Frisson organization prospect${leads.length===1?'':'s'} to Frisson Organizations / New Organization Lead.\n\nWorkflow trigger tag: organization`)});
+    }
+    res.json(await importApprovedFrissonLeads(req.body||{},'organizations'));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
+app.post('/api/frisson/partners/discover-preview',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const discovered=demoLeadDiscovery({...req.body,leadProfile:'frisson',organizationType:'nonprofit partner organizations'}); 
+      const leads=(discovered.leads||[]).map(lead=>applyFrissonScoring(lead,'partners'));
+      const result={...discovered,ok:true,leadProfile:'frisson',prospectingMode:'frisson_partners',scraperType:'Partner',tag:'partner',leads,crmDestination:{pipeline:FRISSON_PARTNER_PIPELINE_NAME,stage:FRISSON_PARTNER_STAGE_NAME}};
+      result.content=withDemoCta(frissonPreviewText(result,'partners'));
+      return res.json(result);
+    }
+    res.json(await withTimeout(discoverFrissonProspects('partners',req.body||{}),GOALL_LEAD_DISCOVERY_TIMEOUT_MS,'Frisson partner scrape timed out before results returned'));
+  }catch(e){
+    res.json({ok:false,leadProfile:'frisson',prospectingMode:'frisson_partners',scraperType:'Partner',leads:[],error:e.message,content:`Frisson partner scrape could not complete.\n\n${cleanLeadLevelText(e.message)}`});
+  }
+});
+
+app.post('/api/frisson/partners/import-approved',async(req,res)=>{
+  try{
+    if(DEMO_MODE){
+      const leads=(req.body?.leads||[]).map(lead=>applyFrissonScoring(lead,'partners'));
+      return res.json({ok:true,created:leads,failed:[],content:withDemoCta(`Pushed ${leads.length} approved demo Frisson partner prospect${leads.length===1?'':'s'} to Frisson Partners / New Partner Lead.\n\nWorkflow trigger tag: partner`)});
+    }
+    res.json(await importApprovedFrissonLeads(req.body||{},'partners'));
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+
 app.post('/api/val/partners/discover-preview',async(req,res)=>{
   try{
     const body=req.body||{};
@@ -19515,6 +19574,30 @@ function frissonPreviewText(discovered={},mode='organizations'){
   ].join('\n');
 }
 
+function blankGhlValue(value){
+  if(value===undefined||value===null) return true;
+  if(Array.isArray(value)) return value.length===0 || value.every(blankGhlValue);
+  return String(value).trim()==='';
+}
+
+function frissonMissingCustomFieldPayloads(contactPayload,ids,fields){
+  return Object.entries(ids)
+    .filter(([key,id])=>{
+      if(!id || !Object.prototype.hasOwnProperty.call(fields,key)) return false;
+      return blankGhlValue(customFieldValueFromContact(contactPayload,id,GHL_LEAD_FIELD_KEYS[key]));
+    })
+    .map(([key,id])=>({id,key:GHL_LEAD_FIELD_KEYS[key],field_value:fields[key]||''}));
+}
+
+function frissonMissingStandardPayload(contactPayload,contactPayloadCandidate){
+  const contact=contactPayload?.contact||contactPayload||{};
+  const standardKeys=['companyName','website','email','phone','address1','city','state','country','postalCode','timezone','firstName','lastName','name','source'];
+  return standardKeys.reduce((out,key)=>{
+    if(!blankGhlValue(contactPayloadCandidate[key]) && blankGhlValue(contact[key])) out[key]=contactPayloadCandidate[key];
+    return out;
+  },{});
+}
+
 async function upsertGhlFrissonLead(raw={},mode='organizations'){
   const currentMode=frissonMode(mode);
   const p=applyFrissonScoring(raw,currentMode);
@@ -19551,9 +19634,11 @@ async function upsertGhlFrissonLead(raw={},mode='organizations'){
   let contactId=duplicate?.id||'';
   let updated=!!duplicate;
   if(contactId){
-    const {locationId,...updatePayload}=contactPayload;
-    await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
-    await updateGhlLeadFields(contactId,fields).catch(()=>null);
+    const existing=await ghlStrict('GET',`/contacts/${contactId}`).catch(()=>null);
+    const updatePayload=frissonMissingStandardPayload(existing,contactPayload);
+    const missingCustomFields=existing?frissonMissingCustomFieldPayloads(existing,ids,fields):customFields;
+    if(missingCustomFields.length) updatePayload.customFields=missingCustomFields;
+    if(Object.keys(updatePayload).length) await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
   }else{
     const created=await ghlStrict('POST','/contacts',contactPayload);
     contactId=(created.contact||created).id||created.contact?.id||'';
