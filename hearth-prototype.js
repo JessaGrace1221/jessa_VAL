@@ -5423,6 +5423,10 @@ function renderHomePacketRows(roomName, items = []){
     items.map((queueItem, index) => {
       const fields = homePacketDisplayFields(queueItem.sourceItem || queueItem, roomName);
       const primaryAction = roomName === 'leverage' ? 'open_prepared' : 'open_source';
+      const rowActions = [
+        '<button type="button" data-home-action="' + primaryAction + '" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">' + escapeHtml(fields.primary_action_label) + '</button>',
+        roomName === 'velocity' ? '' : '<button type="button" data-home-action="cowork_card_context" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">Co-Work with VAL</button>'
+      ].filter(Boolean).join('');
       return '<article class="home-packet-row">' +
         '<div data-home-room-source="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(fields.source_type) + '"' +
@@ -5434,8 +5438,7 @@ function renderHomePacketRows(roomName, items = []){
           '<small>' + escapeHtml(fields.evidence_summary) + '</small>' +
         '</div>' +
         '<div class="home-packet-actions">' +
-          '<button type="button" data-home-action="' + primaryAction + '" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">' + escapeHtml(fields.primary_action_label) + '</button>' +
-          '<button type="button" data-home-action="cowork_card_context" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">Co-Work with VAL</button>' +
+          rowActions +
         '</div>' +
       '</article>';
     }).join('') +

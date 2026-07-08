@@ -1237,6 +1237,7 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     'Home executive modes must resolve before generic internal navigation'
   );
   assert.match(hearthJs, /allowBlockedForInspection: isHomeExecutiveMode/);
+  assert.match(hearthJs, /roomName === 'velocity' \? '' : '<button type="button" data-home-action="cowork_card_context"/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
   assert.match(hearthJs, /How can I help with /);
   assert.match(hearthJs, /Approved and ' \+ verb/);
