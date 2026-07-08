@@ -907,8 +907,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-entry-packets-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-entry-packets-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-detail-listener-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-detail-listener-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1396,6 +1396,9 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /data-workflow-action="valWitnessingFresh" data-val-variable-packet="val_os_packet">Begin Witnessing Session/);
   assert.match(hearthHtml, /data-workflow-action="valConnections:review" data-val-variable-packet="val_os_packet">Connect inbox\/calendar/);
   assert.match(hearthHtml, /data-workflow-action="valConnections:review" data-val-variable-packet="val_os_packet"/);
+  assert.match(hearthJs, /const valDetail = document\.querySelector\('#val-detail'\)/);
+  assert.match(hearthJs, /valDetail\?\.addEventListener\('click', async \(event\) =>/);
+  assert.match(hearthJs, /action === 'valConnections:review'/);
   assert.doesNotMatch(hearthHtml, /val-status-panel/);
   assert.doesNotMatch(hearthHtml, /val-routing-panel/);
   assert.doesNotMatch(hearthHtml, /val-action-grid/);

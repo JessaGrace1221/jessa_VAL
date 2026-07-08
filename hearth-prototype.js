@@ -38,6 +38,7 @@ const drawerPull = document.querySelector('.drawer-pull');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
 const drawerTray = document.querySelector('#drawer-tray');
 const valDrawerLink = document.querySelector('.val-drawer-link');
+const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
 const valLiveStatus = document.querySelector('[data-val-live-status]');
 const valStatusFields = {
@@ -10433,6 +10434,41 @@ valDrawerLink?.addEventListener('click', () => {
   } else {
     renderDrawerPacketReceiptStrip(null);
   }
+});
+
+valDetail?.addEventListener('click', async (event) => {
+  const workflowButton = event.target.closest('[data-workflow-action]');
+  if(!workflowButton) return;
+  const action = workflowButton.dataset.workflowAction || '';
+  if(!action.startsWith('val')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const preflight = await ensureHearthClickPacket({
+    node:workflowButton,
+    packetName:'val_os_packet',
+    action,
+    allowBlockedForInspection:true,
+    source:{
+      sourceId:action,
+      sourceType:'val_entry_action',
+      sourceLabel:workflowButton.innerText || action,
+      sourceItem:{id:action, title:workflowButton.innerText || action, sourceType:'val_entry_action'}
+    }
+  });
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  if(action === 'valConnections:review' || action === 'valConnections'){
+    openValConnectionsWorkspace();
+    return;
+  }
+  if(action === 'valWitnessingResume'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return;
+  }
+  if(action === 'valWitnessingFresh'){
+    await openValWitnessingSession('meeting_val', {fresh:true});
+    return;
+  }
+  await handleWorkflowAction(action, workflowButton);
 });
 
 sourceDrawerLink.addEventListener('click', () => {
