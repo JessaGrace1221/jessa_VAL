@@ -621,6 +621,7 @@ const relationshipProfiles = {
     temperature: 'Warm',
     temperatureScore: 82,
     trajectory: 'Growing',
+    trustLevel: 'High',
     relationshipState: 'strategic',
     relationshipStateLabel: 'Strategic',
     sourceEvidence: 'GHL contact, Frisson notes, and partner-path context all point to active leverage.',
@@ -634,6 +635,20 @@ const relationshipProfiles = {
     patterns: 'The relationship is shifting from collaborator to strategic thought partner.',
     meaning: 'Aric creates leverage beyond individual projects by turning ideas into visible momentum.',
     certainty: 'You know why Aric matters, what changed recently, and why your next action should preserve trust rather than create urgency.',
+    nextMove: 'Review the Frisson partnership direction before the next follow-up.',
+    risk: 'No urgent trust risk, but do not let more than two weeks pass without a meaningful touchpoint.',
+    keyFacts: ['Strategic partner', 'High trust', 'Warm and growing', 'Best engaged through clear opportunities'],
+    whatChanged: ['Accepted the Frisson consulting direction.', 'Suggested two new partner paths.', 'Mentioned community partnerships.'],
+    executiveAdvice: ['Bring him opportunities, not problems.', 'Use conversation for strategy and short writing for decisions.', 'Protect this relationship because it compounds.'],
+    activeThreads: ['Frisson', 'Partner strategy', 'Community partnerships'],
+    openLoops: ['Proposal review', 'Partner workflow feedback', 'Follow-up after introduction'],
+    valueUserCreates: ['Seeing patterns and building systems he can execute within.', 'Providing strategic clarity and decision frameworks.', 'Opening doors to aligned partners and opportunities.'],
+    valueTheyCreate: ['Driving momentum and execution forward.', 'Bringing ideas to life in the real world.', 'Challenging you to think bigger and move faster.'],
+    livingNarrative: 'The relationship began through shared Frisson work and has expanded into a strategic partnership around larger momentum.',
+    timeline: ['Beginning: connected through HelpByShopping foundation.', 'Trust: early collaboration proved reliability.', 'Breakthroughs: built partner workflows and saw real impact.', 'Current season: shaping a bigger vision together.', 'Open future: expanding influence and lasting impact.'],
+    recentActivity: ['Meeting with Aric · Jun 12', 'Email from Aric · Jun 10', 'LinkedIn post · Jun 8'],
+    relatedWork: ['Frisson · Active thread', 'Partner Consulting · Opportunity', 'VAL Round Table · Relevant discussions'],
+    notesToSee: ['Aric mentioned a possible introduction to a foundation that aligns with your values.'],
     linkedinSignal: 'Recent LinkedIn activity is worth watching for a thoughtful comment before the next Frisson follow-up.',
     sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo available · Outscraper available',
     introReview: {
@@ -665,6 +680,7 @@ const relationshipProfiles = {
     temperature: 'Active',
     temperatureScore: 68,
     trajectory: 'Needs clarity',
+    trustLevel: 'Medium',
     relationshipState: 'waiting',
     relationshipStateLabel: 'Waiting',
     sourceEvidence: 'Direct proposal reply is the strongest current signal; LinkedIn is quiet.',
@@ -678,6 +694,20 @@ const relationshipProfiles = {
     patterns: 'The relationship is becoming more concrete: fewer broad ideas, more decisions that move work forward.',
     meaning: 'Greg can unlock the proposal path if the follow-up stays precise and does not create extra work.',
     certainty: 'You know the next move is review, not persuasion. The relationship needs clarity more than urgency.',
+    nextMove: 'Reply with the cleanest next decision and create one follow-up task.',
+    risk: 'Ambiguity is the trust risk. A precise next step protects momentum better than a longer explanation.',
+    keyFacts: ['Proposal decision partner', 'Responds to specificity', 'Waiting on clarity'],
+    whatChanged: ['Answered the proposal question that was blocking the next step.', 'Moved the thread from broad possibility into a concrete decision.', 'Made follow-up possible without persuasion.'],
+    executiveAdvice: ['Name the decision plainly.', 'Do not add extra options unless he asks.', 'Use a short reply and one dated task.'],
+    activeThreads: ['Acme proposal', 'Decision clarity'],
+    openLoops: ['Proposal reply', 'Follow-up task with due date'],
+    valueUserCreates: ['Translating broad options into clear decisions.', 'Protecting scope from expanding too fast.'],
+    valueTheyCreate: ['Practical decision clarity.', 'Direct answers that can unblock work.'],
+    livingNarrative: 'This relationship is becoming more operational: fewer broad ideas, more decisions that move the proposal forward.',
+    timeline: ['Beginning: proposal conversation opened.', 'Trust: direct reply clarified the blocker.', 'Current season: decision path needs precision.', 'Open future: proposal can move if follow-up stays narrow.'],
+    recentActivity: ['Proposal reply received', 'Acme proposal thread updated'],
+    relatedWork: ['Acme proposal · Active thread', 'Executive Inbox · Reply draft'],
+    notesToSee: ['Do not let silence become ambiguity.'],
     linkedinSignal: 'LinkedIn is quiet; the stronger signal is the direct proposal reply already in the relationship file.',
     sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo available · Outscraper watching',
     introReview: {
@@ -709,6 +739,7 @@ const relationshipProfiles = {
     temperature: 'Healthy',
     temperatureScore: 74,
     trajectory: 'Protect',
+    trustLevel: 'High',
     relationshipState: 'warm',
     relationshipStateLabel: 'Warm',
     sourceEvidence: 'Recurring trust notes and follow-up timing point to a warm, care-dependent relationship.',
@@ -722,6 +753,20 @@ const relationshipProfiles = {
     patterns: 'The relationship is deepening through reliability rather than volume.',
     meaning: 'Lindsey helps protect reputation and continuity across work that depends on human trust.',
     certainty: 'You know this relationship should be handled gently, with fewer promises and stronger follow-through.',
+    nextMove: 'Follow through carefully before adding any new ask.',
+    risk: 'Overpromising is the risk. Reliability matters more than speed here.',
+    keyFacts: ['Trust holder', 'Warm relationship', 'Follow-through sensitive'],
+    whatChanged: ['Recent notes reinforced that timing matters.', 'One follow-up should be handled carefully rather than rushed.'],
+    executiveAdvice: ['Make fewer promises and keep them cleanly.', 'Use gentle language and specific follow-through.', 'Do not turn care into urgency.'],
+    activeThreads: ['Partner network', 'Relationship continuity'],
+    openLoops: ['Careful follow-up'],
+    valueUserCreates: ['Continuity, thoughtfulness, and careful execution.', 'Clear memory across relationship-dependent work.'],
+    valueTheyCreate: ['Reputation protection and trust continuity.', 'Human signal when work needs care.'],
+    livingNarrative: 'This relationship deepens through reliability rather than volume. It should be protected through careful follow-through.',
+    timeline: ['Beginning: shared relationship memory.', 'Trust: consistency became the signal.', 'Current season: protect warmth with careful follow-through.'],
+    recentActivity: ['Trust note reviewed', 'Follow-up timing surfaced'],
+    relatedWork: ['Partner Network · Warm thread'],
+    notesToSee: ['Consistency matters more than speed here.'],
     linkedinSignal: 'A recent network post may be a natural place to reinforce shared trust without creating a new ask.',
     sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo watching · Outscraper available',
     href: './dashboard.html?view=relationships&targetType=person&targetId=lindsey-wincek'
@@ -4117,6 +4162,7 @@ function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
   });
   renderRelationshipActions(profile);
   renderRelationshipSectionActions(profile);
+  renderRelationshipDossierSections(profile);
   renderRelationshipTemperatureReview(profile);
   hydrateRelationshipProjectLinks(profile);
   hydrateRelationshipDocuments(profile);
@@ -4284,6 +4330,37 @@ function relationshipDossierMatchesFallback(dossier = {}, fallback = {}){
   if(expectedEmail && returnedEmail) return expectedEmail === returnedEmail;
   if(!expectedName || !returnedName) return false;
   return expectedName === returnedName;
+}
+
+function renderRelationshipList(name = '', items = []){
+  const target = document.querySelector('[data-relationship-list="' + name + '"]');
+  if(!target) return;
+  const normalized = Array.isArray(items) ? items.filter(Boolean) : String(items || '').split(/\n|;/).map((item) => item.trim()).filter(Boolean);
+  if(!normalized.length){
+    target.innerHTML = '<li>No signal loaded yet.</li>';
+    return;
+  }
+  const tag = target.tagName.toLowerCase() === 'ol' ? 'li' : 'li';
+  target.innerHTML = normalized.map((item) => '<' + tag + '>' + escapeHtml(String(item)) + '</' + tag + '>').join('');
+}
+
+function renderRelationshipDossierSections(profile = {}){
+  const listFallbacks = {
+    keyFacts: [profile.relationshipStateLabel || profile.relationshipState, profile.temperature && profile.temperature + ' temperature', profile.trajectory && profile.trajectory + ' trajectory'].filter(Boolean),
+    whatChanged: [profile.evidence || profile.signal].filter(Boolean),
+    executiveAdvice: [profile.certainty || 'Protect the relationship by acting from what is known, not from urgency.'].filter(Boolean),
+    activeThreads: [profile.company || profile.role].filter(Boolean),
+    openLoops: [profile.nextMove || profile.certainty].filter(Boolean),
+    valueUserCreates: ['Pattern recognition and thoughtful follow-through.'],
+    valueTheyCreate: [profile.meaning || 'Relationship value is still being assembled.'].filter(Boolean),
+    timeline: [profile.livingNarrative || profile.patterns].filter(Boolean),
+    recentActivity: [profile.lastChangedAt ? 'Last meaningful change · ' + new Date(profile.lastChangedAt).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : profile.signal].filter(Boolean),
+    relatedWork: [profile.company || profile.role].filter(Boolean),
+    notesToSee: [profile.wisdom].filter(Boolean)
+  };
+  Object.keys(listFallbacks).forEach((key) => {
+    renderRelationshipList(key, profile[key] || listFallbacks[key]);
+  });
 }
 
 function preferredRelationshipActions(actions = []){

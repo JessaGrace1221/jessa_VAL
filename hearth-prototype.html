@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=no-user-context-sweep-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=relationship-dossier-scan-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -383,67 +383,144 @@
           <p class="relationship-index-source" data-relationship-index-source>Local preview · canonical index will appear when available</p>
         </div>
         <div class="relationship-rolodex" data-relationship-rolodex aria-label="All people"></div>
-        <div class="relationship-file">
-          <section class="relationship-identity" aria-label="Relationship identity">
+        <div class="relationship-file relationship-dossier">
+          <section class="relationship-identity relationship-dossier-layer" aria-label="Identity">
             <div class="relationship-portrait" aria-hidden="true" data-relationship-field="initials">AS</div>
-            <div>
+            <div class="relationship-identity-main">
               <span>Identity</span>
               <strong data-relationship-field="role">Strategic Partner</strong>
               <p data-relationship-field="identity">Entrepreneur · Strategist · Idea to momentum</p>
               <small data-relationship-field="contact">Acme Ventures · Minneapolis, MN · aric@acmeventures.com</small>
               <div class="relationship-section-actions" data-relationship-section-actions="identity"></div>
             </div>
+            <aside class="relationship-identity-card" aria-label="Quick facts">
+              <span>Quick Facts</span>
+              <ul data-relationship-list="keyFacts"></ul>
+            </aside>
           </section>
-          <section class="relationship-wisdom" aria-label="Relationship wisdom">
-            <span>Executive Reminder</span>
-            <strong>If you remember one thing...</strong>
-            <p data-relationship-field="wisdom">Protect this relationship. Aric consistently creates momentum where you naturally create systems.</p>
-            <div class="relationship-section-actions" data-relationship-section-actions="wisdom"></div>
+          <section class="relationship-dossier-layer relationship-understanding" aria-label="Understanding">
+            <div class="relationship-layer-heading">
+              <span>Understanding</span>
+              <h4>What VAL wants you to remember</h4>
+            </div>
+            <div class="relationship-three-card-row">
+              <article class="relationship-wisdom">
+                <span>Thirty Second Reminder</span>
+                <strong>If I had 30 seconds...</strong>
+                <p data-relationship-field="wisdom">Protect this relationship. Aric consistently creates momentum where you naturally create systems.</p>
+                <div class="relationship-section-actions" data-relationship-section-actions="wisdom"></div>
+              </article>
+              <article class="relationship-wisdom">
+                <span>Becoming Observer</span>
+                <strong>What is this becoming?</strong>
+                <p data-relationship-field="patterns">The relationship is shifting from collaborator to strategic thought partner.</p>
+                <div class="relationship-section-actions" data-relationship-section-actions="patterns"></div>
+              </article>
+              <article class="relationship-wisdom">
+                <span>Witness Observer</span>
+                <strong>What is the one truth?</strong>
+                <p data-relationship-field="certainty">You know why Aric matters, what changed recently, and why your next action should preserve trust rather than create urgency.</p>
+              </article>
+            </div>
           </section>
-          <div class="relationship-actions" aria-label="Executive relationship actions">
-            <a href="./dashboard.html?view=relationships&targetType=person&targetId=aric-soyring" data-relationship-field="href" data-relationship-action="open_full_file">Open full file</a>
-            <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
-          </div>
-          <div class="relationship-pyramid" aria-label="Relationship Brief">
-            <article>
-              <span>Current Reality</span>
-              <strong>What is happening now</strong>
-              <p data-relationship-field="evidence">Recent conversations moved Frisson forward, opened two partner paths, and left one proposal review waiting.</p>
-              <div class="relationship-section-actions" data-relationship-section-actions="evidence"></div>
-            </article>
-            <article>
-              <span>Executive Assessment</span>
-              <strong>What is changing</strong>
-              <p data-relationship-field="patterns">The relationship is shifting from collaborator to strategic thought partner.</p>
-              <div class="relationship-section-actions" data-relationship-section-actions="patterns"></div>
-            </article>
-            <article>
-              <span>Strategic Importance</span>
-              <strong>Why it matters</strong>
-              <p data-relationship-field="meaning">Aric creates leverage beyond individual projects by turning ideas into visible momentum.</p>
-              <div class="relationship-section-actions" data-relationship-section-actions="meaning"></div>
-            </article>
-          </div>
-          <div class="relationship-certainty" aria-label="Relationship certainty">
-            <span>Observer Notes</span>
-            <p data-relationship-field="certainty">You know why Aric matters, what changed recently, and why your next action should preserve trust rather than create urgency.</p>
-          </div>
+          <section class="relationship-dossier-layer relationship-executive-judgment" aria-label="Executive judgment">
+            <div class="relationship-layer-heading">
+              <span>Executive Judgment</span>
+              <h4>If you only read one thing before reaching out</h4>
+            </div>
+            <div class="relationship-judgment-grid">
+              <article class="relationship-judgment-card">
+                <span>Current Read</span>
+                <div class="relationship-stat-grid">
+                  <p>Temperature <b data-relationship-field="temperature">Warm</b></p>
+                  <p>Trajectory <b data-relationship-field="trajectory">Growing</b></p>
+                  <p>Importance <b data-relationship-field="relationshipStateLabel">Strategic</b></p>
+                  <p>Trust <b data-relationship-field="trustLevel">High</b></p>
+                </div>
+              </article>
+              <article class="relationship-judgment-card">
+                <span>What Changed</span>
+                <ul data-relationship-list="whatChanged"></ul>
+              </article>
+              <article class="relationship-judgment-card relationship-judgment-card-wide">
+                <span>Why This Matters</span>
+                <p data-relationship-field="meaning">Aric creates leverage beyond individual projects by turning ideas into visible momentum.</p>
+                <strong data-relationship-field="nextMove">Review the partnership proposal before the next follow-up.</strong>
+                <div class="relationship-section-actions" data-relationship-section-actions="meaning"></div>
+              </article>
+            </div>
+            <div class="relationship-protection-grid">
+              <article>
+                <span>Executive Advice</span>
+                <ul data-relationship-list="executiveAdvice"></ul>
+              </article>
+              <article>
+                <span>Relationship Risk</span>
+                <p data-relationship-field="risk">No urgent trust risk, but this relationship compounds when it is tended deliberately.</p>
+              </article>
+            </div>
+          </section>
+          <section class="relationship-dossier-layer relationship-collaboration" aria-label="Collaboration">
+            <div class="relationship-layer-heading">
+              <span>Collaboration</span>
+              <h4>Where the work currently lives</h4>
+            </div>
+            <div class="relationship-collaboration-grid">
+              <article>
+                <span>Active Threads</span>
+                <ul data-relationship-list="activeThreads"></ul>
+              </article>
+              <article>
+                <span>Open Loops</span>
+                <ul data-relationship-list="openLoops"></ul>
+              </article>
+              <article>
+                <span>Mutual Value</span>
+                <div class="relationship-mutual-value">
+                  <div><strong>You create value by...</strong><ul data-relationship-list="valueUserCreates"></ul></div>
+                  <div><strong>They create value by...</strong><ul data-relationship-list="valueTheyCreate"></ul></div>
+                </div>
+              </article>
+            </div>
+          </section>
+          <section class="relationship-dossier-layer relationship-story" aria-label="Story">
+            <div class="relationship-layer-heading">
+              <span>Story</span>
+              <h4>The meaning over time</h4>
+            </div>
+            <div class="relationship-story-grid">
+              <article>
+                <span>Living Narrative</span>
+                <p data-relationship-field="livingNarrative">This relationship is becoming a strategic partnership around shared momentum.</p>
+              </article>
+              <article>
+                <span>Relationship Timeline</span>
+                <ol data-relationship-list="timeline"></ol>
+              </article>
+            </div>
+          </section>
           <div class="relationship-temperature-review" data-relationship-temperature-review hidden>
             <span>Temperature Review</span>
             <p data-relationship-temperature-review-copy></p>
             <button type="button" data-relationship-action="teach_temperature">Teach VAL temperature</button>
           </div>
-          <div class="relationship-receipts" aria-label="Relationship source receipts">
+          <div class="relationship-right-rail" aria-label="Related context">
             <article>
-              <span>LinkedIn Signal</span>
-              <p data-relationship-field="linkedinSignal">Recent public activity suggests this relationship is still warm enough for a thoughtful comment or follow-up.</p>
-              <button type="button" data-relationship-action="review_linkedin_activity">Review LinkedIn activity</button>
+              <span>Recent Activity</span>
+              <ul data-relationship-list="recentActivity"></ul>
             </article>
             <article>
-              <span>Source Receipts</span>
-              <p data-relationship-field="sourceReceipts">GHL contact resolved · LinkedIn watching · Apollo available · Outscraper available</p>
-              <button type="button" data-relationship-action="refresh_relationship_observers">Refresh observers</button>
+              <span>Related Work</span>
+              <ul data-relationship-list="relatedWork"></ul>
             </article>
+            <article>
+              <span>Notes You Should See</span>
+              <ul data-relationship-list="notesToSee"></ul>
+            </article>
+          </div>
+          <div class="relationship-actions" aria-label="Executive relationship actions">
+            <a href="./dashboard.html?view=relationships&targetType=person&targetId=aric-soyring" data-relationship-field="href" data-relationship-action="open_full_file">Open full file</a>
+            <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
           </div>
           <div class="relationship-project-panel" aria-label="Linked projects">
             <div class="relationship-project-panel-header">
@@ -797,6 +874,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=no-user-context-sweep-20260708"></script>
+<script src="./hearth-prototype.js?v=relationship-dossier-scan-20260708"></script>
 </body>
 </html>

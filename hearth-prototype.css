@@ -4517,7 +4517,13 @@ button.drawer-link{
 .relationship-identity,
 .relationship-wisdom,
 .relationship-temperature-review,
-.relationship-certainty{
+.relationship-certainty,
+.relationship-dossier-layer,
+.relationship-judgment-card,
+.relationship-protection-grid article,
+.relationship-collaboration-grid article,
+.relationship-story-grid article,
+.relationship-right-rail article{
   display:grid;
   gap:7px;
   padding:14px;
@@ -4548,7 +4554,7 @@ button.drawer-link{
   font-weight:850;
 }
 .relationship-identity{
-  grid-template-columns:58px minmax(0,1fr);
+  grid-template-columns:58px minmax(0,1fr) minmax(180px,.6fr);
   align-items:center;
 }
 .relationship-portrait{
@@ -4580,11 +4586,23 @@ button.drawer-link{
   font-size:.76rem;
   line-height:1.45;
 }
+.relationship-layer-heading{
+  display:grid;
+  gap:2px;
+  margin-bottom:4px;
+}
+.relationship-layer-heading h4{
+  margin:0;
+  color:rgba(34,19,15,.96);
+  font:750 clamp(1.02rem,1.6vw,1.32rem)/1.12 var(--serif);
+}
+.relationship-three-card-row,
 .relationship-pyramid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
 }
+.relationship-three-card-row article,
 .relationship-pyramid article{
   display:grid;
   gap:7px;
@@ -4607,11 +4625,55 @@ button.drawer-link{
     linear-gradient(180deg,rgba(232,241,220,.58),rgba(255,249,239,.42)),
     rgba(211,221,196,.42);
 }
+.relationship-judgment-grid{
+  display:grid;
+  grid-template-columns:.75fr .95fr 1.3fr;
+  gap:10px;
+}
+.relationship-stat-grid{
+  display:grid;
+  gap:8px;
+}
+.relationship-stat-grid p{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding-bottom:7px;
+  border-bottom:1px solid rgba(79,48,38,.1);
+}
+.relationship-stat-grid b{
+  color:rgba(34,19,15,.94);
+}
+.relationship-file ul,
+.relationship-file ol{
+  display:grid;
+  gap:7px;
+  margin:0;
+  padding-left:17px;
+  color:rgba(45,27,22,.74);
+  font-size:.75rem;
+  line-height:1.46;
+}
+.relationship-file li::marker{
+  color:rgba(155,100,53,.86);
+}
+.relationship-judgment-card-wide strong{
+  color:rgba(58,33,27,.92);
+  font-size:.84rem;
+  line-height:1.34;
+}
+.relationship-protection-grid,
+.relationship-story-grid,
 .relationship-receipts{
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:10px;
 }
+.relationship-protection-grid article,
+.relationship-collaboration-grid article,
+.relationship-story-grid article,
+.relationship-right-rail article,
 .relationship-receipts article{
   display:grid;
   gap:7px;
@@ -4637,6 +4699,24 @@ button.drawer-link{
 .relationship-receipts button:hover{
   background:rgba(255,249,239,.62);
   border-color:rgba(64,86,61,.3);
+}
+.relationship-collaboration-grid{
+  display:grid;
+  grid-template-columns:.85fr .85fr 1.3fr;
+  gap:10px;
+}
+.relationship-mutual-value{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.relationship-mutual-value strong{
+  font-size:.76rem;
+}
+.relationship-right-rail{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
 }
 .relationship-project-panel,
 .relationship-document-panel{
@@ -4968,7 +5048,7 @@ button.drawer-link{
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
   .drawer-cowork-orb{left:0;bottom:0;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
-      .drawer-grid,.source-list,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
+      .drawer-grid,.source-list,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
       .relationship-identity{grid-template-columns:1fr}
       .project-identity{grid-template-columns:1fr}
       .relationship-folder-rail{display:grid;grid-template-columns:1fr}

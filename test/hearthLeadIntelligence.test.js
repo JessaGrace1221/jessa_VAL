@@ -987,8 +987,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=no-user-context-sweep-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=no-user-context-sweep-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-dossier-scan-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-dossier-scan-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1708,20 +1708,26 @@ test('Relationship drawer opens a Relationship Brief instead of a CRM link', () 
   assert.match(hearthHtml, /id="relationship-detail"/);
   assert.match(hearthHtml, /Relationship Brief/);
   assert.match(hearthHtml, /<span>Identity<\/span>/);
-  assert.match(hearthHtml, /<span>Current Reality<\/span>/);
-  assert.match(hearthHtml, /<span>Executive Assessment<\/span>/);
-  assert.match(hearthHtml, /<span>Strategic Importance<\/span>/);
-  assert.match(hearthHtml, /<span>Executive Reminder<\/span>/);
-  assert.match(hearthHtml, /<span>Observer Notes<\/span>/);
-  assert.match(hearthHtml, /<span>LinkedIn Signal<\/span>/);
-  assert.match(hearthHtml, /<span>Source Receipts<\/span>/);
-  assert.match(hearthHtml, /data-relationship-action="review_linkedin_activity"/);
-  assert.match(hearthHtml, /data-relationship-action="refresh_relationship_observers"/);
+  assert.match(hearthHtml, /<span>Understanding<\/span>/);
+  assert.match(hearthHtml, /<span>Thirty Second Reminder<\/span>/);
+  assert.match(hearthHtml, /<span>Becoming Observer<\/span>/);
+  assert.match(hearthHtml, /<span>Witness Observer<\/span>/);
+  assert.match(hearthHtml, /<span>Executive Judgment<\/span>/);
+  assert.match(hearthHtml, /<span>Current Read<\/span>/);
+  assert.match(hearthHtml, /<span>What Changed<\/span>/);
+  assert.match(hearthHtml, /<span>Why This Matters<\/span>/);
+  assert.match(hearthHtml, /<span>Executive Advice<\/span>/);
+  assert.match(hearthHtml, /<span>Relationship Risk<\/span>/);
+  assert.match(hearthHtml, /<span>Collaboration<\/span>/);
+  assert.match(hearthHtml, /<span>Story<\/span>/);
+  assert.match(hearthHtml, /<span>Related Work<\/span>/);
   assert.match(hearthHtml, /class="relationship-actions"/);
   assert.match(hearthJs, /const relationshipDrawerLink/);
   assert.match(hearthJs, /relationship-open/);
-  assert.match(hearthCss, /\.relationship-pyramid/);
-  assert.match(hearthCss, /\.relationship-receipts/);
+  assert.match(hearthCss, /\.relationship-layer-heading/);
+  assert.match(hearthCss, /\.relationship-judgment-grid/);
+  assert.match(hearthCss, /\.relationship-collaboration-grid/);
+  assert.match(hearthCss, /\.relationship-right-rail/);
   assert.match(hearthCss, /\.relationship-actions/);
 });
 
@@ -1733,6 +1739,13 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthHtml, /data-relationship-field="wisdom"/);
   assert.match(hearthJs, /const relationshipProfiles/);
   assert.match(hearthJs, /function renderRelationshipProfile/);
+  assert.match(hearthJs, /function renderRelationshipDossierSections/);
+  assert.match(hearthJs, /function renderRelationshipList/);
+  assert.match(hearthJs, /whatChanged/);
+  assert.match(hearthJs, /executiveAdvice/);
+  assert.match(hearthJs, /activeThreads/);
+  assert.match(hearthJs, /openLoops/);
+  assert.match(hearthJs, /livingNarrative/);
   assert.match(hearthJs, /relationship-action-group/);
   assert.match(hearthJs, /Actions VAL can take with this relationship/);
   assert.match(hearthJs, /Draft reply/);
@@ -1814,6 +1827,9 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /aria-pressed/);
   assert.match(hearthJs, /Do not let silence become ambiguity/);
   assert.match(hearthCss, /\.relationship-folder-rail/);
+  assert.match(hearthCss, /\.relationship-three-card-row/);
+  assert.match(hearthCss, /\.relationship-protection-grid/);
+  assert.match(hearthCss, /\.relationship-story-grid/);
   assert.match(hearthCss, /\.relationship-action-group/);
   assert.match(hearthCss, /\.relationship-actions\{[\s\S]{0,80}display:grid/);
   assert.match(hearthCss, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
@@ -1821,8 +1837,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.drawer-tray\{\n  position:absolute;\n  z-index:6/);
   assert.match(hearthJs, /if\(hearth\.classList\.contains\('drawer-open'\)\) return;\n    handlePrimaryAction\(button\)/);
   assert.ok(
-    hearthHtml.indexOf('class="relationship-actions"') < hearthHtml.indexOf('class="relationship-receipts"'),
-    'Relationship suggested actions should appear before receipt/link panels so the next move is reachable without deep scrolling.'
+    hearthHtml.indexOf('class="relationship-actions"') > hearthHtml.indexOf('class="relationship-right-rail"'),
+    'Relationship actions should stay after the scannable executive understanding layers.'
   );
 });
 
@@ -1864,7 +1880,6 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthHtml, /data-relationship-action="open_full_file"/);
   assert.match(hearthHtml, /data-relationship-action="ask_alignment"/);
   assert.match(hearthHtml, /data-relationship-section-actions="identity"/);
-  assert.match(hearthHtml, /data-relationship-section-actions="evidence"/);
   assert.match(hearthHtml, /data-relationship-section-actions="patterns"/);
   assert.match(hearthHtml, /data-relationship-section-actions="meaning"/);
   assert.match(hearthHtml, /data-relationship-section-actions="wisdom"/);
