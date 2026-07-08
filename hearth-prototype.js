@@ -6163,12 +6163,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
 }
 
 function shouldShowPacketReceipts(){
-  try{
-    const params = new URLSearchParams(window.location.search);
-    return params.get('debug') === 'packets' || window.localStorage?.getItem('val_debug_packets') === 'true';
-  }catch(_){
-    return false;
-  }
+  return false;
 }
 
 function packetReceiptSummary(packet = {}){
@@ -12499,10 +12494,34 @@ drawerTray.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('click', (event) => {
-  if(!retrievalSystem?.classList.contains('open')) return;
-  if(event.target.closest('.retrieval-system')) return;
-  if(event.target.closest('.desk-workspace, .full-calendar-panel, .home-card-workspace')) return;
-  closeDrawer();
+  const launchTarget = event.target.closest([
+    '[data-open-room]',
+    '.cowork-notebook',
+    '.next-meeting-card',
+    '.agenda-item',
+    '.calendar-tab',
+    '.drawer-pull',
+    '.drawer-link',
+    '.observer-board-button',
+    '.teach-pen',
+    '.linkedin-widget',
+    '.lean-button'
+  ].join(','));
+  if(launchTarget) return;
+  if(hearth.classList.contains('calendar-open') && !event.target.closest('.full-calendar-panel')){
+    closeCalendarPanel();
+  }
+  if(hearth.dataset.distance === 'judgment' && !event.target.closest('.desk-workspace')){
+    closeWorkspace();
+  }
+  if(retrievalSystem?.classList.contains('open') && !event.target.closest('.retrieval-system')){
+    closeDrawer();
+  }
+  if(hearth.classList.contains('evidence-open') && !event.target.closest('.hearth-evidence')){
+    evidence.classList.remove('open');
+    hearth.classList.remove('evidence-open');
+    leanButton.setAttribute('aria-expanded', 'false');
+  }
 });
 
 closeSourceDetail.addEventListener('click', () => {

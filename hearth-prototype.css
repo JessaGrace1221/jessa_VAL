@@ -1779,7 +1779,7 @@ button,a{font:inherit}
   line-height:1.42;
 }
 .workspace-packet-receipt{
-  display:grid;
+  display:none !important;
   grid-template-columns:minmax(150px,.7fr) 1fr;
   gap:12px;
   align-items:start;

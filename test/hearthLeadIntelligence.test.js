@@ -987,8 +987,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=drawer-cowork-orb-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=drawer-cowork-orb-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=no-user-context-sweep-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=no-user-context-sweep-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1113,11 +1113,13 @@ test('Hearth packet contracts require the deep source web behind every click', (
   });
 });
 
-test('Hearth drawer openings show index packet receipts before item actions', () => {
+test('Hearth drawer openings keep index packet receipts internal before item actions', () => {
   assert.match(hearthHtml, /data-drawer-packet-receipt/);
   assert.match(hearthJs, /function drawerIndexPacketReceipt/);
   assert.match(hearthJs, /status:'index_context'/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(packet\)/);
+  assert.match(hearthJs, /function shouldShowPacketReceipts\(\)\{[\s\S]{0,60}return false;/);
+  assert.match(hearthCss, /\.workspace-packet-receipt\{[\s\S]{0,80}display:none !important;/);
   assert.match(hearthJs, /const sourceReceipts = sourceLabel \? \[\{/);
   for(const action of [
     'drawer:relationships',
@@ -1216,7 +1218,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /function renderHearthPacketReceiptStrip/,
     /node\.dataset\.valPacketReceiptId/,
     /function shouldShowPacketReceipts/,
-    /debug'\) === 'packets'/,
+    /function shouldShowPacketReceipts\(\)\{[\s\S]{0,60}return false;/,
     /function localHearthMetadataPacket/,
     /metadata_only/,
     /if\(hearthPacketShouldSkip\(action, resolvedPacketName\)\)\{[\s\S]{0,160}localHearthMetadataPacket\(\{packetName:resolvedPacketName, action, node, source\}\)/,
@@ -1549,6 +1551,10 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /function updateCloseAllDrawersButton/);
   assert.match(hearthJs, /drawerPull\.addEventListener\('click', \(\) => \{\s*hideWorkspaceForDrawerNavigation\(\);/);
   assert.match(hearthJs, /closeAllDrawersButton\?\.addEventListener\('click', closeDrawer\)/);
+  assert.match(hearthJs, /document\.addEventListener\('click', \(event\) => \{/);
+  assert.match(hearthJs, /hearth\.classList\.contains\('calendar-open'\) && !event\.target\.closest\('\.full-calendar-panel'\)/);
+  assert.match(hearthJs, /hearth\.dataset\.distance === 'judgment' && !event\.target\.closest\('\.desk-workspace'\)/);
+  assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
   assert.match(hearthCss, /\.state-switcher\{top:28px;left:104px;right:18px;max-width:calc\(100vw - 122px\);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:\.54\}/);
