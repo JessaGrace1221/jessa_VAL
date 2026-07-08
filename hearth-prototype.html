@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=workspace-hidden-fix-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=val-entry-routing-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -252,10 +252,10 @@
         <div class="val-witnessing-entry" aria-label="Begin VAL Witnessing Session">
           <p>VAL begins with one question, not a setup checklist.</p>
           <div class="val-entry-actions">
-            <button type="button" data-val-action="start_onboarding">Begin Witnessing Session</button>
+            <button type="button" data-workflow-action="valWitnessingFresh">Begin Witnessing Session</button>
             <button type="button" data-workflow-action="valWitnessingResume">Pick Up Where We Left Off</button>
             <button type="button" data-workflow-action="valWitnessingFresh">Start Fresh</button>
-            <button type="button" data-val-action="connections">Connect inbox/calendar</button>
+            <button type="button" data-workflow-action="valConnections:review">Connect inbox/calendar</button>
           </div>
           <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
         </div>
@@ -826,6 +826,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=workspace-hidden-fix-20260708"></script>
+<script src="./hearth-prototype.js?v=val-entry-routing-20260708"></script>
 </body>
 </html>

@@ -907,8 +907,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=workspace-hidden-fix-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=workspace-hidden-fix-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-entry-routing-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-entry-routing-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1393,8 +1393,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /VAL begins with one question, not a setup checklist/);
   assert.match(hearthHtml, /Nothing leaves this session/);
   assert.match(hearthHtml, /data-val-live-status/);
-  assert.match(hearthHtml, /data-val-action="start_onboarding"/);
-  assert.match(hearthHtml, /data-val-action="connections"/);
+  assert.match(hearthHtml, /data-workflow-action="valWitnessingFresh">Begin Witnessing Session/);
+  assert.match(hearthHtml, /data-workflow-action="valConnections:review">Connect inbox\/calendar/);
   assert.doesNotMatch(hearthHtml, /val-status-panel/);
   assert.doesNotMatch(hearthHtml, /val-routing-panel/);
   assert.doesNotMatch(hearthHtml, /val-action-grid/);
