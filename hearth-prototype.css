@@ -4972,6 +4972,223 @@ button.drawer-link{
   font:800 .54rem var(--body);
   font-style:normal;
 }
+
+/* System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan. */
+:root{
+  --frost-open-surface:
+    linear-gradient(135deg,rgba(255,255,252,.94),rgba(248,250,244,.84) 54%,rgba(235,241,226,.72)),
+    rgba(255,255,252,.74);
+  --frost-open-card:
+    linear-gradient(180deg,rgba(255,255,252,.82),rgba(248,250,244,.66)),
+    rgba(255,255,252,.58);
+  --frost-open-card-strong:
+    linear-gradient(180deg,rgba(255,255,252,.9),rgba(248,250,244,.74)),
+    rgba(255,255,252,.68);
+  --frost-open-line:rgba(91,105,79,.16);
+  --frost-open-shadow:0 20px 54px rgba(18,24,18,.12);
+  --frost-open-soft-shadow:0 12px 28px rgba(18,24,18,.08);
+  --frost-open-ink:rgba(29,25,22,.92);
+  --frost-open-muted:rgba(50,45,40,.66);
+}
+.full-calendar-panel,
+.workspace-panel,
+.drawer-tray{
+  border-color:var(--frost-open-line);
+  background:var(--frost-open-surface);
+  color:var(--frost-open-ink);
+  backdrop-filter:blur(26px) saturate(1.04);
+  box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.72);
+}
+.retrieval-system::before,
+.drawer-pull,
+.close-all-drawers,
+.return-button,
+.close-calendar-button,
+.close-source-detail,
+.close-val-detail,
+.close-relationship-detail,
+.close-timeline-detail,
+.close-correspondence-detail,
+.close-commitment-detail,
+.close-document-detail,
+.close-project-detail{
+  border-color:rgba(91,105,79,.18);
+  background:linear-gradient(180deg,rgba(255,255,252,.86),rgba(248,250,244,.68));
+  color:var(--frost-open-ink);
+  box-shadow:0 10px 26px rgba(18,24,18,.1),inset 0 1px 0 rgba(255,255,255,.68);
+}
+.desk-workspace.home-cowork-mode .workspace-panel,
+.desk-workspace.witnessing-mode .workspace-panel,
+.observer-board-mode .workspace-panel{
+  background:var(--frost-open-surface);
+  border-color:var(--frost-open-line);
+  box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.72);
+}
+.calendar-panel-inner,
+.source-detail,
+.relationship-detail,
+.project-detail,
+.timeline-detail,
+.correspondence-detail,
+.commitment-detail,
+.document-detail,
+.val-detail,
+.workspace-panel{
+  color:var(--frost-open-ink);
+}
+.drawer-tray :is(
+  .drawer-link,
+  .agenda-item,
+  .source-card,
+  .lead-scraper-card,
+  .criteria-card,
+  .home-packet-row,
+  .preview-lead,
+  .linkedin-engagement-item,
+  .observer-chief-card,
+  .observer-truth-card,
+  .val-status-panel article,
+  .val-routing-panel article,
+  .val-workbench article,
+  .val-witnessing-entry,
+  .document-status-panel article,
+  .document-library,
+  .document-brief,
+  .document-list button,
+  .document-list .empty,
+  .document-preview,
+  .correspondence-queue,
+  .correspondence-brief,
+  .correspondence-list button,
+  .correspondence-context div,
+  .correspondence-draft-preview,
+  .commitment-summary-grid article,
+  .commitment-workbench article,
+  .timeline-status-grid article,
+  .timeline-principles article,
+  .timeline-event-panel,
+  .timeline-review-panel,
+  .timeline-event-list article,
+  .timeline-review-cards article,
+  .timeline-review-checklist div,
+  .timeline-match-row,
+  .timeline-proposal-receipt,
+  .project-create-form,
+  .project-rolodex button,
+  .project-identity,
+  .project-certainty,
+  .project-pyramid article,
+  .project-source-panel,
+  .project-source-grid article,
+  .project-graph-panel,
+  .project-graph-grid article,
+  .project-review-panel,
+  .project-prepared-panel,
+  .project-document-panel,
+  .project-review-grid article,
+  .project-prepared-grid article,
+  .project-document-grid article,
+  .relationship-folder-rail button,
+  .relationship-rolodex button,
+  .relationship-identity,
+  .relationship-wisdom,
+  .relationship-temperature-review,
+  .relationship-certainty,
+  .relationship-dossier-layer,
+  .relationship-judgment-card,
+  .relationship-protection-grid article,
+  .relationship-collaboration-grid article,
+  .relationship-story-grid article,
+  .relationship-right-rail article,
+  .relationship-project-panel,
+  .relationship-document-panel,
+  .relationship-project-grid article,
+  .relationship-document-grid article,
+  .relationship-actions a,
+  .relationship-actions button,
+  .source-readiness,
+  .source-status
+),
+.workspace-panel :is(
+  .paper,
+  .criteria-card,
+  .home-packet-row,
+  .preview-lead,
+  .linkedin-engagement-item,
+  .workspace-input-panel,
+  .workspace-prompt-card,
+  .meeting-prep-readiness,
+  .meeting-prep-section,
+  .meeting-prep-two article,
+  .val-witnessing-tool-row,
+  .val-witnessing-prompt-card,
+  .val-source-status,
+  .calendar-source-status,
+  .val-connection-panel,
+  .val-conversation-answer,
+  .val-witnessing-complete,
+  .observer-chief-card,
+  .observer-truth-card,
+  article
+),
+.full-calendar-panel :is(.agenda-item,.calendar-source-status){
+  border-color:var(--frost-open-line);
+  background:var(--frost-open-card);
+  box-shadow:var(--frost-open-soft-shadow),inset 0 1px 0 rgba(255,255,255,.56);
+}
+.drawer-tray :is(.drawer-link:hover,.drawer-link:focus-visible),
+.drawer-tray :is(button:hover,a:hover){
+  background:var(--frost-open-card-strong);
+  border-color:rgba(91,105,79,.28);
+}
+.drawer-tray :is([aria-pressed="true"],.active,.sync,.connected,.ready-review,[data-review-decision="approved"]),
+.workspace-panel :is([aria-pressed="true"],.active,.connected,.ready-review,[data-review-decision="approved"]){
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.9),rgba(238,246,230,.74)),
+    rgba(232,241,220,.62);
+  border-color:rgba(91,105,79,.26);
+}
+.drawer-tray :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]),
+.workspace-panel :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]){
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.9),rgba(252,241,237,.72)),
+    rgba(255,255,252,.62);
+  border-color:rgba(177,112,100,.22);
+}
+.drawer-tray :is(h2,h3,h4,strong,b),
+.workspace-panel :is(h2,h3,h4,strong,b),
+.full-calendar-panel :is(h2,h3,h4,strong,b){
+  color:var(--frost-open-ink);
+}
+.drawer-tray :is(p,li,small,dd),
+.workspace-panel :is(p,li,small,dd),
+.full-calendar-panel :is(p,li,small,dd){
+  color:var(--frost-open-muted);
+}
+.drawer-tray :is(span,dt,.drawer-kicker,.home-packet-eyebrow),
+.workspace-panel :is(span,dt,.workspace-kicker,.home-packet-eyebrow),
+.full-calendar-panel :is(span,dt,.calendar-panel-kicker){
+  color:rgba(73,87,63,.72);
+}
+.drawer-tray :is(input,textarea,select),
+.workspace-panel :is(input,textarea,select),
+.full-calendar-panel :is(input,textarea,select){
+  border-color:rgba(91,105,79,.18);
+  background:rgba(255,255,252,.76);
+  color:var(--frost-open-ink);
+}
+.home-cowork-chatbar input,
+.workspace-panel .home-cowork-chatbar input{
+  border:0;
+  background:transparent !important;
+}
+.drawer-tray :is(.primary-action,.source-action.primary),
+.workspace-panel :is(.primary-action,.source-action.primary),
+.full-calendar-panel :is(.primary-action,.source-action.primary){
+  background:rgba(73,87,63,.9);
+  border-color:rgba(73,87,63,.24);
+  color:rgba(255,255,252,.96);
+}
 .hearth-shell[data-distance="judgment"] .hearth{
   opacity:.4;
   filter:blur(.8px);
