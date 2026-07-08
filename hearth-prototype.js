@@ -5355,7 +5355,8 @@ function openHomeItemCowork(roomName, index){
     recommendation: executiveHomeRecommendation(sourceItem, roomName),
     actions: suggestedHomeActionsForItem(sourceItem, roomName, sourceLabel),
     sourceItem,
-    cardType: roomName === 'leverage' ? 'ready_for_you_queue_item' : 'what_changed_queue_item'
+    cardType: roomName === 'leverage' ? 'ready_for_you_queue_item' : 'what_changed_queue_item',
+    packetReceipt: {}
   };
   setWorkspaceContent({...workspace, label: 'Home ' + roomLabel + ' source workspace'});
   activeHomeWorkspace = {roomName, workspace};
@@ -10088,6 +10089,35 @@ function openHomeSourceView(){
   renderSourceOpenReceipt(workspace, route);
 }
 
+function renderHomeEvidenceBrief(){
+  const workspace = activeHomeWorkspace && activeHomeWorkspace.workspace ? activeHomeWorkspace.workspace : {};
+  const item = workspace.sourceItem || {};
+  const roomName = roomNameFromWorkspace(workspace, 'source');
+  const title = executiveHomeBriefTitle(item, workspace.title || itemTitle(item, 'Evidence review'), roomName);
+  setWorkspaceContent({
+    lens: workspace.lens ? workspace.lens + ' Evidence' : 'Evidence Review',
+    title,
+    meaning: executiveHomeMeaning(item, workspace.meaning, roomName),
+    understanding: executiveHomeUnderstanding(item, title, roomName),
+    recommendation: executiveHomeRecommendation(item, roomName),
+    actions: [
+      {label: sourceActionLabel(item, 'Open source context'), homeAction: 'open_source'},
+      {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+    ],
+    label: 'Home evidence review',
+    packetReceipt: {}
+  });
+  activeHomeWorkspace = {
+    roomName,
+    workspace: {
+      ...workspace,
+      sourceItem: item,
+      cardType: workspace.cardType || 'homepage_card'
+    }
+  };
+  markRoomAttended(roomName, 'evidence');
+}
+
 function openExecutiveInboxForHomeEmail(item = {}){
   const email = homeEmailPayload(item);
   const params = new URLSearchParams();
@@ -10238,6 +10268,10 @@ async function handleHomeRoomAction(action, node = null){
   if(!homePreflight.ok) return;
   if(action === 'open_source'){
     openHomeSourceView();
+    return;
+  }
+  if(action === 'review_evidence'){
+    renderHomeEvidenceBrief();
     return;
   }
   if(action === 'open_executive_inbox' || action === 'draft_email_reply' || action === 'create_email_task'){
