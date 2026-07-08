@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=inbox-direct-actions-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=inbox-action-fallback-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -688,10 +688,10 @@
               <p data-correspondence-field="summary">Prepared replies and draft-readiness items will appear here with evidence and approval boundaries.</p>
             </div>
             <div class="correspondence-actions" aria-label="Correspondence review actions">
-              <button type="button" data-correspondence-action="cowork_correspondence">Co-Work with VAL</button>
-              <button type="button" data-correspondence-action="review">Review in Leverage</button>
-              <button type="button" data-correspondence-action="generate">Prepare draft</button>
-              <button type="button" data-correspondence-action="revise">Tighten draft</button>
+              <button type="button" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Co-Work with VAL</button>
+              <button type="button" data-correspondence-action="review" onclick="runCorrespondenceActionClick(this,event);return false;">Review in Leverage</button>
+              <button type="button" data-correspondence-action="generate" onclick="runCorrespondenceActionClick(this,event);return false;">Prepare draft</button>
+              <button type="button" data-correspondence-action="revise" onclick="runCorrespondenceActionClick(this,event);return false;">Tighten draft</button>
             </div>
             <dl class="correspondence-context">
               <div><dt>Why now</dt><dd data-correspondence-field="whyNow">No active correspondence selected.</dd></div>
@@ -826,6 +826,6 @@
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=inbox-direct-actions-20260708"></script>
+<script src="./hearth-prototype.js?v=inbox-action-fallback-20260708"></script>
 </body>
 </html>

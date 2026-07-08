@@ -447,6 +447,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-correspondence-draft-preview/);
   assert.match(hearthHtml, /data-correspondence-evidence/);
   assert.match(hearthHtml, /data-correspondence-action="cowork_correspondence"/);
+  assert.match(hearthHtml, /onclick="runCorrespondenceActionClick\(this,event\);return false;"/);
   assert.match(hearthHtml, /data-correspondence-action="review"/);
   assert.ok(correspondenceDrawerHtml.indexOf('data-correspondence-action="cowork_correspondence"') < correspondenceDrawerHtml.indexOf('class="correspondence-context"'));
   assert.match(hearthHtml, /Prepare draft/);
@@ -894,8 +895,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-direct-actions-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-direct-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-action-fallback-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-action-fallback-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
