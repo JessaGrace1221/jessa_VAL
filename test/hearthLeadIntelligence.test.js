@@ -519,14 +519,25 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /\/api\/val\/documents\?limit=120/);
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /function filteredDocumentItems/);
+  assert.match(hearthJs, /function documentSuggestedActions/);
+  assert.match(hearthJs, /function documentSource/);
+  assert.match(hearthJs, /function documentActionNeedsLiveConfirmation/);
+  assert.match(hearthJs, /suggestedActions: documentSuggestedActions/);
+  assert.match(hearthJs, /button\.hidden = !allowed/);
+  assert.match(hearthJs, /button\.classList\.toggle\('active', isActive\)/);
   assert.match(hearthJs, /item\.relationship/);
   assert.match(hearthJs, /item\.project/);
   assert.match(hearthJs, /function openDocumentWorkspace/);
   assert.match(hearthJs, /openWorkspaceShell\(actionLabel, \{returnTarget:'document'\}\)/);
+  assert.match(hearthJs, /renderHearthPacketReceiptStrip\(lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /action === 'cowork_document'/);
   assert.match(hearthJs, /function documentSendPayload/);
   assert.match(hearthJs, /hearth_documents_drawer/);
   assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-packet/);
+  assert.match(hearthJs, /action:'document:' \+ action/);
+  assert.match(hearthJs, /allowBlockedForInspection:true, source:documentSource/);
+  assert.match(hearthJs, /preflight\.packet\?\.status === 'blocked' && documentActionNeedsLiveConfirmation/);
+  assert.match(hearthJs, /no document, email, CRM record, Google Doc, Drive file, or external system was changed/);
   assert.match(hearthJs, /function hydrateRelationshipDocuments/);
   assert.match(hearthJs, /function hydrateProjectDocuments/);
   assert.match(hearthJs, /\/api\/val\/documents\/reference\?relationship=/);
@@ -837,7 +848,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=commitment-source-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=document-source-actions-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

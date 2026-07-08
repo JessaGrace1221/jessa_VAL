@@ -2932,6 +2932,63 @@ function setDocumentField(field, value){
   if(node) node.textContent = value || '';
 }
 
+function documentSuggestedActions(item = activeDocumentItem){
+  if(!item) return [];
+  const actions = ['cowork_document', 'present'];
+  const push = (action) => {
+    if(action && !actions.includes(action)) actions.push(action);
+  };
+  const status = String(item.status || '').toLowerCase();
+  const type = String(item.type || '').toLowerCase();
+  const origin = String(item.origin || item.source || '').toLowerCase();
+  const hasBody = Boolean(String(item.body || item.summary || '').trim());
+  const hasSource = Boolean(String(item.sourceUrl || item.url || '').trim());
+  const hasRecipient = Boolean(String(item.recipientEmail || '').trim());
+  const needsLinks = !String(item.relationship || '').trim() || !String(item.project || '').trim();
+  const editable = /draft|ready|prepared|proposal|copy|brief|report|html|document/.test([status,type,origin].join(' '));
+  if(editable) push('update');
+  if(hasBody && hasRecipient) push('send');
+  if(hasSource) push('open_source');
+  if(needsLinks || /onboarding|unlinked|reference/.test([status,origin,item.needs || ''].join(' ').toLowerCase())) push('link_context');
+  return actions.filter((action) => [
+    'cowork_document',
+    'present',
+    'update',
+    'send',
+    'open_source',
+    'link_context'
+  ].includes(action));
+}
+
+function documentSource(item = activeDocumentItem, action = ''){
+  const selected = item || activeDocumentItem || null;
+  return {
+    document: selected,
+    documentId: selected?.id || '',
+    sourceId: selected?.id || '',
+    sourceType: selected?.type ? 'document_' + selected.type : 'document',
+    sourceLabel: selected?.title || 'Document',
+    sourceItem: selected,
+    relationshipName: selected?.relationship || '',
+    projectName: selected?.project || '',
+    relationshipId: selected?.relationshipId || selected?.relationship_id || '',
+    projectId: selected?.projectId || selected?.project_id || '',
+    emailThreadId: selected?.threadId || selected?.thread_id || '',
+    transcriptId: selected?.transcriptId || selected?.transcript_id || '',
+    calendarEventId: selected?.calendarEventId || selected?.calendar_event_id || '',
+    draftId: selected?.draftId || selected?.draft_id || selected?.readyForYouId || '',
+    sourceUrl: selected?.sourceUrl || '',
+    sourceTitle: selected?.source || selected?.origin || '',
+    sourceQuote: selected?.summary || selected?.referenceUse || '',
+    suggestedActions: documentSuggestedActions(selected),
+    requestedAction: action
+  };
+}
+
+function documentActionNeedsLiveConfirmation(action = ''){
+  return ['update','send','link_context'].includes(action);
+}
+
 function renderDocumentList(){
   if(!documentList || !documentCount) return;
   const rows = filteredDocumentItems();
@@ -2948,7 +3005,9 @@ function renderDocumentList(){
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.documentItem = item.id;
-    button.setAttribute('aria-pressed', String(activeDocumentItem?.id === item.id));
+    const isActive = activeDocumentItem?.id === item.id;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
     const meta = [documentTypeLabel(item.type), item.status, item.source].filter(Boolean).join(' · ');
     const context = [item.relationship && 'Relationship: ' + item.relationship, item.project && 'Project: ' + item.project].filter(Boolean).join(' · ') || 'Context needs linking';
     button.innerHTML = '<span>' + escapeHtml(meta) + '</span><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(item.summary || '') + '</p><small>' + escapeHtml(context) + '</small>';
@@ -2974,7 +3033,10 @@ function renderDocumentBrief(item = activeDocumentItem){
   }
   if(documentStatus) documentStatus.textContent = selected ? 'Selected document is reference material. Presenting is internal; updating and sending require review-gated action.' : 'Documents are reference material until the user approves an update, send, or external write.';
   document.querySelectorAll('[data-document-action]').forEach((button) => {
-    button.disabled = !selected;
+    const allowed = documentSuggestedActions(selected).includes(button.dataset.documentAction);
+    button.hidden = !allowed;
+    button.disabled = !selected || !allowed;
+    button.setAttribute('aria-hidden', String(!allowed));
   });
 }
 
@@ -3030,6 +3092,7 @@ function openDocumentWorkspace(action, item = activeDocumentItem){
     returnTarget:'document'
   });
   openWorkspaceShell(actionLabel, {returnTarget:'document'});
+  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
 function documentSendPayload(item = activeDocumentItem){
@@ -3065,6 +3128,7 @@ async function handleDocumentAction(action){
       helper: 'This Co-Work note is tagged to the selected document. Updating, sending, or changing source files still requires approval.',
       backWorkflow: 'cancel:document'
     });
+    renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
     return;
   }
   if(action === 'present' || action === 'update' || action === 'link_context'){
@@ -3081,6 +3145,10 @@ async function handleDocumentAction(action){
     return;
   }
   if(action === 'send'){
+    if(item.noExternalAction || String(item.id || '').startsWith('local-')){
+      if(documentStatus) documentStatus.textContent = 'Local preview only: VAL can prepare this send for review, but no document, email, CRM record, Google Doc, Drive file, or external system was changed.';
+      return;
+    }
     const payload = documentSendPayload(item);
     if(!payload?.body){
       if(documentStatus) documentStatus.textContent = 'This document has no sendable body yet. Present or update it first.';
@@ -10232,23 +10300,39 @@ documentList?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-document-item]');
   if(!button) return;
   const selected = currentDocumentItems.find((item) => item.id === button.dataset.documentItem);
-  const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:select', source:{documentId:selected?.id || button.dataset.documentItem || '', sourceLabel:selected?.title || 'Document row', sourceType:'document', sourceItem:selected || null}});
+  const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:select', allowBlockedForInspection:true, source:documentSource(selected, 'document:select')});
   if(!preflight.ok) return;
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   renderDocumentBrief(selected);
 });
 
-documentSearchInput?.addEventListener('input', () => renderDocumentBrief(filteredDocumentItems()[0] || null));
-documentRelationshipFilter?.addEventListener('change', () => renderDocumentBrief(filteredDocumentItems()[0] || null));
-documentProjectFilter?.addEventListener('change', () => renderDocumentBrief(filteredDocumentItems()[0] || null));
+documentSearchInput?.addEventListener('input', async () => {
+  const preflight = await ensureHearthClickPacket({node:documentSearchInput, packetName:'document_packet', action:'document:search', allowBlockedForInspection:true, source:{...documentSource(activeDocumentItem, 'document:search'), sourceType:'document_filter', sourceLabel:'Document search'}});
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  renderDocumentBrief(filteredDocumentItems()[0] || null);
+});
+documentRelationshipFilter?.addEventListener('change', async () => {
+  const preflight = await ensureHearthClickPacket({node:documentRelationshipFilter, packetName:'document_packet', action:'document:relationship_filter', allowBlockedForInspection:true, source:{...documentSource(activeDocumentItem, 'document:relationship_filter'), sourceType:'document_filter', sourceLabel:'Document relationship filter'}});
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  renderDocumentBrief(filteredDocumentItems()[0] || null);
+});
+documentProjectFilter?.addEventListener('change', async () => {
+  const preflight = await ensureHearthClickPacket({node:documentProjectFilter, packetName:'document_packet', action:'document:project_filter', allowBlockedForInspection:true, source:{...documentSource(activeDocumentItem, 'document:project_filter'), sourceType:'document_filter', sourceLabel:'Document project filter'}});
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  renderDocumentBrief(filteredDocumentItems()[0] || null);
+});
 
 document.querySelectorAll('[data-document-action]').forEach((button) => {
   button.addEventListener('click', async () => {
-    const item = activeDocumentItem || {};
-    const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:button.dataset.documentAction, source:{documentId:item.id || '', sourceLabel:item.title || 'Document action', sourceType:item.type || 'document', sourceItem:item}});
+    const action = button.dataset.documentAction;
+    const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:' + action, allowBlockedForInspection:true, source:documentSource(activeDocumentItem, action)});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    handleDocumentAction(button.dataset.documentAction);
+    if(preflight.packet?.status === 'blocked' && documentActionNeedsLiveConfirmation(action)){
+      if(documentStatus) documentStatus.textContent = 'VAL checked the document packet and needs more source/link context before this action can update, send, or link anything. Receipt is shown above; no external action happened.';
+      return;
+    }
+    handleDocumentAction(action);
   });
 });
 
