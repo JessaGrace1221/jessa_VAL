@@ -10481,6 +10481,50 @@ function findProjectForHomeSource(item = {}){
     }, {id:'', project:null, score:0});
 }
 
+function relationshipProfileFromHomeSource(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const title = itemTitle(item, identity.label || 'Relationship');
+  const name = title.split(':')[0].trim() || identity.label || 'Relationship';
+  return {
+    id: identity.id || item.id || 'home-relationship-' + Date.now().toString(36),
+    profileId: identity.id || item.id || '',
+    name,
+    company: item.company || item.organization || '',
+    role: 'Home source',
+    temperature: /warm/i.test(title) ? 'Warm' : 'Observed',
+    temperatureScore: /warm/i.test(title) ? 72 : 55,
+    relationshipState: /risk|open loop|watch/i.test(title + ' ' + (item.summary || '')) ? 'watch' : 'active',
+    trajectory: 'Watch',
+    summary: item.summary || item.reason_it_matters || item.reason || title,
+    latestSignal: item.summary || item.reason_it_matters || 'This relationship is the source behind the Velocity signal.',
+    nextMove: suggestedRecommendationForHomeItem(item, 'velocity'),
+    evidence: sourceOfSourceLines(item).join(' '),
+    href: './dashboard.html?view=relationships&targetId=' + encodeURIComponent(identity.id || item.id || name),
+    query: {contactId: identity.id || item.contactId || item.personId || '', name}
+  };
+}
+
+function projectProfileFromHomeSource(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const title = itemTitle(item, identity.label || 'Project');
+  const name = title.split(':')[0].trim() || identity.label || 'Project';
+  return {
+    id: identity.id || item.id || 'home-project-' + Date.now().toString(36),
+    name,
+    status: 'Observed from Home',
+    signal: item.summary || item.reason_it_matters || title,
+    nextMove: suggestedRecommendationForHomeItem(item, 'velocity'),
+    reality: item.summary || 'This project is the source behind the Velocity signal.',
+    decision: 'Review the project source before deciding what moves next.',
+    decisionEvidence: sourceOfSourceLines(item).join(' '),
+    sourceDetails: {
+      rawContext: item.summary || item.reason_it_matters || title,
+      documents: sourceOfSourceLines(item).join(' ')
+    },
+    href: './dashboard.html?view=projects&targetId=' + encodeURIComponent(identity.id || item.id || name)
+  };
+}
+
 function correspondenceItemFromHomeSource(item = {}){
   const email = homeEmailPayload(item);
   const id = email.messageId || email.threadId || item.id || item.sourceId || item.source_id || 'home-email-' + Date.now().toString(36);
@@ -10536,14 +10580,22 @@ function openHomeSourceDrawerDestination(workspace = {}){
       renderRelationshipProfile(match.id, match.profile);
       loadRelationshipDossier(match.id);
     } else {
-      openRelationshipIndex();
+      const fallback = relationshipProfileFromHomeSource(item);
+      relationshipIndexProfiles[fallback.id] = fallback;
+      renderRelationshipProfile(fallback.id, fallback);
     }
     return;
   }
   if(profile.key === 'project' || /project/i.test(destination)){
     restoreProjectWindow();
     const match = findProjectForHomeSource(item);
-    if(match.project && match.score >= 60) renderProjectProfile(match.id);
+    if(match.project && match.score >= 60) {
+      renderProjectProfile(match.id);
+    } else {
+      const fallback = projectProfileFromHomeSource(item);
+      projectIndexProfiles[fallback.id] = fallback;
+      renderProjectProfile(fallback.id);
+    }
     return;
   }
   if(profile.key === 'meeting' || /meeting|calendar/i.test(destination)){
