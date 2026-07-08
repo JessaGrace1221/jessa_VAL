@@ -10488,9 +10488,14 @@ projectFileInput?.addEventListener('change', updateProjectFileReceipt);
 async function openRelationshipProfileFromFolder(profileId = '', node = null){
   const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
   renderRelationshipProfile(profileId, {...profile, profileId});
-  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
+  const selectedSource = relationshipSource({...profile, profileId}, 'relationship:open_profile');
+  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:selectedSource});
   if(!preflight.ok) return;
-  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  const selectedLabel = selectedSource.sourceLabel || profile.name || profileId;
+  const receiptLabels = packetReceiptSummary(preflight.packet || {}).sourceLabels.join(' ');
+  const receiptMatchesSelection = selectedLabel && receiptLabels.toLowerCase().includes(String(selectedLabel).toLowerCase());
+  const packet = receiptMatchesSelection ? preflight.packet : localHearthMetadataPacket({packetName:'relationship_packet', action:'relationship:open_profile', node, source:selectedSource});
+  renderDrawerPacketReceiptStrip(packet || lastHearthPacketReceipt);
   loadRelationshipDossier(profileId);
 }
 

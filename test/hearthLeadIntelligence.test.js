@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-local-packet-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-local-packet-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-proof-guard-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-proof-guard-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1549,6 +1549,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /relationshipFolderButtons\.forEach/);
   assert.match(hearthJs, /async function openRelationshipProfileFromFolder/);
   assert.match(hearthJs, /renderRelationshipProfile\(profileId, \{\.\.\.profile, profileId\}\)/);
+  assert.match(hearthJs, /receiptMatchesSelection/);
+  assert.match(hearthJs, /localHearthMetadataPacket\(\{packetName:'relationship_packet', action:'relationship:open_profile', node, source:selectedSource\}\)/);
   assert.match(hearthHtml, /openRelationshipProfileFromFolder\(this\.dataset\.relationshipProfile,this\)/);
   assert.match(hearthJs, /openRelationshipProfileFromFolder\(button\.dataset\.relationshipProfile, button\)/);
   assert.match(hearthJs, /aria-pressed/);
@@ -1595,8 +1597,10 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /strategicImportance/);
   assert.match(hearthJs, /renderRelationshipProfile\(profileId, relationshipProfileFromDossier\(data\.dossier, fallback\)\)/);
   assert.match(hearthJs, /if\(!canUseApi\) return/);
-  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}loadRelationshipDossier\(profileId\)/);
-  assert.match(hearthJs, /source:relationshipSource\(\{\.\.\.profile, profileId\}, 'relationship:open_profile'\)/);
+  assert.match(hearthJs, /const packet = receiptMatchesSelection \? preflight\.packet : localHearthMetadataPacket/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}loadRelationshipDossier\(profileId\)/);
+  assert.match(hearthJs, /const selectedSource = relationshipSource\(\{\.\.\.profile, profileId\}, 'relationship:open_profile'\)/);
+  assert.match(hearthJs, /source:selectedSource/);
   assert.match(hearthJs, /await openRelationshipProfileFromFolder\(profileId, relationshipProfileButton\)/);
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
   assert.match(hearthHtml, /data-relationship-action="open_full_file"/);
