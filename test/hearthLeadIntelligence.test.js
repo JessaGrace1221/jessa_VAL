@@ -128,6 +128,8 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthHtml, /Co-Work with VAL/);
   assert.match(hearthHtml, /data-project-action="ask_priority"/);
   assert.match(hearthHtml, /data-project-action="show_alternatives"/);
+  assert.doesNotMatch(hearthHtml, /data-open-room="alignment" data-project-action="ask_priority"/);
+  assert.doesNotMatch(hearthHtml, /data-open-room="leverage" data-project-action="show_alternatives"/);
   assert.match(hearthJs, /const projectProfiles/);
   assert.match(hearthJs, /function openProjectIndex/);
   assert.match(hearthJs, /function renderProjectRolodex/);
@@ -185,6 +187,7 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /projectOpenProfile/);
   assert.match(hearthJs, /function handleProjectAction/);
   assert.match(hearthJs, /await handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/);
+  assert.match(hearthJs, /if\(button\.closest\('#drawer-tray'\)\) return/);
   assert.match(hearthJs, /Project Judgment/);
   assert.match(hearthJs, /No task, CRM update, message, scrape, or import happened from this click/);
   assert.match(hearthJs, /priority is ready to judge/);
@@ -868,8 +871,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-render-proof-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-render-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-action-proof-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-action-proof-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

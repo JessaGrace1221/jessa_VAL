@@ -11048,6 +11048,7 @@ switches.forEach((button) => {
 
 roomButtons.forEach((button) => {
   button.addEventListener('click', () => {
+    if(button.closest('#drawer-tray')) return;
     if(hearth.classList.contains('drawer-open')) return;
     handlePrimaryAction(button);
   });
