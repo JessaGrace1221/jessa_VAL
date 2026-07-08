@@ -74,7 +74,7 @@ const closeCorrespondenceDetail = document.querySelector('.close-correspondence-
 const correspondenceList = document.querySelector('[data-correspondence-list]');
 const correspondenceCount = document.querySelector('[data-correspondence-count]');
 const correspondenceDraftPreview = document.querySelector('[data-correspondence-draft-preview]');
-const correspondenceEvidence = document.querySelector('[data-correspondence-evidence]');
+const correspondenceDraftBody = document.querySelector('[data-correspondence-draft-body]');
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const commitmentDrawerLink = document.querySelector('.commitment-drawer-link');
 const closeCommitmentDetail = document.querySelector('.close-commitment-detail');
@@ -330,7 +330,7 @@ const hearthClickContractRegistry = [
   {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, search, sort, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
   {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open file, Co-Work, ask priority, show alternatives, review source learning', never:'Do not create or mutate project records without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
-  {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Co-Work, review, prepare draft, tighten draft, send packet', never:'Do not send directly from drawer click'},
+  {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
   {selector:'.commitment-drawer-link,[data-commitment-item],[data-commitment-filter],[data-commitment-action]', contract:'drawer.commitments', packet:'commitment_packet', rule:'Commitment observer/task support rules', actions:'Co-Work, draft email, create task, schedule, status, show source', never:'Do not send; status changes need visible user action'},
   {selector:'.document-drawer-link,[data-document-item],[data-document-action],[data-document-search],[data-document-relationship-filter],[data-document-project-filter]', contract:'drawer.documents', packet:'document_packet', rule:'Document observer/reference prompt suite', actions:'Co-Work, present, update, send packet, open source, link context', never:'Do not send or update live document without approval gate'},
   {selector:'.source-drawer-link,[data-open-scraper],[data-preview-choice]', contract:'drawer.lead_intelligence', packet:'lead_intelligence_packet', rule:'Lead Intelligence scraper prompt suite', actions:'Run preview, approve/hold, import approved only', never:'Do not import unreviewed leads'},
@@ -3324,11 +3324,11 @@ function correspondenceItemsFromReady(result = {}){
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   correspondenceList.innerHTML = '';
-  correspondenceCount.textContent = currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' prepared ' + (currentCorrespondenceItems.length === 1 ? 'reply' : 'replies') : 'No prepared replies waiting';
+  correspondenceCount.textContent = currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') : 'No conversations waiting';
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty';
-    empty.innerHTML = '<span>Review-only</span><p>Prepared replies, draft-readiness items, and correspondence evidence will appear here when VAL has enough signal.</p>';
+    empty.innerHTML = '<span>Clear</span><p>No conversation needs executive attention right now.</p>';
     correspondenceList.appendChild(empty);
     return;
   }
@@ -3340,13 +3340,13 @@ function renderCorrespondenceList(){
     button.classList.toggle('active', isActive);
     button.setAttribute('aria-pressed', String(isActive));
     const label = document.createElement('span');
-    label.textContent = item.status === 'needs_context' ? 'Needs Context' : 'Ready For Review';
+    label.textContent = item.status === 'needs_context' ? 'Needs Context' : 'Ready';
     const title = document.createElement('strong');
     title.textContent = item.title;
     const summary = document.createElement('p');
     summary.textContent = item.summary;
     const small = document.createElement('small');
-    small.textContent = [item.representationRisk && 'Risk: ' + item.representationRisk, item.source, 'No external action'].filter(Boolean).join(' · ');
+    small.textContent = item.context || item.source || '';
     button.append(label, title, summary, small);
     correspondenceList.appendChild(button);
   });
@@ -3354,10 +3354,7 @@ function renderCorrespondenceList(){
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   if(!item) return [];
-  const actions = ['cowork_correspondence', 'review', 'not_executive_contact'];
-  if(item.conversationId) actions.push('generate');
-  if(item.draftId) actions.push('revise');
-  return actions;
+  return ['send', 'cowork_correspondence', 'not_executive_contact'];
 }
 
 function scrollCorrespondenceActionsIntoView(){
@@ -3382,21 +3379,15 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   activeCorrespondenceItem = item || currentCorrespondenceItems[0] || null;
   renderCorrespondenceList();
   const selected = activeCorrespondenceItem;
-  setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Review-only') : 'Review-only');
+  setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Ready');
   setCorrespondenceField('title', selected?.title || 'Select a prepared reply');
-  setCorrespondenceField('summary', selected?.summary || 'Prepared replies and draft-readiness items will appear here with evidence and approval boundaries.');
-  setCorrespondenceField('whyNow', selected?.whyNow || 'No active correspondence selected.');
-  setCorrespondenceField('context', selected?.context || 'Identity and project context will appear when known.');
-  setCorrespondenceField('prepared', selected?.prepared || 'No draft selected yet.');
-  setCorrespondenceField('needs', selected?.needs || 'Review, edit, approve, reject, or provide missing context.');
-  if(correspondenceDraftPreview){
-    correspondenceDraftPreview.innerHTML = '<span>Draft Preview</span><p>' + escapeHtml(selected?.draftBody || 'No draft body selected yet.') + '</p>';
+  setCorrespondenceField('summary', selected?.summary || 'Edit the draft, send it, or work with VAL on this conversation.');
+  if(correspondenceDraftBody){
+    correspondenceDraftBody.value = selected?.draftBody || '';
+    correspondenceDraftBody.disabled = !selected;
+    correspondenceDraftBody.placeholder = selected ? 'Write or edit the reply here.' : 'Select a conversation to edit the draft.';
   }
-  if(correspondenceEvidence){
-    const evidenceText = selected?.evidence?.length ? selected.evidence.slice(0, 5).map((line) => '- ' + line).join('\n') : 'Source excerpts will appear here.';
-    correspondenceEvidence.innerHTML = '<span>Evidence</span><p>' + escapeHtml(evidenceText) + '</p>';
-  }
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Drafting is private preparation inside VAL. Sending represents Jessa externally and still requires explicit approval.';
+  if(correspondenceSafety) correspondenceSafety.textContent = '';
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
     const allowed = correspondenceSuggestedActions(selected).includes(button.dataset.correspondenceAction);
     button.hidden = !allowed;
@@ -3411,11 +3402,10 @@ function showCorrespondenceLocalBoundary(action, item = activeCorrespondenceItem
   const needs = action === 'generate'
     ? 'I can only prepare a fresh saved draft when this item has a live conversation id. This preview already has private draft language ready for review.'
     : action === 'send'
-      ? 'I can only send a saved draft that has a draft id and recipient context. Prepare or select a saved draft first.'
+      ? 'This draft needs a recipient and message before it can be sent.'
       : 'I can only tighten a saved draft when this item has a draft id. This preview draft is private preparation inside VAL, and no saved draft record was changed.';
-  setCorrespondenceField('needs', needs);
   if(correspondenceSafety){
-    correspondenceSafety.textContent = needs + ' Nothing was sent. Sending represents Jessa externally and still requires explicit approval.';
+    correspondenceSafety.textContent = needs;
   }
 }
 
@@ -3436,7 +3426,7 @@ function correspondenceSendPayload(item = activeCorrespondenceItem){
   const source = raw.sourceContext || raw.source_context || {};
   const draft = source.writerOutput || source.draft || {};
   const subject = item.title || raw.subject || draft.subject || 'VAL follow-up';
-  const body = item.draftBody || raw.body || draft.body || item.prepared || '';
+  const body = correspondenceDraftBody?.value || item.draftBody || raw.body || draft.body || item.prepared || '';
   const recipientEmail = item.recipientEmail || source.to || source.recipientEmail || source.recipient || source.forwardTo || '';
   return {
     to: recipientEmail,
@@ -3482,8 +3472,7 @@ function correspondenceSuppressionContact(item = activeCorrespondenceItem){
 
 function correspondenceExecutionMessage(result = {}){
   if(result.executed){
-    const summary = result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'Draft sent.';
-    return summary + ' Execution receipt was recorded.';
+    return result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'Sent.';
   }
   const errors = result.risk_check?.errors || [];
   if(errors.includes('payload.to') || result.risk_check?.missing?.includes('payload.to')){
@@ -3559,7 +3548,7 @@ async function handleCorrespondenceAction(action){
     currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
-    if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact. VAL will keep this sender out of Executive Inbox and relationship context unless you explicitly reverse it.';
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact.';
     return;
   }
   if(action === 'cowork_correspondence'){
@@ -3575,7 +3564,7 @@ async function handleCorrespondenceAction(action){
       ],
       recommendation: 'Use this to tune voice, decide whether to send, add missing context, or reshape the reply before approval.',
       placeholder: 'What should VAL help you decide or rewrite about this reply?',
-      helper: 'This Co-Work note is tagged to the selected Executive Inbox item. Sending still requires explicit approval.',
+      helper: '',
       backWorkflow: 'cancel:correspondence'
     });
     return;
@@ -3619,23 +3608,24 @@ async function handleCorrespondenceAction(action){
         showCorrespondenceLocalBoundary('send', item);
         return;
       }
-      if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a send packet for review. Nothing is sent from this drawer click.';
-      let packetResult;
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Sending...';
+      let sendResult;
       try{
-        packetResult = await postJson('/api/val/external-actions/email-send-packet', payload);
+        sendResult = await postJson('/api/val/external-actions/email-send-now', {...payload, approvalNote:'Sent from Executive Inbox.'});
       }catch(executeError){
-        packetResult = executeError.data || {ok:false,error:executeError.message};
+        sendResult = executeError.data || {ok:false,error:executeError.message};
       }
-      if(packetResult.ok && packetResult.packet){
-        if(correspondenceSafety) correspondenceSafety.textContent = 'Send packet prepared for review. Nothing was sent; use the external-action approval gate for final confirmation.';
-        setCorrespondenceField('status', 'Send packet ready');
-        setCorrespondenceField('needs', 'A send packet is ready for the external-action approval gate. No email was sent from this drawer.');
+      if(sendResult.ok && sendResult.executed){
+        currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+        activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
+        renderCorrespondenceBrief(activeCorrespondenceItem);
+        if(correspondenceSafety) correspondenceSafety.textContent = correspondenceExecutionMessage(sendResult);
         return;
       }
-      if(correspondenceSafety) correspondenceSafety.textContent = 'Send packet was not prepared: ' + (packetResult.error || 'missing send context.');
+      if(correspondenceSafety) correspondenceSafety.textContent = correspondenceExecutionMessage(sendResult);
     }
   }catch(error){
-    if(correspondenceSafety) correspondenceSafety.textContent = 'Correspondence action stayed local: ' + error.message;
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Send failed: ' + error.message;
   }
 }
 
@@ -3647,7 +3637,7 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review' || correspondenceActionId === 'not_executive_contact';
+  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'not_executive_contact';
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
@@ -12682,6 +12672,11 @@ document.querySelectorAll('#correspondence-detail [data-correspondence-action]')
   button.addEventListener('click', (event) => {
     runCorrespondenceActionClick(button, event);
   });
+});
+
+correspondenceDraftBody?.addEventListener('input', () => {
+  if(!activeCorrespondenceItem) return;
+  activeCorrespondenceItem.draftBody = correspondenceDraftBody.value;
 });
 
 switches.forEach((button) => {

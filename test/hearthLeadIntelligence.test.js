@@ -444,43 +444,46 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
 test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   const correspondenceDrawerHtml = hearthHtml.slice(
     hearthHtml.indexOf('id="correspondence-detail"'),
-    hearthHtml.indexOf('id="commitments-detail"')
+    hearthHtml.indexOf('id="commitment-detail"')
   );
   assert.match(hearthHtml, /class="drawer-link correspondence-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="correspondence-detail"/);
   assert.match(hearthHtml, /id="correspondence-detail"/);
   assert.match(hearthHtml, /Executive Inbox/);
-  assert.match(hearthHtml, /Important replies and drafts/);
+  assert.match(hearthHtml, /Only conversations that need judgment appear here/);
   assert.match(hearthHtml, /data-correspondence-list/);
   assert.match(hearthHtml, /data-correspondence-count/);
   assert.match(hearthHtml, /data-correspondence-draft-preview/);
-  assert.match(hearthHtml, /data-correspondence-evidence/);
+  assert.match(hearthHtml, /data-correspondence-draft-body/);
+  assert.match(hearthHtml, /data-correspondence-action="send"/);
   assert.match(hearthHtml, /data-correspondence-action="cowork_correspondence"/);
   assert.match(hearthHtml, /onclick="runCorrespondenceActionClick\(this,event\);return false;"/);
-  assert.match(hearthHtml, /data-correspondence-action="review"/);
-  assert.ok(correspondenceDrawerHtml.indexOf('data-correspondence-action="cowork_correspondence"') < correspondenceDrawerHtml.indexOf('class="correspondence-context"'));
-  assert.match(hearthHtml, /Prepare draft/);
-  assert.match(hearthHtml, /Drafting is internal prep work inside VAL/);
-  assert.match(hearthHtml, /Sending represents Jessa externally/);
-  assert.match(hearthHtml, /data-correspondence-action="generate"/);
-  assert.match(hearthHtml, /data-correspondence-action="revise"/);
   assert.match(hearthHtml, /data-correspondence-action="not_executive_contact"/);
   assert.match(hearthHtml, />Not executive contact</);
-  assert.doesNotMatch(hearthHtml, /data-correspondence-action="send"/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Review Boundary/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Relationship Context/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Prepared Judgment/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /class="correspondence-context"/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /data-correspondence-evidence/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Review in Leverage/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Prepare draft/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Tighten draft/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Drafting is internal prep work inside VAL/);
+  assert.doesNotMatch(correspondenceDrawerHtml, /Sending represents Jessa externally/);
   assert.doesNotMatch(hearthHtml, /Send draft/);
   assert.doesNotMatch(hearthHtml, /<a href="\.\/inbox\.html" class="drawer-link" data-drawer-tone="blush-sage">/);
   assert.match(hearthJs, /const correspondenceDrawerLink/);
+  assert.match(hearthJs, /const correspondenceDraftBody/);
   assert.match(hearthJs, /function hydrateCorrespondenceDrawer/);
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /\/api\/val\/email\/review-drafts\?limit=20/);
-  assert.match(hearthJs, /\/api\/val\/email\/generate-draft/);
-  assert.match(hearthJs, /\/api\/val\/email\/revise-draft/);
-  assert.match(hearthJs, /function openCorrespondenceReviewWorkspace/);
-  assert.match(hearthJs, /openWorkspaceShell\('Executive Inbox review workspace', \{returnTarget:'correspondence'\}\)/);
+  assert.match(hearthJs, /return \['send', 'cowork_correspondence', 'not_executive_contact'\]/);
+  assert.match(hearthJs, /correspondenceDraftBody\.value = selected\?\.draftBody/);
+  assert.match(hearthJs, /correspondenceDraftBody\?\.addEventListener\('input'/);
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
   assert.match(hearthJs, /function scrollCorrespondenceActionsIntoView\(\)/);
   assert.match(hearthJs, /scrollCorrespondenceActionsIntoView\(\)/);
-  assert.match(hearthJs, /inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' \|\| correspondenceActionId === 'review'/);
+  assert.match(hearthJs, /inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' \|\| correspondenceActionId === 'not_executive_contact'/);
   assert.match(hearthJs, /allowBlockedForInspection:inspectOnlyAction/);
   assert.match(hearthJs, /runCorrespondenceActionClick\(button, event\)/);
   assert.match(hearthJs, /function showCorrespondenceLocalBoundary/);
@@ -490,23 +493,15 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /email: senderEmail \|\| item\.recipientEmail/);
   assert.match(hearthJs, /\/api\/val\/executive-inbox\/not-executive-contact/);
   assert.match(hearthJs, /correspondenceActionId === 'not_executive_contact'/);
-  assert.match(hearthJs, /will keep this sender out of Executive Inbox and relationship context/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /action:'email:select'/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:\{email:selected/);
-  assert.match(hearthJs, /private preparation inside VAL/);
-  assert.match(hearthJs, /represents Jessa externally/);
-  assert.match(hearthJs, /function sendPacketForDraft/);
   assert.match(hearthJs, /function correspondenceSendPayload/);
-  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-packet/);
+  assert.match(hearthJs, /\/api\/val\/external-actions\/email-send-now/);
   assert.match(hearthJs, /hearth_executive_inbox_drawer/);
-  assert.match(hearthJs, /Nothing was sent; use the external-action approval gate for final confirmation/);
-  assert.match(hearthJs, /live conversation id/);
-  assert.match(hearthJs, /draft id/);
-  assert.match(hearthJs, /Back to Executive Inbox drawer/);
   assert.match(hearthJs, /restoreCorrespondenceWindow/);
-  assert.match(hearthJs, /Nothing will be sent from this click/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-detail/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.drawer-grid/);
   assert.match(hearthCss, /\.correspondence-workbench/);
   assert.match(hearthCss, /\.correspondence-list/);
   assert.match(hearthCss, /\.correspondence-brief/);
@@ -988,8 +983,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=linkedin-widget-open-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=linkedin-widget-open-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=executive-inbox-clean-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-clean-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1303,8 +1298,8 @@ test('Hearth truth lineage map traces clicks to variables and feeder sources', (
 test('Hearth executive reasoning pipeline defines v1 Home admission gates', () => {
   [
     '# Hearth Executive Reasoning Pipeline',
-    'Truth\n  -> Normalize\n  -> Observe\n  -> Classify\n  -> Judge\n  -> Prioritize\n  -> Prepare\n  -> Can VAL Act?\n  -> Execute\n  -> Learn\n  -> Reflect\n  -> Remember',
-    '## v1 Operating Rule',
+    'Truth\n  -> Normalize\n  -> Witness\n  -> Observe\n  -> Classify\n  -> Judge\n  -> Prioritize\n  -> Prepare\n  -> Can VAL Act?\n  -> Execute\n  -> Learn\n  -> Reflect\n  -> Remember',
+    '## v1 Executive Relevance Rule',
     'Velocity items that passed the Velocity Round Table',
     'Alignment items with a complete Why Now Packet',
     'Leverage items with a Prepared Work Packet and Can VAL Act status',
