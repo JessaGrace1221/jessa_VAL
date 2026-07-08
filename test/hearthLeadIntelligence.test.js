@@ -700,7 +700,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /syncRelationshipTemperatureReviewState\(result\.update \|\| update\)/);
   assert.match(hearthJs, /Relationship Temperature/);
   assert.match(hearthJs, /Current read', 'Correction', 'Evidence', 'Decision/);
-  assert.match(hearthJs, /Temperature context', 'Review evidence', 'Decision boundary/);
+  assert.match(hearthJs, /What shifted', 'Evidence VAL used', 'What to decide/);
   assert.match(hearthJs, /Proposed teaching:/);
   assert.match(hearthJs, /Evidence held:/);
   assert.match(hearthJs, /Boundary: approval records local Teach VAL learning only/);
@@ -916,8 +916,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-row-executive-brief-v2-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-row-executive-brief-v2-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=val-clarity-standard-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=val-clarity-standard-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1287,7 +1287,7 @@ test('Hearth workspace papers relabel themselves by executive lens', () => {
   assert.match(hearthJs, /meaningLabel/);
   assert.match(hearthJs, /function paperLabelsForLens/);
   assert.match(hearthJs, /function renderPaperLabels/);
-  assert.match(hearthJs, /What moved', 'Why VAL noticed', 'Suggested next step/);
+  assert.match(hearthJs, /What moved', 'Why it matters', 'What to do now/);
   assert.match(hearthJs, /Why this matters', 'What it protects', 'Alignment check/);
   assert.match(hearthJs, /What is ready', 'What is already handled', 'Review posture/);
 });
@@ -1306,10 +1306,25 @@ test('Hearth workspace actions preserve agency while emphasizing the recommended
   assert.match(hearthCss, /\.workspace-actions \.primary-action/);
 });
 
+test('Hearth workspaces enforce the VAL Clarity Standard before rendering', () => {
+  assert.match(hearthJs, /function normalizeWorkspaceForClarity/);
+  assert.match(hearthJs, /function claritySpecificMeaning/);
+  assert.match(hearthJs, /function clarityEvidenceLines/);
+  assert.match(hearthJs, /function normalizeClarityActions/);
+  assert.match(hearthJs, /Co-Work with VAL/);
+  assert.match(hearthJs, /workflow: 'cowork:card_context'/);
+  assert.match(hearthJs, /function openCoworkFromClarityWorkspace/);
+  assert.match(hearthJs, /coworkPromptFromWorkspace/);
+  assert.match(hearthJs, /Help me decide what to trust, review, approve, do, or teach VAL next/);
+  assert.match(hearthJs, /Show why VAL believes this/);
+  assert.match(hearthJs, /Open source behind this judgment/);
+  assert.match(hearthJs, /normalizeWorkspaceForClarity\(content\.workspace\)/);
+});
+
 test('Hearth judgment receipts preserve the originating lens and source context', () => {
   assert.match(hearthJs, /function homeActionPosture/);
   assert.match(hearthJs, /priorWorkspace/);
-  assert.match(hearthJs, /sourceActionLabel\(item, 'Open source context'\)/);
+  assert.match(hearthJs, /sourceActionLabel\(item, 'Open source behind this judgment'\)/);
   assert.match(hearthJs, /homeAction: 'open_source'/);
   assert.match(hearthJs, /function openHomeSourceView\(\)/);
   assert.match(hearthJs, /executiveHomeBriefTitle\(item, originalTitle, roomName\)/);
@@ -1322,7 +1337,7 @@ test('Hearth judgment receipts preserve the originating lens and source context'
   assert.match(hearthJs, /No external action was taken from this workspace/);
   assert.match(hearthJs, /accepted your judgment/);
   assert.match(hearthJs, /is ready to adjust/);
-  assert.match(hearthJs, /kept the evidence attached/);
+  assert.match(hearthJs, /kept the evidence visible/);
 });
 
 test('Hearth source openings keep the desk oriented after opening a target', () => {
@@ -1332,7 +1347,7 @@ test('Hearth source openings keep the desk oriented after opening a target', () 
   assert.match(hearthJs, /Route retained inside Hearth/);
   assert.match(hearthJs, /packetReceipt: \{\}/);
   assert.match(hearthJs, /No CRM write, send, import, or durable memory action was taken/);
-  assert.match(hearthJs, /Review evidence/);
+  assert.match(hearthJs, /Show why VAL believes this/);
   assert.match(hearthJs, /GHL opportunity/);
   assert.match(hearthJs, /prepared draft/);
   assert.match(hearthJs, /relationship file/);
@@ -1566,7 +1581,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /const relationshipProfiles/);
   assert.match(hearthJs, /function renderRelationshipProfile/);
   assert.match(hearthJs, /relationship-action-group/);
-  assert.match(hearthJs, /Suggested next moves/);
+  assert.match(hearthJs, /Actions VAL can take with this relationship/);
   assert.match(hearthJs, /Draft reply/);
   assert.match(hearthJs, /Create follow-up task/);
   assert.match(hearthJs, /Draft check-in/);
@@ -1624,7 +1639,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /function relationshipSuggestedActions/);
   assert.match(hearthJs, /Draft reply/);
   assert.match(hearthJs, /Create follow-up task/);
-  assert.match(hearthJs, /Suggested next moves/);
+  assert.match(hearthJs, /Actions VAL can take with this relationship/);
   assert.doesNotMatch(hearthJs, /Draft LinkedIn Comment',type:'endpoint'/);
   assert.match(hearthJs, /function openRelationshipTeachWorkspace/);
   assert.match(hearthJs, /Review what I taught VAL/);

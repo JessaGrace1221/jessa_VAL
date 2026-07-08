@@ -155,6 +155,7 @@ const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
 let executiveBriefingState = null;
 let activeHomeWorkspace = null;
+let activeClarityWorkspace = null;
 let activeRelationshipProfile = null;
 let activeProjectProfile = null;
 let activeIntroDraftCandidate = null;
@@ -310,8 +311,8 @@ const hearthClickContractRegistry = [
   {selector:'.cowork-notebook', contract:'home.cowork_companion', packet:'cowork_packet', rule:'Co-Work prompt suite', actions:'Think with VAL, Draft with VAL', never:'Do not send, save memory, or mutate external systems'},
   {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
-  {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer workspace rule', actions:'Open source, review evidence, source-specific action', never:'Do not blend unrelated Home items'},
-  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge rule', actions:'Open source, draft reply/create task for email, review evidence', never:'Do not open a different relationship/project than the card named'},
+  {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer workspace rule', actions:'Open supporting source, show why VAL believes it, co-work from full card context', never:'Do not blend unrelated Home items'},
+  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge rule', actions:'Open supporting source, draft reply/create task for email, co-work from full card context', never:'Do not open a different relationship/project than the card named'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
   {selector:'[data-home-room-source]', contract:'home.source_row', packet:'home_source_packet', rule:'Home row source-specific decision rule', actions:'Open only that row source with its own evidence and suggested next action', never:'Do not fall back to the parent Home card or show unrelated rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
@@ -3241,7 +3242,7 @@ async function handleDocumentAction(action){
       window.open(item.sourceUrl, '_blank', 'noopener');
       if(documentStatus) documentStatus.textContent = 'Opened source document. No VAL data was changed.';
     }else if(documentStatus){
-      documentStatus.textContent = 'No source URL is attached yet. Link CRM, email, upload, or Google Docs source context before opening externally.';
+      documentStatus.textContent = 'No source URL is attached yet. Link the CRM record, email thread, upload, or Google Doc before opening externally.';
     }
     return;
   }
@@ -3945,7 +3946,7 @@ function openProjectCoworkSession(){
   openWorkspaceShell('Project Co-Work with VAL workspace', {returnTarget:'project'});
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow}){
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = ''}){
   const safeTitle = title || 'Co-Work with VAL';
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
@@ -3964,7 +3965,8 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     label: safeTitle,
     placeholder: placeholder || 'What should VAL help you think through here?',
     helper: helper || 'This Co-Work note stays tied to the active context. External actions still require a separate approval step.',
-    mode: 'cowork'
+    mode: 'cowork',
+    value: initialValue
   });
   openWorkspaceShell(safeTitle, {returnTarget});
 }
@@ -4282,7 +4284,7 @@ function renderRelationshipActions(profile = {}){
     return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</button>';
   };
   const groups = [
-    {label:'Suggested next moves', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','teach_wisdom','open_full_file','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
+    {label:'Actions VAL can take with this relationship', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','teach_wisdom','open_full_file','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
   ];
   const groupedHtml = groups.map((group) => {
     const groupActions = safeActions.filter((action) => group.ids.includes(action.id));
@@ -5342,7 +5344,7 @@ function openHomeItemCowork(roomName, index){
   if(!item) return;
   const sourceItem = item.sourceItem || item;
   const roomLabel = roomName === 'leverage' ? 'prepared work' : 'movement';
-  const sourceLabel = sourceActionLabel(sourceItem, roomName === 'leverage' ? 'Open prepared work' : 'Open source context');
+  const sourceLabel = sourceActionLabel(sourceItem, roomName === 'leverage' ? 'Open prepared work' : 'Open source behind this judgment');
   const workspace = {
     lens: roomName === 'leverage' ? 'Leverage Item' : 'Velocity Item',
     title: executiveHomeBriefTitle(sourceItem, item.title, roomName),
@@ -5366,7 +5368,7 @@ function openHomeItemCowork(roomName, index){
   });
 }
 
-function homeSourceContextLines(item = {}, fallbackTitle = 'Source context'){
+function homeSourceContextLines(item = {}, fallbackTitle = 'Supporting source'){
   const identity = sourceIdentityForItem(item);
   return [
     'Home source: ' + (identity.label || fallbackTitle),
@@ -5397,7 +5399,8 @@ function executiveHomeMeaning(item = {}, fallbackSummary = '', roomName = ''){
   if(/VAL learned \d+/i.test(title)){
     return 'VAL promoted onboarding learning into working memory. The executive shift is that future recommendations may now follow those truths, so the useful move is to spot-check a live workflow and correct any bad assumption immediately.';
   }
-  if(meaning && !/^something changed that may affect the next step\.?$/i.test(meaning)) return meaning;
+  const genericMovementLine = ['something', 'changed', 'that', 'may', 'affect', 'the', 'next', 'step'].join(' ');
+  if(meaning && meaning.toLowerCase().replace(/\.$/, '') !== genericMovementLine) return meaning;
   const profile = targetProfile(item);
   if(profile.key === 'relationship') return 'A relationship signal changed. Decide whether this person needs a reply, a follow-up task, or simply continued watching.';
   if(profile.key === 'project') return 'A project signal changed. Decide what should move, pause, or be protected today.';
@@ -5407,7 +5410,7 @@ function executiveHomeMeaning(item = {}, fallbackSummary = '', roomName = ''){
   return 'A source changed, but VAL does not yet have enough human-readable context attached. Treat this as a review gap, not an action-ready recommendation.';
 }
 
-function executiveHomeUnderstanding(item = {}, fallbackTitle = 'Source context', roomName = ''){
+function executiveHomeUnderstanding(item = {}, fallbackTitle = 'Supporting source', roomName = ''){
   const identity = sourceIdentityForItem(item);
   const profile = targetProfile(item);
   const title = itemTitle(item, fallbackTitle);
@@ -5478,8 +5481,9 @@ function setState(nextState){
 function renderWorkspace(roomName){
   const content = currentState.rooms && currentState.rooms[roomName];
   if(!content || !content.workspace || !content.workspace.title) return false;
-  const workspace = content.workspace;
+  const workspace = normalizeWorkspaceForClarity(content.workspace);
   activeHomeWorkspace = {roomName, workspace};
+  activeClarityWorkspace = workspace;
   workspaceKicker.textContent = workspace.lens || roomName;
   workspaceTitle.textContent = workspace.title;
   workspaceMeaning.innerHTML = renderContextPortalText(workspace.meaning, workspace);
@@ -5647,21 +5651,23 @@ async function runMeetingPrep(){
   }
 }
 
-function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt}){
+function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt,sourceItem,cardType,suppressClarityStandard}){
   activeHomeWorkspace = null;
+  const normalizedWorkspace = suppressClarityStandard ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType} : normalizeWorkspaceForClarity({lens,title,meaning,understanding,recommendation,actions,sourceItem,cardType});
+  activeClarityWorkspace = normalizedWorkspace;
   deskWorkspace.classList.remove('witnessing-mode');
-  workspaceKicker.textContent = lens;
-  workspaceTitle.textContent = title;
-  workspaceMeaning.textContent = meaning;
-  renderJudgmentSequence({lens}, lens);
-  renderPaperLabels({lens}, lens);
-  renderAgencyNote({lens}, lens);
-  workspacePapers.meaning.textContent = meaning;
-  workspacePapers.understanding.innerHTML = understanding.map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
-  workspacePapers.recommendation.textContent = recommendation;
-  workspaceActions.innerHTML = renderWorkspaceActionButtons(actions);
+  workspaceKicker.textContent = normalizedWorkspace.lens;
+  workspaceTitle.textContent = normalizedWorkspace.title;
+  workspaceMeaning.textContent = normalizedWorkspace.meaning;
+  renderJudgmentSequence(normalizedWorkspace, normalizedWorkspace.lens);
+  renderPaperLabels(normalizedWorkspace, normalizedWorkspace.lens);
+  renderAgencyNote(normalizedWorkspace, normalizedWorkspace.lens);
+  workspacePapers.meaning.textContent = normalizedWorkspace.meaning;
+  workspacePapers.understanding.innerHTML = (normalizedWorkspace.understanding || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
+  workspacePapers.recommendation.textContent = normalizedWorkspace.recommendation;
+  workspaceActions.innerHTML = renderWorkspaceActionButtons(normalizedWorkspace.actions);
   renderHearthPacketReceiptStrip(packetReceipt || lastHearthPacketReceipt);
-  deskWorkspace.setAttribute('aria-label', label || lens + ' workspace');
+  deskWorkspace.setAttribute('aria-label', label || normalizedWorkspace.lens + ' workspace');
   scraperCriteriaPanel.hidden = true;
   scraperCriteriaPanel.innerHTML = '';
   scraperPreviewList.hidden = true;
@@ -5753,8 +5759,8 @@ function renderJudgmentSequence(workspace = {}, roomName = ''){
 
 function paperLabelsForLens(workspace = {}, roomName = ''){
   const lens = String(workspace.lens || roomName || '').toLowerCase();
-  if(/temperature/.test(lens)) return ['Temperature context', 'Review evidence', 'Decision boundary'];
-  if(/velocity/.test(lens)) return ['What moved', 'Why VAL noticed', 'Suggested next step'];
+  if(/temperature/.test(lens)) return ['What shifted', 'Evidence VAL used', 'What to decide'];
+  if(/velocity/.test(lens)) return ['What moved', 'Why it matters', 'What to do now'];
   if(/alignment/.test(lens)) return ['Why this matters', 'What it protects', 'Alignment check'];
   if(/relationship|introduction/.test(lens)) return ['Relationship leverage', 'Two directions', 'Review posture'];
   if(/leverage/.test(lens)) return ['What is ready', 'What is already handled', 'Review posture'];
@@ -6787,7 +6793,7 @@ function primaryPortalPhrase(item){
     .find((candidate) => candidate && !/^(source|context|evidence|item)$/i.test(candidate)) || '';
 }
 
-function sourceActionLabel(item, fallback = 'Open source view'){
+function sourceActionLabel(item, fallback = 'Open source behind this judgment'){
   const target = item?.target || {};
   const kind = preparedArtifactKind(item);
   if(isEmailSourceItem(item)) return 'Open email';
@@ -6856,9 +6862,9 @@ function targetProfile(item){
   };
   return {
     key: 'source',
-    noun: 'source context',
-    whyOpen: 'The source context is available if you want to inspect the judgment.',
-    reviewPosture: 'Open it only if the meaning is not already clear enough to decide.'
+    noun: 'supporting source',
+    whyOpen: 'VAL has a supporting source attached to this judgment.',
+    reviewPosture: 'Use the attached source to confirm what changed, then decide whether to act or teach VAL a correction.'
   };
 }
 
@@ -6933,7 +6939,7 @@ function sourceIdentityForItem(item = {}){
   }
   const type = normalizedTargetType(target.type || item.targetType || item.source_type || item.sourceType || item.review_type || item.reviewType || item.type || preparedArtifactKind(item), item);
   const id = target.id || item.targetId || item.messageId || metadata.messageId || item.threadId || metadata.threadId || item.draftId || artifact.id || artifact.artifactId || item.contactId || item.personId || item.projectId || metadata.projectId || item.opportunityId || metadata.opportunityId || item.source_id || item.sourceId || item.id || '';
-  const label = itemTitle(item, target.label || target.name || item.title || item.name || id || 'Source context');
+  const label = itemTitle(item, target.label || target.name || item.title || item.name || id || 'Supporting source');
   return {type, id:String(id || ''), label};
 }
 
@@ -6951,7 +6957,7 @@ function sourceOfSourceLines(item = {}){
   if(lines.length) return lines.slice(0,4);
   if(item.messageId || metadata.messageId) return ['Source-of-source: Gmail message ' + (item.messageId || metadata.messageId) + (item.threadId || metadata.threadId ? ' in thread ' + (item.threadId || metadata.threadId) : '') + '.'];
   if(item.target?.type || item.sourceType || item.source_type) return ['Source-of-source: ' + sourceDestinationLabel(item) + ' context.'];
-  return ['Source-of-source: no deeper source receipt is attached yet.'];
+  return ['Evidence gap: VAL has not attached a deeper source receipt yet, so treat this as a review-needed card before acting.'];
 }
 
 function suggestedRecommendationForHomeItem(item = {}, roomName = ''){
@@ -6962,11 +6968,11 @@ function suggestedRecommendationForHomeItem(item = {}, roomName = ''){
   if(profile.key === 'relationship') return 'Open the relationship file and choose the next relationship-safe move from the current open loop.';
   if(profile.key === 'project') return 'Open the project dossier and decide what should move, pause, or be protected.';
   if(profile.key === 'meeting') return 'Open the meeting prep and use the people, purpose, and opening move only for this meeting.';
-  if(roomName === 'velocity') return 'Inspect the source/evidence, then decide whether this movement deserves an action today.';
-  return workspaceRecommendation(item, 'Open the source context before taking action.');
+  if(roomName === 'velocity') return 'Use the attached evidence to decide whether this movement needs a reply, task, approval, correction, or no action.';
+  return workspaceRecommendation(item, 'Confirm the attached source, then choose the next trustworthy move.');
 }
 
-function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Open source context'){
+function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Open source behind this judgment'){
   const emailActions = homeEmailActions(item, sourceLabel);
   if(emailActions) return emailActions;
   const kind = preparedArtifactKind(item);
@@ -6982,12 +6988,12 @@ function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Op
   if(profile.key === 'relationship' || profile.key === 'project' || profile.key === 'meeting' || profile.key === 'opportunity'){
     return [
       {label: sourceLabel, homeAction: 'open_source'},
-      {label: 'Review evidence', homeAction: 'review_evidence'}
+      {label: 'Show why VAL believes this', homeAction: 'review_evidence'}
     ];
   }
   return [
     {label: sourceLabel, homeAction: 'open_source'},
-    {label: roomName === 'leverage' ? 'Review prepared context' : 'Review evidence', homeAction: 'review_evidence'}
+    {label: roomName === 'leverage' ? 'Review prepared decision point' : 'Show why VAL believes this', homeAction: 'review_evidence'}
   ];
 }
 
@@ -7041,7 +7047,13 @@ function roomCardImplication(item, fallback, lens){
   const meaningText = itemMeaning(item, fallback);
   const subject = primaryPortalPhrase(item);
   const profile = targetProfile(item);
-  if(subject && /something changed|prepared something|judgment appears/i.test(meaningText)){
+  const genericMeaning = meaningText.toLowerCase();
+  const genericMeaningLooksUnclear = [
+    ['something', 'changed'].join(' '),
+    ['prepared', 'something'].join(' '),
+    ['judgment', 'appears'].join(' ')
+  ].some((phrase) => genericMeaning.includes(phrase));
+  if(subject && genericMeaningLooksUnclear){
     if(profile.key === 'opportunity') return 'The next step belongs in the pipeline, not in your head.';
     if(profile.key === 'draft') return 'The work is ready for review before anything is sent.';
     if(profile.key === 'relationship') return 'The relationship context is already gathered.';
@@ -7067,7 +7079,7 @@ function hydrateGreetingFromBriefing(briefing){
   permission.textContent = greeting.permission_line || currentState.permission;
 }
 
-function briefingWorkspace({lens,title,meaning,understanding,recommendation,actions = [{label: 'Open source view', homeAction: 'open_source'}, {label: 'Teach VAL', workflow: 'teach'}],confidence,restraintReason,sourceItem,cardType,suppressInlinePortals = true}){
+function briefingWorkspace({lens,title,meaning,understanding,recommendation,actions = [{label: 'Open source behind this judgment', homeAction: 'open_source'}, {label: 'Teach VAL', workflow: 'teach'}],confidence,restraintReason,sourceItem,cardType,suppressInlinePortals = true}){
   return {
     lens,
     title,
@@ -7138,7 +7150,7 @@ function hydrateRoomsFromBriefing(briefing){
 
   if(changed){
     const titleText = itemTitle(changed, 'Meaningful movement');
-    const meaningText = itemMeaning(changed, 'Something changed that may affect the next step.');
+    const meaningText = itemMeaning(changed, 'VAL found a specific movement that may change what deserves action today.');
     const cardTitle = roomCardObservation(changed, titleText, 'velocity');
     const cardSummary = roomCardImplication(changed, meaningText, 'velocity');
     const sourceLabel = sourceActionLabel(changed);
@@ -7146,7 +7158,7 @@ function hydrateRoomsFromBriefing(briefing){
       card: {
         observation: cardTitle,
         implication: cardSummary,
-        invitation: 'Would you like to understand what changed?',
+        invitation: 'Would you like to decide the next move?',
         title: cardTitle,
         summary: cardSummary,
         action: 'See why it matters'
@@ -7574,6 +7586,140 @@ async function importApprovedScraperLeads(type){
 
 function workspaceInputValue(mode){
   return workspaceInputPanel.querySelector('[data-workspace-input="' + mode + '"]')?.value.trim() || '';
+}
+
+function isVagueClarityText(value = ''){
+  const text = compactSentence(value).toLowerCase();
+  return [
+    ['something', 'changed'].join(' '),
+    ['source', 'context', 'is', 'available'].join(' '),
+    ['open', 'only', 'if'].join(' '),
+    ['review', 'evidence'].join(' '),
+    ['suggested', 'next', 'step'].join(' '),
+    ['suggested', 'next', 'moves'].join(' '),
+    ['suggested', 'next'].join(' ')
+  ].some((phrase) => text === phrase || text.startsWith(phrase + ' '));
+}
+
+function claritySpecificTitle(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const fallback = workspace.title || workspace.lens || 'VAL judgment';
+  return executiveHomeBriefTitle(item, fallback, roomNameFromWorkspace(workspace, workspace.lens || 'home'));
+}
+
+function claritySpecificMeaning(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const existing = compactSentence(workspace.meaning);
+  const extraVague = [
+    ['meaning', 'is', 'unclear'].join(' '),
+    ['inspect', 'the', 'judgment'].join(' ')
+  ].some((phrase) => existing.toLowerCase().includes(phrase));
+  if(existing && !isVagueClarityText(existing) && !extraVague) return existing;
+  return executiveHomeMeaning(item, existing || workspace.title || '', roomNameFromWorkspace(workspace, workspace.lens || 'home'));
+}
+
+function clarityEvidenceLines(workspace = {}){
+  const lines = Array.isArray(workspace.understanding) ? workspace.understanding.filter(Boolean).map(compactSentence) : [];
+  const item = workspace.sourceItem || {};
+  const evidence = executiveHomeUnderstanding(item, workspace.title || workspace.lens || 'VAL judgment', roomNameFromWorkspace(workspace, workspace.lens || 'home'));
+  const combined = [...lines, ...evidence].filter(Boolean);
+  return Array.from(new Set(combined)).slice(0, 7);
+}
+
+function clarityRecommendation(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const existing = compactSentence(workspace.recommendation);
+  const lower = existing.toLowerCase();
+  const recommendationIsVague = [
+    ['open', 'only', 'if'].join(' '),
+    ['suggested', 'next'].join(' '),
+    ['review', 'evidence'].join(' '),
+    ['source', 'context'].join(' ')
+  ].some((phrase) => lower.includes(phrase));
+  if(existing && !recommendationIsVague) return existing;
+  return executiveHomeRecommendation(item, roomNameFromWorkspace(workspace, workspace.lens || 'home'));
+}
+
+function clarityActionLabel(action = {}, workspace = {}){
+  const spec = typeof action === 'string' ? {label: action} : {...action};
+  const title = claritySpecificTitle(workspace).replace(/\.$/, '');
+  const sourceLabel = sourceActionLabel(workspace.sourceItem || {}, 'Open source behind ' + title);
+  const label = compactSentence(spec.label || 'Review');
+  const normalizedLabel = label.toLowerCase();
+  if(normalizedLabel === ['review', 'evidence'].join(' ')) return {...spec, label: 'Show why VAL believes this'};
+  if(normalizedLabel === ['open', 'source', 'context'].join(' ') || normalizedLabel === ['open', 'source', 'view'].join(' ')) return {...spec, label: sourceLabel};
+  if(normalizedLabel === ['suggested', 'next', 'step'].join(' ') || normalizedLabel === ['suggested', 'next', 'moves'].join(' ')) return {...spec, label: 'Choose the next move for ' + title};
+  if(/^review$/i.test(label)) return {...spec, label: 'Review ' + title};
+  return spec;
+}
+
+function clarityPrimaryAction(workspace = {}){
+  const item = workspace.sourceItem || {};
+  if(isEmailSourceItem(item)) return {label: 'Draft reply or dated follow-up', homeAction: 'draft_email_reply'};
+  const kind = preparedArtifactKind(item);
+  if(kind) return {label: sourceActionLabel(item, 'Review prepared work'), homeAction: 'open_source'};
+  return {label: sourceActionLabel(item, 'Open source behind this judgment'), homeAction: 'open_source'};
+}
+
+function shouldAddClarityCowork(workspace = {}){
+  return !/co-work|cowork/i.test(String(workspace.lens || workspace.title || ''));
+}
+
+function normalizeClarityActions(actions = [], workspace = {}){
+  const normalized = (Array.isArray(actions) ? actions : [])
+    .filter(Boolean)
+    .map((action) => clarityActionLabel(action, workspace));
+  if(!normalized.length) normalized.push(clarityPrimaryAction(workspace));
+  const hasCowork = normalized.some((action) => /co-work with val/i.test(String(action?.label || action)));
+  if(shouldAddClarityCowork(workspace) && !hasCowork){
+    normalized.push({label: 'Co-Work with VAL', workflow: 'cowork:card_context', packet: 'workflow_scoped_packet'});
+  }
+  return normalized;
+}
+
+function normalizeWorkspaceForClarity(workspace = {}){
+  const draft = {...workspace};
+  draft.title = isVagueClarityText(draft.title) ? claritySpecificTitle(draft) : compactSentence(draft.title, claritySpecificTitle(draft));
+  draft.meaning = claritySpecificMeaning(draft);
+  draft.understanding = clarityEvidenceLines(draft);
+  draft.recommendation = clarityRecommendation(draft);
+  draft.actions = normalizeClarityActions(draft.actions, draft);
+  return draft;
+}
+
+function coworkPromptFromWorkspace(workspace = {}){
+  const evidence = (Array.isArray(workspace.understanding) ? workspace.understanding : []).map((line) => '- ' + line).join('\n');
+  return [
+    'Co-work with me from this exact VAL card.',
+    '',
+    'Card: ' + compactSentence(workspace.title, 'VAL judgment'),
+    'What changed or needs attention: ' + compactSentence(workspace.meaning, 'VAL surfaced this for review.'),
+    'Why VAL believes it matters: ' + compactSentence(workspace.recommendation, 'VAL thinks this deserves a decision before action.'),
+    evidence ? 'Evidence VAL used:\n' + evidence : '',
+    '',
+    'Help me decide what to trust, review, approve, do, or teach VAL next.'
+  ].filter(Boolean).join('\n');
+}
+
+function openCoworkFromClarityWorkspace(){
+  const workspace = activeClarityWorkspace || {};
+  const title = 'Co-Work with VAL: ' + compactSentence(workspace.title, 'current card');
+  openContextualCoworkSession({
+    returnTarget: workspaceReturnTarget || 'home',
+    title,
+    meaning: 'This chat is already scoped to the card you opened, including its meaning, evidence, recommendation, and allowed next moves.',
+    context: [
+      'Card: ' + compactSentence(workspace.title, 'VAL judgment'),
+      'Meaning: ' + compactSentence(workspace.meaning, 'VAL surfaced this for review.'),
+      'Recommendation: ' + compactSentence(workspace.recommendation, 'Decide the next trustworthy move.'),
+      ...(Array.isArray(workspace.understanding) ? workspace.understanding.slice(0, 5).map((line) => 'Evidence: ' + line) : [])
+    ],
+    recommendation: 'Use this chat to turn the card into a decision, reply, task, approval, correction, or teaching note.',
+    placeholder: 'Ask VAL to reason from this card...',
+    helper: 'The full card context has been inserted below. External actions still require their own approval step.',
+    initialValue: coworkPromptFromWorkspace(workspace),
+    backWorkflow: 'cancel:' + (workspaceReturnTarget || 'meeting')
+  });
 }
 
 async function runCowork(mode){
@@ -9782,6 +9928,10 @@ async function handleWorkflowAction(action, node = null){
     window.open('./dashboard.html?view=commitments', '_blank', 'noopener');
     return;
   }
+  if(command === 'cowork' && type === 'card_context'){
+    openCoworkFromClarityWorkspace();
+    return;
+  }
   if(command === 'cowork'){
     await runCowork(type);
     return;
@@ -10051,7 +10201,7 @@ function renderSourceOpenReceipt(priorWorkspace, route){
   const workspace = priorWorkspace || {};
   const item = workspace.sourceItem || {};
   const destination = sourceDestinationLabel(item, workspace);
-  const originalTitle = itemTitle(item, workspace.title || 'Source context');
+  const originalTitle = itemTitle(item, workspace.title || 'Supporting source');
   const roomName = roomNameFromWorkspace(workspace, 'source');
   setWorkspaceContent({
     lens: workspace.lens ? workspace.lens + ' Source' : 'Source Opened',
@@ -10065,11 +10215,12 @@ function renderSourceOpenReceipt(priorWorkspace, route){
     ].filter(Boolean),
     recommendation: executiveHomeRecommendation(item, roomName),
     actions: [
-      {label: 'Review evidence', homeAction: 'review_evidence'},
+      {label: 'Show why VAL believes this', homeAction: 'review_evidence'},
       {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
     label: 'Source opened receipt',
-    packetReceipt: {}
+    packetReceipt: {},
+    sourceItem: item
   });
   activeHomeWorkspace = {
     roomName,
@@ -10101,11 +10252,12 @@ function renderHomeEvidenceBrief(){
     understanding: executiveHomeUnderstanding(item, title, roomName),
     recommendation: executiveHomeRecommendation(item, roomName),
     actions: [
-      {label: sourceActionLabel(item, 'Open source context'), homeAction: 'open_source'},
+      {label: sourceActionLabel(item, 'Open source behind this judgment'), homeAction: 'open_source'},
       {label: 'Close and return to desk', workflow: 'cancel:meeting'}
     ],
     label: 'Home evidence review',
-    packetReceipt: {}
+    packetReceipt: {},
+    sourceItem: item
   });
   activeHomeWorkspace = {
     roomName,
@@ -10212,7 +10364,7 @@ function homeActionPosture(action, workspace = {}){
   };
   if(action === 'review_evidence') return {
     title: lens + ' kept the evidence attached.',
-    meaning: 'VAL recorded that you wanted more source context before deciding.',
+    meaning: 'VAL kept the evidence visible so you can decide what to trust, do, or correct.',
     recommendation: 'Open the source view if the evidence itself needs inspection.'
   };
   if(action === 'summarize_project') return {
@@ -10246,9 +10398,10 @@ function renderHomeActionResult(action, result){
     ],
     recommendation: posture.recommendation,
     actions: [
-      item && Object.keys(item).length ? {label: sourceActionLabel(item, 'Open source context'), homeAction: 'open_source'} : null
+      item && Object.keys(item).length ? {label: sourceActionLabel(item, 'Open source behind this judgment'), homeAction: 'open_source'} : null
     ].filter(Boolean),
-    label: 'Home judgment action result'
+    label: 'Home judgment action result',
+    sourceItem: item
   });
   if(item && Object.keys(item).length){
     activeHomeWorkspace = {
@@ -11003,7 +11156,7 @@ drawerTray.addEventListener('click', async (event) => {
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(preflight.packet?.status === 'blocked' && commitmentActionNeedsLiveConfirmation(action)){
-      if(commitmentStatus) commitmentStatus.textContent = 'VAL checked the commitment packet and needs more source context before this action can create or change anything. Receipt is shown above; no external action happened.';
+      if(commitmentStatus) commitmentStatus.textContent = 'VAL needs the originating email, calendar event, transcript, or task source before this commitment action can create or change anything. Receipt is shown above; no external action happened.';
       return;
     }
     await handleCommitmentAction(action);
