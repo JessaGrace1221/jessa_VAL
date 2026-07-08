@@ -10232,7 +10232,10 @@ drawerTray.addEventListener('click', async (event) => {
     const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction, allowBlockedForInspection:true, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Timeline & Tasks', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    if(timelineAction.dataset.timelineAction === 'cowork_timeline') openTimelineCoworkSession();
+    if(timelineAction.dataset.timelineAction === 'cowork_timeline'){
+      openTimelineCoworkSession();
+      renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    }
     return;
   }
   const timelineMatchAccept = event.target.closest('[data-timeline-match-accept]');

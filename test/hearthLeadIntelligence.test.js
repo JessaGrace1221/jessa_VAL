@@ -315,6 +315,7 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /action:'timeline:review:'/);
   assert.match(hearthJs, /action:timelineAction\.dataset\.timelineAction, allowBlockedForInspection:true/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
+  assert.match(hearthJs, /openTimelineCoworkSession\(\);\s*renderHearthPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /source:timelineReviewSource/);
   assert.match(hearthJs, /source:timelineMatchSource/);
   assert.match(hearthJs, /\/api\/val\/review-updates\/transcript-proposal/);
@@ -825,7 +826,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-cowork-inspection-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-workspace-receipt-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
