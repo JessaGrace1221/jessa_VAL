@@ -433,6 +433,10 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
 });
 
 test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
+  const correspondenceDrawerHtml = hearthHtml.slice(
+    hearthHtml.indexOf('id="correspondence-detail"'),
+    hearthHtml.indexOf('id="commitments-detail"')
+  );
   assert.match(hearthHtml, /class="drawer-link correspondence-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="correspondence-detail"/);
   assert.match(hearthHtml, /id="correspondence-detail"/);
@@ -444,6 +448,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-correspondence-evidence/);
   assert.match(hearthHtml, /data-correspondence-action="cowork_correspondence"/);
   assert.match(hearthHtml, /data-correspondence-action="review"/);
+  assert.ok(correspondenceDrawerHtml.indexOf('data-correspondence-action="cowork_correspondence"') < correspondenceDrawerHtml.indexOf('class="correspondence-context"'));
   assert.match(hearthHtml, /Prepare draft/);
   assert.match(hearthHtml, /Drafting is internal prep work inside VAL/);
   assert.match(hearthHtml, /Sending represents Jessa externally/);
@@ -884,8 +889,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=timeline-cowork-header-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=timeline-cowork-header-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-actions-visible-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-actions-visible-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
