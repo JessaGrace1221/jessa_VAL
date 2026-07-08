@@ -3905,8 +3905,8 @@ function handleProjectAction(action){
       ],
       recommendation: project.nextMoveEvidence,
       actions: [
-        {label:'Ask what matters now', workflow:'project:ask_priority'},
-        {label:'Show alternatives', workflow:'project:show_alternatives'}
+        {label:'Ask what matters now', projectAction:'ask_priority'},
+        {label:'Show alternatives', projectAction:'show_alternatives'}
       ]
     });
     return;
@@ -3924,8 +3924,8 @@ function handleProjectAction(action){
       ],
       recommendation: project.nextMoveEvidence || project.nextMove,
       actions: [
-        {label:'Open project file', workflow:'project:open_project_file'},
-        {label:'Show alternatives', workflow:'project:show_alternatives'}
+        {label:'Open project file', projectAction:'open_project_file'},
+        {label:'Show alternatives', projectAction:'show_alternatives'}
       ]
     });
     return;
@@ -3942,8 +3942,8 @@ function handleProjectAction(action){
       ],
       recommendation: project.nextMoveEvidence || project.decisionEvidence || project.reality,
       actions: [
-        {label:'Ask what matters now', workflow:'project:ask_priority'},
-        {label:'Open project file', workflow:'project:open_project_file'}
+        {label:'Ask what matters now', projectAction:'ask_priority'},
+        {label:'Open project file', projectAction:'open_project_file'}
       ]
     });
   }
@@ -5660,9 +5660,11 @@ function renderWorkspaceActionButtons(actions = []){
       ' class="' + classes.join(' ') + '"',
       spec.workflow ? ' data-workflow-action="' + escapeHtml(spec.workflow) + '"' : '',
       spec.homeAction ? ' data-home-action="' + escapeHtml(spec.homeAction) + '"' : '',
+      spec.projectAction ? ' data-project-action="' + escapeHtml(spec.projectAction) + '"' : '',
       spec.packet ? ' data-val-variable-packet="' + escapeHtml(spec.packet) + '"' : '',
       spec.workflow ? ' onclick="event.preventDefault();event.stopPropagation();handleWorkflowAction(this.dataset.workflowAction,this);return false;"' : '',
-      spec.homeAction ? ' onclick="event.preventDefault();event.stopPropagation();handleHomeRoomAction(this.dataset.homeAction,this);return false;"' : ''
+      spec.homeAction ? ' onclick="event.preventDefault();event.stopPropagation();handleHomeRoomAction(this.dataset.homeAction,this);return false;"' : '',
+      spec.projectAction ? ' onclick="event.preventDefault();event.stopPropagation();handleProjectActionClick(this.dataset.projectAction,this);return false;"' : ''
     ].join('');
     return '<button type="button"' + attrs + '>' + escapeHtml(label) + '</button>';
   }).join('');
