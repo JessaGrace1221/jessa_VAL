@@ -3590,6 +3590,17 @@ function updateCommitmentSummary(summary = {}){
   });
 }
 
+function commitmentSummaryFromItems(items = currentCommitmentItems){
+  return items.reduce((summary, item) => {
+    if(!item || ['complete','dismissed'].includes(item.status)) return summary;
+    if(item.owner_type === 'user') summary.you_owe += 1;
+    if(item.owner_type === 'contact') summary.others_owe_you += 1;
+    if(item.status === 'overdue') summary.overdue += 1;
+    if(item.status === 'drafted' || item.draft_id || item.task_id) summary.ready_for_approval += 1;
+    return summary;
+  }, {you_owe:0, others_owe_you:0, overdue:0, ready_for_approval:0});
+}
+
 function setCommitmentField(field, value){
   const node = document.querySelector('[data-commitment-field="' + field + '"]');
   if(node) node.textContent = value || '';
@@ -3708,12 +3719,26 @@ function renderCommitmentBrief(item = activeCommitmentItem){
     button.disabled = !selected || !allowed;
     button.setAttribute('aria-hidden', String(!allowed));
   });
+  scrollCommitmentActionsIntoView();
+}
+
+function scrollCommitmentActionsIntoView(){
+  if(!drawerTray || !drawerTray.classList.contains('commitment-open')) return;
+  window.requestAnimationFrame(() => {
+    const action = document.querySelector('#commitment-detail [data-commitment-action]:not([hidden])');
+    if(!action) return;
+    const trayRect = drawerTray.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    const safeBottom = Math.min(window.innerHeight - 18, trayRect.bottom - 18);
+    if(actionRect.bottom <= safeBottom && actionRect.top >= trayRect.top + 18) return;
+    drawerTray.scrollTop = Math.max(0, drawerTray.scrollTop + actionRect.bottom - safeBottom);
+  });
 }
 
 async function hydrateCommitmentDrawer(){
   currentCommitmentItems = localCommitmentItems.slice();
   activeCommitmentItem = currentCommitmentItems[0] || null;
-  updateCommitmentSummary({you_owe:1, others_owe_you:1, overdue:0, ready_for_approval:0});
+  updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
   renderCommitmentBrief(activeCommitmentItem);
   if(!canUseApi) return;
   try{
@@ -3724,7 +3749,7 @@ async function hydrateCommitmentDrawer(){
       updateCommitmentSummary(result.summary || {});
       renderCommitmentBrief(activeCommitmentItem);
     }else{
-      updateCommitmentSummary(result.summary || {you_owe:0, others_owe_you:0, overdue:0, ready_for_approval:0});
+      updateCommitmentSummary(commitmentSummaryFromItems(currentCommitmentItems));
     }
   }catch(error){
     if(commitmentStatus) commitmentStatus.textContent = 'Commitments API unavailable; showing local preview only.';

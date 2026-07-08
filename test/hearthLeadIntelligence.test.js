@@ -512,6 +512,8 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.doesNotMatch(hearthHtml, /<a href="\.\/dashboard\.html" class="drawer-link commitment-drawer-link"/);
   assert.match(hearthJs, /const commitmentDrawerLink/);
   assert.match(hearthJs, /function hydrateCommitmentDrawer/);
+  assert.match(hearthJs, /function commitmentSummaryFromItems/);
+  assert.match(hearthJs, /function scrollCommitmentActionsIntoView/);
   assert.match(hearthJs, /function commitmentSuggestedActions/);
   assert.match(hearthJs, /function commitmentSource/);
   assert.match(hearthJs, /function commitmentActionNeedsLiveConfirmation/);
@@ -526,6 +528,7 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.match(hearthJs, /action:'commitment:' \+ action/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:commitmentSource/);
   assert.match(hearthJs, /preflight\.packet\?\.status === 'blocked' && commitmentActionNeedsLiveConfirmation/);
+  assert.match(hearthJs, /updateCommitmentSummary\(commitmentSummaryFromItems\(currentCommitmentItems\)\)/);
   assert.match(hearthJs, /no draft, task, schedule change, status update, delegation, dismissal, send, CRM update, or calendar change happened/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /commitment-open/);
@@ -895,8 +898,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=inbox-action-fallback-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=inbox-action-fallback-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=commitments-actions-summary-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=commitments-actions-summary-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
