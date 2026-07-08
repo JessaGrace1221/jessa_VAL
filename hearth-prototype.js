@@ -3952,7 +3952,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     lens: 'Co-Work with VAL',
     title: safeTitle,
     meaning: meaning || 'This Co-Work space is scoped to the context you opened it from.',
-    understanding: context.concat(['No email, CRM update, task, memory write, calendar change, document send, public post, or external action happens from this Co-Work space.']).filter(Boolean),
+    understanding: context.concat(['Nothing external happens from this Co-Work space unless you explicitly approve it.']).filter(Boolean),
     recommendation: recommendation || 'Use this to think, draft, decide, or give VAL the missing context before action.',
     actions: [
       {label: 'Think with VAL', workflow: 'cowork:think'},
@@ -3966,7 +3966,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     placeholder: placeholder || 'What should VAL help you think through here?',
     helper: helper || 'This Co-Work note stays tied to the active context. External actions still require a separate approval step.',
     mode: 'cowork',
-    value: initialValue
+    value: ''
   });
   openWorkspaceShell(safeTitle, {returnTarget});
 }
@@ -5765,7 +5765,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   workspacePapers.understanding.innerHTML = (normalizedWorkspace.understanding || []).map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
   workspacePapers.recommendation.textContent = normalizedWorkspace.recommendation;
   workspaceActions.innerHTML = renderWorkspaceActionButtons(normalizedWorkspace.actions);
-  renderHearthPacketReceiptStrip(packetReceipt || lastHearthPacketReceipt);
+  renderHearthPacketReceiptStrip(packetReceipt || null);
   deskWorkspace.setAttribute('aria-label', label || normalizedWorkspace.lens + ' workspace');
   scraperCriteriaPanel.hidden = true;
   scraperCriteriaPanel.innerHTML = '';
@@ -5775,6 +5775,15 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   workspaceInputPanel.hidden = true;
   workspaceInputPanel.innerHTML = '';
   applyHearthClickContracts(deskWorkspace);
+}
+
+function shouldShowPacketReceipts(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    return params.get('debug') === 'packets' || window.localStorage?.getItem('val_debug_packets') === 'true';
+  }catch(_){
+    return false;
+  }
 }
 
 function packetReceiptSummary(packet = {}){
@@ -5799,7 +5808,7 @@ function packetReceiptSummary(packet = {}){
 
 function renderPacketReceiptInto(target, packet = null){
   if(!target) return;
-  if(!packet || !packet.packetName){
+  if(!shouldShowPacketReceipts() || !packet || !packet.packetName){
     target.hidden = true;
     target.innerHTML = '';
     return;
@@ -7047,16 +7056,18 @@ function sourceOfSourceLines(item = {}){
   const rawRefs = item.sourceRefsJson || item.source_refs || item.sourceRefs || metadata.sourceRefs || metadata.source_refs || item.evidence || [];
   const refs = Array.isArray(rawRefs) ? rawRefs : [];
   const lines = refs.map((ref, index) => {
-    if(typeof ref === 'string') return 'Source-of-source ' + (index + 1) + ': ' + ref;
+    if(typeof ref === 'string') return ref;
     const type = ref.source_type || ref.sourceType || ref.type || ref.label || 'evidence';
-    const id = ref.source_id || ref.sourceId || ref.id || '';
     const quote = ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.detail || ref.content || '';
-    return ['Source-of-source ' + (index + 1) + ': ' + type + (id ? ' ' + id : ''), quote].filter(Boolean).join(' - ');
+    if(quote) return quote;
+    if(/observation/i.test(type)) return 'A stored observation is linked to this signal.';
+    if(/evidence/i.test(type)) return 'Stored evidence is linked to this signal.';
+    return 'A supporting ' + String(type).replace(/_/g, ' ') + ' is linked to this signal.';
   }).filter(Boolean);
   if(lines.length) return lines.slice(0,4);
-  if(item.messageId || metadata.messageId) return ['Source-of-source: Gmail message ' + (item.messageId || metadata.messageId) + (item.threadId || metadata.threadId ? ' in thread ' + (item.threadId || metadata.threadId) : '') + '.'];
-  if(item.target?.type || item.sourceType || item.source_type) return ['Source-of-source: ' + sourceDestinationLabel(item) + ' context.'];
-  return ['Evidence gap: VAL has not attached a deeper source receipt yet, so treat this as a review-needed card before acting.'];
+  if(item.messageId || metadata.messageId) return ['The original Gmail message is attached to this signal.'];
+  if(item.target?.type || item.sourceType || item.source_type) return ['The related ' + sourceDestinationLabel(item) + ' is attached.'];
+  return ['The supporting source needs review before taking action.'];
 }
 
 function suggestedRecommendationForHomeItem(item = {}, roomName = ''){
@@ -10335,9 +10346,7 @@ function renderSourceOpenReceipt(priorWorkspace, route){
 
 function openHomeSourceView(){
   const workspace = activeHomeWorkspace && activeHomeWorkspace.workspace ? activeHomeWorkspace.workspace : {};
-  const item = workspace.sourceItem || {};
-  const route = sourceRouteForItem(item, workspace);
-  renderSourceOpenReceipt(workspace, route);
+  openHomeSourceDrawerDestination(workspace);
 }
 
 function renderHomeEvidenceBrief(){
@@ -10379,6 +10388,41 @@ function openExecutiveInboxForHomeEmail(item = {}){
   window.open('./dashboard.html?' + params.toString(), '_blank', 'noopener');
 }
 
+function openHomeSourceDrawerDestination(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const destination = sourceDestinationLabel(item, workspace);
+  const profile = targetProfile(item);
+  hideWorkspaceForDrawerNavigation();
+  if(profile.key === 'email' || /Executive Inbox|prepared draft|proposal draft/i.test(destination)){
+    restoreCorrespondenceWindow();
+    hydrateCorrespondenceDrawer();
+    return;
+  }
+  if(profile.key === 'relationship' || /relationship/i.test(destination)){
+    restoreRelationshipWindow();
+    openRelationshipIndex();
+    return;
+  }
+  if(profile.key === 'project' || /project/i.test(destination)){
+    restoreProjectWindow();
+    return;
+  }
+  if(profile.key === 'meeting' || /meeting|calendar/i.test(destination)){
+    openCalendarPanel();
+    return;
+  }
+  if(/task|commitment/i.test(destination)){
+    restoreCommitmentWindow();
+    hydrateCommitmentDrawer();
+    return;
+  }
+  if(/document|proposal/i.test(destination)){
+    restoreDocumentWindow();
+    return;
+  }
+  restoreLeadIntelligenceWindow();
+}
+
 function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
   activeClarityWorkspace = active;
@@ -10395,8 +10439,8 @@ function openHomeCardCowork(workspace){
     ].filter(Boolean),
     recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
     placeholder: 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
-    helper: 'This Co-Work chat is scoped to the active Home card packet and source refs only.',
-    initialValue: active.coworkContext || coworkPromptFromWorkspace(active),
+    helper: 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
+    initialValue: '',
     backWorkflow: 'cancel:meeting'
   });
 }
@@ -10646,8 +10690,6 @@ async function handleHomeRoomAction(action, node = null){
   if(node?.dataset?.homeRoomItemAction){
     activateHomeQueueItem(node.dataset.homeRoomItemAction, node.dataset.homeRoomIndex);
   }
-  const homePreflight = await ensureHearthClickPacket({node, packetName:node?.dataset?.valVariablePacket || 'home_source_packet', action});
-  if(!homePreflight.ok) return;
   if(action === 'cowork_card_context'){
     openHomeCardCowork(activeHomeWorkspace?.workspace || activeClarityWorkspace);
     return;
@@ -10672,6 +10714,8 @@ async function handleHomeRoomAction(action, node = null){
     await runHomeEmailAction(action);
     return;
   }
+  const homePreflight = await ensureHearthClickPacket({node, packetName:node?.dataset?.valVariablePacket || 'home_source_packet', action});
+  if(!homePreflight.ok) return;
   const payload = homeWorkspacePayload(action);
   if(!canUseApi){
     renderHomeActionResult(action, {
@@ -10794,7 +10838,18 @@ function openWorkspace(roomName){
 
 async function handlePrimaryAction(button){
   const roomName = button?.dataset?.openRoom || '';
-  const isHomeExecutiveMode = ['velocity','alignment','leverage'].includes(roomName);
+  if(roomName === 'velocity'){
+    openVelocityAwarenessWorkspace();
+    return;
+  }
+  if(roomName === 'alignment'){
+    openAlignmentExecutionWorkspace();
+    return;
+  }
+  if(roomName === 'leverage'){
+    openLeverageApprovalWorkspace();
+    return;
+  }
   const roomWorkspace = roomName && currentState.rooms?.[roomName]?.workspace ? currentState.rooms[roomName].workspace : {};
   const roomSourceItem = roomWorkspace.sourceItem || {};
   const roomIdentity = sourceIdentityForItem(roomSourceItem);
@@ -10814,18 +10869,6 @@ async function handlePrimaryAction(button){
   if(!preflight.ok) return;
   const actionType = button.dataset.actionType || 'workspace';
   const target = button.dataset.actionTarget;
-  if(roomName === 'velocity'){
-    openVelocityAwarenessWorkspace();
-    return;
-  }
-  if(roomName === 'alignment'){
-    openAlignmentExecutionWorkspace();
-    return;
-  }
-  if(roomName === 'leverage'){
-    openLeverageApprovalWorkspace();
-    return;
-  }
   if(actionType === 'openExternal' && target){
     window.open(target, '_blank', 'noopener');
     return;

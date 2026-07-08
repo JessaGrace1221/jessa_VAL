@@ -855,7 +855,7 @@ test('Hearth Home queue items preserve source identity and source-of-source cont
   assert.match(hearthJs, /Source receipt display rule/);
   assert.match(hearthJs, /data-home-room-item-action/);
   assert.match(hearthJs, /activateHomeQueueItem\(node\.dataset\.homeRoomItemAction, node\.dataset\.homeRoomIndex\)/);
-  assert.match(hearthJs, /Source-of-source/);
+  assert.match(hearthJs, /Stored evidence is linked to this signal/);
   assert.match(hearthJs, /function suggestedHomeActionsForItem/);
   assert.match(hearthJs, /function suggestedRecommendationForHomeItem/);
   assert.match(hearthJs, /function executiveHomeBriefTitle/);
@@ -917,8 +917,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-modes-contract-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-modes-contract-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-card-visible-cleanup-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-card-visible-cleanup-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1141,8 +1141,8 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /data-workspace-packet-receipt/,
     /function renderHearthPacketReceiptStrip/,
     /node\.dataset\.valPacketReceiptId/,
-    /Packet receipt/,
-    /Source proof:/,
+    /function shouldShowPacketReceipts/,
+    /debug'\) === 'packets'/,
     /function localHearthMetadataPacket/,
     /metadata_only/,
     /if\(hearthPacketShouldSkip\(action, resolvedPacketName\)\)\{[\s\S]{0,160}localHearthMetadataPacket\(\{packetName:resolvedPacketName, action, node, source\}\)/,
@@ -1236,7 +1236,14 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     hearthJs.indexOf("if(roomName === 'velocity')") < hearthJs.indexOf("if(actionType === 'openInternal'"),
     'Home executive modes must resolve before generic internal navigation'
   );
-  assert.match(hearthJs, /allowBlockedForInspection: isHomeExecutiveMode/);
+  const primaryActionBody = hearthJs.slice(
+    hearthJs.indexOf('async function handlePrimaryAction'),
+    hearthJs.indexOf('function closeWorkspace')
+  );
+  assert.ok(
+    primaryActionBody.indexOf("if(roomName === 'velocity')") < primaryActionBody.indexOf('ensureHearthClickPacket({'),
+    'Home executive modes must open before server packet preflight'
+  );
   assert.match(hearthJs, /roomName === 'velocity' \? '' : '<button type="button" data-home-action="cowork_card_context"/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
   assert.match(hearthJs, /How can I help with /);
@@ -1355,13 +1362,16 @@ test('Hearth judgment receipts preserve the originating lens and source context'
 });
 
 test('Hearth source openings keep the desk oriented after opening a target', () => {
+  const openHomeSourceViewBody = hearthJs.slice(
+    hearthJs.indexOf('function openHomeSourceView()'),
+    hearthJs.indexOf('function renderHomeEvidenceBrief')
+  );
   assert.match(hearthJs, /function sourceDestinationLabel/);
-  assert.match(hearthJs, /function renderSourceOpenReceipt/);
-  assert.match(hearthJs, /Source surface: /);
-  assert.match(hearthJs, /Route retained inside Hearth/);
-  assert.match(hearthJs, /packetReceipt: \{\}/);
-  assert.match(hearthJs, /No CRM write, send, import, or durable memory action was taken/);
-  assert.match(hearthJs, /Show why VAL believes this/);
+  assert.match(hearthJs, /function openHomeSourceDrawerDestination/);
+  assert.match(openHomeSourceViewBody, /openHomeSourceDrawerDestination\(workspace\)/);
+  assert.match(hearthJs, /restoreCorrespondenceWindow\(\)/);
+  assert.match(hearthJs, /restoreRelationshipWindow\(\)/);
+  assert.match(hearthJs, /restoreProjectWindow\(\)/);
   assert.match(hearthJs, /GHL opportunity/);
   assert.match(hearthJs, /prepared draft/);
   assert.match(hearthJs, /relationship file/);
