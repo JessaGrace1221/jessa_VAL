@@ -10900,6 +10900,13 @@ async function routeWorkspaceActionClick(event){
 workspaceActions.addEventListener('click', (event) => {
   routeWorkspaceActionClick(event);
 });
+document.addEventListener('click', async (event) => {
+  const projectActionButton = event.target.closest('#desk-workspace .workspace-actions [data-project-action]');
+  if(!projectActionButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await handleProjectActionClick(projectActionButton.dataset.projectAction, projectActionButton);
+}, true);
 document.addEventListener('input', (event) => {
   const field = event.target;
   if(!isValAutocorrectField(field)) return;

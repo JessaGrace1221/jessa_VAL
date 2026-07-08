@@ -879,8 +879,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-workspace-route-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-workspace-route-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-capture-route-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-capture-route-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1147,6 +1147,9 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
   assert.doesNotMatch(hearthJs, /workflow:'project:ask_priority'/);
   assert.doesNotMatch(hearthJs, /workflow:'project:show_alternatives'/);
   assert.doesNotMatch(hearthJs, /workflow:'project:open_project_file'/);
+  assert.match(hearthJs, /document\.addEventListener\('click', async \(event\) =>/);
+  assert.match(hearthJs, /event\.target\.closest\('#desk-workspace \.workspace-actions \[data-project-action\]'\)/);
+  assert.match(hearthJs, /await handleProjectActionClick\(projectActionButton\.dataset\.projectAction, projectActionButton\);/);
   assert.match(server, /status:'not_supplied',source:'hearth_packet_builder',message:'Selected Home source did not include a numeric confidence score.'/);
 });
 
