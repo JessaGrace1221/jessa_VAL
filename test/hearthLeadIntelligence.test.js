@@ -775,7 +775,12 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /Suggested Questions/);
   assert.match(hearthJs, /workspaceActions\.innerHTML = renderWorkspaceActionButtons\(\[\{label:'Co-Work with VAL', workflow:'meetingPrepCowork'\}\]\)/);
   assert.match(hearthJs, /if\(command === 'meetingPrepCowork'\)/);
-  assert.match(hearthJs, /value: initialValue \|\| ''/);
+  assert.match(hearthJs, /let activeCoworkHeldContext = ''/);
+  assert.match(hearthJs, /activeCoworkHeldContext = \[initialValue, \.\.\.context\]\.filter\(Boolean\)\.join\('\\n'\)/);
+  assert.match(hearthJs, /value: ''/);
+  assert.match(hearthJs, /Use this held context silently/);
+  assert.match(hearthJs, /VAL is holding the Meeting Prep brief privately/);
+  assert.doesNotMatch(hearthJs, /value: initialValue \|\| ''/);
   assert.match(hearthCss, /\.workspace-grid\[hidden\]\{display:none!important\}/);
   assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
   assert.doesNotMatch(meetingPrepResultBlock, /label: 'Prepare follow-up'/);

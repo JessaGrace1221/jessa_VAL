@@ -167,6 +167,7 @@ let activeMeetingPrepBriefing = null;
 let activeValOnboardingSessionId = '';
 let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
+let activeCoworkHeldContext = '';
 let currentCalendarEvents = [];
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
@@ -3950,11 +3951,15 @@ function openProjectCoworkSession(){
 
 function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = ''}){
   const safeTitle = title || 'Co-Work with VAL';
+  activeCoworkHeldContext = [initialValue, ...context].filter(Boolean).join('\n');
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: safeTitle,
     meaning: meaning || 'This Co-Work space is scoped to the context you opened it from.',
-    understanding: context.concat(['Nothing external happens from this Co-Work space unless you explicitly approve it.']).filter(Boolean),
+    understanding: [
+      'VAL is holding the relevant context for this workspace.',
+      'Nothing external happens from this Co-Work space unless you explicitly approve it.'
+    ],
     recommendation: recommendation || 'Use this to think, draft, decide, or give VAL the missing context before action.',
     actions: [
       {label: 'Think with VAL', workflow: 'cowork:think'},
@@ -3968,7 +3973,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     placeholder: placeholder || 'What should VAL help you think through here?',
     helper: helper || 'This Co-Work note stays tied to the active context. External actions still require a separate approval step.',
     mode: 'cowork',
-    value: initialValue || ''
+    value: ''
   });
   openWorkspaceShell(safeTitle, {returnTarget});
 }
@@ -8324,7 +8329,7 @@ function openCoworkFromClarityWorkspace(){
     ],
     recommendation: 'Use this chat to turn the card into a decision, reply, task, approval, correction, or teaching note.',
     placeholder: 'Ask VAL to reason from this card...',
-    helper: 'The full card context has been inserted below. External actions still require their own approval step.',
+    helper: 'VAL is holding the card context privately. External actions still require their own approval step.',
     initialValue: coworkPromptFromWorkspace(workspace),
     backWorkflow: 'cancel:' + (workspaceReturnTarget || 'meeting')
   });
@@ -8361,7 +8366,7 @@ function openMeetingPrepCoworkSession(){
     ],
     recommendation: 'Ask VAL to tighten the opening, choose the highest-leverage question, or role-play the first five minutes.',
     placeholder: 'Help me walk into this meeting prepared...',
-    helper: 'The full Meeting Prep brief is already inserted below. Nothing external happens from Co-Work without approval.',
+    helper: 'VAL is holding the Meeting Prep brief privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
     backWorkflow: 'cancel:meeting'
   });
@@ -8369,17 +8374,22 @@ function openMeetingPrepCoworkSession(){
 
 async function runCowork(mode){
   const input = workspaceInputValue('cowork');
-  const prompt = input || 'Help me think through the most useful next step from the Hearth.';
+  const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
+  const heldContext = activeCoworkHeldContext || '';
+  const heldSystemPrompt = heldContext
+    ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext
+    : '';
   if(mockScrapers || !canUseApi){
     setWorkspaceContent({
       lens: 'Co-Work with VAL',
       title: mode === 'draft' ? 'A draft can begin here.' : 'Here is the first useful shape.',
-      meaning: 'VAL would use the current Home context and your Co-Work prompt to prepare a private working draft.',
+      meaning: 'VAL would use the held context and your Co-Work prompt to prepare a private working draft.',
       understanding: [
-        'Prompt: ' + prompt,
+        'Prompt: ' + visiblePrompt,
+        heldContext ? 'VAL is holding the source context privately.' : '',
         'This stays inside the desk workspace.',
         'No external action is taken from Co-Work without a separate approval step.'
-      ],
+      ].filter(Boolean),
       recommendation: mode === 'draft' ? 'Start with one plain paragraph, then refine from there.' : 'Name the decision, list the tradeoffs, and choose the next reversible step.',
       actions: [
         {label: 'Keep working', workflow: 'cowork:think'},
@@ -8402,7 +8412,7 @@ async function runCowork(mode){
     title: 'VAL is thinking with you.',
     meaning: 'Co-Work is becoming a private working response.',
     understanding: [
-      'Current Home context is included.',
+      'VAL is holding the relevant context privately.',
       'VAL can prepare drafts, options, or decision framing.',
       'External action still requires approval.'
     ],
@@ -8414,7 +8424,11 @@ async function runCowork(mode){
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
       title: 'Co-Work from Hearth',
-      messages: [{role: 'user', content: prompt}],
+      messages: [
+        ...(heldSystemPrompt ? [{role: 'system', content: heldSystemPrompt}] : []),
+        {role: 'user', content: visiblePrompt}
+      ],
+      heldContext,
       projectContext: workspaceReturnTarget === 'project' ? activeProjectChatContext() : null,
       dashboard: {
         hearth: title.textContent,
