@@ -5378,26 +5378,41 @@ function homeSourceContextLines(item = {}, fallbackTitle = 'Supporting source'){
   ].filter(Boolean);
 }
 
+function homeSourceTypeLabel(value = ''){
+  const raw = String(value || 'source').trim();
+  const labels = {
+    what_changed: 'movement',
+    highest_leverage: 'priority',
+    ready_for_you: 'prepared work',
+    gmail_email: 'email',
+    google_calendar: 'calendar',
+    relationship_profile: 'relationship',
+    project_profile: 'project'
+  };
+  return labels[raw] || raw.replace(/_/g, ' ');
+}
+
 function homePacketDisplayFields(item = {}, roomName = 'velocity'){
   const identity = sourceIdentityForItem(item);
   const title = itemTitle(item, roomName === 'leverage' ? 'Prepared work' : 'Home item');
   const meaning = itemMeaning(item, item.summary || item.reason || title);
   const refs = sourceOfSourceLines(item);
   const sourceType = identity.type || item.sourceType || item.source_type || item.type || 'source';
+  const sourceTypeLabel = homeSourceTypeLabel(sourceType);
   const timestamp = item.timestamp || item.createdAt || item.updatedAt || item.receivedAt || item.date || item.start || '';
   const artifactKind = preparedArtifactKind(item);
   const actionLabel = roomName === 'leverage'
     ? (artifactKind ? 'Open and approve ' + artifactKind.replace(/_/g, ' ') : 'Open prepared work')
     : roomName === 'alignment'
       ? (isEmailSourceItem(item) ? 'Draft reply or create task' : 'Do this priority now')
-      : sourceActionLabel(item, 'Open ' + sourceType + ' source');
+      : sourceActionLabel(item, 'Open ' + sourceTypeLabel + ' source');
   return {
     what_changed: roomName === 'leverage'
       ? (preparedArtifactHomeCopy(item)?.observation || title)
       : title,
     why_it_matters: meaning || 'VAL found this because it may affect attention, follow-through, or trust.',
     what_val_now_knows: executiveHomeMeaning(item, meaning, roomName),
-    evidence_summary: refs.join(' ') || ((identity.label || title) + ' from ' + sourceType),
+    evidence_summary: refs.join(' ') || ((identity.label || title) + ' from ' + sourceTypeLabel),
     recommended_next_step: executiveHomeRecommendation(item, roomName),
     primary_action_label: actionLabel,
     cowork_context: [
@@ -5407,7 +5422,7 @@ function homePacketDisplayFields(item = {}, roomName = 'velocity'){
       'Evidence: ' + (refs.join(' | ') || identity.label || sourceType),
       'Recommended next step: ' + executiveHomeRecommendation(item, roomName)
     ].join('\n'),
-    source_type: sourceType,
+    source_type: sourceTypeLabel,
     source_label: identity.label || title,
     source_id: identity.id || '',
     timestamp,
