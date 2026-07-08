@@ -4087,9 +4087,9 @@ function renderRelationshipActions(profile = {}){
     const title = escapeHtml([action.willDo, action.willNotDo].filter(Boolean).join(' '));
     if(action.type === 'route'){
       const href = escapeHtml(relationshipRouteUrl(action.route || profile.href || '#'));
-      return '<a href="' + href + '" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '">' + label + '</a>';
+      return '<a href="' + href + '" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</a>';
     }
-    return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '">' + label + '</button>';
+    return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</button>';
   };
   const groups = [
     {label:'Suggested next moves', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','teach_wisdom','open_full_file','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
@@ -4119,7 +4119,7 @@ function renderRelationshipSectionActions(profile = {}){
     const actions = relationshipSectionActions(profile, section).slice(0, 2);
     container.innerHTML = actions.map((action) => {
       const title = escapeHtml([action.willDo, action.willNotDo, action.prompt].filter(Boolean).join(' '));
-      return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" data-relationship-section="' + escapeHtml(section) + '" title="' + title + '">' + escapeHtml(action.label || 'Review') + '</button>';
+      return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" data-relationship-section="' + escapeHtml(section) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + escapeHtml(action.label || 'Review') + '</button>';
     }).join('');
   });
 }
@@ -4143,6 +4143,13 @@ function relationshipActionById(profile = {}, actionId = ''){
   const actions = Array.isArray(profile.actions) ? profile.actions : [];
   const sectionActions = relationshipAllSectionActions(profile);
   return actions.find((action) => action.id === actionId) || sectionActions.find((action) => action.id === actionId) || {id: actionId, label: actionId.replace(/_/g, ' ')};
+}
+
+async function handleRelationshipActionClick(actionId = '', node = null){
+  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:actionId, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, actionId)});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  handleRelationshipAction(actionId);
 }
 
 function relationshipSource(profile = activeRelationshipProfile, action = ''){
