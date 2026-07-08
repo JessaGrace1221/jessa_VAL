@@ -133,8 +133,8 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthHtml, /data-project-prepared-count/);
   assert.match(hearthHtml, /Prepared Work/);
   assert.match(hearthHtml, /data-project-action="open_project_file"/);
-  assert.match(hearthHtml, /data-project-action="cowork_project"/);
-  assert.match(hearthHtml, /Co-Work with VAL/);
+  assert.match(hearthHtml, /data-drawer-cowork-icon/);
+  assert.doesNotMatch(hearthHtml, /<button type="button" data-project-action="cowork_project">Co-Work with VAL<\/button>/);
   assert.match(hearthHtml, /data-project-action="ask_priority"/);
   assert.match(hearthHtml, /data-project-action="show_alternatives"/);
   assert.doesNotMatch(hearthHtml, /data-open-room="alignment" data-project-action="ask_priority"/);
@@ -327,12 +327,12 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /No task proposal packet is loaded yet/);
   assert.match(hearthJs, /function renderTimelineReviewCards/);
   assert.match(hearthJs, /The event queue may show transcript review needs, but no proposal packet is loaded here yet/);
-  assert.match(hearthHtml, /data-timeline-action="cowork_timeline"/);
-  assert.ok(hearthHtml.indexOf('data-timeline-action="cowork_timeline"') < hearthHtml.indexOf('class="timeline-status-panel"'));
+  assert.doesNotMatch(hearthHtml, /data-timeline-action="cowork_timeline"/);
+  assert.match(hearthJs, /mode === 'timeline'/);
   assert.match(hearthJs, /function openTimelineCoworkSession/);
   assert.match(hearthJs, /returnTarget: 'timeline'/);
   assert.match(hearthJs, /restoreTimelineWindow/);
-  assert.match(hearthCss, /\.timeline-drawer-actions/);
+  assert.match(hearthCss, /\.drawer-cowork-orb/);
   assert.match(hearthJs, /const timelineReviewDecisions/);
   assert.match(hearthJs, /function timelineProposalAnchorStatus/);
   assert.match(hearthJs, /const timelineMatchReviewOpen/);
@@ -456,7 +456,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-correspondence-draft-preview/);
   assert.match(hearthHtml, /data-correspondence-draft-body/);
   assert.match(hearthHtml, /data-correspondence-action="send"/);
-  assert.match(hearthHtml, /data-correspondence-action="cowork_correspondence"/);
+  assert.doesNotMatch(hearthHtml, /data-correspondence-action="cowork_correspondence"/);
+  assert.match(hearthHtml, /data-drawer-cowork-icon/);
   assert.match(hearthHtml, /onclick="runCorrespondenceActionClick\(this,event\);return false;"/);
   assert.match(hearthHtml, /data-correspondence-action="not_executive_contact"/);
   assert.match(hearthHtml, />Not executive contact</);
@@ -516,7 +517,8 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.match(hearthHtml, /data-commitment-summary="others_owe_you"/);
   assert.match(hearthHtml, /data-commitment-filter="overdue"/);
   assert.match(hearthHtml, /data-commitment-list/);
-  assert.match(hearthHtml, /data-commitment-action="cowork_commitment"/);
+  assert.doesNotMatch(hearthHtml, /data-commitment-action="cowork_commitment"/);
+  assert.match(hearthJs, /mode === 'commitment'/);
   assert.match(hearthHtml, /data-commitment-action="draft_email"/);
   assert.match(hearthHtml, /data-commitment-action="create_task"/);
   assert.match(hearthHtml, /data-commitment-action="complete"/);
@@ -562,7 +564,8 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthHtml, /data-document-project-filter/);
   assert.match(hearthHtml, /data-document-list/);
   assert.match(hearthHtml, /data-document-preview/);
-  assert.match(hearthHtml, /data-document-action="cowork_document"/);
+  assert.doesNotMatch(hearthHtml, /data-document-action="cowork_document"/);
+  assert.match(hearthJs, /mode === 'document'/);
   assert.match(hearthHtml, /data-document-action="present"/);
   assert.match(hearthHtml, /data-document-action="update"/);
   assert.match(hearthHtml, /data-document-action="send"/);
@@ -640,7 +643,8 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthHtml, /data-relationship-project-panel/);
   assert.match(hearthHtml, /data-relationship-project-count/);
   assert.match(hearthHtml, /Linked Projects/);
-  assert.match(hearthHtml, /data-relationship-action="cowork_relationship"/);
+  assert.doesNotMatch(hearthHtml, /<button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL<\/button>/);
+  assert.match(hearthJs, /mode === 'relationship'/);
   assert.match(hearthHtml, /data-relationship-action="teach_temperature"/);
   for(const sort of ['attention', 'warmest', 'changed', 'alpha']){
     assert.match(hearthHtml, new RegExp(`<option value="${sort}"`));
@@ -983,8 +987,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=executive-inbox-clean-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=executive-inbox-clean-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=drawer-cowork-orb-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=drawer-cowork-orb-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

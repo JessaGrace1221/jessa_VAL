@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-clean-20260708">
+<link rel="stylesheet" href="./hearth-prototype.css?v=drawer-cowork-orb-20260708">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -334,7 +334,6 @@
               <p>No document selected yet.</p>
             </div>
             <div class="correspondence-actions" aria-label="Document actions">
-              <button type="button" data-document-action="cowork_document">Co-Work with VAL</button>
               <button type="button" data-document-action="present">Present</button>
               <button type="button" data-document-action="update">Update</button>
               <button type="button" data-document-action="send">Send</button>
@@ -403,7 +402,6 @@
           </section>
           <div class="relationship-actions" aria-label="Executive relationship actions">
             <a href="./dashboard.html?view=relationships&targetType=person&targetId=aric-soyring" data-relationship-field="href" data-relationship-action="open_full_file">Open full file</a>
-            <button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL</button>
             <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
           </div>
           <div class="relationship-pyramid" aria-label="Relationship Brief">
@@ -512,7 +510,6 @@
         </form>
         <div class="project-actions" aria-label="Executive project actions">
             <button type="button" data-project-action="open_project_file">Open project file</button>
-            <button type="button" data-project-action="cowork_project">Co-Work with VAL</button>
             <button type="button" data-project-action="ask_priority">Ask what matters now</button>
             <button type="button" data-project-action="show_alternatives">Show alternatives</button>
         </div>
@@ -592,9 +589,6 @@
             <p>VAL should treat each meeting as an evidence spine: the calendar event holds the transcript, attendees, linked relationships, linked projects, tasks, drafts, and review status.</p>
           </div>
           <button type="button" class="close-timeline-detail">Close</button>
-        </div>
-        <div class="timeline-drawer-actions" aria-label="Timeline Co-Work">
-          <button type="button" data-timeline-action="cowork_timeline">Co-Work with VAL</button>
         </div>
         <div class="timeline-status-panel" aria-label="Timeline status">
           <div class="timeline-status-header">
@@ -676,7 +670,6 @@
             </div>
             <div class="correspondence-actions" aria-label="Correspondence review actions">
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
-              <button type="button" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Co-Work with VAL</button>
               <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not executive contact</button>
             </div>
             <div class="correspondence-draft-preview" data-correspondence-draft-preview>
@@ -735,7 +728,6 @@
               <p>Source quote will appear here.</p>
             </div>
             <div class="correspondence-actions" aria-label="Commitment actions">
-              <button type="button" data-commitment-action="cowork_commitment">Co-Work with VAL</button>
               <button type="button" data-commitment-action="draft_email">Draft Email</button>
               <button type="button" data-commitment-action="create_task">Create Task</button>
               <button type="button" data-commitment-action="schedule">Schedule</button>
@@ -799,9 +791,12 @@
           </article>
         </div>
       </div>
+      <button class="drawer-cowork-orb" type="button" data-drawer-cowork-icon aria-label="Co-Work with VAL" hidden>
+        <img src="./assets/val-favicon.png" alt="">
+      </button>
     </div>
   </section>
 </main>
-<script src="./hearth-prototype.js?v=executive-inbox-clean-20260708"></script>
+<script src="./hearth-prototype.js?v=drawer-cowork-orb-20260708"></script>
 </body>
 </html>

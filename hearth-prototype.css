@@ -584,6 +584,10 @@ button,a{font:inherit}
   0%,100%{box-shadow:0 0 14px rgba(239,185,173,.22),inset 0 1px 0 rgba(255,249,239,.38)}
   50%{box-shadow:0 0 24px rgba(239,185,173,.38),inset 0 1px 0 rgba(255,249,239,.5)}
 }
+@keyframes drawerCoworkPresence{
+  0%,100%{transform:translateY(0) scale(1);opacity:.9}
+  50%{transform:translateY(-2px) scale(1.025);opacity:1}
+}
 .calendar-tab{
   justify-self:end;
   min-height:30px;
@@ -2742,6 +2746,50 @@ button.drawer-link{
 .drawer-tray.source-open .drawer-grid,
 .drawer-tray.val-open .drawer-grid{
   display:none;
+}
+.drawer-cowork-orb{
+  position:sticky;
+  left:4px;
+  bottom:4px;
+  z-index:18;
+  display:grid;
+  place-items:center;
+  width:62px;
+  height:62px;
+  margin:6px 0 0 4px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(255,249,239,.36),rgba(255,249,239,.1) 48%,transparent 72%);
+  box-shadow:0 14px 24px rgba(45,27,22,.16);
+  cursor:pointer;
+  filter:drop-shadow(0 0 12px rgba(255,236,202,.24));
+  animation:drawerCoworkPresence 4.6s ease-in-out infinite;
+  transition:transform .2s ease,filter .2s ease;
+}
+.drawer-cowork-orb[hidden]{
+  display:none;
+}
+.drawer-cowork-orb:hover,
+.drawer-cowork-orb:focus-visible{
+  transform:translateY(-1px) scale(1.04);
+  filter:drop-shadow(0 0 18px rgba(255,236,202,.38));
+  outline:none;
+}
+.drawer-cowork-orb img{
+  display:block;
+  width:54px;
+  height:54px;
+  object-fit:contain;
+  pointer-events:none;
+}
+.drawer-tray [data-document-action="cowork_document"],
+.drawer-tray [data-relationship-action="cowork_relationship"],
+.drawer-tray [data-project-action="cowork_project"],
+.drawer-tray [data-timeline-action="cowork_timeline"],
+.drawer-tray [data-correspondence-action="cowork_correspondence"],
+.drawer-tray [data-commitment-action="cowork_commitment"]{
+  display:none !important;
 }
 .source-detail-header{
   display:flex;
@@ -4918,6 +4966,8 @@ button.drawer-link{
   .drawer-pull:hover,.drawer-pull[aria-expanded="true"]{transform:none}
   .drawer-tray{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden}
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
+  .drawer-cowork-orb{left:0;bottom:0;width:58px;height:58px}
+  .drawer-cowork-orb img{width:50px;height:50px}
       .drawer-grid,.source-list,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
       .relationship-identity{grid-template-columns:1fr}
       .project-identity{grid-template-columns:1fr}

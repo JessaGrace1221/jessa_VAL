@@ -39,6 +39,7 @@ const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
 const drawerTray = document.querySelector('#drawer-tray');
+const drawerCoworkIcon = document.querySelector('[data-drawer-cowork-icon]');
 const valDrawerLink = document.querySelector('.val-drawer-link');
 const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
@@ -4945,6 +4946,90 @@ function ensureDrawerTrayOpen(){
   drawerPull.setAttribute('aria-expanded', 'true');
   drawerTray.setAttribute('aria-hidden', 'false');
   updateCloseAllDrawersButton();
+}
+
+function activeDrawerCoworkMode(){
+  if(!drawerTray || drawerTray.getAttribute('aria-hidden') === 'true') return '';
+  if(drawerTray.classList.contains('relationship-open')) return 'relationship';
+  if(drawerTray.classList.contains('project-open')) return 'project';
+  if(drawerTray.classList.contains('timeline-open')) return 'timeline';
+  if(drawerTray.classList.contains('correspondence-open')) return 'correspondence';
+  if(drawerTray.classList.contains('commitment-open')) return 'commitment';
+  if(drawerTray.classList.contains('document-open')) return 'document';
+  return '';
+}
+
+function updateDrawerCoworkIcon(){
+  if(!drawerCoworkIcon) return;
+  const mode = retrievalSystem?.classList.contains('open') ? activeDrawerCoworkMode() : '';
+  drawerCoworkIcon.hidden = !mode;
+  if(mode){
+    drawerCoworkIcon.dataset.drawerCoworkMode = mode;
+    drawerCoworkIcon.setAttribute('aria-label', 'Co-Work with VAL in ' + mode.replace(/_/g, ' '));
+  }else{
+    delete drawerCoworkIcon.dataset.drawerCoworkMode;
+    drawerCoworkIcon.setAttribute('aria-label', 'Co-Work with VAL');
+  }
+}
+
+async function openDrawerCoworkFromIcon(event){
+  if(!drawerCoworkIcon) return;
+  event?.preventDefault();
+  event?.stopPropagation();
+  const mode = activeDrawerCoworkMode();
+  drawerCoworkIcon.dataset.valClickContract = 'drawer.' + (mode || 'cowork');
+  drawerCoworkIcon.dataset.valPromptRule = 'Drawer-scoped Co-Work prompt suite';
+  drawerCoworkIcon.dataset.valAllowedActions = 'Think with VAL, draft with VAL, prepare next step';
+  drawerCoworkIcon.dataset.valNeverDo = 'Do not expose held context unless explicitly designed for the user.';
+  if(mode === 'relationship'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'relationship_packet';
+    await handleRelationshipActionClick('cowork_relationship', drawerCoworkIcon);
+    return;
+  }
+  if(mode === 'project'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'project_packet';
+    await handleProjectActionClick('cowork_project', drawerCoworkIcon);
+    return;
+  }
+  if(mode === 'timeline'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'timeline_packet';
+    const firstReview = currentTimelineReviewItems[0] || null;
+    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'timeline_packet', action:'cowork_timeline', allowBlockedForInspection:true, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Timeline & Tasks', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    openTimelineCoworkSession();
+    renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    return;
+  }
+  if(mode === 'correspondence'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'email_packet';
+    drawerCoworkIcon.dataset.correspondenceAction = 'cowork_correspondence';
+    await runCorrespondenceActionClick(drawerCoworkIcon, event);
+    delete drawerCoworkIcon.dataset.correspondenceAction;
+    return;
+  }
+  if(mode === 'commitment'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'commitment_packet';
+    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'commitment_packet', action:'commitment:cowork_commitment', allowBlockedForInspection:true, source:commitmentSource(activeCommitmentItem, 'cowork_commitment')});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    await handleCommitmentAction('cowork_commitment');
+    return;
+  }
+  if(mode === 'document'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'document_packet';
+    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'document_packet', action:'document:cowork_document', allowBlockedForInspection:true, source:documentSource(activeDocumentItem, 'cowork_document')});
+    if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+    await handleDocumentAction('cowork_document');
+  }
+}
+
+drawerCoworkIcon?.addEventListener('click', openDrawerCoworkFromIcon);
+if(drawerTray && drawerCoworkIcon){
+  new MutationObserver(updateDrawerCoworkIcon).observe(drawerTray, {attributes:true, attributeFilter:['class','aria-hidden']});
+  new MutationObserver(updateDrawerCoworkIcon).observe(retrievalSystem, {attributes:true, attributeFilter:['class']});
+  updateDrawerCoworkIcon();
 }
 
 function bringDrawerTargetIntoView(target){
@@ -12411,6 +12496,13 @@ drawerTray.addEventListener('click', async (event) => {
   if(!roomButton || roomButton.classList.contains('room-action')) return;
   closeDrawer();
   openWorkspace(roomButton.dataset.openRoom);
+});
+
+document.addEventListener('click', (event) => {
+  if(!retrievalSystem?.classList.contains('open')) return;
+  if(event.target.closest('.retrieval-system')) return;
+  if(event.target.closest('.desk-workspace, .full-calendar-panel, .home-card-workspace')) return;
+  closeDrawer();
 });
 
 closeSourceDetail.addEventListener('click', () => {
