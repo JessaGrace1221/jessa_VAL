@@ -313,6 +313,7 @@ test('Timeline and Tasks drawer combines calendar transcripts and follow-through
   assert.match(hearthJs, /action:'timeline:match_review'/);
   assert.match(hearthJs, /action:'timeline:match_accept:'/);
   assert.match(hearthJs, /action:'timeline:review:'/);
+  assert.match(hearthJs, /action:timelineAction\.dataset\.timelineAction, allowBlockedForInspection:true/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /source:timelineReviewSource/);
   assert.match(hearthJs, /source:timelineMatchSource/);
