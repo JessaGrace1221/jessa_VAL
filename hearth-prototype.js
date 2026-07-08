@@ -3127,6 +3127,19 @@ function scrollDocumentActionsIntoView(){
   });
 }
 
+function scrollLeadIntelligenceActionsIntoView(){
+  if(!drawerTray || !drawerTray.classList.contains('source-open')) return;
+  window.requestAnimationFrame(() => {
+    const action = document.querySelector('#source-detail [data-open-scraper]');
+    if(!action) return;
+    const trayRect = drawerTray.getBoundingClientRect();
+    const actionRect = action.getBoundingClientRect();
+    const safeBottom = Math.min(window.innerHeight - 18, trayRect.bottom - 18);
+    if(actionRect.bottom <= safeBottom && actionRect.top >= trayRect.top + 18) return;
+    drawerTray.scrollTop = Math.max(0, drawerTray.scrollTop + actionRect.bottom - safeBottom);
+  });
+}
+
 async function hydrateDocumentDrawer(){
   currentDocumentItems = localDocumentItems.concat(localStoredDocuments());
   activeDocumentItem = currentDocumentItems[0] || null;
@@ -10399,6 +10412,7 @@ sourceDrawerLink.addEventListener('click', () => {
   document.querySelector('#source-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
     drawerIndexPacketReceipt({node:sourceDrawerLink, packetName:'lead_intelligence_packet', action:'drawer:lead_intelligence', label:'Lead Intelligence drawer', downstreamConsumers:['lead_intelligence_drawer','preview_gate','ghl_handoff']});
+    scrollLeadIntelligenceActionsIntoView();
   } else {
     renderDrawerPacketReceiptStrip(null);
   }

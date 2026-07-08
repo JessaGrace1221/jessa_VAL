@@ -84,6 +84,8 @@ test('Lead Intelligence remains reachable from the office drawers', () => {
   assert.match(hearthHtml, /class="drawer-link source-drawer-link"/);
   assert.match(hearthHtml, /data-open-scraper="organizations"/);
   assert.match(hearthHtml, /data-open-scraper="partners"/);
+  assert.match(hearthJs, /function scrollLeadIntelligenceActionsIntoView/);
+  assert.match(hearthJs, /scrollLeadIntelligenceActionsIntoView\(\)/);
 });
 
 test('Lead Intelligence drawer opens only its own detail panel', () => {
@@ -899,8 +901,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=documents-action-scroll-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=documents-action-scroll-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=lead-intelligence-scroll-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-scroll-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
