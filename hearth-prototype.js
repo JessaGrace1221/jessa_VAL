@@ -10388,6 +10388,136 @@ function openExecutiveInboxForHomeEmail(item = {}){
   window.open('./dashboard.html?' + params.toString(), '_blank', 'noopener');
 }
 
+function homeSourceToken(value){
+  return String(value || '').toLowerCase().replace(/[^a-z0-9@.]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function homeSourceTokens(item = {}){
+  const metadata = item.metadata || item.metadataJson || {};
+  const target = item.target || {};
+  const email = homeEmailPayload(item);
+  return [
+    item.id,
+    item.sourceId,
+    item.source_id,
+    item.targetId,
+    target.id,
+    item.contactId,
+    metadata.contactId,
+    item.personId,
+    item.projectId,
+    metadata.projectId,
+    item.messageId,
+    metadata.messageId,
+    item.threadId,
+    metadata.threadId,
+    email.subject,
+    email.from?.email,
+    email.from?.name,
+    item.title,
+    item.name,
+    item.subject,
+    item.summary,
+    target.label,
+    target.name
+  ].map(homeSourceToken).filter(Boolean);
+}
+
+function homeSourceCandidateTokens(candidate = {}){
+  return [
+    candidate.id,
+    candidate.profileId,
+    candidate.contactId,
+    candidate.crmContactId,
+    candidate.personId,
+    candidate.projectId,
+    candidate.messageId,
+    candidate.threadId,
+    candidate.conversationId,
+    candidate.draftId,
+    candidate.recipientEmail,
+    candidate.email,
+    candidate.name,
+    candidate.displayName,
+    candidate.company,
+    candidate.title,
+    candidate.subject,
+    candidate.summary,
+    candidate.context
+  ].map(homeSourceToken).filter(Boolean);
+}
+
+function homeSourceCandidateScore(item = {}, candidate = {}){
+  const itemTokens = homeSourceTokens(item);
+  const candidateTokens = homeSourceCandidateTokens(candidate);
+  let score = 0;
+  itemTokens.forEach((itemToken) => {
+    candidateTokens.forEach((candidateToken) => {
+      if(!itemToken || !candidateToken) return;
+      if(itemToken === candidateToken) score = Math.max(score, 100);
+      else if(itemToken.length > 5 && candidateToken.includes(itemToken)) score = Math.max(score, 70);
+      else if(candidateToken.length > 5 && itemToken.includes(candidateToken)) score = Math.max(score, 60);
+    });
+  });
+  return score;
+}
+
+function findRelationshipForHomeSource(item = {}){
+  return Object.entries(relationshipIndexSourceProfiles())
+    .concat(Object.entries(relationshipIndexProfiles || {}))
+    .concat(Object.entries(relationshipProfiles || {}))
+    .reduce((best, [id, profile]) => {
+      const score = homeSourceCandidateScore(item, {...profile, id, profileId:id});
+      return score > best.score ? {id, profile:{...profile, profileId:id}, score} : best;
+    }, {id:'', profile:null, score:0});
+}
+
+function findProjectForHomeSource(item = {}){
+  return Object.entries(projectIndexProfiles || {})
+    .concat(Object.entries(projectProfiles || {}))
+    .reduce((best, [id, project]) => {
+      const score = homeSourceCandidateScore(item, {...project, id});
+      return score > best.score ? {id, project:{...project, id:project.id || id}, score} : best;
+    }, {id:'', project:null, score:0});
+}
+
+function correspondenceItemFromHomeSource(item = {}){
+  const email = homeEmailPayload(item);
+  const id = email.messageId || email.threadId || item.id || item.sourceId || item.source_id || 'home-email-' + Date.now().toString(36);
+  return {
+    id,
+    messageId: email.messageId,
+    threadId: email.threadId,
+    conversationId: email.threadId || email.messageId || '',
+    provider: email.provider || 'gmail',
+    title: email.subject || itemTitle(item, 'Email needing attention'),
+    status: 'review_only',
+    summary: email.snippet || item.summary || 'This email is the source behind the Home signal.',
+    whyNow: email.reason || item.reason_it_matters || item.reason || 'VAL surfaced this email because it may affect attention, trust, or follow-through.',
+    context: [email.from?.name, email.from?.email].filter(Boolean).join(' · ') || 'Sender context is attached when available.',
+    prepared: 'No draft has been created from this click.',
+    needs: 'Review the email, then decide whether to reply or create a dated follow-up task.',
+    draftBody: '',
+    evidence: [email.bodyPreview || email.snippet || item.summary].filter(Boolean),
+    representationRisk: 'review',
+    source: 'home_velocity_source',
+    noExternalAction: true,
+    raw: item
+  };
+}
+
+function selectCorrespondenceForHomeSource(item = {}){
+  const best = (currentCorrespondenceItems || []).reduce((winner, candidate) => {
+    const score = homeSourceCandidateScore(item, candidate);
+    return score > winner.score ? {item:candidate, score} : winner;
+  }, {item:null, score:0});
+  const selected = best.score >= 60 ? best.item : correspondenceItemFromHomeSource(item);
+  if(!currentCorrespondenceItems.some((row) => row.id === selected.id)){
+    currentCorrespondenceItems = [selected].concat(currentCorrespondenceItems || []);
+  }
+  renderCorrespondenceBrief(selected);
+}
+
 function openHomeSourceDrawerDestination(workspace = {}){
   const item = workspace.sourceItem || {};
   const destination = sourceDestinationLabel(item, workspace);
@@ -10395,16 +10525,25 @@ function openHomeSourceDrawerDestination(workspace = {}){
   hideWorkspaceForDrawerNavigation();
   if(profile.key === 'email' || /Executive Inbox|prepared draft|proposal draft/i.test(destination)){
     restoreCorrespondenceWindow();
-    hydrateCorrespondenceDrawer();
+    selectCorrespondenceForHomeSource(item);
+    hydrateCorrespondenceDrawer().then(() => selectCorrespondenceForHomeSource(item));
     return;
   }
   if(profile.key === 'relationship' || /relationship/i.test(destination)){
     restoreRelationshipWindow();
-    openRelationshipIndex();
+    const match = findRelationshipForHomeSource(item);
+    if(match.profile && match.score >= 60){
+      renderRelationshipProfile(match.id, match.profile);
+      loadRelationshipDossier(match.id);
+    } else {
+      openRelationshipIndex();
+    }
     return;
   }
   if(profile.key === 'project' || /project/i.test(destination)){
     restoreProjectWindow();
+    const match = findProjectForHomeSource(item);
+    if(match.project && match.score >= 60) renderProjectProfile(match.id);
     return;
   }
   if(profile.key === 'meeting' || /meeting|calendar/i.test(destination)){
