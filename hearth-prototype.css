@@ -4886,7 +4886,8 @@ button.drawer-link{
 @media(max-width:850px){
   .hearth-shell{min-height:auto;overflow:visible;background-position:center top}
   .hearth-topline{align-items:flex-start;flex-direction:column;padding:18px}
-  .state-switcher{top:48px;left:18px;right:18px;max-width:calc(100vw - 36px);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:.54}
+  .observer-board-button{z-index:28}
+  .state-switcher{top:28px;left:104px;right:18px;max-width:calc(100vw - 122px);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:.54}
   .state-switcher span{display:none}
   .state-switcher button{white-space:nowrap}
   .sun-mark{display:none}

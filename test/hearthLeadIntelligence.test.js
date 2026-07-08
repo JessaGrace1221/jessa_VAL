@@ -979,8 +979,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=board-observers-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=board-observers-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=mobile-board-observers-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=mobile-board-observers-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1541,6 +1541,8 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /drawerPull\.addEventListener\('click', \(\) => \{\s*hideWorkspaceForDrawerNavigation\(\);/);
   assert.match(hearthJs, /closeAllDrawersButton\?\.addEventListener\('click', closeDrawer\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
+  assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
+  assert.match(hearthCss, /\.state-switcher\{top:28px;left:104px;right:18px;max-width:calc\(100vw - 122px\);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:\.54\}/);
   assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:24\}/);
   assert.match(hearthCss, /\.drawer-tray\{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden\}/);
   assert.match(hearthCss, /\.retrieval-system\.open \.drawer-tray\{max-height:min\(70vh,640px\);padding:18px;margin-top:0;overflow:auto\}/);
