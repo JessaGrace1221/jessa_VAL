@@ -10794,14 +10794,6 @@ async function handlePrimaryAction(button){
   if(!preflight.ok) return;
   const actionType = button.dataset.actionType || 'workspace';
   const target = button.dataset.actionTarget;
-  if(actionType === 'openExternal' && target){
-    window.open(target, '_blank', 'noopener');
-    return;
-  }
-  if(actionType === 'openInternal' && target){
-    window.open(target, '_blank', 'noopener');
-    return;
-  }
   if(roomName === 'velocity'){
     openVelocityAwarenessWorkspace();
     return;
@@ -10812,6 +10804,14 @@ async function handlePrimaryAction(button){
   }
   if(roomName === 'leverage'){
     openLeverageApprovalWorkspace();
+    return;
+  }
+  if(actionType === 'openExternal' && target){
+    window.open(target, '_blank', 'noopener');
+    return;
+  }
+  if(actionType === 'openInternal' && target){
+    window.open(target, '_blank', 'noopener');
     return;
   }
   openWorkspace(button.dataset.openRoom);
