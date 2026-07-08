@@ -130,6 +130,15 @@ const GHL_PARTNER_PIPELINE_ID = process.env.GHL_PARTNER_PIPELINE_ID || '';
 const GHL_PARTNER_STAGE_ID = process.env.GHL_PARTNER_STAGE_ID || '';
 const GHL_PARTNER_PIPELINE_NAME = process.env.GHL_PARTNER_PIPELINE_NAME || 'GOALL Strategic Partners';
 const GHL_PARTNER_STAGE_NAME = process.env.GHL_PARTNER_STAGE_NAME || 'New Limitless Lead Added';
+const FRISSON_GHL_LOCATION_ID = process.env.FRISSON_GHL_LOCATION_ID || process.env.GHL_ACCOUNT_FRISSON_LOCATION_ID || process.env.GHL_ACCOUNT_FRISSON_LOC || '';
+const FRISSON_ORGANIZATION_PIPELINE_ID = process.env.FRISSON_ORGANIZATION_PIPELINE_ID || process.env.FRISSON_ORGANIZATIONS_PIPELINE_ID || '';
+const FRISSON_ORGANIZATION_STAGE_ID = process.env.FRISSON_ORGANIZATION_STAGE_ID || process.env.FRISSON_ORGANIZATIONS_STAGE_ID || '';
+const FRISSON_ORGANIZATION_PIPELINE_NAME = process.env.FRISSON_ORGANIZATION_PIPELINE_NAME || process.env.FRISSON_ORGANIZATIONS_PIPELINE_NAME || 'Frisson Organizations';
+const FRISSON_ORGANIZATION_STAGE_NAME = process.env.FRISSON_ORGANIZATION_STAGE_NAME || process.env.FRISSON_ORGANIZATIONS_STAGE_NAME || 'New Organization Lead';
+const FRISSON_PARTNER_PIPELINE_ID = process.env.FRISSON_PARTNER_PIPELINE_ID || process.env.FRISSON_PARTNERS_PIPELINE_ID || '';
+const FRISSON_PARTNER_STAGE_ID = process.env.FRISSON_PARTNER_STAGE_ID || process.env.FRISSON_PARTNERS_STAGE_ID || '';
+const FRISSON_PARTNER_PIPELINE_NAME = process.env.FRISSON_PARTNER_PIPELINE_NAME || process.env.FRISSON_PARTNERS_PIPELINE_NAME || 'Frisson Partners';
+const FRISSON_PARTNER_STAGE_NAME = process.env.FRISSON_PARTNER_STAGE_NAME || process.env.FRISSON_PARTNERS_STAGE_NAME || 'New Partner Lead';
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || '';
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || '';
 const MICROSOFT_REDIRECT_URI = process.env.MICROSOFT_REDIRECT_URI || (CLIENT_CONFIG.publicBaseUrl ? `${CLIENT_CONFIG.publicBaseUrl.replace(/\/$/,'')}/auth/microsoft/callback` : '');
@@ -352,7 +361,43 @@ const GHL_LEAD_FIELD_IDS = {
   partnership_fit_score: process.env.GHL_FIELD_PARTNERSHIP_FIT_SCORE || '',
   reason_for_score: process.env.GHL_FIELD_REASON_FOR_SCORE || '',
   source_urls: process.env.GHL_FIELD_SOURCE_URLS || '',
-  date_added: process.env.GHL_FIELD_DATE_ADDED || ''
+  date_added: process.env.GHL_FIELD_DATE_ADDED || '',
+  legal_company_name: process.env.GHL_FIELD_LEGAL_COMPANY_NAME || '',
+  dba_name: process.env.GHL_FIELD_DBA_NAME || '',
+  year_founded: process.env.GHL_FIELD_YEAR_FOUNDED || '',
+  years_in_business: process.env.GHL_FIELD_YEARS_IN_BUSINESS || '',
+  headquarters: process.env.GHL_FIELD_HEADQUARTERS || '',
+  states_served: process.env.GHL_FIELD_STATES_SERVED || '',
+  service_area_type: process.env.GHL_FIELD_SERVICE_AREA_TYPE || '',
+  number_of_employees: process.env.GHL_FIELD_NUMBER_OF_EMPLOYEES || '',
+  number_of_contractors: process.env.GHL_FIELD_NUMBER_OF_CONTRACTORS || '',
+  annual_revenue_range: process.env.GHL_FIELD_ANNUAL_REVENUE_RANGE || '',
+  number_of_offices: process.env.GHL_FIELD_NUMBER_OF_OFFICES || '',
+  work_model: process.env.GHL_FIELD_WORK_MODEL || '',
+  number_of_nonprofits_served: process.env.GHL_FIELD_NUMBER_OF_NONPROFITS_SERVED || '',
+  primary_contact: process.env.GHL_FIELD_PRIMARY_CONTACT || '',
+  mission_statement_ai_summary: process.env.GHL_FIELD_MISSION_STATEMENT_AI_SUMMARY || '',
+  cause_category: process.env.GHL_FIELD_CAUSE_CATEGORY || '',
+  population_served: process.env.GHL_FIELD_POPULATION_SERVED || '',
+  geographic_reach: process.env.GHL_FIELD_GEOGRAPHIC_REACH || '',
+  number_of_volunteers: process.env.GHL_FIELD_NUMBER_OF_VOLUNTEERS || '',
+  number_of_donors: process.env.GHL_FIELD_NUMBER_OF_DONORS || '',
+  years_in_operation: process.env.GHL_FIELD_YEARS_IN_OPERATION || '',
+  accepts_online_donations: process.env.GHL_FIELD_ACCEPTS_ONLINE_DONATIONS || '',
+  monthly_giving_program: process.env.GHL_FIELD_MONTHLY_GIVING_PROGRAM || '',
+  corporate_sponsors_listed: process.env.GHL_FIELD_CORPORATE_SPONSORS_LISTED || '',
+  annual_events: process.env.GHL_FIELD_ANNUAL_EVENTS || '',
+  volunteer_program: process.env.GHL_FIELD_VOLUNTEER_PROGRAM || '',
+  grant_funded: process.env.GHL_FIELD_GRANT_FUNDED || '',
+  planned_giving_available: process.env.GHL_FIELD_PLANNED_GIVING_AVAILABLE || '',
+  facebook: process.env.GHL_FIELD_FACEBOOK || '',
+  instagram: process.env.GHL_FIELD_INSTAGRAM || '',
+  newsletter: process.env.GHL_FIELD_NEWSLETTER || '',
+  recent_activity_last_90_days: process.env.GHL_FIELD_RECENT_ACTIVITY_LAST_90_DAYS || '',
+  ai_fit_summary: process.env.GHL_FIELD_AI_FIT_SUMMARY || '',
+  scraper_type: process.env.GHL_FIELD_SCRAPER_TYPE || '',
+  scrape_date: process.env.GHL_FIELD_SCRAPE_DATE || '',
+  review_needed: process.env.GHL_FIELD_REVIEW_NEEDED || ''
 };
 const GHL_LEAD_FIELD_KEYS = {
   lead_source_system:'contact.lead_source_system',
@@ -465,7 +510,43 @@ const GHL_LEAD_FIELD_KEYS = {
   partnership_fit_score:'contact.partnership_fit_score',
   reason_for_score:'contact.reason_for_score',
   source_urls:'contact.source_urls',
-  date_added:'contact.date_added'
+  date_added:'contact.date_added',
+  legal_company_name:'contact.legal_company_name',
+  dba_name:'contact.dba_name',
+  year_founded:'contact.year_founded',
+  years_in_business:'contact.years_in_business',
+  headquarters:'contact.headquarters',
+  states_served:'contact.states_served',
+  service_area_type:'contact.service_area_type',
+  number_of_employees:'contact.number_of_employees',
+  number_of_contractors:'contact.number_of_contractors',
+  annual_revenue_range:'contact.annual_revenue_range',
+  number_of_offices:'contact.number_of_offices',
+  work_model:'contact.work_model',
+  number_of_nonprofits_served:'contact.number_of_nonprofits_served',
+  primary_contact:'contact.primary_contact',
+  mission_statement_ai_summary:'contact.mission_statement_ai_summary',
+  cause_category:'contact.cause_category',
+  population_served:'contact.population_served',
+  geographic_reach:'contact.geographic_reach',
+  number_of_volunteers:'contact.number_of_volunteers',
+  number_of_donors:'contact.number_of_donors',
+  years_in_operation:'contact.years_in_operation',
+  accepts_online_donations:'contact.accepts_online_donations',
+  monthly_giving_program:'contact.monthly_giving_program',
+  corporate_sponsors_listed:'contact.corporate_sponsors_listed',
+  annual_events:'contact.annual_events',
+  volunteer_program:'contact.volunteer_program',
+  grant_funded:'contact.grant_funded',
+  planned_giving_available:'contact.planned_giving_available',
+  facebook:'contact.facebook',
+  instagram:'contact.instagram',
+  newsletter:'contact.newsletter',
+  recent_activity_last_90_days:'contact.recent_activity_last_90_days',
+  ai_fit_summary:'contact.ai_fit_summary',
+  scraper_type:'contact.scraper_type',
+  scrape_date:'contact.scrape_date',
+  review_needed:'contact.review_needed'
 };
 const GHL_LEAD_FIELD_NAME_ALIASES = {
   lead_source_system:['lead source system','lead_source_system'],
@@ -575,7 +656,43 @@ const GHL_LEAD_FIELD_NAME_ALIASES = {
   raw_industry:['raw industry','rawindustry'],
   tag_confidence:['tag confidence','tagconfidence'],
   needs_new_automation:['needs new automation','needsnewautomation'],
-  suggested_new_automation_tag:['suggested new automation tag','suggested automation tag','suggestednewautomationtag']
+  suggested_new_automation_tag:['suggested new automation tag','suggested automation tag','suggestednewautomationtag'],
+  legal_company_name:['legal company name','legal_company_name','legal name'],
+  dba_name:['dba name','dba_name','doing business as'],
+  year_founded:['year founded','year_founded','founded year','founded'],
+  years_in_business:['years in business','years_in_business'],
+  headquarters:['headquarters','hq'],
+  states_served:['states served','states_served'],
+  service_area_type:['service area type','service_area_type'],
+  number_of_employees:['number of employees','number_of_employees','employees'],
+  number_of_contractors:['number of contractors','number_of_contractors','contractors'],
+  annual_revenue_range:['annual revenue range','annual_revenue_range','revenue range'],
+  number_of_offices:['number of offices','number_of_offices','offices'],
+  work_model:['work model','work_model'],
+  number_of_nonprofits_served:['number of nonprofits served','number_of_nonprofits_served','nonprofits served'],
+  primary_contact:['primary contact','primary_contact'],
+  mission_statement_ai_summary:['mission statement ai summary','mission_statement_ai_summary','mission summary'],
+  cause_category:['cause category','cause_category'],
+  population_served:['population served','population_served'],
+  geographic_reach:['geographic reach','geographic_reach'],
+  number_of_volunteers:['number of volunteers','number_of_volunteers','volunteers'],
+  number_of_donors:['number of donors','number_of_donors','donors'],
+  years_in_operation:['years in operation','years_in_operation'],
+  accepts_online_donations:['accepts online donations','accepts_online_donations','online donations'],
+  monthly_giving_program:['monthly giving program','monthly_giving_program'],
+  corporate_sponsors_listed:['corporate sponsors listed','corporate_sponsors_listed','corporate sponsors'],
+  annual_events:['annual events','annual_events'],
+  volunteer_program:['volunteer program','volunteer_program'],
+  grant_funded:['grant funded','grant_funded'],
+  planned_giving_available:['planned giving available','planned_giving_available','planned giving'],
+  facebook:['facebook','facebook url','facebook_url'],
+  instagram:['instagram','instagram url','instagram_url'],
+  newsletter:['newsletter'],
+  recent_activity_last_90_days:['recent activity last 90 days','recent_activity_last_90_days','recent activity'],
+  ai_fit_summary:['ai fit summary','ai_fit_summary','fit summary'],
+  scraper_type:['scraper type','scraper_type'],
+  scrape_date:['scrape date','scrape_date'],
+  review_needed:['review needed','review_needed']
 };
 function projectSystemPrompt(){
   if(!isBookEditorProject()) return '';
@@ -19022,6 +19139,486 @@ async function importApprovedPartnerLeads(body={}){
   const updated=created.filter(x=>x.updated).length;
   const content=[`Pushed ${created.length} approved strategic partner${created.length===1?'':'s'} to GHL.`,updated?`Updated ${updated} existing contact${updated===1?'':'s'} instead of creating duplicates.`:'','Pipeline: GOALL Strategic Partners','Stage: New Limitless Lead Added',failed.length?`Failed: ${failed.length}`:''].filter(Boolean).join('\n');
   return {ok:true,created,failed,content};
+}
+
+const FRISSON_PARTNER_SEARCH_TERMS=[
+  'grant writers','grant consultants','nonprofit consultants','fundraising consultants','nonprofit marketing agencies','nonprofit event consultants','auction partners','corporate giving consultants','CSR consultants','matching gift advisors','volunteer engagement consultants','donor engagement consultants','planned giving consultants','peer-to-peer fundraising consultants','nonprofit technology consultants'
+];
+const FRISSON_ORGANIZATION_SEARCH_TERMS=[
+  'animal rescues','youth programs','education nonprofits','food banks','healthcare nonprofits','mental health nonprofits','community support organizations','veteran organizations','domestic violence shelters','disability support organizations','environmental nonprofits','arts and culture nonprofits','family service nonprofits','local community nonprofits'
+];
+const FRISSON_ORGANIZATION_CAUSES=['Animal Welfare','Education','Healthcare','Mental Health','Youth','Veterans','Disability Support','Food Security','Housing','Environment','Arts and Culture','Community Support','Family Services','Other'];
+const FRISSON_POPULATIONS=['Children','Families','Seniors','Veterans','Animals','People with Disabilities','Low-income Communities','Students','Survivors','Local Residents','Other'];
+
+function frissonMode(value){
+  const raw=String(value||'').toLowerCase();
+  if(/partner/.test(raw)) return 'partners';
+  return 'organizations';
+}
+
+function frissonModeLabel(mode){
+  return frissonMode(mode)==='partners'?'Partner':'Organization';
+}
+
+function frissonPipelineName(mode){
+  return frissonMode(mode)==='partners'?FRISSON_PARTNER_PIPELINE_NAME:FRISSON_ORGANIZATION_PIPELINE_NAME;
+}
+
+function frissonStageName(mode){
+  return frissonMode(mode)==='partners'?FRISSON_PARTNER_STAGE_NAME:FRISSON_ORGANIZATION_STAGE_NAME;
+}
+
+function frissonWorkflowTag(mode){
+  return frissonMode(mode)==='partners'?'partner':'organization';
+}
+
+async function resolveFrissonLocationId(){
+  return FRISSON_GHL_LOCATION_ID || await resolveGhlLocationId();
+}
+
+function frissonValue(...values){
+  for(const value of values){
+    if(value===undefined||value===null) continue;
+    const text=Array.isArray(value)?value.filter(Boolean).join(', '):String(value).trim();
+    if(text) return text;
+  }
+  return '';
+}
+
+function frissonYesNoUnknown(value){
+  const text=String(value??'').trim().toLowerCase();
+  if(value===true || /^(yes|y|true|1|available|listed|active|has|accepts)$/i.test(text)) return 'Yes';
+  if(value===false || /^(no|n|false|0|none|not listed|missing|unavailable)$/i.test(text)) return 'No';
+  return 'Unknown';
+}
+
+function frissonRecentActivity(value,p={}){
+  const text=[value,p.socialActivity,p.eventsOrCampaigns,p.newsRaw,p.googleReviewsSnippet,Array.isArray(p.evidenceSignals)?p.evidenceSignals.join(' '):p.evidenceSignals].filter(Boolean).join(' ').toLowerCase();
+  if(/last\s*(week|month)|recent|upcoming|2026|2025|event|campaign|news|posted|active|calendar|volunteer/.test(text)) return 'Active';
+  if(/old|inactive|closed|no recent/.test(text)) return 'Inactive';
+  if(text) return 'Somewhat Active';
+  return 'Unknown';
+}
+
+function frissonYearsSince(value){
+  const year=Number(String(value||'').match(/\b(19|20)\d{2}\b/)?.[0]||0);
+  if(!year) return '';
+  const current=new Date().getFullYear();
+  if(year>current || year<1800) return '';
+  return String(current-year);
+}
+
+function frissonSourceUrls(p={}){
+  return [...new Set([
+    ...(Array.isArray(p.sourceUrls)?p.sourceUrls:String(p.sourceUrls||'').split(/[\n,]/)),
+    p.website,p.googleMapsUrl,p.google_maps_url,p.linkedinCompanyUrl,p.linkedinPersonalUrl,p.linkedinUrl,p.facebook,p.instagram,p.newsletterUrl,p.donationPage
+  ].map(v=>String(v||'').trim()).filter(v=>/^https?:\/\//i.test(v)))];
+}
+
+function frissonCauseCategory(p={}){
+  const text=[p.causeCategory,p.cause,p.organizationType,p.industry,p.category,p.organizationName,p.name,p.missionStatement,p.description].filter(Boolean).join(' ').toLowerCase();
+  const match=[
+    [/animal|rescue|shelter|pet/,'Animal Welfare'],
+    [/school|education|student|literacy|learn/,'Education'],
+    [/healthcare|clinic|hospital|medical/,'Healthcare'],
+    [/mental|therapy|counsel|behavioral/,'Mental Health'],
+    [/youth|child|children|teen/,'Youth'],
+    [/veteran|military/,'Veterans'],
+    [/disability|disabled|special needs/,'Disability Support'],
+    [/food|hunger|bank|pantry/,'Food Security'],
+    [/housing|homeless|shelter/,'Housing'],
+    [/environment|conservation|climate/,'Environment'],
+    [/arts|culture|museum|music|theater|theatre/,'Arts and Culture'],
+    [/community|neighborhood|local/,'Community Support'],
+    [/family|families|domestic|violence|survivor/,'Family Services']
+  ].find(([pattern])=>pattern.test(text));
+  return match?.[1] || (FRISSON_ORGANIZATION_CAUSES.includes(p.causeCategory)?p.causeCategory:'Other');
+}
+
+function frissonPopulationServed(p={}){
+  const text=[p.populationServed,p.cause,p.organizationType,p.industry,p.category,p.missionStatement,p.description].filter(Boolean).join(' ').toLowerCase();
+  const found=[];
+  if(/child|children|youth|teen/.test(text)) found.push('Children');
+  if(/famil/.test(text)) found.push('Families');
+  if(/senior|elder/.test(text)) found.push('Seniors');
+  if(/veteran|military/.test(text)) found.push('Veterans');
+  if(/animal|pet/.test(text)) found.push('Animals');
+  if(/disab|special needs/.test(text)) found.push('People with Disabilities');
+  if(/low.income|poverty|underserved|food|housing|homeless/.test(text)) found.push('Low-income Communities');
+  if(/student|school|education/.test(text)) found.push('Students');
+  if(/survivor|domestic|violence|abuse/.test(text)) found.push('Survivors');
+  if(/local|community|resident/.test(text)) found.push('Local Residents');
+  return found.length?[...new Set(found)].join(', '):(FRISSON_POPULATIONS.includes(p.populationServed)?p.populationServed:'Other');
+}
+
+function frissonGeographicReach(p={}){
+  const text=[p.geographicReach,p.location,p.statesServed,p.serviceAreaType,p.linkedinCompanyLocation,p.googleRaw].filter(Boolean).join(' ').toLowerCase();
+  if(/international|global|worldwide/.test(text)) return 'International';
+  if(/national|nationwide|united states|u\.s\./.test(text)) return 'National';
+  if(/statewide/.test(text)) return 'Statewide';
+  if(/regional|multi.state|states served|several states/.test(text)) return 'Regional';
+  if(/local|city|county|community/.test(text) || p.city) return 'Local';
+  return 'Unknown';
+}
+
+function scoreFrissonPartner(p={}){
+  const text=JSON.stringify(p).toLowerCase();
+  let score=4;
+  const reasons=[];
+  if(/nonprofit|non-profit|fundraising|grant|donor|volunteer|csr|corporate giving|planned giving|matching gift/.test(text)){ score=Math.min(score,1); reasons.push('clear nonprofit-service focus'); }
+  if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
+  if(/multiple nonprofits|nonprofits served|clients|portfolio|case studies|agency|consultant/.test(text)){ score=Math.min(score,2); reasons.push('evidence of serving multiple organizations'); }
+  if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public presence found, nonprofit fit needs review'); }
+  return {
+    ...p,
+    leadProfile:'frisson',
+    scraperType:'Partner',
+    leadScore:score,
+    leadScoreReason:reasons.join('; ') || 'Possible partner fit, but nonprofit connection needs review.',
+    aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This prospect'} may be useful to Frisson if its nonprofit reach and referral potential are confirmed.`,
+    recommendedOutreachAngle:p.recommendedOutreachAngle||'Lead with a practical partnership conversation around helping more nonprofits activate donor support, recurring community support, or adjacent revenue.'
+  };
+}
+
+function scoreFrissonOrganization(p={}){
+  const text=JSON.stringify(p).toLowerCase();
+  let score=4;
+  const reasons=[];
+  if(/nonprofit|non-profit|501|donate|donation|volunteer|mission/.test(text)){ score=Math.min(score,2); reasons.push('active nonprofit signals'); }
+  if(/donate|donation|give|monthly giving|sponsor/.test(text)){ score=Math.min(score,1); reasons.push('fundraising surface found'); }
+  if(validEmail(p.email)||validPhone(p.phone)){ score=Math.min(score,2); reasons.push('usable contact path'); }
+  if(/event|campaign|newsletter|facebook|instagram|linkedin|recent|volunteer/.test(text)){ score=Math.min(score,2); reasons.push('community activity signal'); }
+  if(!reasons.length && (p.website||p.linkedinCompanyUrl)) { score=3; reasons.push('public nonprofit-like presence found, Frisson fit needs review'); }
+  return {
+    ...p,
+    leadProfile:'frisson',
+    scraperType:'Organization',
+    leadScore:score,
+    leadScoreReason:reasons.join('; ') || 'Possible organization fit, but activity and fundraising signals need review.',
+    aiFitSummary:p.aiFitSummary||`${p.organizationName||p.name||'This organization'} may be a Frisson fit if its donation, volunteer, and community activity signals are confirmed.`,
+    recommendedOutreachAngle:p.recommendedOutreachAngle||'Open with support for donor activation, shopping-based giving, recurring community support, and practical fundraising lift.'
+  };
+}
+
+function applyFrissonScoring(p={},mode='organizations'){
+  const clean=sanitizeDecisionMaker(p);
+  return frissonMode(mode)==='partners'?scoreFrissonPartner(clean):scoreFrissonOrganization(clean);
+}
+
+function frissonCustomFieldsFromProspect(raw={},mode='organizations'){
+  const p=applyFrissonScoring(raw,mode);
+  const sourceUrls=frissonSourceUrls(p);
+  const founded=frissonValue(p.yearFounded,p.foundedYear,p.linkedinCompanyFoundedYear);
+  const base={
+    lead_source_system:'Frisson Lead Intelligence',
+    lead_ingested_at:p.leadIngestedAt||new Date().toISOString(),
+    lead_processing_status:'reviewed_for_import',
+    lead_dedupe_key:goallLeadKey(p),
+    lead_score:String(p.leadScore||''),
+    lead_score_reason:p.leadScoreReason||'',
+    lead_scored_at:p.leadScoredAt||new Date().toISOString(),
+    lead_scoring_version:`frisson-${frissonMode(mode)}-v1`,
+    linkedin_url:p.linkedinPersonalUrl||p.linkedinCompanyUrl||p.linkedinUrl||'',
+    source_urls:sourceUrls.join('\n'),
+    recommended_outreach_angle:p.recommendedOutreachAngle||'',
+    ai_fit_summary:p.aiFitSummary||'',
+    scraper_type:frissonModeLabel(mode),
+    scrape_date:p.scrapeDate||new Date().toISOString().slice(0,10),
+    review_needed:String(!!(p.reviewNeeded||Number(p.leadScore||4)>=3)),
+    date_added:p.dateAdded||new Date().toISOString()
+  };
+  if(frissonMode(mode)==='partners'){
+    return {
+      ...base,
+      legal_company_name:frissonValue(p.legalCompanyName,p.companyLegalName,p.organizationName,p.name),
+      dba_name:frissonValue(p.dbaName,p.dba),
+      website:p.website||'',
+      year_founded:founded,
+      years_in_business:frissonValue(p.yearsInBusiness,frissonYearsSince(founded)),
+      headquarters:frissonValue(p.headquarters,p.linkedinCompanyLocation,p.location),
+      states_served:frissonValue(p.statesServed,p.serviceArea,p.location),
+      service_area_type:frissonValue(p.serviceAreaType,p.geographicReach),
+      number_of_employees:frissonValue(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.approximateDonors),
+      number_of_contractors:frissonValue(p.numberOfContractors,p.contractors),
+      annual_revenue_range:frissonValue(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue),
+      number_of_offices:frissonValue(p.numberOfOffices,p.offices,p.locations),
+      work_model:frissonValue(p.workModel),
+      number_of_nonprofits_served:frissonValue(p.numberOfNonprofitsServed,p.nonprofitsServed,p.clientsServed)
+    };
+  }
+  return {
+    ...base,
+    primary_contact:frissonValue(p.primaryContact,p.decisionMakerName),
+    mission_statement_ai_summary:frissonValue(p.missionStatementAiSummary,p.missionSummary,p.missionStatement,p.description,p.aiCompanySummary),
+    cause_category:frissonCauseCategory(p),
+    population_served:frissonPopulationServed(p),
+    geographic_reach:frissonGeographicReach(p),
+    annual_revenue_range:frissonValue(p.annualRevenueRange,p.scrapedAnnualRevenue,p.annualRevenue,p.revenue),
+    number_of_employees:frissonValue(p.numberOfEmployees,p.employeeCount,p.scrapedNumberOfEmployees,p.linkedinEmployeeCount,p.approximateDonors),
+    number_of_volunteers:frissonValue(p.numberOfVolunteers,p.volunteers),
+    number_of_donors:frissonValue(p.numberOfDonors,p.donors),
+    years_in_operation:frissonValue(p.yearsInOperation,frissonYearsSince(founded)),
+    accepts_online_donations:frissonYesNoUnknown(p.acceptsOnlineDonations||p.donationPage||(/donat/i.test(JSON.stringify(p))?'Yes':'')),
+    monthly_giving_program:frissonYesNoUnknown(p.monthlyGivingProgram),
+    corporate_sponsors_listed:frissonYesNoUnknown(p.corporateSponsorsListed||p.sponsors),
+    annual_events:frissonYesNoUnknown(p.annualEvents||p.eventsOrCampaigns),
+    volunteer_program:frissonYesNoUnknown(p.volunteerProgram||(/volunteer/i.test(JSON.stringify(p))?'Yes':'')),
+    grant_funded:frissonYesNoUnknown(p.grantFunded||(/grant/i.test(JSON.stringify(p))?'Yes':'')),
+    planned_giving_available:frissonYesNoUnknown(p.plannedGivingAvailable||(/planned giving/i.test(JSON.stringify(p))?'Yes':'')),
+    facebook:frissonValue(p.facebook,p.facebookUrl),
+    instagram:frissonValue(p.instagram,p.instagramUrl),
+    newsletter:frissonYesNoUnknown(p.newsletter||p.newsletterUrl),
+    recent_activity_last_90_days:frissonRecentActivity(p.recentActivityLast90Days,p)
+  };
+}
+
+async function resolveFrissonOpportunityTarget(mode='organizations'){
+  const locationId=await resolveFrissonLocationId();
+  const wantsPartner=frissonMode(mode)==='partners';
+  const pipelineId=wantsPartner?FRISSON_PARTNER_PIPELINE_ID:FRISSON_ORGANIZATION_PIPELINE_ID;
+  const stageId=wantsPartner?FRISSON_PARTNER_STAGE_ID:FRISSON_ORGANIZATION_STAGE_ID;
+  const pipelineName=frissonPipelineName(mode);
+  const stageName=frissonStageName(mode);
+  const data=await ghl('GET',`/opportunities/pipelines?locationId=${encodeURIComponent(locationId||GHL_LOC||'')}`);
+  const pipelines=data.pipelines||data.data||[];
+  const pipeline=pipelines.find(p=>pipelineId
+    ? String(p.id||p._id||'')===String(pipelineId)
+    : String(p.name||p.title||'').trim().toLowerCase()===pipelineName.toLowerCase());
+  if(!pipeline){
+    const available=pipelines.map(p=>`${p.name||p.title||'Unnamed'} (${p.id||p._id||'no id'})`).slice(0,12).join(' | ');
+    throw new Error(`No Frisson GHL pipeline matched "${pipelineName}". Set ${wantsPartner?'FRISSON_PARTNER_PIPELINE_ID':'FRISSON_ORGANIZATION_PIPELINE_ID'} or create the pipeline. Available pipelines: ${available||'none returned'}`);
+  }
+  const stages=pipeline.stages||pipeline.pipelineStages||[];
+  const stage=stages.find(s=>stageId
+    ? String(s.id||s._id||'')===String(stageId)
+    : String(s.name||s.title||'').trim().toLowerCase()===stageName.toLowerCase());
+  if(!stage){
+    const available=stages.map(s=>`${s.name||s.title||'Unnamed'} (${s.id||s._id||'no id'})`).slice(0,20).join(' | ');
+    throw new Error(`No Frisson GHL stage matched "${stageName}" in "${pipeline.name||pipeline.title}". Set ${wantsPartner?'FRISSON_PARTNER_STAGE_ID':'FRISSON_ORGANIZATION_STAGE_ID'} or create the stage. Available stages: ${available||'none returned'}`);
+  }
+  return {locationId,pipelineId:pipeline.id||pipeline._id,stageId:stage.id||stage._id,pipelineName:pipeline.name||pipeline.title||'',stageName:stage.name||stage.title||''};
+}
+
+const frissonOpportunityTargetCache={};
+async function getFrissonOpportunityTarget(mode='organizations'){
+  const key=frissonMode(mode);
+  if(!frissonOpportunityTargetCache[key]) frissonOpportunityTargetCache[key]=resolveFrissonOpportunityTarget(key);
+  return frissonOpportunityTargetCache[key];
+}
+
+function frissonDiscoveryPlan(mode='organizations',body={}){
+  const currentMode=frissonMode(mode);
+  const terms=currentMode==='partners'?FRISSON_PARTNER_SEARCH_TERMS:FRISSON_ORGANIZATION_SEARCH_TERMS;
+  const requestedTerms=String(body.category||body.organizationType||body.partnerType||body.keywords||body.criteria||'').split(/[,;\n]/).map(v=>v.trim()).filter(Boolean);
+  const searchTerms=(requestedTerms.length?requestedTerms:terms).slice(0,Math.max(1,Math.min(Number(body.termLimit)||4,terms.length)));
+  return {
+    mode:currentMode,
+    market:String(body.market||body.location||'United States'),
+    searchTerms,
+    limit:Math.min(Math.max(Number(body.limit)||12,1),100),
+    enrichContacts:body.enrichContacts!==false && body.enrich_contacts!==false,
+    rocketReachMode:body.rocketReachMode||body.rocketreachMode||(Number(body.limit||12)<=25?'auto':'defer')
+  };
+}
+
+async function discoverFrissonProspects(mode='organizations',body={}){
+  const plan=frissonDiscoveryPlan(mode,body);
+  const perSearch=Math.max(3,Math.ceil((plan.limit*1.5)/Math.max(1,plan.searchTerms.length)));
+  const raw=[];
+  const errors=[];
+  for(const term of plan.searchTerms){
+    const scraped=await discoverOutscraperProspects({
+      organizationType:term,
+      employeeMinimum:1,
+      market:plan.market,
+      limit:perSearch,
+      leadProfile:'frisson'
+    }).catch(e=>({configured:!!OUTSCRAPER_API_KEY,leads:[],error:e.message}));
+    if(!scraped.configured){
+      return {ok:false,leadProfile:'frisson',prospectingMode:`frisson_${plan.mode}`,scraperType:frissonModeLabel(plan.mode),market:plan.market,organizationType:term,leads:[],error:scraped.error||'Outscraper is not configured',content:`Frisson ${frissonModeLabel(plan.mode)} scrape could not start.\n\n${cleanLeadLevelText(scraped.error||'Outscraper is not configured')}`};
+    }
+    if(scraped.error) errors.push(`${term}: ${cleanLeadLevelText(scraped.error)}`);
+    raw.push(...(scraped.leads||[]).map(lead=>({...lead,organizationType:term,industry:term,leadProfile:'frisson',scraperType:frissonModeLabel(plan.mode),source:'Frisson Lead Intelligence'})));
+  }
+  const deduped=[];
+  const seen=new Set();
+  for(const lead of raw){
+    const key=goallLeadKey(lead);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(lead);
+  }
+  const enriched=await mapWithConcurrency(deduped.slice(0,Math.min(deduped.length,plan.limit*2)),plan.rocketReachMode==='defer'?3:5,async lead=>{
+    const next=plan.enrichContacts
+      ? await enrichProspect(lead,{rocketReachMode:plan.rocketReachMode,fastPreview:false}).catch(e=>({...lead,rocketReachStatus:e.message}))
+      : {...lead,rocketReachStatus:'deferred until review'};
+    return applyFrissonScoring(next,plan.mode);
+  });
+  const leads=enriched.sort((a,b)=>Number(a.leadScore||4)-Number(b.leadScore||4)).slice(0,plan.limit);
+  const result={
+    ok:!!leads.length,
+    leadProfile:'frisson',
+    prospectingMode:`frisson_${plan.mode}`,
+    scraperType:frissonModeLabel(plan.mode),
+    market:plan.market,
+    searchTerms:plan.searchTerms,
+    organizationType:plan.searchTerms.join(', '),
+    employeeMinimum:1,
+    tag:frissonWorkflowTag(plan.mode),
+    leads,
+    errors,
+    crmDestination:{pipeline:frissonPipelineName(plan.mode),stage:frissonStageName(plan.mode)},
+    report:{
+      requestedViableLeads:plan.limit,
+      viableLeadsFound:leads.length,
+      rawBusinessesSearched:raw.length,
+      score1Count:leads.filter(l=>Number(l.leadScore)===1).length,
+      score2Count:leads.filter(l=>Number(l.leadScore)===2).length,
+      score3Count:leads.filter(l=>Number(l.leadScore)===3).length,
+      score4Count:leads.filter(l=>Number(l.leadScore)===4).length
+    }
+  };
+  result.content=frissonPreviewText(result,plan.mode);
+  return result;
+}
+
+function frissonPreviewText(discovered={},mode='organizations'){
+  const currentMode=frissonMode(mode||discovered.prospectingMode);
+  const label=frissonModeLabel(currentMode);
+  const leads=(discovered.leads||[]).map(p=>applyFrissonScoring(p,currentMode));
+  return [
+    `Found ${leads.length} Frisson ${label.toLowerCase()} prospect${leads.length===1?'':'s'}.`,
+    currentMode==='partners'
+      ? 'Partner question: Could this company, consultant, advisor, agency, or platform help Frisson reach and support nonprofits?'
+      : 'Organization question: Could this nonprofit benefit from Frisson donor activation, shopping-based giving, partner revenue, fundraising support, volunteer engagement, or recurring community support?',
+    `Search: ${discovered.organizationType||discovered.searchTerms?.join(', ')||label} | ${discovered.market||'United States'}`,
+    `CRM destination: ${frissonPipelineName(currentMode)} / ${frissonStageName(currentMode)}`,
+    `Workflow trigger tag: ${frissonWorkflowTag(currentMode)}`,
+    '',
+    ...leads.map((p,i)=>{
+      const sources=frissonSourceUrls(p);
+      return [
+        `${i+1}. ${p.organizationName||p.name||'Unnamed prospect'}`,
+        `   Score: ${p.leadScore} (${p.leadScore===1?'strong Frisson fit':p.leadScore===2?'good fit':p.leadScore===3?'possible fit':'weak or unclear fit'})`,
+        `   Reason: ${p.leadScoreReason||'Needs review'}`,
+        `   Fit summary: ${p.aiFitSummary||'Needs Frisson review'}`,
+        `   Outreach angle: ${p.recommendedOutreachAngle||'Needs review'}`,
+        `   Location: ${p.location||[p.city,p.state].filter(Boolean).join(', ')||'unclear'}`,
+        `   Website: ${p.website||'unclear'}`,
+        `   Contact: ${p.decisionMakerName||p.primaryContact||'not identified'}${p.decisionMakerTitle?' - '+p.decisionMakerTitle:''} | ${p.email||'email unavailable'} | ${p.phone||'phone unavailable'}`,
+        currentMode==='partners'?`   Partner type: ${p.partnerType||p.organizationType||p.industry||'needs review'}`:`   Cause: ${frissonCauseCategory(p)} | Population: ${frissonPopulationServed(p)} | Reach: ${frissonGeographicReach(p)}`,
+        `   Sources (${sources.length}): ${sources.join(', ')||'source review needed'}`
+      ].join('\n');
+    }),
+    '',
+    'Review and approve before pushing anything to GHL.'
+  ].join('\n');
+}
+
+async function upsertGhlFrissonLead(raw={},mode='organizations'){
+  const currentMode=frissonMode(mode);
+  const p=applyFrissonScoring(raw,currentMode);
+  const target=await getFrissonOpportunityTarget(currentMode);
+  const fields=frissonCustomFieldsFromProspect(p,currentMode);
+  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const customFields=leadCustomFieldPayloads(ids,fields);
+  const duplicate=await findExistingGhlLeadDuplicate(p);
+  const workflowTag=frissonWorkflowTag(currentMode);
+  const tags=['Frisson Lead',`Frisson ${frissonModeLabel(currentMode)}`,workflowTag,frissonModeLabel(currentMode)].filter(Boolean);
+  const decisionName=String(p.decisionMakerName||p.primaryContact||'').trim();
+  const nameParts=decisionName.split(/\s+/).filter(Boolean);
+  const contactPayload=compactObject({
+    locationId:target.locationId||GHL_LOC,
+    companyName:p.organizationName||p.name||'Unnamed Frisson prospect',
+    website:p.website,
+    email:validEmail(p.email)?p.email:undefined,
+    phone:validPhone(p.phone)?p.phone:undefined,
+    address1:p.address1,
+    city:p.city,
+    state:p.state,
+    country:normalizeCountryCode(p.country),
+    postalCode:p.postalCode||p.postal_code,
+    timezone:p.timeZone||p.timezone,
+    source:'Frisson Lead Intelligence',
+    tags,
+    customFields:customFields.length?customFields:undefined
+  });
+  if(decisionName){
+    contactPayload.firstName=nameParts[0]||undefined;
+    contactPayload.lastName=nameParts.slice(1).join(' ')||undefined;
+    contactPayload.name=decisionName;
+  }
+  let contactId=duplicate?.id||'';
+  let updated=!!duplicate;
+  if(contactId){
+    const {locationId,...updatePayload}=contactPayload;
+    await ghlStrict('PUT',`/contacts/${contactId}`,updatePayload);
+    await updateGhlLeadFields(contactId,fields).catch(()=>null);
+  }else{
+    const created=await ghlStrict('POST','/contacts',contactPayload);
+    contactId=(created.contact||created).id||created.contact?.id||'';
+  }
+  if(!contactId) throw new Error(`GHL contact upsert returned no contact id for ${p.organizationName||p.name||'Frisson prospect'}`);
+  await ghlStrict('POST',`/contacts/${contactId}/tags`,{tags}).catch(()=>{});
+  const note=[
+    `Frisson scraper type: ${frissonModeLabel(currentMode)}`,
+    `Score: ${p.leadScore} - ${p.leadScoreReason||'needs review'}`,
+    `Fit summary: ${p.aiFitSummary||'needs review'}`,
+    `Recommended outreach: ${p.recommendedOutreachAngle||'needs review'}`,
+    `Workflow trigger tag: ${workflowTag}`,
+    `Sources: ${frissonSourceUrls(p).join(', ')||'source review needed'}`
+  ].join('\n');
+  await ghlStrict('POST',`/contacts/${contactId}/notes`,{body:note}).catch(()=>{});
+  let opportunity=await findPartnerOpportunity(contactId,target);
+  if(!opportunity){
+    const created=await createGhlOpportunity({
+      locationId:target.locationId||GHL_LOC,
+      pipelineId:target.pipelineId,
+      pipelineStageId:target.stageId,
+      name:p.organizationName||p.name||'Frisson prospect',
+      status:'open',
+      contactId,
+      monetaryValue:Number(p.leadScore||4)===1?100:Number(p.leadScore||4)===2?50:10,
+      source:'Frisson Lead Intelligence'
+    });
+    opportunity=created.opportunity||created;
+  }
+  return {name:p.organizationName||p.name,contactId,updated,tags,opportunity,pipelineName:target.pipelineName,stageName:target.stageName,leadScore:p.leadScore,leadScoreReason:p.leadScoreReason};
+}
+
+async function importApprovedFrissonLeads(body={},mode='organizations'){
+  const currentMode=frissonMode(mode||body.scraperType||body.prospectingMode);
+  const leads=(Array.isArray(body.leads)?body.leads:[]).map(p=>applyFrissonScoring(p,currentMode));
+  if(!leads.length) throw new Error(`No approved Frisson ${frissonModeLabel(currentMode).toLowerCase()} leads were provided for import.`);
+  const created=[],failed=[];
+  await mapWithConcurrency(leads,GOALL_LEAD_IMPORT_CONCURRENCY,async lead=>{
+    try{created.push(await upsertGhlFrissonLead(lead,currentMode));}catch(e){failed.push({name:lead.organizationName||lead.name,error:e.message});}
+  });
+  const updated=created.filter(x=>x.updated).length;
+  const content=[
+    `Pushed ${created.length} approved Frisson ${frissonModeLabel(currentMode).toLowerCase()} prospect${created.length===1?'':'s'} to GHL.`,
+    updated?`Updated ${updated} existing contact${updated===1?'':'s'} instead of creating duplicates.`:'',
+    `Pipeline: ${frissonPipelineName(currentMode)}`,
+    `Stage: ${frissonStageName(currentMode)}`,
+    `Workflow trigger tag: ${frissonWorkflowTag(currentMode)}`,
+    failed.length?`Failed: ${failed.length}`:''
+  ].filter(Boolean).join('\n');
+  await saveMemoryItem({
+    kind:`frisson_${currentMode}_import`,
+    summary:`Imported ${created.length} Frisson ${currentMode} prospects`,
+    rawText:content+'\n\nRaw leads:\n'+JSON.stringify(leads,null,2),
+    importance:3,
+    metadata:{mode:currentMode,created,failed}
+  }).catch(()=>{});
+  return {ok:true,created,failed,content};
+}
+
+async function frissonCustomFieldStatus(){
+  const ids=await resolveLeadFieldIds().catch(()=>GHL_LEAD_FIELD_IDS);
+  const partnerKeys=['legal_company_name','dba_name','year_founded','years_in_business','headquarters','states_served','service_area_type','number_of_employees','number_of_contractors','annual_revenue_range','number_of_offices','work_model','number_of_nonprofits_served','linkedin_url','source_urls','ai_fit_summary','recommended_outreach_angle','scraper_type','scrape_date','review_needed'];
+  const organizationKeys=['primary_contact','mission_statement_ai_summary','cause_category','population_served','geographic_reach','annual_revenue_range','number_of_employees','number_of_volunteers','number_of_donors','years_in_operation','accepts_online_donations','monthly_giving_program','corporate_sponsors_listed','annual_events','volunteer_program','grant_funded','planned_giving_available','facebook','instagram','linkedin_url','newsletter','recent_activity_last_90_days','source_urls','ai_fit_summary','recommended_outreach_angle','scraper_type','scrape_date','review_needed'];
+  const mapKeys=keys=>keys.map(key=>({key,fieldKey:GHL_LEAD_FIELD_KEYS[key]||'',configured:!!ids[key],id:ids[key]||''}));
+  return {ok:true,partner:mapKeys(partnerKeys),organization:mapKeys(organizationKeys)};
 }
 
 function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){

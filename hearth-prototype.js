@@ -5481,6 +5481,7 @@ function renderWorkspaceActionButtons(actions = []){
       ' class="' + classes.join(' ') + '"',
       spec.workflow ? ' data-workflow-action="' + escapeHtml(spec.workflow) + '"' : '',
       spec.homeAction ? ' data-home-action="' + escapeHtml(spec.homeAction) + '"' : '',
+      spec.packet ? ' data-val-variable-packet="' + escapeHtml(spec.packet) + '"' : '',
       spec.workflow ? ' onclick="event.preventDefault();event.stopPropagation();handleWorkflowAction(this.dataset.workflowAction,this);return false;"' : '',
       spec.homeAction ? ' onclick="event.preventDefault();event.stopPropagation();handleHomeRoomAction(this.dataset.homeAction,this);return false;"' : ''
     ].join('');
@@ -5911,6 +5912,34 @@ function updatePreviewApprovalSummary(){
     importAction.textContent = approved ? 'Import ' + approved + ' approved lead' + (approved === 1 ? '' : 's') : 'No approved leads';
     importAction.disabled = approved === 0;
   }
+}
+
+function activeLeadIntelligenceSource(action = '', extra = {}){
+  const type = activeScraperType || extra.type || '';
+  const session = type ? sessionFor(type) : {};
+  const rows = scraperPreviewList ? Array.from(scraperPreviewList.querySelectorAll('.preview-lead')) : [];
+  const approvedCount = rows.filter((row) => row.dataset.leadReview !== 'held').length;
+  const heldCount = rows.length - approvedCount;
+  return {
+    ...extra,
+    sourceId: extra.sourceId || type || action || 'lead_intelligence',
+    sourceType: extra.sourceType || 'lead_intelligence_workflow',
+    sourceLabel: extra.sourceLabel || (type ? documentTypeLabel(type) + ' Lead Intelligence' : 'Lead Intelligence'),
+    sourceItem: extra.sourceItem || {
+      id: type || 'lead_intelligence',
+      title: extra.sourceLabel || (type ? documentTypeLabel(type) + ' Lead Intelligence' : 'Lead Intelligence'),
+      workflowType: type,
+      criteria: session?.payload || null,
+      previewCount: rows.length,
+      approvedCount,
+      heldCount
+    },
+    workflowType: type,
+    previewCount: rows.length,
+    approvedCount,
+    heldCount,
+    requestedAction: action
+  };
 }
 
 function getScraperCriteria(){
@@ -7058,7 +7087,8 @@ function setScraperLoading(type, message){
     understanding: message.understanding,
     recommendation: message.recommendation,
     actions: [{label: 'Cancel', workflow: 'setup:' + type}],
-    label: 'Lead Intelligence loading workspace'
+    label: 'Lead Intelligence loading workspace',
+    packetReceipt: lastHearthPacketReceipt
   });
 }
 
@@ -7107,13 +7137,14 @@ async function runScraperPreview(type){
         'The most common causes are a missing source key, a broad search that timed out, or a temporary upstream failure.',
         'The existing scraper workflow remains protected; preview and import are still separate.'
       ],
-      recommendation: 'Check connections or narrow the criteria before running the preview again.',
+    recommendation: 'Check connections or narrow the criteria before running the preview again.',
       actions: [
         {label: 'Tune criteria', workflow: 'setup:' + type},
         {label: 'Check connections', workflow: 'connections'},
         {label: 'Open Pipeline', workflow: 'pipeline'}
       ],
-      label: 'Lead Intelligence error workspace'
+      label: 'Lead Intelligence error workspace',
+      packetReceipt: lastHearthPacketReceipt
     });
   }
 }
@@ -7134,6 +7165,7 @@ async function importApprovedScraperLeads(type){
   const approvedRaw = approvedPreview.map((lead) => ({...(lead._raw || lead), _approved: true}));
   if(!approvedRaw.length){
     updatePreviewApprovalSummary();
+    renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
     return;
   }
   setScraperLoading(type, {
@@ -7172,7 +7204,8 @@ async function importApprovedScraperLeads(type){
         {label: 'Check connections', workflow: 'connections'},
         {label: 'Open Pipeline', workflow: 'pipeline'}
       ],
-      label: 'Lead Intelligence import error workspace'
+      label: 'Lead Intelligence import error workspace',
+      packetReceipt: lastHearthPacketReceipt
     });
   }
 }
@@ -7712,23 +7745,23 @@ function renderScraperWorkflow(type, stage = 'setup'){
   const stageRecommendation = workflow[stage + 'Recommendation'] || workflow.setupRecommendation;
   const actionsByStage = {
     setup: [
-      {label: isPartner ? 'Run partner preview' : 'Run preview', workflow: 'preview:' + type},
-      {label: 'Open Pipeline', workflow: 'pipeline'},
-      {label: 'Check connections', workflow: 'connections'}
+      {label: isPartner ? 'Run partner preview' : 'Run preview', workflow: 'preview:' + type, packet:'lead_intelligence_packet'},
+      {label: 'Open Pipeline', workflow: 'pipeline', packet:'lead_intelligence_packet'},
+      {label: 'Check connections', workflow: 'connections', packet:'lead_intelligence_packet'}
     ],
     preview: [
-      {label: 'Run Level 3 verification', workflow: 'verify:' + type},
-      {label: 'Import approved leads', workflow: 'import:' + type},
-      {label: 'Cancel import', workflow: 'cancel:' + type}
+      {label: 'Run Level 3 verification', workflow: 'verify:' + type, packet:'lead_intelligence_packet'},
+      {label: 'Import approved leads', workflow: 'import:' + type, packet:'lead_intelligence_packet'},
+      {label: 'Cancel import', workflow: 'cancel:' + type, packet:'lead_intelligence_packet'}
     ],
     verified: [
-      {label: 'Import approved leads', workflow: 'import:' + type},
-      {label: isPartner ? 'Tune partner type' : 'Tune criteria', workflow: 'setup:' + type},
-      {label: 'Cancel import', workflow: 'cancel:' + type}
+      {label: 'Import approved leads', workflow: 'import:' + type, packet:'lead_intelligence_packet'},
+      {label: isPartner ? 'Tune partner type' : 'Tune criteria', workflow: 'setup:' + type, packet:'lead_intelligence_packet'},
+      {label: 'Cancel import', workflow: 'cancel:' + type, packet:'lead_intelligence_packet'}
     ],
     imported: [
-      {label: 'Open Pipeline', workflow: 'pipeline'},
-      {label: isPartner ? 'Run another partner scrape' : 'Find next batch', workflow: 'setup:' + type},
+      {label: 'Open Pipeline', workflow: 'pipeline', packet:'lead_intelligence_packet'},
+      {label: isPartner ? 'Run another partner scrape' : 'Find next batch', workflow: 'setup:' + type, packet:'lead_intelligence_packet'},
       {label: 'Teach VAL', workflow: 'teach'}
     ]
   };
@@ -7757,7 +7790,8 @@ function renderScraperUtility(type){
     recommendation: workflow.recommendation,
     actions: workflow.actions.map((label) => ({
       label,
-      workflow: label === 'Open Pipeline' ? 'pipeline' : label === 'Teach VAL' ? 'teach' : ''
+      workflow: label === 'Open Pipeline' ? 'pipeline' : label === 'Teach VAL' ? 'teach' : '',
+      packet: label === 'Teach VAL' ? 'val_os_packet' : 'lead_intelligence_packet'
     })),
     label: workflow.lens + ' workspace'
   });
@@ -7768,6 +7802,7 @@ function openScraper(type, stage = 'setup'){
   const rendered = renderScraperWorkflow(type, stage) || renderScraperUtility(type);
   if(!rendered) return;
   openWorkspaceShell('Lead Intelligence workspace');
+  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
 function valWorkspaceCopy(action){
@@ -9058,8 +9093,14 @@ async function handleValAction(action){
 
 async function handleWorkflowAction(action, node = null){
   const workflowPacket = node?.dataset?.valVariablePacket || 'workflow_scoped_packet';
-  const workflowPreflight = await ensureHearthClickPacket({node, packetName:workflowPacket, action});
+  const workflowSource = workflowPacket === 'lead_intelligence_packet'
+    ? activeLeadIntelligenceSource(action, {sourceType:'lead_intelligence_workflow_action', sourceLabel:node?.innerText || 'Lead Intelligence action'})
+    : {};
+  const workflowPreflight = await ensureHearthClickPacket({node, packetName:workflowPacket, action, allowBlockedForInspection:workflowPacket === 'lead_intelligence_packet', source:workflowSource});
   if(!workflowPreflight.ok) return;
+  if(workflowPacket === 'lead_intelligence_packet'){
+    renderHearthPacketReceiptStrip(workflowPreflight.packet || lastHearthPacketReceipt);
+  }
   const [command,type,...rest] = String(action || '').split(':');
   if(command === 'relationshipAllPeople'){
     closeWorkspace();
@@ -10604,6 +10645,7 @@ scraperButtons.forEach((button) => {
     const type = button.dataset.openScraper || '';
     const preflight = await ensureHearthClickPacket({node:button, packetName:'lead_intelligence_packet', action:'lead_intelligence:open:' + type, source:{sourceId:type, sourceType:'lead_intelligence_workflow', sourceLabel:button.innerText || type, sourceItem:{id:type, title:button.innerText || type}}});
     if(!preflight.ok) return;
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     openScraper(type);
   });
 });
@@ -10769,8 +10811,9 @@ scraperPreviewList.addEventListener('click', async (event) => {
   const index = Number(lead.dataset.leadIndex);
   const activeSession = scraperSessions[activeScraperType];
   const selectedLead = activeSession?.previewLeads?.[index] || null;
-  const preflight = await ensureHearthClickPacket({node:choice, packetName:'lead_intelligence_packet', action:'lead_intelligence:preview_choice:' + nextStatus, source:{sourceId:selectedLead?.id || String(index), sourceType:'lead_preview_row', sourceLabel:selectedLead?.name || selectedLead?.company || 'Lead preview row', sourceItem:selectedLead}});
+  const preflight = await ensureHearthClickPacket({node:choice, packetName:'lead_intelligence_packet', action:'lead_intelligence:preview_choice:' + nextStatus, source:activeLeadIntelligenceSource('lead_intelligence:preview_choice:' + nextStatus, {sourceId:selectedLead?.id || String(index), sourceType:'lead_preview_row', sourceLabel:selectedLead?.name || selectedLead?.company || 'Lead preview row', sourceItem:selectedLead})});
   if(!preflight.ok) return;
+  renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   lead.dataset.leadReview = nextStatus;
   lead.querySelectorAll('[data-preview-choice]').forEach((button) => {
     button.classList.toggle('active', button === choice);

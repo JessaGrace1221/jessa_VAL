@@ -54,6 +54,14 @@ test('Hearth Lead Intelligence keeps preview and import endpoints separate', () 
   assert.match(hearthJs, /importUrl:\s*'\/api\/val\/leads\/import-approved'/);
   assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/partners\/discover-preview'/);
   assert.match(hearthJs, /importUrl:\s*'\/api\/val\/partners\/import-approved'/);
+  assert.match(hearthJs, /function activeLeadIntelligenceSource/);
+  assert.match(hearthJs, /previewCount/);
+  assert.match(hearthJs, /approvedCount/);
+  assert.match(hearthJs, /heldCount/);
+  assert.match(hearthJs, /packet:'lead_intelligence_packet'/);
+  assert.match(hearthJs, /workflowPacket === 'lead_intelligence_packet'/);
+  assert.match(hearthJs, /source:activeLeadIntelligenceSource/);
+  assert.match(hearthJs, /renderHearthPacketReceiptStrip\(workflowPreflight\.packet \|\| lastHearthPacketReceipt\)/);
 });
 
 test('Hearth scraper preview requires approve or hold before import', () => {
@@ -62,6 +70,9 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held'/);
   assert.match(hearthJs, /Import ' \+ approved \+ ' approved lead/);
   assert.match(hearthJs, /importAction\.disabled = approved === 0/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
+  assert.match(hearthJs, /renderHearthPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
+  assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
 });
 
 test('Hearth scraper QA can run without calling live endpoints', () => {
@@ -849,7 +860,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=autocorrect-20260707/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=document-preview-safe-actions-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-packets-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
