@@ -859,8 +859,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-actions-top-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-actions-top-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=relationship-folder-direct-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=relationship-folder-direct-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1105,7 +1105,9 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /handleWorkflowAction\(drawerWorkflowAction\.dataset\.workflowAction, drawerWorkflowAction\)/,
     /handleHomeRoomAction\(homeActionButton\.dataset\.homeAction, homeActionButton\)/,
     /ensureHearthClickPacket\(\{node:correspondenceAction, packetName:'email_packet'/,
-    /ensureHearthClickPacket\(\{node:relationshipAction, packetName:'relationship_packet'/,
+    /async function handleRelationshipActionClick/,
+    /ensureHearthClickPacket\(\{node, packetName:'relationship_packet'/,
+    /handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/,
     /ensureHearthClickPacket\(\{node:projectAction, packetName:'project_packet'/,
     /allowBlockedForInspection:true/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
@@ -1541,6 +1543,10 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.return-button\{[\s\S]{0,80}position:sticky/);
   assert.match(hearthJs, /workflow:'relationship:teach_wisdom'/);
   assert.match(hearthJs, /relationshipFolderButtons\.forEach/);
+  assert.match(hearthJs, /async function openRelationshipProfileFromFolder/);
+  assert.match(hearthJs, /renderRelationshipProfile\(profileId, \{\.\.\.profile, profileId\}\)/);
+  assert.match(hearthHtml, /openRelationshipProfileFromFolder\(this\.dataset\.relationshipProfile,this\)/);
+  assert.match(hearthJs, /openRelationshipProfileFromFolder\(button\.dataset\.relationshipProfile, button\)/);
   assert.match(hearthJs, /aria-pressed/);
   assert.match(hearthJs, /Do not let silence become ambiguity/);
   assert.match(hearthCss, /\.relationship-folder-rail/);
@@ -1585,8 +1591,10 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /strategicImportance/);
   assert.match(hearthJs, /renderRelationshipProfile\(profileId, relationshipProfileFromDossier\(data\.dossier, fallback\)\)/);
   assert.match(hearthJs, /if\(!canUseApi\) return/);
-  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);\n    loadRelationshipDossier\(profileId\)/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}loadRelationshipDossier\(profileId\)/);
   assert.match(hearthJs, /source:relationshipSource\(\{\.\.\.profile, profileId\}, 'relationship:open_profile'\)/);
+  assert.match(hearthJs, /await openRelationshipProfileFromFolder\(profileId, relationshipProfileButton\)/);
+  assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
   assert.match(hearthHtml, /data-relationship-action="open_full_file"/);
   assert.match(hearthHtml, /data-relationship-action="ask_alignment"/);
   assert.match(hearthHtml, /data-relationship-section-actions="identity"/);
@@ -1613,8 +1621,9 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /\/api\/relationships\/actions/);
   assert.match(hearthJs, /No email will be sent from this click/);
   assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
-  assert.match(hearthJs, /source:relationshipSource\(activeRelationshipProfile, relationshipAction\.dataset\.relationshipAction\)/);
-  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);\n    handleRelationshipAction/);
+  assert.match(hearthJs, /source:relationshipSource\(activeRelationshipProfile, actionId\)/);
+  assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}await handleRelationshipAction\(actionId\)/);
+  assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
   assert.match(hearthJs, /function closeDrawer/);
   assert.match(hearthJs, /drawerTray\.addEventListener\('click'/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-action\]'\)/);

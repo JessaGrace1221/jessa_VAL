@@ -1814,8 +1814,10 @@ function setRelationshipDetailMode(mode = 'brief'){
   const showIndex = mode === 'index';
   document.querySelector('#relationship-detail')?.classList.toggle('show-index', showIndex);
   relationshipFolderButtons.forEach((button) => {
-    const profile = relationshipProfiles[button.dataset.relationshipProfile];
-    button.classList.toggle('active', !showIndex && activeRelationshipProfile && profile === activeRelationshipProfile);
+    const activeId = activeRelationshipProfile?.profileId || activeRelationshipProfile?.id || '';
+    const profile = relationshipProfiles[button.dataset.relationshipProfile] || {};
+    const profileId = button.dataset.relationshipProfile || profile.profileId || profile.id || '';
+    button.classList.toggle('active', !showIndex && activeRelationshipProfile && profileId === activeId);
     button.setAttribute('aria-pressed', String(!showIndex && button.classList.contains('active')));
   });
 }
@@ -10461,14 +10463,18 @@ document.querySelector('[data-project-create-cancel]')?.addEventListener('click'
 
 projectFileInput?.addEventListener('change', updateProjectFileReceipt);
 
+async function openRelationshipProfileFromFolder(profileId = '', node = null){
+  const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
+  renderRelationshipProfile(profileId, {...profile, profileId});
+  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  loadRelationshipDossier(profileId);
+}
+
 relationshipFolderButtons.forEach((button) => {
-  button.addEventListener('click', async () => {
-    const profileId = button.dataset.relationshipProfile;
-    const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
-    const preflight = await ensureHearthClickPacket({node:button, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    loadRelationshipDossier(profileId);
+  button.addEventListener('click', () => {
+    openRelationshipProfileFromFolder(button.dataset.relationshipProfile, button);
   });
 });
 
@@ -10639,12 +10645,10 @@ drawerTray.addEventListener('click', async (event) => {
   }
   const relationshipProfileButton = event.target.closest('[data-relationship-open-profile]');
   if(relationshipProfileButton){
+    event.preventDefault();
+    event.stopPropagation();
     const profileId = relationshipProfileButton.dataset.relationshipOpenProfile;
-    const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
-    const preflight = await ensureHearthClickPacket({node:relationshipProfileButton, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:relationshipSource({...profile, profileId}, 'relationship:open_profile')});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    loadRelationshipDossier(relationshipProfileButton.dataset.relationshipOpenProfile);
+    await openRelationshipProfileFromFolder(profileId, relationshipProfileButton);
     return;
   }
   const projectProfileButton = event.target.closest('[data-project-open-profile]');
@@ -10656,10 +10660,8 @@ drawerTray.addEventListener('click', async (event) => {
   const relationshipAction = event.target.closest('[data-relationship-action]');
   if(relationshipAction){
     event.preventDefault();
-    const preflight = await ensureHearthClickPacket({node:relationshipAction, packetName:'relationship_packet', action:relationshipAction.dataset.relationshipAction, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, relationshipAction.dataset.relationshipAction)});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    handleRelationshipAction(relationshipAction.dataset.relationshipAction);
+    event.stopPropagation();
+    await handleRelationshipActionClick(relationshipAction.dataset.relationshipAction, relationshipAction);
     return;
   }
   const projectAction = event.target.closest('[data-project-action]');
