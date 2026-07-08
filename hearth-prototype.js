@@ -3547,6 +3547,21 @@ async function handleCorrespondenceAction(action){
   }
 }
 
+async function runCorrespondenceActionClick(correspondenceAction, event){
+  if(!correspondenceAction) return false;
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+    if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+  }
+  const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
+  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review';
+  const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
+  if(!preflight.ok) return true;
+  await handleCorrespondenceAction(correspondenceActionId);
+  return true;
+}
+
 function commitmentLabel(value = ''){
   return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
@@ -10713,13 +10728,7 @@ drawerTray.addEventListener('click', async (event) => {
   }
   const correspondenceAction = event.target.closest('[data-correspondence-action]');
   if(correspondenceAction){
-    event.preventDefault();
-    event.stopPropagation();
-    const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-    const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'review';
-    const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
-    if(!preflight.ok) return;
-    await handleCorrespondenceAction(correspondenceActionId);
+    await runCorrespondenceActionClick(correspondenceAction, event);
     return;
   }
   const correspondenceItem = event.target.closest('[data-correspondence-item]');
@@ -11077,6 +11086,12 @@ scraperPreviewList.addEventListener('click', async (event) => {
     activeSession.previewLeads[index]._approved = nextStatus !== 'held';
   }
   updatePreviewApprovalSummary();
+});
+
+document.querySelectorAll('#correspondence-detail [data-correspondence-action]').forEach((button) => {
+  button.addEventListener('click', (event) => {
+    runCorrespondenceActionClick(button, event);
+  });
 });
 
 switches.forEach((button) => {
