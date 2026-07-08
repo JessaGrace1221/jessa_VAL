@@ -73,6 +73,9 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
+  assert.match(hearthJs, /AbortController/);
+  assert.match(hearthJs, /timeoutMs: 20000/);
+  assert.match(hearthJs, /The preview source did not answer within 20 seconds/);
 });
 
 test('Hearth scraper QA can run without calling live endpoints', () => {
@@ -904,8 +907,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=lead-intelligence-restore-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-restore-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=lead-intelligence-preview-timeout-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=lead-intelligence-preview-timeout-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

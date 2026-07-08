@@ -6255,13 +6255,26 @@ function sessionFor(type){
   return scraperSessions[type];
 }
 
-async function postJson(url, payload){
-  const response = await fetch(url, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  });
+async function postJson(url, payload, options = {}){
+  const controller = options.timeoutMs && window.AbortController ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), options.timeoutMs) : null;
+  let response;
+  try{
+    response = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+      signal: controller?.signal
+    });
+  }catch(error){
+    if(error.name === 'AbortError'){
+      throw new Error(options.timeoutMessage || 'Request timed out before VAL received a usable response.');
+    }
+    throw error;
+  }finally{
+    if(timeoutId) window.clearTimeout(timeoutId);
+  }
   const text = await response.text();
   let data = {};
   try{ data = text ? JSON.parse(text) : {}; }
@@ -7403,7 +7416,10 @@ async function runScraperPreview(type){
     recommendation: 'Let VAL finish the preview, then approve only the records that deserve to enter the pipeline.'
   });
   try{
-    const result = await postJson(config.previewUrl, payload);
+    const result = await postJson(config.previewUrl, payload, {
+      timeoutMs: 20000,
+      timeoutMessage: 'The preview source did not answer within 20 seconds.'
+    });
     const leads = Array.isArray(result.leads) ? result.leads : [];
     session.result = result;
     session.previewLeads = leads.map((lead) => normalizePreviewLead(lead, type));
