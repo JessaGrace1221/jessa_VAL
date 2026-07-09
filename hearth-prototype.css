@@ -651,9 +651,9 @@ button,a{font:inherit}
   border:1px solid rgba(255,249,239,.2);
   border-radius:6px;
   background:
-    radial-gradient(circle at 20% 12%,rgba(255,225,178,.1),transparent 8rem),
-    linear-gradient(180deg,rgba(255,249,239,.13),rgba(255,249,239,.055) 48%,rgba(255,249,239,.035)),
-    linear-gradient(180deg,rgba(33,21,18,.28),rgba(33,21,18,.16));
+    radial-gradient(circle at 20% 12%,rgba(255,225,178,.16),transparent 8rem),
+    linear-gradient(180deg,rgba(255,249,239,.24),rgba(255,249,239,.13) 48%,rgba(255,249,239,.08)),
+    linear-gradient(180deg,rgba(33,21,18,.42),rgba(33,21,18,.26));
   backdrop-filter:blur(20px) saturate(1.08);
   box-shadow:0 16px 42px rgba(13,8,6,.22),inset 0 1px 0 rgba(255,249,239,.16);
   transition:background .28s ease,transform .28s ease,box-shadow .28s ease,opacity .28s ease;
@@ -666,19 +666,19 @@ button,a{font:inherit}
   outline-offset:3px;
 }
 .living-room.active-room{
-  border-color:rgba(255,249,239,.3);
+  border-color:rgba(255,249,239,.38);
   background:
-    radial-gradient(circle at 20% 12%,rgba(255,225,178,.14),transparent 8rem),
-    linear-gradient(180deg,rgba(255,249,239,.18),rgba(255,249,239,.075) 48%,rgba(255,249,239,.045)),
-    linear-gradient(180deg,rgba(33,21,18,.34),rgba(33,21,18,.2));
+    radial-gradient(circle at 20% 12%,rgba(255,225,178,.2),transparent 8rem),
+    linear-gradient(180deg,rgba(255,249,239,.28),rgba(255,249,239,.16) 48%,rgba(255,249,239,.1)),
+    linear-gradient(180deg,rgba(33,21,18,.48),rgba(33,21,18,.3));
   box-shadow:0 18px 48px rgba(13,8,6,.3),inset 0 1px 0 rgba(255,249,239,.18);
 }
 .living-room.room-has-been-held{
   border-color:rgba(239,185,173,.22);
   background:
-    radial-gradient(circle at 20% 12%,rgba(255,225,178,.11),transparent 8rem),
-    linear-gradient(180deg,rgba(255,249,239,.12),rgba(255,249,239,.05) 48%,rgba(255,249,239,.03)),
-    linear-gradient(180deg,rgba(33,21,18,.24),rgba(33,21,18,.14));
+    radial-gradient(circle at 20% 12%,rgba(255,225,178,.15),transparent 8rem),
+    linear-gradient(180deg,rgba(255,249,239,.22),rgba(255,249,239,.12) 48%,rgba(255,249,239,.075)),
+    linear-gradient(180deg,rgba(33,21,18,.38),rgba(33,21,18,.24));
 }
 .room-attended{
   position:absolute;
@@ -715,9 +715,9 @@ button,a{font:inherit}
 .living-room:hover{
   transform:translateY(-2px);
   background:
-    radial-gradient(circle at 20% 12%,rgba(255,225,178,.13),transparent 8rem),
-    linear-gradient(180deg,rgba(255,249,239,.16),rgba(255,249,239,.07) 48%,rgba(255,249,239,.04)),
-    linear-gradient(180deg,rgba(33,21,18,.34),rgba(33,21,18,.2));
+    radial-gradient(circle at 20% 12%,rgba(255,225,178,.2),transparent 8rem),
+    linear-gradient(180deg,rgba(255,249,239,.28),rgba(255,249,239,.15) 48%,rgba(255,249,239,.09)),
+    linear-gradient(180deg,rgba(33,21,18,.48),rgba(33,21,18,.3));
 }
 .living-room p{
   display:flex;
@@ -4995,11 +4995,11 @@ button.drawer-link{
     linear-gradient(135deg,rgba(255,255,252,.68),rgba(248,250,244,.52) 54%,rgba(235,241,226,.34)),
     rgba(255,255,252,.34);
   --frost-open-card:
-    linear-gradient(180deg,rgba(255,255,252,.74),rgba(248,250,244,.6)),
-    rgba(255,255,252,.48);
+    linear-gradient(180deg,rgba(255,255,252,.64),rgba(248,250,244,.48)),
+    rgba(255,255,252,.32);
   --frost-open-card-strong:
-    linear-gradient(180deg,rgba(255,255,252,.8),rgba(248,250,244,.66)),
-    rgba(255,255,252,.52);
+    linear-gradient(180deg,rgba(255,255,252,.72),rgba(248,250,244,.56)),
+    rgba(255,255,252,.42);
   --frost-open-line:rgba(91,105,79,.16);
   --frost-open-shadow:0 20px 54px rgba(18,24,18,.12);
   --frost-open-soft-shadow:0 12px 28px rgba(18,24,18,.08);
@@ -5161,15 +5161,15 @@ button.drawer-link{
 .drawer-tray :is([aria-pressed="true"],.active,.sync,.connected,.ready-review,[data-review-decision="approved"]),
 .workspace-panel :is([aria-pressed="true"],.active,.connected,.ready-review,[data-review-decision="approved"]){
   background:
-    linear-gradient(180deg,rgba(255,255,252,.86),rgba(238,246,230,.68)),
-    rgba(232,241,220,.54);
+    linear-gradient(180deg,rgba(255,255,252,.72),rgba(238,246,230,.54)),
+    rgba(232,241,220,.38);
   border-color:rgba(91,105,79,.26);
 }
 .drawer-tray :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]),
 .workspace-panel :is(.needs-review,.failed,[data-anchor-state="needs_match"],[data-review-decision="needs_edit"]){
   background:
-    linear-gradient(180deg,rgba(255,255,252,.86),rgba(252,241,237,.66)),
-    rgba(255,255,252,.54);
+    linear-gradient(180deg,rgba(255,255,252,.72),rgba(252,241,237,.52)),
+    rgba(255,255,252,.38);
   border-color:rgba(177,112,100,.22);
 }
 .drawer-tray :is(h2,h3,h4,strong,b),
@@ -5223,11 +5223,11 @@ button.drawer-link{
 }
 .hearth-shell[data-distance="judgment"] .living-rooms{
   transform:translate(-50%,16px) scale(.985);
-  opacity:.64;
+  opacity:.82;
   filter:saturate(.9);
 }
 .hearth-shell[data-distance="judgment"] .living-room:not(.active-room){
-  opacity:.42;
+  opacity:.66;
 }
 .hearth-shell.desk-settling .hearth-light{
   animation:desk-return-glow .62s ease both;

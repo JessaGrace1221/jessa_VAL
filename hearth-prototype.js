@@ -12692,6 +12692,7 @@ document.addEventListener('click', (event) => {
     '.calendar-tab',
     '.drawer-pull',
     '.drawer-link',
+    '.living-room',
     '.observer-board-button',
     '.teach-pen',
     '.linkedin-widget',
@@ -12997,7 +12998,11 @@ rooms.forEach((room) => {
     if(hearth.classList.contains('drawer-open')) return;
     if(event.target.closest('button')) return;
     const actionButton = room.querySelector('.room-action');
-    if(actionButton) handlePrimaryAction(actionButton);
+    if(actionButton){
+      event.preventDefault();
+      event.stopPropagation();
+      handlePrimaryAction(actionButton);
+    }
   });
 
   room.addEventListener('keydown', (event) => {

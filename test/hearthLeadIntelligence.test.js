@@ -992,8 +992,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-meeting-prep-orb-20260708c/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-meeting-prep-orb-20260708c/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-card-click-and-frost-20260708d/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-card-click-and-frost-20260708d/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1241,7 +1241,7 @@ test('Hearth client preflights action clicks with packet receipts before dispatc
     /handlePrimaryAction\(button\)/,
     /room\.querySelector\(/,
     /\.room-action/,
-    /if\(actionButton\) handlePrimaryAction\(actionButton\)/,
+    /event\.stopPropagation\(\);[\s\S]{0,80}handlePrimaryAction\(actionButton\)/,
     /routeWorkspaceActionClick\(event\)/,
     /handleWorkflowAction\(drawerWorkflowAction\.dataset\.workflowAction, drawerWorkflowAction\)/,
     /handleHomeRoomAction\(homeActionButton\.dataset\.homeAction, homeActionButton\)/,
@@ -1916,4 +1916,5 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-action\]'\)/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-open-room\]'\)/);
   assert.match(hearthJs, /openWorkspace\(roomButton\.dataset\.openRoom\)/);
+  assert.match(hearthJs, /'\.living-room'/);
 });
