@@ -3472,7 +3472,7 @@ function renderCorrespondenceList(){
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty';
-    empty.innerHTML = '<span>Clear</span><p>No conversation needs executive attention right now.</p>';
+    empty.innerHTML = '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p>';
     correspondenceList.appendChild(empty);
     return;
   }
@@ -3676,11 +3676,11 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   activeCorrespondenceItem = item || currentCorrespondenceItems[0] || null;
   renderCorrespondenceList();
   const selected = activeCorrespondenceItem;
-  setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Ready');
-  setCorrespondenceField('title', selected?.title || 'Select a prepared reply');
-  setCorrespondenceField('summary', selected?.summary || 'Edit the draft, send it, or work with VAL on this conversation.');
+  setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Clear');
+  setCorrespondenceField('title', selected?.title || 'No Executive Inbox conversations');
+  setCorrespondenceField('summary', selected?.summary || 'VAL has not found a connected Gmail thread that needs executive judgment yet.');
   setCorrespondenceField('draft-title', selected ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
-  setCorrespondenceField('draft-note', selected ? 'Editable private draft. Nothing sends until approved.' : 'Private draft. Nothing sends until approved.');
+  setCorrespondenceField('draft-note', selected ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.');
   renderCorrespondenceThread(selected);
   renderCorrespondenceIntelligence(selected);
   if(correspondenceDraftBody){
@@ -3936,7 +3936,7 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
-  currentCorrespondenceItems = localCorrespondenceItems.slice();
+  currentCorrespondenceItems = canUseApi ? [] : localCorrespondenceItems.slice();
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
   if(!canUseApi){
@@ -3950,7 +3950,7 @@ async function hydrateCorrespondenceDrawer(){
     ]);
     const merged = correspondenceItemsFromReady(ready).concat((drafts.drafts || []).map(normalizeCorrespondenceDraft));
     const byId = new Map();
-    merged.concat(localCorrespondenceItems).forEach((item) => {
+    merged.forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
     currentCorrespondenceItems = Array.from(byId.values());
@@ -3959,6 +3959,10 @@ async function hydrateCorrespondenceDrawer(){
     await hydrateCorrespondenceRules();
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
+    currentCorrespondenceItems = [];
+    activeCorrespondenceItem = null;
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not load live Gmail-classified conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
   }
 }
