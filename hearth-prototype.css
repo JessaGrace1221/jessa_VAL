@@ -843,6 +843,7 @@ button,a{font:inherit}
 }
 .hearth-shell .desk-workspace[aria-hidden="false"]{
   visibility:visible;
+  z-index:1000;
 }
 .hearth-shell.calendar-open .desk-companions,
 .hearth-shell.calendar-prep-open .desk-companions,
@@ -1526,6 +1527,9 @@ button,a{font:inherit}
   bottom:auto;
   width:min(520px,calc(100vw - 36px));
   transform:translate(-50%,-50%) scale(.985);
+}
+.hearth-shell .desk-workspace.home-cowork-mode[aria-hidden="false"]{
+  z-index:1200;
 }
 .hearth-shell[data-distance="judgment"] .desk-workspace.home-cowork-mode{
   transform:translate(-50%,-50%) scale(1);
@@ -4988,14 +4992,14 @@ button.drawer-link{
 /* System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan. */
 :root{
   --frost-open-surface:
-    linear-gradient(135deg,rgba(255,255,252,.58),rgba(248,250,244,.42) 54%,rgba(235,241,226,.26)),
-    rgba(255,255,252,.24);
+    linear-gradient(135deg,rgba(255,255,252,.68),rgba(248,250,244,.52) 54%,rgba(235,241,226,.34)),
+    rgba(255,255,252,.34);
   --frost-open-card:
-    linear-gradient(180deg,rgba(255,255,252,.68),rgba(248,250,244,.52)),
-    rgba(255,255,252,.38);
+    linear-gradient(180deg,rgba(255,255,252,.74),rgba(248,250,244,.6)),
+    rgba(255,255,252,.48);
   --frost-open-card-strong:
-    linear-gradient(180deg,rgba(255,255,252,.74),rgba(248,250,244,.58)),
-    rgba(255,255,252,.42);
+    linear-gradient(180deg,rgba(255,255,252,.8),rgba(248,250,244,.66)),
+    rgba(255,255,252,.52);
   --frost-open-line:rgba(91,105,79,.16);
   --frost-open-shadow:0 20px 54px rgba(18,24,18,.12);
   --frost-open-soft-shadow:0 12px 28px rgba(18,24,18,.08);

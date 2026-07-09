@@ -40,6 +40,9 @@ const drawerPull = document.querySelector('.drawer-pull');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
 const drawerTray = document.querySelector('#drawer-tray');
 const drawerCoworkIcon = document.querySelector('[data-drawer-cowork-icon]');
+if(drawerCoworkIcon && drawerCoworkIcon.parentElement !== document.body){
+  document.body.appendChild(drawerCoworkIcon);
+}
 const valDrawerLink = document.querySelector('.val-drawer-link');
 const valDetail = document.querySelector('#val-detail');
 const closeValDetail = document.querySelector('.close-val-detail');
@@ -5025,8 +5028,9 @@ function updateDrawerCoworkIcon(){
     delete drawerCoworkIcon.dataset.drawerCoworkMode;
     return;
   }
-  let mode = retrievalSystem?.classList.contains('open') ? activeDrawerCoworkMode() : '';
   const workspaceOpen = deskWorkspace?.getAttribute('aria-hidden') === 'false';
+  let mode = hearth.classList.contains('calendar-prep-open') && workspaceOpen ? 'meeting_prep' : '';
+  if(!mode) mode = retrievalSystem?.classList.contains('open') ? activeDrawerCoworkMode() : '';
   if(!mode && workspaceOpen && !isCleanCoworkOpen) mode = 'workspace';
   drawerCoworkIcon.hidden = !mode;
   if(mode){
@@ -5052,6 +5056,11 @@ async function openDrawerCoworkFromIcon(event){
     openCoworkFromClarityWorkspace();
     return;
   }
+  if(mode === 'meeting_prep'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'meeting_prep_packet';
+    openMeetingPrepCoworkSession();
+    return;
+  }
   const packetByMode = {
     relationship: 'relationship_packet',
     project: 'project_packet',
@@ -5059,7 +5068,8 @@ async function openDrawerCoworkFromIcon(event){
     correspondence: 'email_packet',
     commitment: 'commitment_packet',
     document: 'document_packet',
-    val: 'val_packet'
+    val: 'val_packet',
+    meeting_prep: 'meeting_prep_packet'
   };
   drawerCoworkIcon.dataset.valVariablePacket = packetByMode[mode] || 'cowork_packet';
   openContextualCoworkSession(drawerCoworkContext(mode));
@@ -6120,6 +6130,7 @@ function renderMeetingPrepExecutiveBrief(briefing = {}){
     briefing.missing.length ? '<section class="meeting-prep-section meeting-prep-missing"><h3>Still Missing</h3>' + renderMeetingPrepList(briefing.missing) + '</section>' : ''
   ].filter(Boolean).join('');
   workspaceActions.innerHTML = renderWorkspaceActionButtons([{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}]);
+  updateDrawerCoworkIcon();
 }
 
 function renderMeetingPrepResult(result){
@@ -6145,6 +6156,7 @@ async function runMeetingPrep(){
     label: 'Meeting prep loading workspace',
     suppressClarityStandard:true
   });
+  updateDrawerCoworkIcon();
   try{
     const result = await postJson('/api/val/calendar/meeting-prep', {event});
     renderMeetingPrepResult(result);
@@ -6163,6 +6175,7 @@ async function runMeetingPrep(){
       label: 'Meeting prep error workspace',
       suppressClarityStandard:true
     });
+    updateDrawerCoworkIcon();
   }
 }
 
@@ -8651,7 +8664,7 @@ function openMeetingPrepCoworkSession(){
   const seed = briefing.coworkSeed || meetingPrepCoworkSeed(briefing);
   openContextualCoworkSession({
     returnTarget: 'meeting',
-    title: 'Co-Work with VAL before ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting') + '.',
+    title: 'Meeting Prep: ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting'),
     meaning: 'This chat is scoped to the Meeting Prep brief. Use it to sharpen how you enter the room.',
     context: [
       'Meeting: ' + compactSentence(briefing.eventTitle || meetingPrepEventTitle(event), 'Meeting'),
@@ -9217,7 +9230,7 @@ function openWorkspaceShell(label, options = {}){
   });
   deskWorkspace.setAttribute('aria-label', label || 'Decision workspace');
   updateDrawerCoworkIcon();
-  if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
+  if(!deskWorkspace.classList.contains('home-cowork-mode') && window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
     drawerTray.scrollTop = 0;
     window.requestAnimationFrame(() => {
       deskWorkspace.scrollTop = 0;
@@ -11032,15 +11045,19 @@ function calendarPacketSourceFromEvent(event = {}, index = 0){
 async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0){
   const event = currentCalendarEvents[eventIndex] || currentCalendarEvents[0] || {};
   activeMeetingPrepEvent = event;
-  const preflight = await ensureHearthClickPacket({
+  const prepPromise = openMeetingPrep();
+  ensureHearthClickPacket({
     node,
     packetName:'timeline_packet',
     action:'timeline:meeting_prep',
     source:calendarPacketSourceFromEvent(event, eventIndex),
     allowBlockedForInspection:true
+  }).then((preflight) => {
+    if(preflight.ok) renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {
+    // Meeting prep should remain usable even if the audit receipt is delayed.
   });
-  if(!preflight.ok) return;
-  await openMeetingPrep();
+  await prepPromise;
 }
 
 async function openCalendarPanelWithPacket(node = calendarTab){
@@ -11809,12 +11826,14 @@ async function handleHomeRoomAction(action, node = null){
 
 async function openMeetingPrep(){
   closeCalendarPanel();
+  workspaceReturnTarget = 'meeting';
   hearth.dataset.distance = 'judgment';
   hearth.classList.add('calendar-prep-open');
   deskWorkspace.setAttribute('aria-hidden', 'false');
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
+  updateDrawerCoworkIcon();
   await runMeetingPrep();
 }
 

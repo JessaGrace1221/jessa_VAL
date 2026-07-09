@@ -771,6 +771,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function meetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function renderMeetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function openMeetingPrepCoworkSession/);
+  assert.match(hearthJs, /hearth\.classList\.contains\('calendar-prep-open'\) && workspaceOpen \? 'meeting_prep'/);
+  assert.match(hearthJs, /const prepPromise = openMeetingPrep\(\)/);
+  assert.match(hearthJs, /if\(mode === 'meeting_prep'\)\{[\s\S]{0,140}openMeetingPrepCoworkSession\(\)/);
   assert.match(hearthJs, /function meetingPrepHasUsefulContext/);
   assert.match(hearthJs, /only the calendar title and time are available/);
   assert.match(hearthJs, /Executive Readiness/);
@@ -989,8 +992,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-orb-clean-overlay-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-orb-clean-overlay-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-meeting-prep-orb-20260708c/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-meeting-prep-orb-20260708c/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
