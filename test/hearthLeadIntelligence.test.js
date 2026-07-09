@@ -75,7 +75,9 @@ test('Hearth Lead Intelligence keeps preview and import endpoints separate', () 
 test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthHtml, /Lead Sourcing/);
   assert.match(hearthHtml, /Two starter scraper definitions are ready/);
-  assert.match(hearthHtml, /<i>Level 1<\/i><i>Level 2<\/i><i>Level 3<\/i><i>GHL<\/i>/);
+  assert.match(hearthHtml, /Run organization scraper/);
+  assert.match(hearthHtml, /Run partner scraper/);
+  assert.match(hearthHtml, /Train this scraper/);
   assert.match(hearthJs, /lead-sourcing-board/);
   assert.match(hearthJs, /<span>Level 1<\/span><h4>Discovery<\/h4>/);
   assert.match(hearthJs, /<span>Level 2<\/span><h4>Decision Maker<\/h4>/);
@@ -85,6 +87,12 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held'/);
   assert.match(hearthJs, /Import ' \+ approved \+ ' approved lead/);
   assert.match(hearthJs, /importAction\.disabled = approved === 0/);
+  assert.match(hearthJs, /drawerImportAction\.disabled = approved === 0/);
+  assert.match(hearthHtml, /data-lead-sourcing-drawer-workbench/);
+  assert.match(hearthHtml, /data-lead-drawer-preview/);
+  assert.match(hearthHtml, /data-lead-drawer-action="train"/);
+  assert.match(hearthJs, /leadSourcingEmptyBoard\(\)/);
+  assert.match(hearthJs, /await runScraperPreview\(type\)/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
@@ -106,7 +114,9 @@ test('Lead Intelligence remains reachable from the office drawers', () => {
   assert.match(hearthJs, /scrollLeadIntelligenceActionsIntoView\(\)/);
   assert.match(hearthJs, /function restoreLeadIntelligenceWindow/);
   assert.match(hearthJs, /workspaceReturnTarget === 'source'/);
-  assert.match(hearthJs, /openWorkspaceShell\('Lead Intelligence workspace', \{returnTarget:'source'\}\)/);
+  assert.match(hearthJs, /function handleLeadDrawerAction/);
+  assert.match(hearthJs, /function trainLeadScraper/);
+  assert.match(hearthJs, /function saveLeadScraperTraining/);
 });
 
 test('Lead Intelligence drawer opens only its own detail panel', () => {

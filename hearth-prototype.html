@@ -870,49 +870,26 @@
           <div>
             <p class="drawer-kicker">Lead Intelligence</p>
             <h3>Lead Sourcing</h3>
-            <p>Define the two starter scrapers, watch discovery move through three levels, then import only approved records.</p>
+            <p>Choose a scraper, watch it move through three levels, then import only approved records.</p>
           </div>
           <button type="button" class="close-source-detail">Close</button>
         </div>
-        <div class="lead-intelligence-hero">
+        <div class="lead-sourcing-control-bar" aria-label="Lead sourcing controls">
+          <button type="button" data-open-scraper="organizations">Run organization scraper</button>
+          <button type="button" data-open-scraper="partners">Run partner scraper</button>
+          <button type="button" data-lead-drawer-action="train">Train this scraper</button>
+        </div>
+        <section class="lead-sourcing-drawer-workbench" data-lead-sourcing-drawer-workbench>
+          <div class="scraper-preview-list" data-lead-drawer-preview aria-label="Lead sourcing board"></div>
+          <div class="scraper-criteria-panel" data-lead-drawer-criteria aria-label="Train Lead Intelligence scraper" hidden></div>
+        </section>
+        <div class="lead-intelligence-hero lead-sourcing-context">
           <div>
             <span>Jessa VAL</span>
             <strong>Two starter scraper definitions are ready.</strong>
-            <small>The definition controls criteria, sources, CRM destination, approval rules, and import behavior.</small>
+            <small>Training updates criteria, sources, CRM destination, approval rules, and import behavior for this VAL.</small>
           </div>
           <a href="./dashboard.html" class="source-action primary">Open Pipeline</a>
-        </div>
-        <div class="source-list">
-          <article class="source-card lead-scraper-card active">
-            <span>Organizations / Non-Profits</span>
-            <strong>Find mission-aligned organizations</strong>
-            <small>Set market, criteria, and result count. VAL checks public sources and GHL duplicates first.</small>
-            <div class="scraper-steps" aria-label="Organizations and non-profits scraper steps">
-              <i>Level 1</i><i>Level 2</i><i>Level 3</i><i>GHL</i>
-            </div>
-            <button type="button" data-open-scraper="organizations">Start organization scrape</button>
-          </article>
-          <article class="source-card lead-scraper-card active">
-            <span>Partners</span>
-            <strong>Find strategic partner candidates</strong>
-            <small>Choose partner type and market. VAL scores potential reach and partnership fit.</small>
-            <div class="scraper-steps" aria-label="Partners scraper steps">
-              <i>Level 1</i><i>Level 2</i><i>Level 3</i><i>GHL</i>
-            </div>
-            <button type="button" data-open-scraper="partners">Run partner scrape</button>
-          </article>
-          <article class="source-card lead-scraper-card sync">
-            <span>Approval Gate</span>
-            <strong>Preview before import</strong>
-            <small>The user selects approved leads before VAL creates contacts, tags, fields, notes, and opportunities.</small>
-            <button type="button" data-open-scraper="approval">View approval flow</button>
-          </article>
-          <article class="source-card lead-scraper-card quiet">
-            <span>Connections</span>
-            <strong>Sources and CRM must be ready</strong>
-            <small>Outscraper, enrichment tools, and GHL credentials are checked before the workflow runs.</small>
-            <button type="button" data-open-scraper="connections">Check connections</button>
-          </article>
         </div>
       </div>
       <button class="drawer-cowork-orb" type="button" data-drawer-cowork-icon aria-label="Open VAL workspace" hidden>

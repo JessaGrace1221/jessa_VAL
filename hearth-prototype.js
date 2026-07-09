@@ -28,8 +28,11 @@ const workspacePapers = {
 };
 const workspaceGrid = document.querySelector('.workspace-grid');
 const workspaceActions = document.querySelector('.workspace-actions');
+const leadSourcingDrawerWorkbench = document.querySelector('[data-lead-sourcing-drawer-workbench]');
 const scraperCriteriaPanel = document.querySelector('.scraper-criteria-panel');
 const scraperPreviewList = document.querySelector('.scraper-preview-list');
+const leadDrawerCriteriaPanel = document.querySelector('[data-lead-drawer-criteria]') || scraperCriteriaPanel;
+const leadDrawerPreviewList = document.querySelector('[data-lead-drawer-preview]') || scraperPreviewList;
 const workspaceInputPanel = document.querySelector('.workspace-input-panel');
 const workspacePacketReceipt = document.querySelector('[data-workspace-packet-receipt]');
 const calendarPacketReceipt = document.querySelector('[data-calendar-packet-receipt]');
@@ -7438,14 +7441,45 @@ function renderCriteriaField(field){
   return '<label class="criteria-field">' + label + '<input' + dataLabel + ' type="' + (field.type || 'text') + '" value="' + field.value + '"></label>';
 }
 
-function renderScraperCriteria(workflow){
+function revealLeadSourcingWorkbench(){
+  if(!leadSourcingDrawerWorkbench) return;
+  leadSourcingDrawerWorkbench.hidden = false;
+}
+
+function scrollLeadSourcingWorkbenchIntoView(){
+  if(!leadSourcingDrawerWorkbench) return;
+  window.requestAnimationFrame(() => {
+    leadSourcingDrawerWorkbench.scrollIntoView({block:'start', inline:'nearest', behavior:'smooth'});
+  });
+}
+
+function leadSourcingEmptyBoard(){
+  if(!leadDrawerPreviewList) return;
+  leadDrawerPreviewList.hidden = false;
+  leadDrawerPreviewList.innerHTML = [
+    '<div class="preview-list-head"><span>Live sourcing board</span><small>Select one of the two scrapers above to begin.</small></div>',
+    '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>GHL duplicate review and source evidence land here.</small></article></section>',
+    '</div>'
+  ].join('');
+}
+
+function renderScraperCriteria(workflow, type){
   if(!workflow.criteria) return;
   const criteria = workflow.criteria;
-  scraperCriteriaPanel.hidden = false;
-  scraperCriteriaPanel.innerHTML = [
+  revealLeadSourcingWorkbench();
+  leadDrawerCriteriaPanel.hidden = false;
+  if(leadDrawerPreviewList) leadDrawerPreviewList.hidden = true;
+  leadDrawerCriteriaPanel.innerHTML = [
     '<section class="criteria-card">',
       '<h3>' + criteria.title + '</h3>',
       '<div class="criteria-grid">' + criteria.fields.map(renderCriteriaField).join('') + '</div>',
+      '<div class="lead-sourcing-actions">',
+        '<button type="button" data-lead-drawer-action="save-trainer" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Save training</button>',
+        '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + (type || activeScraperType || '') + '">Run this scraper</button>',
+      '</div>',
     '</section>',
     '<section class="criteria-card source-readiness">',
       '<h3>Source readiness</h3>',
@@ -7459,8 +7493,10 @@ function renderScraperPreviewList(workflow, stage){
   const leads = workflow.previewLeads || [];
   if(!leads.length || stage === 'setup') return;
   const stageLabel = stage === 'imported' ? 'Imported records' : stage === 'verified' ? 'Verified preview' : 'Preview records';
-  scraperPreviewList.hidden = false;
-  scraperPreviewList.innerHTML = [
+  revealLeadSourcingWorkbench();
+  if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
+  leadDrawerPreviewList.hidden = false;
+  leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>Details create trust before approval.</small></div>',
     '<div class="lead-sourcing-board" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div>' +
@@ -7495,16 +7531,22 @@ function renderScraperPreviewList(workflow, stage){
           '</article>'
         )).join('') +
       '</section>',
+    '</div>',
+    '<div class="lead-sourcing-actions">',
+      '<button type="button" data-lead-drawer-action="import" data-lead-drawer-type="' + (activeScraperType || '') + '">Import approved leads</button>',
+      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (activeScraperType || '') + '">Train this scraper</button>',
     '</div>'
   ].join('');
   updatePreviewApprovalSummary();
 }
 
 function renderLeadSourcingProgress(type){
-  if(!scraperPreviewList) return;
+  if(!leadDrawerPreviewList) return;
   const definition = leadScraperDefinitions[type] || {};
-  scraperPreviewList.hidden = false;
-  scraperPreviewList.innerHTML = [
+  revealLeadSourcingWorkbench();
+  if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
+  leadDrawerPreviewList.hidden = false;
+  leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering GHL.</small></div>',
     '<div class="lead-sourcing-board loading" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
@@ -7514,12 +7556,31 @@ function renderLeadSourcingProgress(type){
   ].join('');
 }
 
+function renderLeadSourcingMessage(type, title, details = [], actionLabel = 'Train this scraper'){
+  if(!leadDrawerPreviewList) return;
+  const definition = leadScraperDefinitions[type] || {};
+  revealLeadSourcingWorkbench();
+  if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
+  leadDrawerPreviewList.hidden = false;
+  leadDrawerPreviewList.innerHTML = [
+    '<div class="preview-list-head"><span>' + escapeHtml(title) + '</span><small>Nothing has been imported into GHL.</small></div>',
+    '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Paused</strong><span>' + escapeHtml(details[1] || 'Decision-maker enrichment did not run yet.') + '</span><small>No contact was invented.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Protected</strong><span>' + escapeHtml(details[2] || 'Approval and duplicate gates remain in place.') + '</span><small>No CRM write happened.</small></article></section>',
+    '</div>',
+    '<div class="lead-sourcing-actions">',
+      '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'organizations') + '">' + escapeHtml(actionLabel) + '</button>',
+    '</div>'
+  ].join('');
+}
+
 function updatePreviewApprovalSummary(){
-  const rows = Array.from(scraperPreviewList.querySelectorAll('.preview-lead'));
+  const rows = Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead'));
   if(!rows.length) return;
   const approved = rows.filter((row) => row.dataset.leadReview !== 'held').length;
   const held = rows.length - approved;
-  const summary = scraperPreviewList.querySelector('[data-preview-summary]');
+  const summary = leadDrawerPreviewList.querySelector('[data-preview-summary]');
   if(summary){
     summary.textContent = approved + ' approved / ' + held + ' held';
   }
@@ -7528,12 +7589,17 @@ function updatePreviewApprovalSummary(){
     importAction.textContent = approved ? 'Import ' + approved + ' approved lead' + (approved === 1 ? '' : 's') : 'No approved leads';
     importAction.disabled = approved === 0;
   }
+  const drawerImportAction = leadDrawerPreviewList.querySelector('[data-lead-drawer-action="import"]');
+  if(drawerImportAction){
+    drawerImportAction.textContent = approved ? 'Import ' + approved + ' approved lead' + (approved === 1 ? '' : 's') : 'No approved leads';
+    drawerImportAction.disabled = approved === 0;
+  }
 }
 
 function activeLeadIntelligenceSource(action = '', extra = {}){
   const type = activeScraperType || extra.type || '';
   const session = type ? sessionFor(type) : {};
-  const rows = scraperPreviewList ? Array.from(scraperPreviewList.querySelectorAll('.preview-lead')) : [];
+  const rows = leadDrawerPreviewList ? Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead')) : [];
   const approvedCount = rows.filter((row) => row.dataset.leadReview !== 'held').length;
   const heldCount = rows.length - approvedCount;
   return {
@@ -7559,7 +7625,7 @@ function activeLeadIntelligenceSource(action = '', extra = {}){
 }
 
 function getScraperCriteria(){
-  return Array.from(scraperCriteriaPanel.querySelectorAll('[data-criteria-label]')).reduce((values, field) => {
+  return Array.from(leadDrawerCriteriaPanel.querySelectorAll('[data-criteria-label]')).reduce((values, field) => {
     values[field.dataset.criteriaLabel] = field.value;
     values[field.dataset.criteriaKey] = field.value;
     return values;
@@ -8984,6 +9050,7 @@ function setScraperLoading(type, message){
 }
 
 async function runScraperPreview(type){
+  activeScraperType = type;
   if(!canUseApi){
     openScraper(type, 'preview');
     return;
@@ -9023,6 +9090,11 @@ async function runScraperPreview(type){
     }
     renderScraperWorkflow(type, 'preview');
   }catch(error){
+    renderLeadSourcingMessage(type, 'Scraper needs attention', [
+      error.message,
+      'Most failures are missing source keys, overly broad search criteria, or a temporary upstream timeout.',
+      'Preview and import remain separate; nothing entered the CRM.'
+    ]);
     setWorkspaceContent({
       lens: workflow.lens,
       title: 'The scraper needs attention before it can run.',
@@ -9045,6 +9117,7 @@ async function runScraperPreview(type){
 }
 
 async function importApprovedScraperLeads(type){
+  activeScraperType = type;
   if(!canUseApi){
     openScraper(type, 'imported');
     return;
@@ -9052,7 +9125,7 @@ async function importApprovedScraperLeads(type){
   const config = scraperApiConfig[type];
   const workflow = scraperWorkflows[type];
   const session = sessionFor(type);
-  const rows = Array.from(scraperPreviewList.querySelectorAll('.preview-lead'));
+  const rows = Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead'));
   const approvedIndexes = rows
     .filter((row) => row.dataset.leadReview !== 'held')
     .map((row) => Number(row.dataset.leadIndex));
@@ -9084,6 +9157,11 @@ async function importApprovedScraperLeads(type){
     ];
     renderScraperWorkflow(type, 'imported');
   }catch(error){
+    renderLeadSourcingMessage(type, 'Import did not complete', [
+      error.message,
+      'Preview data is still held in this session.',
+      'Held records and unapproved records were not sent.'
+    ], 'Review scraper');
     setWorkspaceContent({
       lens: workflow.lens,
       title: 'The import did not complete.',
@@ -9675,6 +9753,7 @@ function restoreLeadIntelligenceWindow(){
   document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
+  if(leadDrawerPreviewList && !leadDrawerPreviewList.innerHTML.trim()) leadSourcingEmptyBoard();
   scrollLeadIntelligenceActionsIntoView();
   updateCloseAllDrawersButton();
 }
@@ -9880,7 +9959,7 @@ function renderScraperWorkflow(type, stage = 'setup'){
     actions: actionsByStage[stage] || actionsByStage.setup,
     label: (isPartner ? 'Partner' : 'Organization') + ' scraper workspace'
   });
-  if(stage === 'setup') renderScraperCriteria(workflow);
+  if(stage === 'setup') renderScraperCriteria(workflow, type);
   renderScraperPreviewList(workflow, stage);
   return true;
 }
@@ -9904,11 +9983,70 @@ function renderScraperUtility(type){
   return true;
 }
 
+function trainLeadScraper(type){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  openScraper(selectedType, 'setup');
+}
+
+function saveLeadScraperTraining(type){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const criteria = getScraperCriteria();
+  saveLeadScraperCriteria(selectedType, criteria);
+  activeScraperType = selectedType;
+  if(leadDrawerPreviewList){
+    leadDrawerPreviewList.hidden = false;
+    leadDrawerPreviewList.innerHTML = [
+      '<div class="preview-list-head"><span>Training saved</span><small>The next run will use this scraper definition.</small></div>',
+      '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
+        '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' definition updated</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the new sequence.</small></article></section>',
+        '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
+        '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered GHL.</small></article></section>',
+      '</div>',
+      '<div class="lead-sourcing-actions">',
+        '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + selectedType + '">Run this scraper</button>',
+        '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + selectedType + '">Train this scraper</button>',
+      '</div>'
+    ].join('');
+  }
+  if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
+  updatePreviewApprovalSummary();
+  renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
+}
+
+async function handleLeadDrawerAction(action, type, node){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  const preflight = await ensureHearthClickPacket({
+    node,
+    packetName:'lead_intelligence_packet',
+    action:'lead_intelligence:' + action + ':' + selectedType,
+    allowBlockedForInspection:true,
+    source:activeLeadIntelligenceSource(action, {type:selectedType, sourceType:'lead_intelligence_drawer_action', sourceLabel:node?.innerText || action})
+  });
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  if(action === 'train'){
+    trainLeadScraper(selectedType);
+    return;
+  }
+  if(action === 'save-trainer'){
+    saveLeadScraperTraining(selectedType);
+    return;
+  }
+  if(action === 'preview'){
+    await runScraperPreview(selectedType);
+    return;
+  }
+  if(action === 'import'){
+    await importApprovedScraperLeads(selectedType);
+  }
+}
+
 function openScraper(type, stage = 'setup'){
   const rendered = renderScraperWorkflow(type, stage) || renderScraperUtility(type);
   if(!rendered) return;
-  openWorkspaceShell('Lead Intelligence workspace', {returnTarget:'source'});
-  renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
+  revealLeadSourcingWorkbench();
+  scrollLeadSourcingWorkbenchIntoView();
+  renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
 function valWorkspaceCopy(action){
@@ -12813,6 +12951,7 @@ sourceDrawerLink.addEventListener('click', () => {
   document.querySelector('#source-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
     drawerIndexPacketReceipt({node:sourceDrawerLink, packetName:'lead_intelligence_packet', action:'drawer:lead_intelligence', label:'Lead Intelligence drawer', downstreamConsumers:['lead_intelligence_drawer','preview_gate','ghl_handoff']});
+    if(leadDrawerPreviewList && !leadDrawerPreviewList.innerHTML.trim()) leadSourcingEmptyBoard();
     scrollLeadIntelligenceActionsIntoView();
   } else {
     renderDrawerPacketReceiptStrip(null);
@@ -13419,12 +13558,22 @@ fullCalendarPanel?.addEventListener('click', (event) => {
 scraperButtons.forEach((button) => {
   button.addEventListener('click', async () => {
     const type = button.dataset.openScraper || '';
-    const preflight = await ensureHearthClickPacket({node:button, packetName:'lead_intelligence_packet', action:'lead_intelligence:open:' + type, source:{sourceId:type, sourceType:'lead_intelligence_workflow', sourceLabel:button.innerText || type, sourceItem:{id:type, title:button.innerText || type}}});
+    const preflight = await ensureHearthClickPacket({node:button, packetName:'lead_intelligence_packet', action:'lead_intelligence:run:' + type, allowBlockedForInspection:true, source:{sourceId:type, sourceType:'lead_intelligence_workflow', sourceLabel:button.innerText || type, sourceItem:{id:type, title:button.innerText || type}}});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    openScraper(type);
+    await runScraperPreview(type);
   });
 });
+
+document.addEventListener('click', async (event) => {
+  const leadActionButton = event.target.closest('[data-lead-drawer-action]');
+  if(!leadActionButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await handleLeadDrawerAction(leadActionButton.dataset.leadDrawerAction, leadActionButton.dataset.leadDrawerType, leadActionButton);
+});
+
+leadSourcingEmptyBoard();
 
 async function routeWorkspaceActionClick(event){
   const homeActionButton = event.target.closest('[data-home-action]');
@@ -13572,7 +13721,7 @@ deskWorkspace.addEventListener('click', async (event) => {
   handleHomeRoomAction(homeActionButton.dataset.homeAction, homeActionButton);
 });
 
-scraperPreviewList.addEventListener('click', async (event) => {
+async function handleScraperPreviewClick(event){
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -13601,9 +13750,10 @@ scraperPreviewList.addEventListener('click', async (event) => {
   const index = Number(lead.dataset.leadIndex);
   const activeSession = scraperSessions[activeScraperType];
   const selectedLead = activeSession?.previewLeads?.[index] || null;
-  const preflight = await ensureHearthClickPacket({node:choice, packetName:'lead_intelligence_packet', action:'lead_intelligence:preview_choice:' + nextStatus, source:activeLeadIntelligenceSource('lead_intelligence:preview_choice:' + nextStatus, {sourceId:selectedLead?.id || String(index), sourceType:'lead_preview_row', sourceLabel:selectedLead?.name || selectedLead?.company || 'Lead preview row', sourceItem:selectedLead})});
+  const preflight = await ensureHearthClickPacket({node:choice, packetName:'lead_intelligence_packet', action:'lead_intelligence:preview_choice:' + nextStatus, allowBlockedForInspection:true, source:activeLeadIntelligenceSource('lead_intelligence:preview_choice:' + nextStatus, {sourceId:selectedLead?.id || String(index), sourceType:'lead_preview_row', sourceLabel:selectedLead?.name || selectedLead?.company || 'Lead preview row', sourceItem:selectedLead})});
   if(!preflight.ok) return;
   renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   lead.dataset.leadReview = nextStatus;
   lead.querySelectorAll('[data-preview-choice]').forEach((button) => {
     button.classList.toggle('active', button === choice);
@@ -13612,6 +13762,10 @@ scraperPreviewList.addEventListener('click', async (event) => {
     activeSession.previewLeads[index]._approved = nextStatus !== 'held';
   }
   updatePreviewApprovalSummary();
+}
+
+Array.from(new Set([scraperPreviewList, leadDrawerPreviewList].filter(Boolean))).forEach((previewList) => {
+  previewList.addEventListener('click', handleScraperPreviewClick);
 });
 
 document.addEventListener('keydown', (event) => {
