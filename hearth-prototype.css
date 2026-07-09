@@ -5163,6 +5163,86 @@ button.drawer-link{
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:10px;
 }
+.lead-sourcing-board{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:0;
+  min-height:340px;
+  border:1px solid rgba(29,29,31,.12);
+  border-radius:8px;
+  overflow:hidden;
+  background:rgba(255,255,255,.58);
+}
+.lead-sourcing-column{
+  display:grid;
+  align-content:start;
+  gap:0;
+  min-width:0;
+  border-right:1px solid rgba(29,29,31,.12);
+}
+.lead-sourcing-column:last-child{
+  border-right:0;
+}
+.lead-sourcing-column > div:first-child{
+  display:grid;
+  gap:4px;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(29,29,31,.1);
+  background:rgba(255,255,255,.68);
+}
+.lead-sourcing-column span{
+  color:rgba(60,60,67,.66);
+  font:650 .58rem/1.2 var(--mono);
+  text-transform:uppercase;
+}
+.lead-sourcing-column h4{
+  margin:0;
+  color:rgba(29,29,31,.92);
+  font:650 .9rem/1.15 var(--body);
+}
+.lead-stage-row{
+  display:grid;
+  gap:5px;
+  min-width:0;
+  min-height:92px;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(29,29,31,.08);
+  color:rgba(29,29,31,.82);
+}
+.lead-stage-row strong{
+  color:rgba(29,29,31,.94);
+  font:650 .84rem/1.2 var(--body);
+  overflow-wrap:anywhere;
+}
+.lead-stage-row small,
+.lead-stage-row span{
+  overflow-wrap:anywhere;
+}
+.lead-stage-row b{
+  width:max-content;
+  max-width:100%;
+  padding:4px 7px;
+  border:1px solid rgba(94,114,88,.18);
+  border-radius:999px;
+  background:rgba(94,114,88,.08);
+  color:rgba(65,83,61,.92);
+  font:650 .62rem/1 var(--body);
+}
+.lead-sourcing-board.loading .lead-sourcing-column.active{
+  background:rgba(247,247,242,.62);
+}
+.lead-sourcing-column .preview-controls{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-top:3px;
+}
+.lead-sourcing-column .preview-choice{
+  min-height:28px;
+  padding:6px 9px;
+  border-radius:999px;
+  font-size:.66rem;
+}
 .lead-intelligence-hero{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(180px,.34fr);
@@ -5577,7 +5657,8 @@ button.drawer-link{
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
   .drawer-cowork-orb{right:18px;bottom:86px;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
-      .drawer-grid,.source-list,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
+      .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
+      .lead-sourcing-column{border-right:0;border-bottom:1px solid rgba(29,29,31,.12)}
       .correspondence-rulebar,.correspondence-rule-create{grid-template-columns:1fr}
       .correspondence-queue,.correspondence-thread,.correspondence-brief,.correspondence-intelligence{min-height:auto;border-right:0;border-bottom:1px solid rgba(34,19,15,.18)}
       .correspondence-draft-preview,.correspondence-draft-preview textarea{min-height:260px}

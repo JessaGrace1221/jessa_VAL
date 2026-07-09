@@ -51,10 +51,17 @@ function extractObjectLiteral(source, marker){
 }
 
 test('Hearth Lead Intelligence keeps preview and import endpoints separate', () => {
-  assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/leads\/discover-preview'/);
-  assert.match(hearthJs, /importUrl:\s*'\/api\/val\/leads\/import-approved'/);
-  assert.match(hearthJs, /previewUrl:\s*'\/api\/val\/partners\/discover-preview'/);
-  assert.match(hearthJs, /importUrl:\s*'\/api\/val\/partners\/import-approved'/);
+  assert.match(hearthJs, /const leadScraperDefinitions = \{/);
+  assert.match(hearthJs, /scraperId: 'frisson_organizations'/);
+  assert.match(hearthJs, /scraperId: 'frisson_partners'/);
+  assert.match(hearthJs, /routeBase: '\/api\/frisson\/organizations'/);
+  assert.match(hearthJs, /routeBase: '\/api\/frisson\/partners'/);
+  assert.match(hearthJs, /previewUrl:\s*'\/api\/frisson\/organizations\/discover-preview'/);
+  assert.match(hearthJs, /importUrl:\s*'\/api\/frisson\/organizations\/import-approved'/);
+  assert.match(hearthJs, /previewUrl:\s*'\/api\/frisson\/partners\/discover-preview'/);
+  assert.match(hearthJs, /importUrl:\s*'\/api\/frisson\/partners\/import-approved'/);
+  assert.match(hearthJs, /leadScraperPayloadFromDefinition/);
+  assert.match(hearthJs, /saveLeadScraperCriteria/);
   assert.match(hearthJs, /function activeLeadIntelligenceSource/);
   assert.match(hearthJs, /previewCount/);
   assert.match(hearthJs, /approvedCount/);
@@ -66,6 +73,13 @@ test('Hearth Lead Intelligence keeps preview and import endpoints separate', () 
 });
 
 test('Hearth scraper preview requires approve or hold before import', () => {
+  assert.match(hearthHtml, /Lead Sourcing/);
+  assert.match(hearthHtml, /Two starter scraper definitions are ready/);
+  assert.match(hearthHtml, /<i>Level 1<\/i><i>Level 2<\/i><i>Level 3<\/i><i>GHL<\/i>/);
+  assert.match(hearthJs, /lead-sourcing-board/);
+  assert.match(hearthJs, /<span>Level 1<\/span><h4>Discovery<\/h4>/);
+  assert.match(hearthJs, /<span>Level 2<\/span><h4>Decision Maker<\/h4>/);
+  assert.match(hearthJs, /<span>Level 3<\/span><h4>Confirm \/ Dedupe<\/h4>/);
   assert.match(hearthJs, /data-preview-choice="approved"/);
   assert.match(hearthJs, /data-preview-choice="held"/);
   assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held'/);
@@ -293,10 +307,11 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
   assert.match(hearthCss, /\.drawer-link\[data-drawer-tone="rose-sage"\]/);
 });
 
-test('Timeline and Tasks drawer combines calendar transcripts and follow-through', () => {
+test('Transcripts drawer combines meeting evidence proposed notes and follow-through', () => {
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
-  assert.match(hearthHtml, /Timeline &amp; Tasks/);
-  assert.match(hearthHtml, /Calendar, transcripts, follow-through/);
+  assert.match(hearthHtml, /Transcripts/);
+  assert.match(hearthHtml, /Meeting evidence, notes, tasks/);
+  assert.match(hearthHtml, /Transcript evidence and review/);
   assert.match(hearthHtml, /id="timeline-detail"/);
   assert.match(hearthHtml, /data-timeline-status-panel/);
   assert.match(hearthHtml, /data-timeline-status-count/);
@@ -823,7 +838,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
   assert.doesNotMatch(meetingPrepResultBlock, /label: 'Prepare follow-up'/);
   assert.doesNotMatch(meetingPrepResultBlock, /Open full calendar/);
-  assert.doesNotMatch(meetingPrepResultBlock, /Open Timeline & Tasks/);
+  assert.doesNotMatch(meetingPrepResultBlock, /Open Transcripts/);
   assert.doesNotMatch(meetingPrepResultBlock, /Close and return to desk/);
   assert.match(hearthHtml, /data-calendar-packet-receipt/);
   assert.match(hearthJs, /function meetingPrepAttendeeIdentityLines/);

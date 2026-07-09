@@ -954,34 +954,145 @@ function defaultRelationshipSectionActions(name = 'this relationship'){
   };
 }
 
+const leadScraperDefinitionStorageKey = 'val_lead_scraper_definitions_v1';
+
+function storedLeadScraperDefinitionValues(){
+  try{
+    const parsed = JSON.parse(localStorage.getItem(leadScraperDefinitionStorageKey) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  }catch(error){
+    return {};
+  }
+}
+
+function leadScraperField(type, key, fallback = ''){
+  const stored = storedLeadScraperDefinitionValues();
+  return stored[type]?.[key] || fallback;
+}
+
+function saveLeadScraperCriteria(type, criteria = {}){
+  try{
+    const stored = storedLeadScraperDefinitionValues();
+    stored[type] = {...(stored[type] || {}), ...criteria};
+    localStorage.setItem(leadScraperDefinitionStorageKey, JSON.stringify(stored));
+  }catch(error){
+    console.warn('[hearth] lead scraper definition could not be saved locally', error.message);
+  }
+}
+
+const leadScraperDefinitions = {
+  organizations: {
+    scraperId: 'frisson_organizations',
+    userLabel: 'Organizations',
+    purpose: 'Find nonprofit organizations that may benefit from Frisson.',
+    clientTemplate: 'frisson',
+    routeBase: '/api/frisson/organizations',
+    recommendedAction: 'Start organization scrape',
+    crmDestination: {
+      provider: 'ghl',
+      label: 'Frisson Organizations / New Organization Lead',
+      pipeline: 'Frisson Organizations',
+      stage: 'New Organization Lead',
+      tags: ['Frisson Lead', 'Organization']
+    },
+    criteriaFields: [
+      {key:'scraper_name',label:'Scraper name',value:'Organizations'},
+      {key:'lead_type',label:'Lead type',type:'select',value:'Nonprofit organizations',options:['Nonprofit organizations','Community organizations','Mission-aligned companies']},
+      {key:'market',label:'Market',value:'United States'},
+      {key:'category',label:'Category or keywords',value:'animal rescues, food banks, youth programs'},
+      {key:'limit',label:'Preview count',type:'number',value:'12'},
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations with visible donation, volunteer, community, or partnership signals and enough public evidence for review.'}
+    ],
+    sourceReadiness: [
+      ['Level 1 discovery', 'Outscraper/public business search'],
+      ['Level 2 decision maker', 'Decision-maker enrichment when available'],
+      ['Level 3 confirmation/dedupe', 'GHL duplicate check + optional verification'],
+      ['Import policy', 'Approved only']
+    ]
+  },
+  partners: {
+    scraperId: 'frisson_partners',
+    userLabel: 'Partners',
+    purpose: 'Find companies, advisors, agencies, and platforms that can become Frisson referral or strategic partners.',
+    clientTemplate: 'frisson',
+    routeBase: '/api/frisson/partners',
+    recommendedAction: 'Run partner scrape',
+    crmDestination: {
+      provider: 'ghl',
+      label: 'Frisson Partners / New Partner Lead',
+      pipeline: 'Frisson Partners',
+      stage: 'New Partner Lead',
+      tags: ['Frisson Lead', 'Partner']
+    },
+    criteriaFields: [
+      {key:'scraper_name',label:'Scraper name',value:'Partners'},
+      {key:'partner_type',label:'Partner type',type:'select',value:'Nonprofit consultants',options:['Nonprofit consultants','Grant writers','CSR consultants','Fundraising advisors','Referral partners']},
+      {key:'market',label:'Market',value:'United States'},
+      {key:'category',label:'Category or keywords',value:'grant writers, nonprofit consultants, CSR consultants'},
+      {key:'limit',label:'Preview count',type:'number',value:'12'},
+      {key:'criteria',label:'Qualification rule',type:'textarea',value:'Find organizations that serve nonprofits and could refer, distribute, recommend, introduce, or partner with Frisson.'}
+    ],
+    sourceReadiness: [
+      ['Level 1 discovery', 'Outscraper/public business search'],
+      ['Level 2 decision maker', 'Partner contact and reach context'],
+      ['Level 3 confirmation/dedupe', 'GHL duplicate check + optional verification'],
+      ['Import policy', 'Approved only']
+    ]
+  }
+};
+
+function leadScraperCriteriaFromDefinition(type){
+  const definition = leadScraperDefinitions[type];
+  return {
+    title: (definition?.userLabel || 'Scraper') + ' definition',
+    fields: (definition?.criteriaFields || []).map((field) => ({
+      ...field,
+      label: field.label,
+      value: leadScraperField(type, field.key, field.value)
+    })),
+    destination: definition?.crmDestination?.label || 'GHL destination not configured',
+    sources: definition?.sourceReadiness || []
+  };
+}
+
+function leadScraperPayloadFromDefinition(type, criteria = {}){
+  const definition = leadScraperDefinitions[type] || {};
+  const limit = Math.min(Math.max(Number(criteria['Preview count'] || criteria.limit) || 12, 1), 100);
+  const market = criteria.Market || criteria.market || 'United States';
+  const category = criteria['Category or keywords'] || criteria.category || criteria['Partner type'] || criteria['Lead type'] || '';
+  return {
+    market,
+    category,
+    keywords: category,
+    organizationType: criteria['Lead type'] || category || definition.userLabel || '',
+    partnerType: criteria['Partner type'] || category || definition.userLabel || '',
+    criteria: criteria['Qualification rule'] || criteria.Criteria || '',
+    limit,
+    enrichContacts: true,
+    rocketReachMode: 'defer',
+    scraperDefinition: {
+      scraperId: definition.scraperId,
+      userLabel: criteria['Scraper name'] || definition.userLabel,
+      purpose: definition.purpose,
+      clientTemplate: definition.clientTemplate,
+      crmDestination: definition.crmDestination,
+      importPolicy: 'approved_only'
+    }
+  };
+}
+
 const scraperWorkflows = {
   organizations: {
     lens: 'Lead Intelligence',
-    setupTitle: 'Set the organization scrape before VAL begins.',
-    setupMeaning: 'This is an intentional scrape. VAL should know the market, fit profile, result count, and CRM destination before it touches the sources.',
+    setupTitle: 'Define the organization scraper before VAL begins.',
+    setupMeaning: 'This scraper definition controls criteria, source behavior, CRM destination, approval gates, and import policy.',
     setupUnderstanding: [
-      'Lead set: Organizations / Non-Profits.',
-      'Active pattern: focused preview, or a configured broad batch up to 200 when the client preset supports it.',
+      'Starter scraper: Organizations.',
+      'Active pattern: Level 1 discovery, Level 2 decision-maker context, Level 3 confirmation and dedupe.',
       'Safeguard: Level 1 discovery checks live GHL duplicates before enrichment or import.'
     ],
-    setupRecommendation: 'I would start with a focused preview unless the client has a proven batch preset. Either way, VAL should show the preview before anything enters GHL.',
-    criteria: {
-      title: 'Organization scrape criteria',
-      fields: [
-        {label: 'Lead set', type: 'select', value: 'Organizations / Non-Profits', options: ['Organizations / Non-Profits', 'Mission-aligned companies', 'Community partners']},
-        {label: 'Market', value: 'Tennessee and Southeast US'},
-        {label: 'Preview count', type: 'number', value: '12'},
-        {label: 'Minimum size', value: 'Evidence of active programs'},
-        {label: 'Criteria', type: 'textarea', value: 'Find mission-aligned organizations with visible partnership readiness, active public programs, and enough contact evidence for review.'}
-      ],
-      destination: 'Frisson GHL pipeline / Organizations',
-      sources: [
-        ['Level 1 business discovery', 'Ready'],
-        ['GHL duplicate check', 'Ready'],
-        ['Level 2 enrichment', 'Ready'],
-        ['Level 3 verification', 'Deferred']
-      ]
-    },
+    setupRecommendation: 'Start with a focused preview. Make the definition trustworthy before VAL touches the sources.',
+    criteria: leadScraperCriteriaFromDefinition('organizations'),
     previewTitle: 'The organization preview is ready for judgment.',
     previewMeaning: 'VAL has not imported anything. The review set is staged so the user can decide what belongs in GHL.',
     previewUnderstanding: [
@@ -1035,31 +1146,15 @@ const scraperWorkflows = {
   },
   partners: {
     lens: 'Lead Intelligence',
-    setupTitle: 'Set the partner scrape before VAL begins.',
-    setupMeaning: 'Partner scrapes should feel like opening a strategic file, not running a bulk import.',
+    setupTitle: 'Define the partner scraper before VAL begins.',
+    setupMeaning: 'Partner scrapes should feel like opening a strategic file, with the source mix and CRM destination visible before the run.',
     setupUnderstanding: [
-      'Lead set: Partners.',
+      'Starter scraper: Partners.',
       'Criteria: partner type, geographic market, potential reach, and fit score.',
-      'Safeguard: the strategic partner destination is locked before anything is pushed to GHL.'
+      'Safeguard: the Frisson partner destination is visible before anything is pushed to GHL.'
     ],
-    setupRecommendation: 'I would choose one partner type, keep the first preview small, and sort by potential reach before approving records.',
-    criteria: {
-      title: 'Partner scrape criteria',
-      fields: [
-        {label: 'Partner type', type: 'select', value: 'Strategic distribution partners', options: ['Strategic distribution partners', 'Professional associations', 'Payroll companies', 'HR consultants', 'Referral partners']},
-        {label: 'Market', value: 'United States'},
-        {label: 'Preview count', type: 'number', value: '12'},
-        {label: 'Scoring', value: 'Potential Reach + Partnership Fit'},
-        {label: 'Criteria', type: 'textarea', value: 'Find organizations that can distribute, recommend, introduce, or sell GOALL. Prefer recent public sources and at least two supporting URLs.'}
-      ],
-      destination: 'GOALL Strategic Partners / New Limitless Lead Added',
-      sources: [
-        ['Public source discovery', 'Ready'],
-        ['GHL duplicate check', 'Ready'],
-        ['Fit scoring', 'Ready'],
-        ['Level 3 verification', 'Deferred']
-      ]
-    },
+    setupRecommendation: 'Choose one partner category, keep the first preview small, and approve only candidates with credible nonprofit reach.',
+    criteria: leadScraperCriteriaFromDefinition('partners'),
     previewTitle: 'The partner preview is ready for selection.',
     previewMeaning: 'VAL found candidates and scored them, but the user still owns the import decision.',
     previewUnderstanding: [
@@ -1115,30 +1210,17 @@ const scraperWorkflows = {
 
 const scraperApiConfig = {
   organizations: {
-    previewUrl: '/api/val/leads/discover-preview',
-    importUrl: '/api/val/leads/import-approved',
+    previewUrl: '/api/frisson/organizations/discover-preview',
+    importUrl: '/api/frisson/organizations/import-approved',
     buildPayload(criteria){
-      return {
-        organizationType: criteria['Lead set'] || 'Organizations / Non-Profits',
-        market: criteria.Market || 'Tennessee and Southeast US',
-        limit: Number(criteria['Preview count']) || 12,
-        criteria: criteria.Criteria || 'Find mission-aligned organizations with visible partnership readiness, active public programs, and enough contact evidence for review.',
-        leadProfile: 'frisson',
-        rocketReachMode: 'defer'
-      };
+      return leadScraperPayloadFromDefinition('organizations', criteria);
     }
   },
   partners: {
-    previewUrl: '/api/val/partners/discover-preview',
-    importUrl: '/api/val/partners/import-approved',
+    previewUrl: '/api/frisson/partners/discover-preview',
+    importUrl: '/api/frisson/partners/import-approved',
     buildPayload(criteria){
-      return {
-        partnerType: criteria['Partner type'] || 'Strategic distribution partners',
-        market: criteria.Market || 'United States',
-        limit: Number(criteria['Preview count']) || 12,
-        criteria: criteria.Criteria || 'Find organizations that can distribute, recommend, introduce, or sell GOALL. Prefer recent public sources and at least two supporting URLs.',
-        rocketReachMode: 'defer'
-      };
+      return leadScraperPayloadFromDefinition('partners', criteria);
     }
   }
 };
@@ -5021,8 +5103,8 @@ function updateWorkspaceReturnButton(){
     return;
   }
   if(workspaceReturnTarget === 'timeline'){
-    returnButton.textContent = 'Back to Timeline & Tasks';
-    returnButton.setAttribute('aria-label', 'Back to Timeline and Tasks drawer');
+    returnButton.textContent = 'Back to Transcripts';
+    returnButton.setAttribute('aria-label', 'Back to Transcripts drawer');
     return;
   }
   if(workspaceReturnTarget === 'correspondence'){
@@ -5625,7 +5707,7 @@ function renderTimelineStatus(data = null){
       body: proposedTasks ? 'Tasks must include source excerpt, owner, due date or review-needed date, project, relationship, and why it matters.' : 'No task proposal packet is loaded yet; do not imply a task exists until owner, due date, relationship, project, and source quote are present.'
     }
   ];
-  timelineStatusCount.textContent = data?.ok ? 'Timeline context connected' : 'Local timeline structure';
+  timelineStatusCount.textContent = data?.ok ? 'Transcript context connected' : 'Local transcript review structure';
   timelineStatusPanel.innerHTML = cards.map((card) => [
     '<article>',
     '<span>' + escapeHtml(card.label) + '</span>',
@@ -5813,7 +5895,7 @@ function timelineReviewSource(reviewId = ''){
     review,
     sourceId: review?.id || reviewId || '',
     sourceType: review?.type ? 'timeline_' + review.type + '_proposal' : 'timeline_proposal',
-    sourceLabel: review?.title || review?.eventTitle || review?.transcriptTitle || 'Timeline proposal',
+    sourceLabel: review?.title || review?.eventTitle || review?.transcriptTitle || 'Transcript proposal',
     sourceItem: review,
     transcriptId: review?.transcriptId || '',
     transcriptTitle: review?.transcriptTitle || '',
@@ -5830,7 +5912,7 @@ function timelineMatchSource(reviewId = '', category = '', index = ''){
   return {
     ...source,
     sourceType: 'timeline_match_review',
-    sourceLabel: candidate?.label ? 'Timeline match: ' + candidate.label : source.sourceLabel,
+    sourceLabel: candidate?.label ? 'Transcript match: ' + candidate.label : source.sourceLabel,
     matchCategory: category || '',
     matchCandidate: candidate
   };
@@ -5918,12 +6000,12 @@ async function syncTimelineReviewDecision(review, action){
   const updateId = created?.update?.id;
   if(!updateId) return created;
   if(action === 'approved'){
-    return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/approve', {note:'Approved from Timeline & Tasks transcript review.'});
+    return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/approve', {note:'Approved from Transcripts review.'});
   }
   if(action === 'rejected'){
-    return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/reject', {reason:'Rejected from Timeline & Tasks transcript review.'});
+    return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/reject', {reason:'Rejected from Transcripts review.'});
   }
-  return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/edit', {note:'Marked needs edit from Timeline & Tasks transcript review.'});
+  return postJson('/api/val/review-updates/' + encodeURIComponent(updateId) + '/edit', {note:'Marked needs edit from Transcripts review.'});
 }
 
 async function handleTimelineReviewAction(reviewId, action){
@@ -5956,7 +6038,7 @@ function openTimelineCoworkSession(){
   const firstProposal = proposals[0] || null;
   openContextualCoworkSession({
     returnTarget: 'timeline',
-    title: 'Co-Work with VAL about Timeline & Tasks.',
+    title: 'Co-Work with VAL about Transcripts.',
     meaning: 'This Co-Work space is scoped to calendar, transcripts, proposed notes, proposed tasks, and follow-through.',
     context: [
       proposals.length ? proposals.length + ' transcript proposal' + (proposals.length === 1 ? '' : 's') + ' currently loaded.' : 'No transcript proposals are loaded yet.',
@@ -5967,7 +6049,7 @@ function openTimelineCoworkSession(){
     ].filter(Boolean),
     recommendation: 'Use this to decide what should become notes, tasks, drafts, commitments, or meeting prep before approving anything.',
     placeholder: 'What should VAL help you understand or prepare from the timeline, transcripts, or tasks?',
-    helper: 'This Co-Work note is tagged to Timeline & Tasks. Creating final notes/tasks or linking records still requires review.',
+    helper: 'This Co-Work note is tagged to Transcripts. Creating final notes/tasks or linking records still requires review.',
     backWorkflow: 'cancel:timeline'
   });
 }
@@ -5981,8 +6063,8 @@ async function hydrateTimelineStatus(){
     renderTimelineStatus(data);
     renderTimelineReviewCards(data?.proposedTranscriptReviews || []);
   }catch(error){
-    if(timelineStatusCount) timelineStatusCount.textContent = 'Timeline context unavailable';
-    console.warn('[hearth] timeline context unavailable', error.message);
+    if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript context unavailable';
+    console.warn('[hearth] transcript context unavailable', error.message);
   }
 }
 
@@ -6919,7 +7001,7 @@ function drawerCoworkContext(mode = ''){
     const firstProposal = currentTimelineReviewItems?.[0] || null;
     return {
       returnTarget: 'timeline',
-      title: firstProposal?.eventTitle ? 'Timeline: ' + firstProposal.eventTitle : 'Timeline & Tasks',
+      title: firstProposal?.eventTitle ? 'Transcript: ' + firstProposal.eventTitle : 'Transcripts',
       meaning: 'VAL is holding calendar, transcript, task, and follow-through context privately.',
       context: [
         firstProposal?.title ? 'Proposal: ' + firstProposal.title : '',
@@ -7344,7 +7426,7 @@ function appendWorkspaceImageRequest(){
 
 function renderCriteriaField(field){
   const label = '<span>' + field.label + '</span>';
-  const dataLabel = ' data-criteria-label="' + field.label + '"';
+  const dataLabel = ' data-criteria-label="' + field.label + '" data-criteria-key="' + (field.key || field.label) + '"';
   if(field.type === 'select'){
     return '<label class="criteria-field">' + label + '<select' + dataLabel + '>' + field.options.map((option) => (
       '<option' + (option === field.value ? ' selected' : '') + '>' + option + '</option>'
@@ -7380,20 +7462,56 @@ function renderScraperPreviewList(workflow, stage){
   scraperPreviewList.hidden = false;
   scraperPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>Details create trust before approval.</small></div>',
-    leads.map((lead, index) => (
-      '<article class="preview-lead" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
-        '<div><strong>' + escapeHtml(lead.name) + '</strong><span>' + escapeHtml(lead.type) + '</span></div>' +
-        '<div><b>' + escapeHtml(lead.score) + '</b><small class="muted">' + escapeHtml(lead.location) + '</small></div>' +
-        '<div><span>' + escapeHtml(lead.contact) + '</span></div>' +
-        '<div><small>' + escapeHtml(lead.evidence) + '</small></div>' +
-        '<div class="preview-controls" aria-label="Review decision for ' + escapeHtml(lead.name) + '">' +
-          '<button type="button" class="preview-choice' + (lead._approved === false ? '' : ' active') + '" data-preview-choice="approved">Approve</button>' +
-          '<button type="button" class="preview-choice' + (lead._approved === false ? ' active' : '') + '" data-preview-choice="held">Hold</button>' +
-        '</div>' +
-      '</article>'
-    )).join('')
+    '<div class="lead-sourcing-board" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div>' +
+        leads.map((lead, index) => (
+          '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
+            '<strong>' + escapeHtml(lead.name) + '</strong>' +
+            '<span>' + escapeHtml(lead.type) + '</span>' +
+            '<small>' + escapeHtml(lead.location) + '</small>' +
+            '<b>' + escapeHtml(lead.score) + '</b>' +
+          '</article>'
+        )).join('') +
+      '</section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div>' +
+        leads.map((lead, index) => (
+          '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
+            '<strong>' + escapeHtml(lead.contact || 'Decision maker not confirmed') + '</strong>' +
+            '<span>' + (lead.contact && !/not confirmed|general inbox/i.test(lead.contact) ? 'Candidate attached' : 'Needs confirmation') + '</span>' +
+            '<small>' + escapeHtml(lead.name) + '</small>' +
+          '</article>'
+        )).join('') +
+      '</section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div>' +
+        leads.map((lead, index) => (
+          '<article class="preview-lead lead-stage-row" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
+            '<strong>' + escapeHtml(lead.name) + '</strong>' +
+            '<span>' + escapeHtml(lead.evidence) + '</span>' +
+            '<small>' + (stage === 'imported' ? 'Import receipt attached.' : 'GHL duplicate and source review stay visible before import.') + '</small>' +
+            '<div class="preview-controls" aria-label="Review decision for ' + escapeHtml(lead.name) + '">' +
+              '<button type="button" class="preview-choice' + (lead._approved === false ? '' : ' active') + '" data-preview-choice="approved">Approve</button>' +
+              '<button type="button" class="preview-choice' + (lead._approved === false ? ' active' : '') + '" data-preview-choice="held">Hold</button>' +
+            '</div>' +
+          '</article>'
+        )).join('') +
+      '</section>',
+    '</div>'
   ].join('');
   updatePreviewApprovalSummary();
+}
+
+function renderLeadSourcingProgress(type){
+  if(!scraperPreviewList) return;
+  const definition = leadScraperDefinitions[type] || {};
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.innerHTML = [
+    '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering GHL.</small></div>',
+    '<div class="lead-sourcing-board loading" data-lead-sourcing-board>',
+      '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row"><strong>Waiting for viable leads</strong><span>Decision-maker context attaches after discovery.</span><small>No contact is invented.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row"><strong>Waiting for preview rows</strong><span>GHL duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
+    '</div>'
+  ].join('');
 }
 
 function updatePreviewApprovalSummary(){
@@ -7443,6 +7561,7 @@ function activeLeadIntelligenceSource(action = '', extra = {}){
 function getScraperCriteria(){
   return Array.from(scraperCriteriaPanel.querySelectorAll('[data-criteria-label]')).reduce((values, field) => {
     values[field.dataset.criteriaLabel] = field.value;
+    values[field.dataset.criteriaKey] = field.value;
     return values;
   }, {});
 }
@@ -8851,6 +8970,7 @@ async function hydrateHomePresence(){
 
 function setScraperLoading(type, message){
   const workflow = scraperWorkflows[type];
+  renderLeadSourcingProgress(type);
   setWorkspaceContent({
     lens: workflow.lens,
     title: message.title,
@@ -8875,6 +8995,7 @@ async function runScraperPreview(type){
     return;
   }
   const criteria = getScraperCriteria();
+  saveLeadScraperCriteria(type, criteria);
   const payload = config.buildPayload(criteria);
   const session = sessionFor(type);
   session.payload = payload;
@@ -8897,7 +9018,7 @@ async function runScraperPreview(type){
     session.result = result;
     session.previewLeads = leads.map((lead) => normalizePreviewLead(lead, type));
     workflow.previewLeads = session.previewLeads;
-    if(type === 'partners' && result.crmDestination){
+    if(result.crmDestination){
       workflow.criteria.destination = result.crmDestination.pipeline + ' / ' + result.crmDestination.stage;
     }
     renderScraperWorkflow(type, 'preview');
@@ -9722,6 +9843,7 @@ function renderScraperWorkflow(type, stage = 'setup'){
   const workflow = scraperWorkflows[type];
   if(!workflow) return false;
   activeScraperType = type;
+  workflow.criteria = leadScraperCriteriaFromDefinition(type);
   const isPartner = type === 'partners';
   const stageTitle = workflow[stage + 'Title'] || workflow.setupTitle;
   const stageMeaning = workflow[stage + 'Meaning'] || workflow.setupMeaning;
@@ -10858,7 +10980,7 @@ async function refreshCalendarSourceStatus(){
     calendarSourceStatus.classList.toggle('connected', connected);
     calendarSourceStatus.classList.toggle('failed', !connected && !!google.error);
     calendarSourceStatus.innerHTML = '<strong>' + escapeHtml(connected ? 'Google Calendar is connected.' : 'Connect Google Calendar to test live meeting prep.') + '</strong>'
-      + '<span>' + escapeHtml(connected ? 'Use this panel to inspect calendar-driven prep, then test Timeline & Tasks from the drawers.' : (google.setupMessage || google.error || 'VAL needs Google authorization before live calendar context can be used.')) + '</span>'
+      + '<span>' + escapeHtml(connected ? 'Use this panel to inspect calendar-driven prep, then test Transcripts from the drawers.' : (google.setupMessage || google.error || 'VAL needs Google authorization before live calendar context can be used.')) + '</span>'
       + '<button type="button" data-google-oauth>' + escapeHtml(connected ? 'Reconnect Google' : 'Connect Google') + '</button>';
   }catch(error){
     calendarSourceStatus.classList.add('failed');
@@ -12774,7 +12896,7 @@ timelineDrawerLink?.addEventListener('click', () => {
   timelineDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
-    drawerIndexPacketReceipt({node:timelineDrawerLink, packetName:'timeline_packet', action:'drawer:timeline', label:'Timeline & Tasks drawer', downstreamConsumers:['timeline_drawer','meeting_prep','relationship_packet','project_packet']});
+    drawerIndexPacketReceipt({node:timelineDrawerLink, packetName:'timeline_packet', action:'drawer:timeline', label:'Transcripts drawer', downstreamConsumers:['timeline_drawer','meeting_prep','relationship_packet','project_packet']});
     hydrateTimelineStatus();
   } else {
     renderDrawerPacketReceiptStrip(null);
@@ -13009,7 +13131,7 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const firstReview = currentTimelineReviewItems[0] || null;
-    const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction, allowBlockedForInspection:true, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Timeline & Tasks', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
+    const preflight = await ensureHearthClickPacket({node:timelineAction, packetName:'timeline_packet', action:timelineAction.dataset.timelineAction, allowBlockedForInspection:true, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Transcripts', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(timelineAction.dataset.timelineAction === 'cowork_timeline'){
