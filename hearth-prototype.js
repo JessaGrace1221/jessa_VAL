@@ -3467,7 +3467,8 @@ function correspondenceItemsFromReady(result = {}){
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   correspondenceList.innerHTML = '';
-  correspondenceCount.textContent = currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') : 'No conversations waiting';
+  correspondenceCount.textContent = currentCorrespondenceItems.length ? String(currentCorrespondenceItems.length) : '0';
+  correspondenceCount.setAttribute('aria-label', currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' waiting' : 'No conversations waiting');
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty';

@@ -3712,6 +3712,17 @@ button.drawer-link{
   color:rgba(58,33,27,.82);
   font-size:.74rem;
 }
+.timeline-status-header [data-correspondence-count]{
+  display:inline-grid;
+  place-items:center;
+  min-width:24px;
+  height:24px;
+  border:1px solid rgba(60,60,67,.14);
+  border-radius:999px;
+  background:rgba(255,255,255,.86);
+  color:rgba(29,29,31,.88);
+  font:780 .72rem/1 var(--body);
+}
 .timeline-status-grid,
 .timeline-principles{
   display:grid;
