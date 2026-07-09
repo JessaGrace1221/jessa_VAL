@@ -117,6 +117,7 @@ let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
 let dismissedCorrespondenceRuleSuggestions = new Set();
+let currentCorrespondenceScanDays = 14;
 let currentCommitmentItems = [];
 let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
@@ -3027,6 +3028,59 @@ function normalizeCorrespondenceReadyItem(item = {}){
   };
 }
 
+function normalizeCorrespondenceEmailItem(email = {}, index = 0){
+  const draft = email.preparedDraft || {};
+  const source = draft.sourceContext || draft.source_context || {};
+  const sender = email.from || {};
+  const body = email.bodyText || email.bodyPreview || email.snippet || '';
+  const classification = String(email.classification || '').toLowerCase();
+  const needsContext = ['needs_attention', 'forward_to_team', 'waiting_on_response'].includes(classification);
+  return {
+    id: 'gmail-scan-' + (email.messageId || email.threadId || index),
+    draftId: draft.id || '',
+    conversationId: email.threadId || email.messageId || '',
+    threadId: email.threadId || '',
+    recipientEmail: sender.email || source.to || '',
+    provider: email.provider || 'gmail',
+    senderEmail: sender.email || '',
+    senderName: sender.name || sender.email || 'Gmail sender',
+    receivedAt: email.date || email.receivedAt || email.internalDate || '',
+    title: email.subject || draft.subject || 'Gmail conversation',
+    status: needsContext ? 'needs_context' : 'ready_for_review',
+    summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
+    whyNow: email.recommendedAction || email.reason || 'This thread matched the Executive Inbox scan window.',
+    context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
+    prepared: draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.',
+    needs: draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.',
+    draftBody: draft.body || '',
+    threadMessages: body ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,900)}] : [],
+    relationships: correspondenceContextLines(email, ['matchedContact','relationshipName','relationshipTemperature']),
+    projects: correspondenceContextLines(email, ['projectName','project']),
+    ruleSuggestions: correspondenceRuleHints(email, {}, draft),
+    evidence: [email.reason, email.snippet || email.bodyPreview].filter(Boolean),
+    representationRisk: 'medium',
+    source: 'gmail_scan',
+    noExternalAction: true,
+    raw: email
+  };
+}
+
+function correspondenceItemsFromEmailIntelligence(result = {}){
+  const actionable = ['needs_reply','needs_attention','waiting_on_response','forward_to_team','appointment_recap_needed'];
+  const rows = []
+    .concat(result.draftSuggestions || [])
+    .concat(result.needsReply || [])
+    .concat(result.needsAttention || [])
+    .concat(result.waitingOnResponse || [])
+    .concat((result.emails || []).filter((email) => actionable.includes(String(email.classification || '').toLowerCase())));
+  const byId = new Map();
+  rows.forEach((email, index) => {
+    const key = email.messageId || email.threadId || email.id || index;
+    if(!byId.has(key)) byId.set(key, normalizeCorrespondenceEmailItem(email, index));
+  });
+  return Array.from(byId.values());
+}
+
 function documentTypeLabel(value = ''){
   return String(value || 'document').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
@@ -3472,7 +3526,7 @@ function renderCorrespondenceList(){
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty';
-    empty.innerHTML = '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p>';
+    empty.innerHTML = '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div>';
     correspondenceList.appendChild(empty);
     return;
   }
@@ -3964,6 +4018,29 @@ async function hydrateCorrespondenceDrawer(){
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not load live Gmail-classified conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
+  }
+}
+
+async function scanCorrespondenceWindow(days = 30){
+  const scanDays = Math.max(1, Math.min(90, Number(days) || 30));
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to scan Gmail.';
+    return;
+  }
+  currentCorrespondenceScanDays = scanDays;
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Scanning the last ' + scanDays + ' days of connected Gmail. Low-priority mail will stay out of Executive Inbox.';
+  try{
+    const result = await postJson('/api/email/gmail/refresh', {days:scanDays, limit:scanDays >= 90 ? 120 : 75}, {timeoutMs:45000, timeoutMessage:'Gmail scan is taking longer than expected.'});
+    currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
+    activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+    if(correspondenceSafety){
+      correspondenceSafety.textContent = currentCorrespondenceItems.length
+        ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
+        : 'Scanned the last ' + scanDays + ' days. No Gmail threads crossed the Executive Inbox judgment gate.';
+    }
+  }catch(error){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Gmail scan failed: ' + error.message;
   }
 }
 
@@ -12994,6 +13071,13 @@ drawerTray.addEventListener('click', async (event) => {
   const correspondenceAction = event.target.closest('[data-correspondence-action]');
   if(correspondenceAction){
     await runCorrespondenceActionClick(correspondenceAction, event);
+    return;
+  }
+  const correspondenceScan = event.target.closest('[data-correspondence-scan-days]');
+  if(correspondenceScan){
+    event.preventDefault();
+    event.stopPropagation();
+    await scanCorrespondenceWindow(correspondenceScan.dataset.correspondenceScanDays);
     return;
   }
   const correspondenceRulesClose = event.target.closest('[data-correspondence-rules-close]');

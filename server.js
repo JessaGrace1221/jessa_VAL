@@ -8028,7 +8028,9 @@ async function emailIntelligencePayload(req,{force=false}={}){
     gmailSyncStatus.lastAttemptAt=new Date().toISOString();
     gmailSyncStatus.lastError='';
     const rules=await listEmailRules(req.valUser.id);
-    const limit=Number(req.query.limit)||30;
+    const requestedDays=Number(req.query.days||req.body?.days)||14;
+    const activeDays=Math.max(1,Math.min(90,Number.isFinite(requestedDays)?requestedDays:14));
+    const limit=Number(req.query.limit||req.body?.limit)||30;
     const gmailStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.readonly']);
     const composeStatus=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
     if(!gmailStatus.connected){
@@ -8041,12 +8043,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
         needsAttention:[],needsReply:[],waitingOnResponse:[],lowPriority:[],draftSuggestions:[],relationshipContext:[]
       };
     }
-    const recentQuery=force?'in:inbox newer_than:14d':'in:inbox newer_than:14d';
-    const unreadQuery='in:inbox is:unread newer_than:14d';
+    const recentQuery=`in:inbox newer_than:${activeDays}d`;
+    const unreadQuery=`in:inbox is:unread newer_than:${activeDays}d`;
     const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
-      fetchGmailMessages({query:'in:sent newer_than:14d',maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:`in:sent newer_than:${activeDays}d`,maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
       fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
@@ -8084,7 +8086,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeWindow:'14-day active conversations plus unresolved sent follow-ups'},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
       rules
     };
   }catch(e){
@@ -8102,7 +8104,7 @@ app.get('/api/email/intelligence',async(req,res)=>{
 app.post('/api/email/gmail/refresh',async(req,res)=>{
   try{
     const data=await emailIntelligencePayload(req,{force:true});
-    await auditLog({req,action:'email_sync_refreshed',resourceType:'gmail',metadata:{count:data.summary?.total||0},success:data.ok!==false}).catch(()=>{});
+    await auditLog({req,action:'email_sync_refreshed',resourceType:'gmail',metadata:{count:data.summary?.total||0,days:data.summary?.activeDays||req.body?.days||14},success:data.ok!==false}).catch(()=>{});
     res.status(data.ok===false?400:200).json({...data,refreshed:true});
   }catch(e){res.status(500).json({ok:false,refreshed:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
 });

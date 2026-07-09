@@ -3401,6 +3401,29 @@ button.drawer-link{
   line-height:1.35;
   overflow-wrap:anywhere;
 }
+.correspondence-scan-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px;
+}
+.correspondence-list .correspondence-scan-actions button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:32px;
+  width:auto;
+  padding:7px 10px;
+  border:1px solid rgba(29,29,31,.14);
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  color:rgba(29,29,31,.82);
+  font:650 .68rem/1 var(--body);
+}
+.correspondence-list .correspondence-scan-actions button:hover{
+  border-color:rgba(29,29,31,.28);
+  background:rgba(255,255,255,.94);
+}
 .correspondence-brief-head{
   display:grid;
   gap:5px;
