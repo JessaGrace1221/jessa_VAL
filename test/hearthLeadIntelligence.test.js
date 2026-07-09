@@ -783,8 +783,10 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /workspaceActions\.innerHTML = renderWorkspaceActionButtons\(\[\{label:'Co-Work with VAL', workflow:'meetingPrepCowork'\}\]\)/);
   assert.match(hearthJs, /if\(command === 'meetingPrepCowork'\)/);
   assert.match(hearthJs, /let activeCoworkHeldContext = ''/);
-  assert.match(hearthJs, /activeCoworkHeldContext = \[initialValue, \.\.\.context\]\.filter\(Boolean\)\.join\('\\n'\)/);
-  assert.match(hearthJs, /value: ''/);
+  assert.match(hearthJs, /activeCoworkHeldContext = \[initialValue, safeTitle, meaning, recommendation, helper, \.\.\.context\]\.filter\(Boolean\)\.join\('\\n'\)/);
+  assert.match(hearthJs, /renderHomeCoworkPreview\(\{/);
+  assert.match(hearthJs, /contextualCoworkHeading/);
+  assert.match(hearthJs, /VAL is holding the relevant context privately/);
   assert.match(hearthJs, /Use this held context silently/);
   assert.match(hearthJs, /VAL is holding the Meeting Prep brief privately/);
   assert.match(hearthJs, /preserveHeldCoworkContext = \/co-work\|cowork\/i/);
@@ -987,8 +989,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=softer-frosted-surfaces-20260708/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=softer-frosted-surfaces-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-orb-clean-overlay-20260708/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-orb-clean-overlay-20260708/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1367,7 +1369,8 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     primaryActionBody.indexOf("if(roomName === 'velocity')") < primaryActionBody.indexOf('ensureHearthClickPacket({'),
     'Home executive modes must open before server packet preflight'
   );
-  assert.match(hearthJs, /roomName === 'velocity' \? '' : '<button type="button" data-home-action="cowork_card_context"/);
+  assert.doesNotMatch(hearthJs, /data-home-action="cowork_card_context"/);
+  assert.match(hearthJs, /mode === 'workspace'/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
   assert.match(hearthJs, /How can I help with /);
   assert.match(hearthJs, /Approved and ' \+ verb/);

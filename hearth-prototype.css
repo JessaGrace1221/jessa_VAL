@@ -389,27 +389,37 @@ button,a{font:inherit}
 .cowork-notebook{
   position:relative;
   display:grid;
-  grid-template-columns:42px minmax(0,1fr);
-  align-items:center;
-  gap:11px;
+  place-items:center;
   overflow:hidden;
-  border:1px solid rgba(245,239,228,.14);
-  border-radius:10px;
-  background:
-    radial-gradient(circle at 21px 50%,rgba(239,185,173,.2),transparent 4.8rem),
-    linear-gradient(180deg,rgba(255,249,239,.1),rgba(255,249,239,.03)),
-    rgba(26,16,13,.24);
-  padding:13px;
+  justify-self:end;
+  width:72px;
+  min-height:72px;
+  border:0;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(255,249,239,.28),rgba(255,249,239,.08) 48%,transparent 72%);
+  padding:0;
+  box-shadow:0 14px 24px rgba(45,27,22,.16);
+  filter:drop-shadow(0 0 12px rgba(255,236,202,.24));
+  animation:drawerCoworkPresence 4.6s ease-in-out infinite;
 }
 .next-meeting-card:hover,.next-meeting-card:focus-visible,
 .cowork-notebook:hover,.cowork-notebook:focus-visible{
   transform:translateY(-1px);
-  border-color:rgba(239,185,173,.3);
-  background:
-    radial-gradient(circle at 21px 50%,rgba(239,185,173,.26),transparent 5.4rem),
-    linear-gradient(180deg,rgba(255,249,239,.13),rgba(255,249,239,.045)),
-    rgba(26,16,13,.3);
+  filter:drop-shadow(0 0 18px rgba(255,236,202,.38));
   outline:none;
+}
+.cowork-notebook .val-presence-mark{
+  width:62px;
+  height:62px;
+}
+.cowork-notebook .notebook-copy{
+  position:absolute;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  clip:rect(0 0 0 0);
+  clip-path:inset(50%);
+  white-space:nowrap;
 }
 .calendar-kicker{
   font:500 .54rem var(--mono);
@@ -1511,6 +1521,7 @@ button,a{font:inherit}
 }
 .desk-workspace.home-cowork-mode{
   position:fixed;
+  z-index:1200;
   inset:50% auto auto 50%;
   bottom:auto;
   width:min(520px,calc(100vw - 36px));
@@ -1525,9 +1536,10 @@ button,a{font:inherit}
   padding:44px clamp(24px,5vw,54px) 36px;
   border-color:rgba(79,48,38,.1);
   border-radius:18px;
-  background:rgba(247,238,227,.98);
+  background:rgba(255,255,252,.72);
   box-shadow:0 34px 90px rgba(34,19,15,.24);
-  backdrop-filter:none;
+  -webkit-backdrop-filter:blur(28px) saturate(1.06);
+  backdrop-filter:blur(28px) saturate(1.06);
 }
 .desk-workspace.home-cowork-mode .return-button{
   position:absolute;
@@ -2748,15 +2760,15 @@ button.drawer-link{
   display:none;
 }
 .drawer-cowork-orb{
-  position:sticky;
-  left:4px;
-  bottom:4px;
-  z-index:18;
+  position:fixed;
+  right:clamp(18px,3vw,34px);
+  bottom:clamp(18px,3vw,34px);
+  z-index:900;
   display:grid;
   place-items:center;
   width:62px;
   height:62px;
-  margin:6px 0 0 4px;
+  margin:0;
   padding:0;
   border:0;
   border-radius:50%;
@@ -4976,14 +4988,14 @@ button.drawer-link{
 /* System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan. */
 :root{
   --frost-open-surface:
-    linear-gradient(135deg,rgba(255,255,252,.86),rgba(248,250,244,.76) 54%,rgba(235,241,226,.62)),
-    rgba(255,255,252,.6);
+    linear-gradient(135deg,rgba(255,255,252,.58),rgba(248,250,244,.42) 54%,rgba(235,241,226,.26)),
+    rgba(255,255,252,.24);
   --frost-open-card:
-    linear-gradient(180deg,rgba(255,255,252,.82),rgba(248,250,244,.68)),
-    rgba(255,255,252,.62);
+    linear-gradient(180deg,rgba(255,255,252,.68),rgba(248,250,244,.52)),
+    rgba(255,255,252,.38);
   --frost-open-card-strong:
-    linear-gradient(180deg,rgba(255,255,252,.88),rgba(248,250,244,.74)),
-    rgba(255,255,252,.66);
+    linear-gradient(180deg,rgba(255,255,252,.74),rgba(248,250,244,.58)),
+    rgba(255,255,252,.42);
   --frost-open-line:rgba(91,105,79,.16);
   --frost-open-shadow:0 20px 54px rgba(18,24,18,.12);
   --frost-open-soft-shadow:0 12px 28px rgba(18,24,18,.08);
@@ -4996,6 +5008,7 @@ button.drawer-link{
   border-color:var(--frost-open-line);
   background:var(--frost-open-surface);
   color:var(--frost-open-ink);
+  -webkit-backdrop-filter:blur(26px) saturate(1.04);
   backdrop-filter:blur(26px) saturate(1.04);
   box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.72);
 }
@@ -5263,7 +5276,7 @@ button.drawer-link{
   .drawer-pull:hover,.drawer-pull[aria-expanded="true"]{transform:none}
   .drawer-tray{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden}
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
-  .drawer-cowork-orb{left:0;bottom:0;width:58px;height:58px}
+  .drawer-cowork-orb{right:18px;bottom:86px;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
       .drawer-grid,.source-list,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
       .relationship-identity{grid-template-columns:1fr}

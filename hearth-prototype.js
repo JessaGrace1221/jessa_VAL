@@ -4017,61 +4017,42 @@ function showProjectReceipt({title, meaning, understanding = [], recommendation,
 function openProjectCoworkSession(){
   const project = activeProjectProfile || projectProfiles.frisson;
   closeCalendarPanel();
-  closeDrawer();
-  setWorkspaceContent({
-    lens: 'Co-Work with VAL',
-    title: 'Co-Work with VAL about ' + project.name + '.',
-    meaning: 'This Co-Work space is scoped to the active project so the conversation can stay organized around project context.',
-    understanding: [
+  openContextualCoworkSession({
+    returnTarget: 'project',
+    title: 'Project: ' + project.name,
+    meaning: 'VAL is holding the active project context privately.',
+    context: [
       'Project: ' + project.name,
       'Current reality: ' + (project.reality || project.status || 'Project context is available.'),
       'Source receipts: ' + (project.sourceReceipts || 'Source receipts are not attached yet.'),
       'No task, CRM update, calendar change, message, or project status change happens from this Co-Work space.'
     ],
     recommendation: 'Use this to think, draft, decide, or clarify what VAL should remember for this project.',
-    actions: [
-      {label: 'Think with VAL', workflow: 'cowork:think'},
-      {label: 'Draft with VAL', workflow: 'cowork:draft'},
-      {label: 'Back to ' + project.name, workflow: 'cancel:project'}
-    ],
-    label: 'Project Co-Work with VAL workspace'
-  });
-  renderWorkspaceInput({
-    label: 'Co-Work with VAL about this project',
     placeholder: 'What should VAL help you think through for ' + project.name + '?',
-    helper: 'This Co-Work note is tagged to the active project. External actions still require a separate approval step.',
-    mode: 'cowork'
+    helper: 'Project context is held privately.'
   });
-  openWorkspaceShell('Project Co-Work with VAL workspace', {returnTarget:'project'});
 }
 
 function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = ''}){
-  const safeTitle = title || 'Co-Work with VAL';
-  activeCoworkHeldContext = [initialValue, ...context].filter(Boolean).join('\n');
+  const safeTitle = title || 'VAL workspace';
+  activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: safeTitle,
-    meaning: meaning || 'This Co-Work space is scoped to the context you opened it from.',
-    understanding: [
-      'VAL is holding the relevant context for this workspace.',
-      'Nothing external happens from this Co-Work space unless you explicitly approve it.'
-    ],
+    meaning: meaning || 'VAL is holding the relevant context privately.',
+    understanding: ['VAL is holding the relevant context privately.', 'Nothing external happens without approval.'],
     recommendation: recommendation || 'Use this to think, draft, decide, or give VAL the missing context before action.',
-    actions: [
-      {label: 'Think with VAL', workflow: 'cowork:think'},
-      {label: 'Draft with VAL', workflow: 'cowork:draft'},
-      {label: 'Back', workflow: backWorkflow || ('cancel:' + returnTarget)}
-    ],
-    label: safeTitle
+    actions: [],
+    label: 'Home Co-Work with VAL approval workspace',
+    suppressClarityStandard: true
   });
-  renderWorkspaceInput({
-    label: safeTitle,
-    placeholder: placeholder || 'What should VAL help you think through here?',
-    helper: helper || 'This Co-Work note stays tied to the active context. External actions still require a separate approval step.',
-    mode: 'cowork',
-    value: ''
+  deskWorkspace.classList.add('home-cowork-mode');
+  renderHomeCoworkPreview({
+    heading: contextualCoworkHeading(safeTitle),
+    detail: coworkPublicDetail(returnTarget),
+    placeholder: placeholder || 'What should VAL help you think through here?'
   });
-  openWorkspaceShell(safeTitle, {returnTarget});
+  openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
 }
 
 function handleProjectAction(action){
@@ -5038,7 +5019,15 @@ function activeDrawerCoworkMode(){
 
 function updateDrawerCoworkIcon(){
   if(!drawerCoworkIcon) return;
-  const mode = retrievalSystem?.classList.contains('open') ? activeDrawerCoworkMode() : '';
+  const isCleanCoworkOpen = deskWorkspace?.classList.contains('home-cowork-mode') && deskWorkspace?.getAttribute('aria-hidden') === 'false';
+  if(isCleanCoworkOpen){
+    drawerCoworkIcon.hidden = true;
+    delete drawerCoworkIcon.dataset.drawerCoworkMode;
+    return;
+  }
+  let mode = retrievalSystem?.classList.contains('open') ? activeDrawerCoworkMode() : '';
+  const workspaceOpen = deskWorkspace?.getAttribute('aria-hidden') === 'false';
+  if(!mode && workspaceOpen && !isCleanCoworkOpen) mode = 'workspace';
   drawerCoworkIcon.hidden = !mode;
   if(mode){
     drawerCoworkIcon.dataset.drawerCoworkMode = mode;
@@ -5053,53 +5042,27 @@ async function openDrawerCoworkFromIcon(event){
   if(!drawerCoworkIcon) return;
   event?.preventDefault();
   event?.stopPropagation();
-  const mode = activeDrawerCoworkMode();
+  const mode = drawerCoworkIcon.dataset.drawerCoworkMode || activeDrawerCoworkMode();
   drawerCoworkIcon.dataset.valClickContract = 'drawer.' + (mode || 'cowork');
   drawerCoworkIcon.dataset.valPromptRule = 'Drawer-scoped Co-Work prompt suite';
   drawerCoworkIcon.dataset.valAllowedActions = 'Think with VAL, draft with VAL, prepare next step';
   drawerCoworkIcon.dataset.valNeverDo = 'Do not expose held context unless explicitly designed for the user.';
-  if(mode === 'relationship'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'relationship_packet';
-    await handleRelationshipActionClick('cowork_relationship', drawerCoworkIcon);
+  if(mode === 'workspace'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'cowork_packet';
+    openCoworkFromClarityWorkspace();
     return;
   }
-  if(mode === 'project'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'project_packet';
-    await handleProjectActionClick('cowork_project', drawerCoworkIcon);
-    return;
-  }
-  if(mode === 'timeline'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'timeline_packet';
-    const firstReview = currentTimelineReviewItems[0] || null;
-    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'timeline_packet', action:'cowork_timeline', allowBlockedForInspection:true, source:{review:firstReview, sourceId:firstReview?.id || 'timeline-drawer', sourceType:firstReview ? 'timeline_proposal' : 'timeline_drawer', sourceLabel:firstReview?.title || 'Timeline & Tasks', sourceItem:firstReview || {reviewCount:currentTimelineReviewItems.length}}});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    openTimelineCoworkSession();
-    renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    return;
-  }
-  if(mode === 'correspondence'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'email_packet';
-    drawerCoworkIcon.dataset.correspondenceAction = 'cowork_correspondence';
-    await runCorrespondenceActionClick(drawerCoworkIcon, event);
-    delete drawerCoworkIcon.dataset.correspondenceAction;
-    return;
-  }
-  if(mode === 'commitment'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'commitment_packet';
-    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'commitment_packet', action:'commitment:cowork_commitment', allowBlockedForInspection:true, source:commitmentSource(activeCommitmentItem, 'cowork_commitment')});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    await handleCommitmentAction('cowork_commitment');
-    return;
-  }
-  if(mode === 'document'){
-    drawerCoworkIcon.dataset.valVariablePacket = 'document_packet';
-    const preflight = await ensureHearthClickPacket({node:drawerCoworkIcon, packetName:'document_packet', action:'document:cowork_document', allowBlockedForInspection:true, source:documentSource(activeDocumentItem, 'cowork_document')});
-    if(!preflight.ok) return;
-    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-    await handleDocumentAction('cowork_document');
-  }
+  const packetByMode = {
+    relationship: 'relationship_packet',
+    project: 'project_packet',
+    timeline: 'timeline_packet',
+    correspondence: 'email_packet',
+    commitment: 'commitment_packet',
+    document: 'document_packet',
+    val: 'val_packet'
+  };
+  drawerCoworkIcon.dataset.valVariablePacket = packetByMode[mode] || 'cowork_packet';
+  openContextualCoworkSession(drawerCoworkContext(mode));
 }
 
 drawerCoworkIcon?.addEventListener('click', openDrawerCoworkFromIcon);
@@ -5658,8 +5621,7 @@ function renderHomePacketRows(roomName, items = []){
       const fields = homePacketDisplayFields(queueItem.sourceItem || queueItem, roomName);
       const primaryAction = roomName === 'leverage' ? 'open_prepared' : 'open_source';
       const rowActions = [
-        '<button type="button" data-home-action="' + primaryAction + '" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">' + escapeHtml(fields.primary_action_label) + '</button>',
-        roomName === 'velocity' ? '' : '<button type="button" data-home-action="cowork_card_context" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">Co-Work with VAL</button>'
+        '<button type="button" data-home-action="' + primaryAction + '" data-home-room-item-action="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '">' + escapeHtml(fields.primary_action_label) + '</button>'
       ].filter(Boolean).join('');
       return '<article class="home-packet-row">' +
         '<div data-home-room-source="' + escapeHtml(roomName) + '" data-home-room-index="' + index + '"' +
@@ -5698,12 +5660,10 @@ function homeWorkspaceFromQueueItem(roomName, index){
     actions: roomName === 'leverage'
       ? [
           {label: fields.primary_action_label, homeAction: 'open_prepared'},
-          {label: 'Approve and execute', homeAction: 'approve_prepared'},
-          {label: 'Co-Work with VAL', homeAction: 'cowork_card_context'}
+          {label: 'Approve and execute', homeAction: 'approve_prepared'}
         ]
       : [
-          {label: fields.primary_action_label, homeAction: 'open_source'},
-          {label: 'Co-Work with VAL', homeAction: 'cowork_card_context'}
+          {label: fields.primary_action_label, homeAction: 'open_source'}
         ],
     sourceItem: item,
     cardType: roomName === 'leverage' ? 'ready_for_you' : roomName === 'alignment' ? 'highest_leverage' : 'what_changed',
@@ -6365,7 +6325,10 @@ function renderAgencyNote(workspace = {}, roomName = ''){
 }
 
 function renderWorkspaceActionButtons(actions = []){
-  return actions.map((action, index) => {
+  return actions.filter((action) => {
+    const spec = typeof action === 'string' ? {label: action} : action;
+    return !/co-?work|cowork/i.test(String(spec.label || '')) && !/^cowork/i.test(String(spec.workflow || ''));
+  }).map((action, index) => {
     const spec = typeof action === 'string' ? {label: action} : action;
     const label = spec.label || 'Review';
     const classes = ['workspace-action'];
@@ -6384,6 +6347,129 @@ function renderWorkspaceActionButtons(actions = []){
     ].join('');
     return '<button type="button"' + attrs + '>' + escapeHtml(label) + '</button>';
   }).join('');
+}
+
+function contextualCoworkHeading(title = ''){
+  const clean = compactSentence(String(title || '').replace(/^Co-Work with VAL:?/i, ''), '');
+  if(!clean) return 'What shall we accomplish together?';
+  return 'How can I help with ' + clean.replace(/\.$/, '') + '?';
+}
+
+function coworkPublicDetail(returnTarget = 'home'){
+  const labels = {
+    home: 'VAL is ready to work with what you choose next.',
+    relationship: 'VAL is holding this relationship privately.',
+    project: 'VAL is holding this project privately.',
+    timeline: 'VAL is holding the timeline privately.',
+    correspondence: 'VAL is holding this reply privately.',
+    commitment: 'VAL is holding this commitment privately.',
+    document: 'VAL is holding this document privately.',
+    val: 'VAL is holding this context privately.',
+    workspace: 'VAL is holding this card privately.'
+  };
+  return labels[returnTarget] || 'VAL is holding the relevant context privately.';
+}
+
+function drawerCoworkContext(mode = ''){
+  if(mode === 'relationship'){
+    const profile = activeRelationshipProfile || relationshipProfiles.aric;
+    return {
+      returnTarget: 'relationship',
+      title: 'Relationship: ' + (profile?.name || 'active relationship'),
+      meaning: 'VAL is holding the active relationship context privately.',
+      context: [
+        'Relationship: ' + (profile?.name || 'Unknown'),
+        'Current reality: ' + (profile?.evidence || ''),
+        'Executive assessment: ' + (profile?.patterns || ''),
+        'Strategic importance: ' + (profile?.meaning || '')
+      ],
+      placeholder: 'What should VAL help you think through about this relationship?'
+    };
+  }
+  if(mode === 'project'){
+    const project = activeProjectProfile || projectProfiles.frisson;
+    return {
+      returnTarget: 'project',
+      title: 'Project: ' + (project?.name || 'active project'),
+      meaning: 'VAL is holding the active project context privately.',
+      context: [
+        'Project: ' + (project?.name || 'Unknown'),
+        'Current reality: ' + (project?.reality || project?.status || ''),
+        'Source receipts: ' + (project?.sourceReceipts || '')
+      ],
+      placeholder: 'What should VAL help you think through about this project?'
+    };
+  }
+  if(mode === 'timeline'){
+    const firstProposal = currentTimelineReviewItems?.[0] || null;
+    return {
+      returnTarget: 'timeline',
+      title: firstProposal?.eventTitle ? 'Timeline: ' + firstProposal.eventTitle : 'Timeline & Tasks',
+      meaning: 'VAL is holding calendar, transcript, task, and follow-through context privately.',
+      context: [
+        firstProposal?.title ? 'Proposal: ' + firstProposal.title : '',
+        firstProposal?.eventTitle ? 'Event: ' + firstProposal.eventTitle : '',
+        firstProposal?.project ? 'Project: ' + firstProposal.project : '',
+        firstProposal?.relationships?.length ? 'Relationships: ' + firstProposal.relationships.join(', ') : ''
+      ],
+      placeholder: 'What should VAL help you understand or prepare from the timeline?'
+    };
+  }
+  if(mode === 'correspondence'){
+    const item = activeCorrespondenceItem || {};
+    return {
+      returnTarget: 'correspondence',
+      title: 'Reply: ' + compactSentence(item.title || item.subject || 'selected message', 'selected message'),
+      meaning: item.whyNow || item.summary || 'VAL is holding this Executive Inbox item privately.',
+      context: [
+        'Prepared item: ' + (item.title || item.subject || 'Reply draft'),
+        'Relationship/project: ' + (item.context || ''),
+        'VAL prepared: ' + (item.prepared || ''),
+        'Needs from user: ' + (item.needs || '')
+      ],
+      placeholder: 'What should VAL help you decide or rewrite about this reply?'
+    };
+  }
+  if(mode === 'commitment'){
+    const item = activeCommitmentItem || {};
+    return {
+      returnTarget: 'commitment',
+      title: 'Commitment: ' + compactSentence(item.title || 'selected commitment', 'selected commitment'),
+      meaning: item.description || item.evidence_quote || 'VAL is holding this commitment privately.',
+      context: [
+        'Commitment: ' + (item.title || 'Untitled'),
+        'Owner: ' + [item.owner_name, commitmentLabel(item.owner_type)].filter(Boolean).join(' - '),
+        'Counterparty: ' + (item.counterparty_name || ''),
+        'Due: ' + commitmentDueLabel(item.due_at),
+        'Evidence: ' + (item.evidence_quote || ''),
+        'Next action: ' + (item.next_action || '')
+      ],
+      placeholder: 'What should VAL help you decide or prepare for this commitment?'
+    };
+  }
+  if(mode === 'document'){
+    const item = activeDocumentItem || {};
+    return {
+      returnTarget: 'document',
+      title: 'Document: ' + compactSentence(item.title || 'selected document', 'selected document'),
+      meaning: 'VAL is holding this document context privately.',
+      context: [
+        'Document: ' + (item.title || 'Untitled'),
+        'Relationship: ' + (item.relationship || ''),
+        'Project: ' + (item.project || ''),
+        'Source: ' + (item.source || item.origin || ''),
+        'Reference use: ' + (item.referenceUse || '')
+      ],
+      placeholder: 'What should VAL help you do with this document?'
+    };
+  }
+  return {
+    returnTarget: 'home',
+    title: 'VAL workspace',
+    meaning: 'VAL is holding the active context privately.',
+    context: [],
+    placeholder: 'What should VAL help you think through here?'
+  };
 }
 
 function portalPhraseForWorkspace(workspace = {}){
@@ -9125,10 +9211,12 @@ function openWorkspaceShell(label, options = {}){
   }
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
+  updateDrawerCoworkIcon();
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
   deskWorkspace.setAttribute('aria-label', label || 'Decision workspace');
+  updateDrawerCoworkIcon();
   if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
     drawerTray.scrollTop = 0;
     window.requestAnimationFrame(() => {
@@ -11752,19 +11840,23 @@ function openCoworkSession(){
   });
 }
 
-function renderHomeCoworkPreview(){
+function renderHomeCoworkPreview(options = {}){
+  const heading = options.heading || 'What shall we accomplish together?';
+  const detail = options.detail || '';
+  const placeholder = options.placeholder || 'Tell VAL what you want to accomplish';
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<div class="home-cowork-preview" aria-label="Home Co-Work with VAL">',
-      '<p>Co-Work w/ VAL</p>',
+    '<div class="home-cowork-preview" aria-label="VAL workspace">',
+      '<p>VAL</p>',
       '<span class="val-presence-mark home-cowork-mark" aria-hidden="true">',
         '<span class="val-presence-orbit"></span>',
         '<span class="val-presence-core">VAL</span>',
       '</span>',
       '<div class="home-cowork-context" data-home-cowork-context>',
-        '<strong>What shall we accomplish together?</strong>',
+        '<strong>' + escapeHtml(heading) + '</strong>',
+        detail ? '<span>' + escapeHtml(detail) + '</span>' : '',
       '</div>',
     '</div>'
   ].join('');
@@ -11773,7 +11865,7 @@ function renderHomeCoworkPreview(){
     '<form class="home-cowork-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
       '<span class="home-cowork-divider" aria-hidden="true"></span>',
-      '<input data-workspace-input="cowork" aria-label="Tell VAL what you want to accomplish" autocomplete="on" autocorrect="on" spellcheck="true">',
+      '<input data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" autocomplete="on" autocorrect="on" spellcheck="true">',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
       '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
@@ -11936,6 +12028,7 @@ function closeWorkspace(){
   if(workspaceReturnTarget === 'val') restoreValWindow();
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
+  updateDrawerCoworkIcon();
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
@@ -11951,6 +12044,7 @@ function hideWorkspaceForDrawerNavigation(){
   deskWorkspace.setAttribute('aria-hidden', 'true');
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
+  updateDrawerCoworkIcon();
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
