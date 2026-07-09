@@ -167,6 +167,7 @@ const linkedinReadyCount = document.querySelector('[data-linkedin-ready-count]')
 const prototypeParams = new URLSearchParams(location.search);
 const mockScrapers = prototypeParams.has('mockScrapers');
 const mockBriefing = prototypeParams.has('mockBriefing');
+const forceExecutiveInboxHome = true;
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
@@ -1177,85 +1178,87 @@ function roomContent(card, workspace = {}){
 const states = {
   quiet: {
     title: 'Good morning, Jessa.',
-    witness: 'Today has room to think.',
-    orientation: 'There is one meaningful commitment this afternoon, and everything else can stay quiet for now.',
-    permission: 'Protect that space.',
+    witness: 'Executive Inbox is the live surface today.',
+    orientation: 'Open it when you want VAL to show only connected conversations that need judgment.',
+    permission: 'No demo news belongs on the desk.',
     rooms: {
       velocity: roomContent({
-        observation: 'Greg replied.',
-        implication: 'The proposal can now move forward.',
-        invitation: 'Would you like to review it?',
-        title: 'Greg replied',
-        summary: 'The proposal can now move forward.',
-        action: 'Review the reply'
+        observation: 'Executive Inbox is ready.',
+        implication: 'Review connected conversations that need judgment.',
+        invitation: 'Open Executive Inbox',
+        title: 'Executive Inbox',
+        summary: 'Review connected conversations that need judgment.',
+        action: 'Open Executive Inbox',
+        primaryAction: {
+          type: 'openExecutiveInbox',
+          ariaLabel: 'Open Executive Inbox drawer'
+        }
       }, {
         lens: 'Velocity',
-        title: 'Greg answered the question that was holding the proposal.',
-        meaning: 'This changes the next step, not the whole day.',
+        title: 'Executive Inbox is ready for live review.',
+        meaning: 'VAL should show admitted conversations from connected sources only.',
         understanding: [
-          "Greg's reply resolves the open approval question.",
-          'The proposal language is already drafted.',
-          'No other thread needs first attention.'
+          'The drawer is the source for connected conversation review.',
+          'Demo conversations should not fill the live decision surface.',
+          'Nothing sends or changes externally without approval.'
         ],
-        recommendation: 'I would review this before the afternoon commitment, then leave the rest of the morning open.',
-        actions: ['Review reply', 'Draft response', 'Teach VAL'],
-        contextPortals: ['Greg', 'proposal', 'afternoon commitment'],
+        recommendation: 'Open Executive Inbox and review only admitted conversations.',
+        actions: ['Open Executive Inbox', 'Teach VAL'],
+        contextPortals: ['Executive Inbox', 'connected conversations'],
         confidence: 0.86,
-        restraintReason: 'One story owns the Home surface; related draft context stays inside the workspace.'
+        restraintReason: 'Home points to the live drawer instead of inventing a story.'
       }),
       alignment: roomContent({
-        observation: 'Only one thing deserves your judgment first.',
-        implication: 'Everything else can wait.',
-        invitation: 'Would you like to check that with me?',
-        title: 'Protected attention',
-        summary: 'Everything else can wait.',
-        action: 'Open Acme proposal',
+        observation: 'Only admitted items belong here.',
+        implication: 'Demo news stays out of the decision surface.',
+        invitation: 'Open Executive Inbox',
+        title: 'Judgment only',
+        summary: 'Demo news stays out of the decision surface.',
+        action: 'Open Executive Inbox',
         primaryAction: {
-          type: 'openExternal',
-          target: 'https://app.gohighlevel.com/',
-          ariaLabel: 'Open Acme proposal in GHL'
+          type: 'openExecutiveInbox',
+          ariaLabel: 'Open Executive Inbox drawer'
         }
       }, {
         lens: 'Alignment',
-        title: 'The Acme proposal deserves your first judgment.',
-        meaning: 'This is the one decision that can protect the shape of the day.',
+        title: 'The aligned move is to keep Home quiet.',
+        meaning: 'The first screen should not manufacture urgency from stale demo data.',
         understanding: [
-          'The afternoon has one meaningful commitment.',
-          'The proposal is close enough to complete, but still needs your judgment.',
-          'Small requests can wait without consequence.'
+          'Executive Inbox holds conversations that need judgment.',
+          'The home surface should point to that drawer.',
+          'If no connected thread qualifies, VAL should say there are no admitted items.'
         ],
-        recommendation: 'If this were my day, I would finish the proposal before opening anything reactive.',
-        actions: ['Open proposal', 'Accept', 'Adjust', 'Show alternatives', 'Teach VAL'],
-        contextPortals: ['Acme proposal', 'afternoon commitment', 'small requests'],
+        recommendation: 'Open Executive Inbox rather than reading stale homepage cards.',
+        actions: ['Open Executive Inbox', 'Teach VAL'],
+        contextPortals: ['Executive Inbox', 'Home'],
         confidence: 0.82,
-        restraintReason: 'Velocity owns the Greg reply; Alignment owns where judgment should go first.'
+        restraintReason: 'Alignment is quiet until live evidence creates a real judgment.'
       }),
       leverage: roomContent({
-        observation: 'The Frisson follow-up is ready.',
-        implication: 'Three hours of work became six minutes of review.',
-        invitation: 'Would you like to review it?',
-        title: 'Prepared',
-        summary: 'Three hours of work became six minutes of review.',
-        action: 'Open prepared follow-up',
+        observation: 'Krisp MCP is connected.',
+        implication: 'Transcript evidence can support review without becoming homepage noise.',
+        invitation: 'Open Executive Inbox',
+        title: 'Connected evidence',
+        summary: 'Krisp and source trails support review, not noise.',
+        action: 'Open Executive Inbox',
         primaryAction: {
-          type: 'openInternal',
-          target: './dashboard.html',
-          ariaLabel: 'Open prepared Frisson follow-up'
+          type: 'openExecutiveInbox',
+          ariaLabel: 'Open Executive Inbox drawer'
         }
       }, {
         lens: 'Leverage',
-        title: 'Everything for the Frisson follow-up is ready.',
-        meaning: 'You do not need to assemble the work; you only need to review the few pieces that affect judgment.',
+        title: 'Connected evidence should support the drawer.',
+        meaning: 'Krisp and source trails belong behind reviewable items, not as fake homepage stories.',
         understanding: [
-          'The follow-up email is drafted.',
-          'The meeting notes have been compressed into decision points.',
-          'The relationship context is already attached.'
+          'Krisp MCP status is live.',
+          'Transcript evidence remains source material.',
+          'External actions still require approval.'
         ],
-        recommendation: 'I would review the prepared follow-up, approve the draft if it still feels true, and leave the supporting material closed unless something feels off.',
-        actions: ['Open prepared follow-up', 'Approve draft', 'Refine', 'Teach VAL'],
-        contextPortals: ['Frisson follow-up', 'email draft', 'meeting notes', 'relationship context'],
+        recommendation: 'Use Executive Inbox as the review surface and keep supporting evidence attached there.',
+        actions: ['Open Executive Inbox', 'Teach VAL'],
+        contextPortals: ['Krisp MCP', 'Executive Inbox'],
         confidence: 0.84,
-        restraintReason: 'Prepared work is surfaced as one review moment instead of separate draft, note, and relationship cards.'
+        restraintReason: 'Leverage does not invent prepared work when connected systems have none admitted.'
       })
     }
   },
@@ -8762,90 +8765,67 @@ function prototypeBriefing(){
     dailyWitness: {
       greeting_lines: [
         'Good morning, Jessa.',
-        'Yesterday carried more decisions than meetings.',
-        'Today has room to think.'
+        'Executive Inbox is the live review surface.',
+        'Demo news stays out of the desk.'
       ],
-      permission_line: 'Protect that space.'
+      permission_line: 'Open connected conversations only.'
     },
     whatChanged: [{
-      title: 'Greg answered the question that was holding the proposal.',
-      summary: 'The Acme proposal can move now, but it does not need to take over the morning.',
-      reason_it_matters: 'The next step belongs in the pipeline, not in your head.',
+      title: 'Executive Inbox is connected to the live drawer.',
+      summary: 'Use the drawer to review connected conversations that need judgment.',
+      reason_it_matters: 'The home surface should point to the real workflow instead of stale demo news.',
       confidence: 0.91,
-      target: {type: 'opportunity', id: 'demo-acme-opportunity', name: 'Acme proposal'},
-      opportunityId: 'demo-acme-opportunity',
-      opportunityName: 'Acme proposal',
-      portalPhrases: ['Greg', 'Acme proposal']
+      target: {type: 'drawer', id: 'executive-inbox', name: 'Executive Inbox'},
+      portalPhrases: ['Executive Inbox', 'connected conversations']
     }, {
-      title: 'Michele sent chapter notes.',
-      summary: 'The feedback is useful, but it belongs after the proposal decision.',
-      reason_it_matters: 'This can become prepared feedback instead of a second open loop.',
+      title: 'Krisp MCP is connected.',
+      summary: 'Transcript evidence can support reviewable work without becoming homepage noise.',
+      reason_it_matters: 'Meeting evidence belongs behind sourced items, not as unsourced cards.',
       confidence: 0.78,
-      target: {type: 'relationship', id: 'michele', name: 'Michele chapter feedback'},
-      portalPhrases: ['Michele', 'chapter notes']
+      target: {type: 'integration', id: 'krisp-mcp', name: 'Krisp MCP'},
+      portalPhrases: ['Krisp MCP', 'transcript evidence']
     }, {
-      title: 'Allen shared assessment notes.',
-      summary: 'The notes can inform the project brief once the current decision is clear.',
-      reason_it_matters: 'VAL can hold the detail without letting it interrupt the morning.',
+      title: 'No admitted item should be invented.',
+      summary: 'If live systems do not admit a conversation, VAL should say the queue is clear.',
+      reason_it_matters: 'Trust comes from absence being shown honestly.',
       confidence: 0.73,
-      target: {type: 'document', id: 'allen-assessment-notes', name: 'Allen assessment notes'},
-      portalPhrases: ['Allen', 'assessment notes']
+      target: {type: 'policy', id: 'no-demo-news', name: 'No demo news'},
+      portalPhrases: ['no admitted items', 'clear queue']
     }],
     highestLeverageMove: {
-      title: 'Finish the Acme proposal before taking new meetings.',
-      summary: 'Only this needs your judgment first; everything else can stay quiet until after lunch.',
-      ifIgnored: 'The afternoon will become reactive otherwise.',
+      title: 'Open Executive Inbox for live judgment.',
+      summary: 'Review connected conversations there; keep Home quiet when nothing qualifies.',
+      ifIgnored: 'The first screen will feel like stale news instead of a trusted desk.',
       confidence: 0.88,
-      target: {type: 'opportunity', id: 'demo-acme-opportunity', name: 'Acme proposal'},
-      opportunityId: 'demo-acme-opportunity',
-      opportunityName: 'Acme proposal',
-      portalPhrases: ['Acme proposal']
+      target: {type: 'drawer', id: 'executive-inbox', name: 'Executive Inbox'},
+      portalPhrases: ['Executive Inbox']
     },
     readyForYou: [{
-      title: 'Frisson introduction draft',
-      summary: 'The relationship IDs are attached, and nothing has been sent.',
-      reason_it_matters: 'Three hours of context have become six minutes of judgment.',
+      title: 'Executive Inbox review surface',
+      summary: 'Connected conversations, drafts, relationship context, project context, and rule learning live in the drawer.',
+      reason_it_matters: 'The drawer is the useful surface; the homepage should not pretend there is prepared work.',
       confidence: 0.86,
-      target: {type: 'draft', id: 'demo-frisson-introduction', name: 'Frisson introduction'},
-      draftId: 'demo-frisson-introduction',
+      target: {type: 'drawer', id: 'executive-inbox', name: 'Executive Inbox'},
+      draftId: '',
       metadataJson: {
-        preparedArtifactKind: 'introduction_email_draft',
-        preparedArtifact: {kind: 'introduction_email_draft', id: 'demo-frisson-introduction'}
+        preparedArtifactKind: 'drawer_review',
+        preparedArtifact: {kind: 'drawer_review', id: 'executive-inbox'}
       },
-      portalPhrases: ['Frisson introduction']
-    }, {
-      title: 'D3Day page copy draft',
-      summary: 'The first pass is shaped for review before anything is published.',
-      reason_it_matters: 'The website work can be judged instead of started from scratch.',
-      confidence: 0.82,
-      target: {type: 'draft', id: 'demo-d3day-page-copy', name: 'D3Day page copy'},
-      draftId: 'demo-d3day-page-copy',
-      metadataJson: {
-        preparedArtifactKind: 'copy_draft',
-        preparedArtifact: {kind: 'copy_draft', id: 'demo-d3day-page-copy'}
-      },
-      portalPhrases: ['D3Day page copy']
-    }, {
-      title: 'Client follow-up email',
-      summary: 'The email is drafted and waiting for tone review.',
-      reason_it_matters: 'The follow-up can move with one clean approval instead of another writing session.',
-      confidence: 0.8,
-      target: {type: 'draft', id: 'demo-client-follow-up', name: 'Client follow-up'},
-      draftId: 'demo-client-follow-up',
-      metadataJson: {
-        preparedArtifactKind: 'email_draft',
-        preparedArtifact: {kind: 'email_draft', id: 'demo-client-follow-up'}
-      },
-      portalPhrases: ['Client follow-up']
+      portalPhrases: ['Executive Inbox']
     }],
     todayTheme: {
-      title: 'Protected attention',
-      why: 'One meaningful decision deserves the cleanest part of the day.'
+      title: 'Live review only',
+      why: 'VAL should show connected evidence or stay quiet.'
     }
   };
 }
 
 async function hydrateHomePresence(){
+  if(forceExecutiveInboxHome){
+    setState('quiet');
+    updatePreparedCount(0);
+    return;
+  }
   if(mockBriefing){
     const briefing = prototypeBriefing();
     executiveBriefingState = briefing;
@@ -11752,12 +11732,15 @@ function renderHomeEvidenceBrief(){
 }
 
 function openExecutiveInboxForHomeEmail(item = {}){
-  const email = homeEmailPayload(item);
-  const params = new URLSearchParams();
-  params.set('view', 'email_intelligence');
-  if(email.subject) params.set('query', email.subject);
-  if(email.messageId) params.set('targetId', email.messageId);
-  window.open('./dashboard.html?' + params.toString(), '_blank', 'noopener');
+  closeWorkspace();
+  closeCalendarPanel();
+  restoreCorrespondenceWindow();
+  const hasSource = !!(item && (item.id || item.sourceId || item.messageId || item.threadId || item.title || item.subject || item.summary));
+  hydrateCorrespondenceDrawer().then(() => {
+    if(hasSource) selectCorrespondenceForHomeSource(item);
+  }).catch((error) => {
+    console.warn('[hearth] Executive Inbox drawer could not hydrate from Home', error.message);
+  });
 }
 
 function homeSourceToken(value){
@@ -11923,6 +11906,11 @@ function correspondenceItemFromHomeSource(item = {}){
 }
 
 function selectCorrespondenceForHomeSource(item = {}){
+  const hasSource = !!(item && (item.id || item.sourceId || item.messageId || item.threadId || item.title || item.subject || item.summary));
+  if(!hasSource){
+    renderCorrespondenceBrief(currentCorrespondenceItems[0] || null);
+    return;
+  }
   const best = (currentCorrespondenceItems || []).reduce((winner, candidate) => {
     const score = homeSourceCandidateScore(item, candidate);
     return score > winner.score ? {item:candidate, score} : winner;
@@ -12486,6 +12474,10 @@ function openWorkspace(roomName){
 }
 
 async function handlePrimaryAction(button){
+  if(button?.dataset?.actionType === 'openExecutiveInbox'){
+    openExecutiveInboxForHomeEmail({});
+    return;
+  }
   const roomName = button?.dataset?.openRoom || '';
   if(roomName === 'velocity'){
     openVelocityAwarenessWorkspace();

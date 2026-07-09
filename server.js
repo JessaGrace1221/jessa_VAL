@@ -12,6 +12,7 @@ const multer  = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const {createGhlMcpService} = require('./services/ghlMcpService');
+const {createKrispMcpService} = require('./services/krispMcpService');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
@@ -111,6 +112,8 @@ const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS
 const DEEPGRAM_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || 'nova-2';
 const DEEPGRAM_STT_ENDPOINTING_MS = Math.min(Math.max(Number(process.env.DEEPGRAM_STT_ENDPOINTING_MS)||800,250),2000);
 const VAL_VOICE_RESPONSE_TEMPERATURE = Math.min(Math.max(Number(process.env.VAL_VOICE_RESPONSE_TEMPERATURE)||0.6,0),2);
+const KRISP_MCP_URL = process.env.KRISP_MCP_URL || 'https://mcp.krisp.ai/mcp';
+const KRISP_MCP_ACCESS_TOKEN = process.env.KRISP_MCP_ACCESS_TOKEN || process.env.KRISP_ACCESS_TOKEN || process.env.KRISP_BEARER_TOKEN || '';
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
 const ROCKETREACH_REQUEST_TIMEOUT_MS = Number(process.env.ROCKETREACH_REQUEST_TIMEOUT_MS) || 15000;
@@ -773,6 +776,18 @@ const ghlMcp = createGhlMcpService({
   getTenantId:tenantId,
   inferOwner:inferValOwner,
   logger:console
+});
+const krispMcp = createKrispMcpService({
+  url:KRISP_MCP_URL,
+  fallbackAccessToken:KRISP_MCP_ACCESS_TOKEN,
+  resolveSecret:async(provider,credentialType,fallback='')=>{
+    if(String(provider||'').toLowerCase()==='krisp'&&['access_token','api_key'].includes(String(credentialType||''))){
+      return resolveKrispAccessToken(fallback);
+    }
+    return resolveIntegrationSecret(provider,credentialType,fallback);
+  },
+  logger:console,
+  timeoutMs:30000
 });
 
 function inferValOwner(obj={}){
@@ -1544,7 +1559,8 @@ const TENANT_API_KEY_PROVIDER_REGISTRY={
   anthropic:{providerId:'anthropic',displayName:'Anthropic / Claude',description:'Optional Claude model provider for approved VAL workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'anthropic_models',docsUrl:'https://console.anthropic.com/settings/keys',costRiskCategory:'usage_based_ai',helpText:'Create an API key in Anthropic Console → API Keys.'},
   outscraper:{providerId:'outscraper',displayName:'Outscraper',description:'Supports approved business search and enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://app.outscraper.com/profile',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Outscraper account.'},
   rocketreach:{providerId:'rocketreach',displayName:'RocketReach',description:'Supports approved contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://rocketreach.co/api',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your RocketReach account.'},
-  apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'}
+  apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'},
+  krisp:{providerId:'krisp',displayName:'Krisp MCP',description:'Connects Krisp meeting transcripts through the Krisp MCP server for transcript evidence intake.',credentialFields:['access_token'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://help.krisp.ai/hc/en-us/articles/25396920405148-Krisp-MCP',costRiskCategory:'private_meeting_data',helpText:'Use a Krisp MCP access token or saved OAuth token. VAL treats Krisp output as transcript evidence only.'}
 };
 const TENANT_API_KEY_PROVIDERS=Object.keys(TENANT_API_KEY_PROVIDER_REGISTRY);
 function tenantApiKeyProvider(provider){
@@ -7768,7 +7784,7 @@ app.get('/api/integrations/credentials',async(req,res)=>{
 app.post('/api/integrations/credentials',async(req,res)=>{
   try{
     const provider=String(req.body.provider||'').trim().toLowerCase();
-    const allowed=new Set(['openai','ghl','outscraper','apollo','rocketreach','google_oauth','microsoft_oauth']);
+    const allowed=new Set(['openai','ghl','outscraper','apollo','rocketreach','krisp','google_oauth','microsoft_oauth']);
     if(!allowed.has(provider)) return res.status(400).json({ok:false,error:'Unsupported provider'});
     if(DEMO_MODE) return res.json({ok:true,demo:true,credentials:[{id:`demo-${provider}`,provider,credentialType:'api_key',maskedValue:'...demo',status:'Connected',lastTestedAt:new Date().toISOString()}]});
     const fields=req.body.fields||{};
@@ -7798,6 +7814,8 @@ app.post('/api/integrations/credentials',async(req,res)=>{
       await save('api_key',fields.apiKey||fields.key);
     }else if(provider==='rocketreach'){
       await save('api_key',fields.apiKey||fields.key);
+    }else if(provider==='krisp'){
+      await save('access_token',fields.accessToken||fields.apiKey||fields.key||fields.token);
     }else{
       return res.status(400).json({ok:false,error:'Use OAuth connect buttons for Google or Microsoft'});
     }
@@ -7847,6 +7865,9 @@ app.post('/api/integrations/test/:provider',async(req,res)=>{
     }else if(provider==='rocketreach'){
       const key=await resolveIntegrationSecret('rocketreach','api_key',ROCKETREACH_API_KEY);
       ok=!!key; message=ok?'Connected': 'RocketReach API key is missing';
+    }else if(provider==='krisp'){
+      const token=await resolveKrispAccessToken('');
+      ok=!!token; message=ok?'Krisp MCP token is saved. Use Krisp status to verify the live MCP connection.':'Krisp MCP access token is missing';
     }else if(provider==='google_oauth'){
       ok=!!(await loadOAuthTokens('google')); message=ok?'Connected':'Not connected';
     }else if(provider==='microsoft_oauth'){
@@ -7864,7 +7885,7 @@ app.post('/api/integrations/test/:provider',async(req,res)=>{
 app.delete('/api/integrations/oauth/:provider',async(req,res)=>{
   try{
     const provider=String(req.params.provider||'').toLowerCase();
-    if(!['google','microsoft'].includes(provider)) return res.status(400).json({ok:false,error:'Unsupported OAuth provider'});
+    if(!['google','microsoft','krisp'].includes(provider)) return res.status(400).json({ok:false,error:'Unsupported OAuth provider'});
     const userId=currentUserId();
     const tenant=tenantId();
     let deleted=0;
@@ -7902,6 +7923,34 @@ app.delete('/api/integrations/oauth/:provider',async(req,res)=>{
     res.json({ok:true,deleted});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/val/krisp/status',async(req,res)=>{
+  try{
+    const configured=await krispMcp.isConfigured();
+    if(!configured){
+      return res.json({
+        ok:true,
+        configured:false,
+        connected:false,
+        url:krispMcp.url,
+        message:'Krisp MCP is not connected yet.'
+      });
+    }
+    const includeTools=req.query.tools==='1'||req.query.tools==='true';
+    const tools=includeTools
+      ? await krispMcp.listTools().catch(e=>({error:e.message}))
+      : undefined;
+    res.json({
+      ok:true,
+      configured:true,
+      connected:!tools?.error,
+      url:krispMcp.url,
+      client:krispMcp.usesSdk?.()?'sdk-streamable-http':'legacy-jsonrpc',
+      ...(includeTools?{tools}: {})
+    });
+  }catch(e){
+    res.status(500).json({ok:false,configured:false,connected:false,error:e.message});
   }
 });
 app.get('/api/gmail/debug',async(req,res)=>{
@@ -8440,6 +8489,13 @@ async function loadOAuthTokens(provider){
   }
   const tokens=valStore().oauthTokens||{};
   return tokens[`${tenant}:${userId}:${provider}`] ? decryptOAuthTokens(tokens[`${tenant}:${userId}:${provider}`]) : null;
+}
+
+async function resolveKrispAccessToken(fallback=''){
+  const saved=await loadOAuthTokens('krisp').catch(()=>null);
+  if(saved?.access_token)return saved.access_token;
+  const credential=await resolveIntegrationSecret('krisp','access_token',fallback||KRISP_MCP_ACCESS_TOKEN).catch(()=>fallback||KRISP_MCP_ACCESS_TOKEN);
+  return credential || resolveIntegrationSecret('krisp','api_key',fallback||KRISP_MCP_ACCESS_TOKEN);
 }
 
 async function ensureGoogleTokensLoaded(){

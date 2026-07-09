@@ -1416,16 +1416,18 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
   assert.match(hearthCss, /\.room-item-list \[data-home-room-source\]/);
 });
 
-test('Hearth prototype can visually exercise named live-card language without live data', () => {
+test('Hearth prototype fallback keeps Home pointed at live Executive Inbox instead of demo news', () => {
   assert.match(hearthJs, /mockBriefing/);
   assert.match(hearthJs, /function prototypeBriefing/);
-  assert.match(hearthJs, /Greg answered the question that was holding the proposal/);
-  assert.match(hearthJs, /Michele sent chapter notes/);
-  assert.match(hearthJs, /Allen shared assessment notes/);
-  assert.match(hearthJs, /Acme proposal can move now/);
-  assert.match(hearthJs, /Frisson introduction draft/);
-  assert.match(hearthJs, /D3Day page copy draft/);
-  assert.match(hearthJs, /Client follow-up email/);
+  assert.match(hearthJs, /Executive Inbox is the live review surface/);
+  assert.match(hearthJs, /Demo news stays out of the desk/);
+  assert.match(hearthJs, /No admitted item should be invented/);
+  assert.match(hearthJs, /Open Executive Inbox for live judgment/);
+  assert.match(hearthJs, /openExecutiveInbox/);
+  assert.doesNotMatch(hearthJs, /Greg answered the question that was holding the proposal/);
+  assert.doesNotMatch(hearthJs, /Michele sent chapter notes/);
+  assert.doesNotMatch(hearthJs, /Allen shared assessment notes/);
+  assert.doesNotMatch(hearthJs, /Frisson introduction draft/);
   assert.match(hearthJs, /hydrateGreetingFromBriefing\(briefing\)/);
   assert.match(hearthJs, /hydrateRoomsFromBriefing\(briefing\)/);
 });
