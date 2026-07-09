@@ -7492,12 +7492,16 @@ function renderScraperCriteria(workflow, type){
 function renderScraperPreviewList(workflow, stage){
   const leads = workflow.previewLeads || [];
   if(!leads.length || stage === 'setup') return;
-  const stageLabel = stage === 'imported' ? 'Imported records' : stage === 'verified' ? 'Verified preview' : 'Preview records';
+  const isImportedStage = stage === 'imported';
+  const stageLabel = isImportedStage ? 'Imported records' : stage === 'verified' ? 'Verified preview' : 'Live preview - not imported';
+  const stageSummary = isImportedStage
+    ? 'These rows have an import receipt. Review skipped or failed rows before running another batch.'
+    : 'These are live scraper preview results. Approve or hold each row before any CRM import.';
   revealLeadSourcingWorkbench();
   if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
-    '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>Details create trust before approval.</small></div>',
+    '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>' + stageSummary + '</small></div>',
     '<div class="lead-sourcing-board" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div>' +
         leads.map((lead, index) => (
@@ -7521,9 +7525,14 @@ function renderScraperPreviewList(workflow, stage){
       '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div>' +
         leads.map((lead, index) => (
           '<article class="preview-lead lead-stage-row" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
-            '<strong>' + escapeHtml(lead.name) + '</strong>' +
-            '<span>' + escapeHtml(lead.evidence) + '</span>' +
-            '<small>' + (stage === 'imported' ? 'Import receipt attached.' : 'GHL duplicate and source review stay visible before import.') + '</small>' +
+            '<div class="lead-confirm-main">' +
+              '<strong>' + escapeHtml(lead.name) + '</strong>' +
+              '<span>' + escapeHtml(lead.evidence) + '</span>' +
+            '</div>' +
+            '<div class="lead-confirm-status">' +
+              '<b>' + (isImportedStage ? 'Imported' : 'Preview only') + '</b>' +
+              '<small>' + (isImportedStage ? 'Import receipt attached.' : 'Not in GHL yet. Duplicate check is enforced again at import.') + '</small>' +
+            '</div>' +
             '<div class="preview-controls" aria-label="Review decision for ' + escapeHtml(lead.name) + '">' +
               '<button type="button" class="preview-choice' + (lead._approved === false ? '' : ' active') + '" data-preview-choice="approved">Approve</button>' +
               '<button type="button" class="preview-choice' + (lead._approved === false ? ' active' : '') + '" data-preview-choice="held">Hold</button>' +
@@ -7582,7 +7591,8 @@ function updatePreviewApprovalSummary(){
   const held = rows.length - approved;
   const summary = leadDrawerPreviewList.querySelector('[data-preview-summary]');
   if(summary){
-    summary.textContent = approved + ' approved / ' + held + ' held';
+    const sourceMode = mockScrapers || !canUseApi ? 'Prototype/mock preview' : 'Live scraper preview';
+    summary.textContent = sourceMode + ' - ' + approved + ' approved / ' + held + ' held - not imported until you click Import.';
   }
   const importAction = workspaceActions.querySelector('[data-workflow-action^="import:"]');
   if(importAction){

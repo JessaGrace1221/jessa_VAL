@@ -5295,6 +5295,53 @@ button.drawer-link{
   flex-wrap:wrap;
   margin-top:3px;
 }
+.lead-sourcing-column .preview-lead{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+  min-height:0;
+  border:0;
+  border-bottom:1px solid rgba(29,29,31,.08);
+  border-radius:0;
+  background:rgba(255,255,255,.64);
+  box-shadow:none;
+}
+.lead-sourcing-column .preview-lead[data-lead-review="held"]{
+  background:rgba(248,248,247,.52);
+  border-color:rgba(29,29,31,.1);
+}
+.lead-confirm-main{
+  display:grid;
+  gap:5px;
+  min-width:0;
+}
+.lead-confirm-main span{
+  color:rgba(29,29,31,.66);
+  font:.72rem/1.35 var(--body);
+  text-transform:none;
+}
+.lead-confirm-status{
+  display:grid;
+  gap:5px;
+  padding:8px 9px;
+  border:1px solid rgba(29,29,31,.08);
+  border-radius:8px;
+  background:rgba(248,248,247,.82);
+}
+.lead-confirm-status b{
+  width:max-content;
+  max-width:100%;
+  padding:4px 8px;
+  border:1px solid rgba(94,114,88,.16);
+  border-radius:999px;
+  background:rgba(94,114,88,.08);
+  color:rgba(65,83,61,.92);
+  font:700 .62rem/1 var(--sans);
+}
+.lead-confirm-status small{
+  color:rgba(29,29,31,.62);
+  font:.69rem/1.35 var(--body);
+}
 .lead-sourcing-column .preview-choice{
   min-height:28px;
   padding:6px 9px;

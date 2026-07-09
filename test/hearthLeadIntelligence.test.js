@@ -82,9 +82,14 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /<span>Level 1<\/span><h4>Discovery<\/h4>/);
   assert.match(hearthJs, /<span>Level 2<\/span><h4>Decision Maker<\/h4>/);
   assert.match(hearthJs, /<span>Level 3<\/span><h4>Confirm \/ Dedupe<\/h4>/);
+  assert.match(hearthJs, /Live preview - not imported/);
+  assert.match(hearthJs, /Live scraper preview/);
+  assert.match(hearthJs, /Not in GHL yet\. Duplicate check is enforced again at import\./);
+  assert.match(hearthCss, /\.lead-sourcing-column \.preview-lead\{/);
+  assert.match(hearthCss, /grid-template-columns:1fr/);
   assert.match(hearthJs, /data-preview-choice="approved"/);
   assert.match(hearthJs, /data-preview-choice="held"/);
-  assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held'/);
+  assert.match(hearthJs, /approved \+ ' approved \/ ' \+ held \+ ' held - not imported until you click Import\.'/);
   assert.match(hearthJs, /Import ' \+ approved \+ ' approved lead/);
   assert.match(hearthJs, /importAction\.disabled = approved === 0/);
   assert.match(hearthJs, /drawerImportAction\.disabled = approved === 0/);
