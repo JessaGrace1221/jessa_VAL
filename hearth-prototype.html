@@ -734,14 +734,21 @@
         <div class="correspondence-rulebar" aria-label="Executive Inbox rules">
           <div>
             <span>Rule Learning</span>
-            <strong data-correspondence-rule-status>Loading saved rules</strong>
+            <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
           </div>
           <div class="correspondence-rule-create">
-            <input type="email" data-correspondence-forward-to placeholder="Forward selected sender to..." autocomplete="email">
-            <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save rule</button>
-            <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">VAL suggestions</button>
+            <input type="text" data-correspondence-forward-to placeholder="Type New Rule Here" autocomplete="off">
+            <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save Rule</button>
+            <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Ask VAL</button>
           </div>
         </div>
+        <section class="correspondence-rules-panel" data-correspondence-rules-panel hidden aria-label="Saved Executive Inbox rules">
+          <div>
+            <span>Active Rules</span>
+            <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Close</button>
+          </div>
+          <div class="correspondence-rules-list" data-correspondence-rules-list></div>
+        </section>
         <div class="correspondence-workbench" aria-label="Executive Inbox workbench">
           <section class="correspondence-queue" aria-label="Prepared Executive Inbox queue">
             <div class="timeline-status-header">
@@ -785,7 +792,7 @@
               <div data-correspondence-projects></div>
             </section>
             <section>
-              <span>Rules VAL Noticed</span>
+              <span>Rules VAL Suggests</span>
               <div data-correspondence-rule-suggestions></div>
             </section>
           </aside>

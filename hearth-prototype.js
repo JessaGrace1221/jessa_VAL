@@ -83,6 +83,8 @@ const correspondenceDraftBody = document.querySelector('[data-correspondence-dra
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
 const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
+const correspondenceRulesPanel = document.querySelector('[data-correspondence-rules-panel]');
+const correspondenceRulesList = document.querySelector('[data-correspondence-rules-list]');
 const correspondenceRelationships = document.querySelector('[data-correspondence-relationships]');
 const correspondenceProjects = document.querySelector('[data-correspondence-projects]');
 const correspondenceRuleSuggestions = document.querySelector('[data-correspondence-rule-suggestions]');
@@ -114,6 +116,7 @@ let currentCorrespondenceItems = [];
 let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
+let dismissedCorrespondenceRuleSuggestions = new Set();
 let currentCommitmentItems = [];
 let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
@@ -3493,8 +3496,9 @@ function renderCorrespondenceList(){
 }
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
-  if(!item) return [];
-  return ['send', 'cowork_correspondence', 'not_executive_contact', 'save_forward_rule', 'suggest_rules'];
+  const ruleActions = ['show_rules', 'save_forward_rule', 'suggest_rules'];
+  if(!item) return ruleActions;
+  return ['send', 'cowork_correspondence', 'not_executive_contact'].concat(ruleActions);
 }
 
 function scrollCorrespondenceActionsIntoView(){
@@ -3571,15 +3575,95 @@ function renderCorrespondenceSideList(node, lines, emptyText){
   });
 }
 
+function correspondenceRuleLabel(rule = {}){
+  return correspondenceCompactText(rule.ruleName || rule.rule_name || rule.plainEnglish || rule.confirmationQuestion || 'Email rule', 140);
+}
+
+function renderCorrespondenceRulesPanel(){
+  if(!correspondenceRulesList) return;
+  correspondenceRulesList.innerHTML = '';
+  const rules = currentCorrespondenceRules.filter((rule) => rule.isActive !== false);
+  if(!rules.length){
+    const empty = document.createElement('p');
+    empty.className = 'correspondence-side-empty';
+    empty.textContent = 'No saved Executive Inbox rules yet.';
+    correspondenceRulesList.appendChild(empty);
+    return;
+  }
+  rules.slice(0, 80).forEach((rule) => {
+    const article = document.createElement('article');
+    const title = document.createElement('strong');
+    title.textContent = correspondenceRuleLabel(rule);
+    const meta = document.createElement('p');
+    const action = rule.actions?.action || rule.actions_json?.action || rule.ruleType || rule.rule_type || 'review';
+    const condition = rule.conditions?.from_email || rule.conditions_json?.from_email || rule.conditions?.from_domain || rule.conditions_json?.from_domain || rule.conditions?.subject_contains || rule.conditions_json?.subject_contains || 'Executive Inbox';
+    meta.textContent = [String(action).replace(/_/g, ' '), condition].filter(Boolean).join(' · ');
+    article.append(title, meta);
+    correspondenceRulesList.appendChild(article);
+  });
+}
+
+function toggleCorrespondenceRulesPanel(){
+  if(!correspondenceRulesPanel) return;
+  const nextOpen = correspondenceRulesPanel.hidden;
+  correspondenceRulesPanel.hidden = !nextOpen;
+  if(nextOpen) renderCorrespondenceRulesPanel();
+}
+
+function normalizeCorrespondenceRuleSuggestion(suggestion, source = 'val'){
+  if(typeof suggestion === 'string'){
+    return {text:correspondenceCompactText(suggestion, 220), raw:{plainEnglish:suggestion}, source};
+  }
+  const text = suggestion?.confirmationQuestion || suggestion?.plainEnglish || suggestion?.ruleName || '';
+  return {text:correspondenceCompactText(text, 220), raw:suggestion || {}, source};
+}
+
+function correspondenceRuleSuggestionRows(item = activeCorrespondenceItem){
+  const itemSuggestions = (item?.ruleSuggestions || []).map((suggestion) => normalizeCorrespondenceRuleSuggestion(suggestion, 'thread'));
+  const analyzedSuggestions = currentCorrespondenceRuleSuggestions.map((suggestion) => normalizeCorrespondenceRuleSuggestion(suggestion, 'analysis'));
+  return itemSuggestions.concat(analyzedSuggestions).filter((suggestion) => suggestion.text && !dismissedCorrespondenceRuleSuggestions.has(suggestion.text));
+}
+
+function renderCorrespondenceRuleSuggestions(item = activeCorrespondenceItem){
+  if(!correspondenceRuleSuggestions) return;
+  correspondenceRuleSuggestions.innerHTML = '';
+  const suggestions = correspondenceRuleSuggestionRows(item);
+  if(!suggestions.length){
+    const empty = document.createElement('p');
+    empty.className = 'correspondence-side-empty';
+    empty.textContent = 'No reusable rule suggested yet.';
+    correspondenceRuleSuggestions.appendChild(empty);
+    return;
+  }
+  suggestions.forEach((suggestion, index) => {
+    const article = document.createElement('article');
+    article.className = 'correspondence-rule-suggestion';
+    const p = document.createElement('p');
+    p.textContent = suggestion.text;
+    const actions = document.createElement('div');
+    const yes = document.createElement('button');
+    yes.type = 'button';
+    yes.textContent = 'Yes';
+    yes.dataset.correspondenceSuggestionAccept = String(index);
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.textContent = 'No';
+    no.dataset.correspondenceSuggestionDismiss = String(index);
+    actions.append(yes, no);
+    article.append(p, actions);
+    correspondenceRuleSuggestions.appendChild(article);
+  });
+}
+
 function renderCorrespondenceIntelligence(item = activeCorrespondenceItem){
   renderCorrespondenceSideList(correspondenceRelationships, item?.relationships || [], 'No relationship match yet.');
   renderCorrespondenceSideList(correspondenceProjects, item?.projects || [], 'No project match yet.');
-  const suggestions = (item?.ruleSuggestions || []).concat(currentCorrespondenceRuleSuggestions.map((suggestion) => suggestion.plainEnglish || suggestion.confirmationQuestion || '').filter(Boolean));
-  renderCorrespondenceSideList(correspondenceRuleSuggestions, suggestions, 'No reusable rule suggested yet.');
+  renderCorrespondenceRuleSuggestions(item);
   if(correspondenceRuleStatus){
     const activeCount = currentCorrespondenceRules.filter((rule) => rule.isActive !== false).length;
     correspondenceRuleStatus.textContent = activeCount ? activeCount + ' active rule' + (activeCount === 1 ? '' : 's') : 'No saved rules yet';
   }
+  renderCorrespondenceRulesPanel();
 }
 
 function renderCorrespondenceBrief(item = activeCorrespondenceItem){
@@ -3602,7 +3686,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
     const allowed = correspondenceSuggestedActions(selected).includes(button.dataset.correspondenceAction);
     button.hidden = !allowed;
-    button.disabled = !selected || !allowed;
+    button.disabled = !allowed;
     button.setAttribute('aria-hidden', String(!allowed));
   });
   scrollCorrespondenceActionsIntoView();
@@ -3721,33 +3805,97 @@ async function hydrateCorrespondenceRules(){
   renderCorrespondenceIntelligence(activeCorrespondenceItem);
 }
 
-async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
-  const forwardTo = String(correspondenceForwardTo?.value || '').trim();
-  if(!forwardTo){
-    if(correspondenceSafety) correspondenceSafety.textContent = 'Enter the email address that should receive future forwards from this sender.';
-    return;
-  }
+function correspondenceRulePayloadFromText(ruleText = '', item = activeCorrespondenceItem){
+  const text = String(ruleText || '').trim();
   const email = correspondenceRuleEmail(item);
-  if(!email.from.email){
-    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs the sender email before it can create a forwarding rule.';
-    return;
+  const directForwardMatch = text.match(/forward[\s\S]*?from\s+([^\s,;]+@[^\s,;]+)[\s\S]*?\bto\s+([^\s,;]+@[^\s,;]+)/i);
+  const selectedForwardMatch = text.match(/\bto\s+([^\s,;]+@[^\s,;]+)/i);
+  if(/forward/i.test(text) && (directForwardMatch || (selectedForwardMatch && email.from.email))){
+    const fromEmail = directForwardMatch?.[1] || email.from.email;
+    const forwardTo = directForwardMatch?.[2] || selectedForwardMatch?.[1] || '';
+    return {
+      provider:'any',
+      ruleName:text,
+      ruleType:'forward_sender',
+      conditions:{from_email:fromEmail},
+      actions:{action:'forward',forward_to:forwardTo,include_summary:true,cc_user:false},
+      approvalMode:'review_only',
+      confidenceThreshold:'high',
+      createdFrom:'executive_inbox_rule_learning',
+      createdFromMessageId:item?.messageId || '',
+      createdFromThreadId:item?.threadId || ''
+    };
   }
+  if(/ignore|low priority|downgrade/i.test(text) && email.from.email){
+    return {
+      provider:'any',
+      ruleName:text,
+      ruleType:'ignore_sender',
+      conditions:{from_email:email.from.email},
+      actions:{action:'label',label:'low_priority'},
+      approvalMode:'review_only',
+      confidenceThreshold:'medium',
+      createdFrom:'executive_inbox_rule_learning',
+      createdFromMessageId:item?.messageId || '',
+      createdFromThreadId:item?.threadId || ''
+    };
+  }
+  return {
+    provider:'any',
+    ruleName:text,
+    ruleType:'plain_english_instruction',
+    conditions:email.from.email ? {from_email:email.from.email} : {source:'executive_inbox'},
+    actions:{action:'manual_instruction',instruction:text},
+    approvalMode:'review_only',
+    confidenceThreshold:'medium',
+    createdFrom:'executive_inbox_rule_learning',
+    createdFromMessageId:item?.messageId || '',
+    createdFromThreadId:item?.threadId || ''
+  };
+}
+
+function correspondenceRulePayloadFromSuggestion(suggestion = {}, item = activeCorrespondenceItem){
+  const raw = suggestion.raw || suggestion;
+  const text = suggestion.text || raw.confirmationQuestion || raw.plainEnglish || raw.ruleName || '';
+  if(raw.conditions || raw.actions || raw.suggestedRuleType){
+    return {
+      provider:'any',
+      ruleName:text,
+      ruleType:raw.suggestedRuleType || raw.ruleType || 'suggested_rule',
+      conditions:raw.conditions || {},
+      actions:raw.actions || {action:'manual_instruction',instruction:text},
+      approvalMode:'review_only',
+      confidenceThreshold:raw.confidence || 'medium',
+      createdFrom:'executive_inbox_val_suggestion',
+      createdFromMessageId:item?.messageId || '',
+      createdFromThreadId:item?.threadId || ''
+    };
+  }
+  return correspondenceRulePayloadFromText(text, item);
+}
+
+async function saveCorrespondenceRulePayload(payload, successText){
   if(!canUseApi){
     if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to save rules. Nothing was changed.';
+    return null;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saving rule. Approval boundaries still apply.';
+  const result = await postJson('/api/email/rules', payload);
+  if(result.rule) currentCorrespondenceRules = [result.rule].concat(currentCorrespondenceRules.filter((rule) => rule.id !== result.rule?.id));
+  if(correspondenceSafety) correspondenceSafety.textContent = successText || 'Saved rule: ' + correspondenceRuleLabel(result.rule || payload) + '.';
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
+  return result.rule || payload;
+}
+
+async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
+  const ruleText = String(correspondenceForwardTo?.value || '').trim();
+  if(!ruleText){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type the rule you want VAL to remember.';
     return;
   }
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Saving a narrow forwarding rule. Existing approval boundaries still apply.';
-  const result = await postJson('/api/email/automation-rule', {
-    mode:'auto_next_time',
-    action:'forward',
-    forwardTo,
-    approvalMode:'review_only',
-    ruleName:'Forward ' + email.from.email + ' to ' + forwardTo,
-    email
-  });
-  if(result.rule) currentCorrespondenceRules = [result.rule].concat(currentCorrespondenceRules.filter((rule) => rule.id !== result.rule?.id));
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved rule: future emails from ' + email.from.email + ' can be prepared for forwarding to ' + forwardTo + '.';
-  renderCorrespondenceIntelligence(item);
+  const payload = correspondenceRulePayloadFromText(ruleText, item);
+  const saved = await saveCorrespondenceRulePayload(payload, 'Saved rule: ' + ruleText + '.');
+  if(saved && correspondenceForwardTo) correspondenceForwardTo.value = '';
 }
 
 async function analyzeCorrespondenceRuleSuggestions(){
@@ -3759,6 +3907,25 @@ async function analyzeCorrespondenceRuleSuggestions(){
   const result = await postJson('/api/email/rule-suggestions/analyze', {});
   currentCorrespondenceRuleSuggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceRuleSuggestions.length ? 'VAL found ' + currentCorrespondenceRuleSuggestions.length + ' possible rule' + (currentCorrespondenceRuleSuggestions.length === 1 ? '' : 's') + ' for review.' : 'VAL did not find enough repeated evidence for a new rule yet.';
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
+}
+
+async function acceptCorrespondenceRuleSuggestion(index){
+  const suggestion = correspondenceRuleSuggestionRows(activeCorrespondenceItem)[index];
+  if(!suggestion) return;
+  const payload = correspondenceRulePayloadFromSuggestion(suggestion, activeCorrespondenceItem);
+  const saved = await saveCorrespondenceRulePayload(payload, 'Saved suggested rule: ' + suggestion.text + '.');
+  if(saved){
+    dismissedCorrespondenceRuleSuggestions.add(suggestion.text);
+    renderCorrespondenceIntelligence(activeCorrespondenceItem);
+  }
+}
+
+function dismissCorrespondenceRuleSuggestion(index){
+  const suggestion = correspondenceRuleSuggestionRows(activeCorrespondenceItem)[index];
+  if(!suggestion) return;
+  dismissedCorrespondenceRuleSuggestions.add(suggestion.text);
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Suggestion dismissed.';
   renderCorrespondenceIntelligence(activeCorrespondenceItem);
 }
 
@@ -3814,6 +3981,10 @@ function openCorrespondenceReviewWorkspace(item = activeCorrespondenceItem){
 }
 
 async function handleCorrespondenceAction(action){
+  if(action === 'show_rules'){
+    toggleCorrespondenceRulesPanel();
+    return;
+  }
   const item = activeCorrespondenceItem;
   if(!item) return;
   if(action === 'save_forward_rule'){
@@ -3926,7 +4097,7 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const inspectOnlyAction = correspondenceActionId === 'cowork_correspondence' || correspondenceActionId === 'not_executive_contact';
+  const inspectOnlyAction = ['cowork_correspondence', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'suggest_rules'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
@@ -12813,6 +12984,20 @@ drawerTray.addEventListener('click', async (event) => {
   const correspondenceAction = event.target.closest('[data-correspondence-action]');
   if(correspondenceAction){
     await runCorrespondenceActionClick(correspondenceAction, event);
+    return;
+  }
+  const correspondenceSuggestionAccept = event.target.closest('[data-correspondence-suggestion-accept]');
+  if(correspondenceSuggestionAccept){
+    event.preventDefault();
+    event.stopPropagation();
+    await acceptCorrespondenceRuleSuggestion(Number(correspondenceSuggestionAccept.dataset.correspondenceSuggestionAccept));
+    return;
+  }
+  const correspondenceSuggestionDismiss = event.target.closest('[data-correspondence-suggestion-dismiss]');
+  if(correspondenceSuggestionDismiss){
+    event.preventDefault();
+    event.stopPropagation();
+    dismissCorrespondenceRuleSuggestion(Number(correspondenceSuggestionDismiss.dataset.correspondenceSuggestionDismiss));
     return;
   }
   const correspondenceItem = event.target.closest('[data-correspondence-item]');
