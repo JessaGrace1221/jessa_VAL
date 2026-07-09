@@ -742,12 +742,18 @@
             <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Ask VAL</button>
           </div>
         </div>
-        <section class="correspondence-rules-panel" data-correspondence-rules-panel hidden aria-label="Saved Executive Inbox rules">
-          <div>
-            <span>Active Rules</span>
-            <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Close</button>
+        <section class="correspondence-rules-panel" data-correspondence-rules-panel hidden aria-hidden="true" aria-label="Saved Executive Inbox rules">
+          <div class="correspondence-rules-modal" role="dialog" aria-modal="true" aria-labelledby="correspondence-rules-title">
+            <div class="correspondence-rules-head">
+              <div>
+                <span>Rule Learning</span>
+                <h4 id="correspondence-rules-title">Saved Executive Inbox Rules</h4>
+                <p>Active behavior VAL can apply when a future conversation matches the rule scope.</p>
+              </div>
+              <button type="button" data-correspondence-rules-close aria-label="Close saved rules">Close</button>
+            </div>
+            <div class="correspondence-rules-list" data-correspondence-rules-list></div>
           </div>
-          <div class="correspondence-rules-list" data-correspondence-rules-list></div>
         </section>
         <div class="correspondence-workbench" aria-label="Executive Inbox workbench">
           <section class="correspondence-queue" aria-label="Prepared Executive Inbox queue">

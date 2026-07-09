@@ -3603,11 +3603,16 @@ function renderCorrespondenceRulesPanel(){
   });
 }
 
+function setCorrespondenceRulesPanel(open){
+  if(!correspondenceRulesPanel) return;
+  correspondenceRulesPanel.hidden = !open;
+  correspondenceRulesPanel.setAttribute('aria-hidden', String(!open));
+  if(open) renderCorrespondenceRulesPanel();
+}
+
 function toggleCorrespondenceRulesPanel(){
   if(!correspondenceRulesPanel) return;
-  const nextOpen = correspondenceRulesPanel.hidden;
-  correspondenceRulesPanel.hidden = !nextOpen;
-  if(nextOpen) renderCorrespondenceRulesPanel();
+  setCorrespondenceRulesPanel(correspondenceRulesPanel.hidden);
 }
 
 function normalizeCorrespondenceRuleSuggestion(suggestion, source = 'val'){
@@ -3661,9 +3666,9 @@ function renderCorrespondenceIntelligence(item = activeCorrespondenceItem){
   renderCorrespondenceRuleSuggestions(item);
   if(correspondenceRuleStatus){
     const activeCount = currentCorrespondenceRules.filter((rule) => rule.isActive !== false).length;
-    correspondenceRuleStatus.textContent = activeCount ? activeCount + ' active rule' + (activeCount === 1 ? '' : 's') : 'No saved rules yet';
+    correspondenceRuleStatus.textContent = activeCount ? 'View ' + activeCount + ' active rule' + (activeCount === 1 ? '' : 's') : 'No saved rules yet';
   }
-  renderCorrespondenceRulesPanel();
+  if(correspondenceRulesPanel && !correspondenceRulesPanel.hidden) renderCorrespondenceRulesPanel();
 }
 
 function renderCorrespondenceBrief(item = activeCorrespondenceItem){
@@ -12986,6 +12991,13 @@ drawerTray.addEventListener('click', async (event) => {
     await runCorrespondenceActionClick(correspondenceAction, event);
     return;
   }
+  const correspondenceRulesClose = event.target.closest('[data-correspondence-rules-close]');
+  if(correspondenceRulesClose || event.target === correspondenceRulesPanel){
+    event.preventDefault();
+    event.stopPropagation();
+    setCorrespondenceRulesPanel(false);
+    return;
+  }
   const correspondenceSuggestionAccept = event.target.closest('[data-correspondence-suggestion-accept]');
   if(correspondenceSuggestionAccept){
     event.preventDefault();
@@ -13397,6 +13409,13 @@ scraperPreviewList.addEventListener('click', async (event) => {
     activeSession.previewLeads[index]._approved = nextStatus !== 'held';
   }
   updatePreviewApprovalSummary();
+});
+
+document.addEventListener('keydown', (event) => {
+  if(event.key !== 'Escape') return;
+  if(correspondenceRulesPanel && !correspondenceRulesPanel.hidden){
+    setCorrespondenceRulesPanel(false);
+  }
 });
 
 document.querySelectorAll('#correspondence-detail [data-correspondence-action]').forEach((button) => {

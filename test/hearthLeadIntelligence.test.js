@@ -462,6 +462,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthHtml, /data-correspondence-forward-to/);
   assert.match(hearthHtml, /Type New Rule Here/);
   assert.match(hearthHtml, /data-correspondence-rules-panel/);
+  assert.match(hearthHtml, /role="dialog"/);
+  assert.match(hearthHtml, /data-correspondence-rules-close/);
   assert.match(hearthHtml, /data-correspondence-action="show_rules"/);
   assert.match(hearthHtml, /data-correspondence-action="save_forward_rule"/);
   assert.match(hearthHtml, /data-correspondence-action="suggest_rules"/);
@@ -498,6 +500,7 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function renderCorrespondenceThread/);
   assert.match(hearthJs, /function saveCorrespondenceForwardRule/);
   assert.match(hearthJs, /function renderCorrespondenceRulesPanel/);
+  assert.match(hearthJs, /function setCorrespondenceRulesPanel/);
   assert.match(hearthJs, /data-correspondence-suggestion-accept/);
   assert.match(hearthJs, /\/api\/email\/rules/);
   assert.match(hearthJs, /\/api\/email\/rule-suggestions\/analyze/);

@@ -2740,8 +2740,8 @@ button.drawer-link{
 }
 .drawer-tray.correspondence-open{
   border-color:rgba(60,60,67,.14);
-  background:rgba(246,246,247,.94);
-  box-shadow:0 -14px 42px rgba(0,0,0,.1),0 36px 92px rgba(0,0,0,.18);
+  background:rgba(248,248,249,.96);
+  box-shadow:0 -10px 34px rgba(0,0,0,.08),0 30px 80px rgba(0,0,0,.16);
 }
 .drawer-tray.commitment-open .commitment-detail{
   max-height:none;
@@ -3192,15 +3192,15 @@ button.drawer-link{
 }
 .correspondence-rulebar{
   display:grid;
-  grid-template-columns:minmax(220px,.45fr) minmax(0,1fr);
-  gap:16px;
+  grid-template-columns:minmax(190px,.34fr) minmax(0,1fr);
+  gap:18px;
   align-items:end;
   margin-top:18px;
-  padding:12px 14px;
-  border:1px solid rgba(60,60,67,.12);
-  border-radius:8px;
-  background:rgba(255,255,255,.72);
-  box-shadow:0 12px 30px rgba(0,0,0,.04);
+  padding:11px 0 13px;
+  border-top:1px solid rgba(60,60,67,.14);
+  border-bottom:1px solid rgba(60,60,67,.1);
+  background:transparent;
+  box-shadow:none;
 }
 .correspondence-rulebar > div:first-child{
   display:grid;
@@ -3222,15 +3222,15 @@ button.drawer-link{
 }
 .correspondence-rule-create{
   display:grid;
-  grid-template-columns:minmax(220px,1fr) auto auto;
-  gap:8px;
+  grid-template-columns:minmax(260px,1fr) auto auto;
+  gap:7px;
 }
 .correspondence-rule-create input{
   min-width:0;
-  height:36px;
+  height:34px;
   border:1px solid rgba(60,60,67,.16);
-  border-radius:7px;
-  background:rgba(255,255,255,.86);
+  border-radius:6px;
+  background:rgba(255,255,255,.92);
   color:rgba(29,29,31,.94);
   padding:0 12px;
   font:550 .76rem/1.2 var(--body);
@@ -3242,14 +3242,14 @@ button.drawer-link{
 }
 .correspondence-rule-create button,
 .correspondence-discuss{
-  min-height:36px;
+  min-height:34px;
   border:1px solid rgba(60,60,67,.16);
-  border-radius:7px;
-  background:rgba(255,255,255,.9);
+  border-radius:6px;
+  background:rgba(255,255,255,.86);
   color:rgba(29,29,31,.88);
   padding:0 12px;
-  font-size:.66rem;
-  font-weight:850;
+  font-size:.65rem;
+  font-weight:780;
 }
 .correspondence-rule-create button:hover,
 .correspondence-rule-status:hover{
@@ -3257,48 +3257,73 @@ button.drawer-link{
   color:rgba(0,84,166,.96);
 }
 .correspondence-rules-panel{
+  position:fixed;
+  z-index:80;
+  inset:0;
   display:grid;
-  gap:12px;
-  margin-top:10px;
-  padding:14px;
-  border:1px solid rgba(60,60,67,.12);
-  border-radius:8px;
-  background:rgba(255,255,255,.86);
-  box-shadow:0 16px 40px rgba(0,0,0,.06);
+  place-items:center;
+  padding:24px;
+  background:rgba(18,18,20,.18);
+  backdrop-filter:blur(10px);
 }
 .correspondence-rules-panel[hidden]{
   display:none;
 }
-.correspondence-rules-panel > div:first-child{
+.correspondence-rules-modal{
+  display:grid;
+  gap:16px;
+  width:min(720px,calc(100vw - 48px));
+  max-height:min(620px,calc(100vh - 80px));
+  padding:22px;
+  border:1px solid rgba(60,60,67,.13);
+  border-radius:10px;
+  background:rgba(255,255,255,.96);
+  box-shadow:0 28px 90px rgba(0,0,0,.18);
+  overflow:hidden;
+}
+.correspondence-rules-head{
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:space-between;
-  gap:12px;
+  gap:20px;
+}
+.correspondence-rules-head h4{
+  margin:3px 0 0;
+  color:rgba(29,29,31,.95);
+  font:650 1.05rem/1.2 var(--body);
+}
+.correspondence-rules-head p{
+  max-width:460px;
+  margin:6px 0 0;
+  color:rgba(60,60,67,.68);
+  font-size:.76rem;
+  line-height:1.4;
 }
 .correspondence-rules-panel button{
   min-height:30px;
   border:1px solid rgba(60,60,67,.16);
-  border-radius:7px;
-  background:rgba(255,255,255,.92);
+  border-radius:6px;
+  background:rgba(247,247,248,.92);
   color:rgba(29,29,31,.82);
   padding:0 10px;
   font-size:.66rem;
-  font-weight:850;
+  font-weight:780;
 }
 .correspondence-rules-list{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:8px;
-  max-height:240px;
+  gap:0;
+  max-height:440px;
   overflow:auto;
+  border-top:1px solid rgba(60,60,67,.1);
 }
 .correspondence-rules-list article{
   display:grid;
   gap:5px;
-  padding:10px;
-  border:1px solid rgba(60,60,67,.1);
-  border-radius:8px;
-  background:rgba(247,247,248,.72);
+  padding:12px 0;
+  border:0;
+  border-bottom:1px solid rgba(60,60,67,.1);
+  border-radius:0;
+  background:transparent;
 }
 .correspondence-rules-list strong{
   color:rgba(29,29,31,.92);
@@ -3312,15 +3337,15 @@ button.drawer-link{
 }
 .correspondence-workbench{
   display:grid;
-  grid-template-columns:minmax(210px,.66fr) minmax(360px,1.35fr) minmax(300px,.95fr) minmax(220px,.72fr);
+  grid-template-columns:minmax(210px,.55fr) minmax(410px,1.45fr) minmax(285px,.82fr) minmax(190px,.52fr);
   gap:0;
   margin-top:18px;
-  min-height:520px;
+  min-height:500px;
   border:1px solid rgba(60,60,67,.12);
-  border-radius:8px;
-  background:rgba(255,255,255,.74);
+  border-radius:6px;
+  background:rgba(255,255,255,.82);
   overflow:hidden;
-  box-shadow:0 18px 45px rgba(0,0,0,.05);
+  box-shadow:0 14px 38px rgba(0,0,0,.045);
 }
 .correspondence-queue,
 .correspondence-thread,
@@ -3330,10 +3355,10 @@ button.drawer-link{
   gap:12px;
   align-content:start;
   min-width:0;
-  min-height:520px;
-  padding:16px 16px 14px;
+  min-height:500px;
+  padding:17px 17px 15px;
   border-right:1px solid rgba(60,60,67,.12);
-  background:rgba(255,255,255,.56);
+  background:rgba(255,255,255,.68);
 }
 .correspondence-intelligence{
   border-right:0;
@@ -3349,24 +3374,24 @@ button.drawer-link{
   display:grid;
   gap:4px;
   min-width:0;
-  min-height:74px;
-  padding:12px 10px;
+  min-height:68px;
+  padding:12px 8px;
   border:0;
   border-bottom:1px solid rgba(60,60,67,.1);
-  border-radius:7px;
+  border-radius:0;
   background:transparent;
   color:rgba(29,29,31,.78);
   text-align:left;
 }
 .correspondence-list button[aria-pressed="true"]{
-  border-bottom-color:rgba(0,113,227,.22);
-  background:rgba(0,113,227,.07);
+  border-bottom-color:rgba(29,29,31,.22);
+  background:rgba(29,29,31,.045);
 }
 .correspondence-list strong,
 .correspondence-brief h4,
 .correspondence-thread h4{
   color:rgba(29,29,31,.94);
-  font:650 .96rem/1.18 var(--body);
+  font:650 .94rem/1.2 var(--body);
   overflow-wrap:anywhere;
 }
 .correspondence-list p,
@@ -3383,7 +3408,7 @@ button.drawer-link{
 .correspondence-brief h4,
 .correspondence-thread h4{
   margin:0;
-  font-size:1.05rem;
+  font-size:1rem;
 }
 .correspondence-brief-head p,
 .correspondence-context dd,
@@ -3419,14 +3444,14 @@ button.drawer-link{
 .correspondence-discuss{
   justify-self:start;
   margin-top:2px;
-  background:rgba(0,113,227,.08);
-  border-color:rgba(0,113,227,.2);
-  color:rgba(0,84,166,.95);
-  padding:0 14px;
+  background:transparent;
+  border-color:rgba(60,60,67,.16);
+  color:rgba(29,29,31,.78);
+  padding:0 12px;
   box-shadow:none;
 }
 .correspondence-discuss:hover{
-  background:rgba(0,113,227,.12);
+  background:rgba(29,29,31,.04);
 }
 .correspondence-context{
   display:grid;
@@ -3451,8 +3476,8 @@ button.drawer-link{
   min-height:380px;
   padding:0;
   border:1px solid rgba(60,60,67,.12);
-  border-radius:8px;
-  background:rgba(255,255,255,.9);
+  border-radius:6px;
+  background:rgba(255,255,255,.94);
   overflow:hidden;
 }
 .correspondence-draft-preview label{
@@ -3486,16 +3511,16 @@ button.drawer-link{
 .correspondence-actions button{
   min-height:31px;
   border:1px solid rgba(60,60,67,.14);
-  border-radius:7px;
+  border-radius:6px;
   background:rgba(255,255,255,.9);
   color:rgba(29,29,31,.84);
   padding:0 11px;
   font-size:.66rem;
-  font-weight:850;
+  font-weight:780;
 }
 .correspondence-actions button:first-child{
-  border-color:rgba(0,113,227,.18);
-  background:rgba(0,113,227,.92);
+  border-color:rgba(29,29,31,.92);
+  background:rgba(29,29,31,.92);
   color:#fff;
 }
 .correspondence-actions button:disabled{
@@ -3529,10 +3554,11 @@ button.drawer-link{
 .correspondence-rule-suggestion{
   display:grid;
   gap:8px;
-  padding:10px;
-  border:1px solid rgba(60,60,67,.1);
-  border-radius:8px;
-  background:rgba(255,255,255,.72);
+  padding:10px 0 0;
+  border:0;
+  border-top:1px solid rgba(60,60,67,.1);
+  border-radius:0;
+  background:transparent;
 }
 .correspondence-rule-suggestion div{
   display:flex;
@@ -3541,16 +3567,16 @@ button.drawer-link{
 .correspondence-rule-suggestion button{
   min-height:28px;
   border:1px solid rgba(60,60,67,.14);
-  border-radius:7px;
+  border-radius:6px;
   background:rgba(247,247,248,.86);
   color:rgba(29,29,31,.84);
   padding:0 10px;
   font-size:.64rem;
-  font-weight:850;
+  font-weight:780;
 }
 .correspondence-rule-suggestion button:first-child{
-  border-color:rgba(0,113,227,.18);
-  background:rgba(0,113,227,.9);
+  border-color:rgba(29,29,31,.92);
+  background:rgba(29,29,31,.92);
   color:#fff;
 }
 .commitment-summary-grid{
