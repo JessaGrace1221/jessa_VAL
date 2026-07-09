@@ -77,9 +77,15 @@ const correspondenceDrawerLink = document.querySelector('.correspondence-drawer-
 const closeCorrespondenceDetail = document.querySelector('.close-correspondence-detail');
 const correspondenceList = document.querySelector('[data-correspondence-list]');
 const correspondenceCount = document.querySelector('[data-correspondence-count]');
+const correspondenceThreadBody = document.querySelector('[data-correspondence-thread-body]');
 const correspondenceDraftPreview = document.querySelector('[data-correspondence-draft-preview]');
 const correspondenceDraftBody = document.querySelector('[data-correspondence-draft-body]');
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
+const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
+const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
+const correspondenceRelationships = document.querySelector('[data-correspondence-relationships]');
+const correspondenceProjects = document.querySelector('[data-correspondence-projects]');
+const correspondenceRuleSuggestions = document.querySelector('[data-correspondence-rule-suggestions]');
 const commitmentDrawerLink = document.querySelector('.commitment-drawer-link');
 const closeCommitmentDetail = document.querySelector('.close-commitment-detail');
 const commitmentList = document.querySelector('[data-commitment-list]');
@@ -106,6 +112,8 @@ const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
 let activeCorrespondenceItem = null;
+let currentCorrespondenceRules = [];
+let currentCorrespondenceRuleSuggestions = [];
 let currentCommitmentItems = [];
 let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
@@ -514,6 +522,16 @@ const localCorrespondenceItems = [
     draftBody: 'Hi Aric,\n\nI pulled the Frisson thread into a cleaner next step. The useful move seems to be narrowing the partner path before we add any new work.\n\nIf that still feels right, I can send over the short version for review.',
     recipientEmail: 'aric@example.com',
     provider: 'gmail',
+    senderEmail: 'aric@example.com',
+    senderName: 'Aric Soyring',
+    receivedAt: 'Today',
+    threadMessages: [
+      {from:'Aric Soyring',date:'Today',body:'Can you send over the cleaner partner path before we pull anyone else into the Frisson work?'},
+      {from:'Jessa',date:'Earlier',body:'Yes. I want to keep the partner motion narrow until the next step is actually clear.'}
+    ],
+    relationships: ['Aric Soyring · warm strategic partner', 'Fred · possible partner path'],
+    projects: ['Frisson · partner workflow', 'Lead Intelligence launch'],
+    ruleSuggestions: ['If Aric asks for partner-path materials twice, suggest a prepared Frisson packet before drafting.'],
     evidence: ['Transcript: partner path should stay narrow.', 'Relationship file: warm strategic context.'],
     source: 'local_preview',
     noExternalAction: true
@@ -530,6 +548,16 @@ const localCorrespondenceItems = [
     draftBody: 'Hi Greg,\n\nI saw this and want to answer it carefully. I need to confirm the exact scope and terms before I give you the wrong answer.\n\nI’ll come back with the clean version once I have that in front of me.',
     recipientEmail: 'greg@example.com',
     provider: 'gmail',
+    senderEmail: 'greg@example.com',
+    senderName: 'Greg Niesen',
+    receivedAt: 'Yesterday',
+    threadMessages: [
+      {from:'Greg Niesen',date:'Yesterday',body:'Can you confirm pricing and the scope for the proposal?'},
+      {from:'Jessa',date:'Earlier',body:'I want to make sure I answer with the right scope and not half-answer this.'}
+    ],
+    relationships: ['Greg Niesen · active proposal context'],
+    projects: ['Acme proposal · terms need review'],
+    ruleSuggestions: ['Pricing, legal, or terms questions should stay approval-required unless a narrow rule exists.'],
     evidence: ['Email: proposal question is waiting.', 'Draft readiness: commercial_or_legal_specifics missing.'],
     source: 'local_preview',
     noExternalAction: true
@@ -2874,12 +2902,59 @@ function openProjectIndex(){
   hydrateProjectIndex();
 }
 
+function correspondenceCompactText(value = '', limit = 420){
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
+}
+
+function correspondenceThreadMessagesFromSource(source = {}, fallback = {}){
+  const conversation = source.conversationContext || source.conversation_context || source.thread || source.conversation || {};
+  const messages = conversation.messages || source.messages || source.threadMessages || source.thread_messages || [];
+  if(Array.isArray(messages) && messages.length){
+    return messages.slice(0, 8).map((message) => ({
+      from: message.from?.name || message.fromName || message.from_name || message.senderName || message.sender_name || message.sender || message.author || message.from?.email || 'Email',
+      date: message.date || message.receivedAt || message.received_at || message.createdAt || message.created_at || '',
+      body: correspondenceCompactText(message.bodyText || message.body_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 900)
+    })).filter((message) => message.body);
+  }
+  const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
+  const body = latest.body || latest.bodyText || latest.body_text || latest.snippet || source.bodyPreview || fallback.summary || fallback.draftBody || '';
+  const from = latest.from?.name || latest.from_name || latest.senderName || source.classification?.from?.name || fallback.senderName || fallback.recipientEmail || 'Thread';
+  return body ? [{from,date:latest.date || latest.receivedAt || fallback.createdAt || '',body:correspondenceCompactText(body,900)}] : [];
+}
+
+function correspondenceContextLines(source = {}, keys = []){
+  const lines = [];
+  keys.forEach((key) => {
+    const value = source[key] || source[key.replace(/[A-Z]/g, (match) => '_' + match.toLowerCase())];
+    if(Array.isArray(value)) value.forEach((item) => lines.push(correspondenceCompactText(typeof item === 'string' ? item : item.name || item.title || item.summary || item.email || '', 180)));
+    else if(value && typeof value === 'object') lines.push(correspondenceCompactText(value.name || value.title || value.summary || value.email || '', 180));
+    else if(value) lines.push(correspondenceCompactText(value, 180));
+  });
+  return lines.filter(Boolean);
+}
+
+function correspondenceRuleHints(source = {}, readiness = {}, writer = {}){
+  const hints = [];
+  const push = (value) => {
+    const text = correspondenceCompactText(value, 220);
+    if(text && !hints.includes(text)) hints.push(text);
+  };
+  push(source.ruleSuggestion || source.rule_suggestion);
+  (Array.isArray(source.ruleSuggestions) ? source.ruleSuggestions : []).forEach(push);
+  (Array.isArray(readiness.suggested_rules) ? readiness.suggested_rules : []).forEach(push);
+  (Array.isArray(writer.suggested_rules) ? writer.suggested_rules : []).forEach(push);
+  return hints;
+}
+
 function normalizeCorrespondenceDraft(draft = {}){
   const source = draft.sourceContext || {};
   const writer = source.writerOutput || {};
   const readiness = source.draftReadiness || {};
   const brief = source.draftBrief || {};
   const qa = source.qa || {};
+  const conversation = source.conversationContext || source.conversation_context || {};
+  const latestInbound = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
+  const sender = latestInbound.from || source.classification?.from || {};
   return {
     id: draft.id || writer.id || source.conversationId || 'draft',
     draftId: draft.id || '',
@@ -2887,6 +2962,9 @@ function normalizeCorrespondenceDraft(draft = {}){
     threadId: source.threadId || '',
     recipientEmail: source.to || source.recipientEmail || source.recipient || source.forwardTo || source.classification?.from?.email || source.conversationContext?.latest_inbound?.from?.email || '',
     provider: source.provider || source.classification?.provider || draft.provider || 'gmail',
+    senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || source.classification?.from?.email || '',
+    senderName: sender.name || latestInbound.fromName || latestInbound.from_name || source.classification?.from?.name || '',
+    receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || draft.createdAt || '',
     title: draft.subject || writer.subject || brief.single_purpose || 'Prepared email draft',
     status: draft.status || readiness.status || 'ready_for_review',
     summary: writer.why_this_draft_exists || brief.single_purpose || draft.body || 'Review-only draft prepared locally.',
@@ -2895,6 +2973,10 @@ function normalizeCorrespondenceDraft(draft = {}){
     prepared: draft.body || writer.body || 'VAL prepared draft readiness and brief context.',
     needs: readiness.status === 'needs_context' ? 'Provide missing context: ' + (readiness.missing_context || writer.missing_context || []).join(', ') : 'Review whether this represents your voice, intent, and relationship.',
     draftBody: draft.body || writer.body || '',
+    threadMessages: correspondenceThreadMessagesFromSource(source, draft),
+    relationships: correspondenceContextLines(source, ['relationshipName','relationship','relationshipTemperature','executiveMeaning']),
+    projects: correspondenceContextLines(source, ['projectName','project','projectId']),
+    ruleSuggestions: correspondenceRuleHints(source, readiness, writer),
     evidence: (brief.source_refs || source.sourceRefs || []).map((ref) => ref.quote_or_summary || ref.quoteOrSummary || ref.summary).filter(Boolean),
     representationRisk: writer.representation_risk || readiness.representation_risk || 'medium',
     source: 'executive_inbox_review_only',
@@ -2908,6 +2990,8 @@ function normalizeCorrespondenceReadyItem(item = {}){
   const readiness = item.readinessJson || {};
   const sourceRefs = item.sourceRefsJson || item.source_refs || item.sourceRefs || [];
   const draft = metadata.preparedArtifact || item.preparedArtifact || {};
+  const latestInbound = metadata.latestInbound || metadata.latest_inbound || metadata.conversationContext?.latest_inbound || metadata.conversationContext?.latestInbound || {};
+  const sender = latestInbound.from || metadata.from || {};
   const draftId = metadata.draftId || item.draftId || '';
   return {
     id: item.id || draftId || item.conversationId || 'ready-correspondence',
@@ -2917,6 +3001,9 @@ function normalizeCorrespondenceReadyItem(item = {}){
     threadId: metadata.threadId || '',
     recipientEmail: metadata.to || metadata.recipientEmail || metadata.email || draft.to || draft.recipientEmail || '',
     provider: metadata.provider || item.provider || 'gmail',
+    senderEmail: sender.email || latestInbound.fromEmail || latestInbound.from_email || metadata.fromEmail || metadata.senderEmail || '',
+    senderName: sender.name || latestInbound.fromName || latestInbound.from_name || metadata.fromName || metadata.senderName || metadata.contactName || '',
+    receivedAt: latestInbound.date || latestInbound.receivedAt || latestInbound.received_at || item.createdAt || '',
     title: item.title || draft.subject || 'Conversation ready for review',
     status: item.status || readiness.status || 'ready_for_review',
     summary: item.summary || item.whyUserIsSeeingThis || 'VAL prepared correspondence context for review.',
@@ -2925,6 +3012,10 @@ function normalizeCorrespondenceReadyItem(item = {}){
     prepared: item.whatValPrepared || item.whatValDid || draft.body || 'VAL prepared draft/readiness context only.',
     needs: item.whatOnlyUserCanDo || item.whatUserNeedsToDo || 'Review, edit, approve, reject, or provide missing context.',
     draftBody: draft.body || item.whatValPrepared || '',
+    threadMessages: correspondenceThreadMessagesFromSource(metadata, item),
+    relationships: correspondenceContextLines(metadata, ['contactName','relationshipName','relationshipTemperature','executiveMeaning']),
+    projects: correspondenceContextLines(metadata, ['projectName','project','projectId']),
+    ruleSuggestions: correspondenceRuleHints(metadata, readiness, draft),
     evidence: sourceRefs.map((ref) => ref.quote_or_summary || ref.quoteOrSummary || ref.summary).filter(Boolean),
     representationRisk: item.representationRisk || readiness.representation_risk || 'medium',
     source: metadata.source || item.source || 'ready_for_you',
@@ -3403,7 +3494,7 @@ function renderCorrespondenceList(){
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   if(!item) return [];
-  return ['send', 'cowork_correspondence', 'not_executive_contact'];
+  return ['send', 'cowork_correspondence', 'not_executive_contact', 'save_forward_rule', 'suggest_rules'];
 }
 
 function scrollCorrespondenceActionsIntoView(){
@@ -3424,6 +3515,73 @@ function setCorrespondenceField(field, value){
   if(node) node.textContent = value || '';
 }
 
+function renderCorrespondenceThread(item = activeCorrespondenceItem){
+  if(!correspondenceThreadBody) return;
+  correspondenceThreadBody.innerHTML = '';
+  const messages = Array.isArray(item?.threadMessages) ? item.threadMessages.filter((message) => message?.body) : [];
+  if(!item){
+    const empty = document.createElement('article');
+    empty.className = 'correspondence-thread-message';
+    const span = document.createElement('span');
+    span.textContent = 'No thread selected';
+    const p = document.createElement('p');
+    p.textContent = 'Choose a conversation to read the email thread.';
+    empty.append(span, p);
+    correspondenceThreadBody.appendChild(empty);
+    return;
+  }
+  if(!messages.length){
+    const empty = document.createElement('article');
+    empty.className = 'correspondence-thread-message';
+    const span = document.createElement('span');
+    span.textContent = 'Thread';
+    const p = document.createElement('p');
+    p.textContent = item.summary || 'No thread text is attached yet.';
+    empty.append(span, p);
+    correspondenceThreadBody.appendChild(empty);
+    return;
+  }
+  messages.forEach((message, index) => {
+    const article = document.createElement('article');
+    article.className = 'correspondence-thread-message' + (index === 0 ? ' newest' : '');
+    const span = document.createElement('span');
+    span.textContent = [index === 0 ? 'Newest' : 'Earlier', message.from, message.date].filter(Boolean).join(' · ');
+    const p = document.createElement('p');
+    p.textContent = message.body;
+    article.append(span, p);
+    correspondenceThreadBody.appendChild(article);
+  });
+}
+
+function renderCorrespondenceSideList(node, lines, emptyText){
+  if(!node) return;
+  node.innerHTML = '';
+  const values = (Array.isArray(lines) ? lines : []).map((line) => correspondenceCompactText(line, 180)).filter(Boolean);
+  if(!values.length){
+    const empty = document.createElement('p');
+    empty.className = 'correspondence-side-empty';
+    empty.textContent = emptyText;
+    node.appendChild(empty);
+    return;
+  }
+  values.forEach((line) => {
+    const p = document.createElement('p');
+    p.textContent = line;
+    node.appendChild(p);
+  });
+}
+
+function renderCorrespondenceIntelligence(item = activeCorrespondenceItem){
+  renderCorrespondenceSideList(correspondenceRelationships, item?.relationships || [], 'No relationship match yet.');
+  renderCorrespondenceSideList(correspondenceProjects, item?.projects || [], 'No project match yet.');
+  const suggestions = (item?.ruleSuggestions || []).concat(currentCorrespondenceRuleSuggestions.map((suggestion) => suggestion.plainEnglish || suggestion.confirmationQuestion || '').filter(Boolean));
+  renderCorrespondenceSideList(correspondenceRuleSuggestions, suggestions, 'No reusable rule suggested yet.');
+  if(correspondenceRuleStatus){
+    const activeCount = currentCorrespondenceRules.filter((rule) => rule.isActive !== false).length;
+    correspondenceRuleStatus.textContent = activeCount ? activeCount + ' active rule' + (activeCount === 1 ? '' : 's') : 'No saved rules yet';
+  }
+}
+
 function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   activeCorrespondenceItem = item || currentCorrespondenceItems[0] || null;
   renderCorrespondenceList();
@@ -3431,6 +3589,10 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Ready');
   setCorrespondenceField('title', selected?.title || 'Select a prepared reply');
   setCorrespondenceField('summary', selected?.summary || 'Edit the draft, send it, or work with VAL on this conversation.');
+  setCorrespondenceField('draft-title', selected ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
+  setCorrespondenceField('draft-note', selected ? 'Editable private draft. Nothing sends until approved.' : 'Private draft. Nothing sends until approved.');
+  renderCorrespondenceThread(selected);
+  renderCorrespondenceIntelligence(selected);
   if(correspondenceDraftBody){
     correspondenceDraftBody.value = selected?.draftBody || '';
     correspondenceDraftBody.disabled = !selected;
@@ -3536,11 +3698,78 @@ function correspondenceExecutionMessage(result = {}){
   return 'Send approval was recorded, but the email was not sent: ' + (result.error || errors.join(', ') || result.packet?.failureReason || 'provider execution did not finish.');
 }
 
+function correspondenceRuleEmail(item = activeCorrespondenceItem){
+  const email = String(item?.senderEmail || item?.recipientEmail || '').trim();
+  const name = String(item?.senderName || item?.title || '').trim();
+  return {from:{email,name}};
+}
+
+async function hydrateCorrespondenceRules(){
+  if(!canUseApi){
+    currentCorrespondenceRules = [];
+    if(correspondenceRuleStatus) correspondenceRuleStatus.textContent = 'Rules load when VAL is connected';
+    renderCorrespondenceIntelligence(activeCorrespondenceItem);
+    return;
+  }
+  try{
+    const data = await getJson('/api/email/rules');
+    currentCorrespondenceRules = Array.isArray(data.rules) ? data.rules : [];
+  }catch(error){
+    currentCorrespondenceRules = [];
+    if(correspondenceRuleStatus) correspondenceRuleStatus.textContent = 'Rules unavailable';
+  }
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
+}
+
+async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
+  const forwardTo = String(correspondenceForwardTo?.value || '').trim();
+  if(!forwardTo){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Enter the email address that should receive future forwards from this sender.';
+    return;
+  }
+  const email = correspondenceRuleEmail(item);
+  if(!email.from.email){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs the sender email before it can create a forwarding rule.';
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to save rules. Nothing was changed.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saving a narrow forwarding rule. Existing approval boundaries still apply.';
+  const result = await postJson('/api/email/automation-rule', {
+    mode:'auto_next_time',
+    action:'forward',
+    forwardTo,
+    approvalMode:'review_only',
+    ruleName:'Forward ' + email.from.email + ' to ' + forwardTo,
+    email
+  });
+  if(result.rule) currentCorrespondenceRules = [result.rule].concat(currentCorrespondenceRules.filter((rule) => rule.id !== result.rule?.id));
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved rule: future emails from ' + email.from.email + ' can be prepared for forwarding to ' + forwardTo + '.';
+  renderCorrespondenceIntelligence(item);
+}
+
+async function analyzeCorrespondenceRuleSuggestions(){
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to analyze rule suggestions.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Asking VAL to look for repeatable inbox rules.';
+  const result = await postJson('/api/email/rule-suggestions/analyze', {});
+  currentCorrespondenceRuleSuggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
+  if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceRuleSuggestions.length ? 'VAL found ' + currentCorrespondenceRuleSuggestions.length + ' possible rule' + (currentCorrespondenceRuleSuggestions.length === 1 ? '' : 's') + ' for review.' : 'VAL did not find enough repeated evidence for a new rule yet.';
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
+}
+
 async function hydrateCorrespondenceDrawer(){
   currentCorrespondenceItems = localCorrespondenceItems.slice();
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
-  if(!canUseApi) return;
+  if(!canUseApi){
+    hydrateCorrespondenceRules();
+    return;
+  }
   try{
     const [ready, drafts] = await Promise.all([
       postJson('/api/val/ready-for-you/build', {limit:5}).catch(() => ({items:[]})),
@@ -3554,8 +3783,10 @@ async function hydrateCorrespondenceDrawer(){
     currentCorrespondenceItems = Array.from(byId.values());
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
+    await hydrateCorrespondenceRules();
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
+    await hydrateCorrespondenceRules();
   }
 }
 
@@ -3585,6 +3816,14 @@ function openCorrespondenceReviewWorkspace(item = activeCorrespondenceItem){
 async function handleCorrespondenceAction(action){
   const item = activeCorrespondenceItem;
   if(!item) return;
+  if(action === 'save_forward_rule'){
+    await saveCorrespondenceForwardRule(item);
+    return;
+  }
+  if(action === 'suggest_rules'){
+    await analyzeCorrespondenceRuleSuggestions();
+    return;
+  }
   if(action === 'not_executive_contact'){
     const contact = correspondenceSuppressionContact(item);
     if(!contact.email && !contact.name){
@@ -3608,6 +3847,7 @@ async function handleCorrespondenceAction(action){
       context: [
         'Prepared item: ' + (item.title || 'Reply draft'),
         'Relationship/project: ' + (item.context || 'Context is still being resolved.'),
+        'Newest thread: ' + (item.threadMessages?.[0]?.body || item.summary || 'Thread context is still being resolved.'),
         'VAL prepared: ' + (item.prepared || 'Draft context is available.'),
         'Needs from user: ' + (item.needs || 'Review before external use.')
       ],
@@ -4971,6 +5211,7 @@ async function loadRelationshipDossier(profileId = 'aric'){
 
 function closeDrawer(){
   retrievalSystem.classList.remove('open');
+  retrievalSystem.removeAttribute('data-active-drawer');
   hearth.classList.remove('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'false');
   drawerTray.setAttribute('aria-hidden', 'true');
@@ -12097,6 +12338,7 @@ freshDeskButton.addEventListener('click', clearRoomAttendance);
 drawerPull.addEventListener('click', () => {
   hideWorkspaceForDrawerNavigation();
   const isOpen = retrievalSystem.classList.toggle('open');
+  if(!isOpen) retrievalSystem.removeAttribute('data-active-drawer');
   hearth.classList.toggle('drawer-open', isOpen);
   drawerPull.setAttribute('aria-expanded', String(isOpen));
   drawerTray.setAttribute('aria-hidden', String(!isOpen));
@@ -12307,6 +12549,8 @@ correspondenceDrawerLink?.addEventListener('click', () => {
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   const isOpen = drawerTray.classList.toggle('correspondence-open');
+  if(isOpen) retrievalSystem.dataset.activeDrawer = 'correspondence';
+  else retrievalSystem.removeAttribute('data-active-drawer');
   correspondenceDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){

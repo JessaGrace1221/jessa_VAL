@@ -731,6 +731,17 @@
           </div>
           <button type="button" class="close-correspondence-detail">Close</button>
         </div>
+        <div class="correspondence-rulebar" aria-label="Executive Inbox rules">
+          <div>
+            <span>Rule Learning</span>
+            <strong data-correspondence-rule-status>Loading saved rules</strong>
+          </div>
+          <div class="correspondence-rule-create">
+            <input type="email" data-correspondence-forward-to placeholder="Forward selected sender to..." autocomplete="email">
+            <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save rule</button>
+            <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">VAL suggestions</button>
+          </div>
+        </div>
         <div class="correspondence-workbench" aria-label="Executive Inbox workbench">
           <section class="correspondence-queue" aria-label="Prepared Executive Inbox queue">
             <div class="timeline-status-header">
@@ -739,11 +750,20 @@
             </div>
             <div class="correspondence-list" data-correspondence-list></div>
           </section>
-          <section class="correspondence-brief" aria-label="Correspondence brief">
+          <section class="correspondence-thread" aria-label="Email thread">
             <div class="correspondence-brief-head">
               <span data-correspondence-field="status">Ready</span>
               <h4 data-correspondence-field="title">Select a prepared reply</h4>
               <p data-correspondence-field="summary">Edit the draft, send it, or work with VAL on this conversation.</p>
+            </div>
+            <button type="button" class="correspondence-discuss" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Discuss this thread with VAL</button>
+            <div class="correspondence-thread-body" data-correspondence-thread-body></div>
+          </section>
+          <section class="correspondence-brief" aria-label="Drafted editable reply">
+            <div class="correspondence-brief-head">
+              <span>Drafted Editable Reply</span>
+              <h4 data-correspondence-field="draft-title">Reply for review</h4>
+              <p data-correspondence-field="draft-note">Private draft. Nothing sends until approved.</p>
             </div>
             <div class="correspondence-actions" aria-label="Correspondence review actions">
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
@@ -755,6 +775,20 @@
             </div>
             <p class="correspondence-safety-copy" data-correspondence-safety></p>
           </section>
+          <aside class="correspondence-intelligence" aria-label="Relationship and project context">
+            <section>
+              <span>Relationships</span>
+              <div data-correspondence-relationships></div>
+            </section>
+            <section>
+              <span>Projects</span>
+              <div data-correspondence-projects></div>
+            </section>
+            <section>
+              <span>Rules VAL Noticed</span>
+              <div data-correspondence-rule-suggestions></div>
+            </section>
+          </aside>
         </div>
       </div>
       <div class="source-detail commitment-detail" id="commitment-detail" aria-hidden="true">
