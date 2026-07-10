@@ -355,7 +355,7 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
   assert.match(hearthCss, /System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan/);
 });
 
-test('Transcripts drawer combines meeting evidence proposed notes and follow-through', () => {
+test('Transcripts drawer opens the live transcript archive and selected transcript detail', () => {
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
   assert.match(hearthHtml, /Transcripts/);
   assert.match(hearthHtml, /Meeting evidence, notes, tasks/);
@@ -377,19 +377,23 @@ test('Transcripts drawer combines meeting evidence proposed notes and follow-thr
   assert.match(hearthHtml, /source quote/);
   assert.match(hearthJs, /const timelineDrawerLink/);
   assert.match(hearthJs, /function hydrateTimelineStatus/);
-  assert.match(hearthJs, /function renderTimelineEvents/);
-  assert.match(hearthJs, /\/api\/val\/context-debug\?days=30/);
-  assert.match(hearthJs, /timelineEvents/);
-  assert.match(hearthJs, /unmatchedTranscripts/);
-  assert.match(hearthJs, /const proposals = Array\.isArray\(data\?\.proposedTranscriptReviews\) \? data\.proposedTranscriptReviews : \[\]/);
-  assert.match(hearthJs, /needsMatching/);
-  assert.match(hearthJs, /readyToExtract/);
-  assert.match(hearthJs, /const proposedTasks = proposals\.filter\(\(proposal\) => proposal\.type === 'task'\)\.length/);
-  assert.match(hearthJs, /const proposedNotes = proposals\.filter\(\(proposal\) => proposal\.type !== 'task'\)\.length/);
-  assert.match(hearthJs, /No note proposal packet is loaded yet/);
-  assert.match(hearthJs, /No task proposal packet is loaded yet/);
-  assert.match(hearthJs, /function renderTimelineReviewCards/);
-  assert.match(hearthJs, /The event queue may show transcript review needs, but no proposal packet is loaded here yet/);
+  assert.match(hearthJs, /function loadTimelineTranscripts/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=250/);
+  assert.match(hearthJs, /function openTimelineTranscript/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
+  assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
+  assert.match(hearthJs, /Action Items/);
+  assert.match(hearthJs, /Co-Work on This Transcript/);
+  assert.match(hearthJs, /data-transcript-open/);
+  assert.match(hearthJs, /data-transcript-chat/);
+  assert.match(hearthJs, /data-transcript-action/);
+  assert.match(hearthJs, /data-transcript-reprocess/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/chat/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/actions/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\/reprocess/);
+  assert.match(hearthCss, /\.timeline-transcript-row/);
+  assert.match(hearthCss, /\.timeline-transcript-detail/);
+  assert.match(hearthCss, /\.timeline-transcript-chat-input/);
   assert.doesNotMatch(hearthHtml, /data-timeline-action="cowork_timeline"/);
   assert.match(hearthJs, /mode === 'timeline'/);
   assert.match(hearthJs, /function openTimelineCoworkSession/);

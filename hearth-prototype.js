@@ -113,6 +113,8 @@ const documentProjectFilter = document.querySelector('[data-document-project-fil
 const documentPreview = document.querySelector('[data-document-preview]');
 const documentStatus = document.querySelector('[data-document-status]');
 let currentTimelineReviewItems = [];
+let currentTimelineTranscriptItems = [];
+let currentTimelineTranscript = null;
 const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
@@ -6602,6 +6604,271 @@ function bringDrawerTargetIntoView(target){
   });
 }
 
+function timelineSummaryObject(transcript = {}){
+  const summary = transcript.summary;
+  if(summary && typeof summary === 'object') return summary;
+  if(typeof summary === 'string') return {executiveSummary: summary};
+  return {};
+}
+
+function timelineCompactText(value = '', limit = 220){
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if(text.length <= limit) return text;
+  return text.slice(0, limit - 1).trim() + '...';
+}
+
+function timelineFirstSentence(value = '', fallback = ''){
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if(!text) return fallback;
+  const match = text.match(/^(.{24,160}?[.!?])(?:\s|$)/);
+  return timelineCompactText(match ? match[1] : text, 96);
+}
+
+function timelineTranscriptTitle(transcript = {}){
+  const summary = timelineSummaryObject(transcript);
+  const fromSummary = timelineFirstSentence(summary.executiveSummary || summary.clientSummary || '', '');
+  const rawTitle = String(transcript.title || transcript.meetingTitle || 'Transcript').trim();
+  if(fromSummary && (/mammogram|nope|untitled|transcript/i.test(rawTitle) || rawTitle.length < 8)) return fromSummary;
+  if(fromSummary && /mammogram/i.test(rawTitle) && /agency|apollo|missed call|calendar|dashboard|automation|lead/i.test(fromSummary)) return fromSummary;
+  return timelineCompactText(rawTitle || fromSummary || 'Transcript', 96);
+}
+
+function timelineTranscriptMeta(transcript = {}){
+  const date = transcript.receivedAt || transcript.createdAt || transcript.created_at || transcript.capturedAt || '';
+  const parts = [
+    transcript.source ? String(transcript.source).toUpperCase() : '',
+    date ? new Date(date).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '',
+    transcript.summaryStatus || transcript.processingStatus || ''
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function timelineTranscriptTasks(transcript = {}){
+  return (Array.isArray(transcript.tasks) ? transcript.tasks : [])
+    .filter((task) => {
+      const haystack = [task.taskTitle, task.taskDescription, task.sourceQuote].join(' ');
+      if(!String(task.taskTitle || '').trim()) return false;
+      if(/\bplay in the sprinkler\b|every third sentence|f-word|check that|send something out|diagnose it from there/i.test(haystack)) return false;
+      return true;
+    });
+}
+
+function timelineListItems(value){
+  if(Array.isArray(value)) return value.filter(Boolean);
+  if(typeof value === 'string' && value.trim()){
+    const trimmed = value.trim();
+    if(trimmed.startsWith('{') || trimmed.startsWith('[')){
+      try{
+        const parsed = JSON.parse(trimmed);
+        if(Array.isArray(parsed)) return parsed.filter(Boolean);
+        if(parsed && typeof parsed === 'object') return Object.values(parsed).filter(Boolean);
+      }catch(_){}
+    }
+    return trimmed.split(/\n+|;\s*/).map((item) => item.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function renderTimelineListBlock(title, items, empty, mapper){
+  const list = timelineListItems(items);
+  if(!list.length) return '<section class="timeline-transcript-section"><h4>' + escapeHtml(title) + '</h4><p>' + escapeHtml(empty) + '</p></section>';
+  return [
+    '<section class="timeline-transcript-section">',
+    '<h4>' + escapeHtml(title) + '</h4>',
+    '<ul>',
+    list.slice(0, 8).map((item) => '<li>' + (mapper ? mapper(item) : escapeHtml(typeof item === 'string' ? item : item.summary || item.title || item.update || JSON.stringify(item))) + '</li>').join(''),
+    '</ul>',
+    '</section>'
+  ].join('');
+}
+
+function renderTimelineTranscriptStats(data = {}){
+  if(!timelineStatusPanel || !timelineStatusCount) return;
+  const counts = data.counts || {};
+  const total = Number(counts.total || currentTimelineTranscriptItems.length || 0);
+  const needsReview = Number(counts.needsReview || 0);
+  const openActions = Number(counts.withOpenActions || 0);
+  const failed = Number(counts.failedProcessing || 0);
+  timelineStatusCount.textContent = total ? total + ' transcript' + (total === 1 ? '' : 's') + ' connected' : 'No transcripts loaded';
+  const cards = [
+    ['Recent Transcripts', total, 'Live Krisp, uploads, and recovered transcript records.'],
+    ['Need Review', needsReview, 'Items with participant matches, staged tasks, decisions, or updates needing judgment.'],
+    ['Open Actions', openActions, 'Transcripts with extracted follow-up or staged work.'],
+    ['Processing Issues', failed, failed ? 'These need repair before trusting extraction.' : 'No hard processing failures reported.']
+  ];
+  timelineStatusPanel.innerHTML = cards.map(([label, value, body]) => [
+    '<article>',
+    '<span>' + escapeHtml(label) + '</span>',
+    '<strong>' + escapeHtml(value) + '</strong>',
+    '<p>' + escapeHtml(body) + '</p>',
+    '</article>'
+  ].join('')).join('');
+}
+
+function renderTimelineTranscriptList(activeId = ''){
+  if(!timelineEventList || !timelineEventCount) return;
+  const items = currentTimelineTranscriptItems.slice(0, 40);
+  timelineEventCount.textContent = items.length ? items.length + ' recent transcript' + (items.length === 1 ? '' : 's') : 'No transcripts found';
+  if(!items.length){
+    timelineEventList.innerHTML = '<article class="empty"><span>No transcripts found</span><p>VAL did not receive a transcript archive from the selected range. Use Krisp import, upload, or intake status to trace where the meeting landed.</p></article>';
+    return;
+  }
+  timelineEventList.innerHTML = items.map((transcript) => {
+    const summary = timelineSummaryObject(transcript);
+    const tasks = Number(transcript.taskCount || transcript.openActionCount || 0);
+    const active = String(activeId || '') === String(transcript.id || '');
+    return [
+      '<button type="button" class="timeline-transcript-row' + (active ? ' active' : '') + '" data-transcript-open="' + escapeHtml(transcript.id || '') + '">',
+      '<span>' + escapeHtml(timelineTranscriptMeta(transcript) || 'Transcript') + '</span>',
+      '<strong>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</strong>',
+      '<p>' + escapeHtml(timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summary || 'Open to review the transcript details.', 170)) + '</p>',
+      '<small>' + escapeHtml(tasks ? tasks + ' extracted action' + (tasks === 1 ? '' : 's') : 'No extracted actions') + '</small>',
+      '</button>'
+    ].join('');
+  }).join('');
+}
+
+function renderTimelineTranscriptEmpty(){
+  if(!timelineReviewCards || !timelineReviewCount) return;
+  timelineReviewCount.textContent = 'Select a transcript';
+  timelineReviewCards.innerHTML = [
+    '<article class="empty timeline-transcript-empty">',
+    '<span>Transcript Detail</span>',
+    '<p>Choose a transcript on the left. VAL will show action items first, then summary, decisions, relationship/project context, source text, and transcript-scoped Co-Work.</p>',
+    '</article>'
+  ].join('');
+}
+
+function renderTimelineTranscriptDetail(transcript = {}){
+  if(!timelineReviewCards || !timelineReviewCount) return;
+  currentTimelineTranscript = transcript;
+  const summary = timelineSummaryObject(transcript);
+  const tasks = timelineTranscriptTasks(transcript);
+  const decisions = transcript.canonical?.decisions || summary.keyDecisions || [];
+  const relationshipUpdates = summary.relationshipUpdates || [];
+  const participants = Array.isArray(transcript.participants) ? transcript.participants : [];
+  const rawTitle = transcript.title || transcript.meetingTitle || '';
+  const sourceText = transcript.transcriptText || transcript.rawTranscript || transcript.rawText || '';
+  timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
+  const taskBlock = tasks.length ? [
+    '<section class="timeline-transcript-section action-first">',
+    '<h4>Action Items</h4>',
+    '<ul>',
+    tasks.slice(0, 10).map((task) => [
+      '<li>',
+      '<strong>' + escapeHtml(String(task.taskTitle || '').replace(String(rawTitle || '') + ' — ', '')) + '</strong>',
+      '<span>' + escapeHtml([task.assignedToName || 'Owner needs review', task.dueDate ? 'Due ' + task.dueDate : '', task.status || 'staged'].filter(Boolean).join(' · ')) + '</span>',
+      task.taskDescription ? '<p>' + escapeHtml(task.taskDescription) + '</p>' : '',
+      task.sourceQuote ? '<blockquote>' + escapeHtml(task.sourceQuote) + '</blockquote>' : '',
+      '</li>'
+    ].join('')).join(''),
+    '</ul>',
+    '</section>'
+  ].join('') : renderTimelineListBlock('Action Items', [], 'No useful action items were extracted yet. Reprocess this transcript if the meeting clearly had follow-through.');
+  const decisionBlock = renderTimelineListBlock('Decisions', decisions, 'No decisions extracted yet.', (item) => escapeHtml(item.title || item.summary || item));
+  const relationshipBlock = renderTimelineListBlock('Relationship / Project Signals', relationshipUpdates, 'No relationship or project signals extracted yet.', (item) => {
+    if(typeof item === 'string') return escapeHtml(item);
+    return '<strong>' + escapeHtml(item.name || item.project || 'Signal') + '</strong>' + (item.update ? '<p>' + escapeHtml(item.update) + '</p>' : '');
+  });
+  const participantBlock = renderTimelineListBlock('Participants', participants, 'No participant matches are available yet.', (item) => escapeHtml([item.matchedContactName || item.speakerNameRaw || item.name || 'Participant', item.matchConfidence ? Math.round(Number(item.matchConfidence) * 100) + '% match' : '', item.needsReview ? 'needs review' : ''].filter(Boolean).join(' · ')));
+  timelineReviewCards.innerHTML = [
+    '<article class="timeline-transcript-detail">',
+    '<div class="timeline-transcript-titlebar">',
+    '<div><span>' + escapeHtml(timelineTranscriptMeta(transcript)) + '</span><h4>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</h4>' + (rawTitle && rawTitle !== timelineTranscriptTitle(transcript) ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
+    '<div class="timeline-transcript-actions">',
+    '<button type="button" data-transcript-action="draft_followup" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Draft follow-up</button>',
+    '<button type="button" data-transcript-action="create_task" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Create task</button>',
+    '<button type="button" data-transcript-reprocess="' + escapeHtml(transcript.id || '') + '">Reprocess</button>',
+    '</div>',
+    '</div>',
+    taskBlock,
+    '<section class="timeline-transcript-section"><h4>Summary</h4><p>' + escapeHtml(summary.executiveSummary || summary.clientSummary || 'Summary pending.') + '</p></section>',
+    decisionBlock,
+    relationshipBlock,
+    participantBlock,
+    '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><div class="timeline-transcript-chat" data-transcript-chat-log><p>Ask who said what, what changed, what should become a proposal, or what VAL can prepare from this meeting.</p></div><div class="timeline-transcript-chat-input"><input data-transcript-chat-input placeholder="Ask VAL about this transcript"><button type="button" data-transcript-chat="' + escapeHtml(transcript.id || '') + '">Ask</button></div></section>',
+    '<details class="timeline-transcript-section"><summary>Source transcript</summary><p>' + escapeHtml(timelineCompactText(sourceText || 'No transcript text is available.', 5000)) + '</p></details>',
+    '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
+    '</article>'
+  ].join('');
+}
+
+async function openTimelineTranscript(transcriptId){
+  if(!transcriptId) return;
+  renderTimelineTranscriptList(transcriptId);
+  if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is loading transcript intelligence, action items, source text, and Co-Work context.</p></article>';
+  try{
+    const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId));
+    if(!data?.transcript) throw new Error('Transcript detail was empty.');
+    renderTimelineTranscriptDetail(data.transcript);
+  }catch(error){
+    if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Could not open transcript</span><p>' + escapeHtml(error.message || 'Transcript detail unavailable.') + '</p></article>';
+  }
+}
+
+async function loadTimelineTranscripts({openFirst = true} = {}){
+  renderTimelineTranscriptStats({counts:{}});
+  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Loading transcripts</span><p>VAL is reading the durable transcript archive.</p></article>';
+  renderTimelineTranscriptEmpty();
+  if(!canUseApi) return;
+  try{
+    const data = await getJson('/api/val/transcripts?days=3650&limit=250');
+    currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
+    renderTimelineTranscriptStats(data);
+    renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
+    if(openFirst && currentTimelineTranscriptItems[0]?.id) await openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+  }catch(error){
+    if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript archive unavailable';
+    if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Unable to load transcripts</span><p>' + escapeHtml(error.message || 'Transcript archive unavailable.') + '</p></article>';
+    renderTimelineTranscriptEmpty();
+  }
+}
+
+async function timelineTranscriptAsk(transcriptId){
+  const input = document.querySelector('[data-transcript-chat-input]');
+  const log = document.querySelector('[data-transcript-chat-log]');
+  const question = input?.value?.trim();
+  if(!transcriptId || !question || !log) return;
+  input.value = '';
+  log.insertAdjacentHTML('beforeend', '<p class="user">' + escapeHtml(question) + '</p><p data-transcript-chat-pending>Working from this transcript...</p>');
+  try{
+    const data = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/chat', {question});
+    document.querySelector('[data-transcript-chat-pending]')?.remove();
+    const message = data.message?.content || data.message || 'No response was returned.';
+    log.insertAdjacentHTML('beforeend', '<p>' + escapeHtml(message) + '</p>');
+  }catch(error){
+    document.querySelector('[data-transcript-chat-pending]')?.remove();
+    log.insertAdjacentHTML('beforeend', '<p>Unable to answer from this transcript: ' + escapeHtml(error.message || 'Request failed.') + '</p>');
+  }
+}
+
+async function timelineTranscriptAction(transcriptId, action){
+  const status = document.querySelector('[data-transcript-action-status]');
+  if(status) status.textContent = 'VAL is preparing this from the selected transcript...';
+  try{
+    const data = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/actions', {action});
+    if(status) status.textContent = action === 'draft_followup'
+      ? 'Draft saved for approval: ' + (data.draft?.subject || 'follow-up draft')
+      : 'Task created or staged: ' + (data.task?.title || 'transcript task');
+    await openTimelineTranscript(transcriptId);
+  }catch(error){
+    if(status) status.textContent = 'Action stayed blocked: ' + (error.message || 'Request failed.');
+  }
+}
+
+async function timelineTranscriptReprocess(transcriptId){
+  const status = document.querySelector('[data-transcript-action-status]');
+  if(status) status.textContent = 'Reprocessing this transcript while preserving the raw source...';
+  try{
+    await postJson('/api/val/transcripts/reprocess', {transcriptId, limit:1});
+    if(status) status.textContent = 'Reprocessed. Reloading transcript intelligence...';
+    await loadTimelineTranscripts({openFirst:false});
+    await openTimelineTranscript(transcriptId);
+  }catch(error){
+    if(status) status.textContent = 'Reprocess failed: ' + (error.message || 'Request failed.');
+  }
+}
+
 function renderTimelineStatus(data = null){
   if(!timelineStatusPanel || !timelineStatusCount) return;
   const counts = data?.counts || {};
@@ -6982,17 +7249,7 @@ function openTimelineCoworkSession(){
 }
 
 async function hydrateTimelineStatus(){
-  renderTimelineStatus();
-  renderTimelineReviewCards();
-  if(!canUseApi) return;
-  try{
-    const data = await getJson('/api/val/context-debug?days=30');
-    renderTimelineStatus(data);
-    renderTimelineReviewCards(data?.proposedTranscriptReviews || []);
-  }catch(error){
-    if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript context unavailable';
-    console.warn('[hearth] transcript context unavailable', error.message);
-  }
+  await loadTimelineTranscripts({openFirst:true});
 }
 
 function setRoomCopy(state){
@@ -14304,6 +14561,34 @@ relationshipStateFilterButtons.forEach((button) => {
 });
 
 drawerTray.addEventListener('click', async (event) => {
+  const transcriptOpen = event.target.closest('[data-transcript-open]');
+  if(transcriptOpen){
+    event.preventDefault();
+    event.stopPropagation();
+    await openTimelineTranscript(transcriptOpen.dataset.transcriptOpen);
+    return;
+  }
+  const transcriptChat = event.target.closest('[data-transcript-chat]');
+  if(transcriptChat){
+    event.preventDefault();
+    event.stopPropagation();
+    await timelineTranscriptAsk(transcriptChat.dataset.transcriptChat);
+    return;
+  }
+  const transcriptAction = event.target.closest('[data-transcript-action]');
+  if(transcriptAction){
+    event.preventDefault();
+    event.stopPropagation();
+    await timelineTranscriptAction(transcriptAction.dataset.transcriptId, transcriptAction.dataset.transcriptAction);
+    return;
+  }
+  const transcriptReprocess = event.target.closest('[data-transcript-reprocess]');
+  if(transcriptReprocess){
+    event.preventDefault();
+    event.stopPropagation();
+    await timelineTranscriptReprocess(transcriptReprocess.dataset.transcriptReprocess);
+    return;
+  }
   const timelineAction = event.target.closest('[data-timeline-action]');
   if(timelineAction){
     event.preventDefault();
@@ -14567,6 +14852,14 @@ document.addEventListener('click', (event) => {
     hearth.classList.remove('evidence-open');
     leanButton?.setAttribute('aria-expanded', 'false');
   }
+});
+
+drawerTray.addEventListener('keydown', async (event) => {
+  if(event.key !== 'Enter') return;
+  const transcriptInput = event.target.closest('[data-transcript-chat-input]');
+  if(!transcriptInput || !currentTimelineTranscript?.id) return;
+  event.preventDefault();
+  await timelineTranscriptAsk(currentTimelineTranscript.id);
 });
 
 closeSourceDetail.addEventListener('click', () => {
