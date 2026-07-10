@@ -2373,6 +2373,46 @@ function normalizedProjectSourceDetails(project = {}){
   };
 }
 
+function projectCompactText(value = '', limit = 220){
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if(!text || text.length <= limit) return text;
+  return text.slice(0, Math.max(0, limit - 3)).trimEnd() + '...';
+}
+
+function projectSimilarText(a = '', b = ''){
+  const left = projectCompactText(a, 140).toLowerCase();
+  const right = projectCompactText(b, 140).toLowerCase();
+  if(!left || !right) return false;
+  return left.includes(right.slice(0, 70)) || right.includes(left.slice(0, 70));
+}
+
+function projectJudgmentLabel(candidate = '', fallback = '', blocked = []){
+  const text = projectCompactText(candidate, 160);
+  if(!text) return fallback;
+  const looksRaw = text.length > 105 || text.endsWith('...') || blocked.some((blockedText) => projectSimilarText(text, blockedText));
+  return looksRaw ? fallback : text;
+}
+
+function projectSourceDisplayText(value = '', limit = 520){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+  const url = raw.match(/https?:\/\/[^\s<>"']+/)?.[0] || '';
+  if(raw.length > 1200 || /<\/?[a-z][\s\S]*>/i.test(raw)){
+    const plain = raw
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return [
+      url ? 'URL: ' + url : '',
+      'Captured source: ' + raw.length.toLocaleString() + ' characters',
+      projectCompactText(plain, 320)
+    ].filter(Boolean).join('\n');
+  }
+  return projectCompactText(raw, limit);
+}
+
 function projectSourceDetailCount(details){
   return (details.files?.length || 0) + ['websiteSource','documents','relationships','rawContext'].filter((key) => String(details[key] || '').trim()).length;
 }
@@ -2383,7 +2423,7 @@ function appendProjectSourceSection(label, value, emptyText){
   const title = document.createElement('span');
   title.textContent = label;
   const body = document.createElement('p');
-  body.textContent = value || emptyText;
+  body.textContent = projectSourceDisplayText(value) || emptyText;
   if(!value) article.classList.add('empty');
   article.append(title, body);
   projectSourcePanel.appendChild(article);
@@ -2702,20 +2742,23 @@ async function decideProjectSourceReview(action){
 function projectProfileFromIndexItem(item = {}){
   const id = item.id || item.projectId || item.profileKey || item.name || 'project';
   const name = item.name || item.displayName || 'Unnamed project';
+  const summary = projectCompactText(item.summary || item.reality || '', 360);
+  const signal = projectCompactText(item.signal || summary || 'Project signal available.', 150);
+  const nextMove = projectJudgmentLabel(item.nextMove || item.recommendedAction || '', 'Decide the next narrow move', [summary, signal]);
   return {
     ...item,
     id,
     name,
     initials: item.initials || name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'P',
     status: item.status || item.relationshipStatus || 'Observed',
-    signal: item.signal || item.summary || 'Project signal available.',
-    reality: item.reality || item.summary || 'Canonical project profile from VAL project index.',
+    signal,
+    reality: projectCompactText(item.reality || item.summary || 'Canonical project profile from VAL project index.', 420),
     momentum: item.momentum || 'Active context',
-    momentumEvidence: item.momentumEvidence || item.signal || item.summary || 'Project movement is visible in stored VAL evidence.',
+    momentumEvidence: projectCompactText(item.momentumEvidence || item.signal || item.summary || 'Project movement is visible in stored VAL evidence.', 260),
     decision: item.decision || 'Review project reality',
-    decisionEvidence: item.decisionEvidence || 'Review project context before adding work.',
-    nextMove: item.nextMove || item.recommendedAction || item.summary || 'Review the project file.',
-    nextMoveEvidence: item.nextMoveEvidence || item.nextMove || item.summary || 'Use the project dossier before creating new work.',
+    decisionEvidence: projectCompactText(item.decisionEvidence || 'Review project context before adding work.', 220),
+    nextMove,
+    nextMoveEvidence: projectCompactText(item.nextMoveEvidence || (nextMove === 'Decide the next narrow move' ? 'Use the project dossier before creating new work.' : item.nextMove) || 'Use the project dossier before creating new work.', 240),
     sourceReceipts: item.sourceReceipts || 'Canonical project index',
     sourceDetails: normalizedProjectSourceDetails(item),
     graphLinks: Array.isArray(item.graphLinks) ? item.graphLinks : [],
@@ -2880,6 +2923,11 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
   const decisionPoint = dossier.decisionPoint || {};
   const nextMove = dossier.nextMove || {};
   const sourceReceipts = dossier.sourceReceipts || {};
+  const reality = projectCompactText(currentReality.summary || card.reality || fallback.reality || '', 420);
+  const signal = projectCompactText(currentReality.signal || card.signal || fallback.signal || reality, 150);
+  const momentumLabel = projectJudgmentLabel(momentum.summary || card.momentum || fallback.momentum || '', 'Active context', [reality, signal]);
+  const decisionLabel = projectJudgmentLabel(decisionPoint.summary || card.decision || fallback.decision || '', 'Review project reality', [reality, signal]);
+  const nextMoveLabel = projectJudgmentLabel(nextMove.summary || card.nextMove || fallback.nextMove || '', 'Decide the next narrow move', [reality, signal]);
   return {
     ...fallback,
     id: identity.id || card.id || fallback.id || 'project',
@@ -2888,14 +2936,14 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
     name: identity.name || card.name || fallback.name || 'Project',
     initials: card.initials || fallback.initials || initialsFromName(identity.name || card.name || fallback.name || 'Project'),
     status: identity.status || currentReality.status || card.status || fallback.status || 'Observed',
-    signal: currentReality.signal || card.signal || fallback.signal || '',
-    reality: currentReality.summary || card.reality || fallback.reality || '',
-    momentum: momentum.summary || card.momentum || fallback.momentum || '',
-    momentumEvidence: momentum.evidence || card.momentumEvidence || fallback.momentumEvidence || '',
-    decision: decisionPoint.summary || card.decision || fallback.decision || '',
-    decisionEvidence: decisionPoint.evidence || card.decisionEvidence || fallback.decisionEvidence || '',
-    nextMove: nextMove.summary || card.nextMove || fallback.nextMove || '',
-    nextMoveEvidence: nextMove.evidence || card.nextMoveEvidence || fallback.nextMoveEvidence || '',
+    signal,
+    reality,
+    momentum: momentumLabel,
+    momentumEvidence: projectCompactText(momentum.evidence || card.momentumEvidence || fallback.momentumEvidence || '', 260),
+    decision: decisionLabel,
+    decisionEvidence: projectCompactText(decisionPoint.evidence || card.decisionEvidence || fallback.decisionEvidence || '', 220),
+    nextMove: nextMoveLabel,
+    nextMoveEvidence: projectCompactText(nextMove.evidence || card.nextMoveEvidence || fallback.nextMoveEvidence || '', 240),
     sourceReceipts: sourceReceipts.summary || card.sourceReceipts || fallback.sourceReceipts || '',
     sourceDetails: normalizedProjectSourceDetails(sourceReceipts.details || card.sourceDetails || fallback.sourceDetails || {}),
     graphLinks: Array.isArray(sourceReceipts.graphLinks) ? sourceReceipts.graphLinks : (Array.isArray(card.graphLinks) ? card.graphLinks : (Array.isArray(fallback.graphLinks) ? fallback.graphLinks : [])),

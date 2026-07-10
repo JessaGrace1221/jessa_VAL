@@ -194,8 +194,17 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /\/api\/projects\/index\?limit=80/);
   assert.match(hearthJs, /function projectProfileFromIndexItem/);
   assert.match(hearthJs, /function normalizedProjectSourceDetails/);
+  assert.match(hearthJs, /function projectCompactText/);
+  assert.match(hearthJs, /function projectJudgmentLabel/);
+  assert.match(hearthJs, /function projectSourceDisplayText/);
+  assert.match(hearthJs, /Captured source: /);
+  assert.match(hearthJs, /Decide the next narrow move/);
   assert.match(hearthJs, /function renderProjectSourcePanel/);
   assert.match(hearthJs, /No files uploaded for this project yet/);
+  assert.match(hearthCss, /\.project-row-status,\s*\.project-row-signal,\s*\.project-row-next\{/);
+  assert.match(hearthCss, /-webkit-line-clamp:2/);
+  assert.match(hearthCss, /\.project-identity p,\s*\.project-pyramid p\{/);
+  assert.match(hearthCss, /-webkit-line-clamp:5/);
   assert.match(hearthJs, /function renderProjectGraphPanel/);
   assert.match(hearthJs, /function hydrateProjectGraphLinks/);
   assert.match(hearthJs, /\/api\/projects\/links\?projectId=/);

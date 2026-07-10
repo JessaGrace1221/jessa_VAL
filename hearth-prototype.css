@@ -4284,6 +4284,10 @@ button.drawer-link{
   color:rgba(45,27,22,.66);
   font-size:.72rem;
   line-height:1.25;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
 }
 .project-row-status{
   color:rgba(64,86,61,.8);
@@ -4345,6 +4349,18 @@ button.drawer-link{
   color:rgba(45,27,22,.72);
   font-size:.76rem;
   line-height:1.45;
+}
+.project-identity p,
+.project-pyramid p{
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.project-identity p{
+  -webkit-line-clamp:3;
+}
+.project-pyramid p{
+  -webkit-line-clamp:5;
 }
 .project-pyramid{
   display:grid;
