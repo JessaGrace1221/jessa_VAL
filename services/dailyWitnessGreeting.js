@@ -40,16 +40,58 @@ function evidenceItem(sourceType,item,summary,extra={}){
   };
 }
 
+function normalizedSignalText(value){
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+
+function isGenericDailyWitnessSignal(value){
+  const text=normalizedSignalText(value);
+  if(!text)return true;
+  return [
+    /^email may contain a risk blocker or relationship concern$/,
+    /^review risk email may contain a risk blocker or relationship concern$/,
+    /^sent email appears to need a response and no later reply was found in the fetched window$/,
+    /^close loop sent email appears to need a response and no later reply was found in the fetched window$/,
+    /^email includes pricing cost quote estimate budget or proposal language$/,
+    /^latest observation email includes pricing cost quote estimate budget or proposal language$/,
+    /^latest observation sent email appears to need a response and no later reply was found in the fetched window$/
+  ].some(pattern=>pattern.test(text));
+}
+
+function hasConcreteDailyWitnessSignal(item={}){
+  const title=cleanText(item.title||item.subject||item.displayName||item.name||'');
+  const summary=cleanText(item.summary||item.why||item.detail||item.whatChanged||item.what_changed||'');
+  const combined=[title,summary].filter(Boolean).join(' ');
+  if(isGenericDailyWitnessSignal(combined)||isGenericDailyWitnessSignal(summary))return false;
+  if(item.user_visible===false)return false;
+  return Boolean(combined);
+}
+
+function filterDailyWitnessEvidence(evidence=[]){
+  const seen=new Set();
+  const filtered=[];
+  for(const item of asArray(evidence)){
+    const combined=[item.title,item.summary].filter(Boolean).join(' ');
+    if(isGenericDailyWitnessSignal(combined)||isGenericDailyWitnessSignal(item.summary))continue;
+    const key=normalizedSignalText(combined).slice(0,220);
+    if(key&&seen.has(key))continue;
+    if(key)seen.add(key);
+    filtered.push(item);
+  }
+  return filtered;
+}
+
 function collectDailyWitnessEvidence(input={}){
   const now=input.now instanceof Date?input.now:new Date(input.now||Date.now());
   const evidence=[];
   for(const move of asArray(input.moves)){
+    if(!hasConcreteDailyWitnessSignal(move))continue;
     const summary=move.whatChanged||move.why||move.summary||move.title;
     evidence.push(evidenceItem('agency_move',move,summary,{confidence:move.confidence==null?0.72:move.confidence}));
   }
   for(const profile of asArray(input.profiles)){
     const count=Number(profile.openLoopCount||0)+Number(profile.riskCount||0)+Number(profile.opportunityCount||0);
-    if(count||withinDays(profile.lastObservedAt||profile.updatedAt,7,now)){
+    if((count||withinDays(profile.lastObservedAt||profile.updatedAt,7,now))&&hasConcreteDailyWitnessSignal(profile)){
       evidence.push(evidenceItem(profile.profileType==='project'?'project':'relationship',profile,profile.summary||profile.relationshipStatus,{confidence:profile.confidence==null?0.64:profile.confidence}));
     }
   }
@@ -59,15 +101,17 @@ function collectDailyWitnessEvidence(input={}){
     evidence.push(evidenceItem('draft',draft,summary,{confidence:0.7}));
   }
   for(const memory of asArray(input.onboardingMemory)){
+    if(!hasConcreteDailyWitnessSignal(memory))continue;
     evidence.push(evidenceItem('teach_val',memory,memory.detail||memory.summary,{confidence:0.74}));
   }
   for(const item of asArray(input.evidenceItems)){
+    if(!hasConcreteDailyWitnessSignal(item))continue;
     const sourceType=String(item.sourceType||item.source_type||item.type||'evidence').toLowerCase();
     const text=[item.title,item.summary,item.rawText||item.raw_text].filter(Boolean).join(' ');
-    const sensitivity=/court|custody|bereavement|medical|health|hearing|family emergency/i.test(text)?'high':'low';
+    const sensitivity=/\b(court|custody|bereavement|medical|health|hearing|family emergency)\b/i.test(text)?'high':'low';
     evidence.push(evidenceItem(sourceType,item,text,{confidence:item.confidence==null?0.62:item.confidence,sensitivity}));
   }
-  return evidence.filter(e=>e.summary||e.title);
+  return filterDailyWitnessEvidence(evidence.filter(e=>e.summary||e.title));
 }
 
 function extractDailyWitnessMeaning(input={}){
@@ -75,9 +119,9 @@ function extractDailyWitnessMeaning(input={}){
   const evidence=asArray(input.evidence);
   const recent=evidence.filter(e=>withinDays(e.occurred_at,2,now)||!e.occurred_at);
   const joined=recent.map(e=>`${e.title} ${e.summary}`).join(' ');
-  const meetingCount=(joined.match(/\b(meeting|call|appointment|briefing|demo)\b/gi)||[]).length;
+  const meetingCount=(joined.match(/\b(meeting|appointment|briefing|demo)\b/gi)||[]).length;
   const proposalCount=(joined.match(/\b(proposal|scope|memo|draft|reply|follow-up|follow up)\b/gi)||[]).length;
-  const emotionalHits=(joined.match(/\b(frustrat|hard|difficult|heavy|risk|tired|fatigue|reactive|concern|blocked|custody|court|hearing)\b/gi)||[]).length;
+  const emotionalHits=(joined.match(/\b(frustrat|hard|difficult|heavy|tired|fatigue|reactive|custody|court|hearing|bereavement|medical|family emergency)\b/gi)||[]).length;
   const completionHits=(joined.match(/\b(sent|approved|closed|completed|resolved|replied|finished|out)\b/gi)||[]).length;
   const waitingHits=(joined.match(/\b(waiting|reply|responded|response|asked|pending)\b/gi)||[]).length;
   const highSensitivity=recent.filter(e=>e.sensitivity==='high');
@@ -190,9 +234,9 @@ function composeDailyWitnessGreeting({clientName='there',state,meaning={},resolu
     return {lines,permission:'Go make memories with your people.',witness:'The day can be set down.',cost:'Open loops do not need to come into the evening.',confidence};
   }
   if(state==='exceptional_event'){
-    lines.push(morning?`Good morning, ${name}.`:'I am keeping this simple.');
-    lines.push('Today deserves care, not extra noise.');
-    return {lines,permission:'Only what truly earns attention should come forward.',witness:'A sensitive or exceptional event may be present.',cost:'This could carry more than ordinary work context.',confidence:Math.min(confidence,0.62)};
+    lines.push(morning?`Good morning, ${name}.`:'VAL found sensitive evidence.');
+    lines.push('I am keeping those details private on Home.');
+    return {lines,permission:'Open the source drawer only if you want to inspect what earned attention.',witness:'Sensitive evidence is present but hidden from the Home greeting.',cost:'VAL is withholding details here rather than naming private context on the desk.',confidence:Math.min(confidence,0.62)};
   }
   if(state==='completion'){
     lines.push('Something meaningful moved forward.');
@@ -321,6 +365,8 @@ module.exports={
   resolveDailyWitnessContradictions,
   selectGreetingState,
   selectGreetingIntent,
+  isGenericDailyWitnessSignal,
+  filterDailyWitnessEvidence,
   applyRestraintFilter,
   finalGate
 };

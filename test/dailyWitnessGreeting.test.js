@@ -5,7 +5,8 @@ const {
   collectDailyWitnessEvidence,
   extractDailyWitnessMeaning,
   resolveDailyWitnessContradictions,
-  selectGreetingIntent
+  selectGreetingIntent,
+  isGenericDailyWitnessSignal
 }=require('../services/dailyWitnessGreeting');
 
 test('Daily Witness separates evidence from meaning before composing greeting',()=>{
@@ -58,6 +59,58 @@ test('Daily Witness can say less on quiet mornings',()=>{
   assert.equal(greeting.moment_type,'quiet_morning');
   assert.ok(greeting.greeting_lines.length<=3);
   assert.match(greeting.display_greeting,/Good morning|spacious|clear|quiet/i);
+});
+
+test('Daily Witness does not let repeated generic email risk text drive the greeting',()=>{
+  const now=new Date('2026-07-10T11:30:00-04:00');
+  const moves=Array.from({length:40},(_,index)=>({
+    id:'generic-'+index,
+    title:'Review risk: Email may contain a risk, blocker, or relationship concern.',
+    why:'Email may contain a risk, blocker, or relationship concern.',
+    whatChanged:'Email may contain a risk, blocker, or relationship concern.',
+    confidence:0.75,
+    createdAt:'2026-07-10T10:00:00-04:00'
+  }));
+  const greeting=buildDailyWitnessGreeting({now,clientName:'Jessa Grace',moves});
+  assert.equal(isGenericDailyWitnessSignal('Email may contain a risk, blocker, or relationship concern.'),true);
+  assert.notEqual(greeting.moment_type,'exceptional_event');
+  assert.doesNotMatch(greeting.display_greeting,/Today deserves care, not extra noise/i);
+  assert.doesNotMatch(greeting.what_it_cost_or_represented,/ordinary work context/i);
+  assert.equal(greeting.evidence.length,0);
+});
+
+test('Daily Witness does not treat operational brand words as sensitive events',()=>{
+  const greeting=buildDailyWitnessGreeting({
+    now:new Date('2026-07-10T11:30:00-04:00'),
+    clientName:'Jessa Grace',
+    evidenceItems:[
+      {id:'healthbridge',sourceType:'project',title:'HealthBridge expansion update',summary:'Review project follow-up and renewal notes.',occurredAt:'2026-07-10T10:00:00-04:00'},
+      {id:'missed-call',sourceType:'task',title:'Build missed-call text-back workflow',summary:'Complete the missed-call text-back workflow.',occurredAt:'2026-07-10T10:15:00-04:00'}
+    ]
+  });
+  assert.notEqual(greeting.moment_type,'exceptional_event');
+  assert.doesNotMatch(greeting.display_greeting,/Today deserves care, not extra noise/i);
+});
+
+test('Daily Witness still responds to concrete sensitive evidence with restraint',()=>{
+  const now=new Date('2026-07-10T11:30:00-04:00');
+  const greeting=buildDailyWitnessGreeting({
+    now,
+    clientName:'Jessa Grace',
+    evidenceItems:[{
+      id:'specific-sensitive',
+      sourceType:'calendar',
+      title:'Court hearing with Morgan',
+      summary:'Court hearing moved and needs privacy around the schedule.',
+      occurredAt:'2026-07-10T09:00:00-04:00',
+      confidence:0.82
+    }]
+  });
+  assert.equal(greeting.moment_type,'exceptional_event');
+  assert.match(greeting.display_greeting,/sensitive evidence|private on Home/i);
+  assert.doesNotMatch(greeting.display_greeting,/Court hearing|Morgan/i);
+  assert.doesNotMatch(greeting.what_it_cost_or_represented,/ordinary work context/i);
+  assert.ok(greeting.internalUnderstanding.things_intentionally_not_mentioned.length>=1);
 });
 
 test('Daily Witness protects weekends and holidays unless work earns attention',()=>{

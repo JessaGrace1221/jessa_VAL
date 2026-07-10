@@ -1089,8 +1089,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-card-click-and-frost-20260708d/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-card-click-and-frost-20260708d/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-witness-evidence-20260710/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-witness-evidence-20260710/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -1642,16 +1642,36 @@ test('Hearth room attention markers persist only for the current browser session
 
 test('Hearth offers a quiet fresh-desk gesture for clearing session room marks', () => {
   assert.match(hearthHtml, /class="fresh-desk-button"/);
+  assert.match(hearthHtml, />Clear Home marks</);
+  assert.match(hearthHtml, /No Home card is open/);
   assert.match(hearthJs, /const freshDeskButton/);
   assert.match(hearthJs, /function clearRoomAttendance/);
+  assert.match(hearthJs, /event\?\.preventDefault\?\.\(\)/);
+  assert.match(hearthJs, /event\?\.stopPropagation\?\.\(\)/);
+  assert.match(hearthJs, /Home marks cleared/);
   assert.match(hearthJs, /writeAttendedRooms\(\{\}\)/);
   assert.match(hearthJs, /room-attended'\)\?\.remove\(\)/);
   assert.match(hearthJs, /freshDeskButton\.addEventListener\('click', clearRoomAttendance\)/);
   assert.match(hearthCss, /\.fresh-desk-button/);
 });
 
+test('Hearth Home explains live briefing evidence instead of static architecture filler', () => {
+  assert.match(hearthHtml, /Live briefing/);
+  assert.match(hearthHtml, /Generic risk language should not drive Home/);
+  assert.doesNotMatch(hearthHtml, /Today stands here/);
+  assert.doesNotMatch(hearthHtml, /Supporting drawers stay available without owning Home/);
+  assert.match(hearthJs, /function renderWhyTodayPanel/);
+  assert.match(hearthJs, /Briefing refreshed at/);
+  assert.match(hearthJs, /Velocity: ' \+ velocityCount \+ ' admitted change/);
+  assert.match(hearthJs, /No specific source evidence strong enough to explain the greeting/);
+  assert.match(hearthJs, /Sensitive details were intentionally withheld from Home/);
+  assert.match(hearthJs, /renderWhyTodayPanel\(briefing, 'loaded'\)/);
+  assert.match(hearthCss, /\.hearth-evidence\.open\{[^}]*z-index:40;pointer-events:auto/);
+  assert.match(hearthCss, /\.hearth-shell\.evidence-open \.living-rooms\{[^}]*pointer-events:none/);
+});
+
 test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets usable', () => {
-  assert.match(hearthCss, /\.hearth-evidence\.open\{opacity:1;transform:translateY\(0\);max-height:330px;padding-bottom:24px\}/);
+  assert.match(hearthCss, /\.hearth-evidence\.open\{opacity:1;transform:translateY\(0\);max-height:330px;padding-bottom:24px;z-index:40;pointer-events:auto\}/);
   assert.match(hearthCss, /\.living-room button\{/);
   assert.match(hearthCss, /min-height:32px/);
   assert.match(hearthCss, /\.drawer-pull\{/);

@@ -1635,13 +1635,26 @@ function applyStoredRoomAttendance(){
   });
 }
 
-function clearRoomAttendance(){
+function clearRoomAttendance(event){
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
   writeAttendedRooms({});
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('room-has-been-held');
     delete room.dataset.attended;
     room.querySelector('.room-attended')?.remove();
   });
+  closeWorkspace();
+  if(workspaceKicker) workspaceKicker.textContent = 'Home';
+  if(workspaceTitle) workspaceTitle.textContent = 'No Home card is open.';
+  if(workspaceMeaning) workspaceMeaning.textContent = 'Home marks were cleared for this browser session only.';
+  const priorLabel = freshDeskButton?.textContent || 'Clear Home marks';
+  if(freshDeskButton){
+    freshDeskButton.textContent = 'Home marks cleared';
+    window.setTimeout(() => {
+      freshDeskButton.textContent = priorLabel;
+    }, 1400);
+  }
   hearth.classList.add('desk-settling');
   window.setTimeout(() => hearth.classList.remove('desk-settling'), 620);
 }
@@ -7259,6 +7272,7 @@ function setState(nextState){
   orientation.textContent = state.orientation;
   permission.textContent = state.permission;
   setRoomCopy(state);
+  renderWhyTodayPanel(executiveBriefingState, executiveBriefingState ? 'loaded' : 'waiting');
   switches.forEach((button) => {
     button.classList.toggle('active', button.dataset.stateOption === nextState);
   });
@@ -9375,6 +9389,64 @@ function hydrateGreetingFromBriefing(briefing){
   permission.textContent = greeting.permission_line || currentState.permission;
 }
 
+function homeAdmittedCount(roomName){
+  return (homeRoomQueues[roomName] || []).length;
+}
+
+function briefingRefreshLabel(value){
+  const date = new Date(value || Date.now());
+  if(!Number.isFinite(date.getTime())) return 'just now';
+  return date.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+}
+
+function dailyWitnessEvidenceLabel(item = {}){
+  const titleText = compactSentence(item.title || item.source_type || 'source', 'source');
+  const summaryText = compactSentence(item.summary || '', '');
+  if(summaryText && summaryText !== titleText) return titleText + ': ' + compactSentence(summaryText, '').slice(0, 150);
+  return titleText;
+}
+
+function renderWhyTodayPanel(briefing = null, status = 'loaded'){
+  if(!evidence) return;
+  const velocityCount = homeAdmittedCount('velocity');
+  const alignmentCount = homeAdmittedCount('alignment');
+  const leverageCount = homeAdmittedCount('leverage');
+  const sourceEvidence = (briefing?.dailyWitness?.evidence || []).filter((item) => {
+    const text = [item.title, item.summary].filter(Boolean).join(' ');
+    return text && !/Email may contain a risk, blocker, or relationship concern/i.test(text);
+  }).slice(0, 3);
+  const sensitiveWithheld = (briefing?.dailyWitness?.internalUnderstanding?.things_intentionally_not_mentioned || [])
+    .some((item) => /sensitive/i.test(String(item.topic || item.reason || '')));
+  const generatedLine = status === 'loaded'
+    ? 'Briefing refreshed at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
+    : status === 'unavailable'
+      ? 'Live briefing is unavailable, so Home is using fallback copy.'
+      : 'Waiting for the executive briefing payload.';
+  evidence.innerHTML = [
+    '<div>',
+      '<p class="evidence-label">Live briefing</p>',
+      '<ul>',
+        '<li>' + escapeHtml(generatedLine) + '</li>',
+        '<li>Velocity: ' + velocityCount + ' admitted change' + (velocityCount === 1 ? '' : 's') + '.</li>',
+        '<li>Alignment: ' + (alignmentCount ? alignmentCount + ' priority packet' + (alignmentCount === 1 ? '' : 's') : 'no priority packet admitted') + '.</li>',
+        '<li>Leverage: ' + leverageCount + ' prepared item' + (leverageCount === 1 ? '' : 's') + ' admitted.</li>',
+      '</ul>',
+    '</div>',
+    '<div>',
+      '<p class="evidence-label">Source evidence</p>',
+      '<ul>',
+        sensitiveWithheld ? '<li>Sensitive details were intentionally withheld from Home.</li>' : '',
+        sourceEvidence.length
+          ? sourceEvidence.map((item) => '<li>' + escapeHtml(dailyWitnessEvidenceLabel(item)) + '</li>').join('')
+          : '<li>No specific source evidence strong enough to explain the greeting.</li>',
+        '<li>Nothing sends, imports, or changes externally without approval.</li>',
+      '</ul>',
+      '<button class="fresh-desk-button" type="button">Clear Home marks</button>',
+    '</div>'
+  ].join('');
+  evidence.querySelector('.fresh-desk-button')?.addEventListener('click', clearRoomAttendance);
+}
+
 function briefingWorkspace({lens,title,meaning,understanding,recommendation,actions = [{label: 'Open source behind this judgment', homeAction: 'open_source'}, {label: 'Teach VAL', workflow: 'teach'}],confidence,restraintReason,sourceItem,cardType,suppressInlinePortals = true}){
   return {
     lens,
@@ -9812,6 +9884,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
   if(!ready || !ready.id){
     clearHomeRoomForAdmission('leverage');
     setRoomCopy(currentState);
+    renderWhyTodayPanel(executiveBriefingState, executiveBriefingState ? 'loaded' : 'waiting');
     return;
   }
   const artifactCopy = preparedArtifactHomeCopy(ready);
@@ -9849,6 +9922,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
     })
   });
   setRoomCopy(currentState);
+  renderWhyTodayPanel(executiveBriefingState, executiveBriefingState ? 'loaded' : 'waiting');
 }
 
 async function hydratePreparedWorkQueue(){
@@ -9962,9 +10036,13 @@ async function hydrateHomePresence(){
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
     updatePreparedCount(Array.isArray(briefing.readyForYou) ? briefing.readyForYou.length : 0);
+    renderWhyTodayPanel(briefing, 'loaded');
     return;
   }
-  if(!canUseApi) return;
+  if(!canUseApi){
+    renderWhyTodayPanel(null, 'unavailable');
+    return;
+  }
   try{
     const briefing = await getJson('/api/executive-briefing');
     if(!briefing || briefing.bookMode) return;
@@ -9973,7 +10051,9 @@ async function hydrateHomePresence(){
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
     hydratePreparedWorkQueue();
+    renderWhyTodayPanel(briefing, 'loaded');
   }catch(error){
+    renderWhyTodayPanel(null, 'unavailable');
     console.warn('Executive briefing unavailable:', error.message);
   }
 }
