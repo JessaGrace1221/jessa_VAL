@@ -147,9 +147,12 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/const targetLooksLikeProfileKey=\/@\/\.test\(targetId\)/);
   assert.match(server,/contactId:explicitContactId \|\| \(targetId && !targetLooksLikeProfileKey \? targetId : ''\)/);
   assert.match(server,/resolvedCrmContactId/);
-  assert.match(server,/contact = contact \|\| \{\}/);
-  assert.match(server,/relationship_identity_unresolved/);
-  assert.match(server,/A canonical Relationship Dossier requires a resolved CRM contact ID/);
+  assert.match(server,/relationship_dossier_review_only/);
+  assert.match(server,/Relationship context is review-only until the CRM identity is linked/);
+  assert.match(server,/buildRelationshipContextTimeline\(reviewContact,50\)/);
+  assert.match(server,/buildRelationshipContextTimeline\(contact,50\)/);
+  assert.match(server,/gmailRelationshipContextQuery/);
+  assert.match(server,/from:\$\{email\} OR to:\$\{email\} OR cc:\$\{email\}/);
   assert.match(server,/function canonicalRelationshipDossierForEntity/);
   assert.match(server,/relationshipDossier:canonicalRelationshipDossierForEntity\(p\)/);
   assert.match(server,/action==='open_evidence'/);

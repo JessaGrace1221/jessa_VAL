@@ -9965,7 +9965,41 @@ async function buildContactTimeline(contactInput,limit=80){
   events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact)).forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
   const timeline=items.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,limit);
   const openLoops=timeline.flatMap(i=>extractOpenLoopsFromText(`${i.title}. ${i.summary}`,i.type,i.date,contact)).slice(0,12);
-  return {ok:true,contact,timeline,openLoops,sourcesChecked:['tasks','transcripts','memory','drafts','GHL notes','calendar events']};
+  return {ok:true,contact,timeline,openLoops,sourcesChecked:['tasks','transcripts','memory','drafts','CRM notes','calendar events']};
+}
+function gmailRelationshipContextQuery(contact={},days=30){
+  const boundedDays=Math.max(1,Math.min(365,Number(days)||30));
+  const email=normalizeContextEmail(contact.email||contact.contactEmail||'');
+  const name=String(contact.name||contact.contactName||'').replace(/"/g,'').trim();
+  if(email)return `(from:${email} OR to:${email} OR cc:${email}) newer_than:${boundedDays}d`;
+  if(name)return `"${name}" newer_than:${boundedDays}d`;
+  return `newer_than:${boundedDays}d`;
+}
+async function buildRelationshipContextTimeline(contactInput,limit=80){
+  const contact=typeof contactInput==='object'?contactInput:(await resolveContactFromContext({name:contactInput,email:contactInput})).contact;
+  if(!contact) return {ok:false,error:'Contact not found',items:[]};
+  const items=[];
+  const add=(type,date,title,summary,sourceId='',raw={})=>items.push({type,date:date||'',title:title||type,summary:String(summary||'').slice(0,1200),sourceId,raw});
+  const [tasks,transcripts,memory,drafts,gmail]=await Promise.all([
+    loadTasks().catch(()=>[]),
+    recentTranscripts(365).catch(()=>[]),
+    recentMemoryItems(365,500).catch(()=>[]),
+    listDrafts().catch(()=>[]),
+    fetchGmailMessages({query:gmailRelationshipContextQuery(contact,30),maxResults:40,includeBody:true}).catch(e=>({emails:[],error:e.message,provider:'gmail'}))
+  ]);
+  tasks.filter(t=>itemMentionsContact(t,contact)).forEach(t=>add('task',t.createdAt||t.dueDate,t.title,t.notes,t.id,t));
+  transcripts.filter(t=>itemMentionsContact(t,contact)).forEach(t=>add('transcript',t.createdAt,t.title||'Transcript',t.rawText,t.id,t));
+  memory.filter(m=>itemMentionsContact(m,contact)).forEach(m=>add(m.kind||'memory',m.createdAt,m.summary||m.kind,m.rawText,m.id,m));
+  drafts.filter(d=>itemMentionsContact(d,contact)||String(d.contactId||'')===String(contact.contactId||contact.id||'')).forEach(d=>add('draft',d.createdAt,d.subject||d.draftType,d.body,d.id,d));
+  (gmail.emails||[]).forEach(e=>add('gmail',e.date||e.receivedAt,e.subject,gmailMeetingContextShape(e,'Relationship email context').summary,e.messageId,e));
+  const now=new Date(),past=new Date(now);past.setDate(past.getDate()-365);const future=new Date(now);future.setDate(future.getDate()+30);
+  const {events}=await loadContextCalendarEvents(past,future);
+  events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact)).forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
+  const timeline=items.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,limit);
+  const openLoops=timeline.flatMap(i=>extractOpenLoopsFromText(`${i.title}. ${i.summary}`,i.type,i.date,contact)).slice(0,12);
+  const sourcesChecked=['tasks','transcripts','memory','drafts','Gmail from/to/cc 30 days','calendar events'];
+  if(gmail.error)sourcesChecked.push('Gmail error: '+gmail.error);
+  return {ok:true,contact,timeline,openLoops,sourcesChecked,emailQuery:gmail.query||gmailRelationshipContextQuery(contact,30)};
 }
 function personKey(name,email){
   const e=String(email||'').trim().toLowerCase();
@@ -23920,17 +23954,42 @@ app.get('/api/relationships/dossier',async(req,res)=>{
     }
     const crmContactId=resolvedCrmContactId(contact);
     if(!crmContactId){
-      return res.status(409).json({
-        ok:false,
-        error:'relationship_identity_unresolved',
-        message:'A canonical Relationship Dossier requires a resolved CRM contact ID.',
+      const reviewContact={
+        id:input.targetId||input.email||input.name||'unresolved_relationship',
+        contactId:'',
+        name:input.name||contact?.name||input.email||'Unresolved relationship',
+        email:input.email||contact?.email||'',
+        company:input.company||contact?.company||'',
+        source:'relationship_review_only_identity_unresolved'
+      };
+      const timeline=await buildRelationshipContextTimeline(reviewContact,50).catch(()=>({timeline:[],openLoops:[],sourcesChecked:[]}));
+      const dossier=buildRelationshipDossier({
+        contact:timeline.contact||reviewContact,
+        openLoops:timeline.openLoops||[],
+        evidence:timeline.timeline||[],
+        summary:(timeline.timeline||[]).length
+          ? 'Review-only relationship context assembled from recent VAL evidence. Link the right CRM person before any external action.'
+          : 'VAL has not found enough recent source evidence yet. Link the right CRM person before treating this as a relationship brief.',
+        recommendedAction:'Link the right person before VAL merges or acts on this relationship context.',
+        confidence:Math.max(0.4,Number(resolution?.confidence||0.55)),
+        sourceRefs:(timeline.timeline||[]).map(item=>({source_type:item.type,source_id:item.sourceId,quote_or_summary:item.summary,confidence:0.62})).slice(0,10)
+      });
+      return res.json({
+        ok:true,
+        dossier,
+        source:'relationship_dossier_review_only',
+        identityUnresolved:true,
+        relationshipIdentityUnresolved:true,
+        noExternalAction:true,
+        message:'Relationship context is review-only until the CRM identity is linked.',
         input,
         resolutionStatus:resolution?.status||'unresolved',
         confidence:resolution?.confidence||0,
-        matches:(resolution?.matches||[]).slice(0,5).map(c=>({name:c.name,email:c.email,source:c.source,confidence:c.confidence,contactId:resolvedCrmContactId(c)}))
+        matches:(resolution?.matches||[]).slice(0,5).map(c=>({name:c.name,email:c.email,source:c.source,confidence:c.confidence,contactId:resolvedCrmContactId(c)})),
+        sourcesChecked:timeline.sourcesChecked||[]
       });
     }
-    const timeline=await buildContactTimeline(contact,50).catch(()=>({timeline:[],openLoops:[],sourcesChecked:[]}));
+    const timeline=await buildRelationshipContextTimeline(contact,50).catch(()=>({timeline:[],openLoops:[],sourcesChecked:[]}));
     const dossier=buildRelationshipDossier({
       contactId:crmContactId,
       contact:timeline.contact||contact,

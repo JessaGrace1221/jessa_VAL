@@ -78,6 +78,17 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(dashboard,/Review Prepared Draft/);
 });
 
+test('relationship context can use read email and cc history without admitting it to Executive Inbox',()=>{
+  assert.match(server,/function gmailRelationshipContextQuery/);
+  assert.match(server,/from:\$\{email\} OR to:\$\{email\} OR cc:\$\{email\}/);
+  assert.match(server,/newer_than:\$\{boundedDays\}d/);
+  assert.match(server,/buildRelationshipContextTimeline/);
+  assert.match(server,/fetchGmailMessages\(\{query:gmailRelationshipContextQuery\(contact,30\),maxResults:40,includeBody:true\}/);
+  assert.match(server,/Gmail from\/to\/cc 30 days/);
+  assert.match(server,/read_inbound_excluded/);
+  assert.match(server,/Already read by the user; Executive Inbox only shows unresolved unread conversations/);
+});
+
 test('executive inbox actions report inline and rules avoid native confirm flow',()=>{
   assert.match(dashboard,/Follow-up tracked/);
   assert.match(dashboard,/Task created/);
