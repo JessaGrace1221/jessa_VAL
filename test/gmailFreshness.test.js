@@ -55,6 +55,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/placeholder virtual meeting\|join with google meet/);
   assert.match(server,/function emailLooksAutomatedSystemNotice/);
   assert.match(server,/notify\\.railway\\.app\|mail\\.atlasfin\\.com/);
+  assert.match(server,/function emailIsReadInbound/);
+  assert.match(server,/read_inbound_excluded/);
+  assert.match(server,/Already read by the user; Executive Inbox only shows unresolved unread conversations/);
   assert.match(server,/function emailLooksTransactionalOrBulk/);
   assert.match(server,/your orders\|thanks for your order\|ordered:\|shipped:/);
   assert.match(server,/recommended jobs\|job picks/);

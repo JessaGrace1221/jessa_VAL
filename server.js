@@ -9239,6 +9239,12 @@ function emailLooksAutomatedSystemNotice(email={}){
   if(/\b(deployment crashed|scheduled project deletion|restart deployment|manage email preferences|account alert|security alert|system notification)\b/.test(text))return true;
   return false;
 }
+function emailIsReadInbound(email={}){
+  const labels=Array.isArray(email.labels)?email.labels:[];
+  const isSent=labels.includes('SENT')||email.direction==='outbound'||email.sentByUser;
+  if(isSent)return false;
+  return labels.length>0&&!labels.includes('UNREAD');
+}
 function emailLooksTransactionalOrBulk(email={}){
   const from=normalizeExecutiveEmailAddress(email.from?.email||'');
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ').toLowerCase();
@@ -9263,6 +9269,10 @@ function emailHasExecutiveConsequence(email={}){
 function classifyExecutiveEmail(email,rules=[]){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.from?.email].join(' ').toLowerCase();
   const domain=(email.from?.email||'').split('@')[1]||'';
+  const metrics=email.senderMetrics||{};
+  if(emailIsReadInbound(email)){
+    return {classification:'low_priority',reason:'Already read by the user; Executive Inbox only shows unresolved unread conversations.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics,executiveInboxRule:'read_inbound_excluded'};
+  }
   const activeRules=rules.filter(r=>r.is_active!==false&&r.isActive!==false);
   for(const rule of activeRules){
     const conditions=rule.conditions||rule.conditions_json||rule.conditionsJson||{};
@@ -9288,7 +9298,6 @@ function classifyExecutiveEmail(email,rules=[]){
       };
     }
   }
-  const metrics=email.senderMetrics||{};
   if(emailIsCalendarNotification(email)){
     return {classification:'calendar_notice',reason:'Calendar notification belongs in calendar response controls, not Executive Inbox drafting.',recommendedAction:'Review in calendar if attendance needs a yes/no decision.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
   }
