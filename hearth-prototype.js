@@ -6655,17 +6655,46 @@ function bringDrawerTargetIntoView(target){
 
 function timelineKrispSections(transcript = {}){
   if(!transcript.krispNative) return {actionItems:[], overview:''};
-  const summary = transcript.nativeSummary || transcript.summaryPreview || (typeof transcript.summary === 'string' ? transcript.summary : transcript.summary?.executiveSummary) || '';
+  const summary = transcript.nativeSummary
+    || transcript.rawTranscript
+    || transcript.transcriptText
+    || transcript.raw_content
+    || transcript.sourcePayloadMetadata?.data?.raw_content
+    || transcript.summaryPreview
+    || (typeof transcript.summary === 'string' ? transcript.summary : transcript.summary?.executiveSummary)
+    || '';
   const text = String(summary || '').trim();
   if(!text) return {actionItems:[], overview:''};
-  const actionMatch = text.match(/Action Items?\s*([\s\S]*?)(?:\b(?:Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
-  const overviewMatch = text.match(/\b(?:Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
+  const actionMatch = text.match(/(?:^|\n)\s*#{0,3}\s*Action Items?\s*:?\s*([\s\S]*?)(?=(?:\n\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\b)|$)/i)
+    || text.match(/Action Items?\s*:?\s*([\s\S]*?)(?:\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
+  const overviewMatch = text.match(/(?:^|\n)\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\s*:?\s*([\s\S]*)$/i)
+    || text.match(/\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
   const actionItems = actionMatch
     ? actionMatch[1].split(/\n+|(?=\s*-\s*\[[ x]\])|(?=\s*[-*]\s+)/i)
         .map((item) => item.replace(/^[-*]\s*/, '').trim())
         .filter(Boolean)
     : [];
   return {actionItems, overview:overviewMatch ? overviewMatch[1].trim() : ''};
+}
+
+function timelineKrispStructuredActionItems(transcript = {}){
+  if(!transcript.krispNative) return [];
+  const sections = transcript.sourcePayloadMetadata?.data?.sections
+    || transcript.sourcePayloadMetadata?.sections
+    || transcript.metadata?.sections
+    || {};
+  const items = Array.isArray(sections.action_items) ? sections.action_items : [];
+  return items.map((item) => {
+    if(typeof item === 'string') return item;
+    if(!item || typeof item !== 'object') return null;
+    return {
+      taskTitle:item.title || item.taskTitle || item.text || '',
+      assignedToName:item.assignee?.email || item.assignee?.first_name || item.assignee?.name || item.assignee || '',
+      dueDate:item.due_date || item.dueDate || '',
+      status:item.completed ? 'completed in Krisp' : 'from Krisp',
+      sourceQuote:item.title || ''
+    };
+  }).filter(Boolean);
 }
 
 function timelineSummaryObject(transcript = {}){
@@ -6731,9 +6760,10 @@ function timelineTranscriptMeta(transcript = {}){
 
 function timelineNativeActionItems(transcript = {}){
   const krispSections = timelineKrispSections(transcript);
+  const krispStructured = timelineKrispStructuredActionItems(transcript);
   const native = Array.isArray(transcript.nativeActionItems) && transcript.nativeActionItems.length
     ? transcript.nativeActionItems
-    : (krispSections.actionItems.length ? krispSections.actionItems : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : []));
+    : (krispStructured.length ? krispStructured : (krispSections.actionItems.length ? krispSections.actionItems : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : [])));
   return native.map((item) => {
     if(typeof item === 'string') return {taskTitle:item, status:'from Krisp'};
     if(!item || typeof item !== 'object') return null;

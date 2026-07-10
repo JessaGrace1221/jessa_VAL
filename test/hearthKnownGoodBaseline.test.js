@@ -67,9 +67,14 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(html, /View full transcript/);
   assert.match(js, /function timelineNativeActionItems/);
   assert.match(js, /function timelineKrispSections/);
+  assert.match(js, /rawTranscript/);
+  assert.match(js, /Key Points\|Meeting Overview\|Summary\|Overview/);
+  assert.match(js, /function timelineKrispStructuredActionItems/);
+  assert.match(js, /sourcePayloadMetadata\?\.data\?\.sections/);
   assert.match(js, /Action Items\?/);
   assert.match(js, /Meeting Overview\|Summary\|Overview/);
   assert.match(js, /krispSections\.actionItems\.length/);
+  assert.match(js, /krispStructured\.length/);
   assert.match(js, /if\(native\.length\) return native/);
   assert.match(js, /Krisp Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
