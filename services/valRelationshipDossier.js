@@ -44,6 +44,150 @@ function buildWisdom({name,openLoops=[],risks=[],opportunities=[],summary='',rec
   if(recommendedAction)return compactText(recommendedAction,180);
   return name?`Remember what this relationship is becoming, not only what has happened with ${name}.`:compactText(summary||'This relationship deserves context before action.',180);
 }
+function evidenceTitle(item={}){
+  return compactText(item.title||item.subject||item.sourceId||item.source_id||'',120);
+}
+function evidenceLine(item={}){
+  if(typeof item==='string')return compactText(item,180);
+  const type=compactText(item.type||item.sourceType||item.source||'evidence',40).replace(/_/g,' ');
+  const title=evidenceTitle(item);
+  const summary=itemText(item);
+  return compactText([type,title,summary].filter(Boolean).join(' · '),220);
+}
+function dedupeLines(items=[],limit=6){
+  const seen=new Set();
+  return safeArray(items).map(item=>compactText(item,220)).filter(item=>{
+    const key=item.toLowerCase();
+    if(!item||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,limit);
+}
+function containsAny(text='',words=[]){
+  const hay=String(text||'').toLowerCase();
+  return words.some(word=>hay.includes(String(word).toLowerCase()));
+}
+function firstMatchingLine(lines=[],words=[]){
+  return lines.find(line=>containsAny(line,words))||'';
+}
+function relationshipThreadName(line=''){
+  const text=compactText(line,180);
+  if(/goall|goal agency|grace ai/i.test(text))return 'GOALL / Grace AI work';
+  if(/dashboard|projection|reporting|crm|pipeline/i.test(text))return 'Dashboard and CRM visibility';
+  if(/mike|nonhof/i.test(text))return 'Mike dashboard conversation';
+  if(/apollo|scraper|enrichment/i.test(text))return 'Lead and enrichment workflow';
+  if(/text.?back|missed.?call|alias|phone/i.test(text))return 'Automation build-out';
+  if(/proposal|partner|path|frisson/i.test(text))return 'Partner path materials';
+  return text.split(/[.:;]| · /).map(part=>part.trim()).filter(Boolean).slice(-1)[0]||text;
+}
+function relationshipActionFromLoop(loop='',name='this relationship'){
+  const text=compactText(loop,220);
+  if(!text)return `Clarify the next concrete commitment with ${name}.`;
+  if(/mike|dashboard/i.test(text))return 'Connect with Mike about the dashboard and decide the next owner/date.';
+  if(/send|share/i.test(text))return text;
+  if(/schedule|connect|introduce|intro/i.test(text))return text;
+  return text;
+}
+function buildRelationshipUnderstanding(dossier={}){
+  const identity=dossier.identity||{};
+  const name=identity.name||'this person';
+  const observation=dossier.observation||{};
+  const interpretation=dossier.interpretation||{};
+  const meaning=dossier.meaning||{};
+  const wisdom=dossier.wisdom||{};
+  const evidence=normalizeEvidence(observation.evidence||dossier.timeline||[],10);
+  const evidenceLines=evidence.map(evidenceLine).filter(Boolean);
+  const openLoops=dedupeLines(safeArray(observation.openLoops).map(itemText),6);
+  const risks=normalizeList(interpretation.risks,5);
+  const opportunities=normalizeList(interpretation.opportunities,5);
+  const signals=normalizeList(interpretation.relationshipSignals,5);
+  const dashboardLine=firstMatchingLine(openLoops.concat(evidenceLines),['dashboard','projection','reporting','crm','mike']);
+  const goallLine=firstMatchingLine(openLoops.concat(evidenceLines),['goall','goal agency','grace ai']);
+  const actionLoop=dashboardLine||openLoops[0]||opportunities[0]||risks[0]||signals[0]||'';
+  const activeThreads=dedupeLines(openLoops.concat(evidenceLines).map(relationshipThreadName),5);
+  const whatChanged=dedupeLines([
+    actionLoop ? relationshipActionFromLoop(actionLoop,name) : '',
+    goallLine ? 'GOALL context is active in recent meetings and email.' : '',
+    dashboardLine && dashboardLine!==actionLoop ? relationshipActionFromLoop(dashboardLine,name) : '',
+    opportunities[0] ? `Opportunity signal: ${opportunities[0]}` : '',
+    risks[0] ? `Risk to handle: ${risks[0]}` : ''
+  ],5);
+  const hasGoall=Boolean(goallLine||containsAny(evidenceLines.join(' '),['goall','goal agency','grace ai']));
+  const hasDashboard=Boolean(dashboardLine);
+  const temperature=openLoops.length?'waiting':(risks.length?'sensitive':(opportunities.length?'warm':'unknown'));
+  const lifecycle=hasGoall||hasDashboard?'active':(opportunities.length?'building_trust':'unknown');
+  const health=risks.length?'strained':(openLoops.length?'waiting':(opportunities.length?'strengthening':'unknown'));
+  const strategicImportance=hasGoall||hasDashboard||opportunities.length?'high':'unknown';
+  const thirtySecondTruth=compactText(
+    actionLoop
+      ? `${name} is connected to ${hasGoall?'GOALL/Grace AI work':'active relationship work'}. The next useful move is: ${relationshipActionFromLoop(actionLoop,name)}`
+      : (wisdom.oneThingToRemember||meaning.whyItMatters||`${name} has relationship context, but VAL needs a clearer open loop before recommending action.`),
+    260
+  );
+  const oneSentence=compactText(
+    hasGoall||hasDashboard
+      ? `${name} is part of the current GOALL/Grace AI operating conversation, especially the dashboard and follow-through path.`
+      : (meaning.whyItMatters||observation.summary||`${name} has relationship evidence, but the current role in the work is still unclear.`),
+    260
+  );
+  const stewardship={
+    responsibility: actionLoop ? relationshipActionFromLoop(actionLoop,name) : 'Do not create a new ask until the current relationship context is clearer.',
+    what_to_protect: hasGoall ? 'Protect the momentum around GOALL and the dashboard conversation.' : 'Protect clarity and follow-through.',
+    what_not_to_force: 'Do not turn loose evidence into urgency unless the open loop has an owner and next step.',
+    why_it_matters: actionLoop ? 'This reduces cognitive load by naming the actual next move instead of asking the user to decode evidence.' : 'VAL should not add work when the commitment is still unclear.'
+  };
+  return {
+    relationship_id:dossier.id||identity.id||'',
+    person_key:identity.email||identity.crmContactId||identity.id||name,
+    display_name:name,
+    thirty_second_truth:thirtySecondTruth,
+    one_sentence_understanding:oneSentence,
+    current_relationship:{
+      temperature,
+      lifecycle,
+      health,
+      trust_level:evidence.length>=4?'medium':'unknown',
+      strategic_importance:strategicImportance,
+      gravity:hasGoall||hasDashboard?'high':'unknown'
+    },
+    current_season:{
+      name:openLoops.length?'Clarifying the next move':(opportunities.length?'Building momentum':'Not enough signal'),
+      description:openLoops.length ? `There is active context, but the relationship needs the next commitment made explicit.` : 'VAL needs stronger evidence before naming the season.',
+      entered_at:observation.lastObservedAt||'',
+      confidence:openLoops.length||evidence.length>=4?0.72:0.42
+    },
+    what_changed:whatChanged.length?whatChanged:['No meaningful relationship change is clear yet.'],
+    what_might_surprise_you:hasDashboard ? 'The actionable thread is not the volume of emails; it is the dashboard follow-through hiding inside the recent context.' : '',
+    invisible_contributions:hasGoall?[{contribution:'Keeps GOALL operational context visible.',visible_event:goallLine||'Recent GOALL context.',deeper_influence:'This helps VAL connect meeting, email, and dashboard work instead of treating them as separate loose ends.',evidence:evidenceLines.slice(0,2),confidence:0.66}]:[],
+    why_this_relationship_matters:hasGoall||hasDashboard ? `${name} is tied to work that affects GOALL/Grace AI execution and dashboard visibility.` : (meaning.whyItMatters||'VAL has not found enough evidence to explain why this relationship matters yet.'),
+    active_threads:activeThreads.length?activeThreads:['No active thread is clear yet.'],
+    open_loops:openLoops.length?openLoops:[actionLoop].filter(Boolean),
+    mutual_value:{
+      value_for_them:hasDashboard?['Clarity on the dashboard path and next owner.']:[],
+      value_from_them:hasGoall?['GOALL context, decisions, and operational feedback.']:[],
+      shared_value:hasGoall||hasDashboard?['Make the dashboard and automation work easier to execute without dropped loops.']:[]
+    },
+    who_they_are_becoming_in_the_users_world:hasGoall||hasDashboard ? `${name} is becoming part of the GOALL execution context, not just a contact record.` : 'Unclear until stronger relationship evidence is attached.',
+    living_narrative:compactText(
+      actionLoop
+        ? `${name} is showing up in recent relationship evidence around ${hasGoall?'GOALL/Grace AI':'active work'}. The story is not "needs clarity"; the story is that VAL must help close the named open loop: ${relationshipActionFromLoop(actionLoop,name)}`
+        : `${name} has source evidence, but VAL does not yet have enough meaning-organized context to recommend action.`,
+      420
+    ),
+    meaning_timeline:{
+      current_season:whatChanged.slice(0,3),
+      open_future:actionLoop?[relationshipActionFromLoop(actionLoop,name)]:[]
+    },
+    relationship_graph:{},
+    communication_preferences:{},
+    risks_or_sensitivities:risks,
+    what_to_remember_next_time:actionLoop ? relationshipActionFromLoop(actionLoop,name) : 'Ask what current commitment this relationship is carrying.',
+    stewardship,
+    evidence:evidenceLines.slice(0,6),
+    unknowns:openLoops.length?[]:['Current commitment is not explicit enough.'],
+    confidence:evidence.length>=4?0.72:0.48
+  };
+}
 function relationshipDossierActions({id='',name='',email='',recommendedAction=''}={}){
   const targetId=encodeURIComponent(id||email||name||'relationship');
   const contactRef={id,name,email};
@@ -424,6 +568,7 @@ function buildRelationshipDossier(input={}){
     wisdom:dossier.wisdom.oneThingToRemember
   };
   dossier.relationshipBrief=relationshipBriefFromDossier(dossier);
+  dossier.relationshipUnderstanding=buildRelationshipUnderstanding(dossier);
   return dossier;
 }
 function relationshipDossierPromptContext(dossier={}){
@@ -440,4 +585,4 @@ function relationshipDossierPromptContext(dossier={}){
   return lines.join('\n');
 }
 
-module.exports={buildRelationshipDossier,relationshipDossierPromptContext,relationshipDossierActions,relationshipDossierSectionActions,relationshipBriefFromDossier};
+module.exports={buildRelationshipDossier,relationshipDossierPromptContext,relationshipDossierActions,relationshipDossierSectionActions,relationshipBriefFromDossier,buildRelationshipUnderstanding};

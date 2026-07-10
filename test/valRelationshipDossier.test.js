@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {buildRelationshipDossier,relationshipDossierPromptContext,relationshipDossierActions,relationshipDossierSectionActions,relationshipBriefFromDossier}=require('../services/valRelationshipDossier');
+const {buildRelationshipDossier,relationshipDossierPromptContext,relationshipDossierActions,relationshipDossierSectionActions,relationshipBriefFromDossier,buildRelationshipUnderstanding}=require('../services/valRelationshipDossier');
 
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
@@ -51,11 +51,37 @@ test('relationship dossier preserves the VAL Insight Pyramid contract',()=>{
   assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='Apollo Observer'));
   assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='Outscraper Observer'));
   assert.ok(dossier.actions.items.some(action=>action.id==='open_full_file'&&action.type==='route'));
+  assert.equal(dossier.relationshipUnderstanding.display_name,'Aric Soyring');
+  assert.match(dossier.relationshipUnderstanding.thirty_second_truth,/Proposal review|partner paths|Aric/);
+  assert.ok(Array.isArray(dossier.relationshipUnderstanding.what_changed));
+  assert.ok(Array.isArray(dossier.relationshipUnderstanding.open_loops));
+  assert.ok(dossier.relationshipUnderstanding.stewardship.responsibility);
   assert.ok(dossier.actions.items.some(action=>action.id==='draft_message'&&action.endpoint==='/api/relationships/actions'));
   assert.ok(dossier.actions.sections.evidence.some(action=>action.id==='open_evidence'));
   assert.ok(dossier.actions.sections.meaning.some(action=>action.id==='ask_why_matters'));
   assert.ok(dossier.actions.sections.wisdom.some(action=>action.id==='teach_wisdom'));
   assert.ok(dossier.actions.items.every(action=>Array.isArray(action.observerScope)&&action.observerScope.includes('hearth')&&action.observerScope.includes('meeting_prep')&&action.observerScope.includes('chat')));
+});
+
+test('relationship understanding turns evidence into actionable open-loop judgment',()=>{
+  const dossier=buildRelationshipDossier({
+    contact:{id:'mark',name:'Mark Biermann',email:'mark@goallprogram.com'},
+    openLoops:['Connect with Mike to talk about the dashboard before the next GOALL update.'],
+    evidence:[
+      {type:'transcript',title:'GOALL',summary:'Mark, Jessa, and Mike discussed the dashboard path and who should own the next step.'},
+      {type:'email',title:'AI Call Recap',summary:'Forwarded context about GOALL and dashboard visibility.'}
+    ],
+    summary:'GOALL relationship context is active.',
+    confidence:0.74
+  });
+  const understanding=buildRelationshipUnderstanding(dossier);
+  assert.match(understanding.thirty_second_truth,/Mark Biermann/);
+  assert.match(understanding.thirty_second_truth,/Mike|dashboard/);
+  assert.match(understanding.what_changed.join(' '),/Mike|dashboard/);
+  assert.match(understanding.stewardship.responsibility,/Mike|dashboard/);
+  assert.match(understanding.living_narrative,/close the named open loop/i);
+  assert.doesNotMatch(understanding.thirty_second_truth,/Recent context exists/i);
+  assert.doesNotMatch(understanding.who_they_are_becoming_in_the_users_world,/Open loop Momentum/i);
 });
 
 test('relationship brief contract can be rebuilt from any canonical dossier',()=>{
@@ -151,6 +177,7 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/Relationship context is review-only until the CRM identity is linked/);
   assert.match(server,/buildRelationshipContextTimeline\(reviewContact,50\)/);
   assert.match(server,/buildRelationshipContextTimeline\(contact,50\)/);
+  assert.match(server,/matchingTranscriptContext\(event,3\)/);
   assert.match(server,/gmailRelationshipContextQuery/);
   assert.match(server,/from:\$\{email\} OR to:\$\{email\} OR cc:\$\{email\}/);
   assert.match(server,/function canonicalRelationshipDossierForEntity/);

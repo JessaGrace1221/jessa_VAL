@@ -9962,7 +9962,18 @@ async function buildContactTimeline(contactInput,limit=80){
   }catch(e){}
   const now=new Date(),past=new Date(now);past.setDate(past.getDate()-365);const future=new Date(now);future.setDate(future.getDate()+30);
   const {events}=await loadContextCalendarEvents(past,future);
-  events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact)).forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
+  const matchedEvents=events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact));
+  matchedEvents.forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
+  const seenTranscriptIds=new Set(items.filter(item=>item.type==='transcript').map(item=>String(item.sourceId||'')));
+  for(const event of matchedEvents.slice(0,8)){
+    const linkedTranscripts=await matchingTranscriptContext(event,3).catch(()=>[]);
+    linkedTranscripts.forEach(transcript=>{
+      const transcriptId=String(transcript.id||transcript.transcriptId||'');
+      if(transcriptId&&seenTranscriptIds.has(transcriptId))return;
+      if(transcriptId)seenTranscriptIds.add(transcriptId);
+      add('transcript',transcript.createdAt||event.startTime,transcript.title||event.title||'Meeting transcript',transcript.summary||transcript.rawText||transcript.transcriptText||'',transcriptId,transcript);
+    });
+  }
   const timeline=items.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,limit);
   const openLoops=timeline.flatMap(i=>extractOpenLoopsFromText(`${i.title}. ${i.summary}`,i.type,i.date,contact)).slice(0,12);
   return {ok:true,contact,timeline,openLoops,sourcesChecked:['tasks','transcripts','memory','drafts','CRM notes','calendar events']};
@@ -9994,7 +10005,18 @@ async function buildRelationshipContextTimeline(contactInput,limit=80){
   (gmail.emails||[]).forEach(e=>add('gmail',e.date||e.receivedAt,e.subject,gmailMeetingContextShape(e,'Relationship email context').summary,e.messageId,e));
   const now=new Date(),past=new Date(now);past.setDate(past.getDate()-365);const future=new Date(now);future.setDate(future.getDate()+30);
   const {events}=await loadContextCalendarEvents(past,future);
-  events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact)).forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
+  const matchedEvents=events.filter(e=>itemMentionsContact({title:e.title||e.summary,metadata:e,rawText:JSON.stringify(inferAttendeesFromEvent(e))},contact));
+  matchedEvents.forEach(e=>add('meeting',e.startTime,e.title||e.summary,'Calendar event',e.id,e));
+  const seenTranscriptIds=new Set(items.filter(item=>item.type==='transcript').map(item=>String(item.sourceId||'')));
+  for(const event of matchedEvents.slice(0,8)){
+    const linkedTranscripts=await matchingTranscriptContext(event,3).catch(()=>[]);
+    linkedTranscripts.forEach(transcript=>{
+      const transcriptId=String(transcript.id||transcript.transcriptId||'');
+      if(transcriptId&&seenTranscriptIds.has(transcriptId))return;
+      if(transcriptId)seenTranscriptIds.add(transcriptId);
+      add('transcript',transcript.createdAt||event.startTime,transcript.title||event.title||'Meeting transcript',transcript.summary||transcript.rawText||transcript.transcriptText||'',transcriptId,transcript);
+    });
+  }
   const timeline=items.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,limit);
   const openLoops=timeline.flatMap(i=>extractOpenLoopsFromText(`${i.title}. ${i.summary}`,i.type,i.date,contact)).slice(0,12);
   const sourcesChecked=['tasks','transcripts','memory','drafts','Gmail from/to/cc 30 days','calendar events'];

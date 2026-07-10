@@ -2103,7 +2103,14 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.doesNotMatch(hearthHtml, />Open full file</);
   assert.match(hearthJs, /function relationshipEvidenceItemsFromDossier/);
   assert.match(hearthJs, /relationshipVisibleSectionActions/);
-  assert.match(hearthJs, /Recent context exists for/);
+  assert.match(hearthJs, /relationshipUnderstandingList/);
+  assert.match(hearthJs, /relationshipUnderstandingTimeline/);
+  assert.match(hearthJs, /understanding\.thirty_second_truth/);
+  assert.match(hearthJs, /understanding\.what_changed/);
+  assert.match(hearthJs, /stewardship\.responsibility/);
+  assert.match(hearthJs, /currentRelationship\.temperature/);
+  assert.match(hearthJs, /understanding\.living_narrative/);
+  assert.doesNotMatch(hearthJs, /Recent context exists for/);
   assert.match(hearthJs, /Open loops are present/);
   assert.match(hearthJs, /source trail below is the truth/);
   assert.match(hearthJs, /let activeRelationshipActionSection = ''/);

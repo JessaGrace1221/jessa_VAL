@@ -5745,7 +5745,9 @@ function relationshipEvidenceLine(item = {}){
 
 function relationshipOpenLoopLines(dossier = {}, fallback = {}, limit = 5){
   const observation = dossier.observation || {};
+  const understanding = dossier.relationshipUnderstanding || {};
   const raw = []
+    .concat(Array.isArray(understanding.open_loops) ? understanding.open_loops : [])
     .concat(Array.isArray(observation.openLoops) ? observation.openLoops : [])
     .concat(Array.isArray(fallback.openLoops) ? fallback.openLoops : []);
   const seen = new Set();
@@ -5770,6 +5772,35 @@ function relationshipProjectLines(evidence = [], fallback = {}){
     });
   }
   return Array.from(new Set(projects)).slice(0, 5);
+}
+
+function relationshipUnderstandingList(value, fallback = [], limit = 5){
+  const raw = Array.isArray(value) ? value : (value ? [value] : fallback);
+  const seen = new Set();
+  return raw.map((item) => {
+    if(typeof item === 'string') return relationshipCleanSourceText(item, 180);
+    if(item && typeof item === 'object'){
+      return relationshipCleanSourceText(item.summary || item.contribution || item.visible_event || item.deeper_influence || item.text || item.title || item.name || '', 180);
+    }
+    return '';
+  }).filter((line) => {
+    const key = line.toLowerCase();
+    if(!line || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit);
+}
+
+function relationshipUnderstandingTimeline(understanding = {}, evidenceLines = []){
+  const timeline = understanding.meaning_timeline || {};
+  const sections = [
+    ['Current season', timeline.current_season],
+    ['Open future', timeline.open_future],
+    ['Turning point', timeline.breakthroughs_or_turning_points],
+    ['Beginning', timeline.beginning]
+  ];
+  const lines = sections.flatMap(([label, items]) => relationshipUnderstandingList(items, [], 3).map((item) => label + ': ' + item));
+  return lines.length ? lines.slice(0, 5) : evidenceLines.slice(0, 5);
 }
 
 function relationshipVisibleActions(actions = []){
@@ -5808,6 +5839,10 @@ function relationshipVisibleSectionActions(sections = {}){
 
 function relationshipProfileFromDossier(dossier = {}, fallback = {}){
   const brief = dossier.relationshipBrief || {};
+  const understanding = dossier.relationshipUnderstanding || {};
+  const currentRelationship = understanding.current_relationship || {};
+  const stewardship = understanding.stewardship || {};
+  const mutualValue = understanding.mutual_value || {};
   const briefIdentity = brief.identity || {};
   const currentReality = brief.currentReality || {};
   const strategicImportance = brief.strategicImportance || {};
@@ -5831,17 +5866,17 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
   const executiveSummary = evidenceItems.length
     ? (sourceLine ? 'VAL found recent relationship context across ' + sourceLine + '.' : 'VAL found recent relationship context.')
     : 'VAL has not found enough recent source context yet.';
-  const reminder = evidenceItems.length
+  const reminder = understanding.thirty_second_truth || (evidenceItems.length
     ? (identityUnresolved
-      ? 'Recent context exists for ' + (briefIdentity.name || identity.name || fallback.name || 'this person') + '. Link the right CRM identity before VAL merges or acts.'
+      ? 'VAL found source evidence, but the CRM identity must be linked before VAL merges or acts.'
       : 'Use the latest relationship moments and open loops before reaching out.')
-    : 'Do not treat this relationship as action-ready until VAL has source context.';
-  const pattern = openLoops.length
+    : 'Do not treat this relationship as action-ready until VAL has source context.');
+  const pattern = understanding.who_they_are_becoming_in_the_users_world || (openLoops.length
     ? 'Open loops are present. Keep the next move tied to the actual commitment, not a generic follow-up.'
-    : (evidenceItems.length ? 'Recent activity is visible. Review the source trail before deciding whether anything needs action.' : 'No durable pattern is visible yet.');
-  const oneTruth = identityUnresolved
+    : (evidenceItems.length ? 'Recent activity is visible. Review the source trail before deciding whether anything needs action.' : 'No durable pattern is visible yet.'));
+  const oneTruth = understanding.truth_to_remember || understanding.what_to_remember_next_time || (identityUnresolved
     ? 'This is review-only until the CRM identity is clean.'
-    : 'The source trail below is the truth to use before drafting, scheduling, or updating CRM.';
+    : 'The source trail below is the truth to use before drafting, scheduling, or updating CRM.');
   const latestLinkedInPost = Array.isArray(sourceReceipts.linkedInLatestPosts) && sourceReceipts.linkedInLatestPosts.length
     ? sourceReceipts.linkedInLatestPosts[0]
     : null;
@@ -5858,9 +5893,11 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     name: briefIdentity.name || identity.name || fallback.name || 'Relationship',
     initials: initialsFromName(briefIdentity.name || identity.name || fallback.name),
     role: briefIdentity.role || identity.role || fallback.role || briefIdentity.status || identity.status || 'Relationship',
-    temperature: fallback.temperature || '',
-    relationshipState: fallback.relationshipState || '',
-    relationshipStateLabel: fallback.relationshipStateLabel || '',
+    temperature: currentRelationship.temperature || fallback.temperature || '',
+    relationshipState: currentRelationship.lifecycle || fallback.relationshipState || '',
+    relationshipStateLabel: currentRelationship.strategic_importance ? currentRelationship.strategic_importance + ' importance' : (fallback.relationshipStateLabel || ''),
+    trajectory: currentRelationship.health || fallback.trajectory || '',
+    trustLevel: currentRelationship.trust_level || fallback.trustLevel || '',
     temperatureMeaning: fallback.temperatureMeaning || '',
     temperatureObservers: fallback.temperatureObservers || [],
     temperatureScoreRange: fallback.temperatureScoreRange || [],
@@ -5869,9 +5906,9 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     identity: [briefIdentity.company || identity.company, briefIdentity.status || identity.status, (briefIdentity.tags || identity.tags)?.slice?.(0, 2)?.join(' / ')].filter(Boolean).join(' · ') || fallback.identity || '',
     contact: [identity.email, briefIdentity.company || identity.company, briefIdentity.crmContactId ? 'CRM ' + briefIdentity.crmContactId : ''].filter(Boolean).join(' · ') || fallback.contact || '',
     wisdom: reminder,
-    evidence: executiveSummary,
+    evidence: understanding.one_sentence_understanding || executiveSummary,
     patterns: pattern,
-    meaning: relatedWork.length ? 'This relationship is connected to ' + relatedWork.join(', ') + '.' : (relationshipCleanSourceText(strategicImportance.summary || meaning.whyItMatters || meaning.executiveValue, 180) || 'Strategic importance is not established yet.'),
+    meaning: understanding.why_this_relationship_matters || (relatedWork.length ? 'This relationship is connected to ' + relatedWork.join(', ') + '.' : (relationshipCleanSourceText(strategicImportance.summary || meaning.whyItMatters || meaning.executiveValue, 180) || 'Strategic importance is not established yet.')),
     certainty: oneTruth,
     linkedinSignal: latestLinkedInPost ? (latestLinkedInPost.summary || latestLinkedInPost.title || latestLinkedInPost.text || 'LinkedIn has a recent signal worth reviewing.') : (fallback.linkedinSignal || 'LinkedIn is being watched for useful public context.'),
     sourceReceipts: observerReceiptLine,
@@ -5880,18 +5917,18 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
       openLoops.length ? openLoops.length + ' open loop' + (openLoops.length === 1 ? '' : 's') : '',
       identityUnresolved ? 'CRM identity needs review' : 'CRM identity linked'
     ].filter(Boolean),
-    whatChanged: recentActivity.length ? recentActivity.slice(0, 4) : ['No recent relationship movement is visible yet.'],
-    executiveAdvice: openLoops.length ? ['Review the open loop before reaching out.', 'Do not add a new ask until the current commitment is clear.'] : ['No action-ready outreach is recommended from this relationship brief yet.'],
-    activeThreads: relatedWork.length ? relatedWork : (recentActivity.length ? recentActivity.slice(0, 3) : ['No active thread is visible yet.']),
+    whatChanged: relationshipUnderstandingList(understanding.what_changed, recentActivity.slice(0, 4), 5),
+    executiveAdvice: relationshipUnderstandingList([stewardship.responsibility, stewardship.what_to_protect, stewardship.what_not_to_force].filter(Boolean), openLoops.length ? ['Review the open loop before reaching out.'] : ['No action-ready outreach is recommended from this relationship brief yet.'], 4),
+    activeThreads: relationshipUnderstandingList(understanding.active_threads, relatedWork.length ? relatedWork : recentActivity.slice(0, 3), 5),
     openLoops: openLoops.length ? openLoops : ['No concrete open loop is visible yet.'],
-    valueUserCreates: ['Context, follow-through, and thoughtful relationship stewardship.'],
-    valueTheyCreate: relatedWork.length ? ['Momentum or decision context for ' + relatedWork.join(', ') + '.'] : ['Not enough evidence yet to name the mutual value.'],
-    timeline: recentActivity.length ? recentActivity : ['No relationship timeline is assembled yet.'],
-    recentActivity: recentActivity.length ? recentActivity : ['No recent activity found.'],
+    valueUserCreates: relationshipUnderstandingList(mutualValue.value_for_them, ['Context, follow-through, and thoughtful relationship stewardship.'], 4),
+    valueTheyCreate: relationshipUnderstandingList(mutualValue.value_from_them || mutualValue.shared_value, relatedWork.length ? ['Momentum or decision context for ' + relatedWork.join(', ') + '.'] : ['Not enough evidence yet to name the mutual value.'], 4),
+    timeline: relationshipUnderstandingTimeline(understanding, recentActivity),
+    recentActivity: relationshipUnderstandingList(understanding.evidence, recentActivity, 5),
     relatedWork: relatedWork.length ? relatedWork : ['No linked project surfaced from the current evidence.'],
-    notesToSee: sourceReceiptsList.length ? sourceReceiptsList : ['No source note is ready for review yet.'],
-    risk: identityUnresolved ? 'Identity needs review before VAL merges relationship context.' : 'No specific relationship risk is visible in the current source trail.',
-    livingNarrative: evidenceItems.length ? executiveSummary + (openLoops.length ? ' The next useful move is to close or clarify the open loop.' : '') : 'The relationship story is not ready until sources are attached.',
+    notesToSee: relationshipUnderstandingList(understanding.what_might_surprise_you ? [understanding.what_might_surprise_you] : [], sourceReceiptsList.length ? sourceReceiptsList : ['No source note is ready for review yet.'], 5),
+    risk: relationshipUnderstandingList(understanding.risks_or_sensitivities, [], 1)[0] || (identityUnresolved ? 'Identity needs review before VAL merges relationship context.' : 'No specific relationship risk is visible in the current source trail.'),
+    livingNarrative: understanding.living_narrative || (evidenceItems.length ? executiveSummary + (openLoops.length ? ' The next useful move is to close or clarify the open loop.' : '') : 'The relationship story is not ready until sources are attached.'),
     projectLinks: Array.isArray(fallback.projectLinks) ? fallback.projectLinks : [],
     href: openAction?.route || './dashboard.html?view=relationships&targetType=person&targetId=' + encodeURIComponent(identity.id || fallback.query?.targetId || fallback.name || 'relationship'),
     actions: actionItems,
