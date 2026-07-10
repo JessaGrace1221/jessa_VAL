@@ -323,11 +323,13 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
 
 test('Transcripts drawer restores source-grounded transcript workbench instead of diagnostic workflow cards', () => {
   assert.match(hearthHtml, /<h3>Transcripts<\/h3>/);
-  assert.match(hearthHtml, /Recent Krisp transcripts, source action items, and clean meeting overviews/);
+  assert.match(hearthHtml, /Recent VAL transcripts, source action items, and clean meeting overviews/);
   assert.match(hearthHtml, /data-transcript-list/);
   assert.match(hearthHtml, /data-transcript-detail/);
-  assert.match(hearthHtml, /Import recent Krisp meetings/);
-  assert.match(hearthHtml, /VAL will show the Krisp action items and meeting overview first/);
+  assert.match(hearthHtml, /Import recent VAL meetings/);
+  assert.doesNotMatch(hearthHtml, /Select a transcript/);
+  assert.doesNotMatch(hearthHtml, /VAL will show the .* action items and meeting overview first/);
+  assert.doesNotMatch(hearthHtml, /Krisp|Crisp|Outscraper|RocketReach|GoHighLevel|\bGHL\b/);
   assert.match(hearthHtml, /Action Items/);
   assert.match(hearthHtml, /Meeting Overview/);
   assert.match(hearthHtml, /People and Projects/);
@@ -383,7 +385,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
   assert.match(hearthHtml, /Transcripts/);
   assert.match(hearthHtml, /Meeting evidence, notes, tasks/);
-  assert.match(hearthHtml, /Recent Krisp transcripts/);
+  assert.match(hearthHtml, /Recent VAL transcripts/);
   assert.match(hearthHtml, /id="timeline-detail"/);
   assert.match(hearthHtml, /data-transcript-count/);
   assert.match(hearthHtml, /data-transcript-list/);
@@ -413,7 +415,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /krispSections\.actionItems\.length/);
   assert.match(hearthJs, /krispStructured\.length/);
   assert.match(hearthJs, /if\(native\.length\) return native/);
-  assert.match(hearthJs, /Krisp Action Items/);
+  assert.match(hearthJs, /VAL Action Items/);
   assert.match(hearthJs, /Action Items/);
   assert.match(hearthJs, /Co-Work on This Transcript/);
   assert.match(hearthJs, /data-transcript-open/);

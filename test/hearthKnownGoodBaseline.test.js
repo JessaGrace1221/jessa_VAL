@@ -57,9 +57,11 @@ test('Calendar baseline treats solo blocks as private rhythm, not meetings', () 
 
 test('Transcript drawer baseline stays source-grounded, not diagnostic workflow', () => {
   assert.match(html, /<h3>Transcripts<\/h3>/);
-  assert.match(html, /Recent Krisp transcripts, source action items, and clean meeting overviews/);
+  assert.match(html, /Recent VAL transcripts, source action items, and clean meeting overviews/);
   assert.match(html, /data-transcript-list/);
   assert.match(html, /data-transcript-detail/);
+  assert.doesNotMatch(html, /Select a transcript/);
+  assert.doesNotMatch(html, /Krisp|Crisp|Outscraper|RocketReach|GoHighLevel|\bGHL\b/);
   assert.match(html, /Action Items/);
   assert.match(html, /Meeting Overview/);
   assert.match(html, /People and Projects/);
@@ -76,16 +78,19 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(js, /krispSections\.actionItems\.length/);
   assert.match(js, /krispStructured\.length/);
   assert.match(js, /if\(native\.length\) return native/);
-  assert.match(js, /Krisp Action Items/);
+  assert.match(js, /VAL Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
     assert.doesNotMatch(html, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 });
 
-test('Hearth-facing copy says CRM instead of a single vendor name', () => {
-  assert.match(js, /function publicCrmText/);
+test('Hearth-facing copy hides provider names behind VAL and CRM', () => {
+  assert.match(js, /function publicSurfaceText/);
   assert.match(js, /replace\([^)]*CRM/);
-  assert.doesNotMatch(html, /\bGHL\b|GoHighLevel/i);
+  for(const provider of ['Krisp', 'Crisp', 'Outscraper', 'RocketReach', 'Apollo', 'GoHighLevel']){
+    assert.match(js, new RegExp('replace\\([^\\n]*' + provider));
+  }
+  assert.doesNotMatch(html, /\bGHL\b|GoHighLevel|Krisp|Crisp|Outscraper|RocketReach/);
 });
 
 test('Transcript titles stay source-grounded and reject weak calendar contradictions', () => {

@@ -6691,7 +6691,7 @@ function timelineKrispStructuredActionItems(transcript = {}){
       taskTitle:item.title || item.taskTitle || item.text || '',
       assignedToName:item.assignee?.email || item.assignee?.first_name || item.assignee?.name || item.assignee || '',
       dueDate:item.due_date || item.dueDate || '',
-      status:item.completed ? 'completed in Krisp' : 'from Krisp',
+      status:item.completed ? 'completed in VAL' : 'from VAL',
       sourceQuote:item.title || ''
     };
   }).filter(Boolean);
@@ -6765,14 +6765,14 @@ function timelineNativeActionItems(transcript = {}){
     ? transcript.nativeActionItems
     : (krispStructured.length ? krispStructured : (krispSections.actionItems.length ? krispSections.actionItems : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : [])));
   return native.map((item) => {
-    if(typeof item === 'string') return {taskTitle:item, status:'from Krisp'};
+    if(typeof item === 'string') return {taskTitle:item, status:'from VAL'};
     if(!item || typeof item !== 'object') return null;
     return {
       taskTitle:item.taskTitle || item.title || item.text || item.action || item.summary || item.name || '',
       taskDescription:item.taskDescription || item.description || item.notes || item.detail || '',
       assignedToName:item.assignedToName || item.assignee || item.owner || item.person || '',
       dueDate:item.dueDate || item.due || item.deadline || '',
-      status:item.status || 'from Krisp',
+      status:item.status || 'from VAL',
       sourceQuote:item.sourceQuote || item.quote || ''
     };
   }).filter((item) => String(item?.taskTitle || '').trim());
@@ -6829,9 +6829,9 @@ function renderTimelineTranscriptStats(data = {}){
   timelineStatusCount.textContent = total ? total + ' transcript' + (total === 1 ? '' : 's') : 'No transcripts loaded';
   if(!timelineStatusPanel) return;
   const cards = [
-    ['Recent Transcripts', total, 'Live Krisp, uploads, and recovered transcript records.'],
+    ['Recent Transcripts', total, 'Live VAL transcripts, uploads, and recovered transcript records.'],
     ['Need Review', needsReview, 'Items with participant matches, staged tasks, decisions, or updates needing judgment.'],
-    ['Open Actions', openActions, 'Krisp action items and reviewed follow-up work.'],
+    ['Open Actions', openActions, 'VAL action items and reviewed follow-up work.'],
     ['Processing Issues', failed, failed ? 'These need repair before trusting extraction.' : 'No hard processing failures reported.']
   ];
   timelineStatusPanel.innerHTML = cards.map(([label, value, body]) => [
@@ -6848,7 +6848,7 @@ function renderTimelineTranscriptList(activeId = ''){
   const items = currentTimelineTranscriptItems.slice(0, 40);
   timelineEventCount.textContent = items.length ? items.length + ' recent transcript' + (items.length === 1 ? '' : 's') : 'No transcripts found';
   if(!items.length){
-    timelineEventList.innerHTML = '<article class="empty"><span>No transcripts found</span><p>VAL did not receive a transcript archive from the selected range. Use Krisp import, upload, or intake status to trace where the meeting landed.</p></article>';
+    timelineEventList.innerHTML = '<article class="empty"><span>No transcripts found</span><p>VAL did not receive a transcript archive from the selected range. Use import, upload, or intake status to trace where the meeting landed.</p></article>';
     return;
   }
   timelineEventList.innerHTML = items.map((transcript) => {
@@ -6868,16 +6868,11 @@ function renderTimelineTranscriptList(activeId = ''){
 
 function renderTimelineTranscriptEmpty(){
   if(!timelineReviewCards || !timelineReviewCount) return;
-  if(transcriptEmpty) transcriptEmpty.hidden = false;
+  if(transcriptEmpty) transcriptEmpty.hidden = true;
   if(transcriptDetail) transcriptDetail.hidden = true;
-  timelineReviewCount.textContent = 'Select a transcript';
+  timelineReviewCount.textContent = '';
   if(timelineReviewCards === transcriptDetail) return;
-  timelineReviewCards.innerHTML = [
-    '<article class="empty timeline-transcript-empty">',
-    '<span>Transcript Detail</span>',
-    '<p>Choose a transcript on the left. VAL will show the Krisp action items and summary first, then source text and transcript-scoped Co-Work.</p>',
-    '</article>'
-  ].join('');
+  timelineReviewCards.innerHTML = '';
 }
 
 function renderTimelineTranscriptDetail(transcript = {}){
@@ -6895,7 +6890,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
   timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
   const taskBlock = tasks.length ? [
     '<section class="timeline-transcript-section action-first">',
-    '<h4>' + escapeHtml(transcript.krispNative ? 'Krisp Action Items' : 'Action Items') + '</h4>',
+    '<h4>' + escapeHtml(transcript.krispNative ? 'VAL Action Items' : 'Action Items') + '</h4>',
     '<ul>',
     tasks.slice(0, 10).map((task) => [
       '<li>',
@@ -6925,7 +6920,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '</div>',
     '</div>',
     taskBlock,
-    '<section class="timeline-transcript-section"><h4>' + escapeHtml(transcript.krispNative ? 'Krisp Summary' : 'Summary') + '</h4><p>' + escapeHtml(summary.executiveSummary || summary.clientSummary || 'Summary pending.') + '</p></section>',
+    '<section class="timeline-transcript-section"><h4>' + escapeHtml(transcript.krispNative ? 'VAL Summary' : 'Summary') + '</h4><p>' + escapeHtml(summary.executiveSummary || summary.clientSummary || 'Summary pending.') + '</p></section>',
     decisionBlock,
     relationshipBlock,
     participantBlock,
@@ -7016,22 +7011,22 @@ async function timelineTranscriptReprocess(transcriptId){
 function setTranscriptImportStatus(message, state = ''){
   const status = document.querySelector('[data-transcript-import-status]');
   if(!status) return;
-  status.textContent = message;
+  status.textContent = publicSurfaceText(message);
   if(state) status.dataset.state = state;
   else delete status.dataset.state;
 }
 
 async function showKrispManualImportStatus(){
-  setTranscriptImportStatus('Checking Krisp connection...', 'working');
+  setTranscriptImportStatus('Checking VAL transcript connection...', 'working');
   try{
     const data = await getJson('/api/val/krisp/status');
     if(data?.configured){
-      setTranscriptImportStatus('Krisp is connected. VAL is receiving transcripts automatically; manual Krisp import still needs its action restored.', 'warning');
+      setTranscriptImportStatus('VAL is receiving transcripts automatically; manual import still needs its action restored.', 'warning');
     }else{
-      setTranscriptImportStatus(data?.message || 'Krisp is not connected yet.', 'needs-connection');
+      setTranscriptImportStatus(data?.message || 'VAL transcript intake is not connected yet.', 'needs-connection');
     }
   }catch(error){
-    setTranscriptImportStatus(error.message || 'Could not check Krisp connection.', 'error');
+    setTranscriptImportStatus(error.message || 'Could not check VAL transcript intake.', 'error');
   }
 }
 
@@ -8633,7 +8628,7 @@ function activeWorkspaceTextarea(){
 
 function setWorkspaceToolStatus(message){
   const status = workspaceInputPanel.querySelector('[data-workspace-tool-status]');
-  if(status) status.textContent = message;
+  if(status) status.textContent = publicSurfaceText(message);
 }
 
 function appendToWorkspaceInput(text){
@@ -8981,16 +8976,22 @@ function getScraperCriteria(){
   }, {});
 }
 
-function publicCrmText(value){
+function publicSurfaceText(value){
   return String(value == null ? '' : value)
     .replace(/\bCRM\s*\/\s*CRM\b/gi, 'CRM')
     .replace(/\bCRM\s*\/\s*GHL\b/gi, 'CRM')
     .replace(/\bGHL\s*\/\s*CRM\b/gi, 'CRM')
-    .replace(/\bGHL\b/g, 'CRM');
+    .replace(/\bGHL\b/g, 'CRM')
+    .replace(/\bGoHighLevel\b/gi, 'CRM')
+    .replace(/\bKrisp\b/gi, 'VAL')
+    .replace(/\bCrisp\b/gi, 'VAL')
+    .replace(/\bOutscraper\b/gi, 'VAL')
+    .replace(/\bRocketReach\b/gi, 'VAL')
+    .replace(/\bApollo\b/gi, 'VAL');
 }
 
 function escapeHtml(value){
-  return publicCrmText(value).replace(/[&<>"']/g, (char) => ({
+  return publicSurfaceText(value).replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',

@@ -585,7 +585,7 @@
           <div>
             <p class="drawer-kicker">Transcripts</p>
             <h3>Transcripts</h3>
-            <p>Recent Krisp transcripts, source action items, and clean meeting overviews.</p>
+            <p>Recent VAL transcripts, source action items, and clean meeting overviews.</p>
           </div>
           <button type="button" class="close-timeline-detail">Close</button>
         </div>
@@ -595,10 +595,10 @@
               <span>Conversations</span>
               <strong data-transcript-count>Loading transcripts</strong>
             </div>
-            <div class="transcript-import-actions" aria-label="Krisp transcript import">
-              <button type="button" class="transcript-import-krisp" data-transcript-import-krisp>Import recent Krisp meetings</button>
-              <div class="transcript-import-direct" aria-label="Import one Krisp transcript">
-                <input type="text" data-transcript-import-krisp-id placeholder="Paste Krisp document link or ID" autocomplete="off" spellcheck="false">
+            <div class="transcript-import-actions" aria-label="VAL transcript import">
+              <button type="button" class="transcript-import-krisp" data-transcript-import-krisp>Import recent VAL meetings</button>
+              <div class="transcript-import-direct" aria-label="Import one VAL transcript">
+                <input type="text" data-transcript-import-krisp-id placeholder="Paste VAL transcript link or ID" autocomplete="off" spellcheck="false">
                 <button type="button" data-transcript-import-krisp-direct>Import</button>
               </div>
               <p data-transcript-import-status></p>
@@ -606,10 +606,7 @@
             <div class="transcript-list" data-transcript-list></div>
           </section>
           <section class="transcript-detail-panel" aria-label="Transcript detail">
-            <div class="transcript-detail-empty" data-transcript-empty>
-              <span>Select a transcript</span>
-              <p>VAL will show the Krisp action items and meeting overview first.</p>
-            </div>
+            <div class="transcript-detail-empty" data-transcript-empty hidden></div>
             <div class="transcript-detail-content" data-transcript-detail hidden>
               <div class="transcript-detail-head">
                 <span data-transcript-field="date"></span>
