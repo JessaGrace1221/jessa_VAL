@@ -1967,6 +1967,8 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /function renderRelationshipActions/);
   assert.match(hearthJs, /function renderRelationshipSectionActions/);
   assert.match(hearthJs, /function relationshipAllSectionActions/);
+  assert.match(hearthJs, /const defaults = defaultRelationshipSectionActions\(profile\.name \|\| 'this relationship'\)/);
+  assert.match(hearthJs, /const sections = \{\.\.\.defaults, \.\.\.supplied\}/);
   assert.match(hearthJs, /function defaultRelationshipSectionActions/);
   assert.match(hearthJs, /function showRelationshipSectionReceipt/);
   assert.match(hearthJs, /function preferredRelationshipActions/);
@@ -1979,7 +1981,7 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /if\(!canUseApi\) return/);
   assert.match(hearthJs, /const packet = receiptMatchesSelection \? preflight\.packet : localHearthMetadataPacket/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}loadRelationshipDossier\(profileId\)/);
-  assert.match(hearthJs, /const selectedSource = relationshipSource\(\{\.\.\.profile, profileId\}, 'relationship:open_profile'\)/);
+  assert.match(hearthJs, /const selectedSource = relationshipSource\(\{\.\.\.profile, profileId\}, 'relationship:open_profile', ''\)/);
   assert.match(hearthJs, /source:selectedSource/);
   assert.match(hearthJs, /await openRelationshipProfileFromFolder\(profileId, relationshipProfileButton\)/);
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
@@ -1989,6 +1991,32 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthHtml, /data-relationship-section-actions="patterns"/);
   assert.match(hearthHtml, /data-relationship-section-actions="meaning"/);
   assert.match(hearthHtml, /data-relationship-section-actions="wisdom"/);
+  [
+    'current_read',
+    'what_changed',
+    'certainty',
+    'executive_advice',
+    'risk',
+    'active_threads',
+    'open_loops',
+    'mutual_value',
+    'living_narrative',
+    'timeline',
+    'recent_activity',
+    'related_work',
+    'notes_to_see'
+  ].forEach((section) => {
+    assert.match(hearthHtml, new RegExp(`data-relationship-card-section="${section}"`));
+    assert.match(hearthHtml, new RegExp(`data-relationship-section-actions="${section}"`));
+  });
+  assert.match(hearthJs, /let activeRelationshipActionSection = ''/);
+  assert.match(hearthJs, /node\?\.dataset\?\.relationshipSection \|\| node\?\.dataset\?\.relationshipCardSection/);
+  assert.match(hearthJs, /sourceSection: scopedSection/);
+  assert.match(hearthJs, /requestedSection: scopedSection/);
+  assert.match(hearthJs, /function handleRelationshipCardNode/);
+  assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-card-section\]'\)/);
+  assert.match(hearthJs, /relationshipSectionCurrentValue/);
+  assert.match(hearthJs, /This teaching is scoped to/);
   assert.match(hearthJs, /openAction\?\.route/);
   assert.match(hearthJs, /actions: actionItems/);
   assert.match(hearthJs, /sectionActions: actions\.sections/);
@@ -2012,10 +2040,11 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /\/api\/relationships\/actions/);
   assert.match(hearthJs, /No email will be sent from this click/);
   assert.match(hearthJs, /packetReceipt: lastHearthPacketReceipt/);
-  assert.match(hearthJs, /source:relationshipSource\(activeRelationshipProfile, actionId\)/);
+  assert.match(hearthJs, /source:relationshipSource\(activeRelationshipProfile, actionId, activeRelationshipActionSection\)/);
   assert.match(hearthJs, /renderDrawerPacketReceiptStrip\(preflight\.packet \|\| lastHearthPacketReceipt\);[\s\S]{0,80}await handleRelationshipAction\(actionId\)/);
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
   assert.match(hearthJs, /function closeDrawer/);
+  assert.match(hearthJs, /returnButton\.addEventListener\('click', \(event\) => \{[\s\S]{0,120}event\.stopPropagation\(\);[\s\S]{0,80}closeWorkspace\(\)/);
   assert.match(hearthJs, /drawerTray\.addEventListener\('click'/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-action\]'\)/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-open-room\]'\)/);

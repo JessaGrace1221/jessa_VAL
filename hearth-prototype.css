@@ -5387,6 +5387,20 @@ button.drawer-link{
   border-color:rgba(88,48,37,.24);
   color:rgba(34,19,15,.9);
 }
+.relationship-click-card{
+  cursor:pointer;
+}
+.relationship-click-card:hover,
+.relationship-click-card:focus-visible{
+  border-color:rgba(91,105,79,.24);
+  background:var(--frost-open-card-strong);
+  outline:none;
+  box-shadow:var(--frost-open-soft-shadow),inset 0 1px 0 rgba(255,255,255,.82);
+}
+.relationship-click-card:focus-visible{
+  outline:2px solid rgba(91,105,79,.24);
+  outline-offset:2px;
+}
 .relationship-actions a,
 .relationship-actions button{
   display:grid;

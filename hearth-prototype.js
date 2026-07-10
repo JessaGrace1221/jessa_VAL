@@ -928,6 +928,8 @@ let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
 let relationshipIndexSourceLabel = 'Local preview';
 let relationshipTeachMode = 'relationship';
+let relationshipTeachSection = 'relationship';
+let activeRelationshipActionSection = '';
 let projectIndexProfiles = {};
 let projectIndexLoaded = false;
 let projectIndexRequest = null;
@@ -942,20 +944,64 @@ function updateRelationshipIndexSourceLabel(){
 function defaultRelationshipSectionActions(name = 'this relationship'){
   return {
     identity:[
-      {id:'open_full_file',label:'Open file',intent:'inspect',section:'identity',willDo:'Open the full relationship file.',willNotDo:'No external action will happen.'}
+      {id:'open_full_file',label:'Open file',intent:'inspect',section:'identity',willDo:'Open the full relationship file.',willNotDo:'No external action will happen.'},
+      {id:'teach_identity',label:'Add context',intent:'teach',section:'identity',willDo:'Open a teaching moment scoped to identity.',willNotDo:'VAL will not save durable memory without review.'}
     ],
     evidence:[
       {id:'open_evidence',label:'Open evidence',intent:'inspect',section:'evidence',willDo:'Open source evidence connected to this relationship.',willNotDo:'VAL will not change records.'},
       {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to GHL.'}
     ],
+    current_read:[
+      {id:'teach_current_read',label:'Correct read',intent:'teach',section:'current_read',willDo:'Open a teaching moment scoped to the current read.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    what_changed:[
+      {id:'ask_what_changed',label:'Ask what changed',intent:'understand',section:'what_changed',prompt:'Explain what changed in ' + name + ' using only the relationship evidence.'},
+      {id:'teach_what_changed',label:'Add context',intent:'teach',section:'what_changed',willDo:'Open a teaching moment scoped to what changed.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
     patterns:[
-      {id:'ask_about_pattern',label:'Ask about pattern',intent:'understand',section:'patterns',prompt:'Explain what is changing in ' + name + ' using only the dossier evidence.'}
+      {id:'ask_about_pattern',label:'Ask about pattern',intent:'understand',section:'patterns',prompt:'Explain what is changing in ' + name + ' using only the dossier evidence.'},
+      {id:'teach_pattern',label:'Add context',intent:'teach',section:'patterns',willDo:'Open a teaching moment scoped to relationship pattern.',willNotDo:'VAL will not save durable memory without review.'}
     ],
     meaning:[
-      {id:'ask_why_matters',label:'Ask why it matters',intent:'understand',section:'meaning',prompt:'Explain why ' + name + ' matters to executive judgment right now.'}
+      {id:'ask_why_matters',label:'Ask why it matters',intent:'understand',section:'meaning',prompt:'Explain why ' + name + ' matters to executive judgment right now.'},
+      {id:'teach_meaning',label:'Add context',intent:'teach',section:'meaning',willDo:'Open a teaching moment scoped to strategic importance.',willNotDo:'VAL will not save durable memory without review.'}
     ],
     wisdom:[
       {id:'teach_wisdom',label:'Teach VAL',intent:'teach',section:'wisdom',willDo:'Open a teaching moment about the relationship wisdom.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    certainty:[
+      {id:'teach_certainty',label:'Add context',intent:'teach',section:'certainty',willDo:'Open a teaching moment scoped to the one truth.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    executive_advice:[
+      {id:'teach_executive_advice',label:'Add context',intent:'teach',section:'executive_advice',willDo:'Open a teaching moment scoped to executive advice.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    risk:[
+      {id:'teach_risk',label:'Update risk',intent:'teach',section:'risk',willDo:'Open a teaching moment scoped to relationship risk.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    active_threads:[
+      {id:'cowork_active_threads',label:'Discuss threads',intent:'cowork',section:'active_threads',willDo:'Open Co-Work scoped to active threads.',willNotDo:'No email, CRM update, task, or external action will happen.'}
+    ],
+    open_loops:[
+      {id:'create_task_from_open_loop',label:'Turn loop into task',intent:'commitment',section:'open_loops',willDo:'Prepare a local VAL task from an open loop.',willNotDo:'No email, invite, or CRM write will happen.'},
+      {id:'teach_open_loops',label:'Add context',intent:'teach',section:'open_loops',willDo:'Open a teaching moment scoped to open loops.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    mutual_value:[
+      {id:'teach_mutual_value',label:'Add context',intent:'teach',section:'mutual_value',willDo:'Open a teaching moment scoped to mutual value.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    living_narrative:[
+      {id:'teach_living_narrative',label:'Update story',intent:'teach',section:'living_narrative',willDo:'Open a teaching moment scoped to the living narrative.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    timeline:[
+      {id:'teach_timeline',label:'Add context',intent:'teach',section:'timeline',willDo:'Open a teaching moment scoped to relationship timeline.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    recent_activity:[
+      {id:'teach_recent_activity',label:'Add context',intent:'teach',section:'recent_activity',willDo:'Open a teaching moment scoped to recent activity.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    related_work:[
+      {id:'teach_related_work',label:'Add context',intent:'teach',section:'related_work',willDo:'Open a teaching moment scoped to related work.',willNotDo:'VAL will not save durable memory without review.'}
+    ],
+    notes_to_see:[
+      {id:'teach_notes_to_see',label:'Add context',intent:'teach',section:'notes_to_see',willDo:'Open a teaching moment scoped to important notes.',willNotDo:'VAL will not save durable memory without review.'}
     ]
   };
 }
@@ -5459,7 +5505,7 @@ function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
 }
 
 function relationshipProfileReceiptPacket(profile = activeRelationshipProfile){
-  const source = relationshipSource(profile, 'relationship:open_profile');
+  const source = relationshipSource(profile, 'relationship:open_profile', '');
   const sourceLabel = source.sourceLabel || profile?.name || 'Relationship';
   return {
     ok:true,
@@ -5745,12 +5791,16 @@ function renderRelationshipActions(profile = {}){
 }
 
 function relationshipSectionActions(profile = {}, section = ''){
-  const sections = profile.sectionActions || profile.dossier?.actions?.sections || defaultRelationshipSectionActions(profile.name || 'this relationship');
+  const defaults = defaultRelationshipSectionActions(profile.name || 'this relationship');
+  const supplied = profile.sectionActions || profile.dossier?.actions?.sections || {};
+  const sections = {...defaults, ...supplied};
   return Array.isArray(sections[section]) ? sections[section] : [];
 }
 
 function relationshipAllSectionActions(profile = {}){
-  const sections = profile.sectionActions || profile.dossier?.actions?.sections || defaultRelationshipSectionActions(profile.name || 'this relationship');
+  const defaults = defaultRelationshipSectionActions(profile.name || 'this relationship');
+  const supplied = profile.sectionActions || profile.dossier?.actions?.sections || {};
+  const sections = {...defaults, ...supplied};
   return Object.values(sections).flat().filter(Boolean);
 }
 
@@ -5783,22 +5833,27 @@ function relationshipContactPayload(profile = {}){
 function relationshipActionById(profile = {}, actionId = ''){
   const actions = Array.isArray(profile.actions) ? profile.actions : [];
   const sectionActions = relationshipAllSectionActions(profile);
-  return actions.find((action) => action.id === actionId) || sectionActions.find((action) => action.id === actionId) || {id: actionId, label: actionId.replace(/_/g, ' ')};
+  const found = actions.find((action) => action.id === actionId) || sectionActions.find((action) => action.id === actionId);
+  if(found) return activeRelationshipActionSection && !found.section ? {...found, section:activeRelationshipActionSection} : found;
+  return {id: actionId, label: actionId.replace(/_/g, ' '), section:activeRelationshipActionSection || ''};
 }
 
 async function handleRelationshipActionClick(actionId = '', node = null){
-  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:actionId, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, actionId)});
+  activeRelationshipActionSection = node?.dataset?.relationshipSection || node?.dataset?.relationshipCardSection || activeRelationshipActionSection || '';
+  const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:actionId, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, actionId, activeRelationshipActionSection)});
   if(!preflight.ok) return;
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   await handleRelationshipAction(actionId);
 }
 
-function relationshipSource(profile = activeRelationshipProfile, action = ''){
+function relationshipSource(profile = activeRelationshipProfile, action = '', section = null){
   const person = profile || activeRelationshipProfile || relationshipProfiles.aric;
+  const scopedSection = section == null ? (activeRelationshipActionSection || '') : section;
   return {
     sourceId: person.contactId || person.crmContactId || person.id || person.profileId || person.name || 'relationship',
     sourceType: 'relationship_profile',
     sourceLabel: person.name || 'Relationship',
+    sourceSection: scopedSection,
     sourceItem: {
       id: person.id || person.profileId || person.name || 'relationship',
       name: person.name || 'Relationship',
@@ -5813,7 +5868,8 @@ function relationshipSource(profile = activeRelationshipProfile, action = ''){
       sourceReceipts: person.sourceReceipts || '',
       linkedProjects: person.projectLinks || [],
       linkedDocuments: person.documentLinks || [],
-      requestedAction: action
+      requestedAction: action,
+      requestedSection: scopedSection
     }
   };
 }
@@ -5985,9 +6041,59 @@ function openRelationshipIntroReview(profile = {}){
   openWorkspaceShell('Relationship introduction review', {returnTarget:'relationship'});
 }
 
-function openRelationshipTeachWorkspace(reason = 'relationship'){
+function relationshipSectionLabel(section = ''){
+  const labels = {
+    identity:'Identity',
+    evidence:'Evidence',
+    current_read:'Current read',
+    what_changed:'What changed',
+    patterns:'Pattern',
+    meaning:'Why this matters',
+    wisdom:'Thirty second reminder',
+    certainty:'One truth',
+    executive_advice:'Executive advice',
+    risk:'Relationship risk',
+    active_threads:'Active threads',
+    open_loops:'Open loops',
+    mutual_value:'Mutual value',
+    living_narrative:'Living narrative',
+    timeline:'Relationship timeline',
+    recent_activity:'Recent activity',
+    related_work:'Related work',
+    notes_to_see:'Notes you should see'
+  };
+  return labels[section] || String(section || 'relationship').replace(/_/g, ' ');
+}
+
+function relationshipSectionCurrentValue(profile = {}, section = ''){
+  const sections = {
+    identity: profile.identity || profile.contact,
+    evidence: profile.evidence,
+    current_read: [profile.temperature, profile.trajectory, profile.relationshipStateLabel || profile.relationshipState, profile.trustLevel].filter(Boolean).join(' · '),
+    what_changed: Array.isArray(profile.whatChanged) ? profile.whatChanged.join(' ') : profile.evidence || profile.signal,
+    patterns: profile.patterns,
+    meaning: profile.meaning,
+    wisdom: profile.wisdom,
+    certainty: profile.certainty,
+    executive_advice: Array.isArray(profile.executiveAdvice) ? profile.executiveAdvice.join(' ') : profile.certainty,
+    risk: profile.risk,
+    active_threads: Array.isArray(profile.activeThreads) ? profile.activeThreads.join(' ') : profile.company || profile.role,
+    open_loops: Array.isArray(profile.openLoops) ? profile.openLoops.join(' ') : profile.nextMove || profile.certainty,
+    mutual_value: [profile.meaning, profile.patterns].filter(Boolean).join(' '),
+    living_narrative: profile.livingNarrative || profile.patterns,
+    timeline: Array.isArray(profile.timeline) ? profile.timeline.join(' ') : profile.livingNarrative || profile.patterns,
+    recent_activity: Array.isArray(profile.recentActivity) ? profile.recentActivity.join(' ') : profile.signal,
+    related_work: Array.isArray(profile.relatedWork) ? profile.relatedWork.join(' ') : profile.company || profile.role,
+    notes_to_see: Array.isArray(profile.notesToSee) ? profile.notesToSee.join(' ') : profile.wisdom
+  };
+  return sections[section] || profile.wisdom || profile.evidence || 'No current value is attached yet.';
+}
+
+function openRelationshipTeachWorkspace(reason = 'relationship', section = ''){
   const profile = activeRelationshipProfile || relationshipProfiles.aric;
   relationshipTeachMode = reason;
+  relationshipTeachSection = section || activeRelationshipActionSection || reason || 'relationship';
+  const sectionLabel = relationshipSectionLabel(relationshipTeachSection);
   const promptByReason = {
     wisdom:'What should VAL remember about this relationship wisdom?',
     importance:'How important is this relationship, and why?',
@@ -5996,14 +6102,16 @@ function openRelationshipTeachWorkspace(reason = 'relationship'){
   };
   setWorkspaceContent({
     lens: 'Teach VAL',
-    title: 'Teach VAL about ' + (profile.name || 'this relationship') + '.',
-    meaning: 'This is where you correct, deepen, or nuance VAL’s relationship judgment.',
+    title: 'Teach VAL about ' + sectionLabel.toLowerCase() + '.',
+    meaning: 'This teaching is scoped to ' + (profile.name || 'this relationship') + ' and the "' + sectionLabel + '" card.',
     understanding: (reason === 'temperature' ? relationshipTemperatureTeachingContext(profile) : [
+      'Section: ' + sectionLabel,
+      'Current card value: ' + relationshipSectionCurrentValue(profile, relationshipTeachSection),
       'Current reminder: ' + (profile.wisdom || 'No relationship wisdom is attached yet.'),
       'Current pattern: ' + (profile.patterns || 'No durable pattern is attached yet.'),
       'Teaching stays reviewable before it becomes memory.'
     ]),
-    recommendation: promptByReason[reason] || promptByReason.relationship,
+    recommendation: promptByReason[reason] || 'What should VAL understand differently about this card?',
     actions: [
       {label:'Review what I taught VAL', workflow:'relationshipTeachCandidate'},
       {label:relationshipBackLabel(profile), workflow:'cancel:relationship'},
@@ -6012,8 +6120,8 @@ function openRelationshipTeachWorkspace(reason = 'relationship'){
     label: 'Relationship Teach VAL workspace'
   });
   renderWorkspaceInput({
-    label: 'Teach VAL',
-    placeholder: 'Example: This relationship is warmer than VAL thinks because... / Do not suggest introductions until... / This person prefers concise follow-up...',
+    label: 'Teach VAL: ' + sectionLabel,
+    placeholder: 'Example: On this card, VAL should understand that... / This is wrong because... / Use this context before suggesting action...',
     helper: 'This prepares your teaching for review only. It does not save durable memory, update CRM, send messages, or change relationship facts from this click.',
     mode: 'relationship-teach'
   });
@@ -6049,6 +6157,27 @@ async function handleRelationshipAction(actionId){
     await handleUnresolvedRelationshipAction(actionId, profile);
     return;
   }
+  if(action.intent === 'teach'){
+    openRelationshipTeachWorkspace(actionId.replace(/^teach_/, '') || 'relationship', action.section || activeRelationshipActionSection);
+    return;
+  }
+  if(action.intent === 'cowork'){
+    openContextualCoworkSession({
+      returnTarget:'relationship',
+      title:'Co-Work with VAL about ' + relationshipSectionLabel(action.section || activeRelationshipActionSection).toLowerCase() + '.',
+      meaning:'This Co-Work space is scoped to ' + (profile.name || 'this relationship') + ' and the selected Relationship card.',
+      context:[
+        'Relationship: ' + (profile.name || 'Unknown'),
+        'Section: ' + relationshipSectionLabel(action.section || activeRelationshipActionSection),
+        'Current card value: ' + relationshipSectionCurrentValue(profile, action.section || activeRelationshipActionSection)
+      ],
+      recommendation:'Use this to discuss the relationship context before drafting, scheduling, introducing, or changing anything.',
+      placeholder:'What should VAL help you think through about this card?',
+      helper:'This Co-Work note is tagged to the active relationship and selected card. External actions still require a separate approval step.',
+      backWorkflow:'cancel:relationship'
+    });
+    return;
+  }
   if(actionId === 'cowork_relationship'){
     openContextualCoworkSession({
       returnTarget: 'relationship',
@@ -6068,15 +6197,15 @@ async function handleRelationshipAction(actionId){
     return;
   }
   if(actionId === 'teach_wisdom'){
-    openRelationshipTeachWorkspace('wisdom');
+    openRelationshipTeachWorkspace('wisdom', action.section || activeRelationshipActionSection || 'wisdom');
     return;
   }
   if(actionId === 'teach_temperature'){
-    openRelationshipTeachWorkspace('temperature');
+    openRelationshipTeachWorkspace('temperature', action.section || activeRelationshipActionSection || 'temperature');
     return;
   }
   if(actionId === 'mark_vip' || actionId === 'not_important' || actionId === 'snooze'){
-    openRelationshipTeachWorkspace('importance');
+    openRelationshipTeachWorkspace('importance', action.section || activeRelationshipActionSection || 'importance');
     return;
   }
   if(actionId === 'open_full_file' || action.type === 'route'){
@@ -14015,7 +14144,7 @@ projectManagerProfile?.addEventListener('keydown', (event) => {
 async function openRelationshipProfileFromFolder(profileId = '', node = null){
   const profile = relationshipIndexSourceProfiles()[profileId] || relationshipProfiles[profileId] || relationshipIndexProfiles[profileId] || {};
   renderRelationshipProfile(profileId, {...profile, profileId});
-  const selectedSource = relationshipSource({...profile, profileId}, 'relationship:open_profile');
+  const selectedSource = relationshipSource({...profile, profileId}, 'relationship:open_profile', '');
   const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:'relationship:open_profile', allowBlockedForInspection:true, source:selectedSource});
   if(!preflight.ok) return;
   const selectedLabel = selectedSource.sourceLabel || profile.name || profileId;
@@ -14024,6 +14153,13 @@ async function openRelationshipProfileFromFolder(profileId = '', node = null){
   const packet = receiptMatchesSelection ? preflight.packet : localHearthMetadataPacket({packetName:'relationship_packet', action:'relationship:open_profile', node, source:selectedSource});
   renderDrawerPacketReceiptStrip(packet || lastHearthPacketReceipt);
   loadRelationshipDossier(profileId);
+}
+
+async function handleRelationshipCardNode(card = null){
+  if(!card) return;
+  const section = card.dataset.relationshipCardSection || '';
+  const action = card.dataset.relationshipCardAction || ('inspect_' + section);
+  await handleRelationshipActionClick(action, card);
 }
 
 relationshipFolderButtons.forEach((button) => {
@@ -14273,6 +14409,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await handleRelationshipActionClick(relationshipAction.dataset.relationshipAction, relationshipAction);
+    return;
+  }
+  const relationshipCard = event.target.closest('[data-relationship-card-section]');
+  if(relationshipCard){
+    event.preventDefault();
+    event.stopPropagation();
+    await handleRelationshipCardNode(relationshipCard);
     return;
   }
   const projectAction = event.target.closest('[data-project-action]');
@@ -14608,6 +14751,16 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+document.addEventListener('keydown', async (event) => {
+  if(event.key !== 'Enter' && event.key !== ' ') return;
+  if(event.target.closest('button,a,input,select,textarea')) return;
+  const relationshipCard = event.target.closest('[data-relationship-card-section]');
+  if(!relationshipCard) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await handleRelationshipCardNode(relationshipCard);
+});
+
 document.querySelectorAll('#correspondence-detail [data-correspondence-action]').forEach((button) => {
   button.addEventListener('click', (event) => {
     runCorrespondenceActionClick(button, event);
@@ -14652,7 +14805,11 @@ rooms.forEach((room) => {
   });
 });
 
-returnButton.addEventListener('click', closeWorkspace);
+returnButton.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  closeWorkspace();
+});
 
 enableValAutocorrect(document);
 observeHearthClickContracts();
