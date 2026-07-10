@@ -15832,9 +15832,9 @@ function relationshipIndexItemFromProfile(profile={}){
     contact:[email,metadata.phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
     wisdom:profile.summary||'Review the relationship file before acting.',
     evidence:dashboardShortText(signal,profile.summary||'',220),
-    patterns:'VAL is reading this from the canonical relationship index.',
-    meaning:profile.summary||'This relationship has enough observed context to appear in the index.',
-    certainty:'Open the brief to resolve identity and review the relationship dossier before acting.',
+    patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||signal,profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
+    meaning:profile.summary||dashboardShortText(signal,'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
+    certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)

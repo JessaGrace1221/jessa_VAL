@@ -1707,9 +1707,9 @@ function relationshipProfileFromIndexItem(item = {}){
     contact: item.contact || item.email || item.profileKey || 'CRM identity review may be required.',
     wisdom: item.wisdom || item.summary || 'Review the relationship file before acting.',
     evidence: item.evidence || item.signal || item.summary || 'Relationship evidence is available in the canonical index.',
-    patterns: item.patterns || 'VAL is reading this from the canonical relationship index.',
-    meaning: item.meaning || item.summary || 'This relationship has enough observed context to appear in the index.',
-    certainty: item.certainty || 'Open the brief to resolve identity and review the relationship dossier before acting.',
+    patterns: item.patterns || item.executiveAssessment || item.summary || item.signal || 'Pattern not confirmed yet. VAL needs relationship evidence or your context before treating this as judgment.',
+    meaning: item.meaning || item.summary || item.signal || 'Strategic importance is not confirmed yet. Review the evidence before acting.',
+    certainty: item.certainty || item.nextMove || 'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal: item.linkedinSignal || 'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts: item.sourceReceipts || 'Canonical relationship index · GHL identity gate required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
@@ -5840,6 +5840,12 @@ function relationshipActionById(profile = {}, actionId = ''){
 
 async function handleRelationshipActionClick(actionId = '', node = null){
   activeRelationshipActionSection = node?.dataset?.relationshipSection || node?.dataset?.relationshipCardSection || activeRelationshipActionSection || '';
+  if(node?.dataset?.relationshipCardSection || node?.dataset?.relationshipSection){
+    const packet = localHearthMetadataPacket({node, packetName:'relationship_packet', action:actionId, source:relationshipSource(activeRelationshipProfile, actionId, activeRelationshipActionSection)});
+    renderDrawerPacketReceiptStrip(packet || lastHearthPacketReceipt);
+    await handleRelationshipAction(actionId);
+    return;
+  }
   const preflight = await ensureHearthClickPacket({node, packetName:'relationship_packet', action:actionId, allowBlockedForInspection:true, source:relationshipSource(activeRelationshipProfile, actionId, activeRelationshipActionSection)});
   if(!preflight.ok) return;
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
@@ -6311,59 +6317,90 @@ async function handleRelationshipAction(actionId){
   }
 }
 
-function showRelationshipSectionReceipt(action = {}, profile = {}){
-  const section = action.section || 'relationship';
-  const sectionCopy = {
-    identity:{
-      title:'Identity is the anchor.',
-      meaning:profile.identity || 'VAL starts with who this is before attaching interpretation.',
-      understanding:[profile.contact, 'Canonical contact ID protects every transcript, calendar event, and note from attaching to the wrong person.'],
-      recommendation:'Open the full file when identity needs inspection before action.'
-    },
-    evidence:{
-      title:'Here is the current reality VAL is using.',
-      meaning:profile.evidence || 'VAL is grounding this relationship in observable context.',
-      understanding:[profile.evidence, profile.contact].filter(Boolean),
-      recommendation:'Turn an open loop into a task only after the evidence still feels true.'
-    },
-    patterns:{
-      title:'Here is VAL’s executive assessment.',
-      meaning:profile.patterns || 'VAL is watching the relationship pattern, not just the last interaction.',
-      understanding:[profile.evidence, profile.meaning].filter(Boolean),
-      recommendation:'Use this when you need to understand the season of the relationship before deciding.'
-    },
-    meaning:{
-      title:'Here is the strategic importance.',
-      meaning:profile.meaning || 'VAL is translating relationship context into executive value.',
-      understanding:[profile.evidence, profile.patterns].filter(Boolean),
-      recommendation:'Let meaning decide whether this deserves action today.'
-    },
-    wisdom:{
-      title:'This is the executive reminder.',
-      meaning:profile.wisdom || 'VAL is compressing the relationship into one remembered posture.',
-      understanding:[profile.evidence, profile.patterns, profile.meaning].filter(Boolean),
-      recommendation:'Teach VAL if this wisdom is close, but not quite right.'
-    }
+function relationshipUsefulText(value = '', fallback = ''){
+  const text = String(value || '').trim();
+  if(!text) return fallback;
+  const weak = [
+    /canonical relationship index/i,
+    /Open the brief to resolve identity/i,
+    /Relationship evidence is available in the canonical index/i,
+    /This relationship has enough observed context to appear in the index/i,
+    /LinkedIn context will appear when an observer has current evidence/i
+  ];
+  return weak.some((pattern) => pattern.test(text)) ? fallback : text;
+}
+
+function relationshipSectionEvidence(profile = {}, section = ''){
+  const lines = [
+    relationshipUsefulText(relationshipSectionCurrentValue(profile, section), ''),
+    relationshipUsefulText(profile.evidence, ''),
+    relationshipUsefulText(profile.signal, ''),
+    relationshipUsefulText(profile.sourceEvidence || profile.sourceReceipts, '')
+  ].filter(Boolean);
+  return Array.from(new Set(lines)).slice(0, 4);
+}
+
+function relationshipSectionPacketCopy(section = '', profile = {}){
+  const label = relationshipSectionLabel(section);
+  const current = relationshipUsefulText(relationshipSectionCurrentValue(profile, section), '');
+  const evidence = relationshipSectionEvidence(profile, section);
+  const hasEnoughEvidence = Boolean(current && evidence.length >= 2 && !/not confirmed|not action-ready|review gap/i.test(current));
+  const copyBySection = {
+    identity:['Decide whether this is the right person.', 'Identity has to be clean before VAL attaches transcripts, emails, notes, or project context.'],
+    current_read:['Decide whether the current read is accurate.', 'Temperature, trajectory, trust, and importance should change only when there is evidence or your correction.'],
+    what_changed:['Decide what actually changed.', 'VAL should separate real movement from noise before it creates urgency.'],
+    patterns:['Decide whether this pattern is real.', 'An executive assessment needs repeated evidence, not a single vague signal.'],
+    meaning:['Decide why this relationship matters now.', 'Strategic importance should explain what this relationship changes about priorities, leverage, or risk.'],
+    wisdom:['Correct the reminder VAL will carry forward.', 'This is the one-line posture VAL should remember before it drafts, schedules, or recommends.'],
+    certainty:['Decide the one safe truth.', 'If the truth is thin, VAL should ask before it acts.'],
+    executive_advice:['Decide what advice is safe to follow.', 'Advice should be usable before outreach, not decorative commentary.'],
+    risk:['Decide whether there is relationship risk.', 'Risk should say what could be harmed, what evidence supports it, and what to avoid next.'],
+    active_threads:['Discuss the active thread.', 'Threads should connect to the real work, people, and pending decision.'],
+    open_loops:['Decide whether this is a real open loop.', 'A loop becomes a task only when owner, next action, and source evidence are clear.'],
+    mutual_value:['Clarify the mutual value.', 'VAL should know what each side creates before suggesting introductions, asks, or follow-up.'],
+    living_narrative:['Update the relationship story.', 'The story should explain the season of the relationship without flattening nuance.'],
+    timeline:['Add or correct the timeline.', 'Timeline items should be sourced so VAL does not invent history.'],
+    recent_activity:['Review recent activity.', 'Recent activity needs a source and a reason it matters.'],
+    related_work:['Connect related work.', 'Related projects and documents should attach only when they truly belong to this person.'],
+    notes_to_see:['Review the notes VAL thinks matter.', 'Notes should preserve evidence, not generic memory.'
+    ]
   };
-  const copy = sectionCopy[section] || sectionCopy.meaning;
-  const actions = [];
-  if(action.id === 'open_full_file' || section === 'identity'){
-    actions.push({label:'Open full file', workflow:'relationship:open_full_file'});
-  }
-  if(action.id === 'create_task_from_loop'){
-    actions.push({label:'Create task', workflow:'relationship:create_task'});
-  }
-  if(action.id === 'teach_wisdom' || section === 'wisdom'){
-    actions.push({label:'Teach VAL', workflow:'relationship:teach_wisdom'});
-  }
-  if(action.id === 'ask_about_pattern' || action.id === 'ask_why_matters'){
-    actions.push({label:'Ask Alignment', workflow:'relationship:ask_alignment'});
+  const [title, purpose] = copyBySection[section] || ['Decide what this relationship card means.', 'This card needs enough context to support an executive next move.'];
+  return {
+    label,
+    title,
+    purpose,
+    current: current || 'No action-ready judgment is available for this card yet.',
+    evidence,
+    hasEnoughEvidence
+  };
+}
+
+function showRelationshipSectionReceipt(action = {}, profile = {}){
+  const section = action.section || activeRelationshipActionSection || 'relationship';
+  const copy = relationshipSectionPacketCopy(section, profile);
+  const missing = copy.hasEnoughEvidence
+    ? 'Missing context: nothing obvious, but you can still correct VAL if the read is wrong.'
+    : 'Missing context: VAL needs your correction, a source, or a full relationship dossier before this becomes action-ready.';
+  const actions = [
+    {label:'Add context', workflow:'relationship:teach_wisdom'},
+    {label:'Discuss this card', workflow:'relationship:cowork_relationship'},
+    {label:'Open full file', workflow:'relationship:open_full_file'}
+  ];
+  if(action.id === 'create_task_from_loop' || section === 'open_loops'){
+    actions.unshift({label:'Create task only if real', workflow:'relationship:create_task'});
   }
   showRelationshipReceipt({
     title: copy.title,
-    meaning: copy.meaning,
-    understanding: copy.understanding.filter(Boolean),
-    recommendation: copy.recommendation,
+    meaning: copy.current,
+    understanding: [
+      'Card: ' + copy.label,
+      'What this card is for: ' + copy.purpose,
+      copy.evidence.length ? 'Evidence VAL has: ' + copy.evidence.join(' | ') : 'Evidence VAL has: not enough yet.',
+      missing,
+      'Boundary: no email, CRM update, task, or memory change happened from this click.'
+    ],
+    recommendation: copy.hasEnoughEvidence ? 'Use this card as decision support, then act only through the dedicated approval path.' : 'Do not act from this card yet. Add context or open the relationship file first.',
     actions
   });
 }
@@ -14162,6 +14199,26 @@ async function handleRelationshipCardNode(card = null){
   await handleRelationshipActionClick(action, card);
 }
 
+async function handleRelationshipDetailClickEvent(event){
+  const relationshipAction = event.target.closest('#relationship-detail [data-relationship-action]');
+  if(relationshipAction){
+    event.preventDefault();
+    event.stopPropagation();
+    if(event.stopImmediatePropagation) event.stopImmediatePropagation();
+    await handleRelationshipActionClick(relationshipAction.dataset.relationshipAction, relationshipAction);
+    return true;
+  }
+  const relationshipCard = event.target.closest('#relationship-detail [data-relationship-card-section]');
+  if(relationshipCard){
+    event.preventDefault();
+    event.stopPropagation();
+    if(event.stopImmediatePropagation) event.stopImmediatePropagation();
+    await handleRelationshipCardNode(relationshipCard);
+    return true;
+  }
+  return false;
+}
+
 relationshipFolderButtons.forEach((button) => {
   button.addEventListener('click', () => {
     openRelationshipProfileFromFolder(button.dataset.relationshipProfile, button);
@@ -14404,18 +14461,7 @@ drawerTray.addEventListener('click', async (event) => {
     openProjectFieldCowork(projectCoworkCard.dataset.projectCoworkField);
     return;
   }
-  const relationshipAction = event.target.closest('[data-relationship-action]');
-  if(relationshipAction){
-    event.preventDefault();
-    event.stopPropagation();
-    await handleRelationshipActionClick(relationshipAction.dataset.relationshipAction, relationshipAction);
-    return;
-  }
-  const relationshipCard = event.target.closest('[data-relationship-card-section]');
-  if(relationshipCard){
-    event.preventDefault();
-    event.stopPropagation();
-    await handleRelationshipCardNode(relationshipCard);
+  if(await handleRelationshipDetailClickEvent(event)){
     return;
   }
   const projectAction = event.target.closest('[data-project-action]');
@@ -14429,6 +14475,10 @@ drawerTray.addEventListener('click', async (event) => {
   if(!roomButton || roomButton.classList.contains('room-action')) return;
   closeDrawer();
   openWorkspace(roomButton.dataset.openRoom);
+});
+
+document.addEventListener('click', async (event) => {
+  await handleRelationshipDetailClickEvent(event);
 });
 
 document.addEventListener('click', (event) => {

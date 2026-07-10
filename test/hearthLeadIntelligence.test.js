@@ -746,6 +746,8 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /function relationshipIndexSourceProfiles/);
   assert.match(hearthJs, /function updateRelationshipIndexSourceLabel/);
   assert.match(hearthJs, /function relationshipProfileFromIndexItem/);
+  assert.doesNotMatch(hearthJs, /VAL is reading this from the canonical relationship index/);
+  assert.doesNotMatch(server, /VAL is reading this from the canonical relationship index/);
   assert.match(hearthJs, /email: item\.query\?\.email \|\| item\.email \|\| ''/);
   assert.match(hearthJs, /contactId: item\.query\?\.contactId \|\| item\.contactId \|\| item\.crmContactId \|\| ''/);
   assert.match(hearthJs, /temperatureMeaning: item\.temperatureMeaning/);
@@ -1971,6 +1973,12 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /const sections = \{\.\.\.defaults, \.\.\.supplied\}/);
   assert.match(hearthJs, /function defaultRelationshipSectionActions/);
   assert.match(hearthJs, /function showRelationshipSectionReceipt/);
+  assert.match(hearthJs, /function relationshipUsefulText/);
+  assert.match(hearthJs, /function relationshipSectionPacketCopy/);
+  assert.match(hearthJs, /Do not act from this card yet/);
+  assert.match(hearthJs, /Evidence VAL has/);
+  assert.match(hearthJs, /Missing context/);
+  assert.match(hearthJs, /Boundary: no email, CRM update, task, or memory change happened from this click/);
   assert.match(hearthJs, /function preferredRelationshipActions/);
   assert.match(hearthJs, /activeRelationshipProfile/);
   assert.match(hearthJs, /relationshipBrief/);
@@ -2011,9 +2019,13 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   });
   assert.match(hearthJs, /let activeRelationshipActionSection = ''/);
   assert.match(hearthJs, /node\?\.dataset\?\.relationshipSection \|\| node\?\.dataset\?\.relationshipCardSection/);
+  assert.match(hearthJs, /node\?\.dataset\?\.relationshipCardSection \|\| node\?\.dataset\?\.relationshipSection/);
+  assert.match(hearthJs, /localHearthMetadataPacket\(\{node, packetName:'relationship_packet', action:actionId, source:relationshipSource/);
   assert.match(hearthJs, /sourceSection: scopedSection/);
   assert.match(hearthJs, /requestedSection: scopedSection/);
   assert.match(hearthJs, /function handleRelationshipCardNode/);
+  assert.match(hearthJs, /async function handleRelationshipDetailClickEvent/);
+  assert.match(hearthJs, /event\.stopImmediatePropagation/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-card-section\]'\)/);
   assert.match(hearthJs, /relationshipSectionCurrentValue/);
   assert.match(hearthJs, /This teaching is scoped to/);
@@ -2034,7 +2046,7 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /relationship:open_full_file/);
   assert.match(hearthJs, /relationship:draft_message/);
   assert.match(hearthJs, /relationship:create_task/);
-  assert.match(hearthJs, /relationship:ask_alignment/);
+  assert.match(hearthJs, /Discuss this card/);
   assert.match(hearthJs, /Teach VAL/);
   assert.match(hearthJs, /identity\.crmContactId \|\| identity\.id/);
   assert.match(hearthJs, /\/api\/relationships\/actions/);
@@ -2046,7 +2058,7 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /function closeDrawer/);
   assert.match(hearthJs, /returnButton\.addEventListener\('click', \(event\) => \{[\s\S]{0,120}event\.stopPropagation\(\);[\s\S]{0,80}closeWorkspace\(\)/);
   assert.match(hearthJs, /drawerTray\.addEventListener\('click'/);
-  assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-action\]'\)/);
+  assert.match(hearthJs, /event\.target\.closest\('#relationship-detail \[data-relationship-action\]'\)/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-open-room\]'\)/);
   assert.match(hearthJs, /openWorkspace\(roomButton\.dataset\.openRoom\)/);
   assert.match(hearthJs, /'\.living-room'/);
