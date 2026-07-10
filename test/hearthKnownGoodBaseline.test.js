@@ -55,9 +55,9 @@ test('Calendar baseline treats solo blocks as private rhythm, not meetings', () 
   assert.match(meetingPrepService, /private calendar block/);
 });
 
-test('Transcript drawer baseline stays Meeting Notes, not diagnostic workflow', () => {
-  assert.match(html, /<h3>Meeting notes<\/h3>/);
-  assert.match(html, /Recent transcript conversations, action items, and clean meeting overviews/);
+test('Transcript drawer baseline stays source-grounded, not diagnostic workflow', () => {
+  assert.match(html, /<h3>Transcripts<\/h3>/);
+  assert.match(html, /Recent Krisp transcripts, source action items, and clean meeting overviews/);
   assert.match(html, /data-transcript-list/);
   assert.match(html, /data-transcript-detail/);
   assert.match(html, /Action Items/);
@@ -65,6 +65,9 @@ test('Transcript drawer baseline stays Meeting Notes, not diagnostic workflow', 
   assert.match(html, /People and Projects/);
   assert.match(html, /Co-Work on This Transcript/);
   assert.match(html, /View full transcript/);
+  assert.match(js, /function timelineNativeActionItems/);
+  assert.match(js, /if\(native\.length\) return native/);
+  assert.match(js, /Krisp Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
     assert.doesNotMatch(html, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }

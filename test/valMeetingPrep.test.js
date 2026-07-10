@@ -102,7 +102,7 @@ test('builds meeting prep with source labels, attendee resolution, project links
   const fredIntel=result.brief.attendeeIntelligenceJson.find(a=>a.email==='fred@example.com');
   assert.equal(fredIntel.crm_contact_id,'');
   assert.equal(fredIntel.relationship_dossier,null);
-  assert.equal(fredIntel.unresolved_relationship_context.reason,'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM/GHL contact ID.');
+  assert.equal(fredIntel.unresolved_relationship_context.reason,'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM contact ID.');
   assert.equal(fredIntel.unresolved_relationship_context.recommended_action,'create_crm_contact_candidate');
   assert.equal(fredIntel.unresolved_relationship_context.contact_creation_candidate.endpoint,'/api/val/contacts/create');
   assert.equal(fredIntel.unresolved_relationship_context.contact_creation_candidate.requiresApproval,true);

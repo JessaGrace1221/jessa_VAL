@@ -4,7 +4,7 @@ const {relationshipIntroCandidates,contactId,introductionDirection,relationshipI
 
 test('relationship action intelligence requires canonical CRM contact identity',()=>{
   assert.equal(contactId({id:'local_1',name:'Local Person'}),'');
-  assert.equal(contactId({id:'crm_1',source:'ghl_contact',name:'GHL Person'}),'crm_1');
+  assert.equal(contactId({id:'crm_1',source:'ghl_contact',name:'CRM Person'}),'crm_1');
   const result=relationshipIntroCandidates({
     currentContact:{name:'Aric',email:'aric@example.com'},
     crmContacts:[{contactId:'crm_greg',name:'Greg',needs:['strategic partner']}]
@@ -74,7 +74,7 @@ test('relationship introduction review surface preserves two directions and appr
 test('relationship introduction draft requires both CRM contact IDs and stays internal',()=>{
   const missing=relationshipIntroDraft({personA:{name:'Aric',contactId:'crm_aric'},personB:{name:'Greg'}});
   assert.equal(missing.ok,false);
-  assert.match(missing.error,/Both CRM\/GHL contact IDs are required/);
+  assert.match(missing.error,/Both CRM contact IDs are required/);
   const draft=relationshipIntroDraft({
     id:'intro_crm_aric_crm_greg',
     personA:{name:'Aric Soyring',contactId:'crm_aric',email:'aric@example.com'},

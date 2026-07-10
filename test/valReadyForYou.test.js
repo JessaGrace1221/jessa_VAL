@@ -225,7 +225,7 @@ test('transcript prepared artifacts stay visible in Ready For You',async()=>{
           summary:'VAL noticed a useful introduction.',
           why_user_is_seeing_this:'VAL noticed a possible useful introduction.',
           why_now:'The relationship context is fresh.',
-          what_val_did:'A reviewable introduction email candidate with both CRM/GHL contact IDs attached. Nothing was sent.',
+          what_val_did:'A reviewable introduction email candidate with both CRM contact IDs attached. Nothing was sent.',
           what_only_user_can_do:'Confirm whether this introduction is appropriate.',
           approval_policy:'approval_required',
           representation_risk:'high',

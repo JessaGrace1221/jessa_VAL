@@ -200,6 +200,7 @@ let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let currentCalendarEvents = [];
 let currentMeetingEvents = [];
+let calendarPanelShouldScrollToCurrent = false;
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
 let workspaceReturnTarget = 'home';
@@ -508,7 +509,7 @@ const meetingPrep = {
     'Apollo research is queued for people and role context.'
   ],
   recommendation: 'I would scan the decision points, review the open concern, and then walk into the meeting with the proposal language already in front of you.',
-  actions: ['Open meeting prep', 'Open Acme in GHL', 'Run Apollo refresh', 'Run Outscraper refresh'],
+  actions: ['Open meeting prep', 'Open Acme in CRM', 'Run Apollo refresh', 'Run Outscraper refresh'],
   event: {
     id: 'hearth-acme-proposal-review',
     title: 'Acme proposal review',
@@ -712,7 +713,7 @@ const relationshipProfiles = {
     trustLevel: 'High',
     relationshipState: 'strategic',
     relationshipStateLabel: 'Strategic',
-    sourceEvidence: 'GHL contact, Frisson notes, and partner-path context all point to active leverage.',
+    sourceEvidence: 'CRM contact, Frisson notes, and partner-path context all point to active leverage.',
     confidence: 0.82,
     lastChangedAt: '2026-07-04T09:30:00-04:00',
     signal: 'Frisson and partner momentum',
@@ -738,7 +739,7 @@ const relationshipProfiles = {
     relatedWork: ['Frisson · Active thread', 'Partner Consulting · Opportunity', 'VAL Round Table · Relevant discussions'],
     notesToSee: ['Aric mentioned a possible introduction to a foundation that aligns with your values.'],
     linkedinSignal: 'Recent LinkedIn activity is worth watching for a thoughtful comment before the next Frisson follow-up.',
-    sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo available · Outscraper available',
+    sourceReceipts: 'CRM contact resolved · LinkedIn watching · Apollo available · Outscraper available',
     introReview: {
       whoNeedsThisPerson: [
         {
@@ -797,7 +798,7 @@ const relationshipProfiles = {
     relatedWork: ['Acme proposal · Active thread', 'Executive Inbox · Reply draft'],
     notesToSee: ['Do not let silence become ambiguity.'],
     linkedinSignal: 'LinkedIn is quiet; the stronger signal is the direct proposal reply already in the relationship file.',
-    sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo available · Outscraper watching',
+    sourceReceipts: 'CRM contact resolved · LinkedIn watching · Apollo available · Outscraper watching',
     introReview: {
       whoNeedsThisPerson: [
         {
@@ -856,7 +857,7 @@ const relationshipProfiles = {
     relatedWork: ['Partner Network · Warm thread'],
     notesToSee: ['Consistency matters more than speed here.'],
     linkedinSignal: 'A recent network post may be a natural place to reinforce shared trust without creating a new ask.',
-    sourceReceipts: 'GHL contact resolved · LinkedIn watching · Apollo watching · Outscraper available',
+    sourceReceipts: 'CRM contact resolved · LinkedIn watching · Apollo watching · Outscraper available',
     href: './dashboard.html?view=relationships&targetType=person&targetId=lindsey-wincek'
   }
 };
@@ -866,31 +867,31 @@ const relationshipTemperatureModel = {
     label: 'Needs attention',
     scoreRange: [0, 54],
     meaning: 'Trust, clarity, or follow-through needs executive care before action.',
-    observers: ['GHL/CRM', 'calendar', 'email', 'transcripts', 'Teach VAL']
+    observers: ['CRM', 'calendar', 'email', 'transcripts', 'Teach VAL']
   },
   warm: {
     label: 'Warm',
     scoreRange: [55, 79],
     meaning: 'The relationship is healthy enough for thoughtful continuation.',
-    observers: ['GHL/CRM', 'LinkedIn', 'calendar', 'email', 'Teach VAL']
+    observers: ['CRM', 'LinkedIn', 'calendar', 'email', 'Teach VAL']
   },
   strategic: {
     label: 'Strategic',
     scoreRange: [80, 100],
     meaning: 'This relationship creates meaningful leverage and should be handled deliberately.',
-    observers: ['GHL/CRM', 'LinkedIn', 'Apollo', 'Outscraper', 'Teach VAL']
+    observers: ['CRM', 'LinkedIn', 'Apollo', 'Outscraper', 'Teach VAL']
   },
   new: {
     label: 'New',
     scoreRange: [45, 70],
     meaning: 'Identity is known, but VAL needs more evidence before forming strong judgment.',
-    observers: ['GHL/CRM', 'calendar', 'email']
+    observers: ['CRM', 'calendar', 'email']
   },
   waiting: {
     label: 'Waiting',
     scoreRange: [45, 75],
     meaning: 'A known loop is open; the next move should preserve clarity without creating pressure.',
-    observers: ['GHL/CRM', 'email', 'calendar', 'Teach VAL']
+    observers: ['CRM', 'email', 'calendar', 'Teach VAL']
   }
 };
 
@@ -954,12 +955,12 @@ const projectProfiles = {
     decisionEvidence: 'A lead can be valid without becoming the next project move.',
     nextMove: 'Review approved leads against current projects',
     nextMoveEvidence: 'Use Lead Intelligence as source material, then decide priority in the Projects drawer.',
-    sourceReceipts: 'Lead Intelligence · GHL duplicate checks · project notes',
+    sourceReceipts: 'Lead Intelligence · CRM duplicate checks · project notes',
     sourceDetails: {
       files: [],
       websiteSource: 'Lead Intelligence preview and duplicate-check sources.',
       documents: 'Project notes are referenced, not uploaded in this local preview.',
-      relationships: 'Approved leads, GHL contact context, and project owner notes.',
+      relationships: 'Approved leads, CRM contact context, and project owner notes.',
       rawContext: 'Preview project context only.'
     },
     href: './dashboard.html?view=projects&projectId=client-pipeline'
@@ -995,7 +996,7 @@ function defaultRelationshipSectionActions(name = 'this relationship'){
     ],
     evidence:[
       {id:'open_evidence',label:'Open evidence',intent:'inspect',section:'evidence',willDo:'Open source evidence connected to this relationship.',willNotDo:'VAL will not change records.'},
-      {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to GHL.'}
+      {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to CRM.'}
     ],
     current_read:[
       {id:'teach_current_read',label:'Correct read',intent:'teach',section:'current_read',willDo:'Open a teaching moment scoped to the current read.',willNotDo:'VAL will not save durable memory without review.'}
@@ -1104,7 +1105,7 @@ const leadScraperDefinitions = {
     sourceReadiness: [
       ['Level 1 discovery', 'Outscraper/public business search'],
       ['Level 2 decision maker', 'Decision-maker enrichment when available'],
-      ['Level 3 confirmation/dedupe', 'GHL duplicate check + optional verification'],
+      ['Level 3 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
   },
@@ -1133,7 +1134,7 @@ const leadScraperDefinitions = {
     sourceReadiness: [
       ['Level 1 discovery', 'Outscraper/public business search'],
       ['Level 2 decision maker', 'Partner contact and reach context'],
-      ['Level 3 confirmation/dedupe', 'GHL duplicate check + optional verification'],
+      ['Level 3 confirmation/dedupe', 'CRM duplicate check + optional verification'],
       ['Import policy', 'Approved only']
     ]
   }
@@ -1148,7 +1149,7 @@ function leadScraperCriteriaFromDefinition(type){
       label: field.label,
       value: leadScraperField(type, field.key, field.value)
     })),
-    destination: definition?.crmDestination?.label || 'GHL destination not configured',
+    destination: definition?.crmDestination?.label || 'CRM destination not configured',
     sources: definition?.sourceReadiness || []
   };
 }
@@ -1187,14 +1188,14 @@ const scraperWorkflows = {
     setupUnderstanding: [
       'Starter scraper: Organizations.',
       'Active pattern: Level 1 discovery, Level 2 decision-maker context, Level 3 confirmation and dedupe.',
-      'Safeguard: Level 1 discovery checks live GHL duplicates before enrichment or import.'
+      'Safeguard: Level 1 discovery checks live CRM duplicates before enrichment or import.'
     ],
     setupRecommendation: 'Start with a focused preview. Make the definition trustworthy before VAL touches the sources.',
     criteria: leadScraperCriteriaFromDefinition('organizations'),
     previewTitle: 'The organization preview is ready for judgment.',
-    previewMeaning: 'VAL has not imported anything. The review set is staged so the user can decide what belongs in GHL.',
+    previewMeaning: 'VAL has not imported anything. The review set is staged so the user can decide what belongs in CRM.',
     previewUnderstanding: [
-      'Level 1 found viable organizations and filtered known GHL duplicates.',
+      'Level 1 found viable organizations and filtered known CRM duplicates.',
       'Level 2 person and company enrichment is attached where available.',
       'Level 3 verification is deferred for broad batches and can run in 25-lead chunks after review.'
     ],
@@ -1249,7 +1250,7 @@ const scraperWorkflows = {
     setupUnderstanding: [
       'Starter scraper: Partners.',
       'Criteria: partner type, geographic market, potential reach, and fit score.',
-      'Safeguard: the Frisson partner destination is visible before anything is pushed to GHL.'
+      'Safeguard: the Frisson partner destination is visible before anything is pushed to CRM.'
     ],
     setupRecommendation: 'Choose one partner category, keep the first preview small, and approve only candidates with credible nonprofit reach.',
     criteria: leadScraperCriteriaFromDefinition('partners'),
@@ -1262,7 +1263,7 @@ const scraperWorkflows = {
     ],
     previewRecommendation: 'Select only the partners that would genuinely expand reach, then push approved partners to the strategic partner pipeline.',
     verifiedTitle: 'Partner evidence is ready for approval.',
-    verifiedMeaning: 'VAL has checked source support and contactability without moving anything into GHL.',
+    verifiedMeaning: 'VAL has checked source support and contactability without moving anything into CRM.',
     verifiedUnderstanding: [
       'Partner fit is scored on a 100-point standard.',
       'Potential Reach remains sortable.',
@@ -1344,7 +1345,7 @@ const scraperUtilityWorkflows = {
       'Level 1: Outscraper or public business discovery.',
       'Level 2: Apollo-style company and decision-maker enrichment.',
       'Level 3: RocketReach verification, chunked to avoid gateway timeouts.',
-      'GHL: contact, tag, custom field, note, and opportunity write access.'
+      'CRM: contact, tag, custom field, note, and opportunity write access.'
     ],
     recommendation: 'Show connection readiness before the workflow starts, and show a graceful recovery path when a source fails.',
     actions: ['Check connections', 'Open Pipeline', 'Teach VAL']
@@ -1770,7 +1771,7 @@ function relationshipProfileFromIndexItem(item = {}){
     meaning: item.meaning || item.summary || item.signal || 'Strategic importance is not confirmed yet. Review the evidence before acting.',
     certainty: item.certainty || item.nextMove || 'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal: item.linkedinSignal || 'LinkedIn context will appear when an observer has current evidence.',
-    sourceReceipts: item.sourceReceipts || 'Canonical relationship index · GHL identity gate required before dossier attachment',
+    sourceReceipts: item.sourceReceipts || 'Canonical relationship index · CRM identity gate required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
     href: item.href || './dashboard.html?view=relationships&targetType=person&targetId=' + encodeURIComponent(id)
   };
@@ -5637,7 +5638,7 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     : null;
   const observerReceiptLine = Array.isArray(sourceReceipts.observers) && sourceReceipts.observers.length
     ? sourceReceipts.observers.map((observer) => [observer.label || observer.id, observer.status].filter(Boolean).join(' ')).join(' · ')
-    : fallback.sourceReceipts || 'GHL contact required before observers can merge relationship context.';
+    : fallback.sourceReceipts || 'CRM contact required before observers can merge relationship context.';
   return {
     id: dossier.id || identity.id || fallback.query?.targetId || fallback.name || 'relationship',
     dossier,
@@ -5657,7 +5658,7 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     temperatureEvidence: fallback.temperatureEvidence || [],
     temperatureConflict: fallback.temperatureConflict || null,
     identity: [briefIdentity.company || identity.company, briefIdentity.status || identity.status, (briefIdentity.tags || identity.tags)?.slice?.(0, 2)?.join(' / ')].filter(Boolean).join(' · ') || fallback.identity || '',
-    contact: [identity.email, briefIdentity.company || identity.company, briefIdentity.crmContactId ? 'CRM/GHL ' + briefIdentity.crmContactId : ''].filter(Boolean).join(' · ') || fallback.contact || '',
+    contact: [identity.email, briefIdentity.company || identity.company, briefIdentity.crmContactId ? 'CRM ' + briefIdentity.crmContactId : ''].filter(Boolean).join(' · ') || fallback.contact || '',
     wisdom: brief.executiveReminder || wisdom.oneThingToRemember || fallback.wisdom || '',
     evidence: currentReality.summary || observation.summary || observation.evidence?.[0]?.summary || fallback.evidence || '',
     patterns: Array.isArray(brief.executiveAssessment) && brief.executiveAssessment.length ? brief.executiveAssessment.slice(0, 3).join(' ') : (interpretation.pattern || interpretation.momentum || fallback.patterns || ''),
@@ -5681,7 +5682,7 @@ function contactCandidatePayloadFromRelationship(profile = {}){
     email: email || undefined,
     source: 'VAL relationship identity gate',
     tags: ['val_relationship_identity_review'],
-    note: 'Created from Relationship file identity gate after CRM/GHL lookup did not return a canonical contact ID.'
+    note: 'Created from Relationship file identity gate after CRM lookup did not return a canonical contact ID.'
   };
 }
 
@@ -5696,17 +5697,17 @@ function relationshipProfileFromUnresolvedIdentity(data = {}, fallback = {}){
     name,
     initials: initialsFromName(name),
     role: 'Identity unresolved',
-    identity: 'Not organized in GHL yet',
-    contact: email || 'No canonical CRM/GHL contact ID is attached.',
+    identity: 'Not organized in CRM yet',
+    contact: email || 'No canonical CRM contact ID is attached.',
     wisdom: 'Create or match the contact before VAL attaches relationship context.',
     evidence: 'VAL found possible relationship context, but it is holding that context until identity is clean.',
-    patterns: matches.length ? matches.slice(0, 2).map((match) => [match.name, match.email, match.source].filter(Boolean).join(' · ')).join(' | ') : 'No confident GHL match was returned.',
+    patterns: matches.length ? matches.slice(0, 2).map((match) => [match.name, match.email, match.source].filter(Boolean).join(' · ')).join(' | ') : 'No confident CRM match was returned.',
     meaning: 'This prevents transcripts, calendar attendees, emails, and notes from overlapping the wrong person.',
-    certainty: 'Resolve identity first. Then build the Relationship Dossier from the returned GHL contact ID.',
+    certainty: 'Resolve identity first. Then build the Relationship Dossier from the returned CRM contact ID.',
     href: '#',
     actions: [
-      {id:'search_ghl_contacts',label:'Search GHL contacts',type:'identity_gate',willDo:'Show the possible GHL matches returned by the resolver.',willNotDo:'No contact will be created or merged.'},
-      {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review a new GHL contact candidate before creation.',willNotDo:'VAL will not create a contact without review.'}
+      {id:'search_ghl_contacts',label:'Search CRM contacts',type:'identity_gate',willDo:'Show the possible CRM matches returned by the resolver.',willNotDo:'No contact will be created or merged.'},
+      {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review a new CRM contact candidate before creation.',willNotDo:'VAL will not create a contact without review.'}
     ],
     sectionActions: {},
     contactCandidate:{payload:contactCandidatePayloadFromRelationship({...fallback,name,query:{...(fallback.query||{}),email}})}
@@ -5790,7 +5791,7 @@ function preferredRelationshipActions(actions = []){
 function relationshipSuggestedActions(profile = {}){
   if(profile.unresolvedIdentity){
     return [
-      {id:'search_ghl_contacts',label:'Search GHL contacts',type:'identity_gate',willDo:'Show possible GHL matches for this person.',willNotDo:'No contact will be created or merged.'},
+      {id:'search_ghl_contacts',label:'Search CRM contacts',type:'identity_gate',willDo:'Show possible CRM matches for this person.',willNotDo:'No contact will be created or merged.'},
       {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review the proposed contact before creation.',willNotDo:'VAL will not create a contact without review.'}
     ];
   }
@@ -6322,7 +6323,7 @@ async function handleRelationshipAction(actionId){
     showRelationshipReceipt({
       title: 'Observer refresh is ready for review.',
       meaning: profile.sourceReceipts || 'CRM, LinkedIn, Apollo, and Outscraper are the observers for this relationship brief.',
-      understanding: ['GHL/CRM remains the identity anchor.', 'LinkedIn is for public relationship awareness.', 'Apollo and Outscraper enrich context only when configured and appropriate.'],
+      understanding: ['CRM remains the identity anchor.', 'LinkedIn is for public relationship awareness.', 'Apollo and Outscraper enrich context only when configured and appropriate.'],
       recommendation: 'Run observer refresh only when the relationship brief needs newer evidence before action.'
     });
     return;
@@ -6468,10 +6469,10 @@ async function handleUnresolvedRelationshipAction(actionId, profile = {}){
   if(actionId === 'search_ghl_contacts'){
     const matches = Array.isArray(profile.unresolvedData?.matches) ? profile.unresolvedData.matches : [];
     showRelationshipReceipt({
-      title: 'Search GHL before attaching context.',
-      meaning: profile.name + ' is not organized under a canonical GHL contact ID yet.',
-      understanding: matches.length ? matches.map((match) => [match.name || 'Unnamed contact', match.email, match.contactId || match.source, match.confidence != null ? 'confidence ' + match.confidence : ''].filter(Boolean).join(' · ')) : ['No confident GHL match was returned by the resolver.', 'Use a more specific email, phone, or company if this should match an existing contact.'],
-      recommendation: 'Match or create the GHL contact first. Then VAL can safely attach transcripts, calendar, emails, and notes.',
+      title: 'Search CRM before attaching context.',
+      meaning: profile.name + ' is not organized under a canonical CRM contact ID yet.',
+      understanding: matches.length ? matches.map((match) => [match.name || 'Unnamed contact', match.email, match.contactId || match.source, match.confidence != null ? 'confidence ' + match.confidence : ''].filter(Boolean).join(' · ')) : ['No confident CRM match was returned by the resolver.', 'Use a more specific email, phone, or company if this should match an existing contact.'],
+      recommendation: 'Match or create the CRM contact first. Then VAL can safely attach transcripts, calendar, emails, and notes.',
       actions: [{label:'Review new contact candidate', workflow:'relationship:review_new_contact_candidate'}]
     });
     return;
@@ -6482,7 +6483,7 @@ async function handleUnresolvedRelationshipAction(actionId, profile = {}){
       candidate:{
         endpoint:'/api/val/contacts/create',
         payload:profile.contactCandidate?.payload || contactCandidatePayloadFromRelationship(profile),
-        willNotDo:'VAL will not merge contacts, send messages, add opportunities, or attach relationship context until GHL returns a contact ID.',
+        willNotDo:'VAL will not merge contacts, send messages, add opportunities, or attach relationship context until CRM returns a contact ID.',
         onSuccess:'Use the returned contact.id/contactId as the canonical relationship key.'
       }
     };
@@ -6491,9 +6492,9 @@ async function handleUnresolvedRelationshipAction(actionId, profile = {}){
   }
   showRelationshipReceipt({
     title: 'Resolve identity first.',
-    meaning: 'VAL cannot use this as a Relationship Dossier until a CRM/GHL contact ID exists.',
+    meaning: 'VAL cannot use this as a Relationship Dossier until a CRM contact ID exists.',
     understanding: ['No relationship context was attached.', 'No CRM write happened.', 'This protects against overlapping people.'],
-    recommendation: 'Search GHL or review a new contact candidate.'
+    recommendation: 'Search CRM or review a new contact candidate.'
   });
 }
 
@@ -6653,6 +6654,9 @@ function bringDrawerTargetIntoView(target){
 }
 
 function timelineSummaryObject(transcript = {}){
+  if(transcript.nativeSummary){
+    return {executiveSummary: transcript.nativeSummary};
+  }
   const summary = transcript.summary;
   if(summary && typeof summary === 'object') return summary;
   if(typeof summary === 'string') return {executiveSummary: summary};
@@ -6706,7 +6710,27 @@ function timelineTranscriptMeta(transcript = {}){
   return parts.join(' · ');
 }
 
+function timelineNativeActionItems(transcript = {}){
+  const native = Array.isArray(transcript.nativeActionItems) && transcript.nativeActionItems.length
+    ? transcript.nativeActionItems
+    : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : []);
+  return native.map((item) => {
+    if(typeof item === 'string') return {taskTitle:item, status:'from Krisp'};
+    if(!item || typeof item !== 'object') return null;
+    return {
+      taskTitle:item.taskTitle || item.title || item.text || item.action || item.summary || item.name || '',
+      taskDescription:item.taskDescription || item.description || item.notes || item.detail || '',
+      assignedToName:item.assignedToName || item.assignee || item.owner || item.person || '',
+      dueDate:item.dueDate || item.due || item.deadline || '',
+      status:item.status || 'from Krisp',
+      sourceQuote:item.sourceQuote || item.quote || ''
+    };
+  }).filter((item) => String(item?.taskTitle || '').trim());
+}
+
 function timelineTranscriptTasks(transcript = {}){
+  const native = timelineNativeActionItems(transcript);
+  if(native.length) return native;
   return (Array.isArray(transcript.tasks) ? transcript.tasks : [])
     .filter((task) => {
       const haystack = [task.taskTitle, task.taskDescription, task.sourceQuote].join(' ');
@@ -6757,7 +6781,7 @@ function renderTimelineTranscriptStats(data = {}){
   const cards = [
     ['Recent Transcripts', total, 'Live Krisp, uploads, and recovered transcript records.'],
     ['Need Review', needsReview, 'Items with participant matches, staged tasks, decisions, or updates needing judgment.'],
-    ['Open Actions', openActions, 'Transcripts with extracted follow-up or staged work.'],
+    ['Open Actions', openActions, 'Krisp action items and reviewed follow-up work.'],
     ['Processing Issues', failed, failed ? 'These need repair before trusting extraction.' : 'No hard processing failures reported.']
   ];
   timelineStatusPanel.innerHTML = cards.map(([label, value, body]) => [
@@ -6786,7 +6810,7 @@ function renderTimelineTranscriptList(activeId = ''){
       '<span>' + escapeHtml(timelineTranscriptMeta(transcript) || 'Transcript') + '</span>',
       '<strong>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</strong>',
       '<p>' + escapeHtml(timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summary || 'Open to review the transcript details.', 170)) + '</p>',
-      '<small>' + escapeHtml(tasks ? tasks + ' extracted action' + (tasks === 1 ? '' : 's') : 'No extracted actions') + '</small>',
+      '<small>' + escapeHtml(tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items') + '</small>',
       '</button>'
     ].join('');
   }).join('');
@@ -6801,7 +6825,7 @@ function renderTimelineTranscriptEmpty(){
   timelineReviewCards.innerHTML = [
     '<article class="empty timeline-transcript-empty">',
     '<span>Transcript Detail</span>',
-    '<p>Choose a transcript on the left. VAL will show action items first, then summary, decisions, relationship/project context, source text, and transcript-scoped Co-Work.</p>',
+    '<p>Choose a transcript on the left. VAL will show the Krisp action items and summary first, then source text and transcript-scoped Co-Work.</p>',
     '</article>'
   ].join('');
 }
@@ -6821,7 +6845,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
   timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
   const taskBlock = tasks.length ? [
     '<section class="timeline-transcript-section action-first">',
-    '<h4>Action Items</h4>',
+    '<h4>' + escapeHtml(transcript.krispNative ? 'Krisp Action Items' : 'Action Items') + '</h4>',
     '<ul>',
     tasks.slice(0, 10).map((task) => [
       '<li>',
@@ -6833,7 +6857,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     ].join('')).join(''),
     '</ul>',
     '</section>'
-  ].join('') : renderTimelineListBlock('Action Items', [], 'No useful action items were extracted yet. Reprocess this transcript if the meeting clearly had follow-through.');
+  ].join('') : renderTimelineListBlock('Action Items', [], 'No action items were provided with this transcript.');
   const decisionBlock = renderTimelineListBlock('Decisions', decisions, 'No decisions extracted yet.', (item) => escapeHtml(item.title || item.summary || item));
   const relationshipBlock = renderTimelineListBlock('Relationship / Project Signals', relationshipUpdates, 'No relationship or project signals extracted yet.', (item) => {
     if(typeof item === 'string') return escapeHtml(item);
@@ -6851,7 +6875,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '</div>',
     '</div>',
     taskBlock,
-    '<section class="timeline-transcript-section"><h4>Summary</h4><p>' + escapeHtml(summary.executiveSummary || summary.clientSummary || 'Summary pending.') + '</p></section>',
+    '<section class="timeline-transcript-section"><h4>' + escapeHtml(transcript.krispNative ? 'Krisp Summary' : 'Summary') + '</h4><p>' + escapeHtml(summary.executiveSummary || summary.clientSummary || 'Summary pending.') + '</p></section>',
     decisionBlock,
     relationshipBlock,
     participantBlock,
@@ -7687,7 +7711,7 @@ function meetingPrepAttendeeIdentityLines(attendees = []){
   attendees.forEach((attendee, index) => {
     const name = attendee.name || attendee.email || 'Calendar attendee';
     if(attendee.crm_contact_id){
-      lines.push(name + ' is organized under GHL contact ' + attendee.crm_contact_id + '.');
+      lines.push(name + ' is organized under CRM contact ' + attendee.crm_contact_id + '.');
       return;
     }
     const unresolved = attendee.unresolved_relationship_context || {};
@@ -7695,10 +7719,10 @@ function meetingPrepAttendeeIdentityLines(attendees = []){
     if(candidate){
       const key = 'attendee_' + index;
       activeMeetingContactCandidates[key] = {attendee, candidate};
-      lines.push(name + ' is not in GHL yet. Create the contact before VAL attaches relationship context. [[contact-candidate:' + key + ']]');
+      lines.push(name + ' is not in CRM yet. Create the contact before VAL attaches relationship context. [[contact-candidate:' + key + ']]');
       return;
     }
-    lines.push(name + ' has not resolved to a CRM/GHL contact yet.');
+    lines.push(name + ' has not resolved to a CRM contact yet.');
   });
   return lines;
 }
@@ -7814,7 +7838,7 @@ function meetingPrepReadiness(brief = {}, relationship = null, project = null){
   if(relationship){score += 18; prepared.push('Relationship context reviewed');} else missing.push('Relationship file not matched yet');
   if(project){score += 14; prepared.push('Project context reviewed');} else missing.push('Project context not matched yet');
   if(attendees.some((attendee) => attendee.crm_contact_id)){score += 10; prepared.push('Attendee identity resolved');}
-  else if(hasAttendeeEmail){score += 6; prepared.push('Attendee emails reviewed'); missing.push('CRM/GHL identity not resolved yet');}
+  else if(hasAttendeeEmail){score += 6; prepared.push('Attendee emails reviewed'); missing.push('CRM identity not resolved yet');}
   else missing.push('No attendee email attached');
   if(Array.isArray(brief.internalContextJson?.openLoops) && brief.internalContextJson.openLoops.length){score += 8; prepared.push('Previous open loops reviewed');}
   else if(Array.isArray(brief.internalContextJson?.transcripts) && brief.internalContextJson.transcripts.length){score += 6; prepared.push('Prior transcript context reviewed');}
@@ -8178,7 +8202,7 @@ function agencyNoteForLens(workspace = {}, roomName = ''){
   if(/leverage/.test(lens)) return 'Prepared work waits here until you approve, refine, or release it.';
   if(/board of observers/.test(lens)) return 'The Board makes VAL inspectable. It does not replace your judgment.';
   if(/meeting/.test(lens)) return 'Meeting prep stays private until you choose what to use.';
-  if(/lead|scraper|approval|connection/.test(lens)) return 'Nothing enters GHL until the preview is reviewed and approved.';
+  if(/lead|scraper|approval|connection/.test(lens)) return 'Nothing enters CRM until the preview is reviewed and approved.';
   if(/co-work|cowork|notebook/.test(lens)) return 'Co-Work can become work only when you choose to shape it.';
   if(/teach/.test(lens)) return 'Teaching stays reviewable before VAL turns it into memory.';
   return 'VAL will wait for your judgment before anything moves.';
@@ -8349,7 +8373,7 @@ function portalPhraseForWorkspace(workspace = {}){
       workspace.recommendation
     ].some((text) => String(text || '').toLowerCase().includes(candidate.toLowerCase())));
   if(phrase) return phrase;
-  if(profile.key === 'opportunity') return item.opportunityName || item.name || item.title || 'GHL opportunity';
+  if(profile.key === 'opportunity') return item.opportunityName || item.name || item.title || 'CRM opportunity';
   if(profile.key === 'draft') return /proposal/i.test(item.title || item.summary || '') ? 'proposal' : (item.title || 'prepared draft');
   if(profile.key === 'relationship') return item.name || item.contactName || item.title || 'relationship';
   if(profile.key === 'project') return item.projectName || item.name || item.title || 'project';
@@ -8726,7 +8750,7 @@ function leadSourcingEmptyBoard(){
     '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>GHL duplicate review and source evidence land here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review and source evidence land here.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -8796,7 +8820,7 @@ function renderScraperPreviewList(workflow, stage){
             '</div>' +
             '<div class="lead-confirm-status">' +
               '<b>' + (isImportedStage ? 'Imported' : 'Preview only') + '</b>' +
-              '<small>' + (isImportedStage ? 'Import receipt attached.' : 'Not in GHL yet. Duplicate check is enforced again at import.') + '</small>' +
+              '<small>' + (isImportedStage ? 'Import receipt attached.' : 'Not in CRM yet. Duplicate check is enforced again at import.') + '</small>' +
             '</div>' +
             '<div class="preview-controls" aria-label="Review decision for ' + escapeHtml(lead.name) + '">' +
               '<button type="button" class="preview-choice' + (lead._approved === false ? '' : ' active') + '" data-preview-choice="approved">Approve</button>' +
@@ -8821,11 +8845,11 @@ function renderLeadSourcingProgress(type){
   if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
-    '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering GHL.</small></div>',
+    '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering CRM.</small></div>',
     '<div class="lead-sourcing-board loading" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row"><strong>Waiting for viable leads</strong><span>Decision-maker context attaches after discovery.</span><small>No contact is invented.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row"><strong>Waiting for preview rows</strong><span>GHL duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row"><strong>Waiting for preview rows</strong><span>CRM duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -8837,7 +8861,7 @@ function renderLeadSourcingMessage(type, title, details = [], actionLabel = 'Tra
   if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
   leadDrawerPreviewList.hidden = false;
   leadDrawerPreviewList.innerHTML = [
-    '<div class="preview-list-head"><span>' + escapeHtml(title) + '</span><small>Nothing has been imported into GHL.</small></div>',
+    '<div class="preview-list-head"><span>' + escapeHtml(title) + '</span><small>Nothing has been imported into CRM.</small></div>',
     '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
       '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
       '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Paused</strong><span>' + escapeHtml(details[1] || 'Decision-maker enrichment did not run yet.') + '</span><small>No contact was invented.</small></article></section>',
@@ -8907,8 +8931,16 @@ function getScraperCriteria(){
   }, {});
 }
 
+function publicCrmText(value){
+  return String(value == null ? '' : value)
+    .replace(/\bCRM\s*\/\s*CRM\b/gi, 'CRM')
+    .replace(/\bCRM\s*\/\s*GHL\b/gi, 'CRM')
+    .replace(/\bGHL\s*\/\s*CRM\b/gi, 'CRM')
+    .replace(/\bGHL\b/g, 'CRM');
+}
+
 function escapeHtml(value){
-  return String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({
+  return publicCrmText(value).replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
@@ -9307,12 +9339,12 @@ function preparedArtifactHomeCopy(item){
   };
   if(kind === 'proposal_draft') return {
     observation: 'Proposal draft prepared',
-    implication: subject + ' is ready to review before anything moves into GHL.',
+    implication: subject + ' is ready to review before anything moves into CRM.',
     invitation: 'Would you like to review the proposal?',
     action: 'Review proposal draft',
     workspaceTitle: subject,
     workspaceMeaning: 'VAL prepared the proposal shape from the transcript and kept it waiting for approval.',
-    recommendation: 'Review the decision points first. Nothing should be sent or moved in GHL until it still feels true.'
+    recommendation: 'Review the decision points first. Nothing should be sent or moved in CRM until it still feels true.'
   };
   if(kind === 'agreement_draft') return {
     observation: 'Agreement draft prepared',
@@ -9451,7 +9483,7 @@ function sourceActionLabel(item, fallback = 'Open source behind this judgment'){
   if(kind === 'introduction_email_draft') return 'Review introduction';
   if(kind === 'email_draft') return 'Review email draft';
   const raw = String(target.type || item?.targetType || item?.source_type || item?.sourceType || item?.review_type || item?.reviewType || item?.draftType || '').toLowerCase();
-  if(/opportunity|pipeline|deal/.test(raw) || item?.opportunityId || item?.metadata?.opportunityId || item?.metadataJson?.opportunityId) return 'Open GHL opportunity';
+  if(/opportunity|pipeline|deal/.test(raw) || item?.opportunityId || item?.metadata?.opportunityId || item?.metadataJson?.opportunityId) return 'Open CRM opportunity';
   if(/draft|prepared|reply|proposal|follow/.test(raw) || item?.draftId) return /proposal/i.test(item?.title || item?.summary || '') ? 'Open proposal draft' : 'Open prepared draft';
   if(/contact|person|relationship|people/.test(raw) || item?.contactId || item?.personId) return 'Open relationship file';
   if(/project/.test(raw) || item?.projectId) return 'Open project dossier';
@@ -9474,7 +9506,7 @@ function targetProfile(item){
   };
   if(/opportunity|pipeline|deal/.test(raw) || item?.opportunityId || item?.metadata?.opportunityId || item?.metadataJson?.opportunityId) return {
     key: 'opportunity',
-    noun: 'GHL opportunity',
+    noun: 'CRM opportunity',
     whyOpen: 'This points to the pipeline record where the next decision lives.',
     reviewPosture: 'Review the opportunity stage, latest notes, and next commitment before creating more work.'
   };
@@ -10433,10 +10465,10 @@ async function runScraperPreview(type){
   session.payload = payload;
   setScraperLoading(type, {
     title: type === 'partners' ? 'VAL is preparing the partner preview.' : 'VAL is preparing the organization preview.',
-    meaning: 'This is still a preview. Nothing will be added to GHL until approved records are imported.',
+    meaning: 'This is still a preview. Nothing will be added to CRM until approved records are imported.',
     understanding: [
       'Level 1 discovery is running from the configured source mix.',
-      'GHL duplicate checks happen before enrichment spend.',
+      'CRM duplicate checks happen before enrichment spend.',
       'The review set will preserve contact details, source evidence, and approval state.'
     ],
     recommendation: 'Let VAL finish the preview, then approve only the records that deserve to enter the pipeline.'
@@ -10503,7 +10535,7 @@ async function importApprovedScraperLeads(type){
   }
   setScraperLoading(type, {
     title: 'VAL is sending approved records to the pipeline.',
-    meaning: 'Only the approved records are being handed to GHL.',
+    meaning: 'Only the approved records are being handed to CRM.',
     understanding: [
       'Import re-checks duplicates before writing.',
       'Tags, custom fields, source notes, and opportunity stage stay governed by the active scraper contract.',
@@ -11365,7 +11397,7 @@ function saveLeadScraperTraining(type){
       '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
         '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' definition updated</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the new sequence.</small></article></section>',
         '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
-        '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered GHL.</small></article></section>',
+        '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered CRM.</small></article></section>',
       '</div>',
       '<div class="lead-sourcing-actions">',
         '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + selectedType + '">Run this scraper</button>',
@@ -11447,7 +11479,7 @@ function valWorkspaceCopy(action){
     connections: {
       title: 'Review VAL connections and permissions.',
       meaning: 'Capabilities should be visible before VAL tries to use them.',
-      understanding: ['Email, calendar, CRM/GHL, Google Docs, GitHub, LinkedIn observers, scrapers, and document sources should show connection state.', 'Anything exposed through a connected tool can become Co-Work executable only inside the user approval boundary.', 'Missing connections should create clear next steps, not silent failure.'],
+      understanding: ['Email, calendar, CRM, Google Docs, GitHub, LinkedIn observers, scrapers, and document sources should show connection state.', 'Anything exposed through a connected tool can become Co-Work executable only inside the user approval boundary.', 'Missing connections should create clear next steps, not silent failure.'],
       recommendation: 'Connect only what VAL needs for the next layer of work, then teach the approval rule for each system.',
       actions: [{label:'Review connections here', workflow:'valConnections:review'}, {label:'Teach permission rule', workflow:'teach:extract'}, {label:'Back to VAL', workflow:'cancel:val'}]
     },
@@ -12556,6 +12588,7 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
     if(top) top.innerHTML = '<b>--</b><strong>--</strong>';
     if(body) body.innerHTML = '<span class="calendar-kicker">Next meeting</span><strong>None</strong><span>No attendee meeting found</span><small>Solo blocks stay out of meeting prep.</small>';
   }
+  scrollCalendarPanelToCurrent();
 }
 
 async function hydrateCalendarPanel(){
@@ -12573,6 +12606,16 @@ async function hydrateCalendarPanel(){
   }catch(error){
     renderCalendarAgenda([], 'error', [error.message || 'Calendar could not load.']);
   }
+}
+
+function scrollCalendarPanelToCurrent(){
+  if(!calendarPanelShouldScrollToCurrent || !fullCalendarPanel || !agendaList) return;
+  calendarPanelShouldScrollToCurrent = false;
+  window.requestAnimationFrame(() => {
+    const target = agendaList.querySelector('.agenda-item.active') || agendaList.querySelector('.agenda-item:not(.calendar-past)');
+    if(!target) return;
+    target.scrollIntoView({block:'start', inline:'nearest'});
+  });
 }
 
 function connectGoogleOAuth(){
@@ -13043,16 +13086,16 @@ async function handleMeetingContactCandidate(key){
   const payload = candidate.payload || {};
   setWorkspaceContent({
     lens: 'Contact Identity',
-    title: 'Review the GHL contact candidate.',
-    meaning: (payload.name || record.attendee.name || 'This attendee') + ' is not in GHL yet, so VAL cannot attach relationship context cleanly.',
+    title: 'Review the CRM contact candidate.',
+    meaning: (payload.name || record.attendee.name || 'This attendee') + ' is not in CRM yet, so VAL cannot attach relationship context cleanly.',
     understanding: [
       payload.email ? 'Email: ' + payload.email : 'No email is attached.',
       payload.note || 'This candidate came from the calendar attendee.',
       candidate.willNotDo || 'VAL will not merge contacts or send messages.'
     ],
-    recommendation: 'Create the GHL contact only if this is the right person. The returned contact ID becomes the relationship key.',
+    recommendation: 'Create the CRM contact only if this is the right person. The returned contact ID becomes the relationship key.',
     actions: [
-      {label:'Create GHL contact', workflow:'contactCreate:' + key},
+      {label:'Create CRM contact', workflow:'contactCreate:' + key},
       {label:'Close and return to desk', workflow:'cancel:meeting'}
     ],
     label: 'Meeting contact candidate review'
@@ -13068,7 +13111,7 @@ async function createMeetingContactCandidate(key){
     setWorkspaceContent({
       lens: 'Contact Identity',
       title: 'Prototype contact candidate recorded.',
-      meaning: 'No GHL contact was created in mock mode.',
+      meaning: 'No CRM contact was created in mock mode.',
       understanding: ['Live VAL will call ' + (candidate.endpoint || '/api/val/contacts/create') + ' after review.', candidate.onSuccess || 'The returned contact ID becomes canonical.'],
       recommendation: 'This is the intended identity loop before relationship context is attached.',
       actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
@@ -13078,10 +13121,10 @@ async function createMeetingContactCandidate(key){
   }
   setWorkspaceContent({
     lens: 'Contact Identity',
-    title: 'Creating the reviewed GHL contact.',
+    title: 'Creating the reviewed CRM contact.',
     meaning: 'VAL is creating the contact so future relationship context has a clean CRM key.',
-    understanding: ['This is the only external write in this flow.', 'No message, opportunity, merge, or task is being created.', 'The returned GHL contact ID will be used going forward.'],
-    recommendation: 'Wait for the GHL receipt before attaching relationship context.',
+    understanding: ['This is the only external write in this flow.', 'No message, opportunity, merge, or task is being created.', 'The returned CRM contact ID will be used going forward.'],
+    recommendation: 'Wait for the CRM receipt before attaching relationship context.',
     actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
     label: 'Meeting contact create loading'
   });
@@ -13090,14 +13133,14 @@ async function createMeetingContactCandidate(key){
     const contactId = result.contactId || result.contact?.id || result.contact?.contactId || '';
     setWorkspaceContent({
       lens: 'Contact Identity',
-      title: contactId ? 'GHL contact created.' : 'GHL contact needs review.',
-      meaning: contactId ? (payload.name || 'This attendee') + ' is now organized under GHL contact ' + contactId + '.' : 'GHL responded without a contact ID, so VAL did not attach relationship context.',
+      title: contactId ? 'CRM contact created.' : 'CRM contact needs review.',
+      meaning: contactId ? (payload.name || 'This attendee') + ' is now organized under CRM contact ' + contactId + '.' : 'CRM responded without a contact ID, so VAL did not attach relationship context.',
       understanding: [
         contactId ? 'Canonical contact ID: ' + contactId : 'No canonical contact ID was returned.',
         result.relationshipDossier?.identityResolution?.status === 'resolved' ? 'Relationship Dossier is now keyed to that contact ID.' : 'Relationship Dossier was not attached.',
         'No message, opportunity, merge, or task was created.'
       ],
-      recommendation: contactId ? 'Use the Relationship file from here forward so transcripts, calendar, and CRM context stay clean.' : 'Review the GHL contact manually before continuing.',
+      recommendation: contactId ? 'Use the Relationship file from here forward so transcripts, calendar, and CRM context stay clean.' : 'Review the CRM contact manually before continuing.',
       actions: [
         contactId ? {label:'Open relationship file', workflow:'contactOpen:' + contactId} : null,
         {label:'Close and return to desk', workflow:'cancel:meeting'}
@@ -13107,10 +13150,10 @@ async function createMeetingContactCandidate(key){
   }catch(error){
     setWorkspaceContent({
       lens: 'Contact Identity',
-      title: 'The GHL contact was not created.',
+      title: 'The CRM contact was not created.',
       meaning: 'VAL did not attach relationship context.',
-      understanding: [error.message, 'No message, opportunity, merge, or task was created.', 'The attendee remains unresolved until a GHL contact ID exists.'],
-      recommendation: 'Check the GHL connection or create the contact manually before relying on relationship context.',
+      understanding: [error.message, 'No message, opportunity, merge, or task was created.', 'The attendee remains unresolved until a CRM contact ID exists.'],
+      recommendation: 'Check the CRM connection or create the contact manually before relying on relationship context.',
       actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
       label: 'Meeting contact create error'
     });
@@ -13307,7 +13350,7 @@ function sourceDestinationLabel(item, workspace = {}){
   const rawType = preparedArtifactKind(item) || target.type || item?.targetType || item?.source_type || item?.sourceType || item?.review_type || item?.reviewType || workspace.cardType;
   const view = routeViewForTarget(rawType, item || {});
   if(view === 'email_intelligence') return 'Executive Inbox';
-  if(view === 'opportunities') return 'GHL opportunity';
+  if(view === 'opportunities') return 'CRM opportunity';
   if(view === 'drafts') return 'prepared draft';
   if(view === 'relationships') return 'relationship file';
   if(view === 'projects') return 'project dossier';
@@ -14224,6 +14267,7 @@ function hideWorkspaceForDrawerNavigation(){
 function openCalendarPanel(){
   closeWorkspace();
   closeDrawer();
+  calendarPanelShouldScrollToCurrent = true;
   hearth.classList.add('calendar-open');
   calendarTab.setAttribute('aria-expanded', 'true');
   fullCalendarPanel.setAttribute('aria-hidden', 'false');

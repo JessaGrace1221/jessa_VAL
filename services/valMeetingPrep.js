@@ -101,7 +101,7 @@ function contactCreationCandidateFromAttendee({attendee={},event={},resolution={
     source:'VAL calendar attendee',
     tags:['val_calendar_attendee','val_needs_relationship_review'],
     note:[
-      `Created from calendar attendee after CRM/GHL lookup did not find an existing contact.`,
+      `Created from calendar attendee after CRM lookup did not find an existing contact.`,
       eventTitle(event)?`Meeting: ${eventTitle(event)}`:'',
       eventStart(event)?`Meeting time: ${eventStart(event)}`:'',
       resolution.reason?`Resolver note: ${resolution.reason}`:''
@@ -109,14 +109,14 @@ function contactCreationCandidateFromAttendee({attendee={},event={},resolution={
   };
   return {
     id:'create_crm_contact_from_calendar_attendee',
-    label:'Create GHL contact',
+    label:'Create CRM contact',
     intent:'identity_resolution',
     requiresApproval:true,
     endpoint:'/api/val/contacts/create',
     method:'POST',
     payload,
-    willDo:'Create a new GHL contact from this calendar attendee after review.',
-    willNotDo:'VAL will not merge contacts, send messages, add opportunities, or create a Relationship Dossier until GHL returns a contact ID.',
+    willDo:'Create a new CRM contact from this calendar attendee after review.',
+    willNotDo:'VAL will not merge contacts, send messages, add opportunities, or create a Relationship Dossier until CRM returns a contact ID.',
     onSuccess:'Use the returned contact.id/contactId as crm_contact_id, then rebuild the Relationship Dossier with that canonical ID.'
   };
 }
@@ -335,7 +335,7 @@ function createValMeetingPrepService({
         relationship_context:compactText(safeArray(internal.openLoops).filter(o=>JSON.stringify(o).toLowerCase().includes(String(attendee.name||attendee.email).toLowerCase())).map(o=>o.text||o.title||o.summary||o).join(' | '),500),
         relationship_dossier:relationshipDossier,
         unresolved_relationship_context:relationshipDossier?null:{
-          reason:'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM/GHL contact ID.',
+          reason:'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM contact ID.',
           attendee_key:attendeeKey(attendee),
           resolution_status:resolution.status||'unknown',
           resolution_confidence:confidence,

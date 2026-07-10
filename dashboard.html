@@ -4096,7 +4096,7 @@ var keyProviderLabels={openai:'OpenAI',anthropic:'Anthropic / Claude',ghl:'GoHig
 var keyProviderFields={
   openai:[['apiKey','API key','password'],['preferredModel','Preferred model','text']],
   anthropic:[['apiKey','API key','password']],
-  ghl:[['apiKey','GHL API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
+  ghl:[['apiKey','CRM API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
   microsoft_oauth:[],
   google_oauth:[],
   outscraper:[['apiKey','API key','password']],
@@ -4235,7 +4235,7 @@ function renderSecurityPrivacyCenter(data){
   var warnings=(s.warnings||[]).map(function(w){return '<li>'+docSafe(w)+'</li>';}).join('');
   var accounts=(data.connectedAccounts||[]).map(function(a){
     var reconnect=a.reconnectUrl?'<button class="chip" onclick="securityReconnectAccount(\''+docSafe(a.reconnectUrl)+'\')">Reconnect</button> ':'';
-    var disconnect=a.disconnectProvider&&a.disconnectProvider!=='ghl'?'<button class="chip" onclick="securityDisconnectAccount(\''+docSafe(a.disconnectProvider)+'\')">Disconnect</button>':'<span class="email-reason">GHL uses the existing CRM integration settings.</span>';
+    var disconnect=a.disconnectProvider&&a.disconnectProvider!=='ghl'?'<button class="chip" onclick="securityDisconnectAccount(\''+docSafe(a.disconnectProvider)+'\')">Disconnect</button>':'<span class="email-reason">CRM uses the existing CRM integration settings.</span>';
     return '<tr><td>'+docSafe(a.label)+'</td><td>'+securityStatusPill(a.connected?'Connected':'Not connected')+'</td><td>'+docSafe(securityFmtDate(a.lastSuccessfulSync))+'</td><td>'+docSafe(securityFmtDate(a.lastFailedSync))+'</td><td>'+docSafe(a.error||'')+'</td><td>'+reconnect+disconnect+'</td></tr>';
   }).join('');
   var sources=(data.dataSources||[]).map(function(d){return '<tr><td>'+docSafe(d.name)+'</td><td>'+securityStatusPill(d.access?'Enabled':'Off')+'</td><td>'+docSafe(d.scope||'')+'</td></tr>';}).join('');
@@ -4270,7 +4270,7 @@ function revokeValSession(id){
 function exportValData(){window.open(PROXY+'/api/security/export','_blank','noopener');}
 function requestDataDelete(){
   var phrase='DELETE MY VAL DATA';
-  var typed=prompt('This permanently deletes tenant-scoped VAL data and disconnects saved integrations. External Gmail, Microsoft, and GHL records are not deleted. Type exactly: '+phrase);
+  var typed=prompt('This permanently deletes tenant-scoped VAL data and disconnects saved integrations. External Gmail, Microsoft, and CRM records are not deleted. Type exactly: '+phrase);
   if(typed!==phrase){addSys('Delete cancelled. Confirmation phrase did not match.');return;}
   if(!confirm('Final confirmation: permanently delete VAL data for this tenant now?'))return;
   apiFetch(PROXY+'/api/security/delete-my-data',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation:phrase})})
@@ -4660,7 +4660,7 @@ function runPartnerScrapeFromForm(){
   var type=document.getElementById('partnerTypeInput').value,market=document.getElementById('partnerMarketInput').value||'United States';
   var limit=Math.min(Math.max(parseInt(document.getElementById('partnerLimitInput').value,10)||12,1),100);
   closeExecutiveWorkspace('partnerWorkspace');openDetailWithTitle('Scrape Partners');addMsg('Scrape '+type+' in '+market,true);
-  addMsg('Searching public sources, checking GHL for duplicates, estimating potential reach, and scoring partnership fit. Nothing will be pushed until you approve it.',false);showTyping();
+  addMsg('Searching public sources, checking CRM for duplicates, estimating potential reach, and scoring partnership fit. Nothing will be pushed until you approve it.',false);showTyping();
   fetch(PROXY+'/api/val/partners/discover-preview',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({partnerType:type,market:market,limit:limit})})
   .then(function(r){removeTyping();return apiTextOrJson(r);}).then(function(d){if(d.ok===false)throw new Error(d.error||'No partner results returned.');pendingPartnerImport=d;renderPartnerReviewTable();}).catch(function(e){removeTyping();addSys('Partner scrape failed: '+e.message);});
 }
@@ -4681,7 +4681,7 @@ function approvePartnerImport(){
   fetch(PROXY+'/api/val/partners/import-approved',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({},pendingPartnerImport,{leads:leads}))})
   .then(function(r){removeTyping();return apiTextOrJson(r);}).then(function(d){pendingPartnerImport=null;addMsg(d.content||'Partner import finished.',false);loadDashboard();}).catch(function(e){removeTyping();addSys('Partner import failed: '+e.message);});
 }
-function cancelPartnerImport(){pendingPartnerImport=null;var prior=document.querySelector('.partner-review-message');if(prior)prior.remove();addMsg('Partner import canceled. Nothing was added to GHL.',false);}
+function cancelPartnerImport(){pendingPartnerImport=null;var prior=document.querySelector('.partner-review-message');if(prior)prior.remove();addMsg('Partner import canceled. Nothing was added to CRM.',false);}
 function openMeetingBriefing(){
   var meetings=(dashData.appointments||dashData.calendarEvents||[]);
   var next=meetings.map(function(ev){return {ev:ev,dt:eventStart(ev)};}).filter(function(x){return x.dt&&x.dt>=new Date();}).sort(function(a,b){return a.dt-b.dt;})[0];
@@ -7164,7 +7164,7 @@ function valOsExternalActionReadinessHtml(readiness){
     return '<div class="rule-row" style="cursor:default"><strong>'+(g.ready?'Ready: ':'Waiting: ')+docSafe(g.label||'Safety gate')+'</strong><div>'+docSafe(g.detail||'')+'</div></div>';
   }).join('')||'<div class="task-empty">No readiness gates loaded yet.</div>';
   var packet=(readiness.approvalPacketRequirements||[]).map(function(x){return '• '+docSafe(x);}).join('<br>')||'• exact action packet';
-  return '<div class="teach-val-summary-grid"><div class="teach-val-summary-card"><strong>'+docSafe(readiness.mode||'Connection check only')+'</strong><span>mode</span></div><div class="teach-val-summary-card"><strong>'+docSafe(readiness.readyForSupervisedExecution?'Almost ready':'Not yet')+'</strong><span>supervised action</span></div><div class="teach-val-summary-card"><strong>'+docSafe(readiness.executionAvailable?'Available':'Locked')+'</strong><span>external writes</span></div></div><div class="email-reason"><strong>External Action Readiness Gate:</strong> '+docSafe(readiness.summary||'VAL can check readiness, but cannot act outside VAL from this flow.')+'</div><div class="email-reason"><strong>External writes remain locked.</strong> VAL may check readiness, but this screen cannot write to outside systems.</div><div class="email-reason"><strong>No external action taken.</strong> This connection check does not change Google, Outlook, GHL, invite attendees, send messages, delete records, or reschedule anything.</div><div class="teach-val-two"><div class="email-card"><h3>Connection Check Only</h3><div class="val-mini-list">'+providers+'</div></div><div class="email-card"><h3>Readiness Gates</h3><div class="val-mini-list">'+gates+'</div></div></div><div class="email-reason"><strong>Approval packet must include:</strong><br>'+packet+'</div><div class="email-reason"><strong>Next trust move:</strong> '+docSafe(readiness.nextStep||'Keep gathering approval packets before any executor is built.')+'</div><div class="email-actions"><button class="primary" onclick="valOsRunReadinessCheck()">Run Connection Check Only</button><button onclick="openIntegrationStatus()">Open Live Integration Status</button></div>';
+  return '<div class="teach-val-summary-grid"><div class="teach-val-summary-card"><strong>'+docSafe(readiness.mode||'Connection check only')+'</strong><span>mode</span></div><div class="teach-val-summary-card"><strong>'+docSafe(readiness.readyForSupervisedExecution?'Almost ready':'Not yet')+'</strong><span>supervised action</span></div><div class="teach-val-summary-card"><strong>'+docSafe(readiness.executionAvailable?'Available':'Locked')+'</strong><span>external writes</span></div></div><div class="email-reason"><strong>External Action Readiness Gate:</strong> '+docSafe(readiness.summary||'VAL can check readiness, but cannot act outside VAL from this flow.')+'</div><div class="email-reason"><strong>External writes remain locked.</strong> VAL may check readiness, but this screen cannot write to outside systems.</div><div class="email-reason"><strong>No external action taken.</strong> This connection check does not change Google, Outlook, CRM, invite attendees, send messages, delete records, or reschedule anything.</div><div class="teach-val-two"><div class="email-card"><h3>Connection Check Only</h3><div class="val-mini-list">'+providers+'</div></div><div class="email-card"><h3>Readiness Gates</h3><div class="val-mini-list">'+gates+'</div></div></div><div class="email-reason"><strong>Approval packet must include:</strong><br>'+packet+'</div><div class="email-reason"><strong>Next trust move:</strong> '+docSafe(readiness.nextStep||'Keep gathering approval packets before any executor is built.')+'</div><div class="email-actions"><button class="primary" onclick="valOsRunReadinessCheck()">Run Connection Check Only</button><button onclick="openIntegrationStatus()">Open Live Integration Status</button></div>';
 }
 function valOsExecutorStatusHtml(status){
   status=status||{};
@@ -7316,7 +7316,7 @@ function valOsRunCalendarPregame(){
     .catch(function(e){addSys('Could not run Calendar Pregame: '+e.message);});
 }
 function valOsRunReadinessCheck(){
-  addSys('Running connection check only. VAL will not change Google, Outlook, GHL, email, or calendar.');
+  addSys('Running connection check only. VAL will not change Google, Outlook, CRM, email, or calendar.');
   apiFetch(PROXY+'/api/val/os/readiness/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})})
     .then(function(data){addSys('Readiness check complete. External writes remain locked and no external action was taken.');renderValOsPage(data.os||data);})
     .catch(function(e){addSys('Could not run readiness check: '+e.message);});
@@ -7640,7 +7640,7 @@ async function loadBookDashboard(){
 }
 async function loadDashboard(){
   if(isBookEditorMode())return loadBookDashboard();
-  refreshTaskUI(); // use VAL-managed tasks, no GHL fetch needed
+  refreshTaskUI(); // use VAL-managed tasks, no CRM fetch needed
   var [meetings, pipeline, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
@@ -8588,7 +8588,7 @@ function addLeadImportApprovalControls(){
   var rrNeeded=pendingLeadImport&&pendingLeadImport.rocketReachMode==='defer';
   var isGoall=pendingLeadImport&&((pendingLeadImport.searchPlan&&pendingLeadImport.searchPlan.leadProfile==='goall')||pendingLeadImport.leadProfile==='goall'||pendingLeadImport._sourcePayload);
   var batchNote=isGoall?'<p><strong>Batch note:</strong> This is one focused batch, not the full GOALL pipeline. Use the next-batch button after import to keep building toward 300 prospects without timing out.</p>':'';
-  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' reviewed lead'+(count===1?'':'s')+' are ready. Importing will create GHL contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p>'+batchNote+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Run Level 3 verification</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button>'+(isGoall?'<button class="chip" onclick="approveLeadImportThenNextBatch()">Import and find next batch</button>':'')+'<button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' reviewed lead'+(count===1?'':'s')+' are ready. Importing will create CRM contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p>'+batchNote+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Run Level 3 verification</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button>'+(isGoall?'<button class="chip" onclick="approveLeadImportThenNextBatch()">Import and find next batch</button>':'')+'<button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);
   c.scrollTop=c.scrollHeight;
 }
@@ -8629,7 +8629,7 @@ function addGoallNextBatchControls(seed){
   var d=document.createElement('div');
   d.className='cmsg assistant';
   var next=nextGoallLeadBatchPayload(seed||lastGoallLeadBatchPayload);
-  d.innerHTML='<div class="cmsg-bubble"><p><strong>Next GOALL batch</strong></p><p>Batch '+((Number(next.goallBatchIndex)||0)+1)+': a rotating mix of GOALL priority industries in '+htmlEscape(next.market)+'. Existing GHL contacts will be filtered before enrichment.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="chip" onclick="runGoallLeadBatch('+Number(next.goallBatchIndex)+')">Find up to 200 leads</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Next GOALL batch</strong></p><p>Batch '+((Number(next.goallBatchIndex)||0)+1)+': a rotating mix of GOALL priority industries in '+htmlEscape(next.market)+'. Existing CRM contacts will be filtered before enrichment.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="chip" onclick="runGoallLeadBatch('+Number(next.goallBatchIndex)+')">Find up to 200 leads</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);
   c.scrollTop=c.scrollHeight;
 }
@@ -8651,7 +8651,7 @@ function approveLeadImport(findNext){
   var batchSeed=pendingLeadImport._sourcePayload||lastGoallLeadBatchPayload;
   openDetailWithTitle('Lead Import');
   addMsg('Import approved leads',true);
-  addMsg('Importing approved leads to GHL now. I will report exactly what was created and what failed.',false);
+  addMsg('Importing approved leads to CRM now. I will report exactly what was created and what failed.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/import-approved',{
     method:'POST',
@@ -8682,13 +8682,13 @@ function approveLeadImportThenNextBatch(){
 
 function cancelLeadImport(){
   pendingLeadImport=null;
-  addMsg('Import canceled. Nothing was added to GHL.',false);
+  addMsg('Import canceled. Nothing was added to CRM.',false);
 }
 
 function runCurrentLeadEnrichment(msg){
   openDetailWithTitle('Current Lead Enrichment');
   addMsg(msg,true);
-  addMsg('I am checking current GHL opportunities and verifying public data. This may take a minute.',false);
+  addMsg('I am checking current CRM opportunities and verifying public data. This may take a minute.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/enrich-current',{
     method:'POST',
@@ -8798,16 +8798,16 @@ function handleLeadResearchInput(text){
     leadResearchState.location=(parts[1]||'').trim();
     leadResearchState.step='location';
     addMsg(leadResearchState.location
-      ? 'Got it. If this should update an existing GHL contact, paste the contact ID. Otherwise type "skip".'
+      ? 'Got it. If this should update an existing CRM contact, paste the contact ID. Otherwise type "skip".'
       : 'What city/state or market should I use? If you do not know, type "unclear".',false);
-    document.getElementById('msgInput').placeholder=leadResearchState.location?'GHL contact ID or skip...':'City/state or unclear...';
+    document.getElementById('msgInput').placeholder=leadResearchState.location?'CRM contact ID or skip...':'City/state or unclear...';
     return;
   }
   if(leadResearchState.step==='location'){
     if(!leadResearchState.location&&text.toLowerCase()!=='unclear') leadResearchState.location=text;
     leadResearchState.step='contact';
-    addMsg('If this should update an existing GHL contact, paste the contact ID. Otherwise type "skip".',false);
-    document.getElementById('msgInput').placeholder='GHL contact ID or skip...';
+    addMsg('If this should update an existing CRM contact, paste the contact ID. Otherwise type "skip".',false);
+    document.getElementById('msgInput').placeholder='CRM contact ID or skip...';
     return;
   }
   if(leadResearchState.step==='contact'){
@@ -8831,8 +8831,8 @@ function runLeadResearch(state){
     var content=d.content||'No lead intelligence returned.';
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
-    if(d.ghlUpdate&&d.ghlUpdate.updated)addSys('Lead fields updated in GHL');
-    else if(state.contactId)addSys('Lead research complete, but GHL field update needs custom field IDs configured');
+    if(d.ghlUpdate&&d.ghlUpdate.updated)addSys('Lead fields updated in CRM');
+    else if(state.contactId)addSys('Lead research complete, but CRM field update needs custom field IDs configured');
   })
   .catch(function(e){removeTyping();addSys('Lead research failed: '+e.message);});
 }
@@ -9642,16 +9642,16 @@ function chat(msg,inp){
     ctx+='Appointments:\n';
     dashData.appointments.forEach(function(a){
       var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
-      ctx+='  - '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.owner?' | GHL owner: '+a.owner:'')+(a.status?' ('+a.status+')':'')+'.\n';
+      ctx+='  - '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.owner?' | CRM owner: '+a.owner:'')+(a.status?' ('+a.status+')':'')+'.\n';
     });
   }
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active deals: '+dashData.pipelineActive+(dashData.stalledDeals?' ('+dashData.stalledDeals+' stalled)':'')+'.\n';
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Pipeline ownership:\n';
     dashData.opportunities.slice(0,15).forEach(function(o){
-      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
+      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | CRM owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
       if(o.notes&&o.notes.length){
-        ctx+='    GHL notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
+        ctx+='    CRM notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
       }
     });
   }
@@ -10250,7 +10250,7 @@ function copySocialPost(){
 
 // ── CONTACT LOOKUP ─────────────────────────────────────
 function lookupContact(name, callback){
-  // Search GHL contacts by name — runs before asking user for email
+  // Search CRM contacts by name — runs before asking user for email
   apiFetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
   .then(function(d){
     var contacts=d.contacts||[];
@@ -10288,7 +10288,7 @@ function handleAddDocStep(text){
     s.recipient=text;
     s.step='looking_up';
     addSys('Looking up '+text+' in your contacts...');
-    // Auto-lookup contact in GHL
+    // Auto-lookup contact in CRM
     lookupContact(text, function(contact){
       if(contact&&contact.email){
         s.recipientEmail=contact.email;
@@ -10520,7 +10520,7 @@ function buildContext(){
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Visible lead ownership:\n';
-    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
+    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.accountLabel?' | Account: '+o.accountLabel:'')+(o.owner?' | CRM owner: '+o.owner:'')+'.\n';});
   }
   return ctx;
 }
@@ -10584,7 +10584,7 @@ function addUnreadTriageControls(item,threadText){
   btn('Draft reply',function(){ask('Draft one reply for this conversation only:\n\n'+threadText+'\n\nKeep it concise, human, and ready to send.');});
   btn('Mark handled',function(){var key=unreadKey(item);if(key&&!unreadDismissed.includes(key))unreadDismissed.push(key);saveUnreadDismissed();unreadTriageQueue.splice(unreadTriageIndex,1);updateUnreadVisibleCount();presentUnreadTriageItem();});
   btn('Skip',function(){unreadTriageIndex=Math.min(unreadTriageIndex+1,unreadTriageQueue.length);updateUnreadVisibleCount();presentUnreadTriageItem();});
-  if(item.actionUrl)btn('Open in GHL',function(){window.open(item.actionUrl,'_blank');});
+  if(item.actionUrl)btn('Open in CRM',function(){window.open(item.actionUrl,'_blank');});
   c.appendChild(row);c.scrollTop=c.scrollHeight;
 }
 function presentUnreadTriageItem(){
@@ -10676,15 +10676,15 @@ function pipelineOpportunityPrompt(o){
   if(!o)return '';
   return [
     'Name: '+pipelineDisplayName(o),
-    o.accountLabel?'GHL account: '+o.accountLabel:'',
-    o.owner?'GHL owner: '+o.owner:'',
+    o.accountLabel?'CRM account: '+o.accountLabel:'',
+    o.owner?'CRM owner: '+o.owner:'',
     o.stage?'Stage: '+o.stage:'',
     o.value?'Value: $'+o.value:'',
     o.daysInStage?'Days in stage: '+o.daysInStage:'',
     o.stalled?'Status: stalled':'',
     o.contactEmail?'Email: '+o.contactEmail:'',
     o.contactPhone?'Phone: '+o.contactPhone:'',
-    o.notes&&o.notes.length?'GHL notes/call transcript overview: '+o.notes.join(' | '):''
+    o.notes&&o.notes.length?'CRM notes/call transcript overview: '+o.notes.join(' | '):''
   ].filter(Boolean).join('\n');
 }
 function addPipelineCard(o,options){
@@ -10747,7 +10747,7 @@ function openPipelineTarget(targetId){
     d=d||{};
     var opps=(d.opportunities||[]).slice().sort(function(a,b){return (b.stalled?1:0)-(a.stalled?1:0)||(b.daysInStage||0)-(a.daysInStage||0);});
     if(!opps.length){
-      addMsg('I could not see active GHL pipeline opportunities yet. The GHL connection may need attention.',false);
+      addMsg('I could not see active CRM pipeline opportunities yet. The CRM connection may need attention.',false);
       return null;
     }
     var target=String(targetId||'');
@@ -10758,14 +10758,14 @@ function openPipelineTarget(targetId){
     addPipelineCard(opps[index],{reviewOnly:true});
     return opps[index];
   }).catch(function(){
-    ask('Open the GHL pipeline opportunity with id '+targetId+'. Show the stage, latest notes, risk, and best next action. Do not create or update anything without approval.');
+    ask('Open the CRM pipeline opportunity with id '+targetId+'. Show the stage, latest notes, risk, and best next action. Do not create or update anything without approval.');
     return null;
   });
 }
 window.openPipelineTarget=openPipelineTarget;
 function pipelineReviewCurrent(){
   var o=pipelineCurrent();if(!o)return;
-  ask('Review this one pipeline opportunity only. Give me a concise overview, what the GHL notes/call transcripts reveal, the risk, the best next action, and one suggested message or task.\n\n'+pipelineOpportunityPrompt(o));
+  ask('Review this one pipeline opportunity only. Give me a concise overview, what the CRM notes/call transcripts reveal, the risk, the best next action, and one suggested message or task.\n\n'+pipelineOpportunityPrompt(o));
 }
 function pipelineDraftFollowup(){
   var o=pipelineCurrent();if(!o)return;
@@ -10784,7 +10784,7 @@ function askPipeline(){
     var opps=(d.opportunities||[]).slice().sort(function(a,b){return (b.stalled?1:0)-(a.stalled?1:0)||(b.daysInStage||0)-(a.daysInStage||0);});
     if(!opps.length){
       var debug=d._debug&&d._debug.error?'\n\nPipeline connection detail: '+d._debug.error:'';
-      ask("I am not seeing active pipeline deals in Mark's GHL data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
+      ask("I am not seeing active pipeline deals in Mark's CRM data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
       return;
     }
     pipelineTriageQueue=opps;

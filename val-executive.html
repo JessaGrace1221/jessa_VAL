@@ -876,7 +876,7 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"/></svg>
       Post
     </button>
-    <button class="tbtn tbtn-action" onclick="refreshGhlCalendar()" title="Refresh GHL Calendar">
+    <button class="tbtn tbtn-action" onclick="refreshGhlCalendar()" title="Refresh CRM Calendar">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M5.25 5.25h13.5a1.5 1.5 0 011.5 1.5v12A1.5 1.5 0 0118.75 20.25H5.25a1.5 1.5 0 01-1.5-1.5v-12a1.5 1.5 0 011.5-1.5z"/></svg>
       Calendar
     </button>
@@ -884,7 +884,7 @@ input[type=file]{display:none}
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M4.5 8.25h15M6 5.25h12A1.5 1.5 0 0119.5 6.75v11.5A1.5 1.5 0 0118 19.75H6a1.5 1.5 0 01-1.5-1.5V6.75A1.5 1.5 0 016 5.25z"/></svg>
       Google
     </button>
-    <button class="tbtn tbtn-action" onclick="startLeadResearch()" title="Research and structure a lead for GHL">
+    <button class="tbtn tbtn-action" onclick="startLeadResearch()" title="Research and structure a lead for CRM">
       <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.63 8.41m5.96 5.96a14.98 14.98 0 01-5.84 2.58m-.12-8.54A6 6 0 002.25 14.25h4.8m2.58-5.84A14.98 14.98 0 002.25 2.25 14.98 14.98 0 0014.37 8.41"/></svg>
       Lead Scrape
     </button>
@@ -1150,7 +1150,7 @@ var HOOK_TASKS    = PROXY+'/api/tasks'; // kept for legacy, replaced by valTasks
 var keyProviderLabels={openai:'OpenAI',ghl:'GoHighLevel / LeadConnector',microsoft_oauth:'Microsoft',google_oauth:'Google',outscraper:'Outscraper',rocketreach:'RocketReach'};
 var keyProviderFields={
   openai:[['apiKey','API key','password'],['preferredModel','Preferred model','text']],
-  ghl:[['apiKey','GHL API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
+  ghl:[['apiKey','CRM API key or access token','password'],['locationId','Location ID','text'],['mcpUrl','MCP URL if applicable','text']],
   microsoft_oauth:[],
   google_oauth:[],
   outscraper:[['apiKey','API key','password']],
@@ -2097,7 +2097,7 @@ async function fetchJSON(url){
 }
 
 async function loadDashboard(){
-  refreshTaskUI(); // use VAL-managed tasks, no GHL fetch needed
+  refreshTaskUI(); // use VAL-managed tasks, no CRM fetch needed
   var [meetings, pipeline, calendar, feed, comms, proposalsRes] = await Promise.allSettled([
     fetchJSON(HOOK_MEETINGS),
     fetchJSON(HOOK_PIPELINE),
@@ -2190,7 +2190,7 @@ async function loadDashboard(){
   if(calendar&&calendar.calendarEvents&&calendar.calendarEvents.length){
     renderWeek(calendar.calendarEvents);
   } else {
-    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">No upcoming GHL calendar events found.</div>';
+    document.getElementById('weekScroll').innerHTML='<div class="day-empty" style="padding:1rem;color:var(--text-3);">No upcoming CRM calendar events found.</div>';
   }
 
   // TASKS — handled by valTasks (refreshTaskUI called separately)
@@ -2377,7 +2377,7 @@ function renderWeek(events){
       evtsHtml+='<div class="day-evt" style="cursor:pointer" data-ev=\''+evData.replace(/'/g,'&apos;')+'\' onclick="onEventClick(this)">'
         +'<div class="epip '+pip+'"></div>'
         +'<div class="einfo"><div class="etitle">'+title+ownerBadge(owner)+'</div>'
-        +'<div class="emeta">'+timeStr+' · GHL</div></div>'
+        +'<div class="emeta">'+timeStr+' · CRM</div></div>'
         +badge+'</div>';
     });
     block.innerHTML=headHtml+evtsHtml;
@@ -2398,7 +2398,7 @@ function openCalendarFullView(){
   var c=document.getElementById('chatScroll');
   c.innerHTML='';
   if(!events.length){
-    addMsg('No GHL calendar events loaded yet.\n\nTap the Calendar button at the top to refresh the connected GHL calendar.',false);
+    addMsg('No CRM calendar events loaded yet.\n\nTap the Calendar button at the top to refresh the connected CRM calendar.',false);
     return;
   }
   var grouped={};
@@ -2430,7 +2430,7 @@ function openCalendarFullView(){
 }
 
 function refreshGhlCalendar(){
-  addSys('Refreshing connected GHL calendar...');
+  addSys('Refreshing connected CRM calendar...');
   loadDashboard();
 }
 
@@ -2444,7 +2444,7 @@ function openCalendarEvent(ev){
   var c=document.getElementById('chatScroll');
   c.innerHTML='';
   var past=ev.startTime&&new Date(ev.startTime)<new Date();
-  var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(ev.owner?'\nGHL owner: '+ev.owner:'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.desc?'\nDetails: '+ev.desc:'');
+  var header='Meeting: '+ev.title+'\nTime: '+(ev.timeStr||'')+'\nDate: '+(ev.dateLabel||'')+(ev.owner?'\nCRM owner: '+ev.owner:'')+(ev.contact?'\nContact: '+ev.contact:'')+(ev.desc?'\nDetails: '+ev.desc:'');
   addMsg(header,false);
   showTyping();
   var q=[ev.title,ev.contact,ev.dateLabel,'meeting transcript notes tasks decisions follow-up'].filter(Boolean).join(' ');
@@ -2891,7 +2891,7 @@ function addLeadImportApprovalControls(){
   d.className='cmsg assistant';
   var count=(pendingLeadImport&&pendingLeadImport.leads&&pendingLeadImport.leads.length)||0;
   var rrNeeded=pendingLeadImport&&pendingLeadImport.rocketReachMode==='defer';
-  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' enriched lead'+(count===1?'':'s')+' are ready. Importing will create GHL contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Enrich with RocketReach</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button><button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
+  d.innerHTML='<div class="cmsg-bubble"><p><strong>Import approval</strong></p><p>'+count+' enriched lead'+(count===1?'':'s')+' are ready. Importing will create CRM contacts, apply the mapped tag, save custom fields, and create New Lead opportunities.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+(rrNeeded?'<button class="chip" onclick="enrichPendingLeadsWithRocketReach()">Enrich with RocketReach</button>':'')+'<button class="chip" onclick="approveLeadImport()">Import approved leads</button><button class="chip" onclick="cancelLeadImport()">Cancel import</button></div></div><div class="cmsg-meta"><span>'+ftime()+'</span></div>';
   c.appendChild(d);
   c.scrollTop=c.scrollHeight;
 }
@@ -2928,7 +2928,7 @@ function approveLeadImport(){
   }
   openDetailWithTitle('Lead Import');
   addMsg('Import approved leads',true);
-  addMsg('Importing approved leads to GHL now. I will report exactly what was created and what failed.',false);
+  addMsg('Importing approved leads to CRM now. I will report exactly what was created and what failed.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/import-approved',{
     method:'POST',
@@ -2948,13 +2948,13 @@ function approveLeadImport(){
 
 function cancelLeadImport(){
   pendingLeadImport=null;
-  addMsg('Import canceled. Nothing was added to GHL.',false);
+  addMsg('Import canceled. Nothing was added to CRM.',false);
 }
 
 function runCurrentLeadEnrichment(msg){
   openDetailWithTitle('Current Lead Enrichment');
   addMsg(msg,true);
-  addMsg('I am checking current GHL opportunities and verifying public data. This may take a minute.',false);
+  addMsg('I am checking current CRM opportunities and verifying public data. This may take a minute.',false);
   showTyping();
   fetch(PROXY+'/api/val/leads/enrich-current',{
     method:'POST',
@@ -3032,16 +3032,16 @@ function handleLeadResearchInput(text){
     leadResearchState.location=(parts[1]||'').trim();
     leadResearchState.step='location';
     addMsg(leadResearchState.location
-      ? 'Got it. If this should update an existing GHL contact, paste the contact ID. Otherwise type "skip".'
+      ? 'Got it. If this should update an existing CRM contact, paste the contact ID. Otherwise type "skip".'
       : 'What city/state or market should I use? If you do not know, type "unclear".',false);
-    document.getElementById('msgInput').placeholder=leadResearchState.location?'GHL contact ID or skip...':'City/state or unclear...';
+    document.getElementById('msgInput').placeholder=leadResearchState.location?'CRM contact ID or skip...':'City/state or unclear...';
     return;
   }
   if(leadResearchState.step==='location'){
     if(!leadResearchState.location&&text.toLowerCase()!=='unclear') leadResearchState.location=text;
     leadResearchState.step='contact';
-    addMsg('If this should update an existing GHL contact, paste the contact ID. Otherwise type "skip".',false);
-    document.getElementById('msgInput').placeholder='GHL contact ID or skip...';
+    addMsg('If this should update an existing CRM contact, paste the contact ID. Otherwise type "skip".',false);
+    document.getElementById('msgInput').placeholder='CRM contact ID or skip...';
     return;
   }
   if(leadResearchState.step==='contact'){
@@ -3064,8 +3064,8 @@ function runLeadResearch(state){
     var content=d.content||'No lead intelligence returned.';
     chatHistory.push({role:'assistant',content:content});
     addMsg(content,false);
-    if(d.ghlUpdate&&d.ghlUpdate.updated)addSys('Lead fields updated in GHL');
-    else if(state.contactId)addSys('Lead research complete, but GHL field update needs custom field IDs configured');
+    if(d.ghlUpdate&&d.ghlUpdate.updated)addSys('Lead fields updated in CRM');
+    else if(state.contactId)addSys('Lead research complete, but CRM field update needs custom field IDs configured');
   })
   .catch(function(e){removeTyping();addSys('Lead research failed: '+e.message);});
 }
@@ -3376,16 +3376,16 @@ function chat(msg,inp){
     ctx+='Appointments:\n';
     dashData.appointments.forEach(function(a){
       var t=a.startTime?new Date(a.startTime).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'';
-      ctx+='  - '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.owner?' | GHL owner: '+a.owner:'')+(a.status?' ('+a.status+')':'')+'.\n';
+      ctx+='  - '+(a.title||a.contactName||'Meeting')+(t?' at '+t:'')+(a.owner?' | CRM owner: '+a.owner:'')+(a.status?' ('+a.status+')':'')+'.\n';
     });
   }
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active deals: '+dashData.pipelineActive+(dashData.stalledDeals?' ('+dashData.stalledDeals+' stalled)':'')+'.\n';
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Pipeline ownership:\n';
     dashData.opportunities.slice(0,15).forEach(function(o){
-      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.owner?' | GHL owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
+      ctx+='  - '+(o.contactName||o.name||'Opportunity')+(o.owner?' | CRM owner: '+o.owner:'')+(o.stage?' | Stage: '+o.stage:'')+'.\n';
       if(o.notes&&o.notes.length){
-        ctx+='    GHL notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
+        ctx+='    CRM notes overview: '+o.notes.slice(0,6).join(' | ')+'\n';
       }
     });
   }
@@ -3817,7 +3817,7 @@ function copySocialPost(){
 
 // ── CONTACT LOOKUP ─────────────────────────────────────
 function lookupContact(name, callback){
-  // Search GHL contacts by name — runs before asking user for email
+  // Search CRM contacts by name — runs before asking user for email
   fetch(PROXY+'/api/ghl/contacts/search?q='+encodeURIComponent(name))
   .then(function(r){return r.json();})
   .then(function(d){
@@ -3856,7 +3856,7 @@ function handleAddDocStep(text){
     s.recipient=text;
     s.step='looking_up';
     addSys('Looking up '+text+' in your contacts...');
-    // Auto-lookup contact in GHL
+    // Auto-lookup contact in CRM
     lookupContact(text, function(contact){
       if(contact&&contact.email){
         s.recipientEmail=contact.email;
@@ -4099,7 +4099,7 @@ function buildContext(){
   if(dashData.pipelineActive!==undefined) ctx+='Pipeline active: '+dashData.pipelineActive+'.\n';
   if(dashData.opportunities&&dashData.opportunities.length){
     ctx+='Visible lead ownership:\n';
-    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.owner?' | GHL owner: '+o.owner:'')+'.\n';});
+    dashData.opportunities.slice(0,10).forEach(function(o){ctx+='  - '+(o.contactName||o.name||'Lead')+(o.owner?' | CRM owner: '+o.owner:'')+'.\n';});
   }
   return ctx;
 }
@@ -4162,7 +4162,7 @@ function addUnreadTriageControls(item,threadText){
   btn('Draft reply',function(){ask('Draft one reply for this conversation only:\n\n'+threadText+'\n\nKeep it concise, human, and ready to send.');});
   btn('Mark handled',function(){var key=unreadKey(item);if(key&&!unreadDismissed.includes(key))unreadDismissed.push(key);saveUnreadDismissed();unreadTriageQueue.splice(unreadTriageIndex,1);updateUnreadVisibleCount();presentUnreadTriageItem();});
   btn('Skip',function(){unreadTriageIndex=Math.min(unreadTriageIndex+1,unreadTriageQueue.length);updateUnreadVisibleCount();presentUnreadTriageItem();});
-  if(item.actionUrl)btn('Open in GHL',function(){window.open(item.actionUrl,'_blank');});
+  if(item.actionUrl)btn('Open in CRM',function(){window.open(item.actionUrl,'_blank');});
   c.appendChild(row);c.scrollTop=c.scrollHeight;
 }
 function presentUnreadTriageItem(){
@@ -4250,14 +4250,14 @@ function pipelineOpportunityPrompt(o){
   if(!o)return '';
   return [
     'Name: '+pipelineDisplayName(o),
-    o.owner?'GHL owner: '+o.owner:'',
+    o.owner?'CRM owner: '+o.owner:'',
     o.stage?'Stage: '+o.stage:'',
     o.value?'Value: $'+o.value:'',
     o.daysInStage?'Days in stage: '+o.daysInStage:'',
     o.stalled?'Status: stalled':'',
     o.contactEmail?'Email: '+o.contactEmail:'',
     o.contactPhone?'Phone: '+o.contactPhone:'',
-    o.notes&&o.notes.length?'GHL notes/call transcript overview: '+o.notes.join(' | '):''
+    o.notes&&o.notes.length?'CRM notes/call transcript overview: '+o.notes.join(' | '):''
   ].filter(Boolean).join('\n');
 }
 function addPipelineCard(o){
@@ -4313,7 +4313,7 @@ function presentPipelineItem(){
 function pipelineCurrent(){return pipelineTriageQueue[pipelineTriageIndex];}
 function pipelineReviewCurrent(){
   var o=pipelineCurrent();if(!o)return;
-  ask('Review this one pipeline opportunity only. Give me a concise overview, what the GHL notes/call transcripts reveal, the risk, the best next action, and one suggested message or task.\n\n'+pipelineOpportunityPrompt(o));
+  ask('Review this one pipeline opportunity only. Give me a concise overview, what the CRM notes/call transcripts reveal, the risk, the best next action, and one suggested message or task.\n\n'+pipelineOpportunityPrompt(o));
 }
 function pipelineDraftFollowup(){
   var o=pipelineCurrent();if(!o)return;
@@ -4331,7 +4331,7 @@ function askPipeline(){
     var opps=(d.opportunities||[]).slice().sort(function(a,b){return (b.stalled?1:0)-(a.stalled?1:0)||(b.daysInStage||0)-(a.daysInStage||0);});
     if(!opps.length){
       var debug=d._debug&&d._debug.error?'\n\nPipeline connection detail: '+d._debug.error:'';
-      ask("I am not seeing active pipeline deals in Mark's GHL data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
+      ask("I am not seeing active pipeline deals in Mark's CRM data yet. Help me troubleshoot the connection and tell me what to check first."+debug);
       return;
     }
     pipelineTriageQueue=opps;

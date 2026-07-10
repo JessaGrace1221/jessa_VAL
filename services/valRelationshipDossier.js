@@ -118,7 +118,7 @@ function relationshipDossierActions({id='',name='',email='',recommendedAction=''
       contactRef,
       defaultTitle:recommendedAction||`Follow up with ${name||'this relationship'}`,
       willDo:'Create a local VAL task connected to this relationship.',
-      willNotDo:'VAL will not invite anyone, email anyone, or write to GHL from this click.'
+      willNotDo:'VAL will not invite anyone, email anyone, or write to CRM from this click.'
     },
     {
       id:'brainstorm',
@@ -214,7 +214,7 @@ function relationshipDossierSectionActions({id='',name=''}={}){
     ],
     evidence:[
       {id:'open_evidence',label:'Open evidence',intent:'inspect',observerScope,section:'evidence',willDo:'Open source evidence connected to this relationship.',willNotDo:'VAL will not change records.'},
-      {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',observerScope,section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to GHL.'}
+      {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',observerScope,section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to CRM.'}
     ],
     patterns:[
       {id:'ask_about_pattern',label:'Ask about pattern',intent:'understand',observerScope,section:'patterns',prompt:`Explain what is changing in ${name||'this relationship'} using only the dossier evidence.`}
@@ -258,7 +258,7 @@ function relationshipBriefFromDossier(dossier={}){
     linkedInUrl:firstText(identity.linkedinUrl,identity.linkedin_url,dossier.linkedinUrl,dossier.linkedin_url),
     linkedInLatestPosts:safeArray(dossier.linkedInLatestPosts||dossier.linkedinLatestPosts||dossier.linkedin_latest_posts).slice(0,3),
     observers:[
-      {id:'ghl_crm',label:'GHL/CRM Contact',status:identity.crmContactId?'resolved':'required',sourceId:identity.crmContactId||''},
+      {id:'ghl_crm',label:'CRM Contact',status:identity.crmContactId?'resolved':'required',sourceId:identity.crmContactId||''},
       {id:'linkedin',label:'LinkedIn Observer',status:firstText(identity.linkedinUrl,identity.linkedin_url,dossier.linkedinUrl,dossier.linkedin_url)?'available':'watching',sourceId:firstText(identity.linkedinUrl,identity.linkedin_url,dossier.linkedinUrl,dossier.linkedin_url)},
       {id:'apollo',label:'Apollo Observer',status:dossier.apollo||dossier.apolloStatus?'available':'watching',sourceId:firstText(dossier.apolloStatus,dossier.apollo?.status)},
       {id:'outscraper',label:'Outscraper Observer',status:dossier.outscraper||dossier.outscraperStatus?'available':'watching',sourceId:firstText(dossier.outscraperStatus,dossier.outscraper?.status)}
@@ -381,7 +381,7 @@ function buildRelationshipDossier(input={}){
       status:crmContactId?'resolved':'unresolved',
       canonicalKey:crmContactId?`crm:${crmContactId}`:(email?`email:${email}`:`name:${name.toLowerCase().replace(/\s+/g,' ')}`),
       crmContactId,
-      rule:'Canonical Relationship Dossiers should be organized by CRM/GHL contact ID before transcripts, calendar, or memory are merged.'
+      rule:'Canonical Relationship Dossiers should be organized by CRM contact ID before transcripts, calendar, or memory are merged.'
     },
     observation:{
       summary:observation,

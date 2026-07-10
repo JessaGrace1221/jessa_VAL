@@ -23,7 +23,7 @@ test('command center renders transcript-prepared artifacts as a review surface',
 });
 
 test('prepared artifact actions use artifact-specific approval language', () => {
-  assert.match(commandCenterJs, /Approve for GHL proposal workspace/);
+  assert.match(commandCenterJs, /Approve for CRM proposal workspace/);
   assert.match(commandCenterJs, /Approve for publishing queue/);
   assert.match(commandCenterJs, /Review appointment details/);
   assert.match(commandCenterJs, /Approve calendar invitation/);

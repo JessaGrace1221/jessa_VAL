@@ -112,7 +112,7 @@ test('My VAL OS exposes rule approval with auditability and review-first executi
   assert.match(server,/function buildValOsExecutorStatus/);
   assert.match(server,/function normalizeValOsExternalActionPacket/);
   assert.match(server,/function buildGhlExternalActionPacket/);
-  assert.match(server,/GHL MCP action packet from Co-Work/);
+  assert.match(server,/CRM action packet from Co-Work/);
   assert.match(server,/capability:'ghl_mcp_cowork_action_packet'/);
   assert.match(server,/function updateValOsExternalActionPacket/);
   assert.match(server,/function approveValOsExternalActionPacket/);
@@ -313,7 +313,7 @@ test('My VAL OS exposes rule approval with auditability and review-first executi
   assert.match(dashboard,/Approval packet must include:/);
   assert.match(dashboard,/No external action taken/);
   assert.match(dashboard,/External writes remain locked/);
-  assert.match(dashboard,/does not change Google, Outlook, GHL/);
+  assert.match(dashboard,/does not change Google, Outlook, CRM/);
   assert.match(dashboard,/VAL can currently:/);
   assert.match(dashboard,/VAL cannot do yet:/);
   assert.match(dashboard,/current stage/);

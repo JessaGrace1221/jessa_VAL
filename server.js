@@ -17158,6 +17158,12 @@ function transcriptDetailFromIndex(data,transcript){
   const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
   return cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
 }
+function transcriptKrispNativeMetadata(metadata={}){
+  const nativeSummary=String(metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'').trim();
+  const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:(Array.isArray(metadata.krisp_action_items)?metadata.krisp_action_items:[]);
+  const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test(String(metadata.provider||metadata.source||metadata.importedVia||'')));
+  return {krispNative,nativeSummary,nativeActionItems};
+}
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
 }
@@ -17203,9 +17209,10 @@ function valConversationSummaryFromText(rawText=''){
 }
 function cleanTranscriptForUi(t={}){
   const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
+  const native=transcriptKrispNativeMetadata(t.metadata||t.sourcePayloadMetadata||{});
   const title=cleanTranscriptTitleForUi(t.title||t.meetingTitle||'',raw,t.createdAt||t.meetingDatetime||'');
-  const cleanSummary=cleanTranscriptSummaryForUi(t.summary,raw);
-  return {...t,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
+  const cleanSummary=native.nativeSummary||cleanTranscriptSummaryForUi(t.summary,raw);
+  return {...t,...native,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
 }
 function isHardTranscriptProcessingFailure(t={}){
   const processing=String(t.processingStatus||t.status||'').toLowerCase();
@@ -21449,7 +21456,7 @@ function buildGhlExternalActionPacket(actionRequest={},sourceText=''){
     action,
     actionLabel:action.replace(/\./g,' '),
     title:`Approve GHL MCP action: ${action.replace(/\./g,' ')}`,
-    humanSummary:'VAL prepared this GHL MCP action packet from Co-Work. Approve once and VAL will do exactly this action.',
+    humanSummary:'VAL prepared this CRM action packet from Co-Work. Approve once and VAL will do exactly this action.',
     affectedRecord:affected,
     willDo,
     willNotDo:[
@@ -21870,10 +21877,11 @@ async function processTranscriptPayload(payload){
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
   const rawText=String(record.rawText||record.raw_text||'');
-  const actionItems=Array.isArray(metadata.actionItems)?metadata.actionItems:Array.isArray(metadata.analysis?.actionItems)?metadata.analysis.actionItems:extractOpenLoopsFromText(rawText,`transcript:${record.id}`,record.createdAt).slice(0,12);
+  const native=transcriptKrispNativeMetadata(metadata);
+  const actionItems=native.nativeActionItems.length?native.nativeActionItems:(Array.isArray(metadata.actionItems)?metadata.actionItems:Array.isArray(metadata.analysis?.actionItems)?metadata.analysis.actionItems:extractOpenLoopsFromText(rawText,`transcript:${record.id}`,record.createdAt).slice(0,12));
   const openActions=actionItems.filter(item=>typeof item==='string'||(!item.completed&&!['done','completed','closed'].includes(String(item.status||'').toLowerCase())));
   const people=Array.isArray(metadata.people)?metadata.people:splitPeopleFromText([record.title,rawText,JSON.stringify(metadata)].join(' ')).slice(0,12);
-  const summary=metadata.summary||metadata.analysis?.summary||rawText.replace(/\s+/g,' ').trim().slice(0,420);
+  const summary=native.nativeSummary||metadata.summary||metadata.analysis?.summary||rawText.replace(/\s+/g,' ').trim().slice(0,420);
   const source=metadata.source||metadata.provider||metadata.platform||record.type||'webhook';
   const reviewStatus=String(metadata.reviewStatus||metadata.review_status||metadata.status||(openActions.length?'needs_review':'unreviewed')).toLowerCase().replace(/\s+/g,'_');
   const createdAt=record.createdAt||metadata.created_at||metadata.timestamp||'';
@@ -21885,7 +21893,8 @@ function transcriptUiRecord(record,{includeText=false}={}){
     summary,preview:rawText.replace(/\s+/g,' ').trim().slice(0,260),contactId:metadata.contact_id||metadata.contactId||'',
     contactName:metadata.contact_name||metadata.contactName||metadata.personName||'',company:metadata.company||metadata.companyName||'',opportunityId:metadata.opportunity_id||metadata.opportunityId||'',
     meetingId:metadata.meeting_id||metadata.meetingId||metadata.calendarEventId||'',relatedOpportunity:metadata.opportunityName||metadata.opportunity||'',
-    keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,openActionCount:openActions.length,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
+    keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,nativeActionItems:native.nativeActionItems,nativeSummary:native.nativeSummary,krispNative:native.krispNative,sourceTruthLabel:native.krispNative?'Krisp':'VAL',
+    openActionCount:openActions.length,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
     people,sourcePayloadMetadata:metadata,metadata,...(includeText?{transcriptText:rawText}:{})
   };
 }
@@ -22115,7 +22124,11 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);if(data.transcripts[0]){const transcript=await attachCanonicalTranscriptDetail(transcriptDetailFromIndex(data,data.transcripts[0]));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
+    const data=await transcriptIndexData(id);if(data.transcripts[0]){
+      const archiveRecord=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      const archiveUi=archiveRecord?cleanTranscriptForUi(transcriptUiRecord(archiveRecord,{includeText:true})):null;
+      const transcript=await attachCanonicalTranscriptDetail({...transcriptDetailFromIndex(data,data.transcripts[0]),...(archiveUi?{nativeSummary:archiveUi.nativeSummary,nativeActionItems:archiveUi.nativeActionItems,krispNative:archiveUi.krispNative,sourceTruthLabel:archiveUi.sourceTruthLabel,actionItems:archiveUi.actionItems,summary:archiveUi.summary,summaryPreview:archiveUi.summaryPreview,sourcePayloadMetadata:archiveUi.sourcePayloadMetadata,metadata:archiveUi.metadata}:{} )});
+      transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
     const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
@@ -23838,7 +23851,7 @@ app.get('/api/relationships/dossier',async(req,res)=>{
       return res.status(409).json({
         ok:false,
         error:'relationship_identity_unresolved',
-        message:'A canonical Relationship Dossier requires a resolved CRM/GHL contact ID.',
+        message:'A canonical Relationship Dossier requires a resolved CRM contact ID.',
         input,
         resolutionStatus:resolution?.status||'unresolved',
         confidence:resolution?.confidence||0,
@@ -23973,7 +23986,7 @@ app.post('/api/relationships/actions',async(req,res)=>{
     if(action==='refresh_relationship_observers'){
       const crmContactId=identity.crmContactId||contact.contactId||contact.id||'';
       const observers=[
-        {id:'ghl_crm',label:'GHL/CRM Contact',status:crmContactId?'ready':'needs_contact_id'},
+        {id:'ghl_crm',label:'CRM Contact',status:crmContactId?'ready':'needs_contact_id'},
         {id:'linkedin',label:'LinkedIn Observer',status:(identity.linkedinUrl||identity.linkedin_url||dossier.linkedinUrl||dossier.linkedin_url)?'ready':'needs_linkedin_url'},
         {id:'apollo',label:'Apollo Observer',status:'ready_if_configured'},
         {id:'outscraper',label:'Outscraper Observer',status:'ready_if_configured'}
@@ -24353,7 +24366,7 @@ app.post('/api/val/chat',async(req,res)=>{
     if(inferredGhlAction){
       const packet=saveValOsExternalActionPacket(buildGhlExternalActionPacket(inferredGhlAction,lastUser));
       return sendChat([
-        'I prepared the GHL MCP action packet and need one approval before I touch the external system.',
+        'I prepared the CRM action packet and need one approval before I touch the external system.',
         '',
         packet.willDo,
         '',

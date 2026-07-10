@@ -46,7 +46,7 @@ test('relationship dossier preserves the VAL Insight Pyramid contract',()=>{
   assert.ok(dossier.relationshipBrief.actions.think.some(action=>action.id==='review_linkedin_activity'));
   assert.ok(dossier.relationshipBrief.actions.think.some(action=>action.id==='find_relationship_introductions'));
   assert.ok(dossier.relationshipBrief.actions.teach.some(action=>action.id==='mark_vip'||action.id==='not_important'||action.id==='snooze'));
-  assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='GHL/CRM Contact'&&observer.status==='resolved'));
+  assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='CRM Contact'&&observer.status==='resolved'));
   assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='LinkedIn Observer'));
   assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='Apollo Observer'));
   assert.ok(dossier.relationshipBrief.sourceReceipts.observers.some(observer=>observer.label==='Outscraper Observer'));
@@ -149,7 +149,7 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/resolvedCrmContactId/);
   assert.match(server,/contact = contact \|\| \{\}/);
   assert.match(server,/relationship_identity_unresolved/);
-  assert.match(server,/A canonical Relationship Dossier requires a resolved CRM\/GHL contact ID/);
+  assert.match(server,/A canonical Relationship Dossier requires a resolved CRM contact ID/);
   assert.match(server,/function canonicalRelationshipDossierForEntity/);
   assert.match(server,/relationshipDossier:canonicalRelationshipDossierForEntity\(p\)/);
   assert.match(server,/action==='open_evidence'/);
@@ -196,7 +196,7 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(commandCenter,/<h3>Executive Reminder<\/h3>/);
   assert.match(commandCenter,/<h3>Observer Notes<\/h3>/);
   assert.match(commandCenter,/<h3>Executive Actions<\/h3>/);
-  assert.match(commandCenter,/CRM\/GHL contact ID/);
+  assert.match(commandCenter,/CRM contact ID/);
   assert.match(commandCenter,/LinkedIn Signal/);
   assert.match(commandCenter,/Source Receipts/);
   assert.match(commandCenter,/Review LinkedIn activity/);

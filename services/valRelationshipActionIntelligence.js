@@ -74,7 +74,7 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
         direction,
         confidence:Math.max(0.35,Math.min(0.86,0.45+(score*0.06))),
         whyThisMayMatter:reason,
-        whatValPrepared:'A reviewable introduction email candidate with both CRM/GHL contact IDs attached.',
+        whatValPrepared:'A reviewable introduction email candidate with both CRM contact IDs attached.',
         whatWillNotHappen:'VAL will not send the introduction, create a calendar event, change CRM records, or expose either person without review.',
         requiresApproval:true,
         noExternalAction:true,
@@ -153,7 +153,7 @@ function relationshipIntroDraft(candidate={}){
   const personB=candidate.personB||{};
   const contactA=compactText(personA.contactId||'',120);
   const contactB=compactText(personB.contactId||'',120);
-  if(!contactA||!contactB)return {ok:false,error:'Both CRM/GHL contact IDs are required before VAL can draft an introduction.'};
+  if(!contactA||!contactB)return {ok:false,error:'Both CRM contact IDs are required before VAL can draft an introduction.'};
   const nameA=compactText(personA.name||personA.email||'there',120);
   const nameB=compactText(personB.name||personB.email||'there',120);
   const firstA=nameA.split(/\s+/)[0]||nameA;

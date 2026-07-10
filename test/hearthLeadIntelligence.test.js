@@ -85,7 +85,7 @@ test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthJs, /<span>Level 3<\/span><h4>Confirm \/ Dedupe<\/h4>/);
   assert.match(hearthJs, /Live preview - not imported/);
   assert.match(hearthJs, /Live scraper preview/);
-  assert.match(hearthJs, /Not in GHL yet\. Duplicate check is enforced again at import\./);
+  assert.match(hearthJs, /Not in CRM yet\. Duplicate check is enforced again at import\./);
   assert.match(hearthCss, /\.lead-sourcing-column \.preview-lead\{/);
   assert.match(hearthCss, /grid-template-columns:1fr/);
   assert.match(hearthJs, /data-preview-choice="approved"/);
@@ -321,13 +321,13 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
   assert.match(hearthCss, /\.drawer-link\[data-drawer-tone="rose-sage"\]/);
 });
 
-test('Transcripts drawer restores Meeting Notes workbench instead of diagnostic workflow cards', () => {
-  assert.match(hearthHtml, /<h3>Meeting notes<\/h3>/);
-  assert.match(hearthHtml, /Recent transcript conversations, action items, and clean meeting overviews/);
+test('Transcripts drawer restores source-grounded transcript workbench instead of diagnostic workflow cards', () => {
+  assert.match(hearthHtml, /<h3>Transcripts<\/h3>/);
+  assert.match(hearthHtml, /Recent Krisp transcripts, source action items, and clean meeting overviews/);
   assert.match(hearthHtml, /data-transcript-list/);
   assert.match(hearthHtml, /data-transcript-detail/);
   assert.match(hearthHtml, /Import recent Krisp meetings/);
-  assert.match(hearthHtml, /VAL will show action items and the meeting overview first/);
+  assert.match(hearthHtml, /VAL will show the Krisp action items and meeting overview first/);
   assert.match(hearthHtml, /Action Items/);
   assert.match(hearthHtml, /Meeting Overview/);
   assert.match(hearthHtml, /People and Projects/);
@@ -383,7 +383,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
   assert.match(hearthHtml, /Transcripts/);
   assert.match(hearthHtml, /Meeting evidence, notes, tasks/);
-  assert.match(hearthHtml, /Meeting notes/);
+  assert.match(hearthHtml, /Recent Krisp transcripts/);
   assert.match(hearthHtml, /id="timeline-detail"/);
   assert.match(hearthHtml, /data-transcript-count/);
   assert.match(hearthHtml, /data-transcript-list/);
@@ -402,6 +402,9 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /function openTimelineTranscript/);
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
+  assert.match(hearthJs, /function timelineNativeActionItems/);
+  assert.match(hearthJs, /if\(native\.length\) return native/);
+  assert.match(hearthJs, /Krisp Action Items/);
   assert.match(hearthJs, /Action Items/);
   assert.match(hearthJs, /Co-Work on This Transcript/);
   assert.match(hearthJs, /data-transcript-open/);
@@ -926,7 +929,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(meetingPrepResultBlock, /Close and return to desk/);
   assert.match(hearthHtml, /data-calendar-packet-receipt/);
   assert.match(hearthJs, /function meetingPrepAttendeeIdentityLines/);
-  assert.match(hearthJs, /not in GHL yet\. Create the contact before VAL attaches relationship context/);
+  assert.match(hearthJs, /not in CRM yet\. Create the contact before VAL attaches relationship context/);
   assert.match(hearthJs, /Review contact candidate/);
   assert.match(hearthJs, /function handleMeetingContactCandidate/);
   assert.match(hearthJs, /function createMeetingContactCandidate/);
@@ -1090,7 +1093,7 @@ test('Hearth source actions open the most specific executive surface available',
   assert.match(hearthJs, /function sourceRouteForItem/);
   assert.match(hearthJs, /function routeViewForTarget/);
   assert.match(hearthJs, /function normalizedTargetType/);
-  assert.match(hearthJs, /Open GHL opportunity/);
+  assert.match(hearthJs, /Open CRM opportunity/);
   assert.match(hearthJs, /Open prepared draft/);
   assert.match(hearthJs, /Open relationship file/);
   assert.match(hearthJs, /Open project dossier/);
@@ -1588,7 +1591,7 @@ test('Hearth workspace actions preserve agency while emphasizing the recommended
   assert.match(hearthJs, /function agencyNoteForLens/);
   assert.match(hearthJs, /VAL is offering a judgment, not making the decision for you/);
   assert.match(hearthJs, /Prepared work waits here until you approve, refine, or release it/);
-  assert.match(hearthJs, /Nothing enters GHL until the preview is reviewed and approved/);
+  assert.match(hearthJs, /Nothing enters CRM until the preview is reviewed and approved/);
   assert.match(hearthCss, /\.agency-note/);
   assert.match(hearthCss, /\.workspace-actions \.primary-action/);
 });
@@ -1639,7 +1642,7 @@ test('Hearth source openings keep the desk oriented after opening a target', () 
   assert.match(hearthJs, /restoreCorrespondenceWindow\(\)/);
   assert.match(hearthJs, /restoreRelationshipWindow\(\)/);
   assert.match(hearthJs, /restoreProjectWindow\(\)/);
-  assert.match(hearthJs, /GHL opportunity/);
+  assert.match(hearthJs, /CRM opportunity/);
   assert.match(hearthJs, /prepared draft/);
   assert.match(hearthJs, /relationship file/);
 });
@@ -2012,10 +2015,10 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /unresolvedIdentityWarning: warning/);
   assert.match(hearthJs, /\.\.\.fallback/);
   assert.match(hearthJs, /Create or match the contact before VAL attaches relationship context/);
-  assert.match(hearthJs, /Search GHL contacts/);
+  assert.match(hearthJs, /Search CRM contacts/);
   assert.match(hearthJs, /Review new contact candidate/);
   assert.match(hearthJs, /function handleUnresolvedRelationshipAction/);
-  assert.match(hearthJs, /VAL cannot use this as a Relationship Dossier until a CRM\/GHL contact ID exists/);
+  assert.match(hearthJs, /VAL cannot use this as a Relationship Dossier until a CRM contact ID exists/);
   assert.match(hearthJs, /error\.data = data/);
   assert.match(hearthJs, /function renderRelationshipActions/);
   assert.match(hearthJs, /function renderRelationshipSectionActions/);
