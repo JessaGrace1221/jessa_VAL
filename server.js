@@ -9235,8 +9235,10 @@ function emailIsCalendarNotification(email={}){
 function emailLooksTransactionalOrBulk(email={}){
   const from=normalizeExecutiveEmailAddress(email.from?.email||'');
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ').toLowerCase();
-  if(/\b(unsubscribe|newsletter|digest|roundup|promotion|special offer|limited time|advertis|sponsor|webinar)\b/.test(text))return true;
+  if(/\b(unsubscribe|newsletter|digest|roundup|promotion|promotional|special offer|limited time|advertis|sponsor|webinar|rewards|recommended jobs|job picks)\b/.test(text))return true;
   if(/\b(no-?reply|donotreply|notification|automated|statement|receipt|transaction|order confirmation|payment received|bank alert)\b/.test(text))return true;
+  if(/\b(your orders|thanks for your order|ordered:|shipped:|delivered:|track package|arriving today|arriving tomorrow|view or edit order|grand total)\b/.test(text))return true;
+  if(/\b(auto-confirm|shipment-tracking)@amazon\.com\b/.test(text))return true;
   return false;
 }
 function emailHasRelationshipEvidence(email={}){
@@ -9291,7 +9293,7 @@ function classifyExecutiveEmail(email,rules=[]){
   if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
     return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
   }
-  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)){
+  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){
     return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
   }
   if(/\b(intro|introduction|referral|connect you|introduce you|introduced|warm intro|warm introduction)\b/.test(text)){

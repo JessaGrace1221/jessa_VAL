@@ -52,6 +52,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/more_than_three_inbound_zero_sent/);
   assert.match(server,/function emailIsCalendarNotification/);
   assert.match(server,/calendar_notice/);
+  assert.match(server,/function emailLooksTransactionalOrBulk/);
+  assert.match(server,/your orders\|thanks for your order\|ordered:\|shipped:/);
+  assert.match(server,/recommended jobs\|job picks/);
   assert.match(server,/const scanCorpus=\[/);
   assert.match(server,/senderMetrics:emailSenderMetrics\(email,scanCorpus\)/);
   assert.match(server,/function emailShouldPrepareDraft/);
