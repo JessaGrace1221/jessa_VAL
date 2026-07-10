@@ -5803,6 +5803,43 @@ function relationshipUnderstandingTimeline(understanding = {}, evidenceLines = [
   return lines.length ? lines.slice(0, 5) : evidenceLines.slice(0, 5);
 }
 
+function relationshipNetworkMatchList(value = [], fallback = []){
+  const raw = Array.isArray(value) && value.length ? value : fallback;
+  const seen = new Set();
+  return (Array.isArray(raw) ? raw : []).map((item) => {
+    if(typeof item === 'string') return relationshipCleanSourceText(item, 180);
+    if(item && typeof item === 'object'){
+      const name = relationshipCleanSourceText(item.name || item.person || item.title || '', 72);
+      const reason = relationshipCleanSourceText(item.reason || item.why || item.need_met || item.offer_matched || item.summary || '', 180);
+      if(name && reason) return name + ' - ' + reason;
+      return name || reason;
+    }
+    return '';
+  }).filter((line) => {
+    const key = line.toLowerCase();
+    if(!line || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 5);
+}
+
+function relationshipStewardshipNetwork(understanding = {}, fallback = {}){
+  const network = understanding.stewardship_network || {};
+  const review = fallback.introReview || {};
+  const about = network.about || {};
+  const name = understanding.display_name || fallback.name || 'This person';
+  const role = about.title || fallback.role || fallback.identity || 'Relationship context';
+  const summary = about.summary || understanding.one_sentence_understanding || fallback.meaning || fallback.evidence || 'VAL needs stronger source evidence before naming what this person carries in the network.';
+  return {
+    aboutTitle: role,
+    about: relationshipCleanSourceText(summary, 240),
+    peopleWhoNeedThem: relationshipNetworkMatchList(network.people_who_need_them, review.whoNeedsThisPerson || []),
+    peopleTheyShouldMeet: relationshipNetworkMatchList(network.people_they_should_meet, review.whoThisPersonNeeds || []),
+    noMatchReason: network.no_match_reason || 'No confident network introduction is ready yet.',
+    name
+  };
+}
+
 function relationshipVisibleActions(actions = []){
   const hidden = new Set([
     'open_full_file',
@@ -5841,6 +5878,7 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
   const brief = dossier.relationshipBrief || {};
   const understanding = dossier.relationshipUnderstanding || {};
   const currentRelationship = understanding.current_relationship || {};
+  const stewardshipNetwork = relationshipStewardshipNetwork(understanding, fallback);
   const stewardship = understanding.stewardship || {};
   const mutualValue = understanding.mutual_value || {};
   const briefIdentity = brief.identity || {};
@@ -5905,6 +5943,13 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     temperatureConflict: fallback.temperatureConflict || null,
     identity: [briefIdentity.company || identity.company, briefIdentity.status || identity.status, (briefIdentity.tags || identity.tags)?.slice?.(0, 2)?.join(' / ')].filter(Boolean).join(' · ') || fallback.identity || '',
     contact: [identity.email, briefIdentity.company || identity.company, briefIdentity.crmContactId ? 'CRM ' + briefIdentity.crmContactId : ''].filter(Boolean).join(' · ') || fallback.contact || '',
+    stewardshipAboutLabel: 'Who ' + (briefIdentity.name || identity.name || fallback.name || 'this person') + ' is',
+    stewardshipAboutTitle: stewardshipNetwork.aboutTitle,
+    stewardshipAbout: stewardshipNetwork.about,
+    stewardshipValueLabel: 'Who needs ' + (briefIdentity.name || identity.name || fallback.name || 'this person'),
+    stewardshipValueTitle: (briefIdentity.name || identity.name || fallback.name || 'This person') + ' has what these people need',
+    stewardshipNeedLabel: 'Who ' + (briefIdentity.name || identity.name || fallback.name || 'this person') + ' should meet',
+    stewardshipNeedTitle: 'These people may have what ' + (briefIdentity.name || identity.name || fallback.name || 'this person') + ' needs',
     wisdom: reminder,
     evidence: understanding.one_sentence_understanding || executiveSummary,
     patterns: pattern,
@@ -5927,6 +5972,8 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     recentActivity: relationshipUnderstandingList(understanding.evidence, recentActivity, 5),
     relatedWork: relatedWork.length ? relatedWork : ['No linked project surfaced from the current evidence.'],
     notesToSee: relationshipUnderstandingList(understanding.what_might_surprise_you ? [understanding.what_might_surprise_you] : [], sourceReceiptsList.length ? sourceReceiptsList : ['No source note is ready for review yet.'], 5),
+    peopleWhoNeedThem: stewardshipNetwork.peopleWhoNeedThem.length ? stewardshipNetwork.peopleWhoNeedThem : [stewardshipNetwork.noMatchReason],
+    peopleTheyShouldMeet: stewardshipNetwork.peopleTheyShouldMeet.length ? stewardshipNetwork.peopleTheyShouldMeet : [stewardshipNetwork.noMatchReason],
     risk: relationshipUnderstandingList(understanding.risks_or_sensitivities, [], 1)[0] || (identityUnresolved ? 'Identity needs review before VAL merges relationship context.' : 'No specific relationship risk is visible in the current source trail.'),
     livingNarrative: understanding.living_narrative || (evidenceItems.length ? executiveSummary + (openLoops.length ? ' The next useful move is to close or clarify the open loop.' : '') : 'The relationship story is not ready until sources are attached.'),
     projectLinks: Array.isArray(fallback.projectLinks) ? fallback.projectLinks : [],
@@ -5962,6 +6009,15 @@ function relationshipProfileFromUnresolvedIdentity(data = {}, fallback = {}){
     role: 'Identity unresolved',
     identity: 'Not organized in CRM yet',
     contact: email || 'No canonical CRM contact ID is attached.',
+    stewardshipAboutLabel: 'Who this person is',
+    stewardshipAboutTitle: 'Contact match needed',
+    stewardshipAbout: 'VAL needs the right CRM contact match before it can safely show network opportunities.',
+    stewardshipValueLabel: 'Who needs this person',
+    stewardshipValueTitle: 'No introduction ready',
+    stewardshipNeedLabel: 'Who this person should meet',
+    stewardshipNeedTitle: 'No introduction ready',
+    peopleWhoNeedThem: ['Review the contact match before VAL recommends introductions.'],
+    peopleTheyShouldMeet: ['Review the contact match before VAL recommends introductions.'],
     wisdom: 'Link the right person once so VAL can safely bring the full relationship into view.',
     evidence: 'VAL found possible relationship context, but it is holding that context until identity is clean.',
     patterns: matches.length ? matches.slice(0, 2).map((match) => [match.name, match.email, match.source].filter(Boolean).join(' · ')).join(' | ') : 'No confident CRM match was returned.',
@@ -6039,6 +6095,8 @@ function relationshipHasAny(profile = {}, keys = []){
 function renderRelationshipDossierSections(profile = {}){
   const listFallbacks = {
     keyFacts: [profile.relationshipStateLabel || profile.relationshipState, profile.temperature && profile.temperature + ' temperature', profile.trajectory && profile.trajectory + ' trajectory'].filter(Boolean),
+    peopleWhoNeedThem: ['No confident network introduction is ready yet.'],
+    peopleTheyShouldMeet: ['No confident network introduction is ready yet.'],
     whatChanged: [profile.evidence || profile.signal].filter(Boolean),
     executiveAdvice: [profile.certainty || 'Protect the relationship by acting from what is known, not from urgency.'].filter(Boolean),
     activeThreads: [profile.company || profile.role].filter(Boolean),

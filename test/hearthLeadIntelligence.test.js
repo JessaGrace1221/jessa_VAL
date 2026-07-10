@@ -778,7 +778,8 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthHtml, /data-relationship-search/);
   assert.match(hearthHtml, /data-relationship-sort/);
   assert.match(hearthHtml, /data-relationship-index-source/);
-  assert.match(hearthHtml, /data-relationship-temperature-review/);
+  assert.match(hearthHtml, /stewardship-network-map/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-temperature-review/);
   assert.match(hearthHtml, /data-relationship-project-panel/);
   assert.match(hearthHtml, /data-relationship-project-count/);
   assert.doesNotMatch(hearthHtml, /data-relationship-packet-audit/);
@@ -786,7 +787,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthHtml, /Linked Projects/);
   assert.doesNotMatch(hearthHtml, /<button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL<\/button>/);
   assert.match(hearthJs, /mode === 'relationship'/);
-  assert.match(hearthHtml, /data-relationship-action="teach_temperature"/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-action="teach_temperature"/);
   for(const sort of ['attention', 'warmest', 'changed', 'alpha']){
     assert.match(hearthHtml, new RegExp(`<option value="${sort}"`));
   }
@@ -1959,26 +1960,21 @@ test('Stewardship drawer opens inside the Hearth instead of a CRM link', () => {
   assert.match(hearthHtml, /Your network is one of your greatest assets/);
   assert.match(hearthHtml, /connect people who can genuinely help one another/);
   assert.match(hearthHtml, /<span>Identity<\/span>/);
-  assert.match(hearthHtml, /<span>Understanding<\/span>/);
-  assert.match(hearthHtml, /<span>Thirty Second Reminder<\/span>/);
-  assert.match(hearthHtml, /<span>Becoming Observer<\/span>/);
-  assert.match(hearthHtml, /<span>Witness Observer<\/span>/);
-  assert.match(hearthHtml, /<span>Executive Judgment<\/span>/);
-  assert.match(hearthHtml, /<span>Current Read<\/span>/);
-  assert.match(hearthHtml, /<span>What Changed<\/span>/);
-  assert.match(hearthHtml, /<span>Why This Matters<\/span>/);
-  assert.match(hearthHtml, /<span>Executive Advice<\/span>/);
-  assert.match(hearthHtml, /<span>Relationship Risk<\/span>/);
-  assert.match(hearthHtml, /<span>Collaboration<\/span>/);
-  assert.match(hearthHtml, /<span>Story<\/span>/);
-  assert.match(hearthHtml, /<span>Related Work<\/span>/);
+  assert.match(hearthHtml, /<span>Network Stewardship<\/span>/);
+  assert.match(hearthHtml, /Who needs to meet whom, and why/);
+  assert.match(hearthHtml, /data-relationship-field="stewardshipAbout"/);
+  assert.match(hearthHtml, /data-relationship-list="peopleWhoNeedThem"/);
+  assert.match(hearthHtml, /data-relationship-list="peopleTheyShouldMeet"/);
+  assert.doesNotMatch(hearthHtml, /What VAL wants you to remember/);
+  assert.doesNotMatch(hearthHtml, /<span>Executive Judgment<\/span>/);
+  assert.doesNotMatch(hearthHtml, /<span>Collaboration<\/span>/);
+  assert.doesNotMatch(hearthHtml, /<span>Story<\/span>/);
   assert.match(hearthHtml, /class="relationship-actions"/);
   assert.match(hearthJs, /const relationshipDrawerLink/);
   assert.match(hearthJs, /relationship-open/);
   assert.match(hearthCss, /\.relationship-layer-heading/);
-  assert.match(hearthCss, /\.relationship-judgment-grid/);
-  assert.match(hearthCss, /\.relationship-collaboration-grid/);
-  assert.match(hearthCss, /\.relationship-right-rail/);
+  assert.match(hearthCss, /\.stewardship-network-grid/);
+  assert.match(hearthCss, /\.stewardship-network-card/);
   assert.match(hearthCss, /\.relationship-actions/);
 });
 
@@ -1987,16 +1983,14 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthHtml, /class="relationship-folder-rail" aria-label="Pinned relationships" hidden/);
   assert.doesNotMatch(hearthHtml, /data-relationship-profile="greg"/);
   assert.doesNotMatch(hearthHtml, /data-relationship-profile="lindsey"/);
-  assert.match(hearthHtml, /data-relationship-field="wisdom"/);
+  assert.match(hearthHtml, /data-relationship-field="stewardshipAbout"/);
   assert.match(hearthJs, /const relationshipProfiles/);
   assert.match(hearthJs, /function renderRelationshipProfile/);
   assert.match(hearthJs, /function renderRelationshipDossierSections/);
   assert.match(hearthJs, /function renderRelationshipList/);
-  assert.match(hearthJs, /whatChanged/);
-  assert.match(hearthJs, /executiveAdvice/);
-  assert.match(hearthJs, /activeThreads/);
-  assert.match(hearthJs, /openLoops/);
-  assert.match(hearthJs, /livingNarrative/);
+  assert.match(hearthJs, /relationshipStewardshipNetwork/);
+  assert.match(hearthJs, /peopleWhoNeedThem/);
+  assert.match(hearthJs, /peopleTheyShouldMeet/);
   assert.match(hearthJs, /relationship-action-group/);
   assert.match(hearthJs, /Actions VAL can take with this relationship/);
   assert.match(hearthJs, /Draft reply/);
@@ -2077,9 +2071,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /aria-pressed/);
   assert.match(hearthJs, /Do not let silence become ambiguity/);
   assert.match(hearthCss, /\.relationship-folder-rail/);
-  assert.match(hearthCss, /\.relationship-three-card-row/);
-  assert.match(hearthCss, /\.relationship-protection-grid/);
-  assert.match(hearthCss, /\.relationship-story-grid/);
+  assert.match(hearthCss, /\.stewardship-network-grid/);
+  assert.match(hearthCss, /\.stewardship-network-card/);
   assert.match(hearthCss, /\.relationship-action-group/);
   assert.match(hearthCss, /\.relationship-actions\{[\s\S]{0,80}display:grid/);
   assert.match(hearthCss, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
@@ -2087,8 +2080,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.drawer-tray\{\n  position:absolute;\n  z-index:6/);
   assert.match(hearthJs, /if\(hearth\.classList\.contains\('drawer-open'\)\) return;\n    handlePrimaryAction\(button\)/);
   assert.ok(
-    hearthHtml.indexOf('class="relationship-actions"') > hearthHtml.indexOf('class="relationship-right-rail"'),
-    'Relationship actions should stay after the scannable executive understanding layers.'
+    hearthHtml.indexOf('class="relationship-actions"') > hearthHtml.indexOf('class="relationship-dossier-layer stewardship-network-map"'),
+    'Relationship actions should stay after the three-block Stewardship network map.'
   );
 });
 
@@ -2142,37 +2135,17 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
   assert.match(hearthHtml, /data-relationship-action="ask_alignment"/);
   assert.match(hearthHtml, /data-relationship-section-actions="identity"/);
-  assert.match(hearthHtml, /data-relationship-section-actions="patterns"/);
-  assert.match(hearthHtml, /data-relationship-section-actions="meaning"/);
-  assert.match(hearthHtml, /data-relationship-section-actions="wisdom"/);
-  [
-    'current_read',
-    'what_changed',
-    'certainty',
-    'executive_advice',
-    'risk',
-    'active_threads',
-    'open_loops',
-    'mutual_value',
-    'living_narrative',
-    'timeline',
-    'recent_activity',
-    'related_work',
-    'notes_to_see'
-  ].forEach((section) => {
-    assert.match(hearthHtml, new RegExp(`data-relationship-section-actions="${section}"`));
-  });
+  assert.match(hearthHtml, /data-relationship-list="peopleWhoNeedThem"/);
+  assert.match(hearthHtml, /data-relationship-list="peopleTheyShouldMeet"/);
   assert.doesNotMatch(hearthHtml, /data-relationship-card-section=/);
   assert.doesNotMatch(hearthHtml, /data-relationship-card-action=/);
   assert.doesNotMatch(hearthHtml, /data-relationship-action="open_full_file"/);
   assert.doesNotMatch(hearthHtml, />Open full file</);
   assert.match(hearthJs, /function relationshipEvidenceItemsFromDossier/);
   assert.match(hearthJs, /relationshipVisibleSectionActions/);
-  assert.match(hearthJs, /relationshipUnderstandingList/);
-  assert.match(hearthJs, /relationshipUnderstandingTimeline/);
-  assert.match(hearthJs, /understanding\.thirty_second_truth/);
-  assert.match(hearthJs, /understanding\.what_changed/);
-  assert.match(hearthJs, /stewardship\.responsibility/);
+  assert.match(hearthJs, /relationshipNetworkMatchList/);
+  assert.match(hearthJs, /relationshipStewardshipNetwork/);
+  assert.match(hearthJs, /understanding\.stewardship_network/);
   assert.match(hearthJs, /currentRelationship\.temperature/);
   assert.match(hearthJs, /understanding\.living_narrative/);
   assert.doesNotMatch(hearthJs, /Recent context exists for/);

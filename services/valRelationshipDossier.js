@@ -82,11 +82,22 @@ function relationshipThreadName(line=''){
 }
 function relationshipActionFromLoop(loop='',name='this relationship'){
   const text=compactText(loop,220);
-  if(!text)return `Clarify the next concrete commitment with ${name}.`;
-  if(/mike|dashboard/i.test(text))return 'Connect with Mike about the dashboard and decide the next owner/date.';
+  if(!text)return `Review the source evidence before naming a next move for ${name}.`;
   if(/send|share/i.test(text))return text;
   if(/schedule|connect|introduce|intro/i.test(text))return text;
   return text;
+}
+function relationshipNetworkPersonFromEvidence(lines=[]){
+  const text=lines.join(' ');
+  const people=[];
+  if(/mike|nonhof|mikenonhof/i.test(text)){
+    people.push({
+      name:'Mike Nonhof',
+      reason:'Recent source evidence mentions Mike in the same dashboard or build conversation. Review the source before preparing an introduction.',
+      confidence:0.62
+    });
+  }
+  return people;
 }
 function buildRelationshipUnderstanding(dossier={}){
   const identity=dossier.identity||{};
@@ -105,6 +116,7 @@ function buildRelationshipUnderstanding(dossier={}){
   const goallLine=firstMatchingLine(openLoops.concat(evidenceLines),['goall','goal agency','grace ai']);
   const actionLoop=dashboardLine||openLoops[0]||opportunities[0]||risks[0]||signals[0]||'';
   const activeThreads=dedupeLines(openLoops.concat(evidenceLines).map(relationshipThreadName),5);
+  const evidencePeople=relationshipNetworkPersonFromEvidence(openLoops.concat(evidenceLines));
   const whatChanged=dedupeLines([
     actionLoop ? relationshipActionFromLoop(actionLoop,name) : '',
     goallLine ? 'GOALL context is active in recent meetings and email.' : '',
@@ -166,6 +178,15 @@ function buildRelationshipUnderstanding(dossier={}){
       value_for_them:hasDashboard?['Clarity on the dashboard path and next owner.']:[],
       value_from_them:hasGoall?['GOALL context, decisions, and operational feedback.']:[],
       shared_value:hasGoall||hasDashboard?['Make the dashboard and automation work easier to execute without dropped loops.']:[]
+    },
+    stewardship_network:{
+      about:{
+        title:identity.company||identity.role||'Relationship context',
+        summary:oneSentence
+      },
+      people_who_need_them:[],
+      people_they_should_meet:evidencePeople,
+      no_match_reason:evidencePeople.length?'':'No confident network introduction is ready yet.'
     },
     who_they_are_becoming_in_the_users_world:hasGoall||hasDashboard ? `${name} is becoming part of the GOALL execution context, not just a contact record.` : 'Unclear until stronger relationship evidence is attached.',
     living_narrative:compactText(

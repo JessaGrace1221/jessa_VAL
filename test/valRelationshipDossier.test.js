@@ -79,6 +79,8 @@ test('relationship understanding turns evidence into actionable open-loop judgme
   assert.match(understanding.thirty_second_truth,/Mike|dashboard/);
   assert.match(understanding.what_changed.join(' '),/Mike|dashboard/);
   assert.match(understanding.stewardship.responsibility,/Mike|dashboard/);
+  assert.doesNotMatch(understanding.stewardship.responsibility,/decide the next owner\/date/);
+  assert.ok(understanding.stewardship_network.people_they_should_meet.some((person)=>/Mike Nonhof/.test(person.name)));
   assert.match(understanding.living_narrative,/close the named open loop/i);
   assert.doesNotMatch(understanding.thirty_second_truth,/Recent context exists/i);
   assert.doesNotMatch(understanding.who_they_are_becoming_in_the_users_world,/Open loop Momentum/i);
