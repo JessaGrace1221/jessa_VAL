@@ -14,6 +14,7 @@ const hearthPacketCompleteness = fs.readFileSync(path.join(root, 'docs', 'HEARTH
 const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEARTH_PACKET_HYDRATION_AUDIT.md'), 'utf8');
 const hearthTruthLineageMap = fs.readFileSync(path.join(root, 'docs', 'HEARTH_TRUTH_LINEAGE_MAP.md'), 'utf8');
 const hearthExecutiveReasoningPipeline = fs.readFileSync(path.join(root, 'docs', 'HEARTH_EXECUTIVE_REASONING_PIPELINE.md'), 'utf8');
+const valProjectManagerRoundTable = fs.readFileSync(path.join(root, 'docs', 'VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md'), 'utf8');
 
 function extractObjectLiteral(source, marker){
   const start = source.indexOf(marker);
@@ -145,41 +146,42 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthHtml, /name="relationships"/);
   assert.match(hearthHtml, /name="rawContext"/);
   assert.match(hearthHtml, /data-project-rolodex/);
-  assert.match(hearthHtml, /data-project-field="reality"/);
-  assert.match(hearthHtml, /data-project-field="momentumEvidence"/);
-  assert.match(hearthHtml, /data-project-field="decisionEvidence"/);
-  assert.match(hearthHtml, /data-project-field="nextMoveEvidence"/);
-  assert.match(hearthHtml, /data-project-source-panel/);
-  assert.match(hearthHtml, /data-project-source-count/);
-  assert.match(hearthHtml, /Given to VAL/);
-  assert.match(hearthHtml, /data-project-graph-panel/);
-  assert.match(hearthHtml, /data-project-graph-count/);
-  assert.match(hearthHtml, /Project Graph/);
-  assert.match(hearthHtml, /data-project-review-panel/);
-  assert.match(hearthHtml, /data-project-review-count/);
-  assert.match(hearthHtml, /Review Gate/);
-  assert.match(hearthHtml, /data-project-prepared-panel/);
-  assert.match(hearthHtml, /data-project-prepared-count/);
-  assert.match(hearthHtml, /Prepared Work/);
-  assert.match(hearthHtml, /data-project-action="open_project_file"/);
+  assert.match(hearthHtml, /data-project-manager-profile/);
+  assert.doesNotMatch(hearthHtml, /data-project-source-panel/);
+  assert.doesNotMatch(hearthHtml, /Project Graph/);
+  assert.doesNotMatch(hearthHtml, /Review Gate/);
+  assert.doesNotMatch(hearthHtml, /data-project-action="open_project_file"/);
   assert.match(hearthHtml, /data-drawer-cowork-icon/);
   assert.doesNotMatch(hearthHtml, /<button type="button" data-project-action="cowork_project">Co-Work with VAL<\/button>/);
-  assert.match(hearthHtml, /data-project-action="ask_priority"/);
-  assert.match(hearthHtml, /data-project-action="show_alternatives"/);
+  assert.doesNotMatch(hearthHtml, /data-project-action="ask_priority"/);
+  assert.doesNotMatch(hearthHtml, /data-project-action="show_alternatives"/);
   assert.doesNotMatch(hearthHtml, /data-open-room="alignment" data-project-action="ask_priority"/);
   assert.doesNotMatch(hearthHtml, /data-open-room="leverage" data-project-action="show_alternatives"/);
-  assert.ok(
-    hearthHtml.indexOf('class="project-actions"') < hearthHtml.indexOf('class="project-pyramid"'),
-    'Project suggested actions should appear before source panels so the next move is reachable without deep scrolling.'
-  );
-  assert.ok(
-    hearthHtml.indexOf('class="project-actions"') < hearthHtml.indexOf('data-project-rolodex'),
-    'Project suggested actions should be in the clickable drawer zone before the project list.'
-  );
+  assert.doesNotMatch(hearthHtml, /class="project-actions"/);
   assert.match(hearthJs, /const projectProfiles/);
   assert.match(hearthJs, /function openProjectIndex/);
   assert.match(hearthJs, /function renderProjectRolodex/);
   assert.match(hearthJs, /function renderProjectProfile/);
+  assert.match(hearthJs, /function projectAdmissionPacket/);
+  assert.match(hearthJs, /function projectIsDrawerAdmitted/);
+  assert.match(hearthJs, /function projectManagerPacket/);
+  assert.match(hearthJs, /function renderProjectManagerProfile/);
+  assert.match(hearthJs, /function openProjectFieldCowork/);
+  assert.match(hearthJs, /function applyProjectFieldUpdate/);
+  assert.match(hearthJs, /function renderProjectRelationshipPicker/);
+  assert.match(hearthJs, /heading:spec\.question/);
+  assert.match(hearthJs, /detail:spec\.detail/);
+  assert.match(hearthJs, /What consequence, opportunity, relationship, or business reason makes this project worth attention/);
+  assert.match(hearthJs, /What is the next concrete move, who owns it, and when should it happen/);
+  assert.match(hearthJs, /data-project-cowork-field/);
+  assert.match(hearthJs, /data-project-relationship-choice/);
+  assert.match(hearthJs, /data-project-relationship-create/);
+  assert.match(hearthJs, /activeProjectCoworkTarget/);
+  assert.match(hearthJs, /workspaceReturnTarget === 'project' && activeProjectCoworkTarget\?\.field/);
+  assert.match(hearthJs, /project_manager_judgment_packet/);
+  assert.match(hearthJs, /project_next_action_packet/);
+  assert.match(hearthJs, /project_prepared_work_packets/);
+  assert.match(hearthJs, /projectIndexItems\(\)\{[\s\S]{0,160}\.filter\(projectIsDrawerAdmitted\)/);
   assert.match(hearthJs, /function projectSource/);
   assert.match(hearthJs, /function projectProfileReceiptPacket/);
   assert.match(hearthJs, /function ensureProjectProfileReceipt/);
@@ -194,18 +196,6 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /\/api\/projects\/index\?limit=80/);
   assert.match(hearthJs, /function projectProfileFromIndexItem/);
   assert.match(hearthJs, /function normalizedProjectSourceDetails/);
-  assert.match(hearthJs, /function projectCompactText/);
-  assert.match(hearthJs, /function projectJudgmentLabel/);
-  assert.match(hearthJs, /function projectEvidenceText/);
-  assert.match(hearthJs, /function projectSourceDisplayText/);
-  assert.match(hearthJs, /Captured source: /);
-  assert.match(hearthJs, /Decide the next narrow move/);
-  assert.match(hearthJs, /function renderProjectSourcePanel/);
-  assert.match(hearthJs, /No files uploaded for this project yet/);
-  assert.match(hearthCss, /\.project-row-status,\s*\.project-row-signal,\s*\.project-row-next\{/);
-  assert.match(hearthCss, /-webkit-line-clamp:2/);
-  assert.match(hearthCss, /\.project-identity p,\s*\.project-pyramid p\{/);
-  assert.match(hearthCss, /-webkit-line-clamp:5/);
   assert.match(hearthJs, /function renderProjectGraphPanel/);
   assert.match(hearthJs, /function hydrateProjectGraphLinks/);
   assert.match(hearthJs, /\/api\/projects\/links\?projectId=/);
@@ -228,6 +218,7 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function activeProjectChatContext/);
   assert.match(hearthJs, /function openProjectCoworkSession/);
   assert.match(hearthJs, /function openContextualCoworkSession/);
+  assert.match(hearthJs, /projectManagerPacket: packet/);
   assert.match(hearthJs, /projectContext: workspaceReturnTarget === 'project' \? activeProjectChatContext\(\) : null/);
   assert.match(hearthJs, /function createProjectFromDrawer/);
   assert.match(hearthJs, /\/api\/projects\/create/);
@@ -238,17 +229,17 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /\/api\/projects\/dossier\?/);
   assert.match(hearthJs, /function projectProfileFromDossier/);
   assert.match(hearthJs, /await openProjectProfileFromDrawer\(projectProfileButton\.dataset\.projectOpenProfile, projectProfileButton\)/);
+  assert.match(hearthHtml, /data-project-title/);
+  assert.doesNotMatch(hearthHtml, /data-project-field="name"/);
+  assert.match(hearthJs, /function renderProjectManagerEmptyState/);
+  assert.match(hearthJs, /No active projects yet\./);
+  assert.doesNotMatch(hearthJs, /Project before project memory|Holding evidence quietly|Admit only when useful|No active project is admitted|project admission boundary/);
   assert.match(hearthJs, /projectIndexSourceLabel = data\.source === 'demo_project_profiles' \? 'Demo project index' : 'Canonical project index'/);
   assert.match(hearthJs, /Canonical project index is connected\. No project profiles have enough evidence to appear here yet/);
   assert.match(hearthJs, /projectOpenProfile/);
   assert.match(hearthJs, /function handleProjectAction/);
   assert.match(hearthJs, /await handleProjectActionClick\(projectAction\.dataset\.projectAction, projectAction\)/);
   assert.match(hearthJs, /if\(button\.closest\('#drawer-tray'\)\) return/);
-  assert.match(hearthJs, /Project Judgment/);
-  assert.match(hearthJs, /No task, CRM update, message, scrape, or import happened from this click/);
-  assert.match(hearthJs, /priority is ready to judge/);
-  assert.match(hearthJs, /alternatives are ready to compare/);
-  assert.match(hearthJs, /No task, CRM update, message, scrape, import, or project status change happened from this click/);
   assert.doesNotMatch(hearthJs, /if\(action === 'ask_priority'\)\{\s*closeDrawer\(\);\s*openWorkspace\('alignment'\)/);
   assert.doesNotMatch(hearthJs, /if\(action === 'show_alternatives'\)\{\s*closeDrawer\(\);\s*openWorkspace\('leverage'\)/);
   assert.match(hearthJs, /returnTarget:'project'/);
@@ -261,16 +252,14 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]\[aria-pressed="true"\]/);
   assert.match(hearthCss, /\.project-rolodex-empty/);
-  assert.match(hearthCss, /\.project-pyramid/);
-  assert.match(hearthCss, /\.project-source-panel/);
-  assert.match(hearthCss, /\.project-source-grid/);
-  assert.match(hearthCss, /\.project-graph-panel/);
-  assert.match(hearthCss, /\.project-graph-grid/);
-  assert.match(hearthCss, /\.project-review-panel/);
-  assert.match(hearthCss, /\.project-review-grid/);
-  assert.match(hearthCss, /\.project-prepared-panel/);
-  assert.match(hearthCss, /\.project-prepared-grid/);
-  assert.match(hearthCss, /\.project-review-grid button/);
+  assert.match(hearthCss, /\.project-manager-dossier/);
+  assert.match(hearthCss, /\.project-manager-hero/);
+  assert.match(hearthCss, /\.project-manager-judgment/);
+  assert.match(hearthCss, /\.project-manager-grid/);
+  assert.match(hearthCss, /\.project-manager-columns/);
+  assert.match(hearthCss, /\.project-manager-story/);
+  assert.match(hearthCss, /\.project-manager-clickable/);
+  assert.match(hearthCss, /\.project-relationship-picker/);
   assert.match(hearthCss, /\.project-actions/);
 });
 
@@ -636,9 +625,9 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthHtml, /data-document-action="send"/);
   assert.match(hearthHtml, /data-document-action="link_context"/);
   assert.match(hearthHtml, /data-relationship-document-panel/);
-  assert.match(hearthHtml, /data-project-document-panel/);
   assert.match(hearthHtml, /data-relationship-document-count/);
-  assert.match(hearthHtml, /data-project-document-count/);
+  assert.match(hearthHtml, /data-project-manager-profile/);
+  assert.match(hearthJs, /Documents \/ sources/);
   assert.doesNotMatch(hearthHtml, /<a href="\.\/documents\.html" class="drawer-link" data-drawer-tone="rose-mist">/);
   assert.match(hearthJs, /const documentDrawerLink/);
   assert.match(hearthJs, /const localDocumentItems/);

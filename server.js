@@ -15857,6 +15857,7 @@ function projectIndexItemFromProfile(profile={}){
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
     files:uploadedFiles,
+    sopId:metadata.sopId||intake.sopId||'',
     websiteSource:intake.websiteSource||'',
     documents:intake.documents||'',
     relationships:intake.relationships||'',
@@ -15887,6 +15888,8 @@ function projectIndexItemFromProfile(profile={}){
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
     sourceDetails,
+    sopId:metadata.sopId||intake.sopId||'',
+    sopName:metadata.sopName||'',
     href:'./dashboard.html?view=projects&projectId='+encodeURIComponent(id)
   };
 }
@@ -15901,7 +15904,9 @@ function projectDossierFromProfile(profile={}){
       projectId:item.projectId,
       profileKey:item.profileKey,
       name:item.name,
-      status:item.status
+      status:item.status,
+      sopId:item.sopId||'',
+      sopName:item.sopName||''
     },
     currentReality:{
       summary:item.reality,
@@ -15966,6 +15971,7 @@ function projectCreatePayload(body={}, files=[]){
   const summary=String(body.summary||body.description||body.currentReality||'').trim();
   const projectId=String(body.projectId||stableKey(name)).replace(/[^a-z0-9:_-]/gi,'-').toLowerCase();
   const intake={
+    sopId:String(body.sopId||body.sop_id||'').trim(),
     websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
     documents:String(body.documents||body.documentsAndContracts||body.contracts||'').trim(),
     relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
@@ -23524,6 +23530,7 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
       metadataJson:{
         source:'hearth_project_intake',
         intake:payload.intake,
+        sopId:payload.intake.sopId||'',
         uploadedFiles,
         sourceTypes:payload.sourceTypes,
         createdFrom:'hearth_projects_drawer',

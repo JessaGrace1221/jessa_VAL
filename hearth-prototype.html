@@ -542,12 +542,12 @@
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">Project Dossiers</p>
-            <h3 data-project-field="name">Projects</h3>
-            <p>VAL holds projects by current reality, momentum, decision point, next move, and the quiet source trail that explains why it matters now.</p>
+            <h3 data-project-title>Projects</h3>
+            <p data-project-subtitle>Projects will appear here when there is enough connected work to manage clearly.</p>
           </div>
           <button type="button" class="close-project-detail">Close</button>
         </div>
-        <p class="project-index-source" data-project-index-source>Local project preview · 3 projects</p>
+        <p class="project-index-source" data-project-index-source>No active projects yet.</p>
         <button type="button" class="project-create-toggle" data-project-create-toggle aria-expanded="false">New project</button>
         <form class="project-create-form" data-project-create-form enctype="multipart/form-data" hidden>
           <label>
@@ -555,8 +555,18 @@
             <input type="text" name="name" placeholder="Frisson, client portal, book launch..." autocomplete="off" required>
           </label>
           <label>
+            <span>Operating system / SOP</span>
+            <select name="sopId" data-project-sop-select>
+              <option value="">Choose after VAL interviews me</option>
+              <option value="frisson_partner_onboarding">Frisson Partner Onboarding</option>
+              <option value="client_dashboard_buildout">Client Dashboard Buildout</option>
+              <option value="relationship_nurture_partnership">Long-Term Partnership Nurture</option>
+              <option value="new_sop">Create a new SOP from this project</option>
+            </select>
+          </label>
+          <label>
             <span>What is this project?</span>
-            <textarea name="summary" placeholder="Describe the current reality, purpose, and what VAL should understand first."></textarea>
+            <textarea name="summary" placeholder="Think out loud. VAL will interview you, structure this into a Project Manager Packet, and ask what is missing."></textarea>
           </label>
           <label>
             <span>Website or source code</span>
@@ -585,78 +595,8 @@
           </div>
           <p class="project-create-status" data-project-create-status></p>
         </form>
-        <div class="project-actions" aria-label="Executive project actions">
-            <button type="button" data-project-action="open_project_file">Open project file</button>
-            <button type="button" data-project-action="ask_priority">Ask what matters now</button>
-            <button type="button" data-project-action="show_alternatives">Show alternatives</button>
-        </div>
         <div class="project-rolodex" data-project-rolodex aria-label="Projects"></div>
-        <div class="project-file">
-          <section class="project-identity" aria-label="Project identity">
-            <div class="project-mark" aria-hidden="true" data-project-field="initials">FR</div>
-            <div>
-              <span>Current Reality</span>
-              <strong data-project-field="status">Partner paths forming</strong>
-              <p data-project-field="reality">Frisson has enough relationship and lead context to decide which path deserves the next executive move.</p>
-            </div>
-          </section>
-          <div class="project-pyramid" aria-label="Project brief">
-            <article>
-              <span>Momentum</span>
-              <strong data-project-field="momentum">Visible movement</strong>
-              <p data-project-field="momentumEvidence">Relationship notes, partner candidates, and source material are converging.</p>
-            </article>
-            <article>
-              <span>Decision Point</span>
-              <strong data-project-field="decision">Choose the next narrow move</strong>
-              <p data-project-field="decisionEvidence">VAL should keep this from becoming a broad planning session.</p>
-            </article>
-            <article>
-              <span>Next Move</span>
-              <strong data-project-field="nextMove">Review the strongest path</strong>
-              <p data-project-field="nextMoveEvidence">Use relationships and prepared material before adding new work.</p>
-            </article>
-          </div>
-          <div class="project-certainty" aria-label="Project source receipts">
-            <span>Source Receipts</span>
-            <p data-project-field="sourceReceipts">Relationships · documents · decision notes · lead intelligence</p>
-          </div>
-          <div class="project-source-panel" aria-label="Given to VAL">
-            <div class="project-source-panel-header">
-              <span>Given to VAL</span>
-              <strong data-project-source-count>No source details attached yet</strong>
-            </div>
-            <div class="project-source-grid" data-project-source-panel></div>
-          </div>
-          <div class="project-graph-panel" aria-label="Project graph links">
-            <div class="project-source-panel-header">
-              <span>Project Graph</span>
-              <strong data-project-graph-count>No linked context yet</strong>
-            </div>
-            <div class="project-graph-grid" data-project-graph-panel></div>
-          </div>
-          <div class="project-review-panel" aria-label="Project review gate">
-            <div class="project-source-panel-header">
-              <span>Review Gate</span>
-              <strong data-project-review-count>No source reviews pending</strong>
-            </div>
-            <div class="project-review-grid" data-project-review-panel></div>
-          </div>
-          <div class="project-prepared-panel" aria-label="Project prepared work">
-            <div class="project-source-panel-header">
-              <span>Prepared Work</span>
-              <strong data-project-prepared-count>No prepared work waiting</strong>
-            </div>
-            <div class="project-prepared-grid" data-project-prepared-panel></div>
-          </div>
-          <div class="project-document-panel" aria-label="Project linked documents">
-            <div class="project-source-panel-header">
-              <span>Linked Documents</span>
-              <strong data-project-document-count>No linked documents yet</strong>
-            </div>
-            <div class="project-document-grid" data-project-document-panel></div>
-          </div>
-        </div>
+        <div class="project-file project-manager-dossier" data-project-manager-profile aria-live="polite"></div>
       </div>
       <div class="source-detail timeline-detail" id="timeline-detail" aria-hidden="true">
         <div class="source-detail-header">
