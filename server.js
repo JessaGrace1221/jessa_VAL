@@ -30,7 +30,7 @@ const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRou
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
-const {buildDailyWitnessGreeting} = require('./services/dailyWitnessGreeting');
+const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
 const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft} = require('./services/valRelationshipActionIntelligence');
 const {
@@ -16341,7 +16341,127 @@ function dashboardReadyDraft(draft={}){
   if(!quality.ready)return null;
   const label=quality.recipient?`Draft for ${quality.recipient}`:draft.subject||'Draft ready';
   const portalPhrases=[quality.recipient,draft.subject,label].map(v=>dashboardShortText(v,'',80)).filter(Boolean);
-  return {id:draft.id,title:dashboardShortText(label,'Draft ready',80),summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),view:'drafts',target:{type:'draft',id:draft.id},draftType:draft.draftType,status:draft.status,quality,portalPhrases:[...new Set(portalPhrases)].slice(0,5)};
+  const source=draft.sourceContext||{};
+  const transcriptId=source.transcriptId||source.transcript_id||'';
+  const artifactKind=draft.draftType==='meeting_recap'?'meeting_overview_email_draft':(draft.draftType||'internal_draft');
+  return {
+    id:draft.id,
+    title:dashboardShortText(label,'Draft ready',80),
+    summary:dashboardShortText(draft.subject||quality.context||draft.body,'Review prepared draft.',140),
+    reason_it_matters:dashboardShortText(source.meetingTitle||source.transcriptTitle||quality.context||'Prepared work is ready for review before anything is sent.','Prepared work is ready for review.',180),
+    view:'drafts',
+    target:{type:'draft',id:draft.id},
+    draftType:draft.draftType,
+    status:draft.status,
+    quality,
+    sourceType:transcriptId?'transcript':'draft',
+    sourceId:transcriptId||draft.id,
+    sourceRefs:transcriptId?[{source_type:'transcript',source_id:transcriptId,quote_or_summary:source.meetingTitle||source.transcriptTitle||draft.subject||'Transcript-created draft',confidence:0.86}]:[{source_type:'draft',source_id:draft.id,quote_or_summary:draft.subject||'Prepared draft',confidence:0.78}],
+    preparedArtifactKind:artifactKind,
+    preparedArtifact:{kind:artifactKind,title:draft.subject||label,body:draft.body||'',recipients:source.recipients||[],externalSend:false,reviewRequired:true},
+    preparedWorkPacket:{prepared_work_type:artifactKind,trigger_source_id:transcriptId||draft.id,work_product:draft.body||draft.subject||label,approval_needed:true,execution_path:'review_then_send_email',can_val_act_status:'approval_required'},
+    canValActStatus:'approval_required',
+    homeAdmission:{preparedWorkPacketComplete:true},
+    metadata:{source:source.source||'internal_draft',transcriptId,preparedArtifactKind:artifactKind,noExternalAction:true,noExternalSend:true,recipients:source.recipients||[]},
+    portalPhrases:[...new Set(portalPhrases)].slice(0,5)
+  };
+}
+function dashboardHomeNoiseText(item={}){
+  return [
+    item.title,item.summary,item.why,item.whatChanged,item.what_changed,item.reason_it_matters,
+    item.ifIgnored,item.if_ignored,item.subject,item.snippet,item.bodyPreview
+  ].filter(Boolean).join(' ');
+}
+function dashboardSuppressedHomeSignal(item={}){
+  const metadata=evidenceJsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  const observationType=String(item.observationType||item.observation_type||metadata.observationType||metadata.observation_type||'').toLowerCase();
+  const text=dashboardHomeNoiseText(item);
+  if(['spam','newsletter','receipt'].includes(observationType))return true;
+  if(['ignored','suppressed','low_priority','solicitation','spam_like'].includes(String(item.status||item.priorityLevel||item.priority_level||'').toLowerCase()))return true;
+  if(isGenericDailyWitnessSignal(text)||isGenericDailyWitnessSignal(item.summary)||isGenericDailyWitnessSignal(item.why)||isGenericDailyWitnessSignal(item.whatChanged))return true;
+  if(/\b(inbound emails? from this sender|zero sent replies|never responded|not an executive contact|inbox noise|manual_not_executive_contact|more_than_three_inbound_zero_sent)\b/i.test(text))return true;
+  return false;
+}
+function transcriptHomeLabel(transcript={}){
+  const text=[transcript.title,transcript.summaryPreview,transcript.summary?.executiveSummary].filter(Boolean).join(' ');
+  if(/\bGOALL|Goal Agency|agency call center|missed.?call|Apollo|Grace AI|projections dashboard/i.test(text))return 'Goal Agency meeting';
+  return transcript.title||'recent meeting';
+}
+function transcriptHomeSummary(transcript={}){
+  const summary=dashboardCleanText(transcript.summary?.executiveSummary||transcript.summaryPreview||transcript.preview||'');
+  if(!summary)return '';
+  return dashboardShortText(summary,'Transcript summary ready.',260);
+}
+function transcriptHomeNextMove(transcript={}){
+  const summary=[transcript.summary?.executiveSummary,transcript.summary?.clientSummary,transcript.summaryPreview].filter(Boolean).join(' ');
+  const openQuestions=Array.isArray(transcript.summary?.openQuestions)?transcript.summary.openQuestions:[];
+  const question=openQuestions.find(q=>/projection|dashboard|Mike|calendar|form|missed/i.test(String(q)))||openQuestions[0]||'Review the meeting overview and confirm the next follow-up.';
+  if(/projection|dashboard|Mike/i.test(summary+question))return 'Finish the projections/dashboard handoff with Mike so the agency work has a clean next step.';
+  if(/Grace AI|calendar/i.test(summary+question))return 'Confirm the Grace AI calendar path before the follow-up goes out.';
+  return dashboardShortText(question,'Review the meeting overview and confirm the next follow-up.',180);
+}
+function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
+  if(!transcript?.id)return null;
+  const label=transcriptHomeLabel(transcript);
+  const summary=transcriptHomeSummary(transcript);
+  if(!summary)return null;
+  const createdAt=transcript.createdAt||transcript.receivedAt||new Date().toISOString();
+  const sourceRef={source_type:'transcript',source_id:transcript.id,quote_or_summary:summary,confidence:0.9,created_at:createdAt};
+  const recapDraft=drafts.find(d=>d.draftType==='meeting_recap'&&String(d.sourceContext?.transcriptId||'')===String(transcript.id));
+  const nextMove=transcriptHomeNextMove(transcript);
+  const base={
+    id:`home_transcript_${transcript.id}`,
+    sourceType:'transcript',
+    sourceId:transcript.id,
+    sourceRefs:[sourceRef],
+    evidence:[{id:transcript.id,sourceType:'transcript',title:label,summary,occurredAt:createdAt}],
+    createdAt,
+    confidence:0.9,
+    target:{type:'transcript',id:transcript.id,label},
+    homeAdmission:{velocityRoundTablePassed:true,whyNowPacketComplete:true},
+    velocityRoundTablePassed:true
+  };
+  return {
+    velocity:{...base,title:`${label} moved forward.`,summary,reason_it_matters:'A fresh transcript was processed and changed what Home should show first.',whatChanged:summary,type:'transcript_movement'},
+    alignment:{...base,id:`home_alignment_${transcript.id}`,title:nextMove,summary:nextMove,why:nextMove,reason_it_matters:'This is the one judgment that keeps the fresh meeting from becoming another open loop.',whyNowPacket:{why_now:nextMove,decision_needed:'Choose or edit the next follow-up before the meeting context goes stale.',cost_if_delayed:'The meeting momentum may cool and the dashboard/projections blocker may stay vague.',evidence_refs:[sourceRef],confidence:0.9}},
+    readyDraft:recapDraft?dashboardReadyDraft(recapDraft):null
+  };
+}
+function buildFreshTranscriptDailyWitness(transcript={},packet={}){
+  if(!transcript?.id||!packet?.velocity)return null;
+  const label=transcriptHomeLabel(transcript);
+  const summary=transcriptHomeSummary(transcript);
+  const nextMove=transcriptHomeNextMove(transcript);
+  const text=[summary,nextMove].join(' ');
+  let second='VAL read the transcript and the work is moving.';
+  if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
+    second='Missed-call textback, email aliases, Apollo, and the call-center path all look like they moved forward.';
+  }else if(/happy|good|resolved|ready|complete/i.test(text)){
+    second='The conversation looks like it moved in the right direction.';
+  }
+  const third=nextMove;
+  return {
+    display_greeting:[`${label} moved forward.`,second,third].filter(Boolean).join('\n'),
+    greeting_lines:[`${label} moved forward.`,second,third].filter(Boolean),
+    permission_line:packet.readyDraft?'I also found the meeting overview draft for review.':'Keep the flow going while the context is fresh.',
+    moment_type:'fresh_transcript',
+    what_was_witnessed:summary,
+    what_it_cost_or_represented:nextMove,
+    evidence:[packet.velocity],
+    confidence:0.9,
+    voice_note:'recognize',
+    internalUnderstanding:{
+      greeting_context:'Fresh transcript processed and promoted to Home.',
+      current_day_state:'fresh_transcript',
+      observed_pattern:summary,
+      confidence:0.9,
+      evidence:[packet.velocity],
+      prepared_work:packet.readyDraft?[packet.readyDraft]:[],
+      suggested_tone:'warm',
+      things_intentionally_not_mentioned:[]
+    },
+    generatedAt:new Date().toISOString()
+  };
 }
 function dashboardCardEvidenceFromMove(move={}){
   const items=[];
@@ -16402,18 +16522,21 @@ function dashboardDedupeCardItems(items=[]){
   }
   return out;
 }
-function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[]}={}){
+function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],freshTranscriptPacket=null}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
   const evidenceById=dashboardEvidenceLookupMap(evidenceItems);
-  const conclusions=moves.map(m=>dashboardConclusionFromMove(m,profilesById,evidenceById)).filter(m=>dashboardCleanText(m.title));
+  const conclusions=moves
+    .filter(m=>!dashboardSuppressedHomeSignal(m))
+    .map(m=>dashboardConclusionFromMove(m,profilesById,evidenceById))
+    .filter(m=>dashboardCleanText(m.title)&&!dashboardSuppressedHomeSignal(m));
   const profilePeople=profiles.filter(p=>p.profileType==='person').map(dashboardEntityFromProfile);
   const profileProjects=profiles.filter(p=>p.profileType==='project').map(dashboardEntityFromProfile);
   const people=dashboardMergeEntityRows([...(onboarding?.people||[]),...profilePeople,...dashboardPeopleFromEvidence(evidenceItems)],{type:'person',limit:12});
   const projects=dashboardMergeEntityRows([...(onboarding?.projects||[]),...profileProjects,...dashboardProjectsFromEvidence(evidenceItems)],{type:'project',limit:10});
-  const top=conclusions.find(m=>m.priorityBand==='top_recommended')||conclusions.find(m=>m.priorityBand==='also_important')||onboarding?.recommendedMove||conclusions[0]||null;
+  const top=freshTranscriptPacket?.alignment||conclusions.find(m=>m.priorityBand==='top_recommended')||conclusions.find(m=>m.priorityBand==='also_important')||onboarding?.recommendedMove||conclusions[0]||null;
   const changed=conclusions.filter(m=>!['ignored','quiet'].includes(m.priorityBand)).slice(0,8).map(m=>({id:m.id,title:m.title,summary:m.summary,reason_it_matters:m.why||m.ifIgnored||m.summary,type:m.metadata?.observationType||m.moveType,target:m.target,evidenceIds:m.evidenceIds,observationIds:m.observationIds,confidence:m.confidence,createdAt:m.createdAt,sourceType:m.moveType,sourceId:m.id}));
-  const whatChanged=dashboardDedupeCardItems(dashboardNormalizeCardCollection('what_changed',[...(onboarding?.whatChanged||[]),...changed].slice(0,8)));
+  const whatChanged=dashboardDedupeCardItems(dashboardNormalizeCardCollection('what_changed',[freshTranscriptPacket?.velocity,...(onboarding?.whatChanged||[]),...changed].filter(Boolean).slice(0,8)));
   const momentum=people.concat(projects).filter(e=>e.name).slice(0,8).map(e=>{
     const hasRisk=(e.risks||[]).length||/down|risk|waiting|slow/i.test(e.state||'');
     const hasUp=(e.opportunities||[]).length||/up|momentum|front|observed/i.test(e.state||'');
@@ -16423,7 +16546,7 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
     return dashboardNormalizeCardItem('momentum',{id:e.id,title,summary:detail,detail,state,entity_type:e.target?.type||e.profileType||'entity',entity_id:e.id,momentum_direction:state,reason:detail,evidence:e.evidence||[],target:e.target||{type:'entity',id:e.id},createdAt:e.lastObservedAt});
   }).slice(0,4);
   const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
-  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[...(onboarding?.ready||[]),...readyDrafts].slice(0,8))).slice(0,5);
+  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...(onboarding?.ready||[]),...readyDrafts].filter(Boolean).slice(0,8))).slice(0,5);
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
@@ -16504,9 +16627,11 @@ function profileVelocity(profile={}){
   return 'Observed';
 }
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[])]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[])]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
-  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts});
+  const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
+  const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);
+  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,freshTranscriptPacket});
   const top=dashboard.highestLeverageMove?[dashboard.highestLeverageMove]:[];
   const also=dashboard.alsoImportant;
   const watching=dashboard.watching;
@@ -16530,8 +16655,10 @@ async function buildExecutiveBriefing(){
     down.length?`Momentum needs attention around ${down.slice(0,3).join(', ')}.`:'',
     quiet.length?`${quiet.length} quiet update${quiet.length===1?'':'s'} were handled without asking for attention.`:''
   ].filter(Boolean).slice(0,5);
-  const dailyWitness=buildDailyWitnessGreeting({moves,profiles,onboardingMemory,evidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
-  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
+  const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
+  const dailyWitness=buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
+    || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
+  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';

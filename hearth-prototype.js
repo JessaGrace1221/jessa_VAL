@@ -9407,6 +9407,7 @@ function dailyWitnessEvidenceLabel(item = {}){
 }
 
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
+  return;
   if(!evidence) return;
   const velocityCount = homeAdmittedCount('velocity');
   const alignmentCount = homeAdmittedCount('alignment');
@@ -13840,13 +13841,13 @@ function closeCalendarPanel(){
   renderCalendarPacketReceiptStrip(null);
 }
 
-leanButton.addEventListener('click', () => {
+leanButton?.addEventListener('click', () => {
   const isOpen = evidence.classList.toggle('open');
   hearth.classList.toggle('evidence-open', isOpen);
   leanButton.setAttribute('aria-expanded', String(isOpen));
 });
 
-freshDeskButton.addEventListener('click', clearRoomAttendance);
+freshDeskButton?.addEventListener('click', clearRoomAttendance);
 
 drawerPull.addEventListener('click', () => {
   hideWorkspaceForDrawerNavigation();
@@ -14564,7 +14565,7 @@ document.addEventListener('click', (event) => {
   if(hearth.classList.contains('evidence-open') && !event.target.closest('.hearth-evidence')){
     evidence.classList.remove('open');
     hearth.classList.remove('evidence-open');
-    leanButton.setAttribute('aria-expanded', 'false');
+    leanButton?.setAttribute('aria-expanded', 'false');
   }
 });
 
