@@ -327,7 +327,7 @@ function createValReadyForYouService({
     const params=columns.map((_,i)=>`$${i+1}`).join(',');
     const updates=names.filter(n=>!['id','tenant_id','user_id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
     const r=await dbQuery(`insert into ready_for_you_items (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
-    return parseReadyRow(r.rows[0]);
+    return parseReadyRow(r.rows?.[0]||item);
   }
   async function saveItem(item){
     if(hasPg())return pgUpsert(item);
