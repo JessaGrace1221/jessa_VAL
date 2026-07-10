@@ -342,6 +342,8 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
   }
   assert.match(hearthCss, /--frost-open-surface:/);
   assert.match(hearthCss, /--frost-open-card:/);
+  assert.match(hearthCss, /rgba\(255,255,255,\.92\)/);
+  assert.match(hearthCss, /rgba\(255,255,255,\.82\)/);
   assert.match(hearthCss, /--frost-open-line:rgba\(91,105,79,\.16\)/);
   assert.match(hearthCss, /\.full-calendar-panel,\n\.workspace-panel,\n\.drawer-tray\{[\s\S]{0,180}background:var\(--frost-open-surface\)/);
   assert.match(hearthCss, /\.drawer-tray :is\([\s\S]*?\.correspondence-queue,[\s\S]*?\.correspondence-brief,[\s\S]*?\.correspondence-draft-preview,[\s\S]*?\.relationship-identity,[\s\S]*?\.project-identity/);
@@ -349,6 +351,7 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
   assert.match(hearthCss, /\.correspondence-workbench\{[\s\S]{0,260}background:var\(--frost-open-card\)/);
   assert.match(hearthCss, /\.correspondence-actions button:first-child\{[\s\S]{0,180}background:rgba\(73,87,63,\.9\)/);
   assert.doesNotMatch(hearthCss, /\.drawer-tray\.correspondence-open\{[\s\S]{0,180}background:rgba\(248,248,249,\.96\)/);
+  assert.doesNotMatch(hearthCss, /--frost-open-surface:[\s\S]{0,180}rgba\(235,241,226,\.34\)/);
   assert.match(hearthCss, /System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan/);
 });
 

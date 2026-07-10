@@ -70,6 +70,8 @@ async function main(){
       ].join(' ');
       const muddyPattern = /rgba\((58, 33, 27|79, 48, 38|88, 48, 37|120, 86, 72|227, 204, 177|235, 220, 196)/i;
       const frostPattern = /rgba\(255, 255, 252|rgba\(248, 250, 244|rgba\(255, 255, 255|rgba\(248, 248, 247|linear-gradient/i;
+      const whiteGlassPattern = /rgba\(255, 255, 255, 0\.(9[0-9]|8[2-9])\)/i;
+      const trayBackground = `${trayStyle?.backgroundImage || ''} | ${trayStyle?.backgroundColor || ''}`;
       return {
         name: drawer.name,
         expectedPacket: drawer.packet,
@@ -79,9 +81,10 @@ async function main(){
         openedClass: !!tray?.classList.contains(drawer.open),
         visible: detail?.getAttribute('aria-hidden') === 'false',
         frost: frostPattern.test(background),
+        whiteGlass: whiteGlassPattern.test(trayBackground),
         muddy: muddyPattern.test(background),
         excerpt: (detail?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 180),
-        trayBackground: `${trayStyle?.backgroundImage || ''} | ${trayStyle?.backgroundColor || ''}`,
+        trayBackground,
         cardBackground: `${cardStyle?.backgroundImage || ''} | ${cardStyle?.backgroundColor || ''}`
       };
     }, drawer));
@@ -94,6 +97,7 @@ async function main(){
     !result.openedClass ||
     !result.visible ||
     !result.frost ||
+    !result.whiteGlass ||
     result.muddy
   ));
   console.log(JSON.stringify({ok:failures.length === 0, targetUrl, checkedAt:new Date().toISOString(), results, failures}, null, 2));

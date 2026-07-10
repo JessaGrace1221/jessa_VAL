@@ -19,7 +19,7 @@ Purpose: stop drawer-by-drawer regressions by making every Hearth drawer prove t
 
 ## Visual Contract
 
-Every opened drawer must use the shared frosted surface system in `hearth-prototype.css`:
+Every opened drawer must use the shared white-glass frosted surface system in `hearth-prototype.css`:
 
 - `--frost-open-surface`
 - `--frost-open-card`
@@ -28,7 +28,9 @@ Every opened drawer must use the shared frosted surface system in `hearth-protot
 - `--frost-open-shadow`
 - `--frost-open-soft-shadow`
 
-The opened drawer must not reintroduce heavy tan, clay, mahogany, espresso, muddy brown, or opaque gray/black drawer surfaces. Drawer-specific rules may adjust layout, density, and emphasis, but they should inherit the shared frost variables for tray, cards, inputs, buttons, and panels.
+The opened drawer must not reintroduce heavy tan, clay, mahogany, espresso, muddy brown, opaque gray/black, or low-opacity cream surfaces. Drawer-specific rules may adjust layout, density, and emphasis, but they should inherit the shared frost variables for tray, cards, inputs, buttons, and panels.
+
+Important: translucent does not mean low-opacity beige. The tray must read as clean white glass over the Hearth, with a high-opacity white base. If the dark/warm Hearth background tints the drawer brown, the visual contract has failed even if the CSS technically contains a gradient.
 
 ## Intelligence Contract
 
@@ -74,6 +76,7 @@ The script opens every drawer and fails if:
 - the drawer trigger has the wrong packet
 - the drawer trigger has the wrong click contract
 - frosted surface cues are missing
+- white-glass tray opacity is missing
 - muddy brown/tan surface cues are present
 
 ## Do Not Regress
