@@ -1,6 +1,6 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-10 18:16 EDT
+Last updated: 2026-07-10 18:24 EDT
 
 ## Absolute Baseline
 
@@ -239,7 +239,89 @@ If there is a conflict between a pending change and this handoff, this handoff w
 
 ## Next Product Work
 
-The user is auditing the Stewardship drawer.
+The user is done for the day and needs to be able to pick up exactly here.
+
+The user is auditing the Stewardship drawer and wants the next session to dig into the user's inbox as a context source for:
+
+- VAL onboarding / updating
+- Stewardship
+- relationship context
+- project context
+- network introduction logic
+
+Important distinction:
+
+- Executive Inbox should not show read/replied-to emails as active inbox items.
+- VAL as a whole should still use read emails, sent emails, and CC'd emails as context when understanding a person, project, onboarding preference, stewardship opportunity, or follow-up.
+
+For context gathering, inspect the user's inbox and sent history carefully, especially the last 30 days, and use those emails as evidence for VAL understanding. Do not confuse "not active Executive Inbox material" with "not useful VAL context."
+
+## Next Drawer Order
+
+After the current Stewardship pass, the next drawers to work through are:
+
+1. Projects
+2. Commitments / task list
+3. Documents
+4. Lead Intelligence
+5. VAL onboarding / updating
+
+Each drawer must inherit the same architecture discipline:
+
+```text
+Round Table decides.
+Packet stores.
+Custom fields persist.
+Drawer displays.
+User approves action.
+```
+
+Do not rebuild these drawers from generic UI intuition. Carry forward the documents and source-of-truth architecture around Round Table, packets, custom fields, and AI prompt layering.
+
+At minimum, read and preserve the intent of:
+
+- `docs/VAL_EXECUTIVE_REASONING_ARCHITECTURE.md`
+- `docs/VAL_ROUND_TABLE_INSTRUMENTATION.md`
+- `docs/VAL_ROUND_TABLE_MEMORY_AND_RECOGNITION.md`
+- `docs/VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md`
+- `docs/VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md`
+- `docs/VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md`
+- `docs/VAL_PROMPT_ARCHITECTURE.md`
+- `docs/VAL_TRANSCRIPT_INTAKE_PROMPTS.md`
+- `docs/VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md`
+- `docs/VAL_CALENDAR_AND_MEETING_PREP_PROMPTS.md`
+- `docs/VAL_EMAIL_DRAFT_PROMPTS.md`
+- `docs/VAL_ONBOARDING_FIRST_UNDERSTANDING_PROMPTS.md`
+- `docs/VAL_TEACH_VAL_PROMPTS.md`
+- `docs/VAL_CONTEXT_REGISTRY.md`
+- `docs/VAL_DO_NOT_REGRESS.md`
+
+The point is not to expose these documents in the UI. The point is to preserve their reasoning structure behind the UI so the user sees calm, useful, source-backed conclusions instead of raw machinery.
+
+## Frustrations To Avoid
+
+The user spent too much time recovering from regressions that should not have happened. Avoid these specifically:
+
+- Do not make the user repeat the same product philosophy every session.
+- Do not resurrect old drawers just because stale code or queued deployment work exists.
+- Do not show fake/demo/hallucinated records as if they are real.
+- Do not show stale "canonical index" filler that creates cognitive load without action.
+- Do not expose Round Table, packet, observer, prompt, provider, or debug language in the executive surface.
+- Do not replace working source-grounded surfaces with diagnostic cards.
+- Do not make buttons clickable but functionless.
+- Do not allow close/back buttons to strand the user or close the whole drawer when they should return to the previous view.
+- Do not make the user hunt through raw snippets to infer the open loop.
+- Do not show redundant cards saying the same vague thing in several ways.
+- Do not use muddy colors or regress from the frosted-white baseline.
+- Do not deploy or preserve anything outside the live truth baseline without explicit user approval.
+- Do not say `GHL` in user-facing copy; say `CRM`.
+- Do not mention provider names such as Krisp, Outscraper, or RocketReach in normal user copy unless the user asks for integration/debug detail.
+- Do not assume "empty Executive Inbox" means VAL has no email context.
+- Do not confuse read email exclusion from Executive Inbox with excluding read email from VAL's understanding.
+
+If the next chat gets uncertain, stop and compare the proposal against this handoff before coding.
+
+## Current Stewardship Direction
 
 The current approved direction is:
 
