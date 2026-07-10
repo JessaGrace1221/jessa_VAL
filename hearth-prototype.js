@@ -5792,6 +5792,90 @@ function renderRelationshipList(name = '', items = []){
   target.innerHTML = normalized.map((item) => '<' + tag + '>' + escapeHtml(String(item)) + '</' + tag + '>').join('');
 }
 
+function relationshipHasAny(profile = {}, keys = []){
+  return keys.some((key) => {
+    const value = profile[key];
+    if(Array.isArray(value)) return value.length > 0;
+    if(value && typeof value === 'object') return Object.keys(value).length > 0;
+    return !!String(value || '').trim();
+  });
+}
+
+function relationshipPacketAuditRows(profile = {}){
+  const hasProfile = relationshipHasAny(profile, ['name','identity','contact','role']);
+  const hasReceipts = relationshipHasAny(profile, ['sourceReceipts','sourceEvidence','evidence','signal']);
+  const hasProjects = relationshipHasAny(profile, ['projectLinks','relatedWork','activeThreads']);
+  const hasDocuments = relationshipHasAny(profile, ['documents']);
+  return [
+    {
+      label:'Witnessing root',
+      status: profile.query || profile.sourceReceipts ? 'partial' : 'missing',
+      detail:'Teach VAL, first understanding, preferences, and behavior rules should travel with every relationship click.'
+    },
+    {
+      label:'Selected relationship',
+      status: hasProfile ? 'present' : 'missing',
+      detail: profile.name || 'No selected relationship profile.'
+    },
+    {
+      label:'Source receipts',
+      status: hasReceipts ? 'present' : 'missing',
+      detail: profile.sourceReceipts || profile.sourceEvidence || profile.evidence || 'No source receipt attached yet.'
+    },
+    {
+      label:'Email thread context',
+      status: relationshipHasAny(profile, ['currentThreadHistory','emailThreads','recentEmailSummary']) ? 'present' : 'missing',
+      detail:'Needed for relationship temperature, reply posture, and active thread context.'
+    },
+    {
+      label:'Calendar touchpoints',
+      status: relationshipHasAny(profile, ['calendarTouchpoints','meetings','recentActivity']) ? 'partial' : 'missing',
+      detail: relationshipHasAny(profile, ['recentActivity']) ? 'Recent activity exists, but calendar attendee resolution still needs proof.' : 'No relationship-linked calendar touchpoints shown.'
+    },
+    {
+      label:'Transcript updates',
+      status: relationshipHasAny(profile, ['transcriptUpdates','recentTranscriptUpdates']) ? 'present' : 'missing',
+      detail:'Needed for what changed, open loops, commitments, and meeting context.'
+    },
+    {
+      label:'Linked projects',
+      status: hasProjects ? 'partial' : 'missing',
+      detail: hasProjects ? 'Project-related signals are visible; linked project IDs should be verified.' : 'No linked project context attached.'
+    },
+    {
+      label:'Linked documents',
+      status: hasDocuments ? 'present' : 'missing',
+      detail: hasDocuments ? 'Documents attached to this relationship are visible.' : 'No linked documents attached.'
+    },
+    {
+      label:'Open commitments',
+      status: relationshipHasAny(profile, ['openLoops','commitments','tasks']) ? 'partial' : 'missing',
+      detail: relationshipHasAny(profile, ['openLoops']) ? 'Open loops are visible; source-linked tasks/owners still need verification.' : 'No open relationship commitments attached.'
+    },
+    {
+      label:'Approval rules',
+      status:'present',
+      detail:'Review-only boundary is active. No message, CRM update, scrape, task, or external action happens from inspection.'
+    }
+  ];
+}
+
+function renderRelationshipPacketAudit(profile = {}){
+  const grid = document.querySelector('[data-relationship-packet-grid]');
+  if(!grid) return;
+  const rows = relationshipPacketAuditRows(profile);
+  grid.innerHTML = rows.map((row) => {
+    const status = row.status || 'missing';
+    return [
+      '<article class="relationship-packet-row" data-packet-status="' + escapeHtml(status) + '">',
+      '<span>' + escapeHtml(status) + '</span>',
+      '<strong>' + escapeHtml(row.label) + '</strong>',
+      '<p>' + escapeHtml(row.detail || '') + '</p>',
+      '</article>'
+    ].join('');
+  }).join('');
+}
+
 function renderRelationshipDossierSections(profile = {}){
   const listFallbacks = {
     keyFacts: [profile.relationshipStateLabel || profile.relationshipState, profile.temperature && profile.temperature + ' temperature', profile.trajectory && profile.trajectory + ' trajectory'].filter(Boolean),
@@ -5809,6 +5893,7 @@ function renderRelationshipDossierSections(profile = {}){
   Object.keys(listFallbacks).forEach((key) => {
     renderRelationshipList(key, profile[key] || listFallbacks[key]);
   });
+  renderRelationshipPacketAudit(profile);
 }
 
 function preferredRelationshipActions(actions = []){

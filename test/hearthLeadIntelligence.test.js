@@ -778,6 +778,9 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthHtml, /data-relationship-temperature-review/);
   assert.match(hearthHtml, /data-relationship-project-panel/);
   assert.match(hearthHtml, /data-relationship-project-count/);
+  assert.match(hearthHtml, /data-relationship-packet-audit/);
+  assert.match(hearthHtml, /data-relationship-packet-grid/);
+  assert.match(hearthHtml, /Round-table inputs VAL needs before this brief can be trusted/);
   assert.match(hearthHtml, /Linked Projects/);
   assert.doesNotMatch(hearthHtml, /<button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL<\/button>/);
   assert.match(hearthJs, /mode === 'relationship'/);
@@ -808,6 +811,13 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /Review temperature/);
   assert.match(hearthJs, /function renderRelationshipTemperatureReview/);
   assert.match(hearthJs, /Review before treating this temperature as durable judgment/);
+  assert.match(hearthJs, /function relationshipPacketAuditRows/);
+  assert.match(hearthJs, /function renderRelationshipPacketAudit/);
+  assert.match(hearthJs, /Email thread context/);
+  assert.match(hearthJs, /Transcript updates/);
+  assert.match(hearthJs, /Open commitments/);
+  assert.match(hearthCss, /\.relationship-packet-audit/);
+  assert.match(hearthCss, /\.relationship-packet-row\[data-packet-status="missing"\]/);
   assert.match(hearthJs, /function renderRelationshipProjectPanel/);
   assert.match(hearthJs, /function hydrateRelationshipProjectLinks/);
   assert.match(hearthJs, /\/api\/projects\/links\?relationshipId=/);
