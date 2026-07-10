@@ -5404,6 +5404,88 @@ button.drawer-link{
   transform:translateY(-1px);
   box-shadow:0 10px 22px rgba(79,48,38,.12);
 }
+.drawer-tray.relationship-open{
+  background:
+    linear-gradient(135deg,rgba(255,255,252,.78),rgba(248,250,244,.58) 54%,rgba(235,241,226,.38)),
+    rgba(255,255,252,.46);
+  border-color:rgba(91,105,79,.16);
+  box-shadow:0 20px 54px rgba(18,24,18,.12),inset 0 1px 0 rgba(255,255,255,.74);
+}
+.relationship-detail,
+.relationship-detail .relationship-dossier-layer,
+.relationship-detail .relationship-identity,
+.relationship-detail .relationship-wisdom,
+.relationship-detail .relationship-temperature-review,
+.relationship-detail .relationship-certainty,
+.relationship-detail .relationship-judgment-card,
+.relationship-detail .relationship-protection-grid article,
+.relationship-detail .relationship-collaboration-grid article,
+.relationship-detail .relationship-story-grid article,
+.relationship-detail .relationship-right-rail article,
+.relationship-detail .relationship-project-panel,
+.relationship-detail .relationship-document-panel,
+.relationship-detail .relationship-action-group{
+  border-color:rgba(91,105,79,.14);
+  background:
+    radial-gradient(circle at 0% 0%,rgba(255,255,255,.88),transparent 16rem),
+    linear-gradient(135deg,rgba(255,255,252,.78),rgba(248,250,244,.58) 58%,rgba(241,248,237,.38)),
+    rgba(255,255,252,.46);
+  box-shadow:0 14px 34px rgba(18,24,18,.07),inset 0 1px 0 rgba(255,255,255,.7);
+  -webkit-backdrop-filter:blur(18px);
+  backdrop-filter:blur(18px);
+}
+.relationship-detail .relationship-three-card-row article,
+.relationship-detail .relationship-pyramid article,
+.relationship-detail .relationship-project-grid article,
+.relationship-detail .relationship-document-grid article{
+  border-color:rgba(91,105,79,.12);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.7),rgba(248,250,244,.5)),
+    rgba(255,255,252,.38);
+  box-shadow:0 10px 24px rgba(18,24,18,.06),inset 0 1px 0 rgba(255,255,255,.68);
+}
+.relationship-detail .relationship-folder-rail button,
+.relationship-detail.show-index .relationship-folder-rail button,
+.relationship-detail .relationship-index-tools input,
+.relationship-detail .relationship-index-tools select,
+.relationship-detail .relationship-state-filters button,
+.relationship-detail .relationship-section-actions button,
+.relationship-detail .relationship-actions button{
+  border-color:rgba(91,105,79,.16);
+  background:linear-gradient(180deg,rgba(255,255,252,.74),rgba(248,250,244,.54));
+  color:rgba(29,25,22,.84);
+  box-shadow:0 10px 22px rgba(18,24,18,.07),inset 0 1px 0 rgba(255,255,255,.68);
+}
+.relationship-detail .relationship-folder-rail button.active,
+.relationship-detail .relationship-state-filters button.active{
+  border-color:rgba(91,105,79,.28);
+  background:linear-gradient(180deg,rgba(255,255,252,.86),rgba(235,241,226,.62));
+  color:rgba(29,25,22,.94);
+}
+.relationship-detail .relationship-rolodex button[data-relationship-open-profile]{
+  border-color:rgba(91,105,79,.13);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.76),rgba(248,250,244,.54)),
+    rgba(255,255,252,.38);
+  box-shadow:0 10px 24px rgba(18,24,18,.07);
+}
+.relationship-detail .relationship-rolodex button[data-relationship-open-profile]:hover,
+.relationship-detail .relationship-rolodex button[data-relationship-open-profile]:focus-visible{
+  border-color:rgba(91,105,79,.28);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.9),rgba(241,248,237,.68)),
+    rgba(255,255,252,.52);
+}
+.relationship-detail .relationship-file span,
+.relationship-detail .relationship-index-tools label span,
+.relationship-detail .relationship-action-group>strong,
+.relationship-detail .relationship-layer-heading span,
+.relationship-detail .relationship-project-panel-header span{
+  color:rgba(64,86,61,.72);
+}
+.relationship-detail .relationship-file li::marker{
+  color:rgba(64,86,61,.78);
+}
 .source-list{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));

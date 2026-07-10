@@ -5608,6 +5608,32 @@ function relationshipProfileFromUnresolvedIdentity(data = {}, fallback = {}){
   };
 }
 
+function relationshipProfileWithIdentityWarning(data = {}, fallback = {}){
+  const warning = relationshipProfileFromUnresolvedIdentity(data, fallback);
+  return {
+    ...fallback,
+    unresolvedIdentityWarning: warning,
+    sectionActions: fallback.sectionActions || {},
+    actions: Array.isArray(fallback.actions) && fallback.actions.length ? fallback.actions : warning.actions,
+    contactCandidate: warning.contactCandidate
+  };
+}
+
+function relationshipFallbackHasCanonicalEvidence(profile = {}){
+  return Boolean(
+    profile && !profile.unresolvedIdentity && (
+      profile.sourceEvidence ||
+      profile.relationshipState ||
+      profile.relationshipStateLabel ||
+      profile.temperatureEvidence?.length ||
+      profile.confidence ||
+      profile.summary ||
+      profile.evidence ||
+      profile.wisdom
+    )
+  );
+}
+
 function relationshipDossierMatchesFallback(dossier = {}, fallback = {}){
   const expectedName = String(fallback.name || fallback.query?.name || '').trim().toLowerCase();
   const expectedEmail = String(fallback.query?.email || fallback.email || '').trim().toLowerCase();
@@ -6266,7 +6292,12 @@ async function loadRelationshipDossier(profileId = 'aric'){
     }
   }catch(error){
     if(error.data?.error === 'relationship_identity_unresolved'){
-      renderRelationshipProfile(profileId, relationshipProfileFromUnresolvedIdentity(error.data, fallback));
+      const stableProfile = relationshipFallbackHasCanonicalEvidence(fallback)
+        ? relationshipProfileWithIdentityWarning(error.data, fallback)
+        : relationshipProfileFromUnresolvedIdentity(error.data, fallback);
+      if(activeRelationshipProfile?.profileId === profileId || activeRelationshipProfile?.id === fallback.id || activeRelationshipProfile?.name === fallback.name){
+        renderRelationshipProfile(profileId, stableProfile);
+      }
       return;
     }
     console.warn('[hearth] relationship dossier unavailable', error.message);

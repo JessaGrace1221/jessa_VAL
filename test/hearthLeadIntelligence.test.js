@@ -1915,10 +1915,15 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /\/api\/relationships\/dossier\?/);
   assert.match(hearthJs, /function relationshipProfileFromDossier/);
   assert.match(hearthJs, /function relationshipProfileFromUnresolvedIdentity/);
+  assert.match(hearthJs, /function relationshipProfileWithIdentityWarning/);
+  assert.match(hearthJs, /function relationshipFallbackHasCanonicalEvidence/);
   assert.match(hearthJs, /function relationshipDossierMatchesFallback/);
   assert.match(hearthJs, /relationship dossier identity mismatch; keeping selected fallback/);
   assert.match(hearthJs, /if\(!relationshipDossierMatchesFallback\(data\.dossier, fallback\)\)/);
   assert.match(hearthJs, /relationship_identity_unresolved/);
+  assert.match(hearthJs, /relationshipFallbackHasCanonicalEvidence\(fallback\)[\s\S]{0,140}relationshipProfileWithIdentityWarning\(error\.data, fallback\)/);
+  assert.match(hearthJs, /unresolvedIdentityWarning: warning/);
+  assert.match(hearthJs, /\.\.\.fallback/);
   assert.match(hearthJs, /Create or match the contact before VAL attaches relationship context/);
   assert.match(hearthJs, /Search GHL contacts/);
   assert.match(hearthJs, /Review new contact candidate/);
@@ -1955,6 +1960,10 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /sectionActions: actions\.sections/);
   assert.match(hearthJs, /defaultRelationshipSectionActions\(profile\.name/);
   assert.match(hearthCss, /\.relationship-section-actions/);
+  assert.match(hearthCss, /\.drawer-tray\.relationship-open\{/);
+  assert.match(hearthCss, /\.relationship-detail,[\s\S]{0,260}\.relationship-detail \.relationship-identity/);
+  assert.match(hearthCss, /\.relationship-detail \.relationship-rolodex button\[data-relationship-open-profile\]/);
+  assert.match(hearthCss, /rgba\(255,255,252,\.78\)/);
 });
 
 test('Relationship actions can return focus to the desk lenses', () => {
