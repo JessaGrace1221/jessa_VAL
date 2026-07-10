@@ -992,66 +992,31 @@ function updateRelationshipIndexSourceLabel(){
 
 function defaultRelationshipSectionActions(name = 'this relationship'){
   return {
-    identity:[
-      {id:'open_full_file',label:'Open file',intent:'inspect',section:'identity',willDo:'Open the full relationship file.',willNotDo:'No external action will happen.'},
-      {id:'teach_identity',label:'Add context',intent:'teach',section:'identity',willDo:'Open a teaching moment scoped to identity.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
+    identity:[],
     evidence:[
       {id:'open_evidence',label:'Open evidence',intent:'inspect',section:'evidence',willDo:'Open source evidence connected to this relationship.',willNotDo:'VAL will not change records.'},
       {id:'create_task_from_loop',label:'Turn loop into task',intent:'commitment',section:'evidence',willDo:'Create a local VAL task from an open loop.',willNotDo:'VAL will not invite, email, or write to CRM.'}
     ],
-    current_read:[
-      {id:'teach_current_read',label:'Correct read',intent:'teach',section:'current_read',willDo:'Open a teaching moment scoped to the current read.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    what_changed:[
-      {id:'ask_what_changed',label:'Ask what changed',intent:'understand',section:'what_changed',prompt:'Explain what changed in ' + name + ' using only the relationship evidence.'},
-      {id:'teach_what_changed',label:'Add context',intent:'teach',section:'what_changed',willDo:'Open a teaching moment scoped to what changed.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    patterns:[
-      {id:'ask_about_pattern',label:'Ask about pattern',intent:'understand',section:'patterns',prompt:'Explain what is changing in ' + name + ' using only the dossier evidence.'},
-      {id:'teach_pattern',label:'Add context',intent:'teach',section:'patterns',willDo:'Open a teaching moment scoped to relationship pattern.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    meaning:[
-      {id:'ask_why_matters',label:'Ask why it matters',intent:'understand',section:'meaning',prompt:'Explain why ' + name + ' matters to executive judgment right now.'},
-      {id:'teach_meaning',label:'Add context',intent:'teach',section:'meaning',willDo:'Open a teaching moment scoped to strategic importance.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    wisdom:[
-      {id:'teach_wisdom',label:'Teach VAL',intent:'teach',section:'wisdom',willDo:'Open a teaching moment about the relationship wisdom.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    certainty:[
-      {id:'teach_certainty',label:'Add context',intent:'teach',section:'certainty',willDo:'Open a teaching moment scoped to the one truth.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    executive_advice:[
-      {id:'teach_executive_advice',label:'Add context',intent:'teach',section:'executive_advice',willDo:'Open a teaching moment scoped to executive advice.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    risk:[
-      {id:'teach_risk',label:'Update risk',intent:'teach',section:'risk',willDo:'Open a teaching moment scoped to relationship risk.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
+    current_read:[],
+    what_changed:[],
+    patterns:[],
+    meaning:[],
+    wisdom:[],
+    certainty:[],
+    executive_advice:[],
+    risk:[],
     active_threads:[
       {id:'cowork_active_threads',label:'Discuss threads',intent:'cowork',section:'active_threads',willDo:'Open Co-Work scoped to active threads.',willNotDo:'No email, CRM update, task, or external action will happen.'}
     ],
     open_loops:[
-      {id:'create_task_from_open_loop',label:'Turn loop into task',intent:'commitment',section:'open_loops',willDo:'Prepare a local VAL task from an open loop.',willNotDo:'No email, invite, or CRM write will happen.'},
-      {id:'teach_open_loops',label:'Add context',intent:'teach',section:'open_loops',willDo:'Open a teaching moment scoped to open loops.',willNotDo:'VAL will not save durable memory without review.'}
+      {id:'create_task_from_open_loop',label:'Turn loop into task',intent:'commitment',section:'open_loops',willDo:'Prepare a local VAL task from an open loop.',willNotDo:'No email, invite, or CRM write will happen.'}
     ],
-    mutual_value:[
-      {id:'teach_mutual_value',label:'Add context',intent:'teach',section:'mutual_value',willDo:'Open a teaching moment scoped to mutual value.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    living_narrative:[
-      {id:'teach_living_narrative',label:'Update story',intent:'teach',section:'living_narrative',willDo:'Open a teaching moment scoped to the living narrative.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    timeline:[
-      {id:'teach_timeline',label:'Add context',intent:'teach',section:'timeline',willDo:'Open a teaching moment scoped to relationship timeline.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    recent_activity:[
-      {id:'teach_recent_activity',label:'Add context',intent:'teach',section:'recent_activity',willDo:'Open a teaching moment scoped to recent activity.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    related_work:[
-      {id:'teach_related_work',label:'Add context',intent:'teach',section:'related_work',willDo:'Open a teaching moment scoped to related work.',willNotDo:'VAL will not save durable memory without review.'}
-    ],
-    notes_to_see:[
-      {id:'teach_notes_to_see',label:'Add context',intent:'teach',section:'notes_to_see',willDo:'Open a teaching moment scoped to important notes.',willNotDo:'VAL will not save durable memory without review.'}
-    ]
+    mutual_value:[],
+    living_narrative:[],
+    timeline:[],
+    recent_activity:[],
+    related_work:[],
+    notes_to_see:[]
   };
 }
 
@@ -5698,6 +5663,149 @@ function initialsFromName(name = ''){
     .toUpperCase() || 'R';
 }
 
+function relationshipCleanSourceText(value = '', limit = 180){
+  let text = String(value || '').replace(/\s+/g, ' ').trim();
+  text = text.replace(/\bGHL\b/g, 'CRM');
+  if(!text) return '';
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if(sentences.length > 1) text = sentences.slice(0, 2).join(' ');
+  if(text.length > limit) text = text.slice(0, limit - 1).trim().replace(/[,\s;:]+$/g, '') + '...';
+  return text;
+}
+
+function relationshipItemText(item = {}, limit = 180){
+  if(item == null) return '';
+  if(typeof item === 'string') return relationshipCleanSourceText(item, limit);
+  return relationshipCleanSourceText(item.summary || item.content || item.text || item.reason || item.note || item.title || item.rawText || '', limit);
+}
+
+function relationshipEvidenceItemsFromDossier(dossier = {}){
+  const brief = dossier.relationshipBrief || {};
+  const currentReality = brief.currentReality || {};
+  const observation = dossier.observation || {};
+  const sourceRefs = Array.isArray(dossier.sourceRefs) ? dossier.sourceRefs : [];
+  const raw = []
+    .concat(Array.isArray(observation.evidence) ? observation.evidence : [])
+    .concat(Array.isArray(currentReality.timeline) ? currentReality.timeline : [])
+    .concat(sourceRefs.map((ref) => ({
+      type: ref.source_type || ref.sourceType || ref.type || 'source',
+      title: ref.source_id || ref.sourceId || '',
+      summary: ref.quote_or_summary || ref.summary || ref.text || '',
+      confidence: ref.confidence
+    })));
+  const seen = new Set();
+  return raw.map((item) => {
+    const type = relationshipCleanSourceText(item.type || item.sourceType || item.source || 'source', 40).toLowerCase();
+    const title = relationshipCleanSourceText(item.title || item.subject || item.name || item.sourceId || item.source_id || '', 90);
+    const summary = relationshipItemText(item, 190);
+    const date = item.date || item.createdAt || item.created_at || item.lastObservedAt || item.occurredAt || '';
+    const key = [type, title, summary].join('|').toLowerCase();
+    if(!summary || seen.has(key)) return null;
+    seen.add(key);
+    return {type:type || 'source', title, summary, date};
+  }).filter(Boolean).slice(0, 12);
+}
+
+function relationshipSourceCounts(items = []){
+  return items.reduce((counts, item) => {
+    const type = String(item.type || 'source').toLowerCase();
+    const bucket = /mail|gmail|email/.test(type) ? 'email' : (/transcript|meeting/.test(type) ? 'transcript' : (/task|commitment|loop/.test(type) ? 'task' : (/memory|note/.test(type) ? 'memory' : 'source')));
+    counts[bucket] = (counts[bucket] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function relationshipCountLine(counts = {}){
+  const labels = [
+    ['transcript', 'transcript'],
+    ['email', 'email'],
+    ['task', 'task'],
+    ['memory', 'memory'],
+    ['source', 'source']
+  ];
+  return labels
+    .filter(([key]) => counts[key])
+    .map(([key, label]) => counts[key] + ' ' + label + (counts[key] === 1 ? '' : 's'))
+    .join(', ');
+}
+
+function relationshipDateLabel(value = ''){
+  if(!value) return '';
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+
+function relationshipEvidenceLine(item = {}){
+  const type = String(item.type || 'source').replace(/_/g, ' ');
+  const title = item.title ? item.title + ': ' : '';
+  const date = relationshipDateLabel(item.date);
+  return [date, type].filter(Boolean).join(' · ') + (date || type ? ' · ' : '') + title + item.summary;
+}
+
+function relationshipOpenLoopLines(dossier = {}, fallback = {}, limit = 5){
+  const observation = dossier.observation || {};
+  const raw = []
+    .concat(Array.isArray(observation.openLoops) ? observation.openLoops : [])
+    .concat(Array.isArray(fallback.openLoops) ? fallback.openLoops : []);
+  const seen = new Set();
+  return raw.map((item) => relationshipItemText(item, 150)).filter((line) => {
+    const key = line.toLowerCase();
+    if(!line || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, limit);
+}
+
+function relationshipProjectLines(evidence = [], fallback = {}){
+  const haystack = evidence.map((item) => [item.title, item.summary].filter(Boolean).join(' ')).join(' ');
+  const projects = [];
+  if(/\bgoall\b|goallprogram/i.test(haystack)) projects.push('GOALL relationship work');
+  if(/\bfrisson\b/i.test(haystack)) projects.push('Frisson partner work');
+  if(/\bgrace ai\b/i.test(haystack)) projects.push('Grace AI touchpoint');
+  if(Array.isArray(fallback.projectLinks)){
+    fallback.projectLinks.forEach((project) => {
+      const name = project.name || project.title || project.projectName || '';
+      if(name) projects.push(name);
+    });
+  }
+  return Array.from(new Set(projects)).slice(0, 5);
+}
+
+function relationshipVisibleActions(actions = []){
+  const hidden = new Set([
+    'open_full_file',
+    'teach_identity',
+    'teach_current_read',
+    'teach_what_changed',
+    'teach_pattern',
+    'teach_wisdom',
+    'teach_certainty',
+    'teach_executive_advice',
+    'teach_risk',
+    'teach_open_loops',
+    'teach_mutual_value',
+    'teach_living_narrative',
+    'teach_timeline',
+    'teach_recent_activity',
+    'teach_related_work',
+    'teach_notes_to_see',
+    'ask_what_changed',
+    'ask_about_pattern',
+    'ask_why_matters'
+  ]);
+  return (Array.isArray(actions) ? actions : []).filter((action) => action && !hidden.has(action.id));
+}
+
+function relationshipVisibleSectionActions(sections = {}){
+  const next = {};
+  Object.entries(sections || {}).forEach(([section, actions]) => {
+    const visible = relationshipVisibleActions(actions);
+    if(visible.length) next[section] = visible;
+  });
+  return next;
+}
+
 function relationshipProfileFromDossier(dossier = {}, fallback = {}){
   const brief = dossier.relationshipBrief || {};
   const briefIdentity = brief.identity || {};
@@ -5710,8 +5818,30 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
   const meaning = dossier.meaning || {};
   const wisdom = dossier.wisdom || {};
   const actions = dossier.actions || {};
-  const actionItems = Array.isArray(actions.items) ? actions.items : [];
+  const actionItems = relationshipVisibleActions(actions.items);
   const openAction = actionItems.find((action) => action.id === 'open_full_file');
+  const evidenceItems = relationshipEvidenceItemsFromDossier(dossier);
+  const sourceCounts = relationshipSourceCounts(evidenceItems);
+  const sourceLine = relationshipCountLine(sourceCounts);
+  const openLoops = relationshipOpenLoopLines(dossier, fallback);
+  const recentActivity = evidenceItems.slice(0, 5).map(relationshipEvidenceLine);
+  const relatedWork = relationshipProjectLines(evidenceItems, fallback);
+  const identityUnresolved = dossier.identityResolution?.status === 'unresolved' || !identity.crmContactId;
+  const sourceReceiptsList = evidenceItems.slice(0, 4).map((item) => [item.type.replace(/_/g, ' '), item.title || relationshipDateLabel(item.date), item.summary].filter(Boolean).join(' · '));
+  const executiveSummary = evidenceItems.length
+    ? (sourceLine ? 'VAL found recent relationship context across ' + sourceLine + '.' : 'VAL found recent relationship context.')
+    : 'VAL has not found enough recent source context yet.';
+  const reminder = evidenceItems.length
+    ? (identityUnresolved
+      ? 'Recent context exists for ' + (briefIdentity.name || identity.name || fallback.name || 'this person') + '. Link the right CRM identity before VAL merges or acts.'
+      : 'Use the latest relationship moments and open loops before reaching out.')
+    : 'Do not treat this relationship as action-ready until VAL has source context.';
+  const pattern = openLoops.length
+    ? 'Open loops are present. Keep the next move tied to the actual commitment, not a generic follow-up.'
+    : (evidenceItems.length ? 'Recent activity is visible. Review the source trail before deciding whether anything needs action.' : 'No durable pattern is visible yet.');
+  const oneTruth = identityUnresolved
+    ? 'This is review-only until the CRM identity is clean.'
+    : 'The source trail below is the truth to use before drafting, scheduling, or updating CRM.';
   const latestLinkedInPost = Array.isArray(sourceReceipts.linkedInLatestPosts) && sourceReceipts.linkedInLatestPosts.length
     ? sourceReceipts.linkedInLatestPosts[0]
     : null;
@@ -5738,17 +5868,34 @@ function relationshipProfileFromDossier(dossier = {}, fallback = {}){
     temperatureConflict: fallback.temperatureConflict || null,
     identity: [briefIdentity.company || identity.company, briefIdentity.status || identity.status, (briefIdentity.tags || identity.tags)?.slice?.(0, 2)?.join(' / ')].filter(Boolean).join(' · ') || fallback.identity || '',
     contact: [identity.email, briefIdentity.company || identity.company, briefIdentity.crmContactId ? 'CRM ' + briefIdentity.crmContactId : ''].filter(Boolean).join(' · ') || fallback.contact || '',
-    wisdom: brief.executiveReminder || wisdom.oneThingToRemember || fallback.wisdom || '',
-    evidence: currentReality.summary || observation.summary || observation.evidence?.[0]?.summary || fallback.evidence || '',
-    patterns: Array.isArray(brief.executiveAssessment) && brief.executiveAssessment.length ? brief.executiveAssessment.slice(0, 3).join(' ') : (interpretation.pattern || interpretation.momentum || fallback.patterns || ''),
-    meaning: strategicImportance.summary || meaning.whyItMatters || meaning.executiveValue || fallback.meaning || '',
-    certainty: Array.isArray(brief.observerNotes) && brief.observerNotes.length ? brief.observerNotes.slice(0, 3).map((note) => [note.observer, note.note].filter(Boolean).join(': ')).join(' | ') : (actions.primary || fallback.certainty || 'You know what this relationship needs before deciding what to do next.'),
+    wisdom: reminder,
+    evidence: executiveSummary,
+    patterns: pattern,
+    meaning: relatedWork.length ? 'This relationship is connected to ' + relatedWork.join(', ') + '.' : (relationshipCleanSourceText(strategicImportance.summary || meaning.whyItMatters || meaning.executiveValue, 180) || 'Strategic importance is not established yet.'),
+    certainty: oneTruth,
     linkedinSignal: latestLinkedInPost ? (latestLinkedInPost.summary || latestLinkedInPost.title || latestLinkedInPost.text || 'LinkedIn has a recent signal worth reviewing.') : (fallback.linkedinSignal || 'LinkedIn is being watched for useful public context.'),
     sourceReceipts: observerReceiptLine,
+    keyFacts: [
+      sourceLine ? 'Sources found: ' + sourceLine : 'No recent source context loaded yet',
+      openLoops.length ? openLoops.length + ' open loop' + (openLoops.length === 1 ? '' : 's') : '',
+      identityUnresolved ? 'CRM identity needs review' : 'CRM identity linked'
+    ].filter(Boolean),
+    whatChanged: recentActivity.length ? recentActivity.slice(0, 4) : ['No recent relationship movement is visible yet.'],
+    executiveAdvice: openLoops.length ? ['Review the open loop before reaching out.', 'Do not add a new ask until the current commitment is clear.'] : ['No action-ready outreach is recommended from this relationship brief yet.'],
+    activeThreads: relatedWork.length ? relatedWork : (recentActivity.length ? recentActivity.slice(0, 3) : ['No active thread is visible yet.']),
+    openLoops: openLoops.length ? openLoops : ['No concrete open loop is visible yet.'],
+    valueUserCreates: ['Context, follow-through, and thoughtful relationship stewardship.'],
+    valueTheyCreate: relatedWork.length ? ['Momentum or decision context for ' + relatedWork.join(', ') + '.'] : ['Not enough evidence yet to name the mutual value.'],
+    timeline: recentActivity.length ? recentActivity : ['No relationship timeline is assembled yet.'],
+    recentActivity: recentActivity.length ? recentActivity : ['No recent activity found.'],
+    relatedWork: relatedWork.length ? relatedWork : ['No linked project surfaced from the current evidence.'],
+    notesToSee: sourceReceiptsList.length ? sourceReceiptsList : ['No source note is ready for review yet.'],
+    risk: identityUnresolved ? 'Identity needs review before VAL merges relationship context.' : 'No specific relationship risk is visible in the current source trail.',
+    livingNarrative: evidenceItems.length ? executiveSummary + (openLoops.length ? ' The next useful move is to close or clarify the open loop.' : '') : 'The relationship story is not ready until sources are attached.',
     projectLinks: Array.isArray(fallback.projectLinks) ? fallback.projectLinks : [],
     href: openAction?.route || './dashboard.html?view=relationships&targetType=person&targetId=' + encodeURIComponent(identity.id || fallback.query?.targetId || fallback.name || 'relationship'),
     actions: actionItems,
-    sectionActions: actions.sections || {}
+    sectionActions: relationshipVisibleSectionActions(actions.sections || {})
   };
 }
 
@@ -5872,7 +6019,7 @@ function renderRelationshipDossierSections(profile = {}){
 }
 
 function preferredRelationshipActions(actions = []){
-  const preferred = ['search_ghl_contacts','review_new_contact_candidate','open_full_file','ask_alignment','draft_message','draft_linkedin_comment','draft_linkedin_dm','create_task','brainstorm','review_linkedin_activity','find_relationship_introductions','refresh_relationship_observers'];
+  const preferred = ['search_ghl_contacts','review_new_contact_candidate','ask_alignment','draft_message','draft_linkedin_comment','draft_linkedin_dm','create_task','brainstorm','review_linkedin_activity','find_relationship_introductions','refresh_relationship_observers'];
   return preferred.map((id) => actions.find((action) => action.id === id)).filter(Boolean);
 }
 
@@ -5885,9 +6032,7 @@ function relationshipSuggestedActions(profile = {}){
   }
   const state = String(profile.relationshipState || profile.relationshipStateLabel || '').toLowerCase();
   const evidence = [profile.evidence, profile.signal, profile.certainty, profile.linkedinSignal].join(' ').toLowerCase();
-  const actions = [
-    {id:'open_full_file',label:'Open full file',type:'route',route:profile.href,willDo:'Open the full relationship file.',willNotDo:'No external action will happen.'}
-  ];
+  const actions = [];
   if(state.includes('waiting') || evidence.includes('reply') || evidence.includes('proposal') || evidence.includes('loop')){
     actions.push(
       {id:'draft_message',label:'Draft reply',type:'endpoint',willDo:'Prepare a relationship-specific reply for review.',willNotDo:'Nothing will be sent.'},
@@ -5906,8 +6051,7 @@ function relationshipSuggestedActions(profile = {}){
   }
   actions.push(
     {id:'draft_message',label:'Draft check-in',type:'endpoint',willDo:'Prepare a warm relationship-specific check-in for review.',willNotDo:'Nothing will be sent.'},
-    {id:'create_task',label:'Create follow-up task',type:'endpoint',willDo:'Prepare a task connected to this relationship.',willNotDo:'No external system will be changed without approval.'},
-    {id:'teach_wisdom',label:'Teach VAL',type:'teach',willDo:'Open a teaching moment about this relationship.',willNotDo:'VAL will not save durable memory without review.'}
+    {id:'create_task',label:'Create follow-up task',type:'endpoint',willDo:'Prepare a task connected to this relationship.',willNotDo:'No external system will be changed without approval.'}
   );
   return actions;
 }
@@ -5927,7 +6071,7 @@ function renderRelationshipActions(profile = {}){
     return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</button>';
   };
   const groups = [
-    {label:'Actions VAL can take with this relationship', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','teach_wisdom','open_full_file','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
+    {label:'Actions VAL can take with this relationship', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
   ];
   const groupedHtml = groups.map((group) => {
     const groupActions = safeActions.filter((action) => group.ids.includes(action.id));
@@ -6373,7 +6517,6 @@ async function handleRelationshipAction(actionId){
       understanding: [profile.evidence, profile.patterns, profile.meaning].filter(Boolean),
       recommendation: 'Decide what this relationship needs before drafting, scheduling, or creating a task.',
       actions: [
-        {label:'Open full file', workflow:'relationship:open_full_file'},
         {label:'Draft message', workflow:'relationship:draft_message'},
         {label:'Create task', workflow:'relationship:create_task'}
       ]
@@ -6410,9 +6553,9 @@ async function handleRelationshipAction(actionId){
   if(actionId === 'refresh_relationship_observers'){
     showRelationshipReceipt({
       title: 'Observer refresh is ready for review.',
-      meaning: profile.sourceReceipts || 'CRM, LinkedIn, Apollo, and Outscraper are the observers for this relationship brief.',
-      understanding: ['CRM remains the identity anchor.', 'LinkedIn is for public relationship awareness.', 'Apollo and Outscraper enrich context only when configured and appropriate.'],
-      recommendation: 'Run observer refresh only when the relationship brief needs newer evidence before action.'
+      meaning: profile.sourceReceipts || 'VAL can refresh the relationship source trail before this brief is trusted.',
+      understanding: ['CRM remains the identity anchor.', 'Public relationship context stays review-only.', 'No import, overwrite, message, or CRM update happens from this click.'],
+      recommendation: 'Refresh sources only when the relationship brief needs newer evidence before action.'
     });
     return;
   }
@@ -6532,9 +6675,7 @@ function showRelationshipSectionReceipt(action = {}, profile = {}){
     ? 'Missing context: nothing obvious, but you can still correct VAL if the read is wrong.'
     : 'Missing context: VAL needs your correction, a source, or a full relationship dossier before this becomes action-ready.';
   const actions = [
-    {label:'Add context', workflow:'relationship:teach_wisdom'},
-    {label:'Discuss this card', workflow:'relationship:cowork_relationship'},
-    {label:'Open full file', workflow:'relationship:open_full_file'}
+    {label:'Discuss this card', workflow:'relationship:cowork_relationship'}
   ];
   if(action.id === 'create_task_from_loop' || section === 'open_loops'){
     actions.unshift({label:'Create task only if real', workflow:'relationship:create_task'});
@@ -14838,10 +14979,7 @@ async function openRelationshipProfileFromFolder(profileId = '', node = null){
 }
 
 async function handleRelationshipCardNode(card = null){
-  if(!card) return;
-  const section = card.dataset.relationshipCardSection || '';
-  const action = card.dataset.relationshipCardAction || ('inspect_' + section);
-  await handleRelationshipActionClick(action, card);
+  return false;
 }
 
 async function handleRelationshipDetailClickEvent(event){
@@ -14851,14 +14989,6 @@ async function handleRelationshipDetailClickEvent(event){
     event.stopPropagation();
     if(event.stopImmediatePropagation) event.stopImmediatePropagation();
     await handleRelationshipActionClick(relationshipAction.dataset.relationshipAction, relationshipAction);
-    return true;
-  }
-  const relationshipCard = event.target.closest('#relationship-detail [data-relationship-card-section]');
-  if(relationshipCard){
-    event.preventDefault();
-    event.stopPropagation();
-    if(event.stopImmediatePropagation) event.stopImmediatePropagation();
-    await handleRelationshipCardNode(relationshipCard);
     return true;
   }
   return false;
@@ -15512,11 +15642,7 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('keydown', async (event) => {
   if(event.key !== 'Enter' && event.key !== ' ') return;
   if(event.target.closest('button,a,input,select,textarea')) return;
-  const relationshipCard = event.target.closest('[data-relationship-card-section]');
-  if(!relationshipCard) return;
-  event.preventDefault();
-  event.stopPropagation();
-  await handleRelationshipCardNode(relationshipCard);
+  return;
 });
 
 document.querySelectorAll('#correspondence-detail [data-correspondence-action]').forEach((button) => {

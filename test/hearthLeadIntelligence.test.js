@@ -2064,8 +2064,8 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /function preferredRelationshipActions/);
   assert.match(hearthJs, /activeRelationshipProfile/);
   assert.match(hearthJs, /relationshipBrief/);
-  assert.match(hearthJs, /executiveReminder/);
-  assert.match(hearthJs, /executiveAssessment/);
+  assert.match(hearthJs, /relationshipEvidenceItemsFromDossier/);
+  assert.match(hearthJs, /relationshipOpenLoopLines/);
   assert.match(hearthJs, /strategicImportance/);
   assert.match(hearthJs, /renderRelationshipProfile\(profileId, relationshipProfileFromDossier\(data\.dossier, fallback\)\)/);
   assert.match(hearthJs, /if\(!canUseApi\) return/);
@@ -2075,7 +2075,6 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /source:selectedSource/);
   assert.match(hearthJs, /await openRelationshipProfileFromFolder\(profileId, relationshipProfileButton\)/);
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
-  assert.match(hearthHtml, /data-relationship-action="open_full_file"/);
   assert.match(hearthHtml, /data-relationship-action="ask_alignment"/);
   assert.match(hearthHtml, /data-relationship-section-actions="identity"/);
   assert.match(hearthHtml, /data-relationship-section-actions="patterns"/);
@@ -2096,24 +2095,30 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
     'related_work',
     'notes_to_see'
   ].forEach((section) => {
-    assert.match(hearthHtml, new RegExp(`data-relationship-card-section="${section}"`));
     assert.match(hearthHtml, new RegExp(`data-relationship-section-actions="${section}"`));
   });
+  assert.doesNotMatch(hearthHtml, /data-relationship-card-section=/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-card-action=/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-action="open_full_file"/);
+  assert.doesNotMatch(hearthHtml, />Open full file</);
+  assert.match(hearthJs, /function relationshipEvidenceItemsFromDossier/);
+  assert.match(hearthJs, /relationshipVisibleSectionActions/);
+  assert.match(hearthJs, /Recent context exists for/);
+  assert.match(hearthJs, /Open loops are present/);
+  assert.match(hearthJs, /source trail below is the truth/);
   assert.match(hearthJs, /let activeRelationshipActionSection = ''/);
   assert.match(hearthJs, /node\?\.dataset\?\.relationshipSection \|\| node\?\.dataset\?\.relationshipCardSection/);
-  assert.match(hearthJs, /node\?\.dataset\?\.relationshipCardSection \|\| node\?\.dataset\?\.relationshipSection/);
   assert.match(hearthJs, /localHearthMetadataPacket\(\{node, packetName:'relationship_packet', action:actionId, source:relationshipSource/);
   assert.match(hearthJs, /sourceSection: scopedSection/);
   assert.match(hearthJs, /requestedSection: scopedSection/);
   assert.match(hearthJs, /function handleRelationshipCardNode/);
   assert.match(hearthJs, /async function handleRelationshipDetailClickEvent/);
   assert.match(hearthJs, /event\.stopImmediatePropagation/);
-  assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-card-section\]'\)/);
+  assert.doesNotMatch(hearthJs, /event\.target\.closest\('#relationship-detail \[data-relationship-card-section\]'\)/);
   assert.match(hearthJs, /relationshipSectionCurrentValue/);
   assert.match(hearthJs, /This teaching is scoped to/);
-  assert.match(hearthJs, /openAction\?\.route/);
   assert.match(hearthJs, /actions: actionItems/);
-  assert.match(hearthJs, /sectionActions: actions\.sections/);
+  assert.match(hearthJs, /sectionActions: relationshipVisibleSectionActions/);
   assert.match(hearthJs, /defaultRelationshipSectionActions\(profile\.name/);
   assert.match(hearthCss, /\.relationship-section-actions/);
   assert.match(hearthCss, /\.drawer-tray\.relationship-open\{/);
@@ -2125,11 +2130,10 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
 test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthHtml, /<button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention<\/button>/);
   assert.match(hearthJs, /function handleRelationshipAction/);
-  assert.match(hearthJs, /relationship:open_full_file/);
   assert.match(hearthJs, /relationship:draft_message/);
   assert.match(hearthJs, /relationship:create_task/);
   assert.match(hearthJs, /Discuss this card/);
-  assert.match(hearthJs, /Teach VAL/);
+  assert.doesNotMatch(hearthJs, /label:'Open full file', workflow:'relationship:open_full_file'/);
   assert.match(hearthJs, /identity\.crmContactId \|\| identity\.id/);
   assert.match(hearthJs, /\/api\/relationships\/actions/);
   assert.match(hearthJs, /No email will be sent from this click/);
