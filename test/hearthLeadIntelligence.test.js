@@ -196,6 +196,7 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function normalizedProjectSourceDetails/);
   assert.match(hearthJs, /function projectCompactText/);
   assert.match(hearthJs, /function projectJudgmentLabel/);
+  assert.match(hearthJs, /function projectEvidenceText/);
   assert.match(hearthJs, /function projectSourceDisplayText/);
   assert.match(hearthJs, /Captured source: /);
   assert.match(hearthJs, /Decide the next narrow move/);

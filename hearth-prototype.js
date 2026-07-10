@@ -2393,6 +2393,12 @@ function projectJudgmentLabel(candidate = '', fallback = '', blocked = []){
   return looksRaw ? fallback : text;
 }
 
+function projectEvidenceText(candidate = '', fallback = '', blocked = []){
+  const text = projectCompactText(candidate, 260);
+  if(!text) return fallback;
+  return blocked.some((blockedText) => projectSimilarText(text, blockedText)) ? fallback : text;
+}
+
 function projectSourceDisplayText(value = '', limit = 520){
   const raw = String(value || '').trim();
   if(!raw) return '';
@@ -2754,11 +2760,11 @@ function projectProfileFromIndexItem(item = {}){
     signal,
     reality: projectCompactText(item.reality || item.summary || 'Canonical project profile from VAL project index.', 420),
     momentum: item.momentum || 'Active context',
-    momentumEvidence: projectCompactText(item.momentumEvidence || item.signal || item.summary || 'Project movement is visible in stored VAL evidence.', 260),
+    momentumEvidence: projectEvidenceText(item.momentumEvidence || item.signal || item.summary || '', 'Project movement is visible in stored VAL evidence.', [summary, signal]),
     decision: item.decision || 'Review project reality',
-    decisionEvidence: projectCompactText(item.decisionEvidence || 'Review project context before adding work.', 220),
+    decisionEvidence: projectEvidenceText(item.decisionEvidence || '', 'Review project context before adding work.', [summary, signal]),
     nextMove,
-    nextMoveEvidence: projectCompactText(item.nextMoveEvidence || (nextMove === 'Decide the next narrow move' ? 'Use the project dossier before creating new work.' : item.nextMove) || 'Use the project dossier before creating new work.', 240),
+    nextMoveEvidence: projectEvidenceText(item.nextMoveEvidence || (nextMove === 'Decide the next narrow move' ? '' : item.nextMove) || '', 'Use the project dossier before creating new work.', [summary, signal]),
     sourceReceipts: item.sourceReceipts || 'Canonical project index',
     sourceDetails: normalizedProjectSourceDetails(item),
     graphLinks: Array.isArray(item.graphLinks) ? item.graphLinks : [],
@@ -2939,11 +2945,11 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
     signal,
     reality,
     momentum: momentumLabel,
-    momentumEvidence: projectCompactText(momentum.evidence || card.momentumEvidence || fallback.momentumEvidence || '', 260),
+    momentumEvidence: projectEvidenceText(momentum.evidence || card.momentumEvidence || fallback.momentumEvidence || '', 'Project movement is visible in stored VAL evidence.', [reality, signal]),
     decision: decisionLabel,
-    decisionEvidence: projectCompactText(decisionPoint.evidence || card.decisionEvidence || fallback.decisionEvidence || '', 220),
+    decisionEvidence: projectEvidenceText(decisionPoint.evidence || card.decisionEvidence || fallback.decisionEvidence || '', 'Review project context before adding work.', [reality, signal]),
     nextMove: nextMoveLabel,
-    nextMoveEvidence: projectCompactText(nextMove.evidence || card.nextMoveEvidence || fallback.nextMoveEvidence || '', 240),
+    nextMoveEvidence: projectEvidenceText(nextMove.evidence || card.nextMoveEvidence || fallback.nextMoveEvidence || '', 'Use the project dossier before creating new work.', [reality, signal]),
     sourceReceipts: sourceReceipts.summary || card.sourceReceipts || fallback.sourceReceipts || '',
     sourceDetails: normalizedProjectSourceDetails(sourceReceipts.details || card.sourceDetails || fallback.sourceDetails || {}),
     graphLinks: Array.isArray(sourceReceipts.graphLinks) ? sourceReceipts.graphLinks : (Array.isArray(card.graphLinks) ? card.graphLinks : (Array.isArray(fallback.graphLinks) ? fallback.graphLinks : [])),
