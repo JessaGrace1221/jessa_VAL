@@ -9843,7 +9843,9 @@ async function resolveMeetingContext(input={}){
   if(input.date){start.setHours(0,0,0,0);end.setHours(23,59,59,999);}
   const {events,errors}=await loadContextCalendarEvents(start,end);
   const id=String(input.calendarEventId||input.eventId||input.id||'');
-  let meeting=events.find(e=>id&&(String(e.id)===id||String(e.eventId)===id))||null;
+  const inputEvent=input.event&&typeof input.event==='object'?input.event:null;
+  let meeting=inputEvent?{...inputEvent}:null;
+  if(!meeting) meeting=events.find(e=>id&&(String(e.id)===id||String(e.eventId)===id))||null;
   if(!meeting&&input.title){
     const title=normalizeContextName(input.title);
     meeting=events.map(e=>({...e,_score:looseNameScore(title,e.title||e.summary)})).filter(e=>e._score>=0.35).sort((a,b)=>b._score-a._score)[0]||null;
@@ -11059,9 +11061,11 @@ app.get('/api/calendar',async(req,res)=>{
 function sidebarCalendarWindow(req){
   const startParam=String(req.query.start||'').trim();
   const endParam=String(req.query.end||'').trim();
-  const start=startParam?new Date(`${startParam}T00:00:00`):new Date();
+  const today=new Date();
+  const start=startParam?new Date(`${startParam}T00:00:00`):new Date(today);
+  if(!startParam) start.setDate(start.getDate()-7);
   start.setHours(0,0,0,0);
-  const end=endParam?new Date(`${endParam}T23:59:59`):new Date(start);
+  const end=endParam?new Date(`${endParam}T23:59:59`):new Date(today);
   if(!endParam) end.setDate(end.getDate()+7);
   end.setHours(23,59,59,999);
   return {start,end};
@@ -22340,6 +22344,15 @@ app.patch('/api/val/conversations/:id/context',async(req,res)=>{
 });
 app.post('/api/val/context/resolve-contact',async(req,res)=>{try{res.json(await resolveContactFromContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.post('/api/val/context/resolve-meeting',async(req,res)=>{try{res.json(await resolveMeetingContext(req.body||{}));}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.post('/api/val/calendar/matching-transcripts',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const event=body.event&&typeof body.event==='object'?body.event:body;
+    const limit=Math.min(Math.max(Number(body.limit)||5,1),10);
+    const matches=await matchingTranscriptContext(event,limit);
+    res.json({ok:true,matches,no_external_action:true});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/context/link-transcript',async(req,res)=>{
   try{
     const body=req.body||{};

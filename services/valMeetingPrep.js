@@ -276,7 +276,15 @@ function createValMeetingPrepService({
   }
   async function gatherInternal(event){
     if(resolveMeetingContext){
-      const ctx=await resolveMeetingContext({eventId:eventIdOf(event),title:eventTitle(event),date:eventStart(event)}).catch(e=>({ok:false,errors:[e.message]}));
+      const ctx=await resolveMeetingContext({
+        event,
+        eventId:eventIdOf(event),
+        calendarEventId:eventIdOf(event),
+        title:eventTitle(event),
+        date:eventStart(event),
+        startTime:eventStart(event),
+        attendees:inferAttendees(event)
+      }).catch(e=>({ok:false,errors:[e.message]}));
       return {
         contactResolution:ctx.contactResolution||{},
         relationshipContext:ctx.relationshipContext||{},

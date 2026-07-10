@@ -41,7 +41,9 @@ test('Calendar baseline treats solo blocks as private rhythm, not meetings', () 
   assert.match(js, /function calendarEventIsMeeting/);
   assert.match(js, /function calendarEventExternalAttendees/);
   assert.match(js, /function calendarEventLooksPrivateBlock/);
-  assert.match(js, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsMeeting\)/);
+  assert.match(js, /function calendarEventIsFutureMeeting/);
+  assert.match(js, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsFutureMeeting\)/);
+  assert.match(js, /Past event - open matching transcript/);
   assert.match(js, /Solo blocks stay out of meeting prep/);
   assert.match(js, /if\(!calendarEventIsMeeting\(event\)\)\{/);
   assert.match(server, /meetingPrepEligible:externalAttendees\.length>0/);

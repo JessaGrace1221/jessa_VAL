@@ -876,9 +876,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /hydrateCalendarPanel\(\);/);
   assert.match(hearthJs, /function renderMeetingPrepResult/);
   assert.match(hearthJs, /activeMeetingPrepEvent/);
-  assert.match(hearthJs, /VAL is assembling the two-minute executive brief for this meeting/);
-  assert.match(hearthJs, /VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals/);
-  assert.match(hearthJs, /The final card will show what matters, how to enter, what to ask, and what to watch/);
+  assert.doesNotMatch(hearthJs, /VAL is assembling the two-minute executive brief for this meeting/);
+  assert.doesNotMatch(hearthJs, /VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals/);
+  assert.doesNotMatch(hearthJs, /The final card will show what matters, how to enter, what to ask, and what to watch/);
   assert.match(hearthJs, /postJson\('\/api\/val\/calendar\/meeting-prep', \{event\}\)/);
   assert.match(hearthJs, /function meetingPrepQualityLine/);
   assert.match(hearthJs, /function meetingPrepStakesLine/);
@@ -891,7 +891,13 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /if\(mode === 'meeting_prep'\)\{[\s\S]{0,140}openMeetingPrepCoworkSession\(\)/);
   assert.match(hearthJs, /function meetingPrepHasUsefulContext/);
   assert.match(hearthJs, /function calendarEventIsMeeting/);
-  assert.match(hearthJs, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsMeeting\)/);
+  assert.match(hearthJs, /function calendarEventIsFutureMeeting/);
+  assert.match(hearthJs, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsFutureMeeting\)/);
+  assert.match(hearthJs, /Past event - open matching transcript/);
+  assert.match(hearthJs, /function openCalendarTranscriptFromEvent/);
+  assert.match(hearthJs, /\/api\/val\/calendar\/matching-transcripts/);
+  assert.match(hearthJs, /calendarEventIsPast\(eventRecord\)/);
+  assert.match(server, /app\.post\('\/api\/val\/calendar\/matching-transcripts'/);
   assert.match(hearthJs, /Solo blocks stay out of meeting prep/);
   assert.match(hearthJs, /only the calendar title and time are available/);
   assert.match(hearthJs, /Executive Readiness/);

@@ -229,8 +229,23 @@ function calendarEventLooksPrivateBlock(event = {}){
   return /\b(mammogram|screening|doctor|dentist|therapy|medical|appointment|annual physical|haircut|personal block|focus block|thinking day|ceo thinking day)\b/.test(text);
 }
 
+function calendarEventStartDate(event = {}){
+  const value = event.start || event.startTime || event.date || '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calendarEventIsPast(event = {}){
+  const date = calendarEventStartDate(event);
+  return !!date && date.getTime() < Date.now();
+}
+
 function calendarEventIsMeeting(event = {}){
   return calendarEventExternalAttendees(event).length > 0 && !calendarEventLooksPrivateBlock(event);
+}
+
+function calendarEventIsFutureMeeting(event = {}){
+  return calendarEventIsMeeting(event) && !calendarEventIsPast(event);
 }
 
 const hearthPacketCompletenessRegistry = {
@@ -7792,12 +7807,17 @@ function meetingPrepReadiness(brief = {}, relationship = null, project = null){
   let score = 42;
   const prepared = [];
   const missing = [];
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const calendarAttendees = Array.isArray(brief.meetingContextJson?.attendees) ? brief.meetingContextJson.attendees : [];
+  const hasAttendeeEmail = attendees.concat(calendarAttendees).some((attendee) => attendee?.email || attendee?.address || attendee?.emailAddress?.address);
   if(brief.meetingContextJson?.title){score += 10; prepared.push('Calendar event reviewed');} else missing.push('Calendar event title');
   if(relationship){score += 18; prepared.push('Relationship context reviewed');} else missing.push('Relationship file not matched yet');
   if(project){score += 14; prepared.push('Project context reviewed');} else missing.push('Project context not matched yet');
-  if(Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson.some((attendee) => attendee.crm_contact_id)){score += 10; prepared.push('Attendee identity resolved');}
-  else missing.push('No resolved attendee identity');
+  if(attendees.some((attendee) => attendee.crm_contact_id)){score += 10; prepared.push('Attendee identity resolved');}
+  else if(hasAttendeeEmail){score += 6; prepared.push('Attendee emails reviewed'); missing.push('CRM/GHL identity not resolved yet');}
+  else missing.push('No attendee email attached');
   if(Array.isArray(brief.internalContextJson?.openLoops) && brief.internalContextJson.openLoops.length){score += 8; prepared.push('Previous open loops reviewed');}
+  else if(Array.isArray(brief.internalContextJson?.transcripts) && brief.internalContextJson.transcripts.length){score += 6; prepared.push('Prior transcript context reviewed');}
   else missing.push('No previous call notes or open loops attached');
   if(meetingPrepSourceSummary(brief) !== 'only the calendar title and time are available'){score += 8; prepared.push('Source confidence reviewed');}
   else missing.push('No public profile or recent activity loaded yet');
@@ -7989,28 +8009,10 @@ async function runMeetingPrep(){
     renderMeetingPrep();
     return;
   }
-  const loadingTimer = window.setTimeout(() => {
-    setWorkspaceContent({
-      lens: 'Meeting Prep',
-      title: 'Preparing ' + meetingPrepEventTitle(event) + '.',
-      meaning: 'VAL is assembling the two-minute executive brief for this meeting.',
-      understanding: [
-        'Meeting: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
-        'VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals.'
-      ],
-      recommendation: 'The final card will show what matters, how to enter, what to ask, and what to watch.',
-      actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
-      label: 'Meeting prep loading workspace',
-      suppressClarityStandard:true
-    });
-    updateDrawerCoworkIcon();
-  }, 700);
   try{
     const result = await postJson('/api/val/calendar/meeting-prep', {event});
-    window.clearTimeout(loadingTimer);
     renderMeetingPrepResult(result);
   }catch(error){
-    window.clearTimeout(loadingTimer);
     setWorkspaceContent({
       lens: 'Meeting Prep',
       title: calendarEventIsMeeting(event) ? 'Meeting prep needs attention.' : 'This calendar item is not a meeting.',
@@ -12515,9 +12517,9 @@ function calendarEventSubtitle(event = {}){
 
 function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
   if(!agendaList) return;
-  const visibleEvents = Array.isArray(events) ? events.slice(0, 8) : [];
+  const visibleEvents = Array.isArray(events) ? events.slice(0, 40) : [];
   currentCalendarEvents = visibleEvents;
-  currentMeetingEvents = visibleEvents.filter(calendarEventIsMeeting);
+  currentMeetingEvents = visibleEvents.filter(calendarEventIsFutureMeeting);
   if(!visibleEvents.length){
     agendaList.innerHTML = '<button class="agenda-item quiet" type="button"><span>Calendar</span><strong>No upcoming events loaded</strong><small>' + escapeHtml((errors && errors[0]) || 'Connect Google Calendar or Outlook to show your schedule here.') + '</small></button>';
     if(nextMeetingCard){
@@ -12530,10 +12532,10 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
     return;
   }
   agendaList.innerHTML = visibleEvents.map((event, index) => (
-    '<button class="agenda-item' + (calendarEventIsMeeting(event) && event === currentMeetingEvents[0] ? ' active' : '') + (calendarEventIsMeeting(event) ? '' : ' calendar-note') + '" type="button" data-calendar-event-index="' + index + '" data-calendar-meeting="' + (calendarEventIsMeeting(event) ? 'true' : 'false') + '">' +
+    '<button class="agenda-item' + (calendarEventIsFutureMeeting(event) && event === currentMeetingEvents[0] ? ' active' : '') + (calendarEventIsMeeting(event) ? '' : ' calendar-note') + (calendarEventIsPast(event) ? ' calendar-past' : '') + '" type="button" data-calendar-event-index="' + index + '" data-calendar-meeting="' + (calendarEventIsMeeting(event) ? 'true' : 'false') + '" data-calendar-past="' + (calendarEventIsPast(event) ? 'true' : 'false') + '">' +
       '<span>' + escapeHtml(formatCalendarTime(event.start)) + '</span>' +
       '<strong>' + escapeHtml(event.title || event.summary || '(No title)') + '</strong>' +
-      '<small>' + escapeHtml(calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note - no attendee meeting prep') + '</small>' +
+      '<small>' + escapeHtml(calendarEventIsPast(event) ? 'Past event - open matching transcript' : (calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note - no attendee meeting prep')) + '</small>' +
     '</button>'
   )).join('');
   if(nextMeetingCard && currentMeetingEvents[0]){
@@ -13135,6 +13137,39 @@ function calendarPacketSourceFromEvent(event = {}, index = 0){
   };
 }
 
+async function openCalendarTranscriptFromEvent(event = {}, node = null){
+  closeCalendarPanel();
+  restoreTimelineWindow();
+  await loadTimelineTranscripts({openFirst:false});
+  if(timelineReviewCards){
+    timelineReviewCards.innerHTML = '<article class="empty"><span>Finding transcript</span><p>VAL is matching this calendar event to transcript evidence.</p></article>';
+  }
+  ensureHearthClickPacket({
+    node,
+    packetName:'timeline_packet',
+    action:'timeline:calendar_transcript_match',
+    source:calendarPacketSourceFromEvent(event, Number(node?.dataset?.calendarEventIndex || 0)),
+    allowBlockedForInspection:true
+  }).catch(() => {
+    // Transcript lookup should still run if the packet receipt is delayed.
+  });
+  try{
+    const data = await postJson('/api/val/calendar/matching-transcripts', {event, limit:5});
+    const match = Array.isArray(data.matches) ? data.matches[0] : null;
+    if(match?.id){
+      await openTimelineTranscript(match.id);
+      return;
+    }
+    if(timelineReviewCards){
+      timelineReviewCards.innerHTML = '<article class="empty"><span>No transcript matched</span><p>VAL did not find a transcript confidently linked to ' + escapeHtml(event.title || event.summary || 'this event') + ' yet.</p></article>';
+    }
+  }catch(error){
+    if(timelineReviewCards){
+      timelineReviewCards.innerHTML = '<article class="empty"><span>Transcript match failed</span><p>' + escapeHtml(error.message || 'VAL could not search transcripts for this calendar event.') + '</p></article>';
+    }
+  }
+}
+
 async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0){
   const isAgendaNode = node?.matches?.('[data-calendar-event-index]');
   const event = isAgendaNode
@@ -13162,15 +13197,17 @@ async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0)
 
 async function openCalendarPanelWithPacket(node = calendarTab){
   const event = currentCalendarEvents[0] || {};
-  const preflight = await ensureHearthClickPacket({
+  openCalendarPanel();
+  ensureHearthClickPacket({
     node,
     packetName:'timeline_packet',
     action:'timeline:open_panel',
     source:calendarPacketSourceFromEvent(event, 0)
+  }).then((preflight) => {
+    if(preflight.ok) renderCalendarPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {
+    // The calendar should open on the first click even if the packet receipt is delayed.
   });
-  if(!preflight.ok) return;
-  renderCalendarPacketReceiptStrip(lastHearthPacketReceipt);
-  openCalendarPanel();
 }
 
 async function openCoworkSessionWithPacket(node = coworkNotebook){
@@ -14993,7 +15030,9 @@ closeSourceDetail.addEventListener('click', () => {
 nextMeetingCard.addEventListener('click', () => openMeetingPrepWithPacket(nextMeetingCard, 0));
 agendaItems.forEach((item) => {
   item.addEventListener('click', () => {
-    if(item.classList.contains('active')) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
+    const eventRecord = currentCalendarEvents[Number(item.dataset.calendarEventIndex || 0)] || {};
+    if(calendarEventIsPast(eventRecord)) openCalendarTranscriptFromEvent(eventRecord, item);
+    else if(calendarEventIsFutureMeeting(eventRecord)) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
   });
 });
 observerBoardButton?.addEventListener('click', openObserverBoard);
@@ -15034,7 +15073,13 @@ fullCalendarPanel?.addEventListener('click', (event) => {
   if(agendaButton){
     event.preventDefault();
     event.stopPropagation();
-    openMeetingPrepWithPacket(agendaButton, Number(agendaButton.dataset.calendarEventIndex || 0));
+    const eventIndex = Number(agendaButton.dataset.calendarEventIndex || 0);
+    const eventRecord = currentCalendarEvents[eventIndex] || {};
+    if(calendarEventIsPast(eventRecord)){
+      openCalendarTranscriptFromEvent(eventRecord, agendaButton);
+    }else if(calendarEventIsFutureMeeting(eventRecord)){
+      openMeetingPrepWithPacket(agendaButton, eventIndex);
+    }
     return;
   }
   const googleButton = event.target.closest('[data-google-oauth]');
