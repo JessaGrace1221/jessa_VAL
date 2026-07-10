@@ -74,6 +74,11 @@ test('reality processing pipeline defines witness and global relevance before ro
 });
 
 test('executive inbox hard-excludes one-sided senders and manual not-executive contacts',async()=>{
+  assert.match(server,/function classifyExecutiveEmail/);
+  assert.match(server,/function emailSenderMetrics/);
+  assert.match(server,/function emailIsCalendarNotification/);
+  assert.match(server,/calendar_notice/);
+  assert.match(server,/classifyExecutiveEmail\(withMetrics,rules\)/);
   const oneSided=executiveInboxAdmissionDecision({
     context:{
       current_message:{from:{name:'Cold Vendor',email:'vendor@example.com'}},

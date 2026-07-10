@@ -64,7 +64,8 @@ test('email backfill keeps the evidence-first rule',()=>{
   const start=server.indexOf('async function backfillEmailEvidence');
   const end=server.indexOf('async function backfillValIntelligence',start);
   const body=server.slice(start,end);
-  assert.match(body,/classifyEmail\(email,rules\)/);
+  assert.match(body,/classifyExecutiveEmail\(withMetrics,rules\)/);
+  assert.match(body,/emailSenderMetrics\(email,emailCorpus\)/);
   assert.match(body,/saveEmailEvidenceBatch/);
   assert.doesNotMatch(body,/saveTask\(/);
   assert.doesNotMatch(body,/create_task/);

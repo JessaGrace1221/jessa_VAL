@@ -8103,10 +8103,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
     const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),3);
+    const scanCorpus=[...Array.from(gmailMap.values()),...(sentGmail.emails||[]),...(outlook.emails||[])];
     const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
-      const c=classifyEmail(email,rules);
-      return {...email,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
+      const withMetrics={...email,senderMetrics:emailSenderMetrics(email,scanCorpus)};
+      const c=classifyExecutiveEmail(withMetrics,rules);
+      return {...withMetrics,...c,matchedRuleId:c.matchedRuleId||'',matchedContact:email.matchedContact||{}};
     });
     const preparedDraftResults=await Promise.all(emails.map(async email=>{
       const draft=await prepareEmailDraftIfNeeded(email).catch(()=>null);
@@ -8119,7 +8121,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     const draftsPrepared=preparedDraftResults.filter(Boolean).length;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
-    const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)).length;
+    const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
     const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
@@ -8128,10 +8130,10 @@ async function emailIntelligencePayload(req,{force=false}={}){
       source:'gmail',
       needsAttention:emails.filter(e=>e.classification==='needs_attention'),
       needsReply:emails.filter(e=>e.classification==='needs_reply'),
-      lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like'].includes(e.classification)),
+      lowPriority:emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)),
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
-      relationshipContext:emails.filter(e=>e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' '))).slice(0,20),
+      relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
       providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
@@ -9196,7 +9198,59 @@ function gmailDateValue(email){
 function sortEmailsNewestFirst(emails=[]){
   return emails.slice().sort((a,b)=>gmailDateValue(b)-gmailDateValue(a));
 }
-function classifyEmail(email,rules=[]){
+function normalizeExecutiveEmailAddress(value){
+  const email=String(value||'').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';
+}
+function emailPersonSet(values=[]){
+  const set=new Set();
+  (values||[]).forEach(value=>{
+    if(typeof value==='string')set.add(normalizeExecutiveEmailAddress(value));
+    else set.add(normalizeExecutiveEmailAddress(value?.email||value?.address));
+  });
+  set.delete('');
+  return set;
+}
+function emailSenderMetrics(email={},allEmails=[]){
+  const sender=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
+  if(!sender)return {inboundFromSenderCount:0,outboundToSenderCount:0};
+  let inbound=0,outbound=0;
+  for(const row of allEmails||[]){
+    const labels=Array.isArray(row.labels)?row.labels:[];
+    const isSent=labels.includes('SENT')||row.direction==='outbound'||row.sentByUser;
+    if(!isSent&&normalizeExecutiveEmailAddress(row.from?.email||row.senderEmail||'')===sender)inbound++;
+    if(isSent){
+      const recipients=emailPersonSet([...(row.to||[]),...(row.cc||[]),...(row.bcc||[])]);
+      if(recipients.has(sender))outbound++;
+    }
+  }
+  return {inboundFromSenderCount:inbound,outboundToSenderCount:outbound};
+}
+function emailIsCalendarNotification(email={}){
+  const from=normalizeExecutiveEmailAddress(email.from?.email||'');
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ');
+  return /calendar-notification|google calendar|calendar invite|updated invitation|invitation:/i.test(text)
+    && (/calendar-notification|google\.com|invitation:|updated invitation/i.test(text));
+}
+function emailLooksTransactionalOrBulk(email={}){
+  const from=normalizeExecutiveEmailAddress(email.from?.email||'');
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ').toLowerCase();
+  if(/\b(unsubscribe|newsletter|digest|roundup|promotion|special offer|limited time|advertis|sponsor|webinar)\b/.test(text))return true;
+  if(/\b(no-?reply|donotreply|notification|automated|statement|receipt|transaction|order confirmation|payment received|bank alert)\b/.test(text))return true;
+  return false;
+}
+function emailHasRelationshipEvidence(email={}){
+  const metrics=email.senderMetrics||{};
+  if(Number(metrics.outboundToSenderCount||0)>0)return true;
+  if(email.matchedContact?.name||email.relationshipName||email.projectName||email.project)return true;
+  if(email.userMarkedImportant||email.starred_by_user||email.starred)return true;
+  return false;
+}
+function emailHasExecutiveConsequence(email={}){
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
+  return /\b(proposal|contract|agreement|pricing|invoice|client|customer|partner|partnership|intro|introduction|referral|scope|approval|approve|deadline|decision|legal|confidential|complaint|escalat|blocked|risk)\b/i.test(text);
+}
+function classifyExecutiveEmail(email,rules=[]){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.from?.email].join(' ').toLowerCase();
   const domain=(email.from?.email||'').split('@')[1]||'';
   const activeRules=rules.filter(r=>r.is_active!==false&&r.isActive!==false);
@@ -9224,6 +9278,16 @@ function classifyEmail(email,rules=[]){
       };
     }
   }
+  const metrics=email.senderMetrics||{};
+  if(emailIsCalendarNotification(email)){
+    return {classification:'calendar_notice',reason:'Calendar notification belongs in calendar response controls, not Executive Inbox drafting.',recommendedAction:'Review in calendar if attendance needs a yes/no decision.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
+  }
+  if(Number(metrics.inboundFromSenderCount||0)>3&&Number(metrics.outboundToSenderCount||0)===0&&!emailHasRelationshipEvidence(email)){
+    return {classification:'ignored',reason:'More than three inbound emails from this sender and zero sent replies from the user. This is inbox noise, not an executive relationship.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics,executiveInboxRule:'more_than_three_inbound_zero_sent'};
+  }
+  if(emailLooksTransactionalOrBulk(email)){
+    return {classification:'solicitation',reason:'Bulk, transactional, notification, or promotional mail does not need executive judgment.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
+  }
   if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
     return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
   }
@@ -9233,15 +9297,16 @@ function classifyEmail(email,rules=[]){
   if(/\b(intro|introduction|referral|connect you|introduce you|introduced|warm intro|warm introduction)\b/.test(text)){
     return {classification:'needs_reply',reason:'Warm introduction opportunity asks for reply language.',recommendedAction:'Draft the intro response for approval.',confidence:'high',requiresApproval:true};
   }
-  if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)){
+  if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){
     return {classification:'needs_reply',reason:'Asks for a response or decision.',recommendedAction:'Draft a reply for approval.',confidence:'high',requiresApproval:true};
   }
-  if(/\b(proposal|pricing|contract|intro|introduction|following up|checking in|demo|next step|open loop|waiting|decision|opportunity|partnership)\b/.test(text)){
+  if(/\b(proposal|pricing|contract|intro|introduction|following up|checking in|demo|next step|open loop|waiting|decision|opportunity|partnership)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){
     return {classification:'waiting_on_response',reason:'Looks connected to a deal, intro, or follow-up loop.',recommendedAction:'Track response and draft follow-up if needed.',confidence:'medium',requiresApproval:true};
   }
   return {classification:'low_priority',reason:'No urgent request detected.',recommendedAction:'Keep in low priority unless this sender matters.',confidence:'medium',requiresApproval:true};
 }
 function emailShouldPrepareDraft(email){
+  if(email.classification==='calendar_notice')return false;
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.recommendedAction,email.reason].join(' ');
   if(['needs_reply','appointment_recap_needed'].includes(email.classification))return true;
   if(/\bdraft\b/i.test(email.recommendedAction||''))return true;
@@ -9293,26 +9358,7 @@ function buildEmailReplyDraft(email){
 }
 async function prepareEmailDraftIfNeeded(email){
   if(!emailShouldPrepareDraft(email))return null;
-  const draft=buildEmailReplyDraft(email);
-  return saveInternalDraft({
-    id:emailDraftStableId(email),
-    draftType:'email_reply',
-    provider:'internal',
-    subject:draft.subject,
-    body:draft.body,
-    status:'draft',
-    sourceContext:{
-      source:'executive_inbox_auto_draft',
-      provider:email.provider||'email',
-      messageId:email.messageId||'',
-      threadId:email.threadId||'',
-      to:email.from?.email||'',
-      senderName:email.from?.name||'',
-      why:email.reason||'',
-      recommendedAction:email.recommendedAction||'',
-      classification:email.classification||''
-    }
-  });
+  return null;
 }
 function emailEvidenceStatus(email){
   const classification=String(email.classification||'').toLowerCase();
@@ -10406,7 +10452,11 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
     fetchUnifiedOutlookEmails(Math.min(limit,100)).catch(e=>({emails:[],error:e.message,provider:'outlook'}))
   ]);
   const providerErrors=[recent,unread,sent,outlook].filter(r=>r&&r.error).map(r=>({provider:r.provider||'email',error:r.error}));
-  const emails=uniqueEmailsByMessageId([recent,unread,sent,outlook]).map(email=>({...email,...classifyEmail(email,rules)}));
+  const emailCorpus=uniqueEmailsByMessageId([recent,unread,sent,outlook]);
+  const emails=emailCorpus.map(email=>{
+    const withMetrics={...email,senderMetrics:emailSenderMetrics(email,emailCorpus)};
+    return {...withMetrics,...classifyExecutiveEmail(withMetrics,rules)};
+  });
   const saved=await saveEmailEvidenceBatch(emails);
   return {processed:emails.length,saved:saved.filter(Boolean).length,providerErrors};
 }

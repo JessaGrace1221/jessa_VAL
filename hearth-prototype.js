@@ -4465,7 +4465,9 @@ function renderCorrespondenceList(){
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   const ruleActions = ['show_rules', 'save_forward_rule', 'suggest_rules'];
   if(!item) return ruleActions;
-  return ['send', 'cowork_correspondence', 'not_executive_contact'].concat(ruleActions);
+  const actions = ['cowork_correspondence', 'not_executive_contact'].concat(ruleActions);
+  if(String(item.draftBody || '').trim()) actions.unshift('send');
+  return actions;
 }
 
 function scrollCorrespondenceActionsIntoView(){
@@ -4645,14 +4647,15 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Clear');
   setCorrespondenceField('title', selected?.title || 'No Executive Inbox conversations');
   setCorrespondenceField('summary', selected?.summary || 'VAL has not found a connected Gmail thread that needs executive judgment yet.');
-  setCorrespondenceField('draft-title', selected ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
-  setCorrespondenceField('draft-note', selected ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.');
+  const hasDraft = !!String(selected?.draftBody || '').trim();
+  setCorrespondenceField('draft-title', selected && hasDraft ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
+  setCorrespondenceField('draft-note', selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.');
   renderCorrespondenceThread(selected);
   renderCorrespondenceIntelligence(selected);
   if(correspondenceDraftBody){
     correspondenceDraftBody.value = selected?.draftBody || '';
     correspondenceDraftBody.disabled = !selected;
-    correspondenceDraftBody.placeholder = selected ? 'Write or edit the reply here.' : 'Select a conversation to edit the draft.';
+    correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : 'No draft has been prepared for this conversation yet.') : 'Select a conversation to edit the draft.';
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {

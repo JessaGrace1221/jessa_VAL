@@ -9,7 +9,7 @@ const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
 test('gmail fetch uses a 14-day active inbox window and sorts newest first',()=>{
   assert.match(server,/query='in:inbox newer_than:14d'/);
-  assert.match(server,/const recentQuery=force\?'in:inbox newer_than:14d':'in:inbox newer_than:14d'/);
+  assert.match(server,/const recentQuery=`in:inbox newer_than:\$\{activeDays\}d`/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
 });
@@ -46,15 +46,23 @@ test('executive inbox UI has manual refresh and visible sync metadata',()=>{
   assert.match(dashboard,/\/api\/email\/gmail\/refresh/);
 });
 
-test('executive inbox prepares approval drafts for reply-worthy and warm intro emails',()=>{
+test('executive inbox scan gates reply-worthy mail without canned auto drafts',()=>{
+  assert.match(server,/function classifyExecutiveEmail/);
+  assert.match(server,/function emailSenderMetrics/);
+  assert.match(server,/more_than_three_inbound_zero_sent/);
+  assert.match(server,/function emailIsCalendarNotification/);
+  assert.match(server,/calendar_notice/);
+  assert.match(server,/const scanCorpus=\[/);
+  assert.match(server,/senderMetrics:emailSenderMetrics\(email,scanCorpus\)/);
   assert.match(server,/function emailShouldPrepareDraft/);
   assert.match(server,/function buildEmailReplyDraft/);
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
   assert.match(server,/intro\|introduction\|referral\|connect you/);
-  assert.match(server,/source:'executive_inbox_auto_draft'/);
-  assert.match(server,/email\.preparedDraft=draft/);
+  assert.match(server,/async function prepareEmailDraftIfNeeded\(email\)\{\s*if\(!emailShouldPrepareDraft\(email\)\)return null;\s*return null;\s*\}/);
+  assert.doesNotMatch(server,/source:'executive_inbox_auto_draft'/);
+  assert.match(server,/if\(draft\)email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);
 });

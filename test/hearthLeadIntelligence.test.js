@@ -594,7 +594,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /\/api\/val\/email\/review-drafts\?limit=20/);
   assert.match(hearthJs, /const ruleActions = \['show_rules', 'save_forward_rule', 'suggest_rules'\]/);
-  assert.match(hearthJs, /return \['send', 'cowork_correspondence', 'not_executive_contact'\]\.concat\(ruleActions\)/);
+  assert.match(hearthJs, /if\(String\(item\.draftBody \|\| ''\)\.trim\(\)\) actions\.unshift\('send'\)/);
+  assert.match(hearthJs, /No private draft is waiting for review/);
   assert.match(hearthJs, /correspondenceDraftBody\.value = selected\?\.draftBody/);
   assert.match(hearthJs, /correspondenceDraftBody\?\.addEventListener\('input'/);
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
