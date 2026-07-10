@@ -16400,6 +16400,42 @@ function transcriptHomeNextMove(transcript={}){
   if(/Grace AI|calendar/i.test(summary+question))return 'Confirm the Grace AI calendar path before the follow-up goes out.';
   return dashboardShortText(question,'Review the meeting overview and confirm the next follow-up.',180);
 }
+function transcriptMeetingOverviewFallbackDraft(transcript={},sourceRef={}){
+  const summary=transcriptHomeSummary(transcript);
+  if(!transcript?.id||!summary)return null;
+  const label=transcriptHomeLabel(transcript);
+  const title=`Meeting overview ready: ${label}`;
+  const body=[
+    `${label} moved forward.`,
+    '',
+    summary,
+    '',
+    `Recommended next move: ${transcriptHomeNextMove(transcript)}`,
+    '',
+    'Review recipients and wording before anything is sent.'
+  ].join('\n');
+  return {
+    id:`transcript_overview_${transcript.id}`,
+    title,
+    summary:'VAL prepared a meeting overview from the fresh transcript for review before sending.',
+    reason_it_matters:'The meeting context is fresh enough to turn into a clean overview, but it still needs human review.',
+    view:'drafts',
+    target:{type:'transcript',id:transcript.id,label},
+    draftType:'meeting_recap',
+    status:'ready_for_review',
+    sourceType:'transcript',
+    sourceId:transcript.id,
+    sourceRefs:[sourceRef],
+    preparedArtifactKind:'meeting_overview_email_draft',
+    preparedArtifact:{kind:'meeting_overview_email_draft',title,body,recipients:[],externalSend:false,reviewRequired:true,recipientReviewRequired:true},
+    preparedWorkPacket:{prepared_work_type:'meeting_overview_email_draft',trigger_source_id:transcript.id,work_product:body,approval_needed:true,execution_path:'review_then_send_email',can_val_act_status:'approval_required'},
+    canValActStatus:'approval_required',
+    homeAdmission:{preparedWorkPacketComplete:true},
+    metadata:{source:'transcript_summary_fallback',transcriptId:transcript.id,preparedArtifactKind:'meeting_overview_email_draft',noExternalAction:true,noExternalSend:true,recipientReviewRequired:true},
+    confidence:0.84,
+    portalPhrases:[label,title]
+  };
+}
 function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
   if(!transcript?.id)return null;
   const label=transcriptHomeLabel(transcript);
@@ -16424,7 +16460,7 @@ function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
   return {
     velocity:{...base,title:`${label} moved forward.`,summary,reason_it_matters:'A fresh transcript was processed and changed what Home should show first.',whatChanged:summary,type:'transcript_movement'},
     alignment:{...base,id:`home_alignment_${transcript.id}`,title:nextMove,summary:nextMove,why:nextMove,reason_it_matters:'This is the one judgment that keeps the fresh meeting from becoming another open loop.',whyNowPacket:{why_now:nextMove,decision_needed:'Choose or edit the next follow-up before the meeting context goes stale.',cost_if_delayed:'The meeting momentum may cool and the dashboard/projections blocker may stay vague.',evidence_refs:[sourceRef],confidence:0.9}},
-    readyDraft:recapDraft?dashboardReadyDraft(recapDraft):null
+    readyDraft:recapDraft?dashboardReadyDraft(recapDraft):transcriptMeetingOverviewFallbackDraft(transcript,sourceRef)
   };
 }
 function buildFreshTranscriptDailyWitness(transcript={},packet={}){
