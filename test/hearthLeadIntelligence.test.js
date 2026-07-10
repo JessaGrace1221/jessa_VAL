@@ -321,6 +321,37 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
   assert.match(hearthCss, /\.drawer-link\[data-drawer-tone="rose-sage"\]/);
 });
 
+test('Hearth drawers keep the shared frost surface and packet contracts', () => {
+  const drawerContracts = [
+    ['Relationships', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
+    ['Projects', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
+    ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
+    ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
+    ['Commitments', 'commitment-drawer-link', 'commitment-open', 'commitment-detail', 'commitment_packet', 'drawer.commitments'],
+    ['Documents', 'document-drawer-link', 'document-open', 'document-detail', 'document_packet', 'drawer.documents'],
+    ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence'],
+    ['VAL OS', 'val-drawer-link', 'val-open', 'val-detail', 'val_os_packet', 'drawer.val_os']
+  ];
+  for(const [label, buttonClass, openClass, detailId, packetName, clickContract] of drawerContracts){
+    assert.match(hearthHtml, new RegExp(`class="drawer-link ${buttonClass}"`), label + ' drawer button missing');
+    assert.match(hearthHtml, new RegExp(`aria-controls="${detailId}"`), label + ' drawer control target missing');
+    assert.match(hearthHtml, new RegExp(`id="${detailId}"`), label + ' detail panel missing');
+    assert.match(hearthJs, new RegExp(openClass), label + ' open class missing from runtime');
+    assert.match(hearthJs, new RegExp(`packet:'${packetName}'`), label + ' packet contract missing from registry');
+    assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
+  }
+  assert.match(hearthCss, /--frost-open-surface:/);
+  assert.match(hearthCss, /--frost-open-card:/);
+  assert.match(hearthCss, /--frost-open-line:rgba\(91,105,79,\.16\)/);
+  assert.match(hearthCss, /\.full-calendar-panel,\n\.workspace-panel,\n\.drawer-tray\{[\s\S]{0,180}background:var\(--frost-open-surface\)/);
+  assert.match(hearthCss, /\.drawer-tray :is\([\s\S]*?\.correspondence-queue,[\s\S]*?\.correspondence-brief,[\s\S]*?\.correspondence-draft-preview,[\s\S]*?\.relationship-identity,[\s\S]*?\.project-identity/);
+  assert.match(hearthCss, /\.drawer-tray\.correspondence-open\{[\s\S]{0,180}background:var\(--frost-open-surface\)/);
+  assert.match(hearthCss, /\.correspondence-workbench\{[\s\S]{0,260}background:var\(--frost-open-card\)/);
+  assert.match(hearthCss, /\.correspondence-actions button:first-child\{[\s\S]{0,180}background:rgba\(73,87,63,\.9\)/);
+  assert.doesNotMatch(hearthCss, /\.drawer-tray\.correspondence-open\{[\s\S]{0,180}background:rgba\(248,248,249,\.96\)/);
+  assert.match(hearthCss, /System-wide opened surface standard: frosted off-white, quiet sage, never heavy tan/);
+});
+
 test('Transcripts drawer combines meeting evidence proposed notes and follow-through', () => {
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
   assert.match(hearthHtml, /Transcripts/);

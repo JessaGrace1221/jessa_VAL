@@ -2739,9 +2739,9 @@ button.drawer-link{
   margin-top:14px;
 }
 .drawer-tray.correspondence-open{
-  border-color:rgba(60,60,67,.14);
-  background:rgba(248,248,249,.96);
-  box-shadow:0 -10px 34px rgba(0,0,0,.08),0 30px 80px rgba(0,0,0,.16);
+  border-color:var(--frost-open-line);
+  background:var(--frost-open-surface);
+  box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.72);
 }
 .drawer-tray.commitment-open .commitment-detail{
   max-height:none;
@@ -3197,8 +3197,8 @@ button.drawer-link{
   align-items:end;
   margin-top:18px;
   padding:11px 0 13px;
-  border-top:1px solid rgba(60,60,67,.14);
-  border-bottom:1px solid rgba(60,60,67,.1);
+  border-top:1px solid var(--frost-open-line);
+  border-bottom:1px solid rgba(91,105,79,.12);
   background:transparent;
   box-shadow:none;
 }
@@ -3228,9 +3228,9 @@ button.drawer-link{
 .correspondence-rule-create input{
   min-width:0;
   height:34px;
-  border:1px solid rgba(60,60,67,.16);
+  border:1px solid rgba(91,105,79,.18);
   border-radius:6px;
-  background:rgba(255,255,255,.92);
+  background:rgba(255,255,252,.76);
   color:rgba(29,29,31,.94);
   padding:0 12px;
   font:550 .76rem/1.2 var(--body);
@@ -3243,9 +3243,9 @@ button.drawer-link{
 .correspondence-rule-create button,
 .correspondence-discuss{
   min-height:34px;
-  border:1px solid rgba(60,60,67,.16);
+  border:1px solid rgba(91,105,79,.16);
   border-radius:6px;
-  background:rgba(255,255,255,.86);
+  background:var(--frost-open-card);
   color:rgba(29,29,31,.88);
   padding:0 12px;
   font-size:.65rem;
@@ -3263,7 +3263,7 @@ button.drawer-link{
   display:grid;
   place-items:center;
   padding:24px;
-  background:rgba(18,18,20,.18);
+  background:rgba(18,24,18,.12);
   backdrop-filter:blur(10px);
 }
 .correspondence-rules-panel[hidden]{
@@ -3275,10 +3275,10 @@ button.drawer-link{
   width:min(720px,calc(100vw - 48px));
   max-height:min(620px,calc(100vh - 80px));
   padding:22px;
-  border:1px solid rgba(60,60,67,.13);
+  border:1px solid var(--frost-open-line);
   border-radius:10px;
-  background:rgba(255,255,255,.96);
-  box-shadow:0 28px 90px rgba(0,0,0,.18);
+  background:var(--frost-open-surface);
+  box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.72);
   overflow:hidden;
 }
 .correspondence-rules-head{
@@ -3301,9 +3301,9 @@ button.drawer-link{
 }
 .correspondence-rules-panel button{
   min-height:30px;
-  border:1px solid rgba(60,60,67,.16);
+  border:1px solid rgba(91,105,79,.16);
   border-radius:6px;
-  background:rgba(247,247,248,.92);
+  background:var(--frost-open-card);
   color:rgba(29,29,31,.82);
   padding:0 10px;
   font-size:.66rem;
@@ -3314,14 +3314,14 @@ button.drawer-link{
   gap:0;
   max-height:440px;
   overflow:auto;
-  border-top:1px solid rgba(60,60,67,.1);
+  border-top:1px solid rgba(91,105,79,.12);
 }
 .correspondence-rules-list article{
   display:grid;
   gap:5px;
   padding:12px 0;
   border:0;
-  border-bottom:1px solid rgba(60,60,67,.1);
+  border-bottom:1px solid rgba(91,105,79,.12);
   border-radius:0;
   background:transparent;
 }
@@ -3341,11 +3341,11 @@ button.drawer-link{
   gap:0;
   margin-top:18px;
   min-height:500px;
-  border:1px solid rgba(60,60,67,.12);
+  border:1px solid var(--frost-open-line);
   border-radius:6px;
-  background:rgba(255,255,255,.82);
+  background:var(--frost-open-card);
   overflow:hidden;
-  box-shadow:0 14px 38px rgba(0,0,0,.045);
+  box-shadow:var(--frost-open-soft-shadow),inset 0 1px 0 rgba(255,255,255,.56);
 }
 .correspondence-queue,
 .correspondence-thread,
@@ -3357,8 +3357,10 @@ button.drawer-link{
   min-width:0;
   min-height:500px;
   padding:17px 17px 15px;
-  border-right:1px solid rgba(60,60,67,.12);
-  background:rgba(255,255,255,.68);
+  border-right:1px solid rgba(91,105,79,.12);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.58),rgba(248,250,244,.42)),
+    rgba(255,255,252,.26);
 }
 .correspondence-intelligence{
   border-right:0;
@@ -3377,15 +3379,17 @@ button.drawer-link{
   min-height:68px;
   padding:12px 8px;
   border:0;
-  border-bottom:1px solid rgba(60,60,67,.1);
+  border-bottom:1px solid rgba(91,105,79,.1);
   border-radius:0;
   background:transparent;
   color:rgba(29,29,31,.78);
   text-align:left;
 }
 .correspondence-list button[aria-pressed="true"]{
-  border-bottom-color:rgba(29,29,31,.22);
-  background:rgba(29,29,31,.045);
+  border-bottom-color:rgba(91,105,79,.22);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.72),rgba(238,246,230,.54)),
+    rgba(232,241,220,.38);
 }
 .correspondence-list strong,
 .correspondence-brief h4,
@@ -3414,15 +3418,15 @@ button.drawer-link{
   min-height:32px;
   width:auto;
   padding:7px 10px;
-  border:1px solid rgba(29,29,31,.14);
+  border:1px solid rgba(91,105,79,.14);
   border-radius:999px;
-  background:rgba(255,255,255,.72);
+  background:var(--frost-open-card);
   color:rgba(29,29,31,.82);
   font:650 .68rem/1 var(--body);
 }
 .correspondence-list .correspondence-scan-actions button:hover{
-  border-color:rgba(29,29,31,.28);
-  background:rgba(255,255,255,.94);
+  border-color:rgba(91,105,79,.28);
+  background:var(--frost-open-card-strong);
 }
 .correspondence-brief-head{
   display:grid;
@@ -3452,10 +3456,10 @@ button.drawer-link{
   display:grid;
   gap:6px;
   padding-bottom:12px;
-  border-bottom:1px solid rgba(60,60,67,.12);
+  border-bottom:1px solid rgba(91,105,79,.12);
 }
 .correspondence-thread-message.newest{
-  border-bottom-color:rgba(60,60,67,.2);
+  border-bottom-color:rgba(91,105,79,.2);
 }
 .correspondence-thread-message p{
   margin:0;
@@ -3468,13 +3472,13 @@ button.drawer-link{
   justify-self:start;
   margin-top:2px;
   background:transparent;
-  border-color:rgba(60,60,67,.16);
+  border-color:rgba(91,105,79,.16);
   color:rgba(29,29,31,.78);
   padding:0 12px;
   box-shadow:none;
 }
 .correspondence-discuss:hover{
-  background:rgba(29,29,31,.04);
+  background:var(--frost-open-card-strong);
 }
 .correspondence-context{
   display:grid;
@@ -3486,9 +3490,9 @@ button.drawer-link{
   grid-template-columns:minmax(92px,.28fr) minmax(0,1fr);
   gap:8px;
   padding:8px;
-  border:1px solid rgba(60,60,67,.1);
+  border:1px solid rgba(91,105,79,.12);
   border-radius:7px;
-  background:rgba(247,247,248,.72);
+  background:var(--frost-open-card);
 }
 .correspondence-context dd{
   white-space:pre-line;
@@ -3498,9 +3502,11 @@ button.drawer-link{
   gap:8px;
   min-height:380px;
   padding:0;
-  border:1px solid rgba(60,60,67,.12);
+  border:1px solid rgba(91,105,79,.14);
   border-radius:6px;
-  background:rgba(255,255,255,.94);
+  background:
+    linear-gradient(180deg,rgba(255,255,252,.78),rgba(248,250,244,.56)),
+    rgba(255,255,252,.42);
   overflow:hidden;
 }
 .correspondence-draft-preview label{
@@ -3533,18 +3539,18 @@ button.drawer-link{
 }
 .correspondence-actions button{
   min-height:31px;
-  border:1px solid rgba(60,60,67,.14);
+  border:1px solid rgba(91,105,79,.16);
   border-radius:6px;
-  background:rgba(255,255,255,.9);
+  background:var(--frost-open-card);
   color:rgba(29,29,31,.84);
   padding:0 11px;
   font-size:.66rem;
   font-weight:780;
 }
 .correspondence-actions button:first-child{
-  border-color:rgba(29,29,31,.92);
-  background:rgba(29,29,31,.92);
-  color:#fff;
+  border-color:rgba(73,87,63,.24);
+  background:rgba(73,87,63,.9);
+  color:rgba(255,255,252,.96);
 }
 .correspondence-actions button:disabled{
   cursor:not-allowed;
@@ -3554,7 +3560,7 @@ button.drawer-link{
   display:grid;
   gap:8px;
   padding-bottom:16px;
-  border-bottom:1px solid rgba(60,60,67,.12);
+  border-bottom:1px solid rgba(91,105,79,.12);
 }
 .correspondence-intelligence section:last-child{
   border-bottom:0;
