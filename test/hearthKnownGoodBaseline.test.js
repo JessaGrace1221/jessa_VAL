@@ -66,11 +66,21 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(html, /Co-Work on This Transcript/);
   assert.match(html, /View full transcript/);
   assert.match(js, /function timelineNativeActionItems/);
+  assert.match(js, /function timelineKrispSections/);
+  assert.match(js, /Action Items\?/);
+  assert.match(js, /Meeting Overview\|Summary\|Overview/);
+  assert.match(js, /krispSections\.actionItems\.length/);
   assert.match(js, /if\(native\.length\) return native/);
   assert.match(js, /Krisp Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
     assert.doesNotMatch(html, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('Hearth-facing copy says CRM instead of a single vendor name', () => {
+  assert.match(js, /function publicCrmText/);
+  assert.match(js, /replace\([^)]*CRM/);
+  assert.doesNotMatch(html, /\bGHL\b|GoHighLevel/i);
 });
 
 test('Transcript titles stay source-grounded and reject weak calendar contradictions', () => {

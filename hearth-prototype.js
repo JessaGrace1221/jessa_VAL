@@ -6653,7 +6653,26 @@ function bringDrawerTargetIntoView(target){
   });
 }
 
+function timelineKrispSections(transcript = {}){
+  if(!transcript.krispNative) return {actionItems:[], overview:''};
+  const summary = transcript.nativeSummary || transcript.summaryPreview || (typeof transcript.summary === 'string' ? transcript.summary : transcript.summary?.executiveSummary) || '';
+  const text = String(summary || '').trim();
+  if(!text) return {actionItems:[], overview:''};
+  const actionMatch = text.match(/Action Items?\s*([\s\S]*?)(?:\b(?:Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
+  const overviewMatch = text.match(/\b(?:Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
+  const actionItems = actionMatch
+    ? actionMatch[1].split(/\n+|(?=\s*-\s*\[[ x]\])|(?=\s*[-*]\s+)/i)
+        .map((item) => item.replace(/^[-*]\s*/, '').trim())
+        .filter(Boolean)
+    : [];
+  return {actionItems, overview:overviewMatch ? overviewMatch[1].trim() : ''};
+}
+
 function timelineSummaryObject(transcript = {}){
+  const krispSections = timelineKrispSections(transcript);
+  if(krispSections.overview){
+    return {executiveSummary: krispSections.overview};
+  }
   if(transcript.nativeSummary){
     return {executiveSummary: transcript.nativeSummary};
   }
@@ -6711,9 +6730,10 @@ function timelineTranscriptMeta(transcript = {}){
 }
 
 function timelineNativeActionItems(transcript = {}){
+  const krispSections = timelineKrispSections(transcript);
   const native = Array.isArray(transcript.nativeActionItems) && transcript.nativeActionItems.length
     ? transcript.nativeActionItems
-    : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : []);
+    : (krispSections.actionItems.length ? krispSections.actionItems : (transcript.krispNative && Array.isArray(transcript.actionItems) ? transcript.actionItems : []));
   return native.map((item) => {
     if(typeof item === 'string') return {taskTitle:item, status:'from Krisp'};
     if(!item || typeof item !== 'object') return null;

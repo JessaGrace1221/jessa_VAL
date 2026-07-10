@@ -403,6 +403,10 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
   assert.match(hearthJs, /function timelineNativeActionItems/);
+  assert.match(hearthJs, /function timelineKrispSections/);
+  assert.match(hearthJs, /Action Items\?/);
+  assert.match(hearthJs, /Meeting Overview\|Summary\|Overview/);
+  assert.match(hearthJs, /krispSections\.actionItems\.length/);
   assert.match(hearthJs, /if\(native\.length\) return native/);
   assert.match(hearthJs, /Krisp Action Items/);
   assert.match(hearthJs, /Action Items/);
