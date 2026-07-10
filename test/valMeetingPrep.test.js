@@ -38,6 +38,8 @@ test('quality gate distinguishes usable meeting context',()=>{
   assert.equal(isMeetingEvent({title:'CEO thinking day',startTime:'2026-07-10T20:00:00Z',attendees:[]}),false);
   assert.equal(isMeetingEvent({title:'Solo focus',startTime:'2026-07-10T20:00:00Z',attendees:[{name:'Jessa Grace',email:'jessa@jessagrace.com',self:true}]}),false);
   assert.equal(isMeetingEvent({title:'Call with Fred',startTime:'2026-07-10T20:00:00Z',attendees:[{name:'Fred',email:'fred@example.com',organizer:true}]}),true);
+  assert.equal(isMeetingEvent({title:'Mammogram Wang Building annual screening',startTime:'2026-07-10T10:40:00Z',attendees:[{name:'Clinic',email:'clinic@example.com'}]}),false);
+  assert.ok(qualityGate({id:'cal_med',title:'Mammogram Wang Building annual screening',startTime:'2026-07-10T10:40:00Z',attendees:[{name:'Clinic',email:'clinic@example.com'}]}).issues.includes('private_calendar_block'));
   assert.equal(externalMeetingAttendees(event).length,1);
 });
 

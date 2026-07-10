@@ -150,6 +150,8 @@ Never let Calendar become only agenda management.
 
 Never let a private/solo calendar block appear as the next meeting.
 
+Never let an obvious private appointment, such as a medical appointment or screening, appear as the next executive meeting.
+
 Never launch Meeting Prep unless the calendar event has at least one external attendee.
 
 Never treat meetings as isolated events when they sit inside relationships, projects, opportunities, commitments, and timing.

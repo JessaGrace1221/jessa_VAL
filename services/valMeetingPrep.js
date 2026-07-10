@@ -60,8 +60,12 @@ function attendeeIsSelf(attendee={}){
 function externalMeetingAttendees(event={}){
   return inferAttendees(event).filter(a=>!attendeeIsSelf(a));
 }
+function privateCalendarBlockTitle(event={}){
+  const text=[eventTitle(event),event.description,event.notes,event.location].filter(Boolean).join(' ').toLowerCase();
+  return /\b(mammogram|screening|doctor|dentist|therapy|medical|appointment|annual physical|haircut|personal block|focus block|thinking day|ceo thinking day)\b/.test(text);
+}
 function isMeetingEvent(event={}){
-  return externalMeetingAttendees(event).length>0;
+  return externalMeetingAttendees(event).length>0&&!privateCalendarBlockTitle(event);
 }
 function qualityGate(event={}){
   const attendees=inferAttendees(event);
@@ -71,7 +75,8 @@ function qualityGate(event={}){
   if(!eventTitle(event))issues.push('missing_title');
   if(!eventStart(event))issues.push('missing_start_time');
   if(!externalAttendees.length)issues.push('no_external_attendees');
-  const quality=!externalAttendees.length?'unusable':(issues.length===0?'high':issues.length<=1?'medium':issues.length<=3?'low':'unusable');
+  if(privateCalendarBlockTitle(event))issues.push('private_calendar_block');
+  const quality=(!externalAttendees.length||privateCalendarBlockTitle(event))?'unusable':(issues.length===0?'high':issues.length<=1?'medium':issues.length<=3?'low':'unusable');
   return {
     is_usable:quality!=='unusable',
     quality,
@@ -381,9 +386,12 @@ function createValMeetingPrepService({
     const attendees=inferAttendees(event);
     const unknowns=[];
     if(!isMeetingEvent(event)){
+      const privateBlock=privateCalendarBlockTitle(event);
       return {
         ok:false,
-        error:'This calendar item has no external attendees, so VAL is treating it as a private calendar block instead of a meeting.',
+        error:privateBlock
+          ? 'This calendar item looks like a private appointment or private calendar block, so VAL is keeping it out of executive meeting prep.'
+          : 'This calendar item has no external attendees, so VAL is treating it as a private calendar block instead of a meeting.',
         code:'not_a_meeting',
         calendarEventId:eventId,
         qualityGate:gate,

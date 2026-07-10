@@ -8906,7 +8906,7 @@ async function fetchGoogleCalendarEvents(start,end,maxResults=50){
     endTime: e.end?.dateTime||e.end?.date,
     location: e.location,
     description: e.description,
-    attendees: (e.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||''})),
+    attendees: (e.attendees||[]).map(a=>({name:a.displayName||'',email:a.email||'',responseStatus:a.responseStatus||'',self:!!a.self,organizer:!!a.organizer})),
     organizer:e.organizer?{name:e.organizer.displayName||'',email:e.organizer.email||''}:{},
     status: e.status,
     source: 'google',
@@ -11072,6 +11072,7 @@ function normalizeSidebarCalendarEvent(ev,source){
   const end=ev.endTime||ev.end_time||(typeof ev.end==='string'?ev.end:(ev.end&&(ev.end.dateTime||ev.end.date)))||'';
   const attendees=Array.isArray(ev.attendees)?ev.attendees:[];
   const externalAttendees=attendees.filter(a=>!sidebarCalendarAttendeeIsSelf(a));
+  const privateBlock=sidebarCalendarEventLooksPrivateBlock(ev);
   return {
     id:ev.id||ev.eventId||ev.appointmentId||'',
     title:ev.title||ev.summary||ev.name||'(No title)',
@@ -11079,7 +11080,8 @@ function normalizeSidebarCalendarEvent(ev,source){
     end,
     attendees,
     externalAttendeeCount:externalAttendees.length,
-    meetingPrepEligible:externalAttendees.length>0,
+    meetingPrepEligible:externalAttendees.length>0&&!privateBlock,
+    privateCalendarBlock:privateBlock,
     organizer:ev.organizer||{},
     location:ev.location||'',
     meetingLink:ev.meetingLink||ev.hangoutLink||ev.webLink||'',
@@ -11093,6 +11095,10 @@ const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallp
 function sidebarCalendarAttendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SIDEBAR_SELF_CALENDAR_EMAILS.has(email)));
+}
+function sidebarCalendarEventLooksPrivateBlock(event={}){
+  const text=[event.title,event.summary,event.description,event.location].filter(Boolean).join(' ').toLowerCase();
+  return /\b(mammogram|screening|doctor|dentist|therapy|medical|appointment|annual physical|haircut|personal block|focus block|thinking day|ceo thinking day)\b/.test(text);
 }
 
 app.get('/api/calendar/sidebar',async(req,res)=>{

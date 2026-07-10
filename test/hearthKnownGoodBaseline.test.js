@@ -40,12 +40,15 @@ test('Home baseline keeps Velocity Alignment and Leverage distinct', () => {
 test('Calendar baseline treats solo blocks as private rhythm, not meetings', () => {
   assert.match(js, /function calendarEventIsMeeting/);
   assert.match(js, /function calendarEventExternalAttendees/);
+  assert.match(js, /function calendarEventLooksPrivateBlock/);
   assert.match(js, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsMeeting\)/);
   assert.match(js, /Solo blocks stay out of meeting prep/);
   assert.match(js, /if\(!calendarEventIsMeeting\(event\)\)\{/);
   assert.match(server, /meetingPrepEligible:externalAttendees\.length>0/);
+  assert.match(server, /privateCalendarBlock:privateBlock/);
   assert.match(server, /externalAttendeeCount:externalAttendees\.length/);
   assert.match(meetingPrepService, /function isMeetingEvent/);
+  assert.match(meetingPrepService, /private_calendar_block/);
   assert.match(meetingPrepService, /code:'not_a_meeting'/);
   assert.match(meetingPrepService, /private calendar block/);
 });

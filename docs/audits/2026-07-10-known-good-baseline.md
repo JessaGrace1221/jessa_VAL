@@ -51,7 +51,7 @@ Do not point all three rooms to Executive Inbox. Do not collapse Home into a gen
 
 The small calendar companion is for the next real meeting, not the next private calendar note.
 
-A calendar item is a meeting only when it has at least one external attendee. Solo calendar blocks, personal reminders, focus blocks, and notes to self may inform rhythm/capacity, but they must not:
+A calendar item is a meeting only when it has at least one external attendee and is not obviously a private appointment. Solo calendar blocks, personal reminders, medical appointments, focus blocks, and notes to self may inform rhythm/capacity, but they must not:
 
 - appear as the next meeting
 - launch Meeting Prep

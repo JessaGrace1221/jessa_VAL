@@ -224,8 +224,13 @@ function calendarEventExternalAttendees(event = {}){
   return calendarEventAttendees(event).filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee) && (attendee.name || calendarAttendeeEmail(attendee)));
 }
 
+function calendarEventLooksPrivateBlock(event = {}){
+  const text = [event.title, event.summary, event.description, event.location].filter(Boolean).join(' ').toLowerCase();
+  return /\b(mammogram|screening|doctor|dentist|therapy|medical|appointment|annual physical|haircut|personal block|focus block|thinking day|ceo thinking day)\b/.test(text);
+}
+
 function calendarEventIsMeeting(event = {}){
-  return calendarEventExternalAttendees(event).length > 0;
+  return calendarEventExternalAttendees(event).length > 0 && !calendarEventLooksPrivateBlock(event);
 }
 
 const hearthPacketCompletenessRegistry = {
