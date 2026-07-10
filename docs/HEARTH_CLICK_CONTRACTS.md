@@ -52,13 +52,13 @@ Global rule:
 | Packet | Variables | Source |
 |---|---|---|
 | `home_source_packet` | `{{home.card.current}}`, `{{home.card.sourceItem}}`, `{{home.card.sourceType}}`, `{{home.card.sourceId}}`, `{{home.card.sourceRefs}}`, `{{val.confidence}}`, `{{val.uncertainty}}` | Executive briefing, Ready For You, email evidence, relationship/project/meeting/draft resolver |
-| `relationship_packet` | `{{relationships.current}}`, `{{relationships.current.current_state}}`, `{{relationships.current.what_changed}}`, `{{relationships.current.source_receipts}}`, `{{projects.linked_to_relationship}}`, `{{documents.linked_to_relationship}}` | Relationship dossier, GHL contact, project links, document links, review updates |
+| `relationship_packet` | `{{relationships.current}}`, `{{relationships.current.current_state}}`, `{{relationships.current.what_changed}}`, `{{relationships.current.source_receipts}}`, `{{projects.linked_to_relationship}}`, `{{documents.linked_to_relationship}}` | Stewardship dossier, CRM contact, project links, document links, review updates |
 | `project_packet` | `{{projects.current}}`, `{{projects.current.one_sentence_understanding}}`, `{{projects.current.decisions_waiting}}`, `{{relationships.moving_project}}`, `{{documents.linked_to_project}}`, `{{source_reviews.pending}}` | Project dossier, document/context links, relationship graph, review updates |
 | `email_packet` | `{{emails.current}}`, `{{emails.thread.current}}`, `{{relationships.current}}`, `{{projects.current}}`, `{{drafts.current}}`, `{{sourceRefs}}` | Gmail/Outlook event, Executive Inbox classification, draft review queue |
 | `commitment_packet` | `{{tasks.current}}`, `{{commitments.current}}`, `{{sourceRefs}}`, `{{emails.current}}`, `{{calendar.current_event}}`, `{{relationships.current}}` | Commitment ledger, transcript/email/calendar source |
 | `document_packet` | `{{documents.current}}`, `{{relationships.current}}`, `{{projects.current}}`, `{{sourceRefs}}`, `{{drafts.current}}` | Document drawer, Ready For You artifacts, onboarding imports |
 | `timeline_packet` | `{{calendar.current_event}}`, `{{transcripts.current}}`, `{{tasks.current}}`, `{{proposed_reviews.current}}`, `{{sourceRefs}}` | Calendar sidebar, context debug, transcript proposal review cards |
-| `lead_intelligence_packet` | `{{lead.criteria}}`, `{{lead.preview.current}}`, `{{lead.approvals}}`, `{{lead.source_urls}}`, `{{ghl.mapping_contract}}` | Lead/partner preview endpoints, approval choices, GHL import mapping |
+| `lead_intelligence_packet` | `{{lead.criteria}}`, `{{lead.preview.current}}`, `{{lead.approvals}}`, `{{lead.source_urls}}`, `{{crm.mapping_contract}}` | Lead/partner preview endpoints, approval choices, CRM import mapping |
 | `val_os_packet` | `{{teach_val.onboarding}}`, `{{val.os.review_queue}}`, `{{val.connections}}`, `{{val.runtime}}`, `{{sourceRefs}}` | Teach VAL onboarding, VAL OS review queue, setup health, connection status |
 | `cowork_packet` | `{{active_surface.current}}`, `{{active_source.current}}`, `{{user.input}}`, `{{sourceRefs}}`, `{{val.needs_human_confirmation}}` | Any scoped Co-Work workspace |
 
@@ -89,7 +89,7 @@ Global rule:
 | Surface | Trigger | Variable packet | Prompt or rule | Source-of-source | Allowed actions | Never do | Receipt |
 |---|---|---|---|---|---|---|---|
 | Open drawers | `.drawer-pull` | `drawer_index_packet` | Drawer retrieval rule | Drawer availability only | Open drawer tray, close all drawers | Do not load unrelated detail panels | Drawer tray opens |
-| Relationships drawer | `.relationship-drawer-link` | `relationship_packet` index state | Relationship Dossier understanding prompt suite | GHL contact, email/calendar/transcript/project/document refs | Open brief, All people, scoped relationship actions | Do not default to CRM dashboard instead of dossier | Relationship drawer opens |
+| Stewardship drawer | `.relationship-drawer-link` | `relationship_packet` index state | Stewardship understanding prompt suite | CRM contact, email/calendar/transcript/project/document refs | Open Stewardship view, All people, scoped Stewardship actions | Do not expose internal packet/debug language in the drawer | Stewardship drawer opens |
 | Projects drawer | `.project-drawer-link` | `project_packet` index state | Project understanding prompt suite | Project source, linked people/docs/reviews | Open project file, Co-Work, Ask priority, Show alternatives | Do not create project records without explicit create flow | Project drawer opens |
 | Timeline & Tasks drawer | `.timeline-drawer-link` | `timeline_packet` | Calendar/transcript/task observer rules | Calendar events, transcripts, proposed reviews, tasks | Co-Work, review transcript proposals | Do not create notes/tasks without review | Timeline drawer opens |
 | Executive Inbox drawer | `.correspondence-drawer-link` | `email_packet` | Executive Inbox classification/draft prompt suite | Email thread, draft, source refs | Co-Work, Review, Prepare draft, Tighten draft, Send packet | Do not send directly from drawer click | Executive Inbox drawer opens |
@@ -102,12 +102,12 @@ Global rule:
 
 | Surface | Trigger | Variable packet | Prompt or rule | Source-of-source | Allowed actions | Never do | Receipt |
 |---|---|---|---|---|---|---|---|
-| Relationship row/profile | `data-relationship-profile`, `data-relationship-open-profile` | `relationship_packet` for selected person | Relationship resolver + dossier display rule | GHL contact/id, source receipts | Select/open brief | Do not infer wrong person from similar name | Profile brief updates |
+| Stewardship row/profile | `data-relationship-profile`, `data-relationship-open-profile` | `relationship_packet` for selected person | Stewardship resolver + dossier display rule | CRM contact/id, source receipts | Select/open Stewardship view | Do not infer wrong person from similar name | Profile brief updates |
 | Relationship filters/search/sort | `data-relationship-state-filter`, `data-relationship-search`, `data-relationship-sort` | Relationship index packet | Index filtering rule | Relationship index metadata | Filter/sort only | Do not mutate relationship state | List updates |
 | Relationship section actions | `data-relationship-section-actions` / `data-relationship-action` | `relationship_packet` plus section id | Section-specific relationship understanding rule | Section source receipts | Open full file, draft message, create task, ask alignment, Teach VAL | Do not send or update CRM without approval | Scoped workspace/receipt |
 | Teach temperature | `data-relationship-action="teach_temperature"` | `relationship_packet` plus user correction | Relationship temperature correction prompt | User correction plus relationship evidence | Review temperature correction | Do not immediately change canonical temperature | Review update queued |
 | Pending temperature review | `data-relationship-pending-temperature-review` | Relationship review update packet | Relationship temperature approval rule | Pending review update | Approve/reject learning | Do not save memory if rejected | Approval/rejection receipt |
-| Refresh observers | `data-relationship-action="refresh_relationship_observers"` | `relationship_packet` | Observer refresh rule | GHL/LinkedIn/Apollo/Outscraper availability | Refresh/read receipt | Do not scrape/import automatically | Source receipt |
+| Refresh observers | `data-relationship-action="refresh_relationship_observers"` | `relationship_packet` | Observer refresh rule | CRM/LinkedIn/Apollo/Outscraper availability | Refresh/read receipt | Do not scrape/import automatically | Source receipt |
 
 ## Project Surfaces
 
@@ -130,7 +130,7 @@ Global rule:
 | Timeline match accept | `data-timeline-match-accept` | Transcript/calendar match packet | Timeline match acceptance rule | Matched transcript/calendar ids | Accept match | Do not attach wrong event if stale | Match receipt/status |
 | Timeline review action | `data-timeline-review-action` | Proposed transcript review packet | Transcript proposal review rule | Proposed notes/tasks/context evidence | Approve/reject/reprocess as shown | Do not create final tasks/notes without review | Review receipt |
 | Meeting prep card | `.agenda-card.active` | `timeline_packet` focused to current event | Meeting prep prompt suite | Calendar attendees, recent emails, tasks, transcripts | Contact candidate review, close | Do not create contacts without review | Meeting prep workspace |
-| Meeting contact candidate | `workflow=contactCandidate/contactCreate/contactOpen` | Meeting attendee identity packet | GHL contact identity review rule | Calendar attendee payload | Create GHL contact, open relationship file | Do not merge/send/create task | Contact create receipt |
+| Meeting contact candidate | `workflow=contactCandidate/contactCreate/contactOpen` | Meeting attendee identity packet | CRM contact identity review rule | Calendar attendee payload | Create CRM contact, open Stewardship file | Do not merge/send/create task | Contact create receipt |
 
 ## Executive Inbox
 
@@ -177,9 +177,9 @@ Global rule:
 | Start organization scrape | `data-open-scraper="organizations"` | `lead_intelligence_packet` employer criteria | Lead discovery preview prompt | Public source URLs/criteria | Run preview, approve/hold | Do not import before approval | Preview workspace |
 | Run partner scrape | `data-open-scraper="partners"` | `lead_intelligence_packet` partner criteria | Partner discovery preview prompt | Public source URLs/criteria | Run preview, approve/hold | Do not import before approval | Preview workspace |
 | Approval flow | `data-open-scraper="approval"` | Lead approval packet | Lead approval/import rule | Preview choices | Import approved | Do not import held/unreviewed | Import receipt |
-| Check connections | `data-open-scraper="connections"` | Connection health packet | Lead connection health rule | Tool/GHL configuration | Check/open setup | Do not run scrape | Connection receipt |
+| Check connections | `data-open-scraper="connections"` | Connection health packet | Lead connection health rule | Tool/CRM configuration | Check/open setup | Do not run scrape | Connection receipt |
 | Preview choice | `data-preview-choice` | Lead preview row packet | Preview approval rule | Preview row source refs | Approve/hold | Do not import on choice click | Approval count updates |
-| Import approved | `workflow=import:*` | Approved lead packet | GHL import rule | Approved rows only | Import approved | Do not import held/unreviewed | Import receipt |
+| Import approved | `workflow=import:*` | Approved lead packet | CRM import rule | Approved rows only | Import approved | Do not import held/unreviewed | Import receipt |
 
 ## VAL Drawer And Setup
 

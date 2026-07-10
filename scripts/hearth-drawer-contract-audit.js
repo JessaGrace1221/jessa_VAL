@@ -4,7 +4,7 @@
 const path = require('node:path');
 
 const drawerContracts = [
-  {name:'Relationships', button:'.relationship-drawer-link', open:'relationship-open', detail:'#relationship-detail', packet:'relationship_packet', contract:'drawer.relationships'},
+  {name:'Stewardship', button:'.relationship-drawer-link', open:'relationship-open', detail:'#relationship-detail', packet:'relationship_packet', contract:'drawer.relationships'},
   {name:'Projects', button:'.project-drawer-link', open:'project-open', detail:'#project-detail', packet:'project_packet', contract:'drawer.projects'},
   {name:'Transcripts', button:'.timeline-drawer-link', open:'timeline-open', detail:'#timeline-detail', packet:'timeline_packet', contract:'drawer.timeline'},
   {name:'Executive Inbox', button:'.correspondence-drawer-link', open:'correspondence-open', detail:'#correspondence-detail', packet:'email_packet', contract:'drawer.executive_inbox'},

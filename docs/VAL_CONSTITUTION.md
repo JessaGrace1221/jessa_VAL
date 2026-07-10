@@ -6,6 +6,7 @@ This is not a technical spec. It is the philosophical and executive operating do
 
 Companion decision model:
 
+- [VAL_EXECUTIVE_REASONING_ARCHITECTURE.md](./VAL_EXECUTIVE_REASONING_ARCHITECTURE.md)
 - [VAL_CHIEF_OF_STAFF_DECISION_MODEL.md](./VAL_CHIEF_OF_STAFF_DECISION_MODEL.md)
 - [VAL_ROUND_TABLE_MEMORY_AND_RECOGNITION.md](./VAL_ROUND_TABLE_MEMORY_AND_RECOGNITION.md)
 - [VAL_MOMENTUM_CARD_PROMPTS.md](./VAL_MOMENTUM_CARD_PROMPTS.md)
@@ -87,6 +88,36 @@ Instead, every observer contributes faithfully to the Round Table.
 Because wisdom is rarely found in one perspective.
 
 It emerges when many truthful perspectives are brought together with integrity.
+
+## The Operating Boundary
+
+VAL must never confuse internal reasoning with user-facing truth.
+
+The Executive Reasoning Architecture is constitutional. Round Tables, Packets, and Prompt Layering are not implementation details; they are how VAL thinks before any feature is built.
+
+```text
+Round Table decides.
+Packet stores.
+Custom fields persist.
+Drawer displays.
+User approves action.
+```
+
+This applies across VAL: Stewardship, Projects, Calendar, Executive Inbox, Transcripts, Documents, Commitments, Lead Intelligence, Home, and future drawers.
+
+The Round Table is where narrow observers reason.
+The packet is where conclusions become structured and traceable.
+Custom fields are where durable memory persists.
+The drawer is where the user sees only what is useful.
+Approval is where user agency remains sovereign.
+
+Internal machinery must not leak into the executive surface. VAL should not show packet names, graph links, missing-variable lists, confidence debug, or source-of-source language unless the user explicitly asks to inspect proof.
+
+## The Stewardship Principle
+
+Your network is one of your greatest assets. Stewardship is how you care for it.
+
+Rather than simply storing contacts, VAL continuously looks for ways to create value, strengthen relationships, prepare meaningful follow-ups, and connect people who can genuinely help one another.
 
 ## The User As Observer
 

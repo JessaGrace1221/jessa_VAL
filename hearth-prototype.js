@@ -403,7 +403,7 @@ const hearthClickContractRegistry = [
   {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
-  {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Relationship Dossier understanding prompt suite', actions:'Open brief, filter, search, sort, scoped relationship actions', never:'Do not default to CRM dashboard instead of dossier'},
+  {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Stewardship understanding prompt suite', actions:'Open Stewardship view, filter, search, sort, scoped Stewardship actions', never:'Do not expose internal packet/debug language in the drawer'},
   {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open file, Co-Work, ask priority, show alternatives, review source learning', never:'Do not create or mutate project records without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
@@ -939,7 +939,7 @@ const projectProfiles = {
       files: [],
       websiteSource: 'Local VAL Core source files and Hearth prototype work.',
       documents: 'CODEX current state and VAL architecture notes.',
-      relationships: 'Relationship drawer is the model for this project drawer.',
+      relationships: 'Stewardship is the model for this project drawer.',
       rawContext: 'Preview project context only.'
     },
     href: './dashboard.html?view=projects&projectId=val-core'
@@ -14742,7 +14742,7 @@ relationshipDrawerLink.addEventListener('click', () => {
   relationshipDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#relationship-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
-    drawerIndexPacketReceipt({node:relationshipDrawerLink, packetName:'relationship_packet', action:'drawer:relationships', label:'Relationships drawer', downstreamConsumers:['relationship_drawer','project_packet','email_packet','home_source_packet']});
+    drawerIndexPacketReceipt({node:relationshipDrawerLink, packetName:'relationship_packet', action:'drawer:relationships', label:'Stewardship drawer', downstreamConsumers:['relationship_drawer','project_packet','email_packet','home_source_packet']});
     openRelationshipIndex();
   } else {
     renderDrawerPacketReceiptStrip(null);

@@ -15,6 +15,9 @@ const hearthPacketHydrationAudit = fs.readFileSync(path.join(root, 'docs', 'HEAR
 const hearthTruthLineageMap = fs.readFileSync(path.join(root, 'docs', 'HEARTH_TRUTH_LINEAGE_MAP.md'), 'utf8');
 const hearthExecutiveReasoningPipeline = fs.readFileSync(path.join(root, 'docs', 'HEARTH_EXECUTIVE_REASONING_PIPELINE.md'), 'utf8');
 const valProjectManagerRoundTable = fs.readFileSync(path.join(root, 'docs', 'VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md'), 'utf8');
+const valStewardshipRoundTable = fs.readFileSync(path.join(root, 'docs', 'VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md'), 'utf8');
+const valExecutiveReasoningArchitecture = fs.readFileSync(path.join(root, 'docs', 'VAL_EXECUTIVE_REASONING_ARCHITECTURE.md'), 'utf8');
+const valConstitution = fs.readFileSync(path.join(root, 'docs', 'VAL_CONSTITUTION.md'), 'utf8');
 
 function extractObjectLiteral(source, marker){
   const start = source.indexOf(marker);
@@ -349,7 +352,7 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
 
 test('Hearth drawers keep the shared frost surface and packet contracts', () => {
   const drawerContracts = [
-    ['Relationships', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
+    ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
     ['Projects', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
     ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
@@ -1281,6 +1284,65 @@ test('Hearth packet contracts require the deep source web behind every click', (
   });
 });
 
+test('Stewardship drawer contract keeps round table packet and user view separated', () => {
+  [
+    'Round Table decides.',
+    'Packet stores.',
+    'Custom fields persist.',
+    'Drawer displays.',
+    'User approves action.',
+    'Stewardship Round Table',
+    'Stewardship Packet',
+    'What The User Sees',
+    'Your network is one of your greatest assets. Stewardship is how you care for it.',
+    'Rather than simply storing contacts, VAL continuously looks for ways to create value',
+    'Help me care for this relationship well.',
+    'Stewardship Status',
+    'Current Understanding',
+    'Why It Matters Now',
+    'Relationship History',
+    'Ways They Create Value',
+    'Opportunities to Help',
+    'network cluster',
+    'Introduction Opportunity Packet',
+    'Prepared introduction drafts feed the Home Leverage card',
+    'The user should not see:',
+    'packet names',
+    'source-of-source',
+    'graph links',
+    'confidence debug'
+  ].forEach((required) => assert.ok(valStewardshipRoundTable.includes(required), 'Missing Stewardship contract: ' + required));
+  assert.match(hearthPacketCompleteness, /How well is this relationship being stewarded/);
+  assert.match(hearthPacketCompleteness, /What are the major relationship history chapters/);
+  assert.match(hearthPacketCompleteness, /Is a network cluster or ecosystem forming/);
+  assert.match(hearthPacketCompleteness, /network is one of their greatest assets/);
+  assert.match(hearthPacketCompleteness, /## Stewardship \/ Relationship Packet/);
+  assert.match(hearthTruthLineageMap, /user sees the clean Stewardship conclusion/);
+  assert.match(hearthClickContracts, /\| Stewardship drawer \|/);
+  assert.match(valConstitution, /Round Table decides\.[\s\S]*Packet stores\.[\s\S]*Custom fields persist\.[\s\S]*Drawer displays\.[\s\S]*User approves action\./);
+  assert.match(valConstitution, /Your network is one of your greatest assets\. Stewardship is how you care for it\./);
+});
+
+test('VAL Constitution protects executive reasoning architecture as cognitive architecture', () => {
+  [
+    'Round Tables, Packets, and Prompt Layering are not implementation details. They are how VAL thinks.',
+    'Reality\n  -> Witness\n  -> Executive Relevance\n  -> Round Table\n  -> Packet\n  -> Persistent Memory\n  -> Executive Surface\n  -> Prepared Work\n  -> User Approval',
+    'Witness Before Judgment',
+    'Executive Relevance Before Intelligence',
+    'Round Tables Produce Judgment',
+    'Packets Preserve Understanding',
+    'Custom Fields Persist Executive Understanding',
+    'Prompt Layering Is Executive Thinking',
+    'The Interface Never Thinks',
+    'User Approval Protects Trust',
+    'Every prompt should have one responsibility.',
+    'If a UI component must perform reasoning to display itself, the architecture is wrong.'
+  ].forEach((required) => assert.ok(valExecutiveReasoningArchitecture.includes(required), 'Missing executive reasoning architecture: ' + required));
+  assert.match(valConstitution, /VAL_EXECUTIVE_REASONING_ARCHITECTURE\.md/);
+  assert.match(valConstitution, /Round Tables, Packets, and Prompt Layering are not implementation details/);
+  assert.match(valStewardshipRoundTable, /VAL_EXECUTIVE_REASONING_ARCHITECTURE\.md/);
+});
+
 test('Hearth drawer openings keep index packet receipts internal before item actions', () => {
   assert.match(hearthHtml, /data-drawer-packet-receipt/);
   assert.match(hearthJs, /function drawerIndexPacketReceipt/);
@@ -1889,10 +1951,13 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthCss, /\.workspace-prompt-shelf/);
 });
 
-test('Relationship drawer opens a Relationship Brief instead of a CRM link', () => {
+test('Stewardship drawer opens inside the Hearth instead of a CRM link', () => {
   assert.match(hearthHtml, /class="drawer-link relationship-drawer-link"/);
   assert.match(hearthHtml, /id="relationship-detail"/);
-  assert.match(hearthHtml, /Relationship Brief/);
+  assert.match(hearthHtml, />Stewardship</);
+  assert.match(hearthHtml, /Network value and introductions/);
+  assert.match(hearthHtml, /Your network is one of your greatest assets/);
+  assert.match(hearthHtml, /connect people who can genuinely help one another/);
   assert.match(hearthHtml, /<span>Identity<\/span>/);
   assert.match(hearthHtml, /<span>Understanding<\/span>/);
   assert.match(hearthHtml, /<span>Thirty Second Reminder<\/span>/);

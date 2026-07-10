@@ -39,7 +39,11 @@ Witnessing root means:
 
 The Witnessing root is not a giant prompt dump. It is the stable human/VAL context that prevents a function from acting like the current card is the whole truth.
 
-## Relationship Packet
+## Stewardship / Relationship Packet
+
+The user-facing drawer is Stewardship. The internal packet may remain `relationship_packet` until a safe schema migration is completed.
+
+Stewardship exists because the user's network is one of their greatest assets, and stewardship is how they care for it. The packet must support value creation, relationship strengthening, meaningful follow-ups, and genuine connections between people who can help one another.
 
 `relationship_packet` must carry:
 
@@ -65,6 +69,22 @@ Required graph links:
 - `tasks.open`
 
 If a relationship click cannot answer "what projects, emails, meetings, transcripts, documents, and commitments are connected to this person?", the packet is incomplete.
+
+For Stewardship, completeness also means the packet can answer:
+
+- Who is this person?
+- How well is this relationship being stewarded?
+- What is VAL's current understanding today?
+- Why does this relationship matter now?
+- What are the major relationship history chapters?
+- What are the ways this person creates value?
+- What opportunities to help exist?
+- Who should they meet?
+- Who needs them?
+- Is a network cluster or ecosystem forming?
+- What introduction or follow-up can VAL prepare for review?
+
+Internal packet, source-of-source, graph-link, and confidence-debug language must not appear in the executive-facing drawer. The visible drawer renders only the clean Stewardship fields and plain review actions.
 
 ## Project Packet
 
