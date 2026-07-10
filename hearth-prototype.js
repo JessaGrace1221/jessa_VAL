@@ -4913,11 +4913,14 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const [ready, drafts] = await Promise.all([
+    const [ready, drafts, intelligence] = await Promise.all([
       postJson('/api/val/ready-for-you/build', {limit:5}).catch(() => ({items:[]})),
-      getJson('/api/val/email/review-drafts?limit=20').catch(() => ({drafts:[]}))
+      getJson('/api/val/email/review-drafts?limit=20').catch(() => ({drafts:[]})),
+      getJson('/api/email/intelligence?days=30&limit=75').catch(() => ({emails:[]}))
     ]);
-    const merged = correspondenceItemsFromReady(ready).concat((drafts.drafts || []).map(normalizeCorrespondenceDraft));
+    const merged = correspondenceItemsFromReady(ready)
+      .concat((drafts.drafts || []).map(normalizeCorrespondenceDraft))
+      .concat(correspondenceItemsFromEmailIntelligence(intelligence));
     const byId = new Map();
     merged.forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
