@@ -592,64 +592,82 @@
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">Transcripts</p>
-            <h3>Transcript evidence and review</h3>
-            <p>VAL should treat each meeting transcript as an evidence spine: source text first, then attendees, linked relationships, linked projects, proposed notes, proposed tasks, drafts, and review status.</p>
+            <h3>Meeting notes</h3>
+            <p>Recent transcript conversations, action items, and clean meeting overviews.</p>
           </div>
           <button type="button" class="close-timeline-detail">Close</button>
         </div>
-        <div class="timeline-status-panel" aria-label="Transcript status">
-          <div class="timeline-status-header">
-            <span>Transcript Review Workflow</span>
-            <strong data-timeline-status-count>Checking transcript context</strong>
-          </div>
-          <div class="timeline-status-grid" data-timeline-status-panel>
-            <article>
-              <span>Needs Matching</span>
-              <strong>Attach first</strong>
-              <p>Match transcript to calendar event, attendees, project, and relationships before VAL extracts anything.</p>
-            </article>
-            <article>
-              <span>Ready to Extract</span>
-              <strong>Anchored evidence</strong>
-              <p>Only matched transcripts can move into proposed notes, proposed tasks, drafts, or meeting prep.</p>
-            </article>
-            <article>
-              <span>Proposed Notes</span>
-              <strong>Meaning, not mush</strong>
-              <p>Notes must name the decision, commitment, risk, opportunity, or relationship context they preserve.</p>
-            </article>
-            <article>
-              <span>Proposed Tasks</span>
-              <strong>Specific work</strong>
-              <p>Tasks must include source excerpt, owner, due date or review-needed date, project, relationship, and why it matters.</p>
-            </article>
-          </div>
-        </div>
-        <div class="timeline-principles timeline-quality-standard" aria-label="Transcript note and task quality standard">
-          <article>
-            <span>Useful Note</span>
-            <strong>Evidence plus judgment</strong>
-            <p>A note is useful only when it preserves what changed, who it affects, where it belongs, and the exact transcript evidence behind it.</p>
-          </article>
-          <article>
-            <span>Useful Task</span>
-            <strong>Executable, not vague</strong>
-            <p>A task is useful only when Jessa can open it later and know the work, owner, source quote, project, relationship, due date, and next action.</p>
-          </article>
-        </div>
-        <div class="timeline-event-panel" aria-label="Transcript review queue">
-          <div class="timeline-status-header">
-            <span>Review Queue</span>
-            <strong data-timeline-event-count>No events loaded yet</strong>
-          </div>
-          <div class="timeline-event-list" data-timeline-event-list></div>
-        </div>
-        <div class="timeline-review-panel" aria-label="Transcript proposed notes and tasks">
-          <div class="timeline-status-header">
-            <span>Proposed Notes &amp; Tasks</span>
-            <strong data-timeline-review-count>No proposals loaded yet</strong>
-          </div>
-          <div class="timeline-review-cards" data-timeline-review-cards></div>
+        <div class="transcript-workbench" aria-label="Transcripts">
+          <section class="transcript-index" aria-label="Transcript list">
+            <div class="timeline-status-header">
+              <span>Conversations</span>
+              <strong data-transcript-count>Loading transcripts</strong>
+            </div>
+            <div class="transcript-import-actions" aria-label="Krisp transcript import">
+              <button type="button" class="transcript-import-krisp" data-transcript-import-krisp>Import recent Krisp meetings</button>
+              <div class="transcript-import-direct" aria-label="Import one Krisp transcript">
+                <input type="text" data-transcript-import-krisp-id placeholder="Paste Krisp document link or ID" autocomplete="off" spellcheck="false">
+                <button type="button" data-transcript-import-krisp-direct>Import</button>
+              </div>
+              <p data-transcript-import-status></p>
+            </div>
+            <div class="transcript-list" data-transcript-list></div>
+          </section>
+          <section class="transcript-detail-panel" aria-label="Transcript detail">
+            <div class="transcript-detail-empty" data-transcript-empty>
+              <span>Select a transcript</span>
+              <p>VAL will show action items and the meeting overview first.</p>
+            </div>
+            <div class="transcript-detail-content" data-transcript-detail hidden>
+              <div class="transcript-detail-head">
+                <span data-transcript-field="date"></span>
+                <h4 data-transcript-field="title"></h4>
+                <p data-transcript-field="meta"></p>
+              </div>
+              <div class="transcript-relationship-alert" data-transcript-relationship-alert hidden></div>
+              <div class="transcript-section transcript-actions-section">
+                <div class="timeline-status-header">
+                  <span>Action Items</span>
+                  <strong data-transcript-field="task-count">0 found</strong>
+                </div>
+                <div class="transcript-task-list" data-transcript-tasks></div>
+              </div>
+              <div class="transcript-section">
+                <div class="timeline-status-header">
+                  <span>Meeting Overview</span>
+                  <strong data-transcript-field="overview-status">Ready</strong>
+                </div>
+                <div class="transcript-overview" data-transcript-overview></div>
+              </div>
+              <div class="transcript-section transcript-decisions-section" data-transcript-decisions-wrap hidden>
+                <div class="timeline-status-header">
+                  <span>Decisions</span>
+                  <strong data-transcript-field="decision-count">0 found</strong>
+                </div>
+                <div class="transcript-decision-list" data-transcript-decisions></div>
+              </div>
+              <div class="transcript-section transcript-links-section">
+                <div class="timeline-status-header">
+                  <span>People and Projects</span>
+                  <strong data-transcript-field="link-status">Checking</strong>
+                </div>
+                <div class="transcript-link-list" data-transcript-links></div>
+              </div>
+              <section class="transcript-section timeline-transcript-cowork">
+                <h4>Co-Work on This Transcript</h4>
+                <div class="timeline-transcript-chat" data-transcript-chat-log>
+                  <p>Ask who said what, what changed, what should become a proposal, or what VAL can prepare from this meeting.</p>
+                </div>
+                <div class="timeline-transcript-chat-input">
+                  <input data-transcript-chat-input placeholder="Ask VAL about this transcript">
+                  <button type="button" data-transcript-chat="">Ask</button>
+                </div>
+              </section>
+              <button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>
+              <div class="transcript-full-text" data-transcript-full hidden></div>
+              <p class="timeline-transcript-receipt" data-transcript-action-status></p>
+            </div>
+          </section>
         </div>
       </div>
       <div class="source-detail correspondence-detail" id="correspondence-detail" aria-hidden="true">

@@ -97,12 +97,16 @@ const commitmentList = document.querySelector('[data-commitment-list]');
 const commitmentStatus = document.querySelector('[data-commitment-status]');
 const commitmentEvidence = document.querySelector('[data-commitment-evidence]');
 const commitmentFilterButtons = Array.from(document.querySelectorAll('[data-commitment-filter]'));
+const transcriptCount = document.querySelector('[data-transcript-count]');
+const transcriptList = document.querySelector('[data-transcript-list]');
+const transcriptDetail = document.querySelector('[data-transcript-detail]');
+const transcriptEmpty = document.querySelector('[data-transcript-empty]');
 const timelineStatusPanel = document.querySelector('[data-timeline-status-panel]');
-const timelineStatusCount = document.querySelector('[data-timeline-status-count]');
-const timelineEventList = document.querySelector('[data-timeline-event-list]');
-const timelineEventCount = document.querySelector('[data-timeline-event-count]');
-const timelineReviewCards = document.querySelector('[data-timeline-review-cards]');
-const timelineReviewCount = document.querySelector('[data-timeline-review-count]');
+const timelineStatusCount = document.querySelector('[data-timeline-status-count]') || transcriptCount;
+const timelineEventList = document.querySelector('[data-timeline-event-list]') || transcriptList;
+const timelineEventCount = document.querySelector('[data-timeline-event-count]') || transcriptCount;
+const timelineReviewCards = document.querySelector('[data-timeline-review-cards]') || transcriptDetail;
+const timelineReviewCount = document.querySelector('[data-timeline-review-count]') || document.querySelector('[data-transcript-field="title"]');
 const documentDrawerLink = document.querySelector('.document-drawer-link');
 const closeDocumentDetail = document.querySelector('.close-document-detail');
 const documentList = document.querySelector('[data-document-list]');
@@ -6624,12 +6628,27 @@ function timelineFirstSentence(value = '', fallback = ''){
   return timelineCompactText(match ? match[1] : text, 96);
 }
 
+function timelineTranscriptKnownTitle(transcript = {}){
+  const summary = timelineSummaryObject(transcript);
+  const text = [
+    transcript.title,
+    transcript.meetingTitle,
+    transcript.summaryPreview,
+    summary.executiveSummary,
+    summary.clientSummary,
+    transcript.preview
+  ].filter(Boolean).join(' ');
+  if(/\bGOALL\b|Goal Agency|agency call center|missed.?call|Apollo|Grace AI|projections dashboard/i.test(text)) return 'GOALL';
+  return '';
+}
+
 function timelineTranscriptTitle(transcript = {}){
   const summary = timelineSummaryObject(transcript);
   const fromSummary = timelineFirstSentence(summary.executiveSummary || summary.clientSummary || '', '');
   const rawTitle = String(transcript.title || transcript.meetingTitle || 'Transcript').trim();
+  const knownTitle = timelineTranscriptKnownTitle(transcript);
+  if(knownTitle && (!rawTitle || /mammogram|wang building|screening|nope|untitled|transcript/i.test(rawTitle) || !new RegExp('\\b' + knownTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(rawTitle))) return knownTitle;
   if(fromSummary && (/mammogram|nope|untitled|transcript/i.test(rawTitle) || rawTitle.length < 8)) return fromSummary;
-  if(fromSummary && /mammogram/i.test(rawTitle) && /agency|apollo|missed call|calendar|dashboard|automation|lead/i.test(fromSummary)) return fromSummary;
   return timelineCompactText(rawTitle || fromSummary || 'Transcript', 96);
 }
 
@@ -6683,13 +6702,14 @@ function renderTimelineListBlock(title, items, empty, mapper){
 }
 
 function renderTimelineTranscriptStats(data = {}){
-  if(!timelineStatusPanel || !timelineStatusCount) return;
+  if(!timelineStatusCount) return;
   const counts = data.counts || {};
   const total = Number(counts.total || currentTimelineTranscriptItems.length || 0);
   const needsReview = Number(counts.needsReview || 0);
   const openActions = Number(counts.withOpenActions || 0);
   const failed = Number(counts.failedProcessing || 0);
-  timelineStatusCount.textContent = total ? total + ' transcript' + (total === 1 ? '' : 's') + ' connected' : 'No transcripts loaded';
+  timelineStatusCount.textContent = total ? total + ' transcript' + (total === 1 ? '' : 's') : 'No transcripts loaded';
+  if(!timelineStatusPanel) return;
   const cards = [
     ['Recent Transcripts', total, 'Live Krisp, uploads, and recovered transcript records.'],
     ['Need Review', needsReview, 'Items with participant matches, staged tasks, decisions, or updates needing judgment.'],
@@ -6730,7 +6750,10 @@ function renderTimelineTranscriptList(activeId = ''){
 
 function renderTimelineTranscriptEmpty(){
   if(!timelineReviewCards || !timelineReviewCount) return;
+  if(transcriptEmpty) transcriptEmpty.hidden = false;
+  if(transcriptDetail) transcriptDetail.hidden = true;
   timelineReviewCount.textContent = 'Select a transcript';
+  if(timelineReviewCards === transcriptDetail) return;
   timelineReviewCards.innerHTML = [
     '<article class="empty timeline-transcript-empty">',
     '<span>Transcript Detail</span>',
@@ -6741,6 +6764,8 @@ function renderTimelineTranscriptEmpty(){
 
 function renderTimelineTranscriptDetail(transcript = {}){
   if(!timelineReviewCards || !timelineReviewCount) return;
+  if(transcriptEmpty) transcriptEmpty.hidden = true;
+  if(transcriptDetail) transcriptDetail.hidden = false;
   currentTimelineTranscript = transcript;
   const summary = timelineSummaryObject(transcript);
   const tasks = timelineTranscriptTasks(transcript);
@@ -6787,7 +6812,8 @@ function renderTimelineTranscriptDetail(transcript = {}){
     relationshipBlock,
     participantBlock,
     '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><div class="timeline-transcript-chat" data-transcript-chat-log><p>Ask who said what, what changed, what should become a proposal, or what VAL can prepare from this meeting.</p></div><div class="timeline-transcript-chat-input"><input data-transcript-chat-input placeholder="Ask VAL about this transcript"><button type="button" data-transcript-chat="' + escapeHtml(transcript.id || '') + '">Ask</button></div></section>',
-    '<details class="timeline-transcript-section"><summary>Source transcript</summary><p>' + escapeHtml(timelineCompactText(sourceText || 'No transcript text is available.', 5000)) + '</p></details>',
+    '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
+    '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(timelineCompactText(sourceText || 'No transcript text is available.', 5000)) + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
     '</article>'
   ].join('');
@@ -6866,6 +6892,28 @@ async function timelineTranscriptReprocess(transcriptId){
     await openTimelineTranscript(transcriptId);
   }catch(error){
     if(status) status.textContent = 'Reprocess failed: ' + (error.message || 'Request failed.');
+  }
+}
+
+function setTranscriptImportStatus(message, state = ''){
+  const status = document.querySelector('[data-transcript-import-status]');
+  if(!status) return;
+  status.textContent = message;
+  if(state) status.dataset.state = state;
+  else delete status.dataset.state;
+}
+
+async function showKrispManualImportStatus(){
+  setTranscriptImportStatus('Checking Krisp connection...', 'working');
+  try{
+    const data = await getJson('/api/val/krisp/status');
+    if(data?.configured){
+      setTranscriptImportStatus('Krisp is connected. VAL is receiving transcripts automatically; manual Krisp import still needs its action restored.', 'warning');
+    }else{
+      setTranscriptImportStatus(data?.message || 'Krisp is not connected yet.', 'needs-connection');
+    }
+  }catch(error){
+    setTranscriptImportStatus(error.message || 'Could not check Krisp connection.', 'error');
   }
 }
 
@@ -14561,6 +14609,13 @@ relationshipStateFilterButtons.forEach((button) => {
 });
 
 drawerTray.addEventListener('click', async (event) => {
+  const transcriptImport = event.target.closest('[data-transcript-import-krisp], [data-transcript-import-krisp-direct]');
+  if(transcriptImport){
+    event.preventDefault();
+    event.stopPropagation();
+    await showKrispManualImportStatus();
+    return;
+  }
   const transcriptOpen = event.target.closest('[data-transcript-open]');
   if(transcriptOpen){
     event.preventDefault();
@@ -14587,6 +14642,18 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await timelineTranscriptReprocess(transcriptReprocess.dataset.transcriptReprocess);
+    return;
+  }
+  const transcriptFull = event.target.closest('[data-transcript-full-toggle]');
+  if(transcriptFull){
+    event.preventDefault();
+    event.stopPropagation();
+    const full = drawerTray.querySelector('[data-transcript-full]');
+    if(full){
+      const nextHidden = !full.hidden;
+      full.hidden = nextHidden;
+      transcriptFull.textContent = nextHidden ? 'View full transcript' : 'Hide full transcript';
+    }
     return;
   }
   const timelineAction = event.target.closest('[data-timeline-action]');

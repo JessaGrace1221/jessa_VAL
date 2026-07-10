@@ -79,6 +79,17 @@ test('transcript titles reject command labels and prefer real topics',()=>{
   assert.match(server,/const topic=transcriptTopicTitleFromText/);
 });
 
+test('transcript titles stay grounded when calendar title contradicts GOALL content',()=>{
+  assert.match(server,/function transcriptKnownContentTitle/);
+  assert.ok(server.includes('GOALL'));
+  assert.ok(server.includes('Goal Agency'));
+  assert.ok(server.includes('agency call center'));
+  assert.ok(server.includes('projections dashboard'));
+  assert.match(server,/function transcriptTitleConflictsWithContent/);
+  assert.match(server,/mammogram\|screening\|wang building\|annual screening/);
+  assert.match(server,/calendar title contradicts transcript content/);
+});
+
 test('retrieval returns required fields and accurate counters',()=>{
   for(const field of ['receivedAt','reviewStatus','openActionCount','sourcePayloadMetadata','company','contactName'])assert.ok(server.includes(field));
   assert.match(server,/\['new','unreviewed','needs_review'\]\.includes\(t\.reviewStatus\)/);

@@ -321,6 +321,30 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
   assert.match(hearthCss, /\.drawer-link\[data-drawer-tone="rose-sage"\]/);
 });
 
+test('Transcripts drawer restores Meeting Notes workbench instead of diagnostic workflow cards', () => {
+  assert.match(hearthHtml, /<h3>Meeting notes<\/h3>/);
+  assert.match(hearthHtml, /Recent transcript conversations, action items, and clean meeting overviews/);
+  assert.match(hearthHtml, /data-transcript-list/);
+  assert.match(hearthHtml, /data-transcript-detail/);
+  assert.match(hearthHtml, /Import recent Krisp meetings/);
+  assert.match(hearthHtml, /VAL will show action items and the meeting overview first/);
+  assert.match(hearthHtml, /Action Items/);
+  assert.match(hearthHtml, /Meeting Overview/);
+  assert.match(hearthHtml, /People and Projects/);
+  assert.match(hearthHtml, /View full transcript/);
+  assert.doesNotMatch(hearthHtml, /Transcript Review Workflow/);
+  assert.doesNotMatch(hearthHtml, /Ready to Extract/);
+  assert.doesNotMatch(hearthHtml, /Proposed Notes/);
+  assert.match(hearthJs, /const transcriptList = document\.querySelector\('\[data-transcript-list\]'\)/);
+  assert.match(hearthJs, /function renderTimelineTranscriptList/);
+  assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
+  assert.match(hearthJs, /data-transcript-full-toggle/);
+  assert.match(hearthJs, /function showKrispManualImportStatus/);
+  assert.match(hearthJs, /\/api\/val\/krisp\/status/);
+  assert.match(hearthCss, /\.transcript-workbench/);
+  assert.match(hearthCss, /\.transcript-detail-panel/);
+});
+
 test('Hearth drawers keep the shared frost surface and packet contracts', () => {
   const drawerContracts = [
     ['Relationships', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
@@ -359,22 +383,18 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthHtml, /class="drawer-link timeline-drawer-link"/);
   assert.match(hearthHtml, /Transcripts/);
   assert.match(hearthHtml, /Meeting evidence, notes, tasks/);
-  assert.match(hearthHtml, /Transcript evidence and review/);
+  assert.match(hearthHtml, /Meeting notes/);
   assert.match(hearthHtml, /id="timeline-detail"/);
-  assert.match(hearthHtml, /data-timeline-status-panel/);
-  assert.match(hearthHtml, /data-timeline-status-count/);
-  assert.match(hearthHtml, /data-timeline-event-list/);
-  assert.match(hearthHtml, /data-timeline-event-count/);
-  assert.match(hearthHtml, /data-timeline-review-cards/);
-  assert.match(hearthHtml, /data-timeline-review-count/);
-  assert.match(hearthHtml, /Transcript Review Workflow/);
-  assert.match(hearthHtml, /Needs Matching/);
-  assert.match(hearthHtml, /Ready to Extract/);
-  assert.match(hearthHtml, /Proposed Notes/);
-  assert.match(hearthHtml, /Proposed Tasks/);
-  assert.match(hearthHtml, /Useful Note/);
-  assert.match(hearthHtml, /Useful Task/);
-  assert.match(hearthHtml, /source quote/);
+  assert.match(hearthHtml, /data-transcript-count/);
+  assert.match(hearthHtml, /data-transcript-list/);
+  assert.match(hearthHtml, /data-transcript-detail/);
+  assert.match(hearthHtml, /Action Items/);
+  assert.match(hearthHtml, /Meeting Overview/);
+  assert.match(hearthHtml, /People and Projects/);
+  assert.match(hearthHtml, /View full transcript/);
+  assert.doesNotMatch(hearthHtml, /Transcript Review Workflow/);
+  assert.doesNotMatch(hearthHtml, /Ready to Extract/);
+  assert.doesNotMatch(hearthHtml, /Proposed Notes/);
   assert.match(hearthJs, /const timelineDrawerLink/);
   assert.match(hearthJs, /function hydrateTimelineStatus/);
   assert.match(hearthJs, /function loadTimelineTranscripts/);

@@ -15130,6 +15130,36 @@ function valTitleCandidate(value){
   if(/^(transcript|meeting|call|zoom|recording)\s*#?\d*$/i.test(title))return '';
   return title.slice(0,180);
 }
+function transcriptKnownContentTitle(rawText='',payload={}){
+  const meta=payload.metadata||{};
+  const text=[
+    rawText,
+    payload.transcript,
+    payload.rawText,
+    payload.summary,
+    payload.summaryPreview,
+    payload.title,
+    payload.meetingTitle,
+    meta.summary,
+    meta.title,
+    JSON.stringify(meta.analysis||{}),
+    JSON.stringify(meta.sourcePayloadMetadata||{})
+  ].filter(Boolean).join(' ');
+  if(/\bGOALL\b|Goal Agency|agency call center|missed.?call|Apollo|Grace AI|projections dashboard/i.test(text))return 'GOALL';
+  return '';
+}
+function transcriptTitleConflictsWithContent(title='',rawText='',payload={}){
+  const clean=valTitleCandidate(title);
+  if(!clean)return false;
+  const known=transcriptKnownContentTitle(rawText,payload);
+  if(!known)return false;
+  if(new RegExp('\\b'+known.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(clean))return false;
+  return /\b(mammogram|screening|wang building|annual screening|medical|doctor|dentist|appointment)\b/i.test(clean);
+}
+function transcriptGroundedTitleCandidate(title='',rawText='',payload={}){
+  const candidate=valTitleCandidate(title);
+  return candidate&&!transcriptTitleConflictsWithContent(candidate,rawText,payload)?candidate:'';
+}
 function transcriptTopicTitleFromText(rawText=''){
   const text=String(rawText||'').replace(/\s+/g,' ').trim();
   if(!text)return '';
@@ -15158,12 +15188,14 @@ function eventTitleFromContext(ctx={}){
 }
 function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
+  const knownContentTitle=transcriptKnownContentTitle(rawText,payload);
   const calendarTitle=eventTitleFromContext(payload);
-  if(calendarTitle)return calendarTitle;
-  const meetingTitle=valTitleCandidate(payload.meetingTitle||payload.meeting_title||payload.meetingName||payload.meeting_name||meta.meetingTitle||meta.meeting_name||sourceMeta.meetingTitle||sourceMeta.meeting_name);
+  if(calendarTitle&&!transcriptTitleConflictsWithContent(calendarTitle,rawText,payload))return calendarTitle;
+  const meetingTitle=transcriptGroundedTitleCandidate(payload.meetingTitle||payload.meeting_title||payload.meetingName||payload.meeting_name||meta.meetingTitle||meta.meeting_name||sourceMeta.meetingTitle||sourceMeta.meeting_name,rawText,payload);
   if(meetingTitle)return meetingTitle;
-  const transcriptMetaTitle=valTitleCandidate(payload.callTitle||payload.call_title||payload.callName||payload.call_name||payload.title||meta.callTitle||meta.call_name||meta.title||sourceMeta.callTitle||sourceMeta.call_name||sourceMeta.title);
+  const transcriptMetaTitle=transcriptGroundedTitleCandidate(payload.callTitle||payload.call_title||payload.callName||payload.call_name||payload.title||meta.callTitle||meta.call_name||meta.title||sourceMeta.callTitle||sourceMeta.call_name||sourceMeta.title,rawText,payload);
   if(transcriptMetaTitle)return transcriptMetaTitle;
+  if(knownContentTitle)return knownContentTitle;
   const contact=valTitleCandidate(payload.contactName||payload.contact_name||payload.personName||meta.contactName||meta.contact_name||meta.personName||sourceMeta.contactName||sourceMeta.personName);
   const company=valTitleCandidate(payload.companyName||payload.company||meta.companyName||meta.company||sourceMeta.companyName||sourceMeta.company);
   const date=transcriptDateLabel(payload.meetingDatetime||payload.meeting_datetime||payload.timestamp||payload.createdAt||payload.receivedAt||meta.timestamp||meta.createdAt);
@@ -17110,6 +17142,8 @@ function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
 }
 function cleanTranscriptTitleForUi(title='',rawText='',createdAt=''){
+  const groundedTitle=transcriptKnownContentTitle(rawText,{title});
+  if(groundedTitle&&transcriptTitleConflictsWithContent(title,rawText,{title}))return groundedTitle;
   let clean=dashboardCleanText(title||'');
   clean=clean.replace(/\bUser\/Time\/Date\b/gi,'').replace(/\bunknown\b\s*·?/gi,'').replace(/[·\s-]+$/,'').trim();
   const text=String(rawText||'');
@@ -17676,6 +17710,7 @@ async function fetchValCalendarEvents(start,end){
 function scoreTranscriptMeetingMatch(transcript,event){
   const tText=[transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ').toLowerCase();
   const eTitle=String(event.title||event.summary||'').toLowerCase();
+  if(transcriptTitleConflictsWithContent(eTitle,tText,transcript))return {confidence:0,reason:'calendar title contradicts transcript content'};
   let score=0,reasons=[];
   if(eTitle&&tText.includes(eTitle.slice(0,80))){score+=0.45;reasons.push('title');}
   const attendees=inferAttendeesFromEvent(event);
