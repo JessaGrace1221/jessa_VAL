@@ -3978,12 +3978,11 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
 }
 
 function correspondenceItemsFromEmailIntelligence(result = {}){
-  const actionable = ['needs_reply','needs_attention','waiting_on_response','forward_to_team','appointment_recap_needed'];
+  const actionable = ['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'];
   const rows = []
     .concat(result.draftSuggestions || [])
     .concat(result.needsReply || [])
     .concat(result.needsAttention || [])
-    .concat(result.waitingOnResponse || [])
     .concat((result.emails || []).filter((email) => actionable.includes(String(email.classification || '').toLowerCase())));
   const byId = new Map();
   rows.forEach((email, index) => {
