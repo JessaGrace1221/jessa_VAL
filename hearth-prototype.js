@@ -475,23 +475,19 @@ const meetingPrep = {
 
 const observerBoardState = {
   chiefOfStaff: {
-    view: 'VAL is protecting the morning for one meaningful judgment instead of letting many useful signals compete for first attention.',
-    why: 'Capacity, Calendar, and Alignment are all asking for focus. Executive Inbox and Relationships have useful movement, but nothing there currently needs to interrupt the first block of thought.',
-    next: 'Review the prepared reply when you are ready, then keep the larger morning intact.'
+    view: 'No live Board packet is loaded for this session yet.',
+    why: 'The Board should synthesize real drawer packets from Velocity, Alignment, Leverage, Relationships, Projects, Transcripts, Executive Inbox, and Commitments. This surface should not invent an executive recommendation when those packets are missing.',
+    next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
-    {name: 'Executive Inbox', truth: 'No important human appears neglected this morning.', evidence: 'One meaningful reply is ready, but it is not demanding first attention.', stance: 'Complicates gently'},
-    {name: 'Relationships', truth: 'Trust is warm enough to be supported thoughtfully, not reactively.', evidence: 'LinkedIn Support Circle items are ready for comment review.', stance: 'Supports'},
-    {name: 'Project', truth: 'Prepared work has more leverage than new motion right now.', evidence: 'The proposal follow-up is already shaped for review.', stance: 'Supports'},
-    {name: 'Capacity', truth: 'Decision quality is the protected asset this morning.', evidence: 'There is open space before the afternoon commitment.', stance: 'Strong support'},
-    {name: 'Courage', truth: 'Nothing difficult appears to be hiding behind safe productivity yet.', evidence: 'No avoided conversation has enough evidence to lead the day.', stance: 'Watching'},
-    {name: 'Delight', truth: 'A calmer morning is allowed to count as progress.', evidence: 'There is room to think before producing.', stance: 'Supports'},
-    {name: 'Opportunity', truth: 'The best opportunity is already prepared, not newly discovered.', evidence: 'The follow-up work can move with a small review.', stance: 'Supports'},
-    {name: 'Momentum', truth: 'Momentum is present, but it does not need speed to stay alive.', evidence: 'The proposal can move again when the user chooses.', stance: 'Supports'},
-    {name: 'Meaning', truth: 'The deeper value today is protecting attention before output.', evidence: 'VAL has no reason to turn the morning into a task list.', stance: 'Supports'},
-    {name: 'Commitment', truth: 'The afternoon commitment deserves clean attention later.', evidence: 'The day has one meaningful scheduled commitment.', stance: 'Supports'},
-    {name: 'Calendar', truth: 'Time is a strategic asset today.', evidence: 'The calendar shows enough space to think before the 2:30 PM meeting.', stance: 'Strong support'},
-    {name: 'Environment', truth: 'No outside context is currently strong enough to change the recommendation.', evidence: 'Environment signals are quiet in this prototype state.', stance: 'Quiet'}
+    {name: 'Executive Inbox', truth: 'Not ready to advise from the Board.', evidence: 'Requires a live email packet with sender, thread, relationship, draft, and rule context.', stance: 'Needs packet'},
+    {name: 'Relationships', truth: 'Not ready to advise from the Board.', evidence: 'Requires relationship packet evidence, recent signal, source, and missing-context notes.', stance: 'Needs packet'},
+    {name: 'Projects', truth: 'Not ready to advise from the Board.', evidence: 'Requires project packet evidence, current phase, next move, owner, and source receipts.', stance: 'Needs packet'},
+    {name: 'Transcripts', truth: 'Not ready to advise from the Board.', evidence: 'Requires transcript packet evidence with matched event, attendees, project, and review status.', stance: 'Needs packet'},
+    {name: 'Velocity', truth: 'Not ready to advise from the Board.', evidence: 'Requires confirmed changes since the user was away.', stance: 'Needs packet'},
+    {name: 'Alignment', truth: 'Not ready to advise from the Board.', evidence: 'Requires a ranked priority packet instead of a generic priority list.', stance: 'Needs packet'},
+    {name: 'Leverage', truth: 'Not ready to advise from the Board.', evidence: 'Requires prepared drafts or artifacts VAL actually made while the user was away.', stance: 'Needs packet'},
+    {name: 'Commitments', truth: 'Not ready to advise from the Board.', evidence: 'Requires who owes whom what, by when, and the source quote behind it.', stance: 'Needs packet'}
   ]
 };
 
@@ -12285,6 +12281,10 @@ async function handleValAction(action){
 
 async function handleWorkflowAction(action, node = null){
   const [command,type,...rest] = String(action || '').split(':');
+  if(command === 'cancel'){
+    closeWorkspace();
+    return;
+  }
   if(command === 'meetingPrepCowork'){
     openMeetingPrepCoworkSession();
     return;
@@ -12481,34 +12481,6 @@ async function handleWorkflowAction(action, node = null){
   if(command === 'verify') openScraper(type, 'verified');
   if(command === 'import'){
     await importApprovedScraperLeads(type);
-    return;
-  }
-  if(command === 'cancel' && type === 'meeting'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'relationship'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'project'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'timeline'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'correspondence'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'commitment'){
-    closeWorkspace();
-    return;
-  }
-  if(command === 'cancel' && type === 'val'){
-    closeWorkspace();
     return;
   }
   if(command === 'valOnboarding'){
@@ -13597,9 +13569,9 @@ function openObserverBoard(){
     title: 'Your Board of Observers',
     meaning: chief.view,
     understanding: [
-      'Each observer protects one executive truth.',
-      'The Board surfaces agreement, tension, and uncertainty before the Chief of Staff chooses what deserves attention.',
-      'This is meant to make VAL inspectable, correctable, and easier to trust.'
+      'The Board is only useful when it is fed by real drawer packets.',
+      'Missing packets should show as missing, not as confident executive advice.',
+      'This view is currently an inspection surface, not a recommendation.'
     ],
     recommendation: chief.next,
     actions: [{label:'Close and return to desk', workflow:'cancel:board'}],
@@ -13607,14 +13579,17 @@ function openObserverBoard(){
     suppressClarityStandard: true
   });
   deskWorkspace.classList.add('observer-board-mode');
+  if(workspaceGrid) workspaceGrid.hidden = true;
   renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
-    '<section class="observer-chief-card" aria-label="Chief of Staff view">',
-      '<span>Chief of Staff view</span>',
+    '<section class="observer-chief-card" aria-label="Board readiness">',
+      '<span>Board readiness</span>',
+      '<strong>' + escapeHtml(chief.view) + '</strong>',
       '<p>' + escapeHtml(chief.why) + '</p>',
+      '<small>' + escapeHtml(chief.next) + '</small>',
     '</section>',
-    '<section class="observer-board-grid" aria-label="Observer current truths">',
+    '<section class="observer-board-grid" aria-label="Observer packet readiness">',
       observerBoardState.observers.map((observer) => [
         '<article class="observer-truth-card">',
           '<div>',
@@ -13626,7 +13601,7 @@ function openObserverBoard(){
         '</article>'
       ].join('')).join(''),
     '</section>',
-    '<p class="observer-board-note">If this read feels wrong, teach VAL. The Board should become more accurate through correction, not more certain without evidence.</p>'
+    '<p class="observer-board-note">If this view claims certainty without a packet, that is a bug. Teach VAL or open the source drawer before trusting the Board.</p>'
   ].join('');
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');

@@ -925,8 +925,15 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /const observerBoardState/);
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);
-  assert.match(hearthJs, /Chief of Staff view/);
+  assert.match(hearthJs, /No live Board packet is loaded for this session yet/);
+  assert.match(hearthJs, /Board readiness/);
+  assert.match(hearthJs, /if\(workspaceGrid\) workspaceGrid\.hidden = true/);
   assert.match(hearthJs, /observer-truth-card/);
+  assert.match(hearthJs, /If this view claims certainty without a packet, that is a bug/);
+  assert.match(hearthJs, /if\(command === 'cancel'\)\{/);
+  assert.doesNotMatch(hearthJs, /larger morning intact/);
+  assert.doesNotMatch(hearthJs, /protecting the morning/);
+  assert.doesNotMatch(hearthJs, /Chief of Staff view/);
   assert.match(hearthJs, /'Truth', 'Evidence', 'Tension', 'Synthesis'/);
   assert.match(hearthJs, /observerBoardButton\?\.addEventListener\('click', openObserverBoard\)/);
   assert.match(hearthJs, /function runTeachVal/);
