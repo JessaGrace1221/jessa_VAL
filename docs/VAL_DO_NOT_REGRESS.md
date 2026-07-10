@@ -18,6 +18,7 @@ Companion specs:
 - [VAL_PHASE_13C_SCRAPER_LAUNCH_REGRESSION_GATE.md](./VAL_PHASE_13C_SCRAPER_LAUNCH_REGRESSION_GATE.md)
 - [VAL_UI_COMPONENT_SYSTEM.md](./VAL_UI_COMPONENT_SYSTEM.md)
 - [VAL_USER_JOURNEYS.md](./VAL_USER_JOURNEYS.md)
+- [audits/2026-07-10-known-good-baseline.md](./audits/2026-07-10-known-good-baseline.md)
 
 ## Global Regressions
 
@@ -46,6 +47,8 @@ Never let VAL feel like passive software waiting for interaction when it should 
 ## Homepage Regressions
 
 Never let the homepage become a dashboard again.
+
+Never let Executive Inbox take over Home's three rooms. Home must preserve Velocity, Alignment, and Leverage as distinct executive questions.
 
 Never let the Hearth become a banner, hero section, status header, or greeting widget.
 
@@ -118,6 +121,26 @@ Never generate a draft that fakes missing context.
 Never make the user wonder why a conversation is being surfaced.
 
 Never let Executive Inbox become a conventional inbox clone.
+
+Never let Executive Inbox return to muddy brown, opaque gray/black, or juvenile card styling after the July 10 frosted-white baseline.
+
+Never show demo or hallucinated email threads as if they came from the connected Gmail account.
+
+Never remove rule learning, saved rules review, VAL-suggested rules with accept/dismiss, or thread-scoped discussion with VAL.
+
+## Transcripts Regressions
+
+Never replace the Meeting Notes transcript workbench with diagnostic workflow cards in the normal user drawer.
+
+Never show `Transcript Review Workflow`, `Ready to Extract`, `Proposed Notes`, `Proposed Tasks`, `Useful Note`, or `Useful Task` as the primary transcript drawer experience.
+
+Never use calendar-only events, meeting prep records, chat memory, generic memory, empty webhook receipts, planning artifacts, or debug records as transcript rows.
+
+Never use AI summary sentences as transcript titles.
+
+Never let a weak calendar match overwrite transcript content. If the transcript content clearly identifies the meeting, the transcript title must remain grounded in that content.
+
+Never make the user debug ingestion from the normal transcript drawer. Put intake diagnostics behind an explicit developer/admin path.
 
 ## Calendar Regressions
 
@@ -200,6 +223,14 @@ Never make Developer the place where core user journeys live.
 Never make users inspect debug surfaces to trust normal product behavior.
 
 ## Product Regression Review
+
+Before touching Home, Transcripts, Executive Inbox, Relationships, Projects, or Lead Intelligence, read:
+
+- `docs/audits/2026-07-10-known-good-baseline.md`
+- `docs/audits/2026-07-10-hearth-drawer-contract-audit.md`
+- the drawer-specific source-of-truth docs referenced in those files
+
+Do not ship a drawer/Home change unless the baseline tests pass.
 
 Before shipping any major UX or intelligence change, ask:
 
