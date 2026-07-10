@@ -9229,8 +9229,15 @@ function emailSenderMetrics(email={},allEmails=[]){
 function emailIsCalendarNotification(email={}){
   const from=normalizeExecutiveEmailAddress(email.from?.email||'');
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ');
-  return /calendar-notification|google calendar|calendar invite|updated invitation|invitation:/i.test(text)
-    && (/calendar-notification|google\.com|invitation:|updated invitation/i.test(text));
+  return /calendar-notification|google calendar|calendar invite|updated invitation|invitation:|virtual meeting|placeholder virtual meeting|join with google meet|organizer\s+.+guests|kindly accept the invite/i.test(text)
+    && (/calendar-notification|google\.com|invitation:|updated invitation|google meet|organizer|guests|accept the invite/i.test(text));
+}
+function emailLooksAutomatedSystemNotice(email={}){
+  const from=normalizeExecutiveEmailAddress(email.from?.email||'');
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,from].join(' ').toLowerCase();
+  if(/\b(notify\.railway\.app|mail\.atlasfin\.com|jobs-listings@linkedin\.com)\b/.test(text))return true;
+  if(/\b(deployment crashed|scheduled project deletion|restart deployment|manage email preferences|account alert|security alert|system notification)\b/.test(text))return true;
+  return false;
 }
 function emailLooksTransactionalOrBulk(email={}){
   const from=normalizeExecutiveEmailAddress(email.from?.email||'');
@@ -9239,6 +9246,7 @@ function emailLooksTransactionalOrBulk(email={}){
   if(/\b(no-?reply|donotreply|notification|automated|statement|receipt|transaction|order confirmation|payment received|bank alert)\b/.test(text))return true;
   if(/\b(your orders|thanks for your order|ordered:|shipped:|delivered:|track package|arriving today|arriving tomorrow|view or edit order|grand total)\b/.test(text))return true;
   if(/\b(auto-confirm|shipment-tracking)@amazon\.com\b/.test(text))return true;
+  if(/\b(mastercard|new loan inquiry|loan offer|lending offer|prequalified|apply now)\b/.test(text)&&!emailHasRelationshipEvidence(email))return true;
   return false;
 }
 function emailHasRelationshipEvidence(email={}){
@@ -9250,7 +9258,7 @@ function emailHasRelationshipEvidence(email={}){
 }
 function emailHasExecutiveConsequence(email={}){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
-  return /\b(proposal|contract|agreement|pricing|invoice|client|customer|partner|partnership|intro|introduction|referral|scope|approval|approve|deadline|decision|legal|confidential|complaint|escalat|blocked|risk)\b/i.test(text);
+  return /\b(proposal|contract|agreement|pricing|client|customer|partner|partnership|intro|introduction|referral|scope|approval|approve|deadline|decision|complaint|escalat|blocked|risk)\b/i.test(text);
 }
 function classifyExecutiveEmail(email,rules=[]){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.from?.email].join(' ').toLowerCase();
@@ -9284,6 +9292,9 @@ function classifyExecutiveEmail(email,rules=[]){
   if(emailIsCalendarNotification(email)){
     return {classification:'calendar_notice',reason:'Calendar notification belongs in calendar response controls, not Executive Inbox drafting.',recommendedAction:'Review in calendar if attendance needs a yes/no decision.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
   }
+  if(emailLooksAutomatedSystemNotice(email)&&!emailHasRelationshipEvidence(email)){
+    return {classification:'low_priority',reason:'Automated system or account notice without relationship/project context.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
+  }
   if(Number(metrics.inboundFromSenderCount||0)>3&&Number(metrics.outboundToSenderCount||0)===0&&!emailHasRelationshipEvidence(email)){
     return {classification:'ignored',reason:'More than three inbound emails from this sender and zero sent replies from the user. This is inbox noise, not an executive relationship.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics,executiveInboxRule:'more_than_three_inbound_zero_sent'};
   }
@@ -9293,10 +9304,10 @@ function classifyExecutiveEmail(email,rules=[]){
   if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
     return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
   }
-  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){
+  if(/\b(invoice|contract|agreement|legal|payment|billing|complaint|confidential|medical|hr|termination|benefits|security|deadline|approval|approve|urgent|escalat)\b/.test(text)&&emailHasRelationshipEvidence(email)){
     return {classification:'needs_attention',reason:'Sensitive or high-stakes language detected.',recommendedAction:'Review before any action.',confidence:'high',requiresApproval:true,sensitive:true};
   }
-  if(/\b(intro|introduction|referral|connect you|introduce you|introduced|warm intro|warm introduction)\b/.test(text)){
+  if(/\b(intro|introduction|referral|connect you|introduce you|introduced|warm intro|warm introduction)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){
     return {classification:'needs_reply',reason:'Warm introduction opportunity asks for reply language.',recommendedAction:'Draft the intro response for approval.',confidence:'high',requiresApproval:true};
   }
   if(/\b(can you|could you|please|confirm|question|let me know|reply|respond|available|schedule|meeting|estimate|quote|photos|photo|review|feedback|timeline|next thursday|by friday|client|customer)\b/.test(text)&&(emailHasRelationshipEvidence(email)||emailHasExecutiveConsequence(email))){

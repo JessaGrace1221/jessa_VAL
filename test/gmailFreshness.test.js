@@ -52,9 +52,14 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/more_than_three_inbound_zero_sent/);
   assert.match(server,/function emailIsCalendarNotification/);
   assert.match(server,/calendar_notice/);
+  assert.match(server,/placeholder virtual meeting\|join with google meet/);
+  assert.match(server,/function emailLooksAutomatedSystemNotice/);
+  assert.match(server,/notify\\.railway\\.app\|mail\\.atlasfin\\.com/);
   assert.match(server,/function emailLooksTransactionalOrBulk/);
   assert.match(server,/your orders\|thanks for your order\|ordered:\|shipped:/);
   assert.match(server,/recommended jobs\|job picks/);
+  assert.match(server,/mastercard\|new loan inquiry\|loan offer/);
+  assert.match(server,/Automated system or account notice without relationship\/project context/);
   assert.match(server,/const scanCorpus=\[/);
   assert.match(server,/senderMetrics:emailSenderMetrics\(email,scanCorpus\)/);
   assert.match(server,/function emailShouldPrepareDraft/);
