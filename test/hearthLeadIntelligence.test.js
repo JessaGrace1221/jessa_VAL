@@ -598,6 +598,11 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /const actionable = \['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'\]/);
   assert.doesNotMatch(hearthJs, /\.concat\(result\.waitingOnResponse \|\| \[\]\)/);
   assert.match(hearthJs, /const ruleActions = \['show_rules', 'save_forward_rule', 'suggest_rules'\]/);
+  assert.match(hearthJs, /drawerUtilityAction = \['show_rules', 'save_forward_rule', 'suggest_rules'\]\.includes\(correspondenceActionId\)/);
+  assert.match(hearthJs, /drawerUtilityAction && !activeCorrespondenceItem/);
+  assert.match(hearthJs, /data-correspondence-scan-status/);
+  assert.match(hearthJs, /correspondenceScanInFlight/);
+  assert.match(hearthJs, /Scanned the last ' \+ scanDays \+ ' days\. No unread Gmail threads crossed the Executive Inbox judgment gate\./);
   assert.match(hearthJs, /if\(String\(item\.draftBody \|\| ''\)\.trim\(\)\) actions\.unshift\('send'\)/);
   assert.match(hearthJs, /No private draft is waiting for review/);
   assert.match(hearthJs, /correspondenceDraftBody\.value = selected\?\.draftBody/);
