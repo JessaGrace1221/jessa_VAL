@@ -5384,57 +5384,6 @@ button.drawer-link{
     linear-gradient(180deg,rgba(239,185,173,.16),rgba(255,249,239,.5)),
     rgba(255,249,239,.38);
 }
-.relationship-packet-audit{
-  background:var(--frost-open-card);
-  border-color:rgba(64,86,61,.12);
-}
-.relationship-packet-grid{
-  display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
-  gap:8px;
-}
-.relationship-packet-row{
-  display:grid;
-  gap:5px;
-  min-height:112px;
-  padding:10px;
-  border:1px solid rgba(64,86,61,.12);
-  border-radius:7px;
-  background:rgba(255,255,255,.48);
-}
-.relationship-packet-row span{
-  width:max-content;
-  max-width:100%;
-  border:1px solid rgba(64,86,61,.16);
-  border-radius:999px;
-  padding:3px 7px;
-  color:rgba(52,66,47,.86);
-  background:rgba(219,233,201,.38);
-  font:800 .55rem/1 var(--mono);
-  letter-spacing:.12em;
-  text-transform:uppercase;
-}
-.relationship-packet-row[data-packet-status="missing"] span{
-  color:rgba(112,62,54,.88);
-  border-color:rgba(153,84,73,.18);
-  background:rgba(239,185,173,.24);
-}
-.relationship-packet-row[data-packet-status="partial"] span{
-  color:rgba(103,78,41,.9);
-  border-color:rgba(170,130,69,.2);
-  background:rgba(246,221,174,.28);
-}
-.relationship-packet-row strong{
-  color:rgba(29,29,31,.92);
-  font:750 .74rem/1.18 var(--body);
-}
-.relationship-packet-row p{
-  margin:0;
-  color:rgba(60,60,67,.68);
-  font-size:.68rem;
-  line-height:1.35;
-  overflow-wrap:anywhere;
-}
 .relationship-temperature-review button{
   justify-self:start;
   min-height:30px;
@@ -6428,7 +6377,7 @@ button.drawer-link{
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
   .drawer-cowork-orb{right:18px;bottom:86px;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
-      .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-packet-grid,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.project-manager-operating-system,.project-manager-judgment,.project-manager-grid,.project-manager-sop-grid,.project-manager-columns,.project-manager-story,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
+      .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.project-manager-operating-system,.project-manager-judgment,.project-manager-grid,.project-manager-sop-grid,.project-manager-columns,.project-manager-story,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
       .lead-sourcing-column{border-right:0;border-bottom:1px solid rgba(29,29,31,.12)}
       .correspondence-rulebar,.correspondence-rule-create{grid-template-columns:1fr}
       .correspondence-queue,.correspondence-thread,.correspondence-brief,.correspondence-intelligence{min-height:auto;border-right:0;border-bottom:1px solid rgba(34,19,15,.18)}

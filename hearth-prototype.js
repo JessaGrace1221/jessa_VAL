@@ -1713,11 +1713,61 @@ function clearRoomAttendance(event){
 }
 
 function relationshipIndexSourceProfiles(){
-  return relationshipIndexLoaded ? relationshipIndexProfiles : relationshipProfiles;
+  return relationshipIndexLoaded ? relationshipIndexProfiles : {};
+}
+
+function relationshipCanonicalKey(id = '', profile = {}){
+  const query = profile.query || {};
+  const email = String(query.email || profile.email || '').trim().toLowerCase();
+  if(email) return 'email:' + email;
+  const contactId = String(query.contactId || profile.contactId || profile.crmContactId || profile.personId || '').trim().toLowerCase();
+  if(contactId) return 'contact:' + contactId;
+  const name = String(profile.name || profile.displayName || id || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return 'name:' + name;
+}
+
+function relationshipProfileStrength(profile = {}){
+  const query = profile.query || {};
+  let score = 0;
+  if(query.contactId || profile.contactId || profile.crmContactId) score += 100;
+  if(query.email || profile.email) score += 25;
+  if(Array.isArray(profile.openLoops) && profile.openLoops.length) score += 12;
+  if(Array.isArray(profile.projectLinks) && profile.projectLinks.length) score += 10;
+  if(Array.isArray(profile.temperatureEvidence) && profile.temperatureEvidence.length) score += 8;
+  if(profile.dossier || profile.relationshipBrief) score += 20;
+  score += Math.round(Number(profile.confidence || 0) * 10);
+  const changed = Date.parse(profile.lastChangedAt || profile.updatedAt || profile.lastObservedAt || '') || 0;
+  return {score, changed};
+}
+
+function preferRelationshipProfile(current = {}, incoming = {}){
+  const a = relationshipProfileStrength(current);
+  const b = relationshipProfileStrength(incoming);
+  if(b.score !== a.score) return b.score > a.score ? incoming : current;
+  return b.changed > a.changed ? incoming : current;
+}
+
+function dedupeRelationshipProfiles(profiles = {}){
+  const byKey = new Map();
+  Object.entries(profiles).forEach(([id, profile]) => {
+    const normalized = {...profile, profileId: profile.profileId || id};
+    const key = relationshipCanonicalKey(id, normalized);
+    if(!byKey.has(key)){
+      byKey.set(key, [id, normalized]);
+      return;
+    }
+    const [existingId, existing] = byKey.get(key);
+    const preferred = preferRelationshipProfile(existing, normalized);
+    byKey.set(key, [preferred === normalized ? id : existingId, preferred]);
+  });
+  return Array.from(byKey.values()).reduce((result, [id, profile]) => {
+    result[id] = profile;
+    return result;
+  }, {});
 }
 
 function relationshipIndexItems(){
-  return Object.entries(relationshipIndexSourceProfiles()).map(([id, profile]) => ({
+  return Object.entries(dedupeRelationshipProfiles(relationshipIndexSourceProfiles())).map(([id, profile]) => ({
     id,
     profile,
     name: profile.name || 'Unnamed relationship',
@@ -1727,10 +1777,10 @@ function relationshipIndexItems(){
     trajectory: profile.trajectory || profile.role || 'Watch',
     state: profile.relationshipState || relationshipStateFromTemperature(profile),
     stateLabel: profile.relationshipStateLabel || relationshipTemperatureModel[profile.relationshipState]?.label || profile.temperature || 'Watch',
-    sourceEvidence: profile.sourceEvidence || profile.sourceReceipts || 'Evidence source pending canonical relationship index.',
+    sourceEvidence: profile.sourceEvidence || profile.sourceReceipts || 'Evidence is pending source review.',
     confidence: Math.max(0, Math.min(1, Number(profile.confidence || 0.6))),
     lastChangedAt: profile.lastChangedAt || '',
-    signal: profile.signal || profile.certainty || profile.evidence || 'No current signal attached.',
+    signal: profile.signal || profile.certainty || profile.evidence || 'No current relationship signal is attached.',
     temperatureReviewPending: relationshipPendingTemperatureReviewFor(profile) || profile.temperatureReviewPending || null
   }));
 }
@@ -1761,19 +1811,19 @@ function relationshipProfileFromIndexItem(item = {}){
     temperatureScoreRange: item.temperatureScoreRange || relationshipTemperatureModel[item.relationshipState || item.state]?.scoreRange || [],
     temperatureEvidence: Array.isArray(item.temperatureEvidence) ? item.temperatureEvidence : [],
     temperatureConflict: item.temperatureConflict || null,
-    sourceEvidence: item.sourceEvidence || item.summary || 'Canonical relationship index profile.',
+    sourceEvidence: item.sourceEvidence || item.summary || 'Relationship evidence is pending source review.',
     confidence: Math.max(0, Math.min(1, Number(item.confidence || 0.6))),
     lastChangedAt: item.lastChangedAt || item.updatedAt || item.lastObservedAt || '',
     signal: item.signal || item.summary || 'Relationship signal available.',
     identity: item.identity || item.name || item.displayName || 'Relationship',
     contact: item.contact || item.email || item.profileKey || 'CRM identity review may be required.',
-    wisdom: item.wisdom || item.summary || 'Review the relationship file before acting.',
-    evidence: item.evidence || item.signal || item.summary || 'Relationship evidence is available in the canonical index.',
-    patterns: item.patterns || item.executiveAssessment || item.summary || item.signal || 'Pattern not confirmed yet. VAL needs relationship evidence or your context before treating this as judgment.',
-    meaning: item.meaning || item.summary || item.signal || 'Strategic importance is not confirmed yet. Review the evidence before acting.',
-    certainty: item.certainty || item.nextMove || 'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
+    wisdom: item.wisdom || item.summary || 'VAL needs a clean identity link before this relationship can become a trusted brief.',
+    evidence: item.evidence || item.signal || item.summary || 'VAL has a relationship signal, but the source needs review before it becomes judgment.',
+    patterns: item.patterns || item.executiveAssessment || item.summary || item.signal || 'VAL has not confirmed a durable pattern for this relationship yet.',
+    meaning: item.meaning || item.summary || item.signal || 'VAL has not confirmed why this relationship matters yet.',
+    certainty: item.certainty || item.nextMove || 'Link the right person, then VAL can merge meetings, transcripts, emails, projects, and open commitments safely.',
     linkedinSignal: item.linkedinSignal || 'LinkedIn context will appear when an observer has current evidence.',
-    sourceReceipts: item.sourceReceipts || 'Canonical relationship index · CRM identity gate required before dossier attachment',
+    sourceReceipts: item.sourceReceipts || 'VAL relationship index · CRM identity link required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
     href: item.href || './dashboard.html?view=relationships&targetType=person&targetId=' + encodeURIComponent(id)
   };
@@ -1884,15 +1934,16 @@ async function hydrateRelationshipIndex(){
   relationshipIndexRequest = getJson('/api/relationships/index?limit=120')
     .then(async(data) => {
       if(Array.isArray(data?.relationships)){
-        relationshipIndexProfiles = data.relationships.reduce((profiles, item) => {
+        const rawProfiles = data.relationships.reduce((profiles, item) => {
           const id = item.id || item.profileKey || item.name;
           if(id) profiles[id] = relationshipProfileFromIndexItem(item);
           return profiles;
         }, {});
+        relationshipIndexProfiles = dedupeRelationshipProfiles(rawProfiles);
         const onboarding = await getJson('/api/teach-val/onboarding').catch(() => ({}));
         const added = mergeOnboardingSupportProfiles(onboardingImportItems(onboarding, 'support_circle'));
         relationshipIndexLoaded = true;
-        relationshipIndexSourceLabel = (data.source === 'demo_relationships' ? 'Demo canonical index' : 'Canonical relationship index') + (added ? ' + onboarding support circle' : '');
+        relationshipIndexSourceLabel = (data.source === 'demo_relationships' ? 'Preview relationships' : 'VAL relationship index') + (added ? ' + onboarding support circle' : '');
         updateRelationshipIndexSourceLabel();
         renderRelationshipRolodex();
       }
@@ -2006,7 +2057,7 @@ function relationshipRolodexEmptyText(){
     return 'No relationship matches this search or filter.';
   }
   if(relationshipIndexLoaded && !Object.keys(relationshipIndexProfiles).length){
-    return 'Canonical relationship index is connected. No relationship profiles have enough evidence to appear here yet.';
+    return 'VAL is connected. No relationship profiles have enough evidence to appear here yet.';
   }
   return 'No relationship matches this view.';
 }
@@ -5727,15 +5778,15 @@ function relationshipProfileFromUnresolvedIdentity(data = {}, fallback = {}){
     role: 'Identity unresolved',
     identity: 'Not organized in CRM yet',
     contact: email || 'No canonical CRM contact ID is attached.',
-    wisdom: 'Create or match the contact before VAL attaches relationship context.',
+    wisdom: 'Link the right person once so VAL can safely bring the full relationship into view.',
     evidence: 'VAL found possible relationship context, but it is holding that context until identity is clean.',
     patterns: matches.length ? matches.slice(0, 2).map((match) => [match.name, match.email, match.source].filter(Boolean).join(' · ')).join(' | ') : 'No confident CRM match was returned.',
     meaning: 'This prevents transcripts, calendar attendees, emails, and notes from overlapping the wrong person.',
-    certainty: 'Resolve identity first. Then build the Relationship Dossier from the returned CRM contact ID.',
+    certainty: 'Once this person is linked, VAL can merge meetings, transcripts, emails, projects, and open commitments without overlapping the wrong person.',
     href: '#',
     actions: [
-      {id:'search_ghl_contacts',label:'Search CRM contacts',type:'identity_gate',willDo:'Show the possible CRM matches returned by the resolver.',willNotDo:'No contact will be created or merged.'},
-      {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review a new CRM contact candidate before creation.',willNotDo:'VAL will not create a contact without review.'}
+      {id:'search_ghl_contacts',label:'Find matching person',type:'identity_gate',willDo:'Show possible CRM matches returned by VAL.',willNotDo:'No person will be created or merged.'},
+      {id:'review_new_contact_candidate',label:'Review person link',type:'identity_gate',willDo:'Review a new CRM person link before creation.',willNotDo:'VAL will not create a person without review.'}
     ],
     sectionActions: {},
     contactCandidate:{payload:contactCandidatePayloadFromRelationship({...fallback,name,query:{...(fallback.query||{}),email}})}
@@ -5801,81 +5852,6 @@ function relationshipHasAny(profile = {}, keys = []){
   });
 }
 
-function relationshipPacketAuditRows(profile = {}){
-  const hasProfile = relationshipHasAny(profile, ['name','identity','contact','role']);
-  const hasReceipts = relationshipHasAny(profile, ['sourceReceipts','sourceEvidence','evidence','signal']);
-  const hasProjects = relationshipHasAny(profile, ['projectLinks','relatedWork','activeThreads']);
-  const hasDocuments = relationshipHasAny(profile, ['documents']);
-  return [
-    {
-      label:'Witnessing root',
-      status: profile.query || profile.sourceReceipts ? 'partial' : 'missing',
-      detail:'Teach VAL, first understanding, preferences, and behavior rules should travel with every relationship click.'
-    },
-    {
-      label:'Selected relationship',
-      status: hasProfile ? 'present' : 'missing',
-      detail: profile.name || 'No selected relationship profile.'
-    },
-    {
-      label:'Source receipts',
-      status: hasReceipts ? 'present' : 'missing',
-      detail: profile.sourceReceipts || profile.sourceEvidence || profile.evidence || 'No source receipt attached yet.'
-    },
-    {
-      label:'Email thread context',
-      status: relationshipHasAny(profile, ['currentThreadHistory','emailThreads','recentEmailSummary']) ? 'present' : 'missing',
-      detail:'Needed for relationship temperature, reply posture, and active thread context.'
-    },
-    {
-      label:'Calendar touchpoints',
-      status: relationshipHasAny(profile, ['calendarTouchpoints','meetings','recentActivity']) ? 'partial' : 'missing',
-      detail: relationshipHasAny(profile, ['recentActivity']) ? 'Recent activity exists, but calendar attendee resolution still needs proof.' : 'No relationship-linked calendar touchpoints shown.'
-    },
-    {
-      label:'Transcript updates',
-      status: relationshipHasAny(profile, ['transcriptUpdates','recentTranscriptUpdates']) ? 'present' : 'missing',
-      detail:'Needed for what changed, open loops, commitments, and meeting context.'
-    },
-    {
-      label:'Linked projects',
-      status: hasProjects ? 'partial' : 'missing',
-      detail: hasProjects ? 'Project-related signals are visible; linked project IDs should be verified.' : 'No linked project context attached.'
-    },
-    {
-      label:'Linked documents',
-      status: hasDocuments ? 'present' : 'missing',
-      detail: hasDocuments ? 'Documents attached to this relationship are visible.' : 'No linked documents attached.'
-    },
-    {
-      label:'Open commitments',
-      status: relationshipHasAny(profile, ['openLoops','commitments','tasks']) ? 'partial' : 'missing',
-      detail: relationshipHasAny(profile, ['openLoops']) ? 'Open loops are visible; source-linked tasks/owners still need verification.' : 'No open relationship commitments attached.'
-    },
-    {
-      label:'Approval rules',
-      status:'present',
-      detail:'Review-only boundary is active. No message, CRM update, scrape, task, or external action happens from inspection.'
-    }
-  ];
-}
-
-function renderRelationshipPacketAudit(profile = {}){
-  const grid = document.querySelector('[data-relationship-packet-grid]');
-  if(!grid) return;
-  const rows = relationshipPacketAuditRows(profile);
-  grid.innerHTML = rows.map((row) => {
-    const status = row.status || 'missing';
-    return [
-      '<article class="relationship-packet-row" data-packet-status="' + escapeHtml(status) + '">',
-      '<span>' + escapeHtml(status) + '</span>',
-      '<strong>' + escapeHtml(row.label) + '</strong>',
-      '<p>' + escapeHtml(row.detail || '') + '</p>',
-      '</article>'
-    ].join('');
-  }).join('');
-}
-
 function renderRelationshipDossierSections(profile = {}){
   const listFallbacks = {
     keyFacts: [profile.relationshipStateLabel || profile.relationshipState, profile.temperature && profile.temperature + ' temperature', profile.trajectory && profile.trajectory + ' trajectory'].filter(Boolean),
@@ -5893,7 +5869,6 @@ function renderRelationshipDossierSections(profile = {}){
   Object.keys(listFallbacks).forEach((key) => {
     renderRelationshipList(key, profile[key] || listFallbacks[key]);
   });
-  renderRelationshipPacketAudit(profile);
 }
 
 function preferredRelationshipActions(actions = []){
@@ -5904,8 +5879,8 @@ function preferredRelationshipActions(actions = []){
 function relationshipSuggestedActions(profile = {}){
   if(profile.unresolvedIdentity){
     return [
-      {id:'search_ghl_contacts',label:'Search CRM contacts',type:'identity_gate',willDo:'Show possible CRM matches for this person.',willNotDo:'No contact will be created or merged.'},
-      {id:'review_new_contact_candidate',label:'Review new contact candidate',type:'identity_gate',willDo:'Review the proposed contact before creation.',willNotDo:'VAL will not create a contact without review.'}
+      {id:'search_ghl_contacts',label:'Find matching person',type:'identity_gate',willDo:'Show possible CRM matches for this person.',willNotDo:'No person will be created or merged.'},
+      {id:'review_new_contact_candidate',label:'Review person link',type:'identity_gate',willDo:'Review the proposed person link before creation.',willNotDo:'VAL will not create a person without review.'}
     ];
   }
   const state = String(profile.relationshipState || profile.relationshipStateLabel || '').toLowerCase();
@@ -6497,6 +6472,7 @@ function relationshipUsefulText(value = '', fallback = ''){
     /canonical relationship index/i,
     /Open the brief to resolve identity/i,
     /Relationship evidence is available in the canonical index/i,
+    /Relationship evidence is pending source review/i,
     /This relationship has enough observed context to appear in the index/i,
     /LinkedIn context will appear when an observer has current evidence/i
   ];
@@ -6582,11 +6558,11 @@ async function handleUnresolvedRelationshipAction(actionId, profile = {}){
   if(actionId === 'search_ghl_contacts'){
     const matches = Array.isArray(profile.unresolvedData?.matches) ? profile.unresolvedData.matches : [];
     showRelationshipReceipt({
-      title: 'Search CRM before attaching context.',
-      meaning: profile.name + ' is not organized under a canonical CRM contact ID yet.',
-      understanding: matches.length ? matches.map((match) => [match.name || 'Unnamed contact', match.email, match.contactId || match.source, match.confidence != null ? 'confidence ' + match.confidence : ''].filter(Boolean).join(' · ')) : ['No confident CRM match was returned by the resolver.', 'Use a more specific email, phone, or company if this should match an existing contact.'],
-      recommendation: 'Match or create the CRM contact first. Then VAL can safely attach transcripts, calendar, emails, and notes.',
-      actions: [{label:'Review new contact candidate', workflow:'relationship:review_new_contact_candidate'}]
+      title: 'Find the right person before attaching context.',
+      meaning: profile.name + ' is not linked to one clean CRM person yet.',
+      understanding: matches.length ? matches.map((match) => [match.name || 'Unnamed person', match.email, match.contactId || match.source, match.confidence != null ? 'confidence ' + match.confidence : ''].filter(Boolean).join(' · ')) : ['No confident CRM match was returned by VAL.', 'Use a more specific email, phone, or company if this should match an existing person.'],
+      recommendation: 'Link the right person first. Then VAL can safely attach transcripts, calendar, emails, projects, and notes.',
+      actions: [{label:'Review person link', workflow:'relationship:review_new_contact_candidate'}]
     });
     return;
   }
@@ -6604,10 +6580,10 @@ async function handleUnresolvedRelationshipAction(actionId, profile = {}){
     return;
   }
   showRelationshipReceipt({
-    title: 'Resolve identity first.',
-    meaning: 'VAL cannot use this as a Relationship Dossier until a CRM contact ID exists.',
-    understanding: ['No relationship context was attached.', 'No CRM write happened.', 'This protects against overlapping people.'],
-    recommendation: 'Search CRM or review a new contact candidate.'
+    title: 'Link the right person first.',
+    meaning: 'VAL is protecting the relationship until the identity is clean enough to merge evidence.',
+    understanding: ['No relationship context was merged yet.', 'No CRM write happened.', 'This protects against overlapping people.'],
+    recommendation: 'Find the matching person or review the proposed person link.'
   });
 }
 
@@ -14738,9 +14714,17 @@ documentDrawerLink?.addEventListener('click', () => {
 });
 
 closeRelationshipDetail.addEventListener('click', () => {
-  drawerTray.classList.remove('relationship-open');
-  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
+  const detail = document.querySelector('#relationship-detail');
+  if(detail?.classList.contains('show-index')){
+    drawerTray.classList.remove('relationship-open');
+    relationshipDrawerLink.setAttribute('aria-expanded', 'false');
+    detail.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  drawerTray.classList.add('relationship-open');
+  relationshipDrawerLink.setAttribute('aria-expanded', 'true');
+  detail?.setAttribute('aria-hidden', 'false');
+  openRelationshipIndex();
 });
 
 closeProjectDetail.addEventListener('click', () => {

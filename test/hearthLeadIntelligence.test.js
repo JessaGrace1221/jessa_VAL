@@ -778,9 +778,8 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthHtml, /data-relationship-temperature-review/);
   assert.match(hearthHtml, /data-relationship-project-panel/);
   assert.match(hearthHtml, /data-relationship-project-count/);
-  assert.match(hearthHtml, /data-relationship-packet-audit/);
-  assert.match(hearthHtml, /data-relationship-packet-grid/);
-  assert.match(hearthHtml, /Round-table inputs VAL needs before this brief can be trusted/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-packet-audit/);
+  assert.doesNotMatch(hearthHtml, /Round-table inputs VAL needs before this brief can be trusted/);
   assert.match(hearthHtml, /Linked Projects/);
   assert.doesNotMatch(hearthHtml, /<button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL<\/button>/);
   assert.match(hearthJs, /mode === 'relationship'/);
@@ -795,6 +794,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /function filteredRelationshipIndexItems/);
   assert.match(hearthJs, /function sortRelationshipIndexItems/);
   assert.match(hearthJs, /function relationshipIndexSourceProfiles/);
+  assert.match(hearthJs, /return relationshipIndexLoaded \? relationshipIndexProfiles : \{\}/);
   assert.match(hearthJs, /function updateRelationshipIndexSourceLabel/);
   assert.match(hearthJs, /function relationshipProfileFromIndexItem/);
   assert.doesNotMatch(hearthJs, /VAL is reading this from the canonical relationship index/);
@@ -811,13 +811,11 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /Review temperature/);
   assert.match(hearthJs, /function renderRelationshipTemperatureReview/);
   assert.match(hearthJs, /Review before treating this temperature as durable judgment/);
-  assert.match(hearthJs, /function relationshipPacketAuditRows/);
-  assert.match(hearthJs, /function renderRelationshipPacketAudit/);
-  assert.match(hearthJs, /Email thread context/);
-  assert.match(hearthJs, /Transcript updates/);
-  assert.match(hearthJs, /Open commitments/);
-  assert.match(hearthCss, /\.relationship-packet-audit/);
-  assert.match(hearthCss, /\.relationship-packet-row\[data-packet-status="missing"\]/);
+  assert.match(hearthJs, /function dedupeRelationshipProfiles/);
+  assert.match(hearthJs, /function relationshipCanonicalKey/);
+  assert.match(hearthJs, /function preferRelationshipProfile/);
+  assert.doesNotMatch(hearthJs, /function relationshipPacketAuditRows/);
+  assert.doesNotMatch(hearthCss, /\.relationship-packet-audit/);
   assert.match(hearthJs, /function renderRelationshipProjectPanel/);
   assert.match(hearthJs, /function hydrateRelationshipProjectLinks/);
   assert.match(hearthJs, /\/api\/projects\/links\?relationshipId=/);
@@ -865,7 +863,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /actionId === 'teach_temperature'/);
   assert.match(hearthJs, /async function hydrateRelationshipIndex/);
   assert.match(hearthJs, /\/api\/relationships\/index\?limit=120/);
-  assert.match(hearthJs, /Canonical relationship index/);
+  assert.match(hearthJs, /VAL relationship index/);
   assert.match(hearthJs, /Local preview/);
   assert.match(hearthJs, /function appendRelationshipSectionHeader/);
   assert.match(hearthJs, /function relationshipSectionCounts/);
@@ -875,7 +873,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /relationshipItemMatchesSearch/);
   assert.match(hearthJs, /function relationshipRolodexEmptyText/);
   assert.match(hearthJs, /No relationship matches this search or filter/);
-  assert.match(hearthJs, /Canonical relationship index is connected\. No relationship profiles have enough evidence to appear here yet/);
+  assert.match(hearthJs, /VAL is connected\. No relationship profiles have enough evidence to appear here yet/);
   assert.match(hearthJs, /shouldShowRelationshipSections/);
   assert.match(hearthJs, /relationshipProfiles\[profileId\] \|\| relationshipIndexProfiles\[profileId\]/);
   assert.match(hearthJs, /button\.dataset\.relationshipState = item\.state/);
@@ -1921,9 +1919,9 @@ test('Relationship drawer opens a Relationship Brief instead of a CRM link', () 
 
 test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthHtml, /class="relationship-folder-rail"/);
-  assert.match(hearthHtml, /data-relationship-profile="aric"/);
-  assert.match(hearthHtml, /data-relationship-profile="greg"/);
-  assert.match(hearthHtml, /data-relationship-profile="lindsey"/);
+  assert.match(hearthHtml, /class="relationship-folder-rail" aria-label="Pinned relationships" hidden/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-profile="greg"/);
+  assert.doesNotMatch(hearthHtml, /data-relationship-profile="lindsey"/);
   assert.match(hearthHtml, /data-relationship-field="wisdom"/);
   assert.match(hearthJs, /const relationshipProfiles/);
   assert.match(hearthJs, /function renderRelationshipProfile/);
@@ -2010,7 +2008,6 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /if\(currentReceipt\.includes\(profile\.name\)\) return/);
   assert.match(hearthJs, /receiptMatchesSelection/);
   assert.match(hearthJs, /localHearthMetadataPacket\(\{packetName:'relationship_packet', action:'relationship:open_profile', node, source:selectedSource\}\)/);
-  assert.match(hearthHtml, /openRelationshipProfileFromFolder\(this\.dataset\.relationshipProfile,this\)/);
   assert.match(hearthJs, /openRelationshipProfileFromFolder\(button\.dataset\.relationshipProfile, button\)/);
   assert.match(hearthJs, /aria-pressed/);
   assert.match(hearthJs, /Do not let silence become ambiguity/);
@@ -2045,11 +2042,11 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /relationshipFallbackHasCanonicalEvidence\(fallback\)[\s\S]{0,140}relationshipProfileWithIdentityWarning\(error\.data, fallback\)/);
   assert.match(hearthJs, /unresolvedIdentityWarning: warning/);
   assert.match(hearthJs, /\.\.\.fallback/);
-  assert.match(hearthJs, /Create or match the contact before VAL attaches relationship context/);
-  assert.match(hearthJs, /Search CRM contacts/);
-  assert.match(hearthJs, /Review new contact candidate/);
+  assert.match(hearthJs, /Link the right person once so VAL can safely bring the full relationship into view/);
+  assert.match(hearthJs, /Find matching person/);
+  assert.match(hearthJs, /Review person link/);
   assert.match(hearthJs, /function handleUnresolvedRelationshipAction/);
-  assert.match(hearthJs, /VAL cannot use this as a Relationship Dossier until a CRM contact ID exists/);
+  assert.match(hearthJs, /VAL is protecting the relationship until the identity is clean enough to merge evidence/);
   assert.match(hearthJs, /error\.data = data/);
   assert.match(hearthJs, /function renderRelationshipActions/);
   assert.match(hearthJs, /function renderRelationshipSectionActions/);
