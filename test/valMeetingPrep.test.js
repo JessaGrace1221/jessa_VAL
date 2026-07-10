@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {VAL_MEETING_PREP_SQL}=require('../services/valMeetingPrepSchema');
-const {createValMeetingPrepService,qualityGate,inferAttendees}=require('../services/valMeetingPrep');
+const {createValMeetingPrepService,qualityGate,inferAttendees,externalMeetingAttendees,isMeetingEvent}=require('../services/valMeetingPrep');
 const {createValReadyForYouService}=require('../services/valReadyForYou');
 
 const root=path.join(__dirname,'..');
@@ -34,7 +34,28 @@ test('quality gate distinguishes usable meeting context',()=>{
   const event={id:'cal_1',title:'Intro with Fred',startTime:'2026-07-03T14:00:00Z',attendees:[{name:'Fred',email:'fred@example.com'}]};
   assert.equal(qualityGate(event).quality,'high');
   assert.equal(inferAttendees(event).length,1);
-  assert.equal(qualityGate({title:'Untimed'}).is_usable,true);
+  assert.equal(qualityGate({title:'Untimed'}).is_usable,false);
+  assert.equal(isMeetingEvent({title:'CEO thinking day',startTime:'2026-07-10T20:00:00Z',attendees:[]}),false);
+  assert.equal(isMeetingEvent({title:'Solo focus',startTime:'2026-07-10T20:00:00Z',attendees:[{name:'Jessa Grace',email:'jessa@jessagrace.com',self:true}]}),false);
+  assert.equal(isMeetingEvent({title:'Call with Fred',startTime:'2026-07-10T20:00:00Z',attendees:[{name:'Fred',email:'fred@example.com',organizer:true}]}),true);
+  assert.equal(externalMeetingAttendees(event).length,1);
+});
+
+test('private calendar blocks do not produce meeting prep briefs',async()=>{
+  let store={};
+  const service=createValMeetingPrepService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    resolveMeetingContext:async()=>({meeting:{id:'cal_thinking',title:'CEO thinking day',startTime:'2026-07-10T20:00:00Z',attendees:[]},openLoops:[],transcripts:[],tasks:[],sourcesChecked:[]})
+  });
+  const result=await service.buildMeetingPrep({eventId:'cal_thinking'});
+  assert.equal(result.ok,false);
+  assert.equal(result.code,'not_a_meeting');
+  assert.match(result.error,/private calendar block/);
+  assert.equal(store.meetingPrepBriefs?.length||0,0);
 });
 
 test('builds meeting prep with source labels, attendee resolution, project links, and enrichment stubs',async()=>{

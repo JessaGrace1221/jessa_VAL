@@ -37,6 +37,8 @@ The relevant static guard is in `test/hearthLeadIntelligence.test.js`, especiall
 
 Home is not Executive Inbox.
 
+Home must not show prototype-only controls such as `Prototype states`, `Quiet`, `Protective`, `Completion`, or `Evening`.
+
 The three Home rooms remain:
 
 - Velocity: what changed.
@@ -44,6 +46,32 @@ The three Home rooms remain:
 - Leverage: prepared work/drafts VAL shaped while the user was away.
 
 Do not point all three rooms to Executive Inbox. Do not collapse Home into a generic dashboard, inbox, task board, metrics board, or static explainer.
+
+## Calendar And Meeting Prep Baseline
+
+The small calendar companion is for the next real meeting, not the next private calendar note.
+
+A calendar item is a meeting only when it has at least one external attendee. Solo calendar blocks, personal reminders, focus blocks, and notes to self may inform rhythm/capacity, but they must not:
+
+- appear as the next meeting
+- launch Meeting Prep
+- create meeting prep briefs
+- feed Ready For You as a meeting
+- manufacture relationship intelligence
+
+Meeting Prep should gather and present:
+
+- calendar event title/time
+- attendee identity resolution
+- relationship context
+- project context
+- relevant emails
+- relevant transcripts
+- relevant tasks/open loops
+- source confidence
+- public stewardship signals when useful, including LinkedIn/Outscraper-style updates
+
+Meeting Prep must stay review-only. VAL may prepare openings, questions, follow-up candidates, and stewardship notes, but it must not send messages, update CRM, write calendar changes, or publish LinkedIn content without explicit approval.
 
 ## Transcripts Baseline
 

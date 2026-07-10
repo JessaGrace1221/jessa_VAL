@@ -47,24 +47,37 @@ function inferAttendees(event={}){
   const attendees=raw.map(a=>{
     const email=String(a.email||a.address||a.emailAddress?.address||a.mail||'').trim().toLowerCase();
     const name=compactText(a.name||a.displayName||a.emailAddress?.name||a.label||email.split('@')[0]||'',120);
-    return {name,email,responseStatus:a.responseStatus?.response||a.status||'',raw:a};
+    return {name,email,responseStatus:a.responseStatus?.response||a.status||'',self:!!a.self,organizer:!!a.organizer,raw:a};
   }).filter(a=>a.name||a.email);
   const seen=new Set();
   return attendees.filter(a=>{const key=attendeeKey(a);if(seen.has(key))return false;seen.add(key);return true;}).slice(0,30);
 }
+const SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+function attendeeIsSelf(attendee={}){
+  const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
+  return !!(attendee.self||(email&&SELF_CALENDAR_EMAILS.has(email)));
+}
+function externalMeetingAttendees(event={}){
+  return inferAttendees(event).filter(a=>!attendeeIsSelf(a));
+}
+function isMeetingEvent(event={}){
+  return externalMeetingAttendees(event).length>0;
+}
 function qualityGate(event={}){
   const attendees=inferAttendees(event);
+  const externalAttendees=externalMeetingAttendees(event);
   const issues=[];
   if(!eventIdOf(event))issues.push('missing_event_id');
   if(!eventTitle(event))issues.push('missing_title');
   if(!eventStart(event))issues.push('missing_start_time');
-  if(!attendees.length)issues.push('no_attendees');
-  const quality=issues.length===0?'high':issues.length<=1?'medium':issues.length<=3?'low':'unusable';
+  if(!externalAttendees.length)issues.push('no_external_attendees');
+  const quality=!externalAttendees.length?'unusable':(issues.length===0?'high':issues.length<=1?'medium':issues.length<=3?'low':'unusable');
   return {
     is_usable:quality!=='unusable',
     quality,
     issues,
     attendee_count:attendees.length,
+    external_attendee_count:externalAttendees.length,
     recommended_next_step:quality==='unusable'?'needs_context':(quality==='low'?'process_with_caution':'process')
   };
 }
@@ -367,6 +380,16 @@ function createValMeetingPrepService({
     const gate=qualityGate(event);
     const attendees=inferAttendees(event);
     const unknowns=[];
+    if(!isMeetingEvent(event)){
+      return {
+        ok:false,
+        error:'This calendar item has no external attendees, so VAL is treating it as a private calendar block instead of a meeting.',
+        code:'not_a_meeting',
+        calendarEventId:eventId,
+        qualityGate:gate,
+        no_external_action:true
+      };
+    }
     if(!gate.is_usable)unknowns.push({source:'calendar_event',reason:'Calendar event is not usable enough for full prep.'});
     const internal=await gatherInternal(event);
     safeArray(internal.errors).forEach(reason=>unknowns.push({source:'internal_context',reason}));
@@ -432,4 +455,4 @@ function createValMeetingPrepService({
   return {buildMeetingPrep,getMeetingPrep,postMeetingCapture,listReadyForYouCandidates};
 }
 
-module.exports={createValMeetingPrepService,qualityGate,inferAttendees,meetingStakes,firstFiveMinutes,meetingOverviewApprovalSetting};
+module.exports={createValMeetingPrepService,qualityGate,inferAttendees,externalMeetingAttendees,isMeetingEvent,meetingStakes,firstFiveMinutes,meetingOverviewApprovalSetting};

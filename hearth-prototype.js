@@ -199,9 +199,34 @@ let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let currentCalendarEvents = [];
+let currentMeetingEvents = [];
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
 let workspaceReturnTarget = 'home';
+
+const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
+
+function calendarEventAttendees(event = {}){
+  return Array.isArray(event.attendees) ? event.attendees.filter(Boolean) : [];
+}
+
+function calendarAttendeeEmail(attendee = {}){
+  return String(attendee.email || attendee.address || attendee.emailAddress?.address || attendee.mail || '').trim().toLowerCase();
+}
+
+function calendarAttendeeLooksLikeSelf(attendee = {}){
+  const email = calendarAttendeeEmail(attendee);
+  if(attendee.self) return true;
+  return Boolean(email && selfCalendarEmails.includes(email));
+}
+
+function calendarEventExternalAttendees(event = {}){
+  return calendarEventAttendees(event).filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee) && (attendee.name || calendarAttendeeEmail(attendee)));
+}
+
+function calendarEventIsMeeting(event = {}){
+  return calendarEventExternalAttendees(event).length > 0;
+}
 
 const hearthPacketCompletenessRegistry = {
   navigation_packet: {
@@ -343,7 +368,6 @@ const hearthClickContractRegistry = [
   {selector:'.return-button,.close-calendar-button,.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail', contract:'nav.close_context', packet:'active_context_packet', rule:'Close active context without mutation', actions:'Close active card/detail and return to prior Hearth context', never:'Do not save, send, import, or mutate while closing'},
   {selector:'.workspace-card button,.workspace-actions button:not([data-workflow-action])', contract:'workspace.static_action', packet:'workspace_seed_packet', rule:'Static workspace action rule', actions:'Open the matching review/approval/teaching workspace only', never:'Do not execute external action from static demo card'},
   {selector:'.source-action', contract:'nav.source_action', packet:'source_navigation_packet', rule:'Source navigation rule', actions:'Open the named source surface only', never:'Do not mutate source data or infer approval from navigation'},
-  {selector:'[data-state-option]', contract:'home.state_switch', packet:'home_state_packet', rule:'Prototype state display rule', actions:'Switch visual Home state', never:'Do not run intelligence or mutate memory'},
   {selector:'.lean-button', contract:'home.why_today', packet:'home_presence_packet', rule:'Daily witness explanation rule', actions:'Open or close evidence panel', never:'Do not create tasks or drafts'},
   {selector:'.fresh-desk-button', contract:'home.fresh_desk', packet:'home_session_packet', rule:'Session room-attendance reset rule', actions:'Clear session held marks', never:'Do not clear memory or source records'},
   {selector:'.next-meeting-card,.calendar-tab,.agenda-item,[data-calendar-event-index]', contract:'timeline.calendar_panel', packet:'timeline_packet', rule:'Calendar sidebar and meeting prep rule', actions:'Open calendar or meeting prep', never:'Do not create or update calendar events'},
@@ -7960,35 +7984,39 @@ async function runMeetingPrep(){
     renderMeetingPrep();
     return;
   }
-  setWorkspaceContent({
-    lens: 'Meeting Prep',
-    title: 'VAL is preparing ' + meetingPrepEventTitle(event) + '.',
-    meaning: 'VAL is assembling the two-minute executive brief for this meeting.',
-    understanding: [
-      'Meeting: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
-      'The final screen should tell you what matters, how to enter, what to ask, and what to watch.'
-    ],
-    recommendation: 'Use Co-Work if you want to talk through the meeting before the brief finishes.',
-    actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
-    label: 'Meeting prep loading workspace',
-    suppressClarityStandard:true
-  });
-  updateDrawerCoworkIcon();
-  try{
-    const result = await postJson('/api/val/calendar/meeting-prep', {event});
-    renderMeetingPrepResult(result);
-  }catch(error){
+  const loadingTimer = window.setTimeout(() => {
     setWorkspaceContent({
       lens: 'Meeting Prep',
-      title: 'Meeting prep needs attention.',
+      title: 'Preparing ' + meetingPrepEventTitle(event) + '.',
+      meaning: 'VAL is assembling the two-minute executive brief for this meeting.',
+      understanding: [
+        'Meeting: ' + meetingPrepEventTitle(event) + (meetingPrepEventTime(event) ? ' at ' + meetingPrepEventTime(event) : '') + '.',
+        'VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals.'
+      ],
+      recommendation: 'The final card will show what matters, how to enter, what to ask, and what to watch.',
+      actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
+      label: 'Meeting prep loading workspace',
+      suppressClarityStandard:true
+    });
+    updateDrawerCoworkIcon();
+  }, 700);
+  try{
+    const result = await postJson('/api/val/calendar/meeting-prep', {event});
+    window.clearTimeout(loadingTimer);
+    renderMeetingPrepResult(result);
+  }catch(error){
+    window.clearTimeout(loadingTimer);
+    setWorkspaceContent({
+      lens: 'Meeting Prep',
+      title: calendarEventIsMeeting(event) ? 'Meeting prep needs attention.' : 'This calendar item is not a meeting.',
       meaning: 'VAL did not take any external action. The prep brief could not be assembled cleanly.',
       understanding: [
         error.message,
-        'The calendar card remains available.',
-        'Co-Work can still help you prepare from what is visible.'
+        calendarEventIsMeeting(event) ? 'The calendar card remains available.' : 'No external attendee is attached, so VAL will treat this as a private calendar block.',
+        calendarEventIsMeeting(event) ? 'Co-Work can still help you prepare from what is visible.' : 'Private blocks can inform rhythm and capacity, but they do not receive meeting prep.'
       ],
-      recommendation: 'Use Co-Work to prepare manually from the meeting title and what you already know.',
-      actions: [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}],
+      recommendation: calendarEventIsMeeting(event) ? 'Use Co-Work to prepare manually from the meeting title and what you already know.' : 'Choose a calendar event with attendees for meeting prep.',
+      actions: calendarEventIsMeeting(event) ? [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}] : [],
       label: 'Meeting prep error workspace',
       suppressClarityStandard:true
     });
@@ -12470,7 +12498,7 @@ function formatCalendarTime(value = ''){
 }
 
 function calendarEventSubtitle(event = {}){
-  const attendees = Array.isArray(event.attendees) ? event.attendees.filter(Boolean).length : 0;
+  const attendees = calendarEventExternalAttendees(event).length;
   const source = event.source ? String(event.source).replace(/^\w/, (c) => c.toUpperCase()) : 'Calendar';
   const bits = [
     source,
@@ -12484,27 +12512,42 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
   if(!agendaList) return;
   const visibleEvents = Array.isArray(events) ? events.slice(0, 8) : [];
   currentCalendarEvents = visibleEvents;
+  currentMeetingEvents = visibleEvents.filter(calendarEventIsMeeting);
   if(!visibleEvents.length){
     agendaList.innerHTML = '<button class="agenda-item quiet" type="button"><span>Calendar</span><strong>No upcoming events loaded</strong><small>' + escapeHtml((errors && errors[0]) || 'Connect Google Calendar or Outlook to show your schedule here.') + '</small></button>';
+    if(nextMeetingCard){
+      nextMeetingCard.disabled = true;
+      const top = nextMeetingCard.querySelector('.calendar-page-top');
+      const body = nextMeetingCard.querySelector('.calendar-page-body');
+      if(top) top.innerHTML = '<b>--</b><strong>--</strong>';
+      if(body) body.innerHTML = '<span class="calendar-kicker">Next meeting</span><strong>None</strong><span>No attendee meeting found</span><small>Solo blocks stay out of meeting prep.</small>';
+    }
     return;
   }
   agendaList.innerHTML = visibleEvents.map((event, index) => (
-    '<button class="agenda-item' + (index === 0 ? ' active' : '') + '" type="button" data-calendar-event-index="' + index + '">' +
+    '<button class="agenda-item' + (calendarEventIsMeeting(event) && event === currentMeetingEvents[0] ? ' active' : '') + (calendarEventIsMeeting(event) ? '' : ' calendar-note') + '" type="button" data-calendar-event-index="' + index + '" data-calendar-meeting="' + (calendarEventIsMeeting(event) ? 'true' : 'false') + '">' +
       '<span>' + escapeHtml(formatCalendarTime(event.start)) + '</span>' +
       '<strong>' + escapeHtml(event.title || event.summary || '(No title)') + '</strong>' +
-      '<small>' + escapeHtml(calendarEventSubtitle(event)) + '</small>' +
+      '<small>' + escapeHtml(calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note - no attendee meeting prep') + '</small>' +
     '</button>'
   )).join('');
-  if(nextMeetingCard && visibleEvents[0]){
-    const first = visibleEvents[0];
+  if(nextMeetingCard && currentMeetingEvents[0]){
+    const first = currentMeetingEvents[0];
     const start = new Date(first.start || Date.now());
     const month = Number.isNaN(start.getTime()) ? '' : start.toLocaleDateString([], {month:'short'});
     const day = Number.isNaN(start.getTime()) ? '' : start.toLocaleDateString([], {day:'2-digit'});
     const time = Number.isNaN(start.getTime()) ? 'Next' : start.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
     const top = nextMeetingCard.querySelector('.calendar-page-top');
     const body = nextMeetingCard.querySelector('.calendar-page-body');
+    nextMeetingCard.disabled = false;
     if(top) top.innerHTML = '<b>' + escapeHtml(month) + '</b><strong>' + escapeHtml(day) + '</strong>';
     if(body) body.innerHTML = '<span class="calendar-kicker">Next</span><strong>' + escapeHtml(time) + '</strong><span>' + escapeHtml(first.title || '(No title)') + '</span><small>' + escapeHtml(source === 'google' ? 'Google Calendar connected' : calendarEventSubtitle(first)) + '</small>';
+  }else if(nextMeetingCard){
+    nextMeetingCard.disabled = true;
+    const top = nextMeetingCard.querySelector('.calendar-page-top');
+    const body = nextMeetingCard.querySelector('.calendar-page-body');
+    if(top) top.innerHTML = '<b>--</b><strong>--</strong>';
+    if(body) body.innerHTML = '<span class="calendar-kicker">Next meeting</span><strong>None</strong><span>No attendee meeting found</span><small>Solo blocks stay out of meeting prep.</small>';
   }
 }
 
@@ -13088,7 +13131,14 @@ function calendarPacketSourceFromEvent(event = {}, index = 0){
 }
 
 async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0){
-  const event = currentCalendarEvents[eventIndex] || currentCalendarEvents[0] || {};
+  const isAgendaNode = node?.matches?.('[data-calendar-event-index]');
+  const event = isAgendaNode
+    ? (currentCalendarEvents[eventIndex] || {})
+    : (currentMeetingEvents[eventIndex] || currentMeetingEvents[0] || {});
+  if(!calendarEventIsMeeting(event)){
+    openCalendarPanelWithPacket(calendarTab);
+    return;
+  }
   activeMeetingPrepEvent = event;
   const prepPromise = openMeetingPrep();
   ensureHearthClickPacket({

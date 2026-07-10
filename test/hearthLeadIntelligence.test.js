@@ -877,7 +877,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function renderMeetingPrepResult/);
   assert.match(hearthJs, /activeMeetingPrepEvent/);
   assert.match(hearthJs, /VAL is assembling the two-minute executive brief for this meeting/);
-  assert.match(hearthJs, /The final screen should tell you what matters, how to enter, what to ask, and what to watch/);
+  assert.match(hearthJs, /VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals/);
+  assert.match(hearthJs, /The final card will show what matters, how to enter, what to ask, and what to watch/);
   assert.match(hearthJs, /postJson\('\/api\/val\/calendar\/meeting-prep', \{event\}\)/);
   assert.match(hearthJs, /function meetingPrepQualityLine/);
   assert.match(hearthJs, /function meetingPrepStakesLine/);
@@ -889,6 +890,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /const prepPromise = openMeetingPrep\(\)/);
   assert.match(hearthJs, /if\(mode === 'meeting_prep'\)\{[\s\S]{0,140}openMeetingPrepCoworkSession\(\)/);
   assert.match(hearthJs, /function meetingPrepHasUsefulContext/);
+  assert.match(hearthJs, /function calendarEventIsMeeting/);
+  assert.match(hearthJs, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsMeeting\)/);
+  assert.match(hearthJs, /Solo blocks stay out of meeting prep/);
   assert.match(hearthJs, /only the calendar title and time are available/);
   assert.match(hearthJs, /Executive Readiness/);
   assert.match(hearthJs, /The Purpose/);
@@ -1700,7 +1704,8 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
-  assert.match(hearthCss, /\.state-switcher\{top:28px;left:104px;right:18px;max-width:calc\(100vw - 122px\);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:\.54\}/);
+  assert.doesNotMatch(hearthHtml, /Prototype states/);
+  assert.doesNotMatch(hearthHtml, /data-state-option/);
   assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:24\}/);
   assert.match(hearthCss, /\.drawer-tray\{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden\}/);
   assert.match(hearthCss, /\.retrieval-system\.open \.drawer-tray\{max-height:min\(70vh,640px\);padding:18px;margin-top:0;overflow:auto\}/);

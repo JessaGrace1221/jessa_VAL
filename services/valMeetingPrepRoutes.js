@@ -9,6 +9,10 @@ function registerValMeetingPrepRoutes(app,deps={}){
     try{
       await waitForDb();
       const result=await service.buildMeetingPrep(req.body||{});
+      if(result&&result.ok===false){
+        await auditLog({req,action:'calendar_meeting_prep_skipped',resourceType:'meeting_prep_brief',resourceId:'',metadata:{calendarEventId:result.calendarEventId,code:result.code,noExternalAction:true},success:true}).catch(()=>{});
+        return res.status(result.code==='not_a_meeting'?422:400).json(result);
+      }
       await auditLog({req,action:'calendar_meeting_prep_built',resourceType:'meeting_prep_brief',resourceId:result.brief?.id||'',metadata:{calendarEventId:result.brief?.calendarEventId,status:result.brief?.status,noExternalAction:true},success:true}).catch(()=>{});
       res.json(result);
     }catch(e){

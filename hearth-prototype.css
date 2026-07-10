@@ -145,46 +145,6 @@ button,a{font:inherit}
   opacity:1;
   transform:translateY(0);
 }
-.state-switcher{
-  position:fixed;
-  top:18px;
-  right:42px;
-  z-index:10;
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  flex-wrap:wrap;
-  gap:3px;
-  padding:4px 5px;
-  border:1px solid rgba(245,239,228,.1);
-  background:rgba(27,16,14,.13);
-  backdrop-filter:blur(18px);
-  border-radius:999px;
-  max-width:min(520px,calc(100vw - 70px));
-  opacity:.34;
-  transition:opacity .22s ease,background .22s ease,border-color .22s ease;
-}
-.state-switcher:hover,.state-switcher:focus-within{opacity:1;background:rgba(27,16,14,.3);border-color:rgba(245,239,228,.18)}
-.state-switcher span{
-  padding:0 7px 0 6px;
-  font:500 .52rem var(--mono);
-  letter-spacing:.14em;
-  text-transform:uppercase;
-  color:rgba(245,239,228,.38);
-}
-.state-switcher button{
-  min-height:32px;
-  border:0;
-  border-radius:999px;
-  background:transparent;
-  color:rgba(245,239,228,.68);
-  padding:0 11px;
-  font-size:.62rem;
-  font-weight:700;
-  letter-spacing:.04em;
-}
-.state-switcher button:hover{color:var(--paper);background:rgba(245,239,228,.08)}
-.state-switcher button.active{color:var(--mahogany-deep);background:rgba(245,239,228,.74)}
 .sun-mark{
   position:fixed;
   top:31px;
@@ -922,6 +882,11 @@ button,a{font:inherit}
 .agenda-item.active{
   border-color:rgba(100,57,43,.28);
   box-shadow:0 18px 40px rgba(79,48,38,.18);
+}
+.agenda-item.calendar-note{
+  opacity:.72;
+  border-style:dashed;
+  box-shadow:0 8px 22px rgba(79,48,38,.08);
 }
 .agenda-item span{
   font:500 .58rem var(--mono);
@@ -6401,9 +6366,6 @@ button.drawer-link{
   .hearth-shell{min-height:auto;overflow:visible;background-position:center top}
   .hearth-topline{align-items:flex-start;flex-direction:column;padding:18px}
   .observer-board-button{z-index:28}
-  .state-switcher{top:28px;left:104px;right:18px;max-width:calc(100vw - 122px);overflow-x:auto;border-radius:14px;justify-content:flex-start;opacity:.54}
-  .state-switcher span{display:none}
-  .state-switcher button{white-space:nowrap}
   .sun-mark{display:none}
   .hearth{width:calc(100vw - 36px);margin:118px 18px 0;padding-bottom:28px}
   .hearth h1{font-size:clamp(3rem,16vw,5.2rem)}

@@ -11070,12 +11070,16 @@ function sidebarCalendarWindow(req){
 function normalizeSidebarCalendarEvent(ev,source){
   const start=ev.startTime||ev.start_time||(typeof ev.start==='string'?ev.start:(ev.start&&(ev.start.dateTime||ev.start.date)))||ev.date||'';
   const end=ev.endTime||ev.end_time||(typeof ev.end==='string'?ev.end:(ev.end&&(ev.end.dateTime||ev.end.date)))||'';
+  const attendees=Array.isArray(ev.attendees)?ev.attendees:[];
+  const externalAttendees=attendees.filter(a=>!sidebarCalendarAttendeeIsSelf(a));
   return {
     id:ev.id||ev.eventId||ev.appointmentId||'',
     title:ev.title||ev.summary||ev.name||'(No title)',
     start,
     end,
-    attendees:Array.isArray(ev.attendees)?ev.attendees:[],
+    attendees,
+    externalAttendeeCount:externalAttendees.length,
+    meetingPrepEligible:externalAttendees.length>0,
     organizer:ev.organizer||{},
     location:ev.location||'',
     meetingLink:ev.meetingLink||ev.hangoutLink||ev.webLink||'',
@@ -11083,6 +11087,12 @@ function normalizeSidebarCalendarEvent(ev,source){
     source,
     raw:ev.raw||ev
   };
+}
+
+const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+function sidebarCalendarAttendeeIsSelf(attendee={}){
+  const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
+  return !!(attendee.self||(email&&SIDEBAR_SELF_CALENDAR_EMAILS.has(email)));
 }
 
 app.get('/api/calendar/sidebar',async(req,res)=>{

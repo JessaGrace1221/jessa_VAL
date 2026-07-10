@@ -10,6 +10,7 @@ const html = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const meetingPrepService = fs.readFileSync(path.join(root, 'services', 'valMeetingPrep.js'), 'utf8');
 const baseline = fs.readFileSync(path.join(root, 'docs', 'audits', '2026-07-10-known-good-baseline.md'), 'utf8');
 const doNotRegress = fs.readFileSync(path.join(root, 'docs', 'VAL_DO_NOT_REGRESS.md'), 'utf8');
 
@@ -23,6 +24,8 @@ test('July 10 known-good baseline is documented and linked from Do Not Regress',
 });
 
 test('Home baseline keeps Velocity Alignment and Leverage distinct', () => {
+  assert.doesNotMatch(html, /Prototype states/);
+  assert.doesNotMatch(html, /data-state-option/);
   assert.match(html, /<h2>What changed<\/h2>/);
   assert.match(html, /<h2>Top priority<\/h2>/);
   assert.match(html, /<h2>Prepared drafts<\/h2>/);
@@ -32,6 +35,19 @@ test('Home baseline keeps Velocity Alignment and Leverage distinct', () => {
   assert.match(js, /function renderWhyTodayPanel/);
   assert.doesNotMatch(js, /forceExecutiveInboxHome\s*=\s*true/);
   assert.doesNotMatch(html, /Open Executive Inbox[\s\S]{0,500}Open Executive Inbox[\s\S]{0,500}Open Executive Inbox/);
+});
+
+test('Calendar baseline treats solo blocks as private rhythm, not meetings', () => {
+  assert.match(js, /function calendarEventIsMeeting/);
+  assert.match(js, /function calendarEventExternalAttendees/);
+  assert.match(js, /currentMeetingEvents = visibleEvents\.filter\(calendarEventIsMeeting\)/);
+  assert.match(js, /Solo blocks stay out of meeting prep/);
+  assert.match(js, /if\(!calendarEventIsMeeting\(event\)\)\{/);
+  assert.match(server, /meetingPrepEligible:externalAttendees\.length>0/);
+  assert.match(server, /externalAttendeeCount:externalAttendees\.length/);
+  assert.match(meetingPrepService, /function isMeetingEvent/);
+  assert.match(meetingPrepService, /code:'not_a_meeting'/);
+  assert.match(meetingPrepService, /private calendar block/);
 });
 
 test('Transcript drawer baseline stays Meeting Notes, not diagnostic workflow', () => {

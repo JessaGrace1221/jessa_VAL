@@ -50,6 +50,8 @@ Never let the homepage become a dashboard again.
 
 Never let Executive Inbox take over Home's three rooms. Home must preserve Velocity, Alignment, and Leverage as distinct executive questions.
 
+Never show prototype-state controls on Home.
+
 Never let the Hearth become a banner, hero section, status header, or greeting widget.
 
 Never let the living rooms compete with the Hearth for the first emotional moment.
@@ -146,7 +148,13 @@ Never make the user debug ingestion from the normal transcript drawer. Put intak
 
 Never let Calendar become only agenda management.
 
+Never let a private/solo calendar block appear as the next meeting.
+
+Never launch Meeting Prep unless the calendar event has at least one external attendee.
+
 Never treat meetings as isolated events when they sit inside relationships, projects, opportunities, commitments, and timing.
+
+Never let Meeting Prep manufacture relationship intelligence for a calendar note. It should gather attendee identity, relationship context, project context, email, transcripts, open loops, source confidence, and useful public stewardship signals before presenting confident prep.
 
 Never use enriched or public data without source confidence.
 
