@@ -18,7 +18,16 @@ Companion specs:
 - [VAL_PHASE_13C_SCRAPER_LAUNCH_REGRESSION_GATE.md](./VAL_PHASE_13C_SCRAPER_LAUNCH_REGRESSION_GATE.md)
 - [VAL_UI_COMPONENT_SYSTEM.md](./VAL_UI_COMPONENT_SYSTEM.md)
 - [VAL_USER_JOURNEYS.md](./VAL_USER_JOURNEYS.md)
+- [audits/2026-07-10-live-truth-baseline.md](./audits/2026-07-10-live-truth-baseline.md)
 - [audits/2026-07-10-known-good-baseline.md](./audits/2026-07-10-known-good-baseline.md)
+
+## July 10 Live Truth Rule
+
+The current Railway deployment at commit `dbc5d579c2549cc3353daca007bc7944741220c0` is the hard baseline.
+
+Anything waiting for deployment, preserved in another branch, sitting uncommitted, or inherited from an older chat is trash unless the user explicitly re-approves it.
+
+If there is any conflict between pending work and the live truth baseline, the live truth baseline wins.
 
 ## Global Regressions
 
@@ -99,6 +108,16 @@ Never surface public research in a way that feels creepy, performative, or irrel
 Never let relationship health become a fake certainty score.
 
 Never let CRM size become a proxy for network health.
+
+Never rename Stewardship back to Relationships in the primary user-facing drawer.
+
+Never let Stewardship become a person dossier, project-management surface, or CRM profile.
+
+Never restore noisy Stewardship sections such as `What VAL wants you to remember`, `Executive Judgment`, `Collaboration`, `Story`, or `Temperature Review` unless the user explicitly approves a new baseline.
+
+Never expose Round Table, packet, observer, or canonical-index machinery in the primary Stewardship surface.
+
+Stewardship should answer who needs to meet whom and why.
 
 ## Project Regressions
 
@@ -236,6 +255,7 @@ Never make users inspect debug surfaces to trust normal product behavior.
 
 Before touching Home, Transcripts, Executive Inbox, Relationships, Projects, or Lead Intelligence, read:
 
+- `docs/audits/2026-07-10-live-truth-baseline.md`
 - `docs/audits/2026-07-10-known-good-baseline.md`
 - `docs/audits/2026-07-10-hearth-drawer-contract-audit.md`
 - the drawer-specific source-of-truth docs referenced in those files

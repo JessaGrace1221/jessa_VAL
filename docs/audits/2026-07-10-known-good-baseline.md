@@ -10,6 +10,21 @@ Branch: `codex/executive-inbox-only`
 
 Purpose: define the baseline standard after the July 10 recovery work. Future changes should preserve this state unless the user explicitly approves a new baseline.
 
+## Superseded By Live Truth Baseline
+
+This 13:30 baseline was an important recovery checkpoint, but it is no longer the latest absolute baseline.
+
+The current hard baseline is:
+
+- File: `docs/audits/2026-07-10-live-truth-baseline.md`
+- Commit: `dbc5d579c2549cc3353daca007bc7944741220c0`
+- Commit message: `Simplify Stewardship network view`
+- Production URL: `https://jessaval-production.up.railway.app`
+
+If this file conflicts with the live truth baseline, the live truth baseline wins.
+
+Anything waiting for deployment before `dbc5d57` is not valid just because it exists. Treat it as trash unless the user explicitly re-approves it.
+
 ## Baseline Rule
 
 Do not replace an executive-facing drawer with an older diagnostic, demo, workflow, or architecture surface.

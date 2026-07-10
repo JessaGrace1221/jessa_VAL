@@ -1,86 +1,75 @@
-# Current State: Jessa VAL
+# Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-07 10:35 ET
+Updated: 2026-07-10 18:16 EDT
 
 ## Current Working State
 
-`jessa_VAL` is being converted to a clean dashboard that keeps only the first necessary live-test surfaces:
+The current live Railway app is the baseline.
 
-- Partnership Protocol / Witnessing Session.
-- Transcript upload.
-- Lead Intelligence with existing organization and partner scrapers.
+Do not use older local state, queued changes, abandoned worktrees, or waiting deployments as source truth.
 
-The old dashboard is preserved at:
+Baseline:
 
-```text
-/legacy-dashboard
-```
+- Production URL: `https://jessaval-production.up.railway.app`
+- Branch: `codex/executive-inbox-only`
+- Commit: `dbc5d579c2549cc3353daca007bc7944741220c0`
+- Commit message: `Simplify Stewardship network view`
 
-The new clean dashboard is served at:
+Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
-```text
-/dashboard
-```
+## Product Stance
 
-## Running Server
+The app has been recovered to the July 10 live standard:
 
-At handoff time:
+- frosted-white Hearth drawers
+- Home with Velocity, Alignment, and Leverage
+- Transcripts as Meeting Notes, not diagnostic workflow cards
+- Executive Inbox grounded in real connected email only
+- Stewardship, not Relationships
+- Stewardship focused on who should meet whom and why
+- Projects as actionable dossiers
+- Lead Intelligence as the three-level scraper board
 
-```text
-npm start
-VAL proxy running on port 3000
-```
+## Absolute Guardrail
 
-URL:
+If a future change conflicts with `docs/CODEX_HANDOFF.md`, stop and read the handoff first.
 
-```text
-http://localhost:3000/dashboard
-```
-
-## Most Recent Issue
-
-User clicked `Pick Up Where We Left Off` and it restarted the Witnessing Session from the beginning.
-
-Fix implemented:
-
-- Frontend no longer treats missing resume data as intro.
-- Backend now restores the completed Jessa witnessing export if no live session is found.
-
-Needs live browser re-test.
-
-## Important Files
-
-- `server.js`
-- `hearth-prototype.html`
-- `hearth-prototype.css`
-- `hearth-prototype.js`
-- `jessa-clean-dashboard.html`
-- `jessa-clean-dashboard.css`
-- `jessa-clean-dashboard.js`
-- `data/jessa-real-witnessing-session-2026-07-06.json`
+The handoff wins over any stale code, stale docs, stale deployment, or old chat instruction.
 
 ## Current Verification
 
-Passed:
+The baseline commit was deployed to Railway and live-verified.
+
+Focused checks passed:
 
 ```bash
-node --check server.js
 node --check hearth-prototype.js
-node --check jessa-clean-dashboard.js
-node --test test/hearthLeadIntelligence.test.js test/leadScraperRegression.test.js test/partnerScraperRegression.test.js test/valTranscriptIntelligence.test.js
+node --check services/valRelationshipDossier.js
+node --test test/hearthLeadIntelligence.test.js test/valRelationshipDossier.test.js
+git diff --check
 ```
 
-Result: `63/63` relevant tests passing.
+Result:
 
-## Product North Star
+```text
+62/62 tests passing
+```
 
-VAL is not a generic AI dashboard. For Jessa, this build must feel like:
+Live verification confirmed:
 
-- witnessed,
-- calm,
-- clean,
-- context-rich,
-- review-gated,
-- non-canned,
-- and trustworthy enough to hand off to other client dashboards later.
+- new Stewardship network map is present
+- old visible Stewardship sections are absent
 
+## Next Safe Move
+
+Continue only from this live baseline.
+
+For Stewardship, the next approved product direction is to make source-backed network introductions real:
+
+- identify who needs this person
+- identify who this person should meet
+- explain why in plain executive language
+- draft introductions only after evidence is strong enough
+- place reviewable drafts in Leverage
+
+Do not rebuild the removed relationship dossier/card sections.

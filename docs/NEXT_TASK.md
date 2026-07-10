@@ -1,82 +1,83 @@
-# Next Task: Verify Jessa Clean Dashboard Live
+# Next Task: Continue From July 10 Live Truth
 
-Start here in the next chat.
+Updated: 2026-07-10 18:16 EDT
 
-Repo:
+## Start Here
 
-```text
-/Users/jessagrace/Documents/Val-Alison/jessa_VAL
-```
-
-Live local URL:
+Read first:
 
 ```text
-http://localhost:3000/dashboard
+docs/CODEX_HANDOFF.md
+docs/CODEX_CURRENT_STATE.md
+docs/audits/2026-07-10-live-truth-baseline.md
 ```
 
-## Immediate Goal
-
-Confirm the new clean Jessa dashboard works live:
-
-1. Partnership Protocol resumes correctly.
-2. Transcript upload works for multiple files.
-3. Lead Intelligence preview works for both organization and partner scrapers without breaking existing GHL-safe gates.
-
-## First Test
-
-Hard refresh:
+Then verify the working branch descends from:
 
 ```text
-http://localhost:3000/dashboard
+dbc5d579c2549cc3353daca007bc7944741220c0
 ```
 
-Click:
+If it does not, stop before changing code.
+
+## Immediate Product Direction
+
+The next work should continue the Stewardship drawer from the approved live baseline.
+
+The visible Stewardship person card should stay simple:
+
+1. Who this person is and what they do.
+2. Who needs this person because this person has what they need.
+3. Who this person should meet because those people have what this person needs.
+
+The user wants to know:
 
 ```text
-Partnership Protocol
+Who needs to meet whom, and why?
 ```
 
-Then click:
+## Next Implementation Step
 
-```text
-Pick Up Where We Left Off
-```
+Make the network introduction logic real without adding visual clutter:
 
-Expected:
-
-- It should not silently restart at Question 1.
-- It should resume live witnessing progress or restore Jessa's completed personal witnessing export.
-- If it cannot find saved witnessing data, it should pause with a clear message instead of pretending the beginning is the resumed state.
-
-## What Was Just Fixed
-
-- `/dashboard` serves `jessa-clean-dashboard.html`.
-- `/legacy-dashboard` serves the old `dashboard.html`.
-- Partnership Protocol links to `./hearth-prototype.html#valWitnessingResume`.
-- Hearth prototype opens Witnessing Session resume mode from that hash.
-- Resume no longer silently falls back to intro when no imports are found.
-- Backend can restore Jessa's completed witnessing export:
-
-```text
-/Users/jessagrace/Documents/Val-Alison/jessa_VAL/data/jessa-real-witnessing-session-2026-07-06.json
-```
-
-## Verification Already Done
-
-```bash
-node --check server.js
-node --check hearth-prototype.js
-node --check jessa-clean-dashboard.js
-node --test test/hearthLeadIntelligence.test.js test/leadScraperRegression.test.js test/partnerScraperRegression.test.js test/valTranscriptIntelligence.test.js
-```
-
-All passed. Regression result: `63/63`.
+- use transcripts, emails, calendar context, projects, documents, and CRM context as evidence
+- produce reviewable network-match packets behind the scenes
+- show only the distilled match and why it matters
+- prepare draft introduction emails when a match is strong enough
+- send those drafts to Leverage for user approval
 
 ## Do Not Do
 
-- Do not rewrite the existing scrapers.
-- Do not remove the old dashboard.
-- Do not import leads into GHL without user approval.
-- Do not make Witnessing Session use canned responses.
-- Do not let `Pick Up Where We Left Off` restart silently.
+- Do not restore old Relationship drawer sections.
+- Do not show Round Table internals, packet internals, observer labels, debug copy, or architecture language.
+- Do not bring back `What VAL wants you to remember`, `Executive Judgment`, `Collaboration`, `Story`, or `Temperature Review`.
+- Do not deploy any waiting work from before `dbc5d57`.
+- Do not use provider names in user-facing copy unless explicitly requested.
+- Do not say `GHL`; say `CRM`.
 
+## Required Checks Before Deploy
+
+Run at minimum:
+
+```bash
+node --check hearth-prototype.js
+node --check services/valRelationshipDossier.js
+node --test test/hearthLeadIntelligence.test.js test/valRelationshipDossier.test.js
+git diff --check
+```
+
+Then verify live/static strings after deployment:
+
+```bash
+curl -sS https://jessaval-production.up.railway.app/hearth-prototype.html \
+  | rg "Who needs to meet whom, and why|stewardship-network-map"
+```
+
+And verify the removed old sections stay absent:
+
+```bash
+curl -sS https://jessaval-production.up.railway.app/hearth-prototype.html \
+  | rg "What VAL wants you to remember|<span>Executive Judgment</span>|<span>Collaboration</span>|<span>Story</span>|data-relationship-temperature-review"
+```
+
+The second command should return no matches.
