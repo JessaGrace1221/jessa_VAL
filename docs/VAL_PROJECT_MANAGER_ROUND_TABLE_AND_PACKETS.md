@@ -878,7 +878,7 @@ The top module must be backed by a Project Manager Action Packet or Project Mana
 |---|---|---|---|---|---|
 | `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, angry stakeholder, relationship tension, high-risk trade-off | Create risk/next-action packet, notify Alignment, update project status, prepare next recommended move | Top module, Alignment, Project action layer | Approve recommendation, approve draft, answer scoped question, add context, approve owner assignment | Issue receipt + updated project packet + handled Home receipt when resolved |
 | `Needs Your Judgment` | PM cannot safely move without user judgment, especially option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action, or one missing answer | Create decision packet with options, recommendation, brief source proof, consequence if delayed, and action/prepared-work packet when possible | Top module, Alignment, Project action layer, Leverage if VAL prepared something | Choose option, approve recommendation, add context, ask scoped question, ask VAL to prepare draft, approve external action, put a pin in it | One-line decision receipt |
-| `Prepared For You` | VAL prepared draft, SOP, workflow, note, schedule, document, or follow-up | Persist artifact, link to project/source, register in Leverage if reviewable | Top module or action layer; Leverage when appropriate | Review, refine, approve, reject | Prepared-work receipt |
+| `Prepared For You` | VAL drafted or prepared something ready for user review and approval | Persist artifact, link to project/source, prove why/what/where/what is needed, register in Project and Leverage | Project top module or action layer, and Leverage | Review, edit/refine, approve, ask scoped question, add context, send/publish/schedule/create after approval, put a pin in it | Simple action receipt |
 | `Today's Reprioritization` | Start of day, new source since last review, changed priority/risk | Re-rank project priorities, identify risk today, clarify who needs context | Top module | Accept priority, ask why, change priority | Reprioritization receipt |
 | `Project Movement` | Task completed/slipped, source added, meeting happened, document changed, dependency moved | Create movement packet and update current reality | Top module or recent activity | Open source, add context, ask what changed | Movement receipt |
 | `Execution Adjustment` | Scope/time/cost/quality trade-off appears | Make trade-off explicit, show impact, recommend least-risk move | Top module when active | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
@@ -1067,6 +1067,88 @@ or:
 
 ```text
 VAL just put a pin in this and will keep watching it.
+```
+
+### Prepared For You Contract
+
+Prepared For You means VAL drafted or prepared something that is ready for the user to review, refine, approve, and make real.
+
+Prepared work includes anything VAL has drafted or prepared, such as:
+
+- email draft
+- stakeholder message
+- SOP draft
+- workflow draft
+- project plan update
+- note
+- schedule or calendar proposal
+- document
+- task list
+- status update
+- proposal
+- invoice/payment follow-up
+- meeting agenda
+- project manager recommendation/action packet
+
+Where it appears:
+
+```text
+Prepared work
+  -> Project Manager page
+  -> Leverage
+  -> relevant drawer or surface when applicable
+```
+
+Prepared work must show in both the project page and Leverage when it is tied to a project.
+
+Before VAL may say it prepared something, it must prove:
+
+- why VAL prepared it
+- what VAL prepared
+- source that triggered it
+- where it is saved or visible
+- what it is waiting for
+- approval needed
+- what happens if the user approves it
+
+Required proof shape:
+
+```text
+Why I prepared this:
+What I prepared:
+Where it is:
+What I need from you:
+What happens if approved:
+```
+
+Allowed actions:
+
+- review
+- edit/refine
+- approve
+- ask scoped question
+- add context
+- send after approval
+- publish after approval
+- schedule after approval
+- create after approval
+- put a pin in it
+
+Questions and context:
+
+If VAL needs answers before the prepared work can move forward, it should ask one question at a time and leave space for additional context after the required questions.
+
+This ask/add-context pattern should be available throughout VAL wherever prepared work appears.
+
+Receipt rule:
+
+After the action, the receipt should be one simple line:
+
+```text
+VAL just created the project task list.
+VAL just sent the approved stakeholder update.
+VAL just saved the SOP draft.
+VAL just added the invoice follow-up to Project X.
 ```
 
 ### Handled Work Copy Rule

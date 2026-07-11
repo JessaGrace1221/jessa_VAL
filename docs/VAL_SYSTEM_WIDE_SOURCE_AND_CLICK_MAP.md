@@ -1444,7 +1444,7 @@ Every dynamic top module must be tied to a real path.
 |---|---|---|---|---|---|
 | Critical Project Issue | Payment issue, deadline, failed dependency, blocked/unclear owner, angry stakeholder, relationship tension, service/access risk, launch/legal/contract risk | Project Risk Packet + Project Manager Action Packet + recommended next move | Project top module and Alignment | Approve recommendation/draft, answer scoped question, add context, approve owner assignment | Issue receipt, updated project packet, Home handled receipt when resolved |
 | Needs Your Judgment | Option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action approval, unclear owner, or one missing answer blocks safe progress | Project Manager Judgment Packet + decision/action packet + prepared artifact when useful | Project top module, Alignment, Leverage if prepared work exists | Choose option, approve recommendation, add context, ask scoped question, prepare draft, approve external action, put a pin in it | One-line decision receipt |
-| Prepared For You | Draft/SOP/workflow/document/follow-up prepared | Project Prepared Work Packet | Project top module/action layer, Leverage when reviewable | Review, refine, approve, reject | Prepared-work receipt |
+| Prepared For You | VAL drafted/prepared something ready for review and approval | Project Prepared Work Packet + persisted artifact + surface registration | Project top module/action layer and Leverage | Review, edit/refine, approve, ask scoped question, add context, execute after approval, put a pin in it | Simple action receipt |
 | Today's Reprioritization | Start of day or new evidence changes priority | Project Manager Focus Packet | Project top module | Accept, change priority, ask why | Reprioritization receipt |
 | Project Movement | Work completed/slipped, source added, meeting/document/dependency changed | Project Movement Packet | Project top module/recent activity | Open source, add context, ask what changed | Movement receipt |
 | Execution Adjustment | Scope/time/cost/quality trade-off appears | Project Risk/Judgment Packet | Project top module | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
@@ -1551,6 +1551,43 @@ Decision receipt should be one simple line:
 
 ```text
 VAL just updated the project plan.
+```
+
+Prepared For You rules:
+
+```text
+Prepared work exists
+  -> persist artifact
+  -> link to project and source
+  -> register on Project Manager page
+  -> register in Leverage
+  -> show why/what/where/needed/approval proof
+  -> enable review/refine/approve/context actions
+```
+
+Required proof:
+
+```text
+Why I prepared this
+What I prepared
+Where it is
+What I need from you
+What happens if approved
+```
+
+If questions are needed:
+
+```text
+VAL has questions
+  -> ask one at a time
+  -> allow additional context
+  -> update prepared work after answers
+```
+
+Prepared work receipt:
+
+```text
+VAL just created/sent/saved/added [what it did].
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
