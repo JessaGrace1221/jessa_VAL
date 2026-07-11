@@ -6460,6 +6460,34 @@ function relationshipPacketRows(){
   });
 }
 
+function relationshipPacketHasRealIdentity(packet = {}, item = {}){
+  const person = packet.person || {};
+  const admission = item.relationshipAdmission || {};
+  const contactId = String(person.crm_contact_id || item.contactId || item.crmContactId || '').trim();
+  if(contactId && !/^(email|name|person:email):/i.test(contactId)) return true;
+  if(admission.reason === 'known_email_alias') return true;
+  if(person.identity_status === 'linked') return true;
+  return false;
+}
+
+function relationshipPacketLooksLikeRawHandle(packet = {}, item = {}){
+  const person = packet.person || {};
+  const email = person.email_addresses?.[0] || item.email || '';
+  const name = String(person.name || item.displayName || '').trim().toLowerCase();
+  if(!name || name === 'unknown') return true;
+  if(name.includes('@')) return true;
+  if(email && name === String(email).split('@')[0].toLowerCase()) return true;
+  return /^[a-z0-9._-]+$/.test(name) && !/\s/.test(name);
+}
+
+function relationshipPacketEligibleForIntro(item = {}){
+  const packet = item?.packet || item?.personPacket || item;
+  if(!packet || packet.packet_type !== 'person_packet') return false;
+  if(!relationshipPacketHasRealIdentity(packet, item)) return false;
+  if(relationshipPacketLooksLikeRawHandle(packet, item)) return false;
+  return true;
+}
+
 function relationshipIntroCandidatePackets(profile = {}){
   const selfKeys = new Set([
     profile.personPacket?.packet_id,
@@ -6477,7 +6505,7 @@ function relationshipIntroCandidatePackets(profile = {}){
       person.email_addresses?.[0],
       person.name
     ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
-    return keys.length && !keys.some((key) => selfKeys.has(key));
+    return relationshipPacketEligibleForIntro(item) && keys.length && !keys.some((key) => selfKeys.has(key));
   });
 }
 
@@ -6590,7 +6618,27 @@ function introDraftBody(profile = {}, candidate = {}){
 
 function openIntroDraftReview(candidateIndex = 0){
   const profile = activeRelationshipProfile || relationshipProfiles.aric;
-  const candidate = introDraftCandidates(profile)[Number(candidateIndex)] || introDraftCandidates(profile)[0] || {name:'this relationship',reason:'VAL needs stronger evidence before drafting this introduction.'};
+  const candidate = introDraftCandidates(profile)[Number(candidateIndex)] || introDraftCandidates(profile)[0] || null;
+  if(!candidate){
+    setWorkspaceContent({
+      lens: 'Relationship Leverage',
+      title: 'This introduction is not draft-ready yet.',
+      meaning: 'VAL does not have a clean, identity-safe introduction candidate for ' + (profile.name || 'this relationship') + '.',
+      understanding: [
+        'A real relationship or known identity is required on both sides.',
+        'Raw email handles, one-way inbound messages, spam-like senders, and unresolved observed mentions are not enough.',
+        'Nothing was sent, exposed, written to CRM, imported, scraped, or scheduled.'
+      ],
+      recommendation: 'Link the real person or teach VAL the relationship before asking it to draft an introduction.',
+      actions: relationshipContextActions([
+        {label:'Back to introduction review', workflow:'relationship:find_relationship_introductions'},
+        {label:'All people', workflow:'relationshipAllPeople'}
+      ], profile),
+      label: 'Introduction not draft-ready'
+    });
+    openWorkspaceShell('Introduction not draft-ready', {returnTarget:'relationship'});
+    return;
+  }
   activeIntroDraftCandidate = {profile,candidate,draftBody:introDraftBody(profile,candidate)};
   setWorkspaceContent({
     lens: 'Relationship Leverage',
@@ -6642,12 +6690,22 @@ async function openRelationshipIntroReview(profile = {}){
     }
   }
   const name = reviewedProfile.name || 'this relationship';
+  const candidates = introDraftCandidates(reviewedProfile);
   setWorkspaceContent({
     lens: 'Relationship Leverage',
-    title: 'Introduction leverage is ready for review.',
-    meaning: 'VAL looked in both directions around ' + name + ': who needs this person, and who this person needs.',
-    understanding: introReviewLines(reviewedProfile),
-    recommendation: 'Choose an introduction only if it would serve both people. The next step is a draft for review, never a sent email.',
+    title: candidates.length ? 'Introduction leverage is ready for review.' : 'No introduction is ready yet.',
+    meaning: candidates.length
+      ? 'VAL looked in both directions around ' + name + ': who needs this person, and who this person needs.'
+      : 'VAL checked the current relationship packets around ' + name + ', but did not find a clean, identity-safe introduction candidate.',
+    understanding: candidates.length ? introReviewLines(reviewedProfile) : [
+      'Who needs this person',
+      'No identity-safe match is ready yet.',
+      'Who this person needs',
+      'VAL needs reciprocal relationship evidence, a linked CRM identity, a known alias, or your teaching before suggesting an introduction.'
+    ],
+    recommendation: candidates.length
+      ? 'Choose an introduction only if it would serve both people. The next step is a draft for review, never a sent email.'
+      : 'Treat this as a relationship-context gap, not an action. Link the real person or teach VAL the relationship before drafting.',
     actions: introReviewActions(reviewedProfile),
     label: 'Relationship introduction review'
   });

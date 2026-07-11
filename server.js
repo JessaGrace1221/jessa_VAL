@@ -746,6 +746,9 @@ const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.
   .split(',')
   .map(e=>e.trim().toLowerCase())
   .filter(Boolean));
+const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
+  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'}
+};
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -9403,15 +9406,33 @@ function emailConfidenceNumber(confidence){
   if(c==='low')return 0.45;
   return 0.65;
 }
+function emailWasSentByOwner(email={}){
+  const labels=(email.labels||[]).map(label=>String(label||'').toUpperCase());
+  return String(email.direction||'').toLowerCase()==='outbound' || labels.includes('SENT') || !!email.sentAt;
+}
+function emailParticipantIntakeEligible(email={},role='',participant={}){
+  if(['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(String(email.classification||'').toLowerCase()))return false;
+  if(participant.contactId||participant.crmContactId||participant.matchedContactId)return true;
+  if(knownRelationshipEmailAlias(participant.email))return true;
+  if(emailWasSentByOwner(email)&&['to','cc','bcc'].includes(role))return true;
+  const metrics=email.senderMetrics||{};
+  if(role==='from'&&Number(metrics.outboundToSenderCount||metrics.sentToSenderCount||0)>0)return true;
+  return false;
+}
 function emailParticipantsJson(email){
-  const participant=(role,p={})=>({
-    role,
-    name:p.name||'',
-    email:p.email||'',
-    contactId:p.contactId||p.crmContactId||p.matchedContactId||'',
-    source:'email_relationship_intake',
-    relationshipIntake:true
-  });
+  const participant=(role,p={})=>{
+    const alias=knownRelationshipEmailAlias(p.email);
+    const eligible=emailParticipantIntakeEligible(email,role,p);
+    return {
+      role,
+      name:alias?.name||p.name||'',
+      email:p.email||'',
+      contactId:p.contactId||p.crmContactId||p.matchedContactId||'',
+      source:'email_relationship_intake',
+      relationshipIntake:eligible,
+      relationshipIntakeReason:eligible?(alias?.source||'reciprocal_or_linked_email_signal'):'inbound_or_unconfirmed_email_only'
+    };
+  };
   const matched=email.matchedContact||{};
   return [
     email.from?participant('from',{...email.from,contactId:matched.email&&String(matched.email).toLowerCase()===String(email.from.email||'').toLowerCase()?(matched.contactId||matched.id||''):''}):null,
@@ -9803,6 +9824,17 @@ function normalizeContextEmail(value){
   const email=String(value||'').trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
 }
+function knownRelationshipEmailAlias(email){
+  const normalized=normalizeContextEmail(email);
+  return normalized ? KNOWN_RELATIONSHIP_EMAIL_ALIASES[normalized] || null : null;
+}
+function syntheticRelationshipContactId(value=''){
+  return /^(email|name|person:email):/i.test(String(value||'').trim());
+}
+function realRelationshipContactId(value=''){
+  const clean=String(value||'').trim();
+  return clean&&!syntheticRelationshipContactId(clean)?clean:'';
+}
 function normalizeContextPhone(value){
   const digits=String(value||'').replace(/\D/g,'');
   if(digits.length<7) return '';
@@ -9924,7 +9956,8 @@ async function resolveContactFromContext(input={}){
 }
 function resolvedCrmContactId(contact={}){
   contact = contact || {};
-  if(contact.contactId)return String(contact.contactId);
+  if(realRelationshipContactId(contact.contactId))return String(contact.contactId);
+  if(realRelationshipContactId(contact.crmContactId||contact.crm_contact_id))return String(contact.crmContactId||contact.crm_contact_id);
   if(contact.source==='ghl_contact'&&contact.id)return String(contact.id);
   return '';
 }
@@ -15544,15 +15577,18 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   if((target.profileType||target.profile_type)!=='person')return metadata;
   const contentList=(items=[])=>Array.isArray(items)?items.map(item=>typeof item==='string'?item:(item.content||item.summary||item.text||item.exactQuote||'')).filter(Boolean):[];
   const profileKey=target.profileKey||target.profile_key||relationshipProfileKeyForTarget(target);
-  const email=target.email||(String(profileKey||'').startsWith('email:')?String(profileKey).replace(/^email:/,''):'');
+  const email=target.email||(String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'');
+  const alias=knownRelationshipEmailAlias(email);
+  const contactId=realRelationshipContactId(target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'');
   const packet=personPacketFromContact({
-    contactId:target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'',
-    crmContactId:target.personId||target.person_id||metadata.crmContactId||'',
-    name:target.displayName||target.display_name||target.name||email||'Unknown',
+    contactId,
+    crmContactId:realRelationshipContactId(metadata.crmContactId)||contactId,
+    knownIdentity:!!alias,
+    name:alias?.name||target.displayName||target.display_name||target.name||email||'Unknown',
     email,
     company:metadata.company||metadata.organization||'',
     role:metadata.role||metadata.title||'',
-    relationshipStatus:target.relationshipStatus||target.relationship_status||'observed',
+    relationshipStatus:alias?.relationshipStatus||target.relationshipStatus||target.relationship_status||'observed',
     summary:target.summary||'',
     firstSeenAt:target.createdAt||target.created_at||target.lastObservedAt||target.last_observed_at||'',
     lastMeaningfulSignalAt:target.lastObservedAt||target.last_observed_at||target.updatedAt||target.updated_at||'',
@@ -15570,6 +15606,8 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   });
   return {
     ...metadata,
+    email:metadata.email||email,
+    knownAlias:metadata.knownAlias||alias||null,
     personPacket:packet,
     personPacketUpdatedAt:new Date().toISOString(),
     personPacketSource:'relationship_profile'
@@ -15594,9 +15632,11 @@ function relationshipTargetsForObservation(evidenceItem={},observation={}){
   if(observation.organizationId||observation.organization_id)add({profileType:'organization',organizationId:observation.organizationId||observation.organization_id,displayName:observation.organizationName||observation.organization_name||observation.organizationId||observation.organization_id});
   if(observation.projectId||observation.project_id)add({profileType:'project',projectId:observation.projectId||observation.project_id,displayName:observation.projectName||observation.project_name||observation.projectId||observation.project_id});
   for(const p of Array.isArray(participants)?participants:[]){
+    if(p.relationshipIntake===false)continue;
     const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',p.email||p.matchedEmail||'');
     const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
-    if(name||email)add({profileType:'person',personId:p.personId||p.contactId||p.matchedContactId||'',displayName:name||email,email,metadata:{participantRole:p.role||'',source:'evidence_participant'}});
+    const alias=knownRelationshipEmailAlias(email);
+    if(name||email)add({profileType:'person',personId:p.personId||realRelationshipContactId(p.contactId||p.matchedContactId)||'',displayName:alias?.name||name||email,email,relationshipStatus:alias?.relationshipStatus||undefined,metadata:{participantRole:p.role||'',source:'evidence_participant',email,knownAlias:alias||null,relationshipIntakeReason:p.relationshipIntakeReason||''}});
     const company=p.company||p.matchedCompany||p.organization||p.organizationName||'';
     if(company)add({profileType:'organization',displayName:company,metadata:{source:'evidence_participant'}});
   }
@@ -16066,6 +16106,48 @@ function relationshipIndexTemperature(profile={}){
 function relationshipIndexTemperatureContract(state='warm'){
   return RELATIONSHIP_INDEX_TEMPERATURE_MODEL[state]||RELATIONSHIP_INDEX_TEMPERATURE_MODEL.warm;
 }
+function relationshipProfilePrimaryEmail(profile={}){
+  const metadata=profile.metadata||{};
+  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
+  const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
+  return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
+}
+function relationshipProfileKnownAlias(profile={}){
+  return knownRelationshipEmailAlias(relationshipProfilePrimaryEmail(profile));
+}
+function relationshipProfileHasRealIdentity(profile={}){
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return !!(
+    resolvedCrmContactId(profile) ||
+    realRelationshipContactId(profile.personId||profile.person_id) ||
+    realRelationshipContactId(metadata.contactId||metadata.crmContactId) ||
+    realRelationshipContactId(packet.person?.crm_contact_id)
+  );
+}
+function relationshipDisplayNameLooksLikeRawHandle(name='',email=''){
+  const clean=String(name||'').trim().toLowerCase();
+  if(!clean)return true;
+  if(clean==='unknown')return true;
+  if(clean.includes('@'))return true;
+  if(email&&clean===String(email).split('@')[0].toLowerCase())return true;
+  return /^[a-z0-9._-]+$/.test(clean)&&!/\s/.test(clean);
+}
+function stewardshipRelationshipAdmission(profile={}){
+  const email=relationshipProfilePrimaryEmail(profile);
+  const alias=knownRelationshipEmailAlias(email);
+  const rawHandle=relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email);
+  const admitted=!!alias || relationshipProfileHasRealIdentity(profile) || (!rawHandle && Number(profile.observationCount||0)>0);
+  return {
+    admitted,
+    reason: admitted
+      ? (alias?'known_email_alias':(relationshipProfileHasRealIdentity(profile)?'linked_identity':'named_relationship_evidence'))
+      : 'email_only_or_unconfirmed_observation',
+    email,
+    alias: alias||null,
+    rawHandle
+  };
+}
 function relationshipIndexItemFromProfile(profile={}){
   const temperatureEvidence=relationshipIndexTemperatureEvidence(profile);
   const state=relationshipIndexStateFromEvidence(temperatureEvidence);
@@ -16073,10 +16155,12 @@ function relationshipIndexItemFromProfile(profile={}){
   const temperatureContract=relationshipIndexTemperatureContract(state);
   const metadata=profile.metadata||{};
   const signal=(profile.risks?.[0]?.content)||(profile.openLoops?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.relationshipSignals?.[0]?.content)||profile.summary||'Relationship context is available for review.';
-  const name=profile.displayName||profile.name||'Unnamed relationship';
-  const contactId=profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id||resolvedCrmContactId(profile)||'';
-  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^email:/,''):'';
-  const email=metadata.email||profile.email||profileKeyEmail||'';
+  const admission=stewardshipRelationshipAdmission(profile);
+  const alias=admission.alias||relationshipProfileKnownAlias(profile);
+  const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
+  const contactId=realRelationshipContactId(profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id)||resolvedCrmContactId(profile)||'';
+  const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
+  const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   return {
     id:String(id),
@@ -16109,18 +16193,23 @@ function relationshipIndexItemFromProfile(profile={}){
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
     personPacket:metadata.personPacket||null,
+    relationshipAdmission:admission,
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
   };
 }
 function relationshipPersonPacketItemFromProfile(profile={}){
   const metadata=profile.metadata||{};
+  const admission=stewardshipRelationshipAdmission(profile);
+  const alias=admission.alias||relationshipProfileKnownAlias(profile);
+  const email=admission.email||metadata.email||'';
   const packet=profile.personPacket||metadata.personPacket||personPacketFromContact({
-    contactId:profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'',
-    name:profile.displayName||profile.display_name||profile.name||'Relationship',
-    email:metadata.email||'',
+    contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||''),
+    knownIdentity:!!alias,
+    name:alias?.name||profile.displayName||profile.display_name||profile.name||'Relationship',
+    email,
     company:metadata.company||profile.organizationId||'',
     role:metadata.role||'',
-    relationshipStatus:profile.relationshipStatus||profile.relationship_status||'observed',
+    relationshipStatus:alias?.relationshipStatus||profile.relationshipStatus||profile.relationship_status||'observed',
     summary:profile.summary||'',
     lastObservedAt:profile.lastObservedAt||profile.last_observed_at||'',
     openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
@@ -16132,12 +16221,13 @@ function relationshipPersonPacketItemFromProfile(profile={}){
   return {
     profileId:profile.id||'',
     profileKey:profile.profileKey||profile.profile_key||'',
-    displayName:profile.displayName||profile.display_name||profile.name||packet.person?.name||'Relationship',
+    displayName:alias?.name||profile.displayName||profile.display_name||profile.name||packet.person?.name||'Relationship',
     packet,
     maturity:packet.packet_state?.maturity||'thin',
     needsReview:!!packet.packet_state?.needs_review,
     missingVariables:packet.packet_state?.missing_variables||[],
     lastMeaningfulSignalAt:packet.relationship_state?.last_meaningful_signal_at||profile.lastObservedAt||profile.last_observed_at||'',
+    relationshipAdmission:admission,
     noExternalAction:true
   };
 }
@@ -23905,10 +23995,12 @@ app.get('/api/relationships/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
     if(DEMO_MODE){
-      const profiles=(await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').slice(0,limit);
+      const profiles=(await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
     }
-    const profiles=await listRelationshipProfiles({limit});
+    const profiles=(await listRelationshipProfiles({limit:Math.max(limit,220)}))
+      .filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted)
+      .slice(0,limit);
     res.json({ok:true,source:'relationship_profiles',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
@@ -23919,7 +24011,7 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
     const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
     const includeThin=String(req.query.includeThin||'1')!=='0';
     const profiles=(await listRelationshipProfiles({limit:Math.max(limit,220)}))
-      .filter(profile=>profile.profileType==='person')
+      .filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted)
       .slice(0,limit);
     const packets=profiles
       .map(relationshipPersonPacketItemFromProfile)

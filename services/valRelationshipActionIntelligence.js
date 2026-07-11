@@ -7,7 +7,10 @@ function lowerWords(value=''){
   return compactText(value,1000).toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2);
 }
 function contactId(contact={}){
-  return compactText(contact.crmContactId||contact.contactId||contact.contact_id||(contact.source==='ghl_contact'?contact.id:''),120);
+  const raw=compactText(contact.crmContactId||contact.contactId||contact.contact_id||(contact.source==='ghl_contact'?contact.id:''),120);
+  if(!raw)return '';
+  if(/^(email|name|person:email):/i.test(raw))return '';
+  return raw;
 }
 function evidenceText(contact={}){
   return [
@@ -69,14 +72,15 @@ function packetIdForContact(contact={}){
   return `person_packet:${id||email||name||'unknown'}`.slice(0,180);
 }
 function packetIdentity(contact={}){
+  const linkedId=contactId(contact);
   return {
     person_id:compactText(contact.personId||contact.person_id||contact.id||contact.contactId||contact.crmContactId||'',120),
     name:compactText(contact.name||contact.displayName||contact.fullName||contact.email||'Relationship',140),
     email_addresses:[...new Set([contact.email,contact.primaryEmail,contact.contactEmail].map(value=>compactText(value,120).toLowerCase()).filter(Boolean))],
     role:compactText(contact.role||contact.title||contact.jobTitle||'',140),
     company_or_context:compactText(contact.company||contact.companyName||contact.context||'',160),
-    crm_contact_id:contactId(contact),
-    identity_status:contactId(contact)?'linked':(contact.email||contact.name?'needs_review':'unknown')
+    crm_contact_id:linkedId,
+    identity_status:linkedId?'linked':(contact.knownIdentity?'known_alias':(contact.email||contact.name?'needs_review':'unknown'))
   };
 }
 function personPacketFromContact(contact={},options={}){

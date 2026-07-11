@@ -105,7 +105,9 @@ test('email sync captures evidence before actions and does not auto-create tasks
   assert.match(server,/async function runObservationEngine/);
   assert.match(server,/runObservationEngine\(evidence,\{candidates:emailObservationCandidates\(email\),replace:true\}\)/);
   assert.match(server,/sourceType=email\.provider==='outlook'\?'outlook_email':'gmail_email'/);
-  assert.match(server,/relationshipIntake:true/);
+  assert.match(server,/function emailParticipantIntakeEligible/);
+  assert.match(server,/relationshipIntake:eligible/);
+  assert.match(server,/inbound_or_unconfirmed_email_only/);
   assert.match(server,/source:'email_relationship_intake'/);
   assert.match(server,/relationshipProfilesTouched:relationshipIntake\.relationshipProfiles/);
   assert.match(server,/personPacketsTouched:relationshipIntake\.personPackets/);

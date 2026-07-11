@@ -5,6 +5,8 @@ const {relationshipIntroCandidates,contactId,introductionDirection,relationshipI
 test('relationship action intelligence requires canonical CRM contact identity',()=>{
   assert.equal(contactId({id:'local_1',name:'Local Person'}),'');
   assert.equal(contactId({id:'crm_1',source:'ghl_contact',name:'CRM Person'}),'crm_1');
+  assert.equal(contactId({contactId:'person:email:raw@example.com',name:'Raw Email Person'}),'');
+  assert.equal(contactId({contactId:'email:raw@example.com',name:'Raw Email Person'}),'');
   const result=relationshipIntroCandidates({
     currentContact:{name:'Aric',email:'aric@example.com'},
     crmContacts:[{contactId:'crm_greg',name:'Greg',needs:['strategic partner']}]
