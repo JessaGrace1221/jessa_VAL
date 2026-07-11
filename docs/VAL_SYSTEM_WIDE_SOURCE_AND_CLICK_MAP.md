@@ -628,18 +628,42 @@ Follow-up scheduling behavior:
 ```text
 Recipient accepts a suggested time
   -> VAL confirms the selected time is still available
-  -> VAL prepares the calendar appointment
-  -> VAL prepares the confirmation reply
-  -> User reviews/approves unless a future explicit scheduling automation rule allows this exact case
+  -> VAL creates the calendar appointment
+  -> VAL sends the confirmation reply
+  -> Calendar reflects the meeting
 ```
 
 Target confirmation language:
 
 ```text
-Great, I put that in Jessa's calendar. She's looking forward to meeting next Tuesday at 3:00.
+Great, we put you in the calendar. You can expect a confirmation email shortly.
 ```
 
-Until the user explicitly approves autonomous scheduling, creating the calendar event and sending the confirmation remain approval-gated external actions.
+This is an approved narrow scheduling automation for V1.
+
+It applies only when:
+
+- the recipient is replying to a scheduling thread
+- VAL previously suggested the accepted time or the accepted time is clearly inside the availability window VAL offered
+- the time is still available on the user's calendar
+- the calendar event can be created without ambiguity
+- the confirmation reply is purely logistical
+
+In this narrow case, do not put the item in Leverage / Ready For You and do not put it in the email draft panel.
+
+Reason:
+
+```text
+The scheduling loop is complete. Additional review would create friction instead of value.
+```
+
+The visible result should be:
+
+- the meeting appears on the calendar
+- the email thread contains the confirmation reply
+- an internal execution receipt is stored
+
+If any ambiguity or risk appears, fall back to the right-side missing-context panel instead of executing automatically.
 
 Example draft logic:
 
