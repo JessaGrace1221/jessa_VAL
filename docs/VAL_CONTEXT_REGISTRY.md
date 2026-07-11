@@ -198,6 +198,8 @@ The system should store each person separately, expose lists for matching, and e
 | VIP people | `{{important_people.vip}}` | derived/new | array | rules, relationship preferences | Priority boost. |
 | Watched people | `{{important_people.watched}}` | new/derived | array | user/VAL OS | Relationship radar. |
 | Ignored people | `{{important_people.ignored}}` | derived/new | array | rules, user decisions | Lower priority. |
+| User-important people | `{{important_people.user_marked_important}}` | new/derived | array | user decision | Manual promotion into important relationship context. |
+| Suppressed senders | `{{important_people.suppressed_senders}}` | new/derived | array | user decision | Never show emails from these senders unless reversed. |
 
 Person object shape:
 
@@ -370,6 +372,8 @@ Dedicated classification prompt suite:
 | Communication classification | `{{emails.current.communication_classification}}` | new/derived | object | Executive Inbox classification | Conversation-first routing. |
 | Executive meaning | `{{emails.current.executive_meaning}}` | new/derived | array | Executive Inbox classification | Explain why surfaced. |
 | If delayed | `{{emails.current.if_delayed}}` | new/derived | string | Executive Inbox classification | Timing consequence. |
+| Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
+| Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
 
 ## Email Thread Variables
 
@@ -378,6 +382,9 @@ Dedicated classification prompt suite:
 | Current thread | `{{emails.thread.current}}` | derived/new | object | email event | Focused thread context. |
 | Thread messages | `{{emails.thread.current.messages}}` | new | array | thread fetch | Stop drafting from one snippet. |
 | Thread summary | `{{emails.thread.current.summary}}` | new | string | thread summarizer | Compact prompt context. |
+| Thread participants | `{{emails.thread.current.participants}}` | new/derived | array | thread fetch | Resolve everyone included in the thread, not only the latest sender. |
+| User replied in thread | `{{emails.thread.current.user_replied_in_thread}}` | new/derived | boolean | thread analyzer | Reciprocal relationship evidence for human participants. |
+| Introduction participants | `{{emails.thread.current.introduction_participants}}` | new/derived | array | introduction observer | Three-way introduction relationship admission and context. |
 | Conversation state | `{{emails.thread.current.conversation_state}}` | new | enum | Conversation Context Builder | Know whether waiting/progressing/blocked/complete. |
 | Relationship temperature | `{{emails.thread.current.relationship_temperature}}` | new | enum | Conversation Observer | Warm/cooling/waiting/repairing/sensitive context. |
 | Conversation trajectory | `{{emails.thread.current.conversation_trajectory}}` | new | enum | Conversation Observer | Decision/trust/sale/repair/scheduling/closure. |

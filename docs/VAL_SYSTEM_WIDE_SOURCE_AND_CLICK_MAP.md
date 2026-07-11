@@ -318,8 +318,9 @@ Each observer receives only admitted source facts plus relevant existing packet 
 
 | Source | Always stored? | Can create person? | Can create project? | Can create prepared work? | Can enter Home? | Notes |
 |---|---:|---:|---:|---:|---:|---|
-| Sent email recipient | Yes | Yes, strongest automatic signal | Yes, if project evidence exists | Yes, if commitment/draft exists | Sometimes | Safer than inbound because user initiated. |
+| Sent email recipient | Yes | Yes, strongest automatic signal | Yes, if project evidence exists | Yes, if commitment/draft exists | Sometimes | If the user is in communication with them, they are a relationship. |
 | Replied email thread | Yes | Yes | Yes | Yes | Sometimes | A reply is reciprocal relationship evidence. |
+| Person included in a thread the user replied to | Yes | Yes, if human/contact-like | Maybe | Maybe | Sometimes | Includes three-way introductions and group threads. |
 | Inbound-only email | Yes if not spam | No by itself | No by itself | Rarely | Rarely | Cannot create relationship without another trusted signal. |
 | Email with unsubscribe/bulk/list headers | Maybe source-only | No | No | No | No | Marketing/newsletter unless user explicitly marks important. |
 | No-reply/system/receipt | Maybe source-only | No | No | No | No | Never a relationship. |
@@ -351,15 +352,20 @@ Every email must answer:
 
 1. Is this spam, bulk, unsubscribe, receipt, notification, system, or no-reply?
 2. Did the user send to or reply to this person?
-3. Does it contain a commitment, document, project, deadline, question, relationship signal, or draftable response?
-4. Which consumers are allowed to use it?
+3. Was this person included in any thread the user replied to?
+4. Has the user manually marked this person important or blocked?
+5. Does it contain a commitment, document, project, deadline, question, relationship signal, or draftable response?
+6. Which consumers are allowed to use it?
 
 ### Required Routes
 
 | Signal | Route |
 |---|---|
 | User sent or replied | Update person packet relationship evidence. |
+| User replied to thread containing person | Update person packet relationship evidence for human/contact-like participants. |
 | Inbound-only from human | Store source; do not create relationship unless another trusted signal admits. |
+| User marks person important | Promote or preserve person packet and raise priority. |
+| User marks "Never show me email from this person again" | Suppress from Executive Inbox and relationship surfacing unless user reverses. |
 | Attachment/document request | Document observer and project observer. |
 | Project-like document with no project | Create project suggestion review update. |
 | Commitment language | Commitment observer. |
@@ -367,6 +373,71 @@ Every email must answer:
 | Email context for meeting attendee | Meeting prep. |
 | Relationship warmth/risk | Relationship packet only if person admitted. |
 | Introduction language | Stewardship intro observer if identities resolve. |
+
+### Email Relationship Admission Graph
+
+Email relationship admission should use a graph of reciprocal communication, not just the latest inbound sender.
+
+Gold-standard email relationship signals:
+
+- the user sent an email to the person
+- the user replied directly to the person
+- the person was included in an email thread where the user replied
+- the person was introduced in a thread where the user participated
+- the person is also present in calendar, transcript, CRM, project, or manual-important context
+
+Rule:
+
+```text
+If the user is in communication with them, they are a relationship.
+```
+
+The relationship may be large or small, warm or practical, but it is still a relationship packet candidate.
+
+Three-way introduction example:
+
+```text
+Colin emails Sally and Jessa:
+  "Sally, I want you to meet Jessa..."
+
+Jessa replies anywhere in that thread
+  -> Sally becomes relationship-admissible
+  -> Colin remains relationship evidence
+  -> thread becomes source evidence for Sally/Jessa relationship context
+```
+
+This means VAL must resolve relationship evidence across the whole thread and participant list, not only the sender of the latest message.
+
+### Inbound Sender Suppression And Manual Promotion
+
+Inbound-only senders should not become relationships by volume. They need reciprocal/trusted evidence or an explicit user decision.
+
+Allowed promotion signals:
+
+- user has sent to them
+- user has replied in any thread containing them
+- they are a calendar attendee
+- they are a transcript attendee
+- they are a confirmed CRM contact tied to user context
+- user manually marks them important
+
+Allowed suppression signal:
+
+```text
+Never show me an email from this person again
+```
+
+Required suppression behavior:
+
+```text
+User suppresses sender
+  -> suppress from Executive Inbox
+  -> suppress from relationship surfacing
+  -> keep source receipts internally for audit and reversal
+  -> do not delete historical evidence
+```
+
+Unsubscribe links, list headers, bulk sender patterns, no-reply addresses, notification senders, receipts, and obvious system messages should default to source-only or suppressed unless the user explicitly marks the sender important.
 
 ### Document/Attachment Email Rule
 
