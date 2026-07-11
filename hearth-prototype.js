@@ -1844,8 +1844,12 @@ function stewardshipIsFallbackRow(line = ''){
   return /^(No clear (need|offer) is ready yet|Evidence is still developing)\.?$/i.test(String(line || '').trim());
 }
 
+function stewardshipIsGenericClassifierRow(line = ''){
+  return /^(Email may involve a document request or document follow-up|Email contains relationship momentum or warmth|Email may contain relationship or revenue opportunity signal|Email includes scheduling or meeting language|Email asks for a response or decision|Thread appears to be waiting on a response|Transcript-derived introduction opportunity: review the source snippet before preparing any introduction|Transcript source mentions a possible introduction connected to this relationship context)\.?$/i.test(String(line || '').trim());
+}
+
 function stewardshipActionableRows(rows = []){
-  return (Array.isArray(rows) ? rows : [rows]).filter((line) => line && !stewardshipIsFallbackRow(line));
+  return (Array.isArray(rows) ? rows : [rows]).filter((line) => line && !stewardshipIsFallbackRow(line) && !stewardshipIsGenericClassifierRow(line));
 }
 
 function stewardshipLooksLikePerson(profile = {}){
@@ -1857,11 +1861,13 @@ function stewardshipLooksLikePerson(profile = {}){
 }
 
 function stewardshipNeeds(profile = {}){
-  return stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, 'No clear need is ready yet.');
+  const rows = stewardshipActionableRows(stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, ''));
+  return rows.length ? rows : ['No clear need is ready yet.'];
 }
 
 function stewardshipOffers(profile = {}){
-  return stewardshipCleanList(profile.packetOffers?.length ? profile.packetOffers : profile.valueTheyCreate, 'No clear offer is ready yet.');
+  const rows = stewardshipActionableRows(stewardshipCleanList(profile.packetOffers?.length ? profile.packetOffers : profile.valueTheyCreate, ''));
+  return rows.length ? rows : ['No clear offer is ready yet.'];
 }
 
 function stewardshipEvidence(profile = {}){
@@ -1871,7 +1877,9 @@ function stewardshipEvidence(profile = {}){
     .concat(packet.relationship_origin?.source_receipts || [])
     .concat(Array.isArray(profile.evidenceBindings) ? profile.evidenceBindings : []);
   const rows = stewardshipCleanList(receipts.map((item) => item.summary || item.relationship_context || item.title || item.source_type || ''), '');
-  return rows.length ? rows : stewardshipCleanList([profile.evidencePosture, profile.sourceEvidence, profile.signal, profile.summary], 'Evidence is still developing.');
+  const profileRows = stewardshipCleanList([profile.evidencePosture, profile.sourceEvidence, profile.signal, profile.summary], '');
+  const usefulRows = rows.concat(profileRows).filter((line) => !stewardshipIsGenericClassifierRow(String(line || '').replace(/^Latest observation:\s*/i, '')));
+  return usefulRows.length ? usefulRows.slice(0, 5) : ['Evidence is still developing.'];
 }
 
 function stewardshipRelationshipLine(profile = {}){
@@ -1932,7 +1940,14 @@ function stewardshipExplicitIntroSignal(a = {}, b = {}){
   ].filter(Boolean).join(' ').toLowerCase();
   const aFirst = String(a.name || '').split(/\s+/)[0]?.toLowerCase();
   const bFirst = String(b.name || '').split(/\s+/)[0]?.toLowerCase();
-  return Boolean(aFirst && bFirst && text.includes(aFirst) && text.includes(bFirst) && /\b(introduce|intro|connect|meet|should meet)\b/i.test(text));
+  const bNameTokens = stewardshipNameTokens(b);
+  const namesBothPresent = aFirst && bFirst && text.includes(aFirst) && text.includes(bFirst);
+  const candidateNamedInTranscript = bNameTokens.some((token) => text.includes(token)) && /\b(transcript|speaker|said|told|source)\b/i.test(text);
+  return Boolean((namesBothPresent || candidateNamedInTranscript) && /\b(introduce|intro|connect|should meet|should talk|want to introduce|want to connect)\b/i.test(text));
+}
+
+function stewardshipNameTokens(profile = {}){
+  return String(profile.name || '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 4 && !['relationship','observed','unknown'].includes(word));
 }
 
 function stewardshipIntroFit(a = {}, b = {}){
@@ -1954,14 +1969,16 @@ function stewardshipIntroFit(a = {}, b = {}){
   const aNeedsBOffers = stewardshipOverlapScore(aActionableNeeds.join(' '), bActionableOffers.join(' '));
   const bNeedsAOffers = stewardshipOverlapScore(bActionableNeeds.join(' '), aActionableOffers.join(' '));
   const explicit = stewardshipExplicitIntroSignal(a, b);
-  const score = aNeedsBOffers + bNeedsAOffers + (explicit ? 6 : 0);
+  const score = aNeedsBOffers + bNeedsAOffers + (explicit ? 20 : 0);
   const missing = [];
   if(!aActionableNeeds.length && !bActionableNeeds.length) missing.push('at least one real need from either person');
   if(!aActionableOffers.length && !bActionableOffers.length) missing.push('at least one real offer from either person');
   if(!aNeedsBOffers && !explicit) missing.push('clear need from ' + (a.name || 'Person A') + ' that ' + (b.name || 'Person B') + ' can meet');
   if(!bNeedsAOffers && !explicit) missing.push('clear need from ' + (b.name || 'Person B') + ' that ' + (a.name || 'Person A') + ' can meet');
   const ready = explicit || score >= 2;
-  const because = ready
+  const because = ready && explicit && (!aActionableNeeds.length || !bActionableOffers.length)
+    ? 'Because transcript evidence says Jessa wanted to introduce ' + (a.name || 'Person A') + ' and ' + (b.name || 'Person B') + '. Review the source snippet before drafting.'
+    : ready
     ? 'Because ' + (a.name || 'Person A') + ' needs ' + relationshipCleanSourceText(aActionableNeeds[0] || bActionableNeeds[0] || 'support this network can provide', 90).replace(/\.$/, '') + ', and ' + (b.name || 'Person B') + ' offers ' + relationshipCleanSourceText(bActionableOffers[0] || aActionableOffers[0] || 'relevant context', 90).replace(/\.$/, '') + '.'
     : 'I do not see a strong reason to introduce these two yet.';
   return {ready, score, because, missing, aNeeds, bNeeds, aOffers, bOffers, evidence:[...stewardshipEvidence(a).slice(0, 2), ...stewardshipEvidence(b).slice(0, 2)]};

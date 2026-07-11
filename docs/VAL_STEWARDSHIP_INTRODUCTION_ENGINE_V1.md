@@ -108,6 +108,18 @@ Rules:
 - No suggestion may appear without source evidence from both sides.
 - No external message may be sent without explicit approval.
 
+Classifier labels are not packet content:
+
+- Generic intake labels must never become a person's Need, Offer, or introduction reason.
+- Labels such as `Email may involve a document request or document follow-up.`, `Email contains relationship momentum or warmth.`, `Email may contain relationship or revenue opportunity signal.`, `Transcript-derived introduction opportunity: review the source snippet before preparing any introduction.`, and `Transcript source mentions a possible introduction connected to this relationship context.` may route evidence internally, but they are not executive-facing judgment.
+- If VAL only has those labels, the correct result is no suggested introduction.
+
+Explicit transcript instructions outrank inferred matching:
+
+- If a transcript says the executive wants to introduce one person to another, VAL must preserve the named target and the source snippet.
+- VAL should prefer the named transcript target over unrelated keyword-overlap matches.
+- The recommendation should explain the transcript instruction, not generic email labels.
+
 ### 2. Create An Introduction
 
 Purpose:
@@ -660,6 +672,8 @@ Packet maturity: usable.
 No confident network introduction is ready.
 VAL recommends reviewing observers.
 Terry and Kareemah overlap by keyword only.
+Terrie needs Email may involve a document request or document follow-up.
+Kareemah offers Email contains relationship momentum or warmth.
 ```
 
 ## Implementation Sequence After Approval

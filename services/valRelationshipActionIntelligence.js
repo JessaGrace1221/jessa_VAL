@@ -58,6 +58,9 @@ function textEvidenceItem(text='',type='inferred_relationship_signal'){
   const summary=compactText(text,260);
   return summary?{type,summary,confidence:'medium'}:null;
 }
+function genericStewardshipClassifierText(value=''){
+  return /^(Email may involve a document request or document follow-up|Email contains relationship momentum or warmth|Email may contain relationship or revenue opportunity signal|Email includes scheduling or meeting language|Email asks for a response or decision|Thread appears to be waiting on a response|Transcript-derived introduction opportunity: review the source snippet before preparing any introduction|Transcript source mentions a possible introduction connected to this relationship context)\.?$/i.test(compactText(value,260));
+}
 function normalizedList(...sources){
   const seen=new Set();
   return sources.flatMap(source=>safeArray(source)).map(item=>{
@@ -65,7 +68,7 @@ function normalizedList(...sources){
     return compactText(item.need||item.offer||item.summary||item.text||item.content||item.reason||item.title||'',220);
   }).filter(item=>{
     const key=item.toLowerCase();
-    if(!item||seen.has(key))return false;
+    if(!item||seen.has(key)||genericStewardshipClassifierText(item))return false;
     seen.add(key);
     return true;
   }).slice(0,12);
