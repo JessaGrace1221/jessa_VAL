@@ -410,6 +410,57 @@ Executive Inbox detail for this email must include:
 - ability to chat with VAL about the email thread
 - a visible "What VAL did from this email" section
 
+## Executive Inbox Email Detail Contract
+
+When the user clicks an Executive Inbox email, the main view should show:
+
+1. The full latest email only.
+2. A clear button to show the full thread.
+3. `Chat with VAL about this thread`.
+4. `What VAL did from this email`, when applicable.
+
+The full thread should not be expanded by default.
+
+The user should be able to read the current email first without being buried in the entire thread history.
+
+### Email Thread Chat Boundary
+
+`Chat with VAL about this thread` should open a scoped Co-Work session for that email thread.
+
+This is the cleanest boundary because the Co-Work packet can explicitly name the allowed context and block everything else.
+
+Allowed context:
+
+- the selected latest email
+- previous messages in that email thread
+- the matched relationship/person packet, if admitted
+- the matched project packet, if admitted
+- source receipts directly attached to that email, relationship, or project packet
+
+Blocked context:
+
+- unrelated emails
+- unrelated transcripts
+- unrelated calendar events
+- unrelated people
+- unrelated projects
+- general memory that is not attached to the selected thread, relationship, or project
+- public enrichment unless already attached to an admitted packet
+
+The session opening receipt should say, internally:
+
+```text
+Scope: email_thread
+Allowed sources: selected email, thread messages, admitted relationship packet, admitted project packet.
+No unrelated source retrieval.
+```
+
+User-facing copy should stay simple:
+
+```text
+Chat with VAL about this thread
+```
+
 Example "What VAL did from this email":
 
 ```text
