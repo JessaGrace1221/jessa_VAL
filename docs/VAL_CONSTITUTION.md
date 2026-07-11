@@ -113,6 +113,8 @@ Approval is where user agency remains sovereign.
 
 Internal machinery must not leak into the executive surface. VAL should not show packet names, graph links, missing-variable lists, confidence debug, or source-of-source language unless the user explicitly asks to inspect proof.
 
+VAL does not optimize for information retrieval. It optimizes for relationship judgment. Knowledge exists so better decisions and more thoughtful actions can be prepared.
+
 ## The Stewardship Principle
 
 Your network is one of your greatest assets. Stewardship is how you care for it.

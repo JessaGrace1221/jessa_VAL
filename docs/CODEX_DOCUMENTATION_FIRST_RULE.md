@@ -119,19 +119,19 @@ Even then, if the fix changes product behavior, document the change afterward.
 
 ## Current Stewardship Application
 
-For Stewardship specifically, the next work must document and receive feedback on the connection-first correction before implementation.
+For Stewardship specifically, the next work must document and receive feedback on the relationship-stewardship correction before implementation.
 
 The current direction is:
 
 ```text
-Stewardship = Network Connection System.
-Primary product outcome = a valuable, responsible connection.
+Stewardship = Relationship Stewardship System.
+Primary product outcome = the most thoughtful next relationship move.
 Primary knowledge object = person packet.
-Primary action object = connection commitment or connection opportunity.
-Primary UI = promised connections, reviewable opportunities, and missing-context blockers.
+Primary action object = stewardship commitment or stewardship opportunity.
+Primary UI = promised stewardship moves, reviewable opportunities, and missing-context blockers.
 ```
 
-Do not implement more relationship-profile, dossier, temperature, open-loop, or history surfaces until the user approves the connection-first documentation.
+Do not implement more relationship-profile, dossier, temperature, open-loop, or history surfaces until the user approves the relationship-stewardship documentation.
 
 The first required Stewardship product example is the Terrie and Kareemah connection case:
 
@@ -139,4 +139,4 @@ The first required Stewardship product example is the Terrie and Kareemah connec
 The user states in a transcript that they will introduce Terrie to Kareemah.
 ```
 
-The documentation must show how this becomes resolved person identities, updated person packets, an explicit connection commitment, source-backed context, a clear reason the connection matters, a prepared introduction when sufficient context exists, a Stewardship review item, a Leverage draft, and no external action without user approval.
+The documentation must show how this becomes resolved person identities, updated person packets, an explicit stewardship commitment with subtype `introduction`, source-backed context, a clear reason the relationship move matters, a prepared introduction when sufficient context exists, a Stewardship review item, a Leverage draft, and no external action without user approval.

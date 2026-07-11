@@ -267,6 +267,7 @@ Answers:
 - Why is the match useful now?
 - Is there enough evidence and relationship permission to prepare an introduction?
 - Is this only a person-to-person match, or is an ecosystem/network cluster forming?
+- If the best stewardship move is not an introduction, what is it?
 
 Network clusters are a future-facing layer. VAL should leave room to notice them without forcing a complex visualization today.
 
@@ -289,15 +290,16 @@ Answers:
 
 ## Stewardship Packet
 
-Legacy note: older Hearth contracts use `Stewardship Packet` as the umbrella term. In the current architecture, the umbrella contains many `person_packet` records plus `stewardship_match_packet` records. Do not collapse those layers.
+Legacy note: older Hearth contracts use `Stewardship Packet` as the umbrella term. In the current architecture, the umbrella contains many `person_packet` records plus stewardship commitment, opportunity, and move records. Do not collapse those layers.
 
-## Stewardship Match Packet
+## Stewardship Move Packet
 
-The match packet is the structured output of the Stewardship Round Table. It should be boring, traceable, and machine-readable.
+The move packet is the structured output of the Stewardship Round Table. It should be boring, traceable, and machine-readable.
 
 ```json
 {
-  "packet_type": "stewardship_match_packet",
+  "packet_type": "stewardship_move_packet",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
   "focus_person_packet_id": "",
   "compared_person_packet_ids": [],
   "stewardship_status": {
@@ -479,17 +481,19 @@ The user should not see:
 - repetitive transcript snippets
 - internal phrases like "observed trajectory" or "identity unresolved" unless paired with a clear action
 
-## Introduction Opportunity Packet
+## Stewardship Opportunity Packet
 
-When VAL finds that one person needs what another person can offer, VAL may prepare an introduction packet.
+When VAL finds a source-backed relationship move worth reviewing, VAL may prepare a stewardship opportunity packet. Introduction is one subtype, not the whole product.
 
 ```json
 {
-  "packet_type": "introduction_opportunity_packet",
+  "packet_type": "stewardship_opportunity_packet",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
   "match_direction": "person_needs_mark|mark_needs_person",
   "recipient": "",
   "introduced_person": "",
-  "why_this_match_matters": "",
+  "recommended_move": "",
+  "why_this_move_matters": "",
   "need": "",
   "offer": "",
   "source_receipts": [],
@@ -500,7 +504,7 @@ When VAL finds that one person needs what another person can offer, VAL may prep
 }
 ```
 
-Prepared introduction drafts feed the Home Leverage card because they are work VAL prepared for review.
+Prepared stewardship drafts and review artifacts feed the Home Leverage card because they are work VAL prepared for review.
 
 Nothing sends without explicit user approval.
 

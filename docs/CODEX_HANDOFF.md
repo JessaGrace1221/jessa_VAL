@@ -269,7 +269,7 @@ The user is auditing the Stewardship drawer and wants the next session to dig in
 - Stewardship
 - relationship context
 - project context
-- network introduction logic
+- relationship stewardship logic
 
 Important distinction:
 
@@ -348,9 +348,10 @@ If the next chat gets uncertain, stop and compare the proposal against this hand
 The current approved direction is:
 
 - keep Stewardship simple
-- focus on network value
-- show who should meet whom and why
-- prepare introduction drafts only after source-backed matches are clear
-- surface those drafts in Leverage for approval
+- focus on thoughtful relationship moves
+- use person packets as the relationship memory layer
+- support introductions as one move type, alongside follow-ups, resources, check-ins, congratulations, questions, reminders, and waiting
+- prepare drafts or review artifacts only after source-backed context is clear
+- surface prepared work in Leverage for approval
 
 Do not rebuild the removed relationship dossier sections unless the user explicitly asks for a new version of them.

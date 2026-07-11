@@ -37,7 +37,7 @@ Important:
 
 - Read/replied-to emails do not belong in the active Executive Inbox queue.
 - Those same read/replied-to emails may be essential context for VAL's understanding of people, projects, commitments, onboarding preferences, and stewardship opportunities.
-- Inbox, sent mail, and CC'd email context from the last 30 days should help VAL understand who matters, what has happened, and where a useful introduction or follow-up may exist.
+- Inbox, sent mail, and CC'd email context from the last 30 days should help VAL understand who matters, what has happened, and what thoughtful relationship move may be useful.
 
 The visible Stewardship person card should stay simple:
 
@@ -48,18 +48,18 @@ The visible Stewardship person card should stay simple:
 The user wants to know:
 
 ```text
-Who needs to meet whom, and why?
+What is the most thoughtful next move for this relationship?
 ```
 
 ## Next Implementation Step
 
-Make the network introduction logic real without adding visual clutter:
+Make the relationship stewardship logic real without adding visual clutter:
 
 - use transcripts, emails, calendar context, projects, documents, and CRM context as evidence
-- produce reviewable network-match packets behind the scenes
-- show only the distilled match and why it matters
-- prepare draft introduction emails when a match is strong enough
-- send those drafts to Leverage for user approval
+- produce reviewable stewardship move packets behind the scenes
+- show only the distilled move and why it matters
+- prepare drafts or review artifacts when a move is strong enough
+- send prepared work to Leverage for user approval
 
 ## Drawer Order After Stewardship
 
@@ -120,7 +120,7 @@ Before implementation, read:
 docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
 ```
 
-The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, create first-class connection commitments/opportunities, sort by usefulness, and show match packets only when the evidence can support an executive review.
+The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, create first-class stewardship commitments/opportunities, sort by usefulness, and show stewardship move packets only when the evidence can support an executive review.
 
 Before requesting implementation approval, documentation must include:
 

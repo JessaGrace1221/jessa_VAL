@@ -38,7 +38,7 @@ The current Stewardship direction is now documented in:
 docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
 ```
 
-Use that spec before changing the Stewardship drawer, relationship admission logic, person packets, introduction matching, or relationship list sorting.
+Use that spec before changing the Stewardship drawer, relationship admission logic, person packets, stewardship moves, or relationship list sorting.
 
 The executive goal is not "show relationships." The goal is:
 
@@ -49,14 +49,14 @@ Create powerful packets for each real relationship, then sort those packets by e
 More precisely:
 
 ```text
-Stewardship = Network Connection System.
-Primary product outcome = a valuable, responsible connection.
+Stewardship = Relationship Stewardship System.
+Primary product outcome = the most thoughtful next relationship move.
 Primary knowledge object = person packet.
-Primary action object = connection commitment or connection opportunity.
-Primary UI = promised connections, reviewable opportunities, and specific missing-context blockers.
+Primary action object = stewardship commitment or stewardship opportunity.
+Primary UI = promised stewardship moves, reviewable opportunities, and specific missing-context blockers.
 ```
 
-The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely compare the packet against other people for a possible introduction. The connection record is the action object that turns that packet knowledge into something the executive can review.
+The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely prepare a thoughtful relationship move. The stewardship record is the action object that turns that packet knowledge into something the executive can review.
 
 ## Absolute Guardrail
 
@@ -104,13 +104,13 @@ Live verification confirmed:
 
 Continue only from this live baseline.
 
-For Stewardship, the next approved product direction is to make source-backed network introductions real:
+For Stewardship, the next approved product direction is to make source-backed relationship stewardship moves real:
 
-- identify who needs this person
-- identify who this person should meet
+- identify what thoughtful next move is warranted
 - explain why in plain executive language
-- draft introductions only after evidence is strong enough
-- place reviewable drafts in Leverage
+- support introductions, follow-ups, resources, check-ins, congratulations, questions, reminders, and waiting
+- draft or prepare work only after evidence is strong enough
+- place reviewable drafts or prepared work in Leverage
 
 Do not rebuild the removed relationship dossier/card sections.
 

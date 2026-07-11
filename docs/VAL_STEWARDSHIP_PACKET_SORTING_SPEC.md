@@ -2,7 +2,7 @@
 
 Updated: 2026-07-11
 
-Purpose: define how VAL should create powerful relationship packets, use them to create responsible connection records, and sort those records into an executive-useful Stewardship surface.
+Purpose: define how VAL should create powerful relationship packets, use them to prepare thoughtful stewardship moves, and sort those moves into an executive-useful Stewardship surface.
 
 This spec tightens [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md). The older document defines the philosophy and Round Table architecture. This document defines the practical product contract for packet creation, relationship admission, packet maturity, sorting, and executive display.
 
@@ -11,8 +11,10 @@ This spec tightens [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHI
 Stewardship should answer one executive question:
 
 ```text
-Who needs to meet whom, and why should I care now?
+What is the most thoughtful next move for this relationship?
 ```
+
+Sometimes the answer is an introduction. Sometimes it is a follow-up, a reconnection, a congratulations, a resource, a question, a check-in, a reminder, a declined introduction, or waiting.
 
 The user should not have to inspect raw email artifacts, debug labels, model reasoning, packet internals, provider names, or generic CRM fields to understand why a person is on the list.
 
@@ -21,8 +23,8 @@ VAL's job is:
 1. Build a source-backed packet for each real relationship.
 2. Keep that packet alive as new evidence arrives.
 3. Compare packets against one another.
-4. Create explicit connection commitments and connection opportunities.
-5. Sort promised connections, reviewable opportunities, and missing-context blockers by usefulness.
+4. Create explicit stewardship commitments and stewardship opportunities.
+5. Sort promised moves, reviewable opportunities, and missing-context blockers by usefulness.
 6. Show only the executive-ready conclusion, source posture, and review path.
 
 ## Stewardship Object Hierarchy
@@ -32,14 +34,14 @@ Stewardship must not become a better contact profile.
 The hierarchy is:
 
 ```text
-Stewardship = Network Connection System.
-Primary product outcome = a valuable, responsible connection.
+Stewardship = Relationship Stewardship System.
+Primary product outcome = the most thoughtful next relationship move.
 Primary knowledge object = person packet.
-Primary action object = connection commitment or connection opportunity.
-Primary UI = promised connections, reviewable opportunities, and specific missing-context blockers.
+Primary action object = stewardship commitment or stewardship opportunity.
+Primary UI = promised stewardship moves, reviewable opportunities, and specific missing-context blockers.
 ```
 
-Person packets exist so VAL can connect people responsibly. The drawer does not exist to display packets.
+Person packets exist so VAL can prepare better relationship judgment and more thoughtful actions. The drawer does not exist to display packets.
 
 ## Core Distinction
 
@@ -48,22 +50,23 @@ There are three different things:
 | Layer | What It Is | What It Must Not Pretend To Be |
 |---|---|---|
 | Contact evidence | Raw source traces from email, transcripts, calendar, CRM, documents, tasks, projects, and user corrections. | A relationship by itself. |
-| Person packet | A living source-backed understanding of a real person: who they are, what they need, what they offer. | A final introduction recommendation. |
-| Stewardship match | A comparison between packets that says who may need whom, why, and whether an introduction draft is warranted. | A sent message or automatic action. |
+| Person packet | A living source-backed understanding of a real person: who they are, what they need, what they offer. | A final stewardship recommendation. |
+| Stewardship move | A comparison between packet knowledge, commitments, timing, and context that says what the thoughtful next relationship move is. | A sent message or automatic action. |
 
-The packet is the foundation. The match is a decision made from multiple packets.
+The packet is the foundation. The stewardship move is a decision made from packets plus context.
 
-## Connection Records
+## Stewardship Records
 
-Stewardship needs a dedicated connection layer in addition to person packets.
+Stewardship needs a dedicated action layer in addition to person packets.
 
-### Connection Commitment
+### Stewardship Commitment
 
-Create this when the user explicitly promises, requests, or approves an introduction.
+Create this when the user explicitly promises, requests, or approves a relationship move.
 
 ```json
 {
-  "record_type": "connection_commitment",
+  "record_type": "stewardship_commitment",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
   "person_a_id": "",
   "person_b_id": "",
   "stated_direction": "a_to_b|b_to_a|mutual|unknown",
@@ -73,31 +76,33 @@ Create this when the user explicitly promises, requests, or approves an introduc
   "promised_at": "",
   "status": "needs_context|draft_ready|ready_for_review|completed|declined|stale",
   "missing_context": [],
-  "prepared_intro_id": "",
+  "prepared_artifact_id": "",
   "external_action_requires_approval": true
 }
 ```
 
-An explicit connection commitment has priority over an inferred opportunity.
+An explicit stewardship commitment has priority over an inferred opportunity.
 
-### Connection Opportunity
+### Stewardship Opportunity
 
-Create this when VAL discovers a possible need-and-offer match that the user did not explicitly state.
+Create this when VAL discovers a possible relationship move that the user did not explicitly state.
 
 ```json
 {
-  "record_type": "connection_opportunity",
-  "person_with_need_id": "",
-  "person_with_offer_id": "",
+  "record_type": "stewardship_opportunity",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
+  "primary_person_id": "",
+  "related_person_id": "",
   "need": "",
   "offer": "",
-  "why_the_match_matters": "",
+  "recommended_move": "",
+  "why_the_move_matters": "",
   "timing_reason": "",
   "need_source_receipts": [],
   "offer_source_receipts": [],
   "relationship_permission_receipts": [],
   "confidence": "low|medium|high",
-  "status": "watch|needs_source_review|ready_for_review|draft_ready|do_not_introduce",
+  "status": "watch|needs_source_review|ready_for_review|draft_ready|do_not_act",
   "risks": [],
   "missing_context": [],
   "external_action_requires_approval": true
@@ -105,6 +110,26 @@ Create this when VAL discovers a possible need-and-offer match that the user did
 ```
 
 Do not use the same status or data model for an explicit promise and an inferred opportunity.
+
+### Stewardship Move Types
+
+Introductions are one strong stewardship move, not the whole product.
+
+Supported stewardship move types include:
+
+- introduction
+- follow-up
+- reconnection
+- congratulations
+- resource/article/deck/proposal
+- referral
+- meeting
+- reminder
+- check-in
+- clarifying question
+- decline or delay an introduction
+- wait/watch quietly
+- other
 
 ## Relationship Admission
 
@@ -151,7 +176,7 @@ or
 Watch quietly until stronger evidence appears
 ```
 
-Thin packets are not introduction-ready.
+Thin packets are not external-move-ready.
 
 ## Person Packet Contract
 
@@ -180,10 +205,10 @@ A packet is minimally useful when it has:
 
 | Maturity | Meaning | Executive Behavior |
 |---|---|---|
-| `thin` | VAL has identity or source evidence, but not enough meaning. | Show only if user asks for all people or review gaps. Do not recommend introductions. |
+| `thin` | VAL has identity or source evidence, but not enough meaning. | Show only if user asks for all people or review gaps. Do not recommend external moves. |
 | `developing` | VAL knows who the person is and has some needs/offers, but evidence is partial. | Can appear in Stewardship with careful language. Usually watch, ask, or review source. |
-| `usable` | VAL has enough source-backed needs/offers and relationship context to compare against other packets. | Can create introduction candidates for review. |
-| `strong` | VAL has recent, source-backed reciprocal value and low identity risk. | Can draft an introduction for user approval. |
+| `usable` | VAL has enough source-backed needs/offers and relationship context to prepare a responsible next move. | Can create stewardship opportunities for review. |
+| `strong` | VAL has recent, source-backed context and low identity risk. | Can draft a stewardship move for user approval. |
 
 ## Packet Fields
 
@@ -377,24 +402,24 @@ Offer language may be inferred only when there is source support.
 
 ## Stewardship Sorting
 
-The executive list should be connection-first. It should not sort alphabetically by default.
+The executive list should be stewardship-move-first. It should not sort alphabetically by default.
 
 It should sort by usefulness.
 
 ### Primary Stewardship Sections
 
-The primary Stewardship surface should be organized around connection outcomes:
+The primary Stewardship surface should be organized around relationship-care outcomes:
 
-1. Connections You Promised
-2. Connections Worth Reviewing
+1. Stewardship You Promised
+2. Stewardship Moves Worth Reviewing
 3. More Context Needed
 4. People To Watch
 
 Every visible primary-surface item must lead toward one of four outcomes:
 
-1. Complete a promised connection.
-2. Review a valuable possible connection.
-3. Learn the missing context needed to make a connection responsibly.
+1. Complete a promised relationship move.
+2. Review a valuable possible relationship move.
+3. Learn the missing context needed to act responsibly.
 4. Do nothing yet.
 
 If an item does not support one of these outcomes, it does not belong on the primary Stewardship surface.
@@ -403,11 +428,12 @@ If an item does not support one of these outcomes, it does not belong on the pri
 
 | Lane | Meaning | Example Executive Copy |
 |---|---|---|
-| Ready To Review | Strong enough match exists; user should review why these people belong in the same conversation. | `Review introduction: Terrie may need Kareemah's adaptive nonprofit experience.` |
-| Needs Source Review | VAL sees a possible match, but source evidence is not human-readable enough yet. | `Possible introduction, but review transcript/source first.` |
-| Waiting On Loop | Relationship has open loops or follow-up obligations. | `Waiting: 3 open loops need source review.` |
+| Promised Move Ready | The user promised something and VAL has enough context for review. | `Review introduction: You said you would connect Terrie and Kareemah.` |
+| Opportunity Ready | Strong enough stewardship move exists; user should review why it matters. | `Review follow-up: send the proposal after yesterday's call.` |
+| Needs Source Review | VAL sees a possible move, but source evidence is not human-readable enough yet. | `Possible check-in, but review the transcript first.` |
+| Waiting On Commitment | Relationship has a promised follow-up or obligation. | `Waiting: proposal follow-up needs source review.` |
 | Needs Identity Cleanup | Person is likely real but CRM/contact identity is unresolved. | `Link the real person before matching.` |
-| Developing Relationship | Packet is real but not introduction-ready. | `Watch quietly until needs/offers are clearer.` |
+| Developing Relationship | Packet is real but not stewardship-ready. | `Watch quietly until needs/offers are clearer.` |
 | Dormant / Low Signal | Real person, low recent value signal. | `No current stewardship action.` |
 
 ### Sort Score
@@ -419,7 +445,7 @@ Sort score should combine:
 - recency
 - explicit user instruction
 - number and quality of source receipts
-- match strength between needs and offers
+- strength of the recommended move
 - reciprocal value
 - current project relevance
 - open loop urgency
@@ -437,17 +463,18 @@ Rank them highly because:
 - the user engaged with them
 - there is a real open loop
 - they are tied to meaningful work
-- there is a source-backed need/offer match
+- there is a source-backed stewardship move
 - the user explicitly cares about them
 - VAL can prepare a useful review item
 
-## Introduction Match Packet
+## Stewardship Move Packet
 
-When VAL compares packets, it may create an introduction match packet:
+When VAL compares packets and context, it may create a stewardship move packet:
 
 ```json
 {
-  "packet_type": "stewardship_match_packet",
+  "packet_type": "stewardship_move_packet",
+  "stewardship_type": "introduction|follow_up|resource|referral|meeting|reminder|check_in|congratulation|question|decline_intro|wait|other",
   "candidate_a": {
     "name": "",
     "need": "",
@@ -458,36 +485,37 @@ When VAL compares packets, it may create an introduction match packet:
     "offer": "",
     "source_receipts": []
   },
+  "recommended_move": "",
   "why_this_may_matter": "",
   "direction": "a_needs_b|b_needs_a|reciprocal",
   "confidence": "high|medium|low",
-  "review_posture": "draft_ready|review_source_first|watch|do_not_intro",
+  "review_posture": "draft_ready|review_source_first|watch|do_not_act",
   "risks": [],
   "missing_variables": [],
   "no_external_action": true
 }
 ```
 
-The match packet can prepare a draft introduction only when:
+The move packet can prepare a draft or review artifact only when:
 
-- both people are real identities
+- required people are real identities
 - source evidence is readable
-- there is an actual need/offer connection
-- the introduction would serve both people
-- the user is the right person to make the introduction
-- no sensitivity or permission issue blocks the match
+- there is an actual reason the move would help
+- the move would serve the relationship rather than create noise
+- the user is the right person to make the move
+- no sensitivity or permission issue blocks the move
 
 ## Executive UI Contract
 
 The executive should see:
 
-1. Promised connections first.
-2. Reviewable connection opportunities second.
+1. Promised stewardship moves first.
+2. Reviewable stewardship opportunities second.
 3. Missing-context blockers third.
-4. People worth watching only when they may become useful connection nodes.
-5. Plain explanation of why the connection matters.
+4. People worth watching only when they may become useful relationship nodes.
+5. Plain explanation of why the move matters.
 6. Specific missing fact when action is blocked.
-7. Review introduction when there is something real to review.
+7. Review the move when there is something real to review.
 8. Refresh/review sources only when the packet needs more evidence.
 
 The executive should not see:
@@ -534,22 +562,22 @@ Waiting for what?
 
 ## Executive Review Page
 
-When the user clicks `Review introductions`, the page should answer:
+When the user opens a stewardship review item, the page should answer:
 
-1. Is an introduction ready?
+1. Is a relationship move ready?
 2. Who is involved?
-3. Which direction is the value flowing?
-4. What source proves the need?
-5. What source proves the offer?
+3. What kind of move is this?
+4. What source proves the need or reason?
+5. What source proves the offer, context, or timing?
 6. What risk or missing context remains?
-7. What would VAL draft if approved?
+7. What would VAL draft, prepare, or mark if approved?
 
 The page should reuse the same information as the first Stewardship page. It must not become a disconnected generic review surface.
 
-If no introduction is ready, say plainly:
+If no move is ready, say plainly:
 
 ```text
-No introduction is ready yet.
+No stewardship move is ready yet.
 ```
 
 Then explain the specific missing variable:
@@ -565,7 +593,7 @@ Then explain the specific missing variable:
 
 Before implementing the next Stewardship change, the documentation and implementation plan must show:
 
-1. What product behavior is being introduced: connection commitments and connection opportunities become first-class Stewardship objects.
+1. What product behavior is being introduced: stewardship commitments and stewardship opportunities become first-class Stewardship objects.
 2. What existing behavior it replaces: primary Stewardship surfaces centered on relationship profiles, temperature, open loops, generic history, or packet maturity.
 3. What remains valid: person packets, source receipts, identity admission gates, need/offer extraction, Leverage approval, and no external action without approval.
 4. What is now deprecated: relationship-profile-first Stewardship, open-loop-count-driven ranking, generic "packet needs evidence" copy, and review pages disconnected from the person/context evidence.
@@ -620,13 +648,14 @@ Kareemah packet receives:
 
 Scraped/enriched public data may explain who Kareemah is or what she plausibly offers, but it must not prove the user relationship, current need, permission, or promised introduction.
 
-### Expected Connection Record
+### Expected Stewardship Record
 
 VAL creates or updates:
 
 ```json
 {
-  "record_type": "connection_commitment",
+  "record_type": "stewardship_commitment",
+  "stewardship_type": "introduction",
   "person_a_id": "terrie",
   "person_b_id": "kareemah",
   "stated_direction": "unknown",
@@ -653,22 +682,22 @@ VAL must answer:
 - Who are the two people?
 - What does Terrie need?
 - What does Kareemah offer?
-- Why might this connection matter now?
+- Why might this relationship move matter now?
 - What source proves each claim?
 - What remains unknown?
 - Is it responsible to draft now, or should VAL ask/review one missing fact first?
 
 ### Exact Executive-Facing Result
 
-The Stewardship primary surface should show a promised connection near the top:
+The Stewardship primary surface should show a promised stewardship move near the top:
 
 ```text
-Connections You Promised
+Stewardship You Promised
 
 Introduce Terrie and Kareemah
 
 You said you would introduce Terrie to Kareemah.
-VAL found the promise in your transcript and is checking both person packets for why the connection matters.
+VAL found the promise in your transcript and is checking both person packets for why this relationship move matters.
 
 Next step: Review introduction context.
 ```
@@ -740,9 +769,9 @@ A Stewardship result is useful only if the executive can answer, in under 10 sec
 2. Why is VAL showing them?
 3. What might they need?
 4. What might they offer?
-5. Who might they need to meet?
-6. Why would that introduction matter?
-7. What should I review before VAL drafts anything?
+5. What thoughtful move might be useful?
+6. Why would that move matter?
+7. What should I review before VAL drafts or marks anything?
 
 If the answer is unclear, VAL should not show the item as action-ready.
 
@@ -755,8 +784,9 @@ As of 2026-07-11:
 - Confirmed aliases need to become durable user-editable identity mappings, not only code constants.
 - Mike Nonhof now appears as a real admitted relationship and dedupes across known email aliases.
 - Kareemah's packet can receive transcript-backed intro evidence through adaptive/para-climbing context, but the future target is stronger exact-name/entity resolution.
-- The introduction review page must continue moving toward the same source-backed information as the first Stewardship page.
+- The review page must continue moving toward the same source-backed information as the first Stewardship page.
 - Sorting needs explicit lane labels and score reasoning stored internally, with only plain executive copy shown.
+- The architecture must broaden beyond introductions into follow-ups, resources, congratulations, check-ins, questions, referrals, reminders, and waiting.
 
 ## Implementation Next Steps
 
@@ -764,17 +794,18 @@ As of 2026-07-11:
 2. Add exact and fuzzy identity resolution across email aliases, CRM contacts, transcript speaker names, and user corrections.
 3. Add source-backed need/offer extraction for transcripts, sent email, CC'd email, calendar, projects, documents, tasks, and CRM notes.
 4. Store packet maturity and missing variables.
-5. Create match packets by comparing needs/offers across people.
-6. Sort Stewardship by lane and usefulness, not alphabetically or volume.
-7. Make `Review introductions` show match packets with the same source evidence as the person drawer.
-8. Route draft-ready introductions into Leverage for user approval.
-9. Keep all external actions behind explicit user approval.
+5. Create stewardship commitment and stewardship opportunity records from explicit promises and inferred next moves.
+6. Create move packets by comparing needs/offers, commitments, timing, permission, and relationship context.
+7. Sort Stewardship by lane and usefulness, not alphabetically or volume.
+8. Make review surfaces show stewardship move packets with the same source evidence as the person drawer.
+9. Route draft-ready moves into Leverage for user approval.
+10. Keep all external actions behind explicit user approval.
 
 ## Non-Negotiables
 
 - No source, no claim.
-- No identity, no introduction.
-- No reciprocal value, no draft.
+- No identity, no external relationship move.
+- No source-backed reason, no draft.
 - No user approval, no external action.
 - No passive inbound-only email address in Stewardship as a relationship.
 - No debug language in the executive surface.
