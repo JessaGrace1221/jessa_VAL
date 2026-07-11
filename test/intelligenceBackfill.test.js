@@ -67,6 +67,8 @@ test('email backfill keeps the evidence-first rule',()=>{
   assert.match(body,/classifyExecutiveEmail\(withMetrics,rules\)/);
   assert.match(body,/emailSenderMetrics\(email,emailCorpus\)/);
   assert.match(body,/saveEmailEvidenceBatch/);
+  assert.match(body,/relationshipIntake/);
+  assert.match(body,/personPackets/);
   assert.doesNotMatch(body,/saveTask\(/);
   assert.doesNotMatch(body,/create_task/);
 });
@@ -77,4 +79,22 @@ test('relationship review can use stored relationship engine profiles when provi
   assert.match(server,/source:'relationship_profiles'/);
   assert.match(server,/providerReviewErrors/);
   assert.match(server,/stored&&\(stored\.relationshipProfiles\|\|\[\]\)\.length/);
+});
+
+test('relationship profiles persist person packets for ongoing Stewardship intake',()=>{
+  assert.match(server,/function relationshipProfilePersonPacketMetadata/);
+  assert.match(server,/personPacketFromContact\(\{/);
+  assert.match(server,/personPacket:packet/);
+  assert.match(server,/row\.metadataJson=relationshipProfilePersonPacketMetadata\(row\)/);
+  assert.match(server,/metadata_json=relationship_profiles\.metadata_json\|\|\$20::jsonb/);
+  assert.match(server,/personPacket:metadata\.personPacket\|\|null/);
+});
+
+test('Stewardship exposes an internal person packet read surface',()=>{
+  assert.match(server,/function relationshipPersonPacketItemFromProfile/);
+  assert.match(server,/app\.get\('\/api\/relationships\/person-packets'/);
+  assert.match(server,/maturityCounts/);
+  assert.match(server,/needsReviewCount/);
+  assert.match(server,/includeThin/);
+  assert.match(server,/noExternalAction:true/);
 });

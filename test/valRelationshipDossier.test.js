@@ -151,6 +151,8 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/buildRelationshipDossier/);
   assert.match(server,/relationshipDossierPromptContext/);
   assert.match(server,/app\.get\('\/api\/relationships\/index'/);
+  assert.match(server,/app\.get\('\/api\/relationships\/person-packets'/);
+  assert.match(server,/relationshipPersonPacketItemFromProfile/);
   assert.match(server,/relationshipIndexItemFromProfile/);
   assert.match(server,/relationshipIndexState/);
   assert.match(server,/RELATIONSHIP_INDEX_TEMPERATURE_MODEL/);
@@ -202,6 +204,9 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/draftType:prepared\.draftType/);
   assert.match(server,/whoNeedsThisPerson/);
   assert.match(server,/whoThisPersonNeeds/);
+  assert.match(server,/currentPersonPacket/);
+  assert.match(server,/stewardshipMatchPackets/);
+  assert.match(server,/personPacketFromContact\(currentContact\)/);
   assert.match(server,/relationshipIntroReviewSurface/);
   assert.match(server,/reviewSurface/);
   assert.match(server,/const effectiveAction=action==='create_task_from_loop'\?'create_task':action/);

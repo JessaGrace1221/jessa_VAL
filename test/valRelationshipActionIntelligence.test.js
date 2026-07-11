@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft}=require('../services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket}=require('../services/valRelationshipActionIntelligence');
 
 test('relationship action intelligence requires canonical CRM contact identity',()=>{
   assert.equal(contactId({id:'local_1',name:'Local Person'}),'');
@@ -35,10 +35,63 @@ test('relationship action intelligence drafts review-only intro candidates betwe
   assert.equal(candidate.personB.contactId,'crm_greg');
   assert.equal(candidate.requiresApproval,true);
   assert.equal(candidate.noExternalAction,true);
+  assert.equal(candidate.personPackets.current.packet_type,'person_packet');
+  assert.equal(candidate.personPackets.candidate.packet_type,'person_packet');
+  assert.equal(candidate.stewardshipMatchPacket.packet_type,'stewardship_match_packet');
+  assert.equal(candidate.stewardshipMatchPacket.no_external_action,true);
   assert.equal(candidate.direction.whoNeedsThisPerson>0,true);
   assert.equal(candidate.direction.whoThisPersonNeeds>0,true);
   assert.match(candidate.whatWillNotHappen,/will not send/);
   assert.match(candidate.draft.subject,/Introduction/);
+});
+
+test('person packets preserve who they are, needs, offers, evidence, and thin state',()=>{
+  const packet=personPacketFromContact({
+    name:'New Relationship',
+    email:'new@example.com',
+    firstMeaningfulSignal:'CCd into the Frisson partner conversation.',
+    evidence:[{type:'cc_email',messageId:'m_1',subject:'Partner intro',summary:'New Relationship was copied on the partner conversation.'}]
+  },{updatedAt:'2026-07-11T00:00:00.000Z'});
+  assert.equal(packet.packet_type,'person_packet');
+  assert.equal(packet.person.identity_status,'needs_review');
+  assert.equal(packet.who_this_person_is.summary,'New Relationship');
+  assert.equal(packet.relationship_origin.first_meaningful_signal,'CCd into the Frisson partner conversation.');
+  assert.equal(packet.evidence.cc_receipts.length,1);
+  assert.equal(packet.packet_state.maturity,'developing');
+  assert.ok(packet.packet_state.needs_review);
+  assert.ok(packet.packet_state.missing_variables.includes('crm_contact_id'));
+  assert.ok(packet.packet_state.missing_variables.includes('what_this_person_needs'));
+  assert.ok(packet.packet_state.missing_variables.includes('what_this_person_offers'));
+});
+
+test('relationship matching can consume person packets directly',()=>{
+  const currentPacket=personPacketFromContact({
+    contactId:'crm_current',
+    name:'Current Person',
+    offers:['operator systems'],
+    needs:['foundation access'],
+    evidence:[{type:'gmail_email',messageId:'m_current',summary:'Current Person can help with operator systems.'}]
+  });
+  const candidatePacket=personPacketFromContact({
+    contactId:'crm_candidate',
+    name:'Candidate Person',
+    offers:['foundation access'],
+    needs:['operator systems'],
+    evidence:[{type:'sent_email',messageId:'m_candidate',summary:'Candidate Person is looking for operator systems.'}]
+  });
+  const result=relationshipIntroCandidates({currentContact:currentPacket,crmContacts:[candidatePacket]});
+  assert.equal(result.candidates.length,1);
+  const candidate=result.candidates[0];
+  assert.equal(candidate.personA.contactId,'crm_current');
+  assert.equal(candidate.personB.contactId,'crm_candidate');
+  assert.equal(candidate.stewardshipMatchPacket.focus_person_packet_id,currentPacket.packet_id);
+  assert.deepEqual(candidate.stewardshipMatchPacket.compared_person_packet_ids,[candidatePacket.packet_id]);
+  assert.ok(candidate.stewardshipMatchPacket.people_who_need_them.length);
+  assert.ok(candidate.stewardshipMatchPacket.people_they_should_meet.length);
+  const backToContact=contactFromPersonPacket(currentPacket);
+  assert.equal(backToContact.contactId,'crm_current');
+  assert.deepEqual(backToContact.needs,['foundation access']);
+  assert.deepEqual(backToContact.offers,['operator systems']);
 });
 
 test('relationship introduction direction separates who needs this person from who this person needs',()=>{

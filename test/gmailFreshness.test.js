@@ -105,6 +105,10 @@ test('email sync captures evidence before actions and does not auto-create tasks
   assert.match(server,/async function runObservationEngine/);
   assert.match(server,/runObservationEngine\(evidence,\{candidates:emailObservationCandidates\(email\),replace:true\}\)/);
   assert.match(server,/sourceType=email\.provider==='outlook'\?'outlook_email':'gmail_email'/);
+  assert.match(server,/relationshipIntake:true/);
+  assert.match(server,/source:'email_relationship_intake'/);
+  assert.match(server,/relationshipProfilesTouched:relationshipIntake\.relationshipProfiles/);
+  assert.match(server,/personPacketsTouched:relationshipIntake\.personPackets/);
   for(const type of ['reply_needed','pricing_question','meeting_request','document_request','spam','newsletter','receipt']){
     assert.match(server,new RegExp(`'${type}'`));
   }

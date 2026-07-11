@@ -60,6 +60,7 @@ Every Intelligence Pass output that updates context should use this shape:
 | `teach_val` | Root durable profile from Teach VAL. | existing/derived |
 | `user` | Identity, preferences, capacity, energy, decision rules. | existing/new |
 | `important_people` | People the user or VAL has identified as important. | derived/new |
+| `person_packets` | Living source-backed packets for every meaningful person or new relationship VAL notices. | new |
 | `projects` | Active projects, blockers, current truth, momentum. | derived/new |
 | `relationships` | Person/org/project relationship memory and status. | existing/derived |
 | `emails` | Current email, thread, sent mail, inbox classification. | existing |
@@ -212,6 +213,41 @@ Person object shape:
   "confidence": 0.9
 }
 ```
+
+## Person Packet Variables
+
+Person packets are the durable relationship intake layer for Stewardship. They are created during onboarding from connected source review and updated continuously as new relationships appear.
+
+A person packet should hold who the person is, what they need, and what they offer. It should not permanently decide who needs them or who they need. Those are Stewardship matching decisions made by comparing packets later.
+
+Dedicated Stewardship packet spec:
+
+- [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md)
+
+| Label | Variable | Status | Type | Updated by | Recommended use |
+|---|---|---|---|---|---|
+| Person packet list | `{{person_packets.list}}` | new | array | onboarding scan, relationship intake, source indexer | Broad matching across the network. |
+| By person ID | `{{person_packets.by_person_id}}` | new | object | context indexer | Direct packet lookup. |
+| By email | `{{person_packets.by_email}}` | new | object | email/contact resolver | Create or update packets from inbox, sent, and CC'd mail. |
+| Current person packet | `{{person_packets.current}}` | new/derived | object | event resolver | Focused Stewardship and meeting prep context. |
+| Who this person is | `{{person_packets.current.who_this_person_is}}` | new | object | person packet builder | Identity, role, relationship to user, current context. |
+| What this person needs | `{{person_packets.current.what_this_person_needs}}` | new | array | person packet builder, source review | Needs, gaps, asks, open loops, and current support opportunities. |
+| What this person offers | `{{person_packets.current.what_this_person_offers}}` | new | array | person packet builder, source review | Expertise, access, credibility, network, services, perspective, resources. |
+| Relationship origin | `{{person_packets.current.relationship_origin}}` | new | object | onboarding scan, event intake | First meaningful signal and provenance. |
+| Packet maturity | `{{person_packets.current.packet_state.maturity}}` | new | enum | packet builder | `thin`, `developing`, `usable`, or `strong`. Thin packets are allowed. |
+| Last meaningful signal | `{{person_packets.current.relationship_state.last_meaningful_signal_at}}` | new | datetime | source intake | Freshness for Stewardship timing. |
+| Missing variables | `{{person_packets.current.packet_state.missing_variables}}` | new | array | packet builder | What VAL does not know yet. |
+| Packet evidence | `{{person_packets.current.evidence}}` | new | object | evidence linker | Source receipts from email, sent mail, CCs, transcripts, calendar, projects, documents, CRM, and user confirmations. |
+| New relationship candidates | `{{person_packets.new_relationship_candidates}}` | new | array | email/calendar/transcript/contact intake | People who may need a new packet or identity review. |
+| Stewardship match candidates | `{{person_packets.match_candidates}}` | new/derived | array | Stewardship Round Table | Candidate comparisons between needs and offers. |
+
+Person packet creation rules:
+
+1. Create packets during onboarding from roughly 90 days of inbox, sent, and CC'd email when source access is connected.
+2. Continue creating packets after onboarding whenever a meaningful new relationship signal appears.
+3. Do not discard thin packets. Mark them as thin, source them, and let meaning accumulate.
+4. Do not confuse active Executive Inbox eligibility with relationship evidence eligibility.
+5. Do not make importance final too early. New relationships often become important after more context arrives.
 
 ## Project Variables
 

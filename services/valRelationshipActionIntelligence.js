@@ -2,6 +2,7 @@
 
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=300){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+function firstText(...values){return values.map(value=>compactText(value)).find(Boolean)||'';}
 function lowerWords(value=''){
   return compactText(value,1000).toLowerCase().split(/[^a-z0-9]+/).filter(word=>word.length>2);
 }
@@ -25,6 +26,176 @@ function evidenceText(contact={}){
     ...safeArray(contact.evidence).map(e=>e.summary||e.text||e.content||'')
   ].filter(Boolean).join(' ');
 }
+function sourceReceipt(item={},fallbackType='relationship_evidence'){
+  if(typeof item==='string')return {source_type:fallbackType,source_id:'',summary:compactText(item,260),confidence:'unknown'};
+  return {
+    source_type:compactText(item.source_type||item.sourceType||item.type||item.source||fallbackType,80),
+    source_id:compactText(item.source_id||item.sourceId||item.id||item.messageId||'',120),
+    title:compactText(item.title||item.subject||'',140),
+    summary:compactText(item.summary||item.text||item.content||item.bodyPreview||item.snippet||item.rawText||'',260),
+    occurred_at:item.occurred_at||item.occurredAt||item.receivedAt||item.sentAt||item.date||item.createdAt||'',
+    confidence:item.confidence||item.source_confidence_label||item.sourceConfidenceLabel||'unknown'
+  };
+}
+function sourceReceipts(items=[],fallbackType='relationship_evidence',limit=8){
+  const seen=new Set();
+  return safeArray(items).map(item=>sourceReceipt(item,fallbackType)).filter(item=>{
+    const key=[item.source_type,item.source_id,item.summary].join('|').toLowerCase();
+    if((!item.summary&&!item.title&&!item.source_id)||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,limit);
+}
+function textEvidenceItem(text='',type='inferred_relationship_signal'){
+  const summary=compactText(text,260);
+  return summary?{type,summary,confidence:'medium'}:null;
+}
+function normalizedList(...sources){
+  const seen=new Set();
+  return sources.flatMap(source=>safeArray(source)).map(item=>{
+    if(typeof item==='string')return compactText(item,220);
+    return compactText(item.need||item.offer||item.summary||item.text||item.content||item.reason||item.title||'',220);
+  }).filter(item=>{
+    const key=item.toLowerCase();
+    if(!item||seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,12);
+}
+function packetIdForContact(contact={}){
+  const id=contactId(contact);
+  const email=compactText(contact.email||contact.primaryEmail||'',120).toLowerCase();
+  const name=compactText(contact.name||contact.displayName||'',120).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return `person_packet:${id||email||name||'unknown'}`.slice(0,180);
+}
+function packetIdentity(contact={}){
+  return {
+    person_id:compactText(contact.personId||contact.person_id||contact.id||contact.contactId||contact.crmContactId||'',120),
+    name:compactText(contact.name||contact.displayName||contact.fullName||contact.email||'Relationship',140),
+    email_addresses:[...new Set([contact.email,contact.primaryEmail,contact.contactEmail].map(value=>compactText(value,120).toLowerCase()).filter(Boolean))],
+    role:compactText(contact.role||contact.title||contact.jobTitle||'',140),
+    company_or_context:compactText(contact.company||contact.companyName||contact.context||'',160),
+    crm_contact_id:contactId(contact),
+    identity_status:contactId(contact)?'linked':(contact.email||contact.name?'needs_review':'unknown')
+  };
+}
+function personPacketFromContact(contact={},options={}){
+  const evidence=sourceReceipts([
+    ...safeArray(contact.evidence),
+    ...safeArray(contact.sourceReceipts||contact.source_refs||contact.sourceRefs),
+    textEvidenceItem(contact.summary||contact.reason||contact.why||'','relationship_summary'),
+    textEvidenceItem(contact.recommendedAction||'','relationship_recommended_action')
+  ].filter(Boolean),'relationship_evidence',12);
+  const needs=normalizedList(contact.needs,contact.openLoops,contact.risks,contact.riskSignals);
+  const offers=normalizedList(contact.offers,contact.opportunitySignals,contact.opportunities,contact.tags);
+  const identity=packetIdentity(contact);
+  const firstSeen=firstText(contact.firstSeenAt,contact.createdAt,contact.lastObservedAt,contact.lastInteractionAt,contact.receivedAt,contact.sentAt);
+  const lastSignal=firstText(contact.lastMeaningfulSignalAt,contact.lastObservedAt,contact.lastInteractionAt,contact.updatedAt,contact.receivedAt,contact.sentAt,firstSeen);
+  const maturity=contactId(contact)&&(needs.length||offers.length)&&evidence.length?'usable':((needs.length||offers.length||evidence.length)?'developing':'thin');
+  return {
+    packet_type:'person_packet',
+    packet_id:options.packetId||packetIdForContact(contact),
+    person:identity,
+    relationship_origin:{
+      first_seen_at:firstSeen,
+      first_meaningful_signal:firstText(contact.firstMeaningfulSignal,contact.reason,contact.summary,contact.recommendedAction),
+      source_receipts:evidence.slice(0,3)
+    },
+    who_this_person_is:{
+      summary:firstText(contact.summary,contact.reason,contact.why,[identity.role,identity.company_or_context].filter(Boolean).join(' at '),identity.name),
+      relationship_to_user:firstText(contact.relationshipToUser,contact.relationship_type,contact.relationshipType,contact.source),
+      current_context:firstText(contact.currentContext,contact.recommendedAction,contact.reason,contact.summary),
+      source_receipts:evidence,
+      confidence:evidence.length>=2?'medium':'low'
+    },
+    what_this_person_needs:needs.map(need=>({need,why_it_matters:need,timing:'unknown',source_receipts:evidence.slice(0,4),confidence:evidence.length?'medium':'low'})),
+    what_this_person_offers:offers.map(offer=>({offer,why_it_matters:offer,source_receipts:evidence.slice(0,4),confidence:evidence.length?'medium':'low'})),
+    relationship_state:{
+      status:firstText(contact.relationshipStatus,contact.relationship_status,contact.status,contact.state)||'unknown',
+      last_meaningful_signal_at:lastSignal,
+      open_loops:normalizedList(contact.openLoops),
+      source_receipts:evidence.slice(0,5)
+    },
+    evidence:{
+      email_receipts:evidence.filter(item=>/email|gmail|outlook/i.test(item.source_type)),
+      sent_email_receipts:evidence.filter(item=>/sent/i.test(item.source_type)),
+      cc_receipts:evidence.filter(item=>/cc/i.test(item.source_type)),
+      transcript_receipts:evidence.filter(item=>/transcript/i.test(item.source_type)),
+      calendar_receipts:evidence.filter(item=>/calendar|meeting/i.test(item.source_type)),
+      project_receipts:evidence.filter(item=>/project/i.test(item.source_type)),
+      document_receipts:evidence.filter(item=>/document|file|doc/i.test(item.source_type)),
+      crm_receipts:evidence.filter(item=>/crm|ghl|contact/i.test(item.source_type)),
+      user_confirmed_receipts:evidence.filter(item=>/user|confirmed|teach_val/i.test(item.source_type))
+    },
+    packet_state:{
+      maturity,
+      needs_review:identity.identity_status!=='linked'||maturity==='thin',
+      missing_variables:[
+        !identity.crm_contact_id?'crm_contact_id':'',
+        needs.length?'':'what_this_person_needs',
+        offers.length?'':'what_this_person_offers',
+        evidence.length?'':'source_receipts'
+      ].filter(Boolean),
+      updated_at:options.updatedAt||new Date().toISOString()
+    }
+  };
+}
+function personPacketText(packet={},field=''){
+  const values=field==='needs'
+    ? safeArray(packet.what_this_person_needs).map(item=>item.need||item.summary||'')
+    : safeArray(packet.what_this_person_offers).map(item=>item.offer||item.summary||'');
+  return values.filter(Boolean).join(' ');
+}
+function contactFromPersonPacket(packet={}){
+  const person=packet.person||{};
+  return {
+    contactId:person.crm_contact_id||person.contactId||'',
+    crmContactId:person.crm_contact_id||'',
+    name:person.name||'Relationship',
+    email:safeArray(person.email_addresses)[0]||'',
+    company:person.company_or_context||'',
+    role:person.role||'',
+    needs:safeArray(packet.what_this_person_needs).map(item=>item.need).filter(Boolean),
+    offers:safeArray(packet.what_this_person_offers).map(item=>item.offer).filter(Boolean),
+    evidence:safeArray(packet.who_this_person_is?.source_receipts||packet.relationship_state?.source_receipts)
+  };
+}
+function stewardshipMatchPacket({currentPacket={},candidatePacket={},candidate={},direction={},score=0}={}){
+  const currentContact=contactFromPersonPacket(currentPacket);
+  const candidateContact=contactFromPersonPacket(candidatePacket);
+  return {
+    packet_type:'stewardship_match_packet',
+    focus_person_packet_id:currentPacket.packet_id||'',
+    compared_person_packet_ids:[candidatePacket.packet_id||''].filter(Boolean),
+    candidate_contact_id:candidateContact.contactId||'',
+    current_contact_id:currentContact.contactId||'',
+    what_this_person_needs:safeArray(currentPacket.what_this_person_needs),
+    what_this_person_offers:safeArray(currentPacket.what_this_person_offers),
+    candidate_needs:safeArray(candidatePacket.what_this_person_needs),
+    candidate_offers:safeArray(candidatePacket.what_this_person_offers),
+    people_they_should_meet:direction.whoThisPersonNeeds>0?[{
+      person:candidateContact.name,
+      reason:compactText(candidate.whyThisMayMatter||`${candidateContact.name} may offer something ${currentContact.name} needs.`,240),
+      need_met:personPacketText(currentPacket,'needs'),
+      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      approval_status:'ready_for_review'
+    }]:[],
+    people_who_need_them:direction.whoNeedsThisPerson>0?[{
+      person:candidateContact.name,
+      reason:compactText(candidate.whyThisMayMatter||`${candidateContact.name} may need something ${currentContact.name} offers.`,240),
+      offer_matched:personPacketText(currentPacket,'offers'),
+      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      approval_status:'ready_for_review'
+    }]:[],
+    next_stewardship_move:{
+      move:score>0?'Review introduction candidate.':'Watch quietly until stronger evidence appears.',
+      why:compactText(candidate.whyThisMayMatter||'',240),
+      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      approval_required:true
+    },
+    no_external_action:true
+  };
+}
 function overlapScore(a='',b=''){
   const aSet=new Set(lowerWords(a)),bSet=new Set(lowerWords(b));
   let score=0;
@@ -32,17 +203,21 @@ function overlapScore(a='',b=''){
   return score;
 }
 function complementaryScore(current={},candidate={}){
-  const currentNeeds=safeArray(current.needs).join(' ')||safeArray(current.openLoops).join(' ')||current.reason||'';
-  const currentOffers=safeArray(current.offers).join(' ')||safeArray(current.opportunitySignals).join(' ')||current.summary||'';
-  const candidateNeeds=safeArray(candidate.needs).join(' ')||safeArray(candidate.openLoops).join(' ')||candidate.reason||'';
-  const candidateOffers=safeArray(candidate.offers).join(' ')||safeArray(candidate.opportunitySignals).join(' ')||candidate.summary||'';
+  const currentPacket=current.packet_type==='person_packet'?current:personPacketFromContact(current);
+  const candidatePacket=candidate.packet_type==='person_packet'?candidate:personPacketFromContact(candidate);
+  const currentNeeds=personPacketText(currentPacket,'needs')||safeArray(current.needs).join(' ')||safeArray(current.openLoops).join(' ')||current.reason||'';
+  const currentOffers=personPacketText(currentPacket,'offers')||safeArray(current.offers).join(' ')||safeArray(current.opportunitySignals).join(' ')||current.summary||'';
+  const candidateNeeds=personPacketText(candidatePacket,'needs')||safeArray(candidate.needs).join(' ')||safeArray(candidate.openLoops).join(' ')||candidate.reason||'';
+  const candidateOffers=personPacketText(candidatePacket,'offers')||safeArray(candidate.offers).join(' ')||safeArray(candidate.opportunitySignals).join(' ')||candidate.summary||'';
   return overlapScore(currentNeeds,candidateOffers)+overlapScore(candidateNeeds,currentOffers)+overlapScore(evidenceText(current),evidenceText(candidate));
 }
 function introductionDirection(current={},candidate={}){
-  const currentNeeds=safeArray(current.needs).join(' ')||safeArray(current.openLoops).join(' ')||current.reason||'';
-  const currentOffers=safeArray(current.offers).join(' ')||safeArray(current.opportunitySignals).join(' ')||current.summary||'';
-  const candidateNeeds=safeArray(candidate.needs).join(' ')||safeArray(candidate.openLoops).join(' ')||candidate.reason||'';
-  const candidateOffers=safeArray(candidate.offers).join(' ')||safeArray(candidate.opportunitySignals).join(' ')||candidate.summary||'';
+  const currentPacket=current.packet_type==='person_packet'?current:personPacketFromContact(current);
+  const candidatePacket=candidate.packet_type==='person_packet'?candidate:personPacketFromContact(candidate);
+  const currentNeeds=personPacketText(currentPacket,'needs')||safeArray(current.needs).join(' ')||safeArray(current.openLoops).join(' ')||current.reason||'';
+  const currentOffers=personPacketText(currentPacket,'offers')||safeArray(current.offers).join(' ')||safeArray(current.opportunitySignals).join(' ')||current.summary||'';
+  const candidateNeeds=personPacketText(candidatePacket,'needs')||safeArray(candidate.needs).join(' ')||safeArray(candidate.openLoops).join(' ')||candidate.reason||'';
+  const candidateOffers=personPacketText(candidatePacket,'offers')||safeArray(candidate.offers).join(' ')||safeArray(candidate.opportunitySignals).join(' ')||candidate.summary||'';
   const whoNeedsThisPerson=overlapScore(candidateNeeds,currentOffers);
   const whoThisPersonNeeds=overlapScore(currentNeeds,candidateOffers);
   return {
@@ -52,36 +227,42 @@ function introductionDirection(current={},candidate={}){
   };
 }
 function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}={}){
-  const currentId=contactId(currentContact);
+  const currentPacket=currentContact.packet_type==='person_packet'?currentContact:personPacketFromContact(currentContact);
+  const currentContactForMatch=contactFromPersonPacket(currentPacket);
+  const currentId=contactId(currentContactForMatch);
   if(!currentId)return {ok:true,candidates:[],unknowns:['current_contact_id_unresolved'],noExternalAction:true};
-  const currentName=compactText(currentContact.name||currentContact.email||'this person',120);
+  const currentName=compactText(currentContactForMatch.name||currentContactForMatch.email||'this person',120);
   const candidates=safeArray(crmContacts)
-    .filter(contact=>contactId(contact)&&contactId(contact)!==currentId)
+    .map(contact=>contact.packet_type==='person_packet'?contact:personPacketFromContact(contact))
+    .filter(packet=>contactId(contactFromPersonPacket(packet))&&contactId(contactFromPersonPacket(packet))!==currentId)
     .map(contact=>{
-      const otherId=contactId(contact);
-      const score=complementaryScore(currentContact,contact);
-      const direction=introductionDirection(currentContact,contact);
+      const candidatePacket=contact;
+      const candidateContact=contactFromPersonPacket(candidatePacket);
+      const otherId=contactId(candidateContact);
+      const score=complementaryScore(currentPacket,candidatePacket);
+      const direction=introductionDirection(currentPacket,candidatePacket);
       const reason=score>0
-        ? `${currentName} and ${contact.name||contact.email||'this contact'} have overlapping needs, offers, opportunities, or relationship evidence.`
-        : `${contact.name||contact.email||'This contact'} is identity-safe, but VAL needs stronger evidence before recommending an introduction.`;
-      return {
+        ? `${currentName} and ${candidateContact.name||candidateContact.email||'this contact'} have overlapping needs and offers from their person packets.`
+        : `${candidateContact.name||candidateContact.email||'This contact'} is identity-safe, but VAL needs stronger person-packet evidence before recommending an introduction.`;
+      const candidate={
         id:`intro_${currentId}_${otherId}`.toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180),
         type:'relationship_introduction_candidate',
         status:score>0?'candidate':'weak_signal',
-        personA:{name:currentName,contactId:currentId,email:currentContact.email||''},
-        personB:{name:contact.name||contact.email||'Contact',contactId:otherId,email:contact.email||''},
+        personA:{name:currentName,contactId:currentId,email:currentContactForMatch.email||''},
+        personB:{name:candidateContact.name||candidateContact.email||'Contact',contactId:otherId,email:candidateContact.email||''},
         score,
         direction,
         confidence:Math.max(0.35,Math.min(0.86,0.45+(score*0.06))),
         whyThisMayMatter:reason,
-        whatValPrepared:'A reviewable introduction email candidate with both CRM contact IDs attached.',
+        whatValPrepared:'A reviewable introduction email candidate grounded in person packets, with both CRM contact IDs attached.',
         whatWillNotHappen:'VAL will not send the introduction, create a calendar event, change CRM records, or expose either person without review.',
         requiresApproval:true,
         noExternalAction:true,
+        personPackets:{current:currentPacket,candidate:candidatePacket},
         draft:{
-          subject:`Introduction: ${currentName} <> ${contact.name||contact.email||'contact'}`,
+          subject:`Introduction: ${currentName} <> ${candidateContact.name||candidateContact.email||'contact'}`,
           body:[
-            `Hi ${currentName} and ${contact.name||'there'},`,
+            `Hi ${currentName} and ${candidateContact.name||'there'},`,
             '',
             'I thought of connecting you because there may be useful overlap in what you are each building or needing right now.',
             '',
@@ -89,6 +270,8 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
           ].join('\n')
         }
       };
+      candidate.stewardshipMatchPacket=stewardshipMatchPacket({currentPacket,candidatePacket,candidate,direction,score});
+      return candidate;
     })
     .filter(item=>item.score>0)
     .sort((a,b)=>b.score-a.score||b.confidence-a.confidence)
@@ -190,4 +373,4 @@ function relationshipIntroDraft(candidate={}){
   };
 }
 
-module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft};
+module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket,stewardshipMatchPacket};

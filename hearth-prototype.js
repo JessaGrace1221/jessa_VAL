@@ -976,6 +976,7 @@ let relationshipIndexProfiles = {};
 let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
 let relationshipIndexSourceLabel = 'Local preview';
+let relationshipPersonPacketIndex = {};
 let relationshipTeachMode = 'relationship';
 let relationshipTeachSection = 'relationship';
 let activeRelationshipActionSection = '';
@@ -1752,20 +1753,28 @@ function relationshipIndexItems(){
 
 function relationshipProfileFromIndexItem(item = {}){
   const id = item.id || item.profileKey || item.name || 'relationship';
+  const personPacket = item.personPacket || item.packet || null;
+  const packetState = personPacket?.packet_state || {};
+  const packetIdentity = personPacket?.person || {};
+  const packetSummary = personPacket?.who_this_person_is?.summary || '';
+  const packetNeeds = Array.isArray(personPacket?.what_this_person_needs) ? personPacket.what_this_person_needs.map((row) => row.need || row.summary || row.why_it_matters).filter(Boolean) : [];
+  const packetOffers = Array.isArray(personPacket?.what_this_person_offers) ? personPacket.what_this_person_offers.map((row) => row.offer || row.summary || row.why_it_matters).filter(Boolean) : [];
   const query = {
     ...(item.query || {}),
-    name: item.query?.name || item.name || item.displayName || '',
+    name: item.query?.name || item.name || item.displayName || packetIdentity.name || '',
     email: item.query?.email || item.email || '',
     targetId: item.query?.targetId || id,
     contactId: item.query?.contactId || item.contactId || item.crmContactId || ''
   };
+  if(!query.email && packetIdentity.email_addresses?.[0]) query.email = packetIdentity.email_addresses[0];
+  if(!query.contactId && packetIdentity.crm_contact_id) query.contactId = packetIdentity.crm_contact_id;
   return {
     ...item,
     query,
-    name: item.name || item.displayName || 'Unnamed relationship',
+    name: item.name || item.displayName || packetIdentity.name || 'Unnamed relationship',
     initials: item.initials || String(item.name || item.displayName || 'R').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
-    role: item.role || item.relationshipStatus || 'Relationship',
-    company: item.company || 'Relationship',
+    role: item.role || packetIdentity.role || item.relationshipStatus || 'Relationship',
+    company: item.company || packetIdentity.company_or_context || 'Relationship',
     temperature: item.temperature || 'Warm',
     temperatureScore: Math.max(0, Math.min(100, Number(item.temperatureScore || 55))),
     trajectory: item.trajectory || item.relationshipStatus || 'Watch',
@@ -1779,9 +1788,9 @@ function relationshipProfileFromIndexItem(item = {}){
     sourceEvidence: item.sourceEvidence || item.summary || 'Relationship evidence is pending source review.',
     confidence: Math.max(0, Math.min(1, Number(item.confidence || 0.6))),
     lastChangedAt: item.lastChangedAt || item.updatedAt || item.lastObservedAt || '',
-    signal: item.signal || item.summary || 'Relationship signal available.',
-    identity: item.identity || item.name || item.displayName || 'Relationship',
-    contact: item.contact || item.email || item.profileKey || 'CRM identity review may be required.',
+    signal: item.signal || packetSummary || item.summary || 'Relationship signal available.',
+    identity: item.identity || item.name || item.displayName || packetIdentity.name || 'Relationship',
+    contact: item.contact || item.email || packetIdentity.email_addresses?.[0] || item.profileKey || 'CRM identity review may be required.',
     wisdom: item.wisdom || item.summary || 'VAL needs a clean identity link before this relationship can become a trusted brief.',
     evidence: item.evidence || item.signal || item.summary || 'VAL has a relationship signal, but the source needs review before it becomes judgment.',
     patterns: item.patterns || item.executiveAssessment || item.summary || item.signal || 'VAL has not confirmed a durable pattern for this relationship yet.',
@@ -1790,7 +1799,81 @@ function relationshipProfileFromIndexItem(item = {}){
     linkedinSignal: item.linkedinSignal || 'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts: item.sourceReceipts || 'VAL relationship index · CRM identity link required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
+    personPacket,
+    personPacketMaturity: item.maturity || packetState.maturity || '',
+    personPacketNeedsReview: Boolean(item.needsReview || packetState.needs_review),
+    personPacketMissingVariables: item.missingVariables || packetState.missing_variables || [],
+    packetNeeds,
+    packetOffers,
     href: item.href || './dashboard.html?view=relationships&targetType=person&targetId=' + encodeURIComponent(id)
+  };
+}
+
+function relationshipPacketIndexKeys(item = {}){
+  const packet = item.packet || item.personPacket || item;
+  const person = packet.person || {};
+  return [
+    item.profileId,
+    item.profileKey,
+    item.id,
+    item.displayName,
+    packet.packet_id,
+    person.person_id,
+    person.crm_contact_id,
+    person.name,
+    ...(Array.isArray(person.email_addresses) ? person.email_addresses : [])
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+}
+
+function rememberRelationshipPersonPackets(items = []){
+  const next = {};
+  items.filter(Boolean).forEach((item) => {
+    relationshipPacketIndexKeys(item).forEach((key) => {
+      next[key] = item;
+    });
+  });
+  relationshipPersonPacketIndex = next;
+  return next;
+}
+
+function relationshipPersonPacketForProfile(profile = {}){
+  const keys = [
+    profile.profileId,
+    profile.id,
+    profile.contactId,
+    profile.crmContactId,
+    profile.query?.contactId,
+    profile.query?.targetId,
+    profile.query?.email,
+    profile.name
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  for(const key of keys){
+    if(relationshipPersonPacketIndex[key]) return relationshipPersonPacketIndex[key];
+  }
+  return null;
+}
+
+function relationshipProfileWithPersonPacket(profile = {}){
+  const item = relationshipPersonPacketForProfile(profile);
+  const packet = item?.packet || item?.personPacket || profile.personPacket || null;
+  if(!packet) return profile;
+  const who = packet.who_this_person_is || {};
+  const needs = Array.isArray(packet.what_this_person_needs) ? packet.what_this_person_needs.map((row) => row.need || row.summary || row.why_it_matters).filter(Boolean) : [];
+  const offers = Array.isArray(packet.what_this_person_offers) ? packet.what_this_person_offers.map((row) => row.offer || row.summary || row.why_it_matters).filter(Boolean) : [];
+  const state = packet.packet_state || {};
+  return {
+    ...profile,
+    personPacket: packet,
+    personPacketMaturity: item?.maturity || state.maturity || profile.personPacketMaturity || '',
+    personPacketNeedsReview: Boolean(item?.needsReview || state.needs_review || profile.personPacketNeedsReview),
+    personPacketMissingVariables: item?.missingVariables || state.missing_variables || profile.personPacketMissingVariables || [],
+    stewardshipAbout: relationshipUsefulText(profile.stewardshipAbout, who.summary || profile.stewardshipAbout),
+    stewardshipAboutTitle: profile.stewardshipAboutTitle || packet.person?.role || packet.person?.company_or_context || 'Relationship context',
+    packetNeeds: needs,
+    packetOffers: offers,
+    openLoops: Array.isArray(profile.openLoops) && profile.openLoops.length ? profile.openLoops : needs,
+    valueTheyCreate: Array.isArray(profile.valueTheyCreate) && profile.valueTheyCreate.length ? profile.valueTheyCreate : offers,
+    keyFacts: Array.isArray(profile.keyFacts) && profile.keyFacts.length ? profile.keyFacts : [state.maturity && 'Understanding: ' + state.maturity, state.needs_review && 'Needs review'].filter(Boolean)
   };
 }
 
@@ -1899,16 +1982,19 @@ async function hydrateRelationshipIndex(){
   relationshipIndexRequest = getJson('/api/relationships/index?limit=120')
     .then(async(data) => {
       if(Array.isArray(data?.relationships)){
+        const packetInventory = await getJson('/api/relationships/person-packets?limit=160&includeThin=1').catch(() => ({packets:[]}));
+        rememberRelationshipPersonPackets(Array.isArray(packetInventory.packets) ? packetInventory.packets : []);
         const rawProfiles = data.relationships.reduce((profiles, item) => {
           const id = item.id || item.profileKey || item.name;
-          if(id) profiles[id] = relationshipProfileFromIndexItem(item);
+          if(id) profiles[id] = relationshipProfileWithPersonPacket(relationshipProfileFromIndexItem(item));
           return profiles;
         }, {});
         relationshipIndexProfiles = dedupeRelationshipProfiles(rawProfiles);
         const onboarding = await getJson('/api/teach-val/onboarding').catch(() => ({}));
         const added = mergeOnboardingSupportProfiles(onboardingImportItems(onboarding, 'support_circle'));
         relationshipIndexLoaded = true;
-        relationshipIndexSourceLabel = (data.source === 'demo_relationships' ? 'Preview relationships' : 'VAL relationship index') + (added ? ' + onboarding support circle' : '');
+        const packetCount = Number(packetInventory.count || packetInventory.packets?.length || 0);
+        relationshipIndexSourceLabel = (data.source === 'demo_relationships' ? 'Preview relationships' : 'VAL relationship index') + (packetCount ? ' + Stewardship context' : '') + (added ? ' + onboarding support circle' : '');
         updateRelationshipIndexSourceLabel();
         renderRelationshipRolodex();
       }
@@ -5583,7 +5669,7 @@ async function handleProjectActionClick(actionId = '', node = null){
 }
 
 function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
-  const profile = {...(providedProfile || relationshipProfiles[profileId] || relationshipProfiles.aric), profileId};
+  const profile = relationshipProfileWithPersonPacket({...(providedProfile || relationshipProfiles[profileId] || relationshipProfiles.aric), profileId});
   activeRelationshipProfile = profile;
   document.querySelectorAll('[data-relationship-field]').forEach((node) => {
     const field = node.dataset.relationshipField;
@@ -6205,14 +6291,26 @@ function renderRelationshipSectionActions(profile = {}){
 function relationshipContactPayload(profile = {}){
   const dossier = profile.dossier || {};
   const identity = dossier.identity || {};
+  const packet = profile.personPacket || null;
+  const packetPerson = packet?.person || {};
+  const identityContactId = identity.crmContactId || identity.id || '';
   return {
     id: identity.id || profile.id || '',
-    contactId: identity.crmContactId || identity.id || profile.id || '',
-    name: identity.name || profile.name || '',
-    email: identity.email || '',
-    company: identity.company || '',
+    contactId: identityContactId || packetPerson.crm_contact_id || profile.contactId || profile.crmContactId || profile.id || '',
+    crmContactId: identity.crmContactId || packetPerson.crm_contact_id || profile.crmContactId || profile.contactId || '',
+    name: identity.name || packetPerson.name || profile.name || '',
+    email: identity.email || packetPerson.email_addresses?.[0] || profile.query?.email || '',
+    company: identity.company || packetPerson.company_or_context || profile.company || '',
+    role: identity.role || packetPerson.role || profile.role || '',
     recommendedAction: profile.certainty || '',
     reason: profile.meaning || '',
+    summary: profile.evidence || profile.signal || packet?.who_this_person_is?.summary || '',
+    openLoops: profile.openLoops || profile.packetNeeds || [],
+    needs: profile.packetNeeds || [],
+    offers: profile.packetOffers || profile.valueTheyCreate || [],
+    opportunitySignals: profile.packetOffers || [],
+    evidence: packet?.who_this_person_is?.source_receipts || [],
+    personPacket: packet,
     relationshipDossier: dossier
   };
 }
@@ -6341,6 +6439,70 @@ function showRelationshipReceipt({title, meaning, understanding = [], recommenda
   openWorkspaceShell('Relationship action workspace', {returnTarget:'relationship'});
 }
 
+function relationshipPacketRows(){
+  const seen = new Set();
+  return Object.values(relationshipPersonPacketIndex).filter((item) => {
+    const packet = item?.packet || item?.personPacket || item;
+    const key = packet?.packet_id || item?.profileId || item?.profileKey || item?.displayName || '';
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function relationshipIntroCandidatePackets(profile = {}){
+  const selfKeys = new Set([
+    profile.personPacket?.packet_id,
+    profile.contactId,
+    profile.crmContactId,
+    profile.query?.contactId,
+    profile.query?.email,
+    profile.name
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean));
+  return relationshipPacketRows().map((item) => item.packet || item.personPacket || item).filter((packet) => {
+    const person = packet.person || {};
+    const keys = [
+      packet.packet_id,
+      person.crm_contact_id,
+      person.email_addresses?.[0],
+      person.name
+    ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+    return keys.length && !keys.some((key) => selfKeys.has(key));
+  });
+}
+
+function relationshipIntroReviewFromResult(profile = {}, result = {}){
+  const next = {
+    ...profile,
+    introReview: {
+      whoNeedsThisPerson: Array.isArray(result.whoNeedsThisPerson) ? result.whoNeedsThisPerson : [],
+      whoThisPersonNeeds: Array.isArray(result.whoThisPersonNeeds) ? result.whoThisPersonNeeds : [],
+      candidates: Array.isArray(result.candidates) ? result.candidates : [],
+      reviewSurface: result.reviewSurface || null,
+      stewardshipMatchPackets: result.stewardshipMatchPackets || [],
+      updatedAt: new Date().toISOString()
+    },
+    currentPersonPacket: result.currentPersonPacket || profile.personPacket || null
+  };
+  activeRelationshipProfile = next;
+  if(next.profileId) relationshipIndexProfiles[next.profileId] = next;
+  if(next.id && relationshipIndexProfiles[next.id]) relationshipIndexProfiles[next.id] = next;
+  return next;
+}
+
+async function prepareRelationshipIntroReview(profile = {}){
+  if(!canUseApi) return profile;
+  const crmContacts = relationshipIntroCandidatePackets(profile);
+  const result = await postJson('/api/relationships/actions', {
+    action:'find_relationship_introductions',
+    contact: relationshipContactPayload(profile),
+    dossier: profile.dossier || null,
+    crmContacts,
+    limit: 8
+  });
+  return relationshipIntroReviewFromResult(profile, result);
+}
+
 function introReviewLines(profile = {}){
   const review = profile.introReview || {};
   const needs = Array.isArray(review.whoNeedsThisPerson) ? review.whoNeedsThisPerson : [];
@@ -6420,15 +6582,34 @@ function openIntroDraftReview(candidateIndex = 0){
   openWorkspaceShell('Introduction draft review', {returnTarget:'relationship'});
 }
 
-function openRelationshipIntroReview(profile = {}){
-  const name = profile.name || 'this relationship';
+async function openRelationshipIntroReview(profile = {}){
+  let reviewedProfile = profile;
+  if(canUseApi){
+    showRelationshipReceipt({
+      title: 'Reviewing possible introductions.',
+      meaning: 'VAL is comparing this relationship against the current Stewardship context.',
+      understanding: ['This is internal review only.', 'No introduction, message, calendar invite, scrape, import, or CRM update will happen.'],
+      recommendation: 'VAL will open the review surface when the comparison is ready.'
+    });
+    try{
+      reviewedProfile = await prepareRelationshipIntroReview(profile);
+    }catch(error){
+      reviewedProfile = profile;
+      reviewedProfile.introReview = reviewedProfile.introReview || {
+        whoNeedsThisPerson: [],
+        whoThisPersonNeeds: [],
+        error: error.message
+      };
+    }
+  }
+  const name = reviewedProfile.name || 'this relationship';
   setWorkspaceContent({
     lens: 'Relationship Leverage',
     title: 'Introduction leverage is ready for review.',
     meaning: 'VAL looked in both directions around ' + name + ': who needs this person, and who this person needs.',
-    understanding: introReviewLines(profile),
+    understanding: introReviewLines(reviewedProfile),
     recommendation: 'Choose an introduction only if it would serve both people. The next step is a draft for review, never a sent email.',
-    actions: introReviewActions(profile),
+    actions: introReviewActions(reviewedProfile),
     label: 'Relationship introduction review'
   });
   openWorkspaceShell('Relationship introduction review', {returnTarget:'relationship'});
@@ -6655,7 +6836,7 @@ async function handleRelationshipAction(actionId){
     return;
   }
   if(actionId === 'find_relationship_introductions'){
-    openRelationshipIntroReview(profile);
+    await openRelationshipIntroReview(profile);
     return;
   }
   if(action.section){

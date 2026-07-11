@@ -32,7 +32,7 @@ const {registerValExternalActionsRoutes} = require('./services/valExternalAction
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
-const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft} = require('./services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact} = require('./services/valRelationshipActionIntelligence');
 const {
   normalizeEmailAddress,
   normalizePhoneNumber,
@@ -8116,6 +8116,14 @@ async function emailIntelligencePayload(req,{force=false}={}){
       return draft;
     }));
     const evidenceResults=await saveEmailEvidenceBatch(emails);
+    const relationshipIntake=evidenceResults.reduce((acc,result)=>{
+      const intake=result?.relationshipIntake||{};
+      acc.relationshipProfiles+=Number(intake.relationshipProfiles||0);
+      acc.personPackets+=Number(intake.personPackets||0);
+      acc.personPacketIds.push(...(Array.isArray(intake.personPacketIds)?intake.personPacketIds:[]));
+      return acc;
+    },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
+    relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,80);
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=preparedDraftResults.filter(Boolean).length;
@@ -8134,10 +8142,11 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
+      relationshipIntake,
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
       rules
     };
   }catch(e){
@@ -9395,10 +9404,19 @@ function emailConfidenceNumber(confidence){
   return 0.65;
 }
 function emailParticipantsJson(email){
+  const participant=(role,p={})=>({
+    role,
+    name:p.name||'',
+    email:p.email||'',
+    contactId:p.contactId||p.crmContactId||p.matchedContactId||'',
+    source:'email_relationship_intake',
+    relationshipIntake:true
+  });
+  const matched=email.matchedContact||{};
   return [
-    email.from?{role:'from',name:email.from.name||'',email:email.from.email||''}:null,
-    ...(email.to||[]).map(p=>({role:'to',name:p.name||'',email:p.email||''})),
-    ...(email.cc||[]).map(p=>({role:'cc',name:p.name||'',email:p.email||''}))
+    email.from?participant('from',{...email.from,contactId:matched.email&&String(matched.email).toLowerCase()===String(email.from.email||'').toLowerCase()?(matched.contactId||matched.id||''):''}):null,
+    ...(email.to||[]).map(p=>participant('to',p)),
+    ...(email.cc||[]).map(p=>participant('cc',p))
   ].filter(p=>p&&(p.name||p.email));
 }
 function emailSourceText(email){
@@ -9429,8 +9447,20 @@ async function saveEmailEvidence(email){
   const status=emailEvidenceStatus(email);
   const evidence=await saveEvidenceItem({sourceType,sourceId:email.messageId,sourceUrl:email.webLink||'',occurredAt:email.date||email.receivedAt||'',capturedAt:new Date().toISOString(),title:email.subject||'(No subject)',rawText:emailSourceText(email),summary:email.reason||email.snippet||email.bodyPreview||'',participantsJson:emailParticipantsJson(email),entitiesJson:{threadId:email.threadId||'',provider:email.provider||'',classification:email.classification||'',recommendedAction:email.recommendedAction||'',from:email.from||{},hasAttachments:!!email.hasAttachments},confidence:emailConfidenceNumber(email.confidence),status,metadataJson:{provider:email.provider||'',messageId:email.messageId||'',threadId:email.threadId||'',labels:email.labels||[],requiresApproval:!!email.requiresApproval,matchedRuleId:email.matchedRuleId||''}}).catch(()=>null);
   if(!evidence?.id)return null;
-  await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(()=>null);
-  return evidence;
+  const observationResult=await runObservationEngine(evidence,{candidates:emailObservationCandidates(email),replace:true}).catch(e=>({ok:false,error:e.message,relationshipEngine:{profiles:[]}}));
+  const relationshipProfiles=observationResult?.relationshipEngine?.profiles||[];
+  const personPackets=relationshipProfiles.map(profile=>publicRelationshipProfile(profile)?.personPacket).filter(Boolean);
+  return {
+    evidence,
+    observationResult,
+    relationshipIntake:{
+      source:'email_evidence',
+      relationshipProfiles:relationshipProfiles.length,
+      personPackets:personPackets.length,
+      personPacketIds:personPackets.map(packet=>packet.packet_id).filter(Boolean),
+      noExternalAction:true
+    }
+  };
 }
 async function saveEmailEvidenceBatch(emails=[]){
   return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
@@ -10536,7 +10566,15 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
     return {...withMetrics,...classifyExecutiveEmail(withMetrics,rules)};
   });
   const saved=await saveEmailEvidenceBatch(emails);
-  return {processed:emails.length,saved:saved.filter(Boolean).length,providerErrors};
+  const relationshipIntake=saved.reduce((acc,result)=>{
+    const intake=result?.relationshipIntake||{};
+    acc.relationshipProfiles+=Number(intake.relationshipProfiles||0);
+    acc.personPackets+=Number(intake.personPackets||0);
+    acc.personPacketIds.push(...(Array.isArray(intake.personPacketIds)?intake.personPacketIds:[]));
+    return acc;
+  },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
+  relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,120);
+  return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,providerErrors};
 }
 async function backfillValIntelligence(options={}){
   if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
@@ -15501,6 +15539,42 @@ function relationshipProfileKeyForTarget(target={}){
   if(target.profileType==='project')return target.projectId?`project:${target.projectId}`:`project:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
   return '';
 }
+function relationshipProfilePersonPacketMetadata(target={},buckets={}){
+  const metadata={...(target.metadataJson||target.metadata||{})};
+  if((target.profileType||target.profile_type)!=='person')return metadata;
+  const contentList=(items=[])=>Array.isArray(items)?items.map(item=>typeof item==='string'?item:(item.content||item.summary||item.text||item.exactQuote||'')).filter(Boolean):[];
+  const profileKey=target.profileKey||target.profile_key||relationshipProfileKeyForTarget(target);
+  const email=target.email||(String(profileKey||'').startsWith('email:')?String(profileKey).replace(/^email:/,''):'');
+  const packet=personPacketFromContact({
+    contactId:target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'',
+    crmContactId:target.personId||target.person_id||metadata.crmContactId||'',
+    name:target.displayName||target.display_name||target.name||email||'Unknown',
+    email,
+    company:metadata.company||metadata.organization||'',
+    role:metadata.role||metadata.title||'',
+    relationshipStatus:target.relationshipStatus||target.relationship_status||'observed',
+    summary:target.summary||'',
+    firstSeenAt:target.createdAt||target.created_at||target.lastObservedAt||target.last_observed_at||'',
+    lastMeaningfulSignalAt:target.lastObservedAt||target.last_observed_at||target.updatedAt||target.updated_at||'',
+    firstMeaningfulSignal:target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
+    openLoops:contentList(buckets.openLoops||target.openLoops||target.open_loops),
+    risks:contentList(buckets.risks||target.risks),
+    opportunities:contentList(buckets.opportunities||target.opportunities),
+    tags:contentList(buckets.relationshipSignals||target.relationshipSignals||target.relationship_signals),
+    evidence:[
+      ...contentList(buckets.openLoops).map(summary=>({type:'relationship_open_loop',summary})),
+      ...contentList(buckets.risks).map(summary=>({type:'relationship_risk',summary})),
+      ...contentList(buckets.opportunities).map(summary=>({type:'relationship_opportunity',summary})),
+      ...contentList(buckets.relationshipSignals).map(summary=>({type:'relationship_signal',summary}))
+    ]
+  });
+  return {
+    ...metadata,
+    personPacket:packet,
+    personPacketUpdatedAt:new Date().toISOString(),
+    personPacketSource:'relationship_profile'
+  };
+}
 function relationshipTargetsForObservation(evidenceItem={},observation={}){
   if(relationshipObservationIsNoise(observation))return [];
   const targets=[],seen=new Set(),owner=relationshipOwnerIdentity();
@@ -15544,6 +15618,7 @@ function relationshipObservationBucket(type){
 async function saveRelationshipProfile(target={}){
   const now=new Date().toISOString();
   const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
+  row.metadataJson=relationshipProfilePersonPacketMetadata(row);
   if(!row.profileType||!row.profileKey)return null;
   if(DEMO_MODE){
     const rows=transcriptDemoArray('relationshipProfiles');if(!rows)return row;
@@ -15578,19 +15653,33 @@ async function relationshipTimelineRows(profileType,profileKey){
 async function recalculateRelationshipProfile(profileType,profileKey){
   const rows=(await relationshipTimelineRows(profileType,profileKey)).sort((a,b)=>interactionDate(b.occurredAt||b.createdAt)-interactionDate(a.occurredAt||a.createdAt));
   const storeForProfile=(!DEMO_MODE&&!pgPool)?valStore():null;
-  const profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  let profile=DEMO_MODE?(transcriptDemoArray('relationshipProfiles')||[]).find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey):pgPool?null:transcriptFileArray(storeForProfile,'relationshipProfiles').find(p=>p.tenantId===tenantId()&&p.profileType===profileType&&p.profileKey===profileKey);
+  if(pgPool){
+    const existing=await dbQuery('select * from relationship_profiles where tenant_id=$1 and profile_type=$2 and profile_key=$3 limit 1',[tenantId(),profileType,profileKey]).catch(()=>({rows:[]}));
+    profile=transcriptPgRow(existing.rows?.[0]||{})||null;
+  }
   const buckets={openLoops:[],risks:[],opportunities:[],preferences:[],emotionalContext:[],relationshipSignals:[]};
   for(const event of rows){
     const bucket=relationshipObservationBucket(event.observationType);
     if(bucket)buckets[bucket].push({content:event.content,exactQuote:event.exactQuote||'',confidence:event.confidence||0,dueAt:event.dueAt||'',occurredAt:event.occurredAt||event.createdAt||'',observationType:event.observationType});
   }
   const payload={summary:rows[0]?.content?`Latest observation: ${String(rows[0].content).slice(0,220)}`:'',relationshipStatus:rows.length?'observed':'quiet',confidence:rows.reduce((m,r)=>Math.max(m,Number(r.confidence)||0),0),lastObservedAt:rows[0]?.occurredAt||rows[0]?.createdAt||null,observationCount:rows.length,openLoopCount:buckets.openLoops.length,promiseCount:rows.filter(r=>['promise','commitment'].includes(r.observationType)).length,riskCount:buckets.risks.length,opportunityCount:buckets.opportunities.length,preferenceCount:buckets.preferences.length,emotionalContextJson:buckets.emotionalContext.slice(0,12),relationshipSignalsJson:buckets.relationshipSignals.slice(0,12),risksJson:buckets.risks.slice(0,12),opportunitiesJson:buckets.opportunities.slice(0,12),preferencesJson:buckets.preferences.slice(0,12),openLoopsJson:buckets.openLoops.slice(0,12)};
+  const packetMetadata=relationshipProfilePersonPacketMetadata({
+    ...(profile||{}),
+    profileType,
+    profileKey,
+    displayName:profile?.displayName||profile?.display_name||profileKey,
+    summary:payload.summary,
+    relationshipStatus:payload.relationshipStatus,
+    lastObservedAt:payload.lastObservedAt,
+    metadataJson:evidenceJsonValue(profile?.metadataJson||profile?.metadata_json||profile?.metadata,{})
+  },buckets);
   if(DEMO_MODE||!pgPool){
-    if(profile)Object.assign(profile,payload,{updatedAt:new Date().toISOString()});
+    if(profile)Object.assign(profile,payload,{metadataJson:packetMetadata,updatedAt:new Date().toISOString()});
     if(storeForProfile)saveValStore(storeForProfile);
     return profile||payload;
   }
-  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey]);
+  const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,metadata_json=relationship_profiles.metadata_json||$20::jsonb,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey,JSON.stringify(packetMetadata)]);
   return transcriptPgRow(r.rows[0]);
 }
 async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
@@ -15842,6 +15931,7 @@ async function listAgencyMoves({limit=80}={}){
 }
 function publicRelationshipProfile(row={}){
   if(!row)return null;
+  const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
@@ -15866,7 +15956,8 @@ function publicRelationshipProfile(row={}){
     opportunities:evidenceJsonValue(row.opportunitiesJson||row.opportunities_json,[]),
     preferences:evidenceJsonValue(row.preferencesJson||row.preferences_json,[]),
     openLoops:evidenceJsonValue(row.openLoopsJson||row.open_loops_json,[]),
-    metadata:evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),
+    metadata,
+    personPacket:metadata.personPacket||null,
     updatedAt:row.updatedAt||row.updated_at||''
   };
 }
@@ -16017,7 +16108,37 @@ function relationshipIndexItemFromProfile(profile={}){
     certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
+    personPacket:metadata.personPacket||null,
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
+  };
+}
+function relationshipPersonPacketItemFromProfile(profile={}){
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||personPacketFromContact({
+    contactId:profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'',
+    name:profile.displayName||profile.display_name||profile.name||'Relationship',
+    email:metadata.email||'',
+    company:metadata.company||profile.organizationId||'',
+    role:metadata.role||'',
+    relationshipStatus:profile.relationshipStatus||profile.relationship_status||'observed',
+    summary:profile.summary||'',
+    lastObservedAt:profile.lastObservedAt||profile.last_observed_at||'',
+    openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    risks:(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    evidence:[profile.summary&&{type:'relationship_profile',summary:profile.summary}].filter(Boolean)
+  });
+  return {
+    profileId:profile.id||'',
+    profileKey:profile.profileKey||profile.profile_key||'',
+    displayName:profile.displayName||profile.display_name||profile.name||packet.person?.name||'Relationship',
+    packet,
+    maturity:packet.packet_state?.maturity||'thin',
+    needsReview:!!packet.packet_state?.needs_review,
+    missingVariables:packet.packet_state?.missing_variables||[],
+    lastMeaningfulSignalAt:packet.relationship_state?.last_meaningful_signal_at||profile.lastObservedAt||profile.last_observed_at||'',
+    noExternalAction:true
   };
 }
 function projectIndexItemFromProfile(profile={}){
@@ -23793,6 +23914,34 @@ app.get('/api/relationships/index',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+app.get('/api/relationships/person-packets',async(req,res)=>{
+  try{
+    const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
+    const includeThin=String(req.query.includeThin||'1')!=='0';
+    const profiles=(await listRelationshipProfiles({limit:Math.max(limit,220)}))
+      .filter(profile=>profile.profileType==='person')
+      .slice(0,limit);
+    const packets=profiles
+      .map(relationshipPersonPacketItemFromProfile)
+      .filter(item=>includeThin||item.maturity!=='thin');
+    const maturityCounts=packets.reduce((acc,item)=>{
+      acc[item.maturity]=(acc[item.maturity]||0)+1;
+      return acc;
+    },{thin:0,developing:0,usable:0,strong:0});
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_relationship_profiles':'relationship_profiles',
+      generatedAt:new Date().toISOString(),
+      count:packets.length,
+      maturityCounts,
+      needsReviewCount:packets.filter(item=>item.needsReview).length,
+      packets,
+      noExternalAction:true
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.get('/api/projects/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
@@ -24167,6 +24316,7 @@ app.post('/api/relationships/actions',async(req,res)=>{
         offers:[...(Array.isArray(interpretation.opportunities)?interpretation.opportunities:[]),...(Array.isArray(contact.opportunitySignals)?contact.opportunitySignals:[]),meaning.whyItMatters,meaning.executiveValue,contact.reason,contact.summary].filter(Boolean),
         evidence:[...(Array.isArray(observation.evidence)?observation.evidence:[]),...(Array.isArray(contact.evidence)?contact.evidence:[])]
       };
+      const currentPersonPacket=personPacketFromContact(currentContact);
       let crmContacts=Array.isArray(req.body.crmContacts)?req.body.crmContacts:[];
       if(!crmContacts.length&&DEMO_MODE){
         const demo=demoState(req,res);
@@ -24176,7 +24326,7 @@ app.post('/api/relationships/actions',async(req,res)=>{
         const briefing=await buildExecutiveBriefing().catch(()=>({}));
         crmContacts=Array.isArray(briefing.people)?briefing.people:[];
       }
-      const introResult=relationshipIntroCandidates({currentContact,crmContacts,limit:req.body.limit||6});
+      const introResult=relationshipIntroCandidates({currentContact:currentPersonPacket,crmContacts,limit:req.body.limit||6});
       const directional=(introResult.candidates||[]).reduce((out,candidate)=>{
         const direction=candidate.direction||{};
         if(direction.whoNeedsThisPerson>0||direction.primary==='who_needs_this_person') out.whoNeedsThisPerson.push(candidate);
@@ -24184,12 +24334,15 @@ app.post('/api/relationships/actions',async(req,res)=>{
         return out;
       },{whoNeedsThisPerson:[],whoThisPersonNeeds:[]});
       const reviewSurface=relationshipIntroReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
+      const stewardshipMatchPackets=(introResult.candidates||[]).map(candidate=>candidate.stewardshipMatchPacket).filter(Boolean);
       return res.json({
         ok:true,
         action,
         status:'relationship_introductions_ready',
         message:'VAL prepared introduction candidates in both directions. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
         contactId:crmContactId,
+        currentPersonPacket,
+        stewardshipMatchPackets,
         whoNeedsThisPerson:directional.whoNeedsThisPerson,
         whoThisPersonNeeds:directional.whoThisPersonNeeds,
         candidates:introResult.candidates||[],

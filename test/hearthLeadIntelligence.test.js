@@ -801,6 +801,8 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /return relationshipIndexLoaded \? relationshipIndexProfiles : \{\}/);
   assert.match(hearthJs, /function updateRelationshipIndexSourceLabel/);
   assert.match(hearthJs, /function relationshipProfileFromIndexItem/);
+  assert.match(hearthJs, /\/api\/relationships\/person-packets\?limit=160&includeThin=1/);
+  assert.match(hearthJs, /function relationshipProfileWithPersonPacket/);
   assert.doesNotMatch(hearthJs, /VAL is reading this from the canonical relationship index/);
   assert.doesNotMatch(server, /VAL is reading this from the canonical relationship index/);
   assert.match(hearthJs, /email: item\.query\?\.email \|\| item\.email \|\| ''/);
@@ -2003,6 +2005,10 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /review_linkedin_activity/);
   assert.match(hearthJs, /find_relationship_introductions/);
   assert.match(hearthJs, /Find Introductions/);
+  assert.match(hearthJs, /function relationshipIntroCandidatePackets/);
+  assert.match(hearthJs, /function prepareRelationshipIntroReview/);
+  assert.match(hearthJs, /crmContacts/);
+  assert.match(hearthJs, /await openRelationshipIntroReview\(profile\)/);
   assert.match(hearthJs, /draft_linkedin_comment/);
   assert.match(hearthJs, /draft_linkedin_dm/);
   assert.match(hearthJs, /refresh_relationship_observers/);
