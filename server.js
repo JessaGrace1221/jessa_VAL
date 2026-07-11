@@ -32,7 +32,7 @@ const {registerValExternalActionsRoutes} = require('./services/valExternalAction
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
-const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact} = require('./services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
 const {
   normalizeEmailAddress,
   normalizePhoneNumber,
@@ -16163,12 +16163,36 @@ function stewardshipRelationshipAdmission(profile={}){
   const alias=knownRelationshipEmailAlias(email);
   const rawHandle=relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email);
   const genericMailbox=relationshipEmailLooksGeneric(email);
-  const admitted=!!alias || relationshipProfileHasRealIdentity(profile);
+  const metadata=profile.metadata||{};
+  const decision=relationshipAdmissionDecision({
+    contact:{
+      contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'')||resolvedCrmContactId(profile)||'',
+      crmContactId:resolvedCrmContactId(profile)||metadata.crmContactId||'',
+      knownIdentity:!!alias||relationshipProfileHasRealIdentity(profile),
+      name:alias?.name||profile.displayName||profile.display_name||profile.name||'',
+      email,
+      company:metadata.company||profile.organizationId||'',
+      relationshipStatus:profile.relationshipStatus||profile.relationship_status||'',
+      summary:profile.summary||'',
+      reason:profile.summary||'',
+      openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      needs:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      offers:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      evidence:[
+        profile.summary&&{type:'relationship_profile',summary:profile.summary},
+        ...(Array.isArray(profile.evidence)?profile.evidence:[])
+      ].filter(Boolean)
+    }
+  });
+  const admitted=decision.admission_status==='admitted';
   return {
+    ...decision,
     admitted,
     reason: admitted
-      ? (alias?'known_email_alias':'linked_identity')
-      : 'email_only_or_unconfirmed_observation',
+      ? (alias?'known_email_alias':decision.reason||'linked_identity')
+      : decision.reason||'email_only_or_unconfirmed_observation',
     email,
     alias: alias||null,
     rawHandle,
@@ -16192,7 +16216,7 @@ async function stewardshipRelationshipAdmissionForProfile(profile={}){
   if(base.admitted)return base;
   const rows=await relationshipTimelineRows(profile.profileType||profile.profile_type||'person',profile.profileKey||profile.profile_key||'').catch(()=>[]);
   if(!base.rawHandle&&!base.genericMailbox&&relationshipTimelineHasOutboundOrReply(rows)){
-    return {...base,admitted:true,reason:'outbound_or_replied_email_evidence'};
+    return {...base,admitted:true,admission_status:'admitted',reason:'outbound_or_replied_email_evidence',relationship_signals:[...(base.relationship_signals||[]),'user_replied']};
   }
   return base;
 }
@@ -16356,6 +16380,10 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     displayName:alias?.name||profile.displayName||profile.display_name||profile.name||packet.person?.name||'Relationship',
     packet,
     maturity:packet.packet_state?.maturity||'thin',
+    packetMaturity:packet.packet_maturity||null,
+    evidenceBindings:packet.evidence_bindings||[],
+    executiveVisibility:packet.executive_visibility||null,
+    canEvaluateMoves:!!packet.packet_state?.can_evaluate_moves,
     needsReview:!!packet.packet_state?.needs_review,
     missingVariables:packet.packet_state?.missing_variables||[],
     lastMeaningfulSignalAt:packet.relationship_state?.last_meaningful_signal_at||profile.lastObservedAt||profile.last_observed_at||'',
@@ -24157,7 +24185,7 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
     const maturityCounts=packets.reduce((acc,item)=>{
       acc[item.maturity]=(acc[item.maturity]||0)+1;
       return acc;
-    },{thin:0,developing:0,usable:0,strong:0});
+    },{blocked_by_identity:0,thin:0,developing:0,usable:0,strong:0});
     res.json({
       ok:true,
       source:DEMO_MODE?'demo_relationship_profiles':'relationship_profiles',

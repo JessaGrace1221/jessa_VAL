@@ -37,7 +37,12 @@ function sourceReceipt(item={},fallbackType='relationship_evidence'){
     title:compactText(item.title||item.subject||'',140),
     summary:compactText(item.summary||item.text||item.content||item.bodyPreview||item.snippet||item.rawText||'',260),
     occurred_at:item.occurred_at||item.occurredAt||item.receivedAt||item.sentAt||item.date||item.createdAt||'',
-    confidence:item.confidence||item.source_confidence_label||item.sourceConfidenceLabel||'unknown'
+    confidence:item.confidence||item.source_confidence_label||item.sourceConfidenceLabel||'unknown',
+    supports_person_ids:safeArray(item.supports_person_ids||item.supportsPersonIds||item.personIds),
+    supports_claims:safeArray(item.supports_claims||item.supportsClaims||item.claims),
+    relationship_context:compactText(item.relationship_context||item.relationshipContext||'',220),
+    resolution_method:compactText(item.resolution_method||item.resolutionMethod||'',80),
+    review_required:!!(item.review_required||item.reviewRequired)
   };
 }
 function sourceReceipts(items=[],fallbackType='relationship_evidence',limit=8){
@@ -83,6 +88,176 @@ function packetIdentity(contact={}){
     identity_status:linkedId?'linked':(contact.knownIdentity?'known_alias':(contact.email||contact.name?'needs_review':'unknown'))
   };
 }
+function contactIdentityKey(contact={},identity=packetIdentity(contact)){
+  return compactText(identity.crm_contact_id||identity.person_id||contact.contactId||contact.crmContactId||contact.email||contact.primaryEmail||identity.name||'',160).toLowerCase();
+}
+function relationshipEmailLooksGeneric(email=''){
+  const local=compactText(email,160).toLowerCase().split('@')[0]||'';
+  return /^(info|support|hello|team|contact|admin|office|newsletter|marketing|receipts?|payments?|invoice|billing|orders?|sales|cs|reply|donotreply|no.?reply|notifications?|comments-noreply|drive-shares|workspace-noreply|azure-noreply)$/i.test(local);
+}
+function relationshipNameLooksLikeRawHandle(name='',email=''){
+  const clean=compactText(name,160).toLowerCase();
+  if(!clean||clean==='unknown')return true;
+  if(clean.includes('@'))return true;
+  if(email&&clean===String(email).split('@')[0].toLowerCase())return true;
+  return /^[a-z0-9._-]+$/.test(clean)&&!/\s/.test(clean);
+}
+function evidenceSignalText(contact={},receipts=[]){
+  return [
+    contact.source,
+    contact.relationshipStatus,
+    contact.relationship_status,
+    contact.status,
+    contact.relationshipToUser,
+    contact.firstMeaningfulSignal,
+    contact.reason,
+    contact.summary,
+    contact.recommendedAction,
+    ...safeArray(contact.tags),
+    ...safeArray(contact.openLoops),
+    ...safeArray(contact.needs),
+    ...safeArray(contact.offers),
+    ...safeArray(contact.opportunities),
+    ...receipts.map(item=>[item.source_type,item.title,item.summary,item.relationship_context].filter(Boolean).join(' '))
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function relationshipAdmissionDecision(input={}){
+  const contact=input.contact||input;
+  const identity=input.identity||packetIdentity(contact);
+  const receipts=sourceReceipts([
+    ...safeArray(input.source_receipts||input.sourceReceipts),
+    ...safeArray(contact.evidence),
+    ...safeArray(contact.sourceReceipts||contact.source_refs||contact.sourceRefs),
+    textEvidenceItem(contact.summary||contact.reason||contact.why||'','relationship_summary'),
+    textEvidenceItem(contact.recommendedAction||'','relationship_recommended_action')
+  ].filter(Boolean),'relationship_evidence',16);
+  const email=safeArray(identity.email_addresses)[0]||compactText(contact.email||contact.primaryEmail||'',160).toLowerCase();
+  const name=identity.name||contact.name||contact.displayName||'';
+  const hasIdentity=!!(identity.crm_contact_id||contact.knownIdentity||contact.userConfirmed||contact.user_confirmed||contact.userTeaching||contact.user_teaching||email||(!relationshipNameLooksLikeRawHandle(name,email)&&name));
+  const safeIdentity=!!(identity.crm_contact_id||contact.knownIdentity||contact.userConfirmed||contact.user_confirmed||contact.userTeaching||contact.user_teaching||(!relationshipEmailLooksGeneric(email)&&!relationshipNameLooksLikeRawHandle(name,email)&&(email||name)));
+  const text=evidenceSignalText(contact,receipts);
+  const relationshipSignals=[];
+  const rejectionSignals=[];
+  if(/\b(sent email|outbound|user sent|jessa sent|direct email|sent_email)\b/.test(text)||contact.sentAt)relationshipSignals.push('user_sent_direct_email');
+  if(/\b(user replied|you replied|jessa replied|replied to|responded to|reply from user)\b/.test(text))relationshipSignals.push('user_replied');
+  if(/\b(person replied|replied to user|inbound reply|waiting on response)\b/.test(text))relationshipSignals.push('person_replied');
+  if(/\b(meeting|calendar|attendee|call|zoom)\b/.test(text))relationshipSignals.push('meaningful_meeting');
+  if(/\b(cc'?d|copied|included on|looped in|meaningful conversation)\b/.test(text))relationshipSignals.push('cc_or_included_context');
+  if(/\b(transcript|speaker|said|told|mentioned)\b/.test(text))relationshipSignals.push('transcript_context');
+  if(/\b(user teaching|teach_val|user confirmed|vip|watch this person|important)\b/.test(text)||contact.userTeaching||contact.user_teaching)relationshipSignals.push('user_teaching');
+  if(/\b(promised|commitment|introduced|introduce|connect|follow up|send|review|confirm|return to)\b/.test(text))relationshipSignals.push('relationship_commitment');
+  if(/\b(project|document|task|opportunity|crm|ghl_contact|relationship_profile)\b/.test(text)||identity.crm_contact_id)relationshipSignals.push('linked_context');
+  if(/\b(introduced by|warm intro|known relationship)\b/.test(text))relationshipSignals.push('known_introduction');
+  if(/\b(newsletter|promotion|promotional|marketing sequence|cold outreach|receipt|invoice|notification|system-generated|automated|scraped|public directory)\b/.test(text))rejectionSignals.push('non_relationship_source');
+  if(relationshipEmailLooksGeneric(email))rejectionSignals.push('generic_mailbox');
+  if(relationshipNameLooksLikeRawHandle(name,email))rejectionSignals.push('raw_handle_identity');
+  const hasMeaningfulSignal=relationshipSignals.length>0;
+  const hasPacketContext=safeArray(contact.needs).length||safeArray(contact.offers).length||safeArray(contact.openLoops).length||safeArray(contact.opportunities).length||safeArray(contact.opportunitySignals).length;
+  let admission_status='rejected';
+  let reason='no_meaningful_relationship_signal';
+  let review_required=false;
+  if(hasMeaningfulSignal&&!safeIdentity){
+    admission_status='blocked_by_identity';
+    reason='meaningful_signal_but_identity_needs_review';
+    review_required=true;
+  }else if(hasMeaningfulSignal&&safeIdentity){
+    admission_status='admitted';
+    reason='meaningful_relationship_signal';
+  }else if(identity.crm_contact_id&&(receipts.length||hasPacketContext)&&!rejectionSignals.includes('non_relationship_source')){
+    admission_status='admitted';
+    reason=receipts.length?'crm_identity_with_supporting_context':'crm_identity_with_packet_context';
+  }else if(rejectionSignals.length){
+    reason=rejectionSignals.includes('generic_mailbox')?'generic_or_automated_sender':'non_relationship_source';
+  }
+  return {
+    admission_status,
+    admitted:admission_status==='admitted',
+    person_id:identity.crm_contact_id||identity.person_id||contact.personId||contact.id||'',
+    reason,
+    source_receipts:receipts.slice(0,8),
+    identity_confidence:identity.crm_contact_id||contact.knownIdentity||contact.userConfirmed?'high':(safeIdentity?'medium':'low'),
+    relationship_signals:[...new Set(relationshipSignals)],
+    rejection_signals:[...new Set(rejectionSignals)],
+    review_required
+  };
+}
+function sourceToPersonEvidenceBindings({contact={},identity=packetIdentity(contact),source_receipts=[]}={}){
+  const personKey=contactIdentityKey(contact,identity);
+  const nameWords=new Set(lowerWords(identity.name||contact.name||contact.displayName||'').filter(word=>word.length>=4));
+  return sourceReceipts(source_receipts,'relationship_evidence',16).map(receipt=>{
+    const explicit=safeArray(receipt.supports_person_ids).map(value=>compactText(value,160).toLowerCase()).filter(Boolean);
+    const summary=compactText([receipt.title,receipt.summary,receipt.relationship_context].join(' '),600).toLowerCase();
+    const mentionedNameCount=[...nameWords].filter(word=>summary.includes(word)).length;
+    const mentionsSeveralPeople=(summary.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g)||[]).length>1;
+    let resolution_method=receipt.resolution_method||'inferred';
+    let review_required=!!receipt.review_required;
+    let supports=explicit.length?explicit:[];
+    if(!supports.length&&personKey&&/email|gmail|outlook|sent/i.test(receipt.source_type)){
+      supports=[personKey];
+      resolution_method=/sent/i.test(receipt.source_type)?'email_match':'direct_identity';
+    }else if(!supports.length&&personKey&&/crm|ghl|contact/i.test(receipt.source_type)){
+      supports=[personKey];
+      resolution_method='direct_identity';
+    }else if(!supports.length&&personKey&&/user|teach|confirmed/i.test(receipt.source_type)){
+      supports=[personKey];
+      resolution_method='user_confirmed';
+    }else if(!supports.length&&personKey&&/transcript/i.test(receipt.source_type)&&mentionedNameCount){
+      supports=[personKey];
+      resolution_method='speaker_match';
+      review_required=review_required||mentionsSeveralPeople;
+    }else if(!supports.length&&personKey&&mentionedNameCount&&!mentionsSeveralPeople){
+      supports=[personKey];
+      resolution_method='inferred';
+      review_required=true;
+    }
+    if(!supports.length)review_required=true;
+    return {
+      source_id:receipt.source_id||'',
+      source_type:receipt.source_type||'relationship_evidence',
+      supports_person_ids:supports,
+      supports_claims:safeArray(receipt.supports_claims).length?safeArray(receipt.supports_claims):[receipt.summary||receipt.title||'relationship_context'].filter(Boolean).slice(0,3),
+      relationship_context:receipt.relationship_context||receipt.summary||receipt.title||'',
+      resolution_method,
+      review_required
+    };
+  });
+}
+function packetMaturityDecision(packet={},admissionDecision={},evidenceBindings=[]){
+  const admission=admissionDecision.admission_status||'rejected';
+  if(admission==='blocked_by_identity')return {maturity:'blocked_by_identity',why:'Meaningful relationship evidence exists, but identity is not safe enough to use.',supporting_receipts:admissionDecision.source_receipts||[],missing_variables:['identity_resolution'],contradictions:[],can_evaluate_moves:false};
+  if(admission==='rejected')return {maturity:'thin',why:'This source is not admitted as a real Stewardship relationship.',supporting_receipts:[],missing_variables:['relationship_evidence'],contradictions:[],can_evaluate_moves:false};
+  const trusted=safeArray(evidenceBindings).filter(binding=>!binding.review_required&&safeArray(binding.supports_person_ids).length);
+  const sourceTypes=new Set(trusted.map(binding=>String(binding.source_type||'').toLowerCase()));
+  const publicOnly=trusted.length&&[...sourceTypes].every(type=>/apollo|outscraper|linkedin|public|directory|scrape/.test(type));
+  const needs=safeArray(packet.what_this_person_needs);
+  const offers=safeArray(packet.what_this_person_offers);
+  const openLoops=safeArray(packet.relationship_state?.open_loops);
+  const missing=[
+    !packet.person?.crm_contact_id&&packet.person?.identity_status!=='known_alias'?'crm_contact_id':'',
+    needs.length?'':'what_this_person_needs',
+    offers.length?'':'what_this_person_offers',
+    trusted.length?'':'bound_source_receipts'
+  ].filter(Boolean);
+  if(publicOnly)return {maturity:'thin',why:'Public enrichment alone cannot mature a relationship packet.',supporting_receipts:trusted,missing_variables:missing,contradictions:[],can_evaluate_moves:false};
+  if(trusted.length>=3&&sourceTypes.size>=2&&(needs.length||offers.length||openLoops.length)){
+    return {maturity:'strong',why:'Identity and current relationship context are supported by multiple bound sources.',supporting_receipts:trusted.slice(0,6),missing_variables:missing,contradictions:[],can_evaluate_moves:true};
+  }
+  if(trusted.length&&(needs.length||offers.length||openLoops.length)){
+    return {maturity:'usable',why:'The relationship is real and has enough bound context to evaluate moves.',supporting_receipts:trusted.slice(0,5),missing_variables:missing,contradictions:[],can_evaluate_moves:true};
+  }
+  if(trusted.length||admission==='admitted'){
+    return {maturity:'developing',why:'The relationship is real, but VAL still needs clearer needs, offers, commitments, or current context.',supporting_receipts:trusted.slice(0,4),missing_variables:missing,contradictions:[],can_evaluate_moves:false};
+  }
+  return {maturity:'thin',why:'Not enough bound relationship context is available yet.',supporting_receipts:[],missing_variables:missing,contradictions:[],can_evaluate_moves:false};
+}
+function executiveVisibilityDecision({packet={},admissionDecision={},maturityDecision={}}={}){
+  if(admissionDecision.admission_status==='rejected')return {visibility:'hidden',why_visible_or_hidden:'Rejected sources do not enter the active Stewardship queue.',attention_reason:'',review_required:false};
+  if(admissionDecision.admission_status==='blocked_by_identity'||maturityDecision.maturity==='blocked_by_identity')return {visibility:'identity_review',why_visible_or_hidden:'Meaningful context exists, but identity must be reviewed first.',attention_reason:'Review contact identity',review_required:true};
+  const hasCommitment=safeArray(packet.relationship_state?.open_loops).length||/\b(introduce|connect|follow up|send|review|confirm|promise|commitment)\b/i.test([packet.relationship_origin?.first_meaningful_signal,packet.who_this_person_is?.current_context].join(' '));
+  if(maturityDecision.can_evaluate_moves&&hasCommitment)return {visibility:'active_queue',why_visible_or_hidden:'A source-backed relationship matter may deserve attention now.',attention_reason:'Review next relationship move',review_required:false};
+  if(['developing','usable','strong'].includes(maturityDecision.maturity))return {visibility:'people_to_watch',why_visible_or_hidden:'Real relationship packet should accumulate meaning, but no active move is ready.',attention_reason:'Watch for new source-backed context',review_required:false};
+  return {visibility:'hidden',why_visible_or_hidden:'No executive attention is needed right now.',attention_reason:'',review_required:false};
+}
 function personPacketFromContact(contact={},options={}){
   const evidence=sourceReceipts([
     ...safeArray(contact.evidence),
@@ -95,8 +270,7 @@ function personPacketFromContact(contact={},options={}){
   const identity=packetIdentity(contact);
   const firstSeen=firstText(contact.firstSeenAt,contact.createdAt,contact.lastObservedAt,contact.lastInteractionAt,contact.receivedAt,contact.sentAt);
   const lastSignal=firstText(contact.lastMeaningfulSignalAt,contact.lastObservedAt,contact.lastInteractionAt,contact.updatedAt,contact.receivedAt,contact.sentAt,firstSeen);
-  const maturity=contactId(contact)&&(needs.length||offers.length)&&evidence.length?'usable':((needs.length||offers.length||evidence.length)?'developing':'thin');
-  return {
+  const shell={
     packet_type:'person_packet',
     packet_id:options.packetId||packetIdForContact(contact),
     person:identity,
@@ -131,18 +305,29 @@ function personPacketFromContact(contact={},options={}){
       crm_receipts:evidence.filter(item=>/crm|ghl|contact/i.test(item.source_type)),
       user_confirmed_receipts:evidence.filter(item=>/user|confirmed|teach_val/i.test(item.source_type))
     },
-    packet_state:{
-      maturity,
-      needs_review:identity.identity_status!=='linked'||maturity==='thin',
-      missing_variables:[
-        !identity.crm_contact_id?'crm_contact_id':'',
-        needs.length?'':'what_this_person_needs',
-        offers.length?'':'what_this_person_offers',
-        evidence.length?'':'source_receipts'
-      ].filter(Boolean),
-      updated_at:options.updatedAt||new Date().toISOString()
-    }
+    packet_state:{updated_at:options.updatedAt||new Date().toISOString()}
   };
+  const admission=options.relationshipAdmission||options.admissionDecision||relationshipAdmissionDecision({contact,identity,source_receipts:evidence});
+  const evidenceBindings=options.evidenceBindings||sourceToPersonEvidenceBindings({contact,identity,source_receipts:evidence});
+  const maturityDecision=options.packetMaturity||packetMaturityDecision(shell,admission,evidenceBindings);
+  const visibility=options.executiveVisibility||executiveVisibilityDecision({packet:shell,admissionDecision:admission,maturityDecision});
+  shell.relationship_admission=admission;
+  shell.evidence_bindings=evidenceBindings;
+  shell.packet_maturity=maturityDecision;
+  shell.executive_visibility=visibility;
+  shell.packet_state={
+    maturity:maturityDecision.maturity,
+    needs_review:identity.identity_status!=='linked'||maturityDecision.maturity==='thin'||maturityDecision.maturity==='blocked_by_identity'||!!admission.review_required,
+    missing_variables:maturityDecision.missing_variables||[
+      !identity.crm_contact_id?'crm_contact_id':'',
+      needs.length?'':'what_this_person_needs',
+      offers.length?'':'what_this_person_offers',
+      evidence.length?'':'source_receipts'
+    ].filter(Boolean),
+    can_evaluate_moves:!!maturityDecision.can_evaluate_moves,
+    updated_at:options.updatedAt||new Date().toISOString()
+  };
+  return shell;
 }
 function personPacketText(packet={},field=''){
   const values=field==='needs'
@@ -280,10 +465,13 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
   const currentContactForMatch=contactFromPersonPacket(currentPacket);
   const currentId=contactId(currentContactForMatch);
   if(!currentId)return {ok:true,candidates:[],unknowns:['current_contact_id_unresolved'],noExternalAction:true};
+  if(currentPacket.relationship_admission?.admission_status&&currentPacket.relationship_admission.admission_status!=='admitted')return {ok:true,candidates:[],unknowns:['current_relationship_not_admitted'],noExternalAction:true};
+  if(currentPacket.packet_maturity?.maturity==='blocked_by_identity')return {ok:true,candidates:[],unknowns:['current_identity_blocked'],noExternalAction:true};
   const currentName=compactText(currentContactForMatch.name||currentContactForMatch.email||'this person',120);
   const candidates=safeArray(crmContacts)
     .map(contact=>contact.packet_type==='person_packet'?contact:personPacketFromContact(contact))
     .filter(packet=>contactId(contactFromPersonPacket(packet))&&contactId(contactFromPersonPacket(packet))!==currentId)
+    .filter(packet=>(packet.relationship_admission?.admission_status||'admitted')==='admitted'&&packet.packet_maturity?.maturity!=='blocked_by_identity')
     .map(contact=>{
       const candidatePacket=contact;
       const candidateContact=contactFromPersonPacket(candidatePacket);
@@ -445,4 +633,4 @@ function relationshipIntroDraft(candidate={}){
   };
 }
 
-module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket,stewardshipMatchPacket,stewardshipMovePacket};
+module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket,stewardshipMatchPacket,stewardshipMovePacket,relationshipAdmissionDecision,sourceToPersonEvidenceBindings,packetMaturityDecision,executiveVisibilityDecision};

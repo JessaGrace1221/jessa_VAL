@@ -1162,7 +1162,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=home-witness-evidence-20260710/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=home-witness-evidence-20260710/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=stewardship-next-move-20260711/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
