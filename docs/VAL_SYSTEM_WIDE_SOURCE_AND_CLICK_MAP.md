@@ -1470,7 +1470,7 @@ Every dynamic top module must be tied to a real path.
 | Prepared For You | VAL drafted/prepared something ready for review and approval | Project Prepared Work Packet + persisted artifact + surface registration | Project top module/action layer and Leverage | Review, edit/refine, approve, ask scoped question, add context, execute after approval, put a pin in it | Simple action receipt |
 | Today's Reprioritization | Any new project-related source/event or user opens project page | Project Manager Focus Packet + updated project priority order | Project top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare, create task if needed, safe stakeholder message, put a pin in it until date/time | Reprioritization receipt |
 | Project Movement | Forward/backward movement: task, document, payment, question, clarification, meeting, dependency, status, or open-loop change | Project Movement Packet + open-loop update | Home welcome/context, Project top module/recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
-| Execution Adjustment | Scope/time/cost/quality trade-off appears | Project Risk/Judgment Packet | Project top module | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
+| Execution Adjustment | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Project Execution Adjustment Packet + plan/draft update when useful | Project top module; Alignment only when open-loop judgment is needed; Velocity if project reality moved; Leverage if prepared work exists | Accept adjustment, choose another option, ask alternatives, add context, update project plan, draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
 | Project Reset | End of day, after meeting/action, stale open loops | Project Receipt/Reset Packet | Project top module or reset section | Confirm, add context, create tomorrow task | Reset receipt |
 | Quietly Watching | No user action needed but monitoring rules exist | Project monitoring rule/status packet | Project top module only when nothing higher exists | Open watcher, add context, change rule | Monitoring receipt |
 
@@ -1715,6 +1715,66 @@ Put a pin in it
   -> ask "When do you want me to unpin this for you?"
   -> user selects date/time
   -> surface again at that date/time: "This is unpinned. Let's work on it."
+```
+
+Execution Adjustment rules:
+
+```text
+Project-related source or event changes a constraint
+  -> detect whether scope, time, cost, quality, resources, stakeholder expectations, dependency, launch pressure, or risk changed
+  -> compare against the current project plan
+  -> identify the trade-off
+  -> prepare clear options
+  -> recommend the least-risk path
+  -> decide whether an executive open loop exists
+  -> write Project Execution Adjustment Packet
+  -> update Project Manager page
+```
+
+Execution Adjustment is not a warning label. It is the place where VAL says:
+
+```text
+The project plan cannot responsibly stay exactly the same.
+Here is the trade-off.
+Here is the least-risk adjustment.
+```
+
+Required visible display:
+
+```text
+What changed
+The trade-off
+VAL's recommendation
+Consequence if delayed
+One-line source proof
+Available actions
+```
+
+Surface routing:
+
+```text
+Project top module: whenever Execution Adjustment is active
+Alignment: only if the trade-off creates an open loop needing executive judgment
+Velocity: when the trade-off represents meaningful movement in project reality
+Leverage: when VAL prepared a plan update, message, schedule, or other reviewable artifact
+```
+
+Allowed actions:
+
+```text
+Accept VAL's adjustment
+Choose another option
+Ask for alternatives
+Add context
+Ask VAL to update the project plan
+Ask VAL to draft a stakeholder message
+Put a pin in it
+```
+
+Receipt example:
+
+```text
+VAL just updated the launch plan to protect quality and moved the content deadline to Friday.
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:

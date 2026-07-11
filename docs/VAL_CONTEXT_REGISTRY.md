@@ -544,6 +544,11 @@ Dedicated prompt suite:
 | Project priority recommendation | `{{projects.current.priority_recommendation}}` | new/derived | object | Project Manager Round Table | What VAL recommends first after re-scanning project evidence. |
 | Project pin until | `{{projects.current.pin_until}}` | new/derived | datetime/object | user action | Date/time chosen after "Put a pin in it"; VAL keeps watching until then or until critical evidence appears. |
 | Project reprioritization receipt | `{{projects.current.reprioritization_receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL reprioritizes the project. |
+| Project execution adjustment | `{{projects.current.execution_adjustment}}` | new/derived | object | Project Manager Round Table | Trade-off packet when scope, time, cost, quality, resources, expectations, dependency, launch pressure, or risk changes. |
+| Execution adjustment trade-off | `{{projects.current.execution_adjustment.trade_off}}` | new/derived | object/string | Project Manager Round Table | The explicit trade-off VAL identified against the current project plan. |
+| Execution adjustment options | `{{projects.current.execution_adjustment.options}}` | new/derived | array | Project Manager Round Table | Clear options the executive can choose between. |
+| Execution adjustment recommendation | `{{projects.current.execution_adjustment.recommendation}}` | new/derived | object | Project Manager Round Table | VAL's least-risk recommended adjustment with source proof and consequence if delayed. |
+| Execution adjustment receipt | `{{projects.current.execution_adjustment.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL updates the plan, prepares work, or records the chosen trade-off. |
 | Project charter | `{{projects.current.charter}}` | new/derived | object | Project Manager Round Table, project interview | Business case, purpose, goals, scope, timeline, stakeholders, risks. |
 | Project constraints | `{{projects.current.constraints}}` | new/derived | object | Project Manager Round Table | Scope, time, cost, quality trade-offs and impacts. |
 | Project lifecycle phase | `{{projects.current.lifecycle_phase}}` | new/derived | enum/object | Project Manager Round Table | Initiation, planning, execution, monitor/control, closure, plus current phase evidence. |

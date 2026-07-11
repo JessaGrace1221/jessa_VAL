@@ -909,7 +909,7 @@ Closed loops should leave Alignment and produce a simple receipt.
 | `Prepared For You` | VAL drafted or prepared something ready for user review and approval | Persist artifact, link to project/source, prove why/what/where/what is needed, register in Project and Leverage | Project top module or action layer, and Leverage | Review, edit/refine, approve, ask scoped question, add context, send/publish/schedule/create after approval, put a pin in it | Simple action receipt |
 | `Today's Reprioritization` | Any new project-related source or event, start of day, user opens project page, or changed priority/risk | Re-scan project emails, transcripts, calendar, documents, commitments, payment/project issues, and relationship tension; set new priority order | Top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare something, create task if needed, message stakeholder only when identity/context are safe, put a pin in it until date/time | Reprioritization receipt |
 | `Project Movement` | Forward or backward movement: task/document/payment/question/clarification/meeting/dependency/status/open-loop change | Create movement packet with direction, update current reality, update open loops, feed Velocity and Project | Home welcome/context, Project top module or recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, ask VAL to prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
-| `Execution Adjustment` | Scope/time/cost/quality trade-off appears | Make trade-off explicit, show impact, recommend least-risk move | Top module when active | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
+| `Execution Adjustment` | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Make the trade-off explicit, show options, recommend the least-risk path, and prepare plan/draft updates when useful | Project top module; Alignment only when the trade-off creates an open loop needing judgment; Velocity if it reflects movement; Leverage if VAL prepared work | Accept VAL's adjustment, choose another option, ask for alternatives, add context, ask VAL to update the project plan, ask VAL to draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
 | `Project Reset` | End of day, after meeting, after major action, stale open loops | Summarize what moved, decisions made, unresolved risks, tomorrow prep | Top module or lower reset card | Confirm, add missing context, create tomorrow task | Reset receipt |
 | `Quietly Watching` | Nothing needs user attention but monitoring rules exist | Show what VAL is watching and why no action is needed | Top module only when no higher module exists | Open watcher, add context, change watch rule | Monitoring receipt |
 
@@ -1367,6 +1367,132 @@ Receipt:
 
 ```text
 VAL just logged the website draft as completed and updated the launch project.
+```
+
+### Execution Adjustment Contract
+
+Execution Adjustment is the trade-off module.
+
+It appears when the project plan cannot responsibly stay exactly the same because a constraint, expectation, dependency, or risk changed.
+
+This module is grounded in the PM constraint model:
+
+```text
+scope
+time
+cost
+quality
+resources
+stakeholder expectations
+risk
+```
+
+Execution Adjustment should not create drama. It should make the trade-off visible before it quietly damages the project.
+
+Trigger examples:
+
+- scope creep
+- timeline slipping
+- budget pressure
+- quality risk
+- resource overload
+- stakeholder asks for something bigger, faster, or cheaper
+- dependency failure
+- launch pressure
+- sponsor or client expectation changes
+- requested deliverable changes
+- workstream no longer matching the project plan
+- a risk becomes active enough that the old plan is no longer responsible
+
+Required processing path:
+
+```text
+Project-related change
+  -> detect changed constraint
+  -> compare against current project plan
+  -> identify the trade-off
+  -> prepare options
+  -> recommend least-risk path
+  -> determine whether an open loop needs executive judgment
+  -> update Project Manager page
+  -> route to Alignment, Velocity, or Leverage only when the relevant gate is met
+```
+
+Required visible display:
+
+```text
+What changed
+The trade-off
+VAL's recommendation
+Consequence if delayed
+One-line source proof
+Available actions
+```
+
+What VAL should prepare before asking:
+
+- what changed
+- the trade-off
+- clear options
+- recommended path
+- consequence if delayed
+- one-line clickable source proof
+- what VAL can adjust automatically
+- project plan update when useful
+- stakeholder message draft when identity and context are safe
+
+Alignment rule:
+
+```text
+Execution Adjustment appears in Alignment only when it creates an open loop that needs executive judgment.
+```
+
+Examples:
+
+- user must choose between scope and timeline
+- VAL needs approval before changing a deadline
+- a stakeholder message should be approved before sending
+- the project cannot move until the executive chooses a path
+- a pinned trade-off reaches its unpin date/time
+
+Velocity rule:
+
+```text
+Execution Adjustment appears in Velocity when the trade-off represents meaningful movement in project reality.
+```
+
+Leverage rule:
+
+```text
+Execution Adjustment appears in Leverage when VAL prepared a reviewable artifact.
+```
+
+Allowed actions:
+
+- accept VAL's adjustment
+- choose another option
+- ask for alternatives
+- add context
+- ask VAL to update the project plan
+- ask VAL to draft a stakeholder message
+- approve prepared plan update
+- approve prepared stakeholder message
+- put a pin in it
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just updated the launch plan to protect quality and moved the content deadline to Friday.
 ```
 
 ### Handled Work Copy Rule
