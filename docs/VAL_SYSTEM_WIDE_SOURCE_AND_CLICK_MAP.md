@@ -699,7 +699,7 @@ Required behavior:
 ```text
 Recipient suggests a different available time
   -> VAL checks calendar
-  -> VAL pencils in the time as tentative/internal hold
+  -> VAL pencils in the time as a visible calendar hold
   -> VAL sends or prepares a soft reply only if safe
   -> VAL creates a Leverage / Ready For You confirmation item
   -> user confirms or rejects
@@ -718,6 +718,50 @@ I penciled in Susie for next Thursday at 1:00. Does this work for you?
 ```
 
 This is different from accepting VAL's own suggested time. A recipient-proposed alternate time deserves user confirmation because VAL did not previously offer that slot.
+
+Use executive language:
+
+```text
+Penciled in
+```
+
+Do not use `tentative` as the primary user-facing label when `penciled in` is clearer.
+
+The visible calendar hold should read like:
+
+```text
+Penciled in: Susie
+```
+
+If the user confirms the Leverage item:
+
+```text
+Penciled in hold
+  -> confirmed calendar event
+  -> confirmation reply sent
+  -> execution receipt stored
+```
+
+If the user rejects the Leverage item, VAL should automatically close the scheduling loop politely.
+
+Required behavior:
+
+```text
+User rejects penciled-in time
+  -> VAL removes or releases the penciled-in hold
+  -> VAL sends a polite reply saying Jessa is not available then
+  -> VAL includes the calendar booking link
+  -> no further back-and-forth automation unless recipient books through the link
+  -> execution receipt stored
+```
+
+Tone example:
+
+```text
+I know I penciled you in, but Jessa actually is not going to be available at that time. Here is her calendar link so you can choose a time that works for you.
+```
+
+This should end the scheduling loop. Do not keep offering new rounds of times after the user rejects a recipient-proposed alternate time.
 
 Example draft logic:
 
