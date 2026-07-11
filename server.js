@@ -747,7 +747,9 @@ const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.
   .map(e=>e.trim().toLowerCase())
   .filter(Boolean));
 const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
-  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'}
+  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
+  'miken@goallprogram.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'},
+  'mikenonhof.wealth@gmail.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'}
 };
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
@@ -16106,6 +16108,23 @@ function relationshipIndexTemperature(profile={}){
 function relationshipIndexTemperatureContract(state='warm'){
   return RELATIONSHIP_INDEX_TEMPERATURE_MODEL[state]||RELATIONSHIP_INDEX_TEMPERATURE_MODEL.warm;
 }
+function relationshipIndexPrimarySignal(profile={},state='warm'){
+  const count=(key)=>Number(profile[key]||profile[String(key).replace(/[A-Z]/g,m=>'_'+m.toLowerCase())]||0);
+  if(state==='waiting'){
+    const loops=count('openLoopCount');
+    return loops?`Waiting: ${loops} open loop${loops===1?'':'s'} need source review.`:'Waiting: VAL sees a pending loop, but the source needs review.';
+  }
+  if(state==='needs_attention'){
+    const risks=count('riskCount');
+    return risks?`Needs attention: ${risks} risk signal${risks===1?'':'s'} need review.`:'Needs attention: relationship context needs review before action.';
+  }
+  if(state==='strategic'){
+    const opportunities=count('opportunityCount');
+    return opportunities?`Strategic: ${opportunities} opportunity signal${opportunities===1?'':'s'} in this relationship file.`:'Strategic: VAL sees possible leverage, but review the source before acting.';
+  }
+  if(state==='new')return 'New: identity is known, but VAL needs more evidence.';
+  return 'Warm: no urgent risk or waiting loop is currently surfaced.';
+}
 function relationshipProfilePrimaryEmail(profile={}){
   const metadata=profile.metadata||{};
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
@@ -16177,11 +16196,16 @@ async function stewardshipRelationshipAdmissionForProfile(profile={}){
   }
   return base;
 }
+function stewardshipRelationshipDedupeKey(profile={}){
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+  if(admission.alias?.name)return `alias:${stableKey(admission.alias.name)}`;
+  return admission.email||profile.profileKey||profile.profile_key||profile.id||profile.displayName||profile.name||'';
+}
 function dedupeStewardshipProfiles(profiles=[]){
   const byKey=new Map();
   for(const profile of Array.isArray(profiles)?profiles:[]){
     const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
-    const key=admission.email||profile.profileKey||profile.profile_key||profile.id||profile.displayName||profile.name||'';
+    const key=stewardshipRelationshipDedupeKey(profile);
     if(!key)continue;
     const existing=byKey.get(key);
     if(!existing){
@@ -16195,13 +16219,71 @@ function dedupeStewardshipProfiles(profiles=[]){
   }
   return [...byKey.values()];
 }
+function relationshipTranscriptIntroTokens(profile={}){
+  const metadata=profile.metadata||{};
+  const values=[
+    profile.displayName||profile.display_name||profile.name,
+    relationshipProfilePrimaryEmail(profile),
+    metadata.company,
+    metadata.organization,
+    profile.organizationId||profile.organization_id
+  ].filter(Boolean).join(' ').toLowerCase();
+  const tokens=values.split(/[^a-z0-9]+/).filter(word=>word.length>=5&&!['gmail','email','group','relationship','observed'].includes(word));
+  for(const word of [...tokens]){
+    if(word.includes('adaptive'))tokens.push('adaptive');
+    if(word.includes('climb'))tokens.push('climbing','climbers');
+  }
+  return [...new Set(tokens)].slice(0,12);
+}
+function relationshipTranscriptIntroEvidence(profile={},transcripts=[]){
+  const tokens=relationshipTranscriptIntroTokens(profile);
+  if(!tokens.length)return null;
+  for(const transcript of Array.isArray(transcripts)?transcripts:[]){
+    const raw=String(transcript.rawTranscript||transcript.raw_transcript||transcript.transcriptText||'');
+    const lower=raw.toLowerCase();
+    const token=tokens.find(word=>lower.includes(word));
+    if(!token)continue;
+    const idx=lower.indexOf(token);
+    const window=raw.slice(Math.max(0,idx-700),idx+1400);
+    if(!/\b(introduce|connect|meet|should talk|want to send|want to connect|make that introduction)\b/i.test(window))continue;
+    const windowOffset=Math.max(0,idx-700);
+    const verbMatch=window.match(/\b(introduce|connect|meet|should talk|want to send|want to connect|make that introduction)\b/i);
+    const snippetCenter=verbMatch?windowOffset+(verbMatch.index||0):idx;
+    const snippet=raw.slice(Math.max(0,snippetCenter-180),snippetCenter+520);
+    const title=transcript.meetingTitle||transcript.meeting_title||transcript.title||'Transcript';
+    const sourceId=transcript.transcriptId||transcript.transcript_id||transcript.id||'';
+    return {
+      type:'transcript_intro_evidence',
+      sourceType:'transcript',
+      sourceId,
+      title,
+      summary:dashboardShortText(snippet,`${title}: transcript mentions an introduction or connection around ${token}.`,520),
+      confidence:'medium',
+      occurredAt:transcript.meetingDatetime||transcript.meeting_datetime||transcript.createdAt||transcript.created_at||''
+    };
+  }
+  return null;
+}
+function enrichRelationshipProfileWithTranscriptIntroEvidence(profile={},transcripts=[]){
+  const introEvidence=relationshipTranscriptIntroEvidence(profile,transcripts);
+  if(!introEvidence)return profile;
+  const existingEvidence=Array.isArray(profile.evidence)?profile.evidence:[];
+  const existingOpportunities=Array.isArray(profile.opportunities)?profile.opportunities:[];
+  const existingSignals=Array.isArray(profile.relationshipSignals)?profile.relationshipSignals:[];
+  return {
+    ...profile,
+    evidence:[introEvidence,...existingEvidence],
+    opportunityCount:Math.max(Number(profile.opportunityCount||0),existingOpportunities.length+1),
+    opportunities:[{content:'Transcript-derived introduction opportunity: review the source snippet before preparing any introduction.',summary:introEvidence.summary,sourceType:'transcript',sourceId:introEvidence.sourceId},...existingOpportunities],
+    relationshipSignals:[{content:'Transcript source mentions a possible introduction connected to this relationship context.',summary:introEvidence.summary,sourceType:'transcript',sourceId:introEvidence.sourceId},...existingSignals]
+  };
+}
 function relationshipIndexItemFromProfile(profile={}){
   const temperatureEvidence=relationshipIndexTemperatureEvidence(profile);
   const state=relationshipIndexStateFromEvidence(temperatureEvidence);
   const temperatureConflict=relationshipIndexTemperatureConflict(temperatureEvidence,state);
   const temperatureContract=relationshipIndexTemperatureContract(state);
   const metadata=profile.metadata||{};
-  const signal=(profile.risks?.[0]?.content)||(profile.openLoops?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.relationshipSignals?.[0]?.content)||profile.summary||'Relationship context is available for review.';
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
@@ -16229,13 +16311,13 @@ function relationshipIndexItemFromProfile(profile={}){
     sourceEvidence:profile.summary||'Canonical relationship profile from VAL relationship index.',
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
-    signal:dashboardShortText(signal,'Relationship signal available.',120),
+    signal:relationshipIndexPrimarySignal(profile,state),
     identity:name,
     contact:[email,metadata.phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
     wisdom:profile.summary||'Review the relationship file before acting.',
-    evidence:dashboardShortText(signal,profile.summary||'',220),
-    patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||signal,profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
-    meaning:profile.summary||dashboardShortText(signal,'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
+    evidence:profile.summary||relationshipIndexPrimarySignal(profile,state),
+    patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||relationshipIndexPrimarySignal(profile,state),profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
+    meaning:profile.summary||dashboardShortText(relationshipIndexPrimarySignal(profile,state),'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
     certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
@@ -16263,7 +16345,10 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     risks:(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
-    evidence:[profile.summary&&{type:'relationship_profile',summary:profile.summary}].filter(Boolean)
+    evidence:[
+      profile.summary&&{type:'relationship_profile',summary:profile.summary},
+      ...(Array.isArray(profile.evidence)?profile.evidence:[])
+    ].filter(Boolean)
   });
   return {
     profileId:profile.id||'',
@@ -24064,7 +24149,9 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
+    const transcripts=await recentTranscriptIndexRowsRaw(3650,120).catch(()=>[]);
     const packets=profiles
+      .map(profile=>enrichRelationshipProfileWithTranscriptIntroEvidence(profile,transcripts))
       .map(relationshipPersonPacketItemFromProfile)
       .filter(item=>includeThin||item.maturity!=='thin');
     const maturityCounts=packets.reduce((acc,item)=>{

@@ -2161,11 +2161,11 @@ function appendRelationshipRolodexRow(item){
   const tempLabel = document.createElement('b');
   tempLabel.textContent = item.temperature;
   const trajectory = document.createElement('em');
-  trajectory.textContent = item.stateLabel + ' · ' + item.trajectory;
+  trajectory.textContent = item.signal || item.temperatureMeaning || item.stateLabel || item.trajectory;
   temperature.append(gauge, tempLabel, trajectory);
   const signal = document.createElement('span');
   signal.className = 'rolodex-signal';
-  signal.textContent = item.signal;
+  signal.textContent = item.sourceEvidence || item.profile?.sourceEvidence || item.signal;
   button.append(name, company, temperature, signal);
   if(item.temperatureReviewPending?.status === 'pending'){
     const pending = document.createElement('button');
@@ -6251,8 +6251,7 @@ function relationshipSuggestedActions(profile = {}){
 function renderRelationshipActions(profile = {}){
   const container = document.querySelector('.relationship-actions');
   if(!container) return;
-  const actions = preferredRelationshipActions(Array.isArray(profile.actions) ? profile.actions : []);
-  const safeActions = relationshipActionsWithStewardshipReview(actions.length ? actions : relationshipSuggestedActions(profile), profile);
+  const safeActions = profile.unresolvedIdentity ? [] : [{id:'refresh_relationship_observers',label:'Refresh observers',type:'endpoint',willDo:'Refresh the source trail before trusting this relationship brief.',willNotDo:'No message, CRM update, import, or external action will happen.'}];
   const actionHtml = (action) => {
     const label = escapeHtml(action.label || 'Review');
     const title = escapeHtml([action.willDo, action.willNotDo].filter(Boolean).join(' '));
@@ -6263,7 +6262,7 @@ function renderRelationshipActions(profile = {}){
     return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</button>';
   };
   const groups = [
-    {label:'Actions VAL can take with this relationship', ids:['draft_message','create_task','ask_alignment','cowork_relationship','find_relationship_introductions','review_linkedin_activity','search_ghl_contacts','review_new_contact_candidate','draft_linkedin_comment','draft_linkedin_dm','brainstorm','refresh_relationship_observers','mark_vip','not_important','snooze']}
+    {label:'Observer controls', ids:['refresh_relationship_observers']}
   ];
   const groupedHtml = groups.map((group) => {
     const groupActions = safeActions.filter((action) => group.ids.includes(action.id));

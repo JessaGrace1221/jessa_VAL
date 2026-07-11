@@ -767,14 +767,17 @@ button,a{font:inherit}
 }
 .living-room button:not([data-home-room-item]) b{font-weight:400;margin-left:10px}
 .desk-workspace{
-  position:absolute;
+  position:fixed;
   z-index:6;
   left:50%;
-  bottom:14.2vh;
+  top:24px;
+  bottom:24px;
   width:min(820px,calc(100vw - 330px));
   transform:translate(-50%,34px) scale(.985);
   opacity:0;
   pointer-events:none;
+  overflow-y:auto;
+  overscroll-behavior:contain;
   transition:opacity .56s ease,transform .72s cubic-bezier(.2,.7,.15,1),filter .56s ease;
 }
 .hearth-shell .desk-workspace[aria-hidden="true"]{

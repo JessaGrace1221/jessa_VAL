@@ -1994,12 +1994,11 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /peopleWhoNeedThem/);
   assert.match(hearthJs, /peopleTheyShouldMeet/);
   assert.match(hearthJs, /relationship-action-group/);
-  assert.match(hearthJs, /Actions VAL can take with this relationship/);
+  assert.match(hearthJs, /Observer controls/);
+  assert.match(hearthJs, /function renderRelationshipPrimaryActions/);
   assert.match(hearthJs, /function relationshipActionsWithStewardshipReview/);
   assert.match(hearthJs, /relationshipReviewIntroductionsAction\(\)/);
-  assert.match(hearthJs, /Draft reply/);
-  assert.match(hearthJs, /Create follow-up task/);
-  assert.match(hearthJs, /Draft check-in/);
+  assert.match(hearthJs, /Refresh observers/);
   assert.match(hearthJs, /Review introductions/);
   assert.match(hearthJs, /linkedinSignal/);
   assert.match(hearthJs, /sourceReceipts/);
@@ -2060,9 +2059,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /sourceType: 'relationship_profile'/);
   assert.match(hearthJs, /sourceReceipts: person\.sourceReceipts/);
   assert.match(hearthJs, /function relationshipSuggestedActions/);
-  assert.match(hearthJs, /Draft reply/);
-  assert.match(hearthJs, /Create follow-up task/);
-  assert.match(hearthJs, /Actions VAL can take with this relationship/);
+  assert.match(hearthJs, /Observer controls/);
+  assert.match(hearthJs, /refresh_relationship_observers/);
   assert.doesNotMatch(hearthJs, /Draft LinkedIn Comment',type:'endpoint'/);
   assert.match(hearthJs, /function openRelationshipTeachWorkspace/);
   assert.match(hearthJs, /Review what I taught VAL/);

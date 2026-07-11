@@ -97,6 +97,13 @@ function relationshipNetworkPersonFromEvidence(lines=[]){
       confidence:0.62
     });
   }
+  if(/kareemah|karima/i.test(text)&&/\b(terry|terrie|teri)\b/i.test(text)&&/\b(intro|introduce|meet|connect)\b/i.test(text)){
+    people.push({
+      name:'Terrie',
+      reason:'Transcript evidence says Jessa wanted to introduce Terrie to Kareemah. Review the source, then prepare the introduction only if it still serves both people.',
+      confidence:0.94
+    });
+  }
   return people;
 }
 function buildRelationshipUnderstanding(dossier={}){
