@@ -1442,7 +1442,7 @@ Every dynamic top module must be tied to a real path.
 
 | Focus module | Trigger | Write target | Surface | User action | Receipt |
 |---|---|---|---|---|---|
-| Critical Project Issue | Payment issue, deadline, failed dependency, blocked owner, service/access risk | Project Risk Packet + Project Manager Action Packet | Project top module, Alignment if admitted | Decide, assign, approve, ask scoped question | Issue receipt |
+| Critical Project Issue | Payment issue, deadline, failed dependency, blocked/unclear owner, angry stakeholder, relationship tension, service/access risk, launch/legal/contract risk | Project Risk Packet + Project Manager Action Packet + recommended next move | Project top module and Alignment | Approve recommendation/draft, answer scoped question, add context, approve owner assignment | Issue receipt, updated project packet, Home handled receipt when resolved |
 | Needs Your Judgment | Missing decision blocks safe progress | Project Manager Judgment Packet + decision/action packet | Project top module | Choose, add context, hold | Decision receipt |
 | Prepared For You | Draft/SOP/workflow/document/follow-up prepared | Project Prepared Work Packet | Project top module/action layer, Leverage when reviewable | Review, refine, approve, reject | Prepared-work receipt |
 | Today's Reprioritization | Start of day or new evidence changes priority | Project Manager Focus Packet | Project top module | Accept, change priority, ask why | Reprioritization receipt |
@@ -1466,6 +1466,50 @@ Source/time trigger
 ```
 
 If this path is incomplete, VAL must not imply that something is being handled.
+
+Critical Project Issue rules:
+
+```text
+Critical issue detected
+  -> route to Alignment
+  -> place at top of Project Manager page
+  -> attach one-sentence clickable source proof
+  -> prepare recommended next move
+  -> prepare draft when useful
+  -> ask before assigning an owner
+```
+
+When resolved:
+
+```text
+Issue handled
+  -> update project packet
+  -> create issue resolution receipt
+  -> show handled note in Home welcome/context message
+```
+
+Critical issue source proof should be brief, not a source dump.
+
+Example:
+
+```text
+Source proof: There was tension in this morning's call during the partner timeline discussion.
+```
+
+Critical issue question flow:
+
+```text
+VAL has 4 questions
+  -> ask question 1
+  -> user answers
+  -> ask question 2
+  -> user answers
+  -> ask question 3
+  -> user answers
+  -> ask final question
+  -> allow additional context
+  -> continue preparing/resolving
+```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
 

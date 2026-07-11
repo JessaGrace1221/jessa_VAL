@@ -876,7 +876,7 @@ The top module must be backed by a Project Manager Action Packet or Project Mana
 
 | Module | Trigger | What VAL must do | Visible surface | User action | Receipt |
 |---|---|---|---|---|---|
-| `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, high-risk trade-off | Create risk/next-action packet, notify Alignment if executive-worthy, update project status | Top module, Alignment when admitted, Project action layer | Decide, approve draft, assign owner, ask scoped question | Issue receipt + updated project packet |
+| `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, angry stakeholder, relationship tension, high-risk trade-off | Create risk/next-action packet, notify Alignment, update project status, prepare next recommended move | Top module, Alignment, Project action layer | Approve recommendation, approve draft, answer scoped question, add context, approve owner assignment | Issue receipt + updated project packet + handled Home receipt when resolved |
 | `Needs Your Judgment` | PM cannot safely move without user decision | Create decision packet with options, recommendation, source proof, consequences | Top module and Project action layer | Choose option, add context, hold | Decision receipt |
 | `Prepared For You` | VAL prepared draft, SOP, workflow, note, schedule, document, or follow-up | Persist artifact, link to project/source, register in Leverage if reviewable | Top module or action layer; Leverage when appropriate | Review, refine, approve, reject | Prepared-work receipt |
 | `Today's Reprioritization` | Start of day, new source since last review, changed priority/risk | Re-rank project priorities, identify risk today, clarify who needs context | Top module | Accept priority, ask why, change priority | Reprioritization receipt |
@@ -902,6 +902,86 @@ Source or time trigger
 ```
 
 If any step is missing, the page must not imply that VAL handled the item.
+
+### Critical Project Issue Contract
+
+Critical project issues include:
+
+- payment issue
+- missed or threatened deadline
+- failed dependency
+- blocked owner
+- unclear owner
+- angry stakeholder
+- relationship tension discovered in transcript or email
+- service or account access risk
+- launch risk
+- legal, contract, or compliance risk
+- high-risk scope/time/cost/quality trade-off
+
+Relationship health is part of project health. If a transcript or email reveals tension, frustration, distrust, conflict, or an angry stakeholder, that can be a critical project issue even when the project tasks still look on track.
+
+Required behavior before showing the issue:
+
+```text
+Critical issue detected
+  -> identify the issue
+  -> attach brief clickable source proof
+  -> prepare the recommended next move
+  -> prepare draft message when appropriate
+  -> ask before assigning an owner
+  -> route to Alignment
+  -> place at top of Project Manager page
+```
+
+Source proof must be brief.
+
+Example:
+
+```text
+Source proof: There was tension in this morning's call during the partner timeline discussion.
+```
+
+The source proof sentence should be clickable so the user can inspect the email, transcript, meeting, document, or source receipt.
+
+Allowed user actions:
+
+- approve VAL's recommendation
+- approve or refine a prepared draft
+- answer scoped questions
+- add additional context
+- approve suggested owner assignment
+- ask a scoped question about this issue
+
+Not allowed:
+
+- vague `dismiss`
+- vague `hold`
+- silent owner assignment
+- broad generic project chat
+- long source dumps
+
+Scoped question rule:
+
+```text
+If VAL has multiple questions:
+  -> say how many questions there are
+  -> ask one question at a time
+  -> allow additional context after the required questions
+  -> then continue preparing or resolving the issue
+```
+
+Resolution behavior:
+
+The user should not have to manually mark the issue resolved as the primary path. VAL should show resolution when the issue is actually handled.
+
+Resolved/handled items should surface in the Home welcome message or equivalent morning/context greeting.
+
+Example:
+
+```text
+I handled the payment issue for Project XYZ. VAL linked the invoice, prepared the follow-up, and updated the project manager packet. Yay, go us. Let's see what's next.
+```
 
 ### Handled Work Copy Rule
 
