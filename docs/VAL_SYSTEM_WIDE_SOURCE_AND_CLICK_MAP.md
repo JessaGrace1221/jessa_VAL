@@ -558,8 +558,73 @@ Rules:
 - The question box is scoped to the selected email thread and admitted relationship/project packet.
 - VAL asks only the missing information needed to create the draft.
 - VAL must not open a broad chat automatically.
-- When the user answers, VAL updates the draft packet and replaces the question box with the editable draft.
+- VAL asks one question at a time.
+- VAL tells the user how many questions it has.
+- After required questions are answered, VAL gives the user room to add any extra context.
+- VAL does not immediately generate the draft after the last answer.
+- The user clicks `Create draft` when ready.
+- When the user clicks `Create draft`, VAL updates the draft packet and replaces the question box with the editable draft.
 - The final action remains `Approve and send`.
+
+Example flow:
+
+```text
+I have three questions before I can draft this safely.
+
+Question 1 of 3: ...
+User answers.
+
+Thanks. Question 2 of 3: ...
+User answers.
+
+Great. Last question: ...
+User answers.
+
+Anything else you want VAL to know before I create the draft?
+[open text box]
+[Create draft]
+```
+
+The final open text box is important. The system should not constrain the user to only VAL's questions. The user may add additional context, wording, preferences, reminders, links, or instructions before creating the draft.
+
+### Scheduling Email Rule
+
+If an email asks about scheduling, availability, meeting times, or when to meet, VAL should prepare the scheduling answer.
+
+Scheduling phrases include:
+
+- "when are you available"
+- "when do you want to meet"
+- "can we schedule"
+- "what times work"
+- "are you free"
+- "pick a time"
+- similar meeting availability language
+
+Required behavior:
+
+1. Read the selected email thread and requested time window.
+2. Check the user's calendar availability.
+3. Offer three reasonable times within the requested window when possible.
+4. Include the user's calendar booking link as a fallback.
+5. If none of the suggested times work, invite the recipient to choose a time through the link.
+6. Keep the draft in VAL for review.
+7. User edits, then clicks `Approve and send`.
+
+Example draft logic:
+
+```text
+I can do Tuesday at 10:00, Wednesday at 1:30, or Thursday at 3:00.
+If none of those work, here is my calendar link and you can choose a time that works for you: {{user.calendar_booking_link}}
+```
+
+Onboarding must collect:
+
+```text
+{{user.calendar_booking_link}}
+```
+
+If the calendar link is missing, the right panel should ask for it as missing context and offer to save it for future scheduling replies.
 
 Example "What VAL did from this email":
 

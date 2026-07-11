@@ -180,6 +180,7 @@ Dedicated onboarding prompt suite:
 | Relief signals | `{{user.relief_signals}}` | new | array | user feedback, chat, transcript signals | Notice what creates calm or frisson. |
 | Priority rules | `{{user.priority_rules}}` | new/derived | array | Teach VAL, corrections, decisions | Define what counts as high priority. |
 | Approval preferences | `{{user.approval_preferences}}` | new/derived | object | rules, user decisions | Know what can be prepared vs executed. |
+| Calendar booking link | `{{user.calendar_booking_link}}` | new | string | Teach VAL onboarding, user settings, scheduling draft correction | Include as fallback in scheduling replies when suggested times do not work. |
 
 ## Important People Variables
 
