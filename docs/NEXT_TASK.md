@@ -33,6 +33,7 @@ The next work should replace the noisy broad Stewardship direction with the intr
 
 ```text
 docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
 ```
 
 Stewardship V1 has one purpose:
@@ -77,6 +78,8 @@ Who should meet whom, and why?
 
 After explicit implementation approval, make the introduction engine real without visual clutter:
 
+- replace the visible Stewardship drawer with the three-area UI in `docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md`
+- remove broad relationship-dashboard sections and generic action buttons from the Stewardship drawer
 - scan 90 days of sent mail recipients
 - add evidence-weighted admission from trusted relationship signals
 - admit only real people who pass trusted relationship gates
@@ -148,6 +151,7 @@ Before implementation, read:
 
 ```text
 docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
 ```
 
 The next Stewardship implementation step should follow that spec: use evidence-weighted admission with 90-day sent mail as the strongest automatic signal, reject inbound-only/spam/generic/unsubscribe/bulk-mail senders, build simple needs/offers/relationship/evidence packets, and show only suggested or manually-created introductions plus People/Find Matches.

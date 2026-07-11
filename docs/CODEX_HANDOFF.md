@@ -143,6 +143,7 @@ The current V1 source of truth is:
 
 ```text
 docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
 ```
 
 V1 purpose:
@@ -183,6 +184,8 @@ Emails with unsubscribe links or bulk-mail/list headers are spam or marketing, n
 ```
 
 Reject spam, newsletters, unsubscribe-link senders, bulk-mail/list senders, no-reply/system senders, generic mailboxes, receipts, notifications, scraped addresses, and company/mailbox records that are not real people.
+
+Calendar attendees are trusted contacts for Stewardship admission unless they are owner/self, private calendar blocks, resource rooms, system/no-reply addresses, or generic mailboxes.
 
 Do not reintroduce visible sections like:
 

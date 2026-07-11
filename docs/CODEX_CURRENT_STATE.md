@@ -44,9 +44,12 @@ The current Stewardship V1 product definition is now:
 
 ```text
 docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
 ```
 
 Use that V1 spec before changing the Stewardship drawer, relationship admission logic, person packets, introduction suggestions, or manual two-person comparison.
+
+Use `docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md` before changing visible Stewardship UI.
 
 The new V1 promise is:
 
@@ -119,6 +122,7 @@ For Stewardship, the next product direction is documentation-first and introduct
 - Suggested Introductions
 - Create an Introduction
 - People
+- V1 visible UI documented in `docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md`
 - evidence-weighted admission, with 90-day sent mail as the strongest automatic signal
 - block inbound-only/spam/generic/unsubscribe/bulk-mail senders from Stewardship
 - packets limited to needs, offers, relationship to user, and evidence
