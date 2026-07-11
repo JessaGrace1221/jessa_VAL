@@ -32,31 +32,41 @@ The app has been recovered to the July 10 live standard:
 
 ## Stewardship Packet Sorting Spec
 
-The current Stewardship direction is now documented in:
+The previous broad Stewardship direction is documented in:
 
 ```text
 docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
 ```
 
-Use that spec before changing the Stewardship drawer, relationship admission logic, person packets, stewardship moves, or relationship list sorting.
+However, on 2026-07-11 the user narrowed Stewardship V1 to introduction-only because the broader drawer became noisy and non-actionable.
 
-The executive goal is not "show relationships." The goal is:
-
-```text
-Create powerful packets for each real relationship, then sort those packets by executive usefulness.
-```
-
-More precisely:
+The current Stewardship V1 product definition is now:
 
 ```text
-Stewardship = Relationship Stewardship System.
-Primary product outcome = the most thoughtful next relationship move.
-Primary knowledge object = person packet.
-Primary action object = stewardship commitment or stewardship opportunity.
-Primary UI = promised stewardship moves, reviewable opportunities, and specific missing-context blockers.
+docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
 ```
 
-The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely prepare a thoughtful relationship move. The stewardship record is the action object that turns that packet knowledge into something the executive can review.
+Use that V1 spec before changing the Stewardship drawer, relationship admission logic, person packets, introduction suggestions, or manual two-person comparison.
+
+The new V1 promise is:
+
+```text
+Stewardship helps you make the right introductions by understanding what people need and what they can offer.
+```
+
+Do not implement general relationship management in Stewardship V1.
+
+Do not show relationship scores, temperature, dossiers, open loops, People To Watch, Active Stewardship, action piles, observer language, packet internals, or generic next-move management.
+
+The urgent identity/admission correction is:
+
+```text
+Recent sent-mail recipients are the strongest automatic admission signal, but not the only definition of a relationship.
+Inbound-only senders the user never replied to or emailed must not appear as relationships unless another trusted relationship signal admits them.
+Emails with unsubscribe links or bulk-mail/list headers are spam or marketing, not contacts.
+```
+
+Packets remain infrastructure, but the visible drawer exists to discover or create introductions.
 
 ## Absolute Guardrail
 
@@ -104,13 +114,16 @@ Live verification confirmed:
 
 Continue only from this live baseline.
 
-For Stewardship, the next approved product direction is to make source-backed relationship stewardship moves real:
+For Stewardship, the next product direction is documentation-first and introduction-only:
 
-- identify what thoughtful next move is warranted
-- explain why in plain executive language
-- support introductions, follow-ups, resources, check-ins, congratulations, questions, reminders, and waiting
-- draft or prepare work only after evidence is strong enough
-- place reviewable drafts or prepared work in Leverage
+- Suggested Introductions
+- Create an Introduction
+- People
+- evidence-weighted admission, with 90-day sent mail as the strongest automatic signal
+- block inbound-only/spam/generic/unsubscribe/bulk-mail senders from Stewardship
+- packets limited to needs, offers, relationship to user, and evidence
+- introduction outcome learning
+- drafts require explicit approval before any external action
 
 Do not rebuild the removed relationship dossier/card sections.
 

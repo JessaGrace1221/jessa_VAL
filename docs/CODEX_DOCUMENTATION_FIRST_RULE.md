@@ -121,17 +121,25 @@ Even then, if the fix changes product behavior, document the change afterward.
 
 For Stewardship specifically, the next work must document and receive feedback on the relationship-stewardship correction before implementation.
 
-The current direction is:
+As of 2026-07-11, the current direction is:
 
 ```text
-Stewardship = Relationship Stewardship System.
-Primary product outcome = the most thoughtful next relationship move.
-Primary knowledge object = person packet.
-Primary action object = stewardship commitment or stewardship opportunity.
-Primary UI = promised stewardship moves, reviewable opportunities, and missing-context blockers.
+Stewardship V1 = Introduction Engine.
+Primary product outcome = valuable introductions.
+Primary knowledge object = simple person packet with needs, offers, relationship, and evidence.
+Primary action object = suggested or manually-created introduction opportunity.
+Primary UI = Suggested Introductions, Create an Introduction, and People.
 ```
 
-Do not implement more relationship-profile, dossier, temperature, open-loop, or history surfaces until the user approves the relationship-stewardship documentation.
+Do not implement more relationship-profile, dossier, temperature, open-loop, People To Watch, Active Stewardship, score, generic next-move, or history surfaces.
+
+Do not implement the broader relationship-stewardship model unless the user explicitly re-approves expanding beyond introduction-only V1.
+
+Read first:
+
+```text
+docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+```
 
 The first required Stewardship product example is the Terrie and Kareemah connection case:
 
@@ -139,4 +147,12 @@ The first required Stewardship product example is the Terrie and Kareemah connec
 The user states in a transcript that they will introduce Terrie to Kareemah.
 ```
 
-The documentation must show how this becomes resolved person identities, updated person packets, an explicit stewardship commitment with subtype `introduction`, source-backed context, a clear reason the relationship move matters, a prepared introduction when sufficient context exists, a Stewardship review item, a Leverage draft, and no external action without user approval.
+The documentation must show how this becomes resolved person identities, updated needs/offers/relationship/evidence packets, a suggested introduction, a reviewable draft, and no external action without user approval.
+
+The current urgent admission rule is:
+
+```text
+Recent sent-mail recipients are the strongest automatic admission signal, but not the only definition of a relationship.
+Inbound-only senders the user never replied to or emailed must not appear as relationships unless another trusted relationship signal admits them.
+Emails with unsubscribe links or bulk-mail/list headers are spam or marketing, not contacts.
+```

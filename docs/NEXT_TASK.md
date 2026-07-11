@@ -29,37 +29,65 @@ The user now requires all relevant documentation before product/code changes so 
 
 The next Stewardship move is documentation-only unless the user explicitly approves implementation after reviewing the docs.
 
-The next work should continue the Stewardship drawer from the approved live baseline.
+The next work should replace the noisy broad Stewardship direction with the introduction-only V1 product definition:
 
-The user wants the next session to dig into the user's inbox as a context source for VAL onboarding and Stewardship.
+```text
+docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+```
+
+Stewardship V1 has one purpose:
+
+```text
+Help the executive make valuable introductions.
+```
+
+The drawer should reduce to:
+
+1. Suggested Introductions
+2. Create an Introduction
+3. People
+
+The user wants the next implementation to resolve the polluted relationship list urgently.
 
 Important:
 
-- Read/replied-to emails do not belong in the active Executive Inbox queue.
-- Those same read/replied-to emails may be essential context for VAL's understanding of people, projects, commitments, onboarding preferences, and stewardship opportunities.
-- Inbox, sent mail, and CC'd email context from the last 30 days should help VAL understand who matters, what has happened, and what thoughtful relationship move may be useful.
+- Recent sent mail from the last 90 days is the strongest automatic admission signal, not the entire definition of a relationship.
+- People the user sent email to are much safer relationship candidates than inbound-only senders.
+- Other trusted admission signals include replies, meaningful meeting participation, meaningful transcript participation, confirmed CRM contact, user-marked importance, manual selection, and prior approved introduction history.
+- Inbound-only email addresses the user never replied to or emailed must not appear as relationships unless another trusted relationship signal admits them.
+- Spam, newsletters, unsubscribe-link senders, bulk-mail/list senders, no-reply/system senders, generic mailboxes, receipts, notifications, and scraped addresses must be rejected from Stewardship.
+- Inbound mail may enrich a packet only after the person is admitted through a trusted relationship signal.
 
-The visible Stewardship person card should stay simple:
+The visible Stewardship output should stay simple:
 
-1. Who this person is and what they do.
-2. Who needs this person because this person has what they need.
-3. Who this person should meet because those people have what this person needs.
+1. Who should be introduced to whom.
+2. What each person needs.
+3. What each person offers.
+4. Why this introduction could matter.
+5. What evidence supports it.
+6. Review draft / approve / not now.
 
 The user wants to know:
 
 ```text
-What is the most thoughtful next move for this relationship?
+Who should meet whom, and why?
 ```
 
 ## Next Implementation Step
 
-Make the relationship stewardship logic real without adding visual clutter:
+After explicit implementation approval, make the introduction engine real without visual clutter:
 
-- use transcripts, emails, calendar context, projects, documents, and CRM context as evidence
-- produce reviewable stewardship move packets behind the scenes
-- show only the distilled move and why it matters
-- prepare drafts or review artifacts when a move is strong enough
-- send prepared work to Leverage for user approval
+- scan 90 days of sent mail recipients
+- add evidence-weighted admission from trusted relationship signals
+- admit only real people who pass trusted relationship gates
+- suppress inbound-only, unsubscribe, bulk-mail, spam, marketing, automated, and generic addresses
+- extract needs/offers/relationship/evidence into simple packets
+- create suggested introduction records from packet comparisons
+- let the user manually choose two people and compare their packets
+- add `Find Matches` from the People section
+- draft introductions only when both identities and evidence are strong enough
+- learn from introduction outcomes without exposing analytics
+- require explicit approval before sending anything
 
 ## Drawer Order After Stewardship
 
@@ -101,6 +129,8 @@ Read the source-of-truth docs before changing each drawer:
 ## Do Not Do
 
 - Do not restore old Relationship drawer sections.
+- Do not continue the broad relationship-stewardship UI.
+- Do not show People To Watch, Active Stewardship, relationship scores, temperature, dossiers, or generic action piles in Stewardship V1.
 - Do not show Round Table internals, packet internals, observer labels, debug copy, or architecture language.
 - Do not bring back `What VAL wants you to remember`, `Executive Judgment`, `Collaboration`, `Story`, or `Temperature Review`.
 - Do not deploy any waiting work from before `dbc5d57`.
@@ -117,10 +147,10 @@ Read the source-of-truth docs before changing each drawer:
 Before implementation, read:
 
 ```text
-docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
+docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
 ```
 
-The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, create first-class stewardship commitments/opportunities, sort by usefulness, and show stewardship move packets only when the evidence can support an executive review.
+The next Stewardship implementation step should follow that spec: use evidence-weighted admission with 90-day sent mail as the strongest automatic signal, reject inbound-only/spam/generic/unsubscribe/bulk-mail senders, build simple needs/offers/relationship/evidence packets, and show only suggested or manually-created introductions plus People/Find Matches.
 
 Before requesting implementation approval, documentation must include:
 
@@ -131,7 +161,7 @@ Before requesting implementation approval, documentation must include:
 - what conflicting UI/prompts/services/tests must be removed or prevented
 - at least one visible-output example
 
-The mandatory first example is the Terrie/Kareemah promised-introduction case in `docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md`.
+The mandatory first example is the Terry/Kareemah promised-introduction case in `docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md`.
 
 Run at minimum:
 

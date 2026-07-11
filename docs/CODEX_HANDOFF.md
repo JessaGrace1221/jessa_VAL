@@ -133,23 +133,56 @@ Preserve:
 
 The drawer is called `Stewardship`, not Relationships.
 
-The core philosophy:
+The prior broad philosophy was:
 
 > Your network is one of your greatest assets. Stewardship is how you care for it. Rather than simply storing contacts, VAL continuously looks for ways to create value, strengthen relationships, prepare meaningful follow-ups, and connect people who can genuinely help one another.
 
-Stewardship is not a CRM profile and not a project management dossier.
+On 2026-07-11, the user narrowed Stewardship V1 because the broader drawer became noisy and non-actionable.
 
-The visible person card must stay simple and executive:
+The current V1 source of truth is:
 
-1. Who this person is and what they do.
-2. Who needs this person because this person has what they need.
-3. Who this person should meet because those people have what this person needs.
+```text
+docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
+```
+
+V1 purpose:
+
+```text
+Stewardship helps the executive make valuable introductions.
+```
+
+Stewardship V1 is not a CRM profile, not a project management dossier, not relationship management, and not a generalized next-move engine.
+
+The visible drawer should reduce to:
+
+1. Suggested Introductions
+2. Create an Introduction
+3. People
+
+Packets remain infrastructure only. The executive should not browse packet machinery.
+
+The packet sections for V1 are:
+
+1. Needs
+2. Offers
+3. Relationship to user
+4. Evidence
 
 The primary question is:
 
 ```text
 Who needs to meet whom, and why?
 ```
+
+Urgent identity/admission correction:
+
+```text
+Recent sent-mail recipients are the strongest automatic admission signal, but not the only definition of a relationship.
+Inbound-only senders the user never replied to or emailed must not appear as relationships unless another trusted relationship signal admits them.
+Emails with unsubscribe links or bulk-mail/list headers are spam or marketing, not contacts.
+```
+
+Reject spam, newsletters, unsubscribe-link senders, bulk-mail/list senders, no-reply/system senders, generic mailboxes, receipts, notifications, scraped addresses, and company/mailbox records that are not real people.
 
 Do not reintroduce visible sections like:
 
@@ -158,6 +191,12 @@ Do not reintroduce visible sections like:
 - `Collaboration`
 - `Story`
 - `Temperature Review`
+- `People To Watch`
+- `Active Stewardship`
+- relationship score
+- relationship temperature
+- dossiers
+- generic action piles
 - raw round-table/debug/packet language
 - generic canonical relationship index filler
 

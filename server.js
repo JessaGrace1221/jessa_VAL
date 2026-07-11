@@ -9194,6 +9194,12 @@ function normalizeGmailMessage(md){
     snippet:md.snippet||'',
     bodyPreview:String(bodyText||'').slice(0,700),
     bodyText:String(bodyText||''),
+    headers:{
+      listUnsubscribe:header('List-Unsubscribe'),
+      listId:header('List-Id'),
+      precedence:header('Precedence'),
+      xCampaign:header('X-Campaign')||header('X-Mailchimp-Campaign-Id')||header('X-SES-Outgoing')
+    },
     labels:md.labelIds||[],
     hasAttachments:attachments,
     webLink:`https://mail.google.com/mail/u/0/#inbox/${md.threadId||md.id}`,
@@ -9268,6 +9274,86 @@ function emailLooksTransactionalOrBulk(email={}){
   if(/\b(auto-confirm|shipment-tracking)@amazon\.com\b/.test(text))return true;
   if(/\b(mastercard|new loan inquiry|loan offer|lending offer|prequalified|apply now)\b/.test(text)&&!emailHasRelationshipEvidence(email))return true;
   return false;
+}
+function relationshipRoleMailboxLocalPart(email=''){
+  const normalized=normalizeExecutiveEmailAddress(email);
+  return normalized ? normalized.split('@')[0] || '' : '';
+}
+function relationshipEmailIsGenericMailbox(email=''){
+  const local=relationshipRoleMailboxLocalPart(email);
+  return /^(info|support|hello|sales|admin|team|contact|office|newsletter|marketing|events?|webinars?|community|billing|invoice|payments?|orders?|receipts?|security|alerts?|updates?|notifications?|notify|no.?reply|donotreply|do.?not.?reply|mailer-daemon|postmaster|comments-noreply|workspace-noreply|drive-shares|azure-noreply)$/i.test(local);
+}
+function relationshipEmailLooksHumanNamed(name='',email=''){
+  const cleanName=String(name||'').replace(/["<>]/g,'').trim();
+  const local=relationshipRoleMailboxLocalPart(email);
+  if(cleanName&&/\s/.test(cleanName)&&!/(team|support|sales|newsletter|notification|billing|admin|community|events?|webinar|marketing|no.?reply)/i.test(cleanName))return true;
+  if(local&&/^[a-z]+[._-][a-z]+$/.test(local)&&!relationshipEmailIsGenericMailbox(email))return true;
+  return false;
+}
+function relationshipEmailHasUnsubscribeSignal(email={}){
+  const headers=email.headers||{};
+  const text=[
+    headers.listUnsubscribe,
+    headers['list-unsubscribe'],
+    headers.listId,
+    headers['list-id'],
+    email.subject,
+    email.snippet,
+    email.bodyPreview,
+    email.bodyText
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /\b(list-unsubscribe|unsubscribe|manage preferences|email preferences|update your preferences|view in browser|why am i receiving this|you are receiving this|opt out)\b/.test(text);
+}
+function relationshipEmailHasBulkSignal(email={}){
+  const headers=email.headers||{};
+  const text=[
+    headers.precedence,
+    headers.xCampaign,
+    headers['x-campaign'],
+    headers['x-mailchimp-campaign-id'],
+    headers['x-ses-outgoing'],
+    email.subject,
+    email.snippet,
+    email.bodyPreview,
+    email.bodyText,
+    email.from?.email,
+    email.from?.name
+  ].filter(Boolean).join(' ').toLowerCase();
+  return /\b(precedence:\s*bulk|bulk|x-campaign|mailchimp|constant contact|convertkit|substack|beehiiv|sendgrid|campaign|newsletter|digest|roundup|webinar|recommended jobs|job picks|promotion|promotional)\b/.test(text);
+}
+function relationshipContactQuality({email={},participant={},role=''}={}){
+  const address=normalizeExecutiveEmailAddress(participant.email||participant.address||'');
+  const display=String(participant.name||participant.displayName||'').trim();
+  const reasons=[];
+  if(!address&&!display)reasons.push('missing_person_identity');
+  if(address&&relationshipEmailIsGenericMailbox(address))reasons.push('generic_or_role_mailbox');
+  if(address&&/^(no.?reply|donotreply|mailer-daemon|postmaster)@/i.test(address))reasons.push('no_reply_or_system_mailbox');
+  if(relationshipEmailHasUnsubscribeSignal(email))reasons.push('unsubscribe_or_list_mail');
+  if(relationshipEmailHasBulkSignal(email))reasons.push('bulk_or_campaign_mail');
+  if(emailLooksAutomatedSystemNotice(email))reasons.push('automated_system_notice');
+  if(emailLooksTransactionalOrBulk(email))reasons.push('transactional_or_bulk_mail');
+  if(address&&!display&&!relationshipEmailLooksHumanNamed('',address))reasons.push('no_plausible_human_name');
+  const trustedSignals=[];
+  if(knownRelationshipEmailAlias(address))trustedSignals.push('known_alias');
+  if(participant.contactId||participant.crmContactId||participant.matchedContactId)trustedSignals.push('confirmed_contact');
+  if(emailWasSentByOwner(email)&&['to','cc','bcc'].includes(role))trustedSignals.push('recent_sent_recipient');
+  const metrics=email.senderMetrics||{};
+  if(role==='from'&&Number(metrics.outboundToSenderCount||metrics.sentToSenderCount||0)>0)trustedSignals.push('reciprocal_email');
+  const hardRejected=reasons.some(reason=>[
+    'generic_or_role_mailbox',
+    'no_reply_or_system_mailbox',
+    'unsubscribe_or_list_mail',
+    'bulk_or_campaign_mail',
+    'automated_system_notice',
+    'transactional_or_bulk_mail'
+  ].includes(reason))&&!trustedSignals.includes('confirmed_contact')&&!trustedSignals.includes('known_alias');
+  const identityRejected=reasons.includes('no_plausible_human_name')&&!trustedSignals.length;
+  return {
+    accepted:!hardRejected&&!identityRejected,
+    hardRejected:hardRejected||identityRejected,
+    reasons:[...new Set(reasons)],
+    trustedSignals:[...new Set(trustedSignals)]
+  };
 }
 function emailHasRelationshipEvidence(email={}){
   const metrics=email.senderMetrics||{};
@@ -9413,6 +9499,8 @@ function emailWasSentByOwner(email={}){
   return String(email.direction||'').toLowerCase()==='outbound' || labels.includes('SENT') || !!email.sentAt;
 }
 function emailParticipantIntakeEligible(email={},role='',participant={}){
+  const quality=relationshipContactQuality({email,role,participant});
+  if(!quality.accepted)return false;
   if(['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(String(email.classification||'').toLowerCase()))return false;
   if(participant.contactId||participant.crmContactId||participant.matchedContactId)return true;
   if(knownRelationshipEmailAlias(participant.email))return true;
@@ -9424,6 +9512,7 @@ function emailParticipantIntakeEligible(email={},role='',participant={}){
 function emailParticipantsJson(email){
   const participant=(role,p={})=>{
     const alias=knownRelationshipEmailAlias(p.email);
+    const quality=relationshipContactQuality({email,role,participant:p});
     const eligible=emailParticipantIntakeEligible(email,role,p);
     return {
       role,
@@ -9432,7 +9521,8 @@ function emailParticipantsJson(email){
       contactId:p.contactId||p.crmContactId||p.matchedContactId||'',
       source:'email_relationship_intake',
       relationshipIntake:eligible,
-      relationshipIntakeReason:eligible?(alias?.source||'reciprocal_or_linked_email_signal'):'inbound_or_unconfirmed_email_only'
+      relationshipIntakeReason:eligible?(alias?.source||quality.trustedSignals[0]||'reciprocal_or_linked_email_signal'):(quality.reasons[0]||'inbound_or_unconfirmed_email_only'),
+      relationshipContactQuality:quality
     };
   };
   const matched=email.matchedContact||{};
@@ -10247,6 +10337,8 @@ async function buildRelationshipReview({windowDays=7}={}){
     const cleanName=cleanPersonName(name,email),cleanEmail=normalizeContextEmail(email);
     if(isOwnerRelationship({name:cleanName,email:cleanEmail},owner)||(!cleanEmail&&(!cleanName||cleanName==='Unknown'))) return null;
     if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(cleanEmail)) return null;
+    const quality=relationshipContactQuality({email:{from:{name:cleanName,email:cleanEmail}},participant:{name:cleanName,email:cleanEmail},role:'from'});
+    if(quality.hardRejected) return null;
     const normalizedName=normalizeContextName(cleanName),normalizedCompany=normalizeContextName(company);
     let p=[...new Set(people.values())].find(existing=>(cleanEmail&&existing.email===cleanEmail)||(normalizedName&&normalizeContextName(existing.name)===normalizedName)||(normalizedName&&normalizedCompany&&normalizeContextName(existing.company)===normalizedCompany&&looseNameScore(existing.name,cleanName)>=0.5));
     const key=personKey(cleanName,cleanEmail);
@@ -10293,7 +10385,10 @@ async function buildRelationshipReview({windowDays=7}={}){
     if(!email) continue;
     if(!isMeaningfulRelationshipEmail(email)) continue;
     const evidence=relationshipEvidence('email',`${email.subject||'(No subject)'}: ${email.snippet||email.bodyPreview||''}`,email.receivedAt||email.date,'high',email.messageId);
-    relationshipEmailParticipants(email).filter(person=>!isOwnerRelationship(person,owner)).forEach(person=>addEvidence(touch(person),evidence));
+    relationshipEmailParticipants(email)
+      .filter(person=>!isOwnerRelationship(person,owner))
+      .filter(person=>relationshipContactQuality({email,participant:person,role:normalizeContextEmail(person.email)===normalizeContextEmail(email.from?.email)?'from':'to'}).accepted)
+      .forEach(person=>addEvidence(touch(person),evidence));
   }
   for(const ev of ghlEvents.concat(googleEvents)){
     if(!ev) continue;
@@ -15627,6 +15722,12 @@ function relationshipTargetsForObservation(evidenceItem={},observation={}){
     if(!clean.profileKey||seen.has(`${clean.profileType}:${clean.profileKey}`))return;
     if(clean.profileType==='person'&&isOwnerRelationship({name:clean.displayName,email:clean.email},owner))return;
     if(clean.profileType==='person'&&/^(no.?reply|notifications?|mailer-daemon)@/i.test(clean.email||''))return;
+    if(clean.profileType==='person'){
+      const metadata=clean.metadata||{};
+      const quality=metadata.relationshipContactQuality||metadata.contactQuality||null;
+      if(quality?.hardRejected||quality?.accepted===false)return;
+      if(metadata.relationshipIntakeReason&&/unsubscribe|bulk|campaign|generic|role_mailbox|system|transactional|inbound_or_unconfirmed/i.test(String(metadata.relationshipIntakeReason)))return;
+    }
     seen.add(`${clean.profileType}:${clean.profileKey}`);
     targets.push(clean);
   };
@@ -15638,7 +15739,7 @@ function relationshipTargetsForObservation(evidenceItem={},observation={}){
     const name=cleanPersonName(p.name||p.displayName||p.matchedContactName||'',p.email||p.matchedEmail||'');
     const email=normalizeContextEmail(p.email||p.matchedEmail||p.address||'');
     const alias=knownRelationshipEmailAlias(email);
-    if(name||email)add({profileType:'person',personId:p.personId||realRelationshipContactId(p.contactId||p.matchedContactId)||'',displayName:alias?.name||name||email,email,relationshipStatus:alias?.relationshipStatus||undefined,metadata:{participantRole:p.role||'',source:'evidence_participant',email,knownAlias:alias||null,relationshipIntakeReason:p.relationshipIntakeReason||''}});
+    if(name||email)add({profileType:'person',personId:p.personId||realRelationshipContactId(p.contactId||p.matchedContactId)||'',displayName:alias?.name||name||email,email,relationshipStatus:alias?.relationshipStatus||undefined,metadata:{participantRole:p.role||'',source:'evidence_participant',email,knownAlias:alias||null,relationshipIntakeReason:p.relationshipIntakeReason||'',relationshipContactQuality:p.relationshipContactQuality||null}});
     const company=p.company||p.matchedCompany||p.organization||p.organizationName||'';
     if(company)add({profileType:'organization',displayName:company,metadata:{source:'evidence_participant'}});
   }
@@ -16200,10 +16301,34 @@ function relationshipDisplayNameLooksLikeRawHandle(name='',email=''){
   return /^[a-z0-9._-]+$/.test(clean)&&!/\s/.test(clean);
 }
 function relationshipEmailLooksGeneric(email=''){
-  const normalized=normalizeContextEmail(email);
-  if(!normalized)return false;
-  const local=normalized.split('@')[0]||'';
-  return /^(info|support|hello|team|contact|admin|office|newsletter|marketing|receipts?|payments?|invoice|billing|orders?|cs|reply|donotreply|no.?reply|notifications?|comments-noreply|drive-shares|workspace-noreply|azure-noreply)$/i.test(local);
+  return relationshipEmailIsGenericMailbox(email);
+}
+function relationshipProfileContactQuality(profile={}){
+  const metadata=profile.metadata||{};
+  const email=relationshipProfilePrimaryEmail(profile);
+  const name=profile.displayName||profile.display_name||profile.name||'';
+  const stored=metadata.relationshipContactQuality||metadata.contactQuality||metadata.targetMetadata?.relationshipContactQuality||null;
+  const reasons=[];
+  const trustedSignals=[];
+  if(stored){
+    reasons.push(...(stored.reasons||[]));
+    trustedSignals.push(...(stored.trustedSignals||[]));
+    if(stored.hardRejected||stored.accepted===false)reasons.push('stored_contact_quality_rejected');
+  }
+  const intakeReason=String(metadata.relationshipIntakeReason||metadata.targetMetadata?.relationshipIntakeReason||'');
+  if(/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_plausible_human|inbound_or_unconfirmed/i.test(intakeReason))reasons.push(intakeReason);
+  if(email&&relationshipEmailIsGenericMailbox(email))reasons.push('generic_or_role_mailbox');
+  if(email&&/^(no.?reply|donotreply|mailer-daemon|postmaster)@/i.test(email))reasons.push('no_reply_or_system_mailbox');
+  if(email&&!name&&!relationshipEmailLooksHumanNamed('',email))reasons.push('no_plausible_human_name');
+  if(knownRelationshipEmailAlias(email))trustedSignals.push('known_alias');
+  if(relationshipProfileHasRealIdentity(profile))trustedSignals.push('confirmed_contact');
+  const hardRejected=reasons.some(reason=>/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_reply|no_plausible_human|stored_contact_quality_rejected|inbound_or_unconfirmed/i.test(String(reason)))&&!trustedSignals.includes('confirmed_contact')&&!trustedSignals.includes('known_alias');
+  return {
+    accepted:!hardRejected,
+    hardRejected,
+    reasons:[...new Set(reasons.filter(Boolean).map(String))],
+    trustedSignals:[...new Set(trustedSignals)]
+  };
 }
 function stewardshipRelationshipAdmission(profile={}){
   const email=relationshipProfilePrimaryEmail(profile);
@@ -16211,6 +16336,20 @@ function stewardshipRelationshipAdmission(profile={}){
   const rawHandle=relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email);
   const genericMailbox=relationshipEmailLooksGeneric(email);
   const metadata=profile.metadata||{};
+  const contactQuality=relationshipProfileContactQuality(profile);
+  if(contactQuality.hardRejected){
+    return {
+      admission_status:'rejected',
+      admitted:false,
+      reason:contactQuality.reasons[0]||'contact_quality_rejected',
+      relationship_signals:contactQuality.trustedSignals,
+      email,
+      alias:alias||null,
+      rawHandle,
+      genericMailbox,
+      contactQuality
+    };
+  }
   const decision=relationshipAdmissionDecision({
     contact:{
       contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'')||resolvedCrmContactId(profile)||'',
@@ -16243,7 +16382,8 @@ function stewardshipRelationshipAdmission(profile={}){
     email,
     alias: alias||null,
     rawHandle,
-    genericMailbox
+    genericMailbox,
+    contactQuality
   };
 }
 function relationshipTimelineHasOutboundOrReply(rows=[]){

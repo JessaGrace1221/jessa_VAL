@@ -2090,8 +2090,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthCss, /\.relationship-action-group/);
   assert.match(hearthCss, /\.relationship-actions\{[\s\S]{0,80}display:grid/);
   assert.match(hearthCss, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:30/);
-  assert.match(hearthCss, /\.drawer-tray\{\n  position:absolute;\n  z-index:6/);
+  assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:1300/);
+  assert.match(hearthCss, /\.drawer-tray\.relationship-open\{\n  position:absolute;\n  z-index:1301/);
   assert.match(hearthJs, /if\(hearth\.classList\.contains\('drawer-open'\)\) return;\n    handlePrimaryAction\(button\)/);
   assert.ok(
     hearthHtml.indexOf('class="relationship-actions"') > hearthHtml.indexOf('class="relationship-dossier-layer stewardship-network-map"'),

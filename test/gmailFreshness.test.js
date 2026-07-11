@@ -122,3 +122,19 @@ test('email sync captures evidence before actions and does not auto-create tasks
   assert.ok(logOnly>evidenceWrite,'email sync should log classification after evidence capture');
   assert.ok(firstTaskSave<0||firstTaskSave>server.indexOf("app.post('/api/email/actions'",syncStart),'email sync should not save tasks directly');
 });
+
+test('stewardship contact admission rejects unsubscribe bulk and generic senders',()=>{
+  assert.match(server,/function relationshipContactQuality/);
+  assert.match(server,/function relationshipEmailHasUnsubscribeSignal/);
+  assert.match(server,/function relationshipEmailHasBulkSignal/);
+  assert.match(server,/function relationshipEmailIsGenericMailbox/);
+  assert.match(server,/headers:\{\s*listUnsubscribe:header\('List-Unsubscribe'\)/);
+  assert.match(server,/relationshipContactQuality\(\{email,role,participant:p\}\)/);
+  assert.match(server,/relationshipIntakeReason:eligible\?\(alias\?\.source\|\|quality\.trustedSignals\[0\]\|\|'reciprocal_or_linked_email_signal'\):\(quality\.reasons\[0\]\|\|'inbound_or_unconfirmed_email_only'\)/);
+  assert.match(server,/relationshipContactQuality:p\.relationshipContactQuality\|\|null/);
+  assert.match(server,/quality\?\.hardRejected\|\|quality\?\.accepted===false/);
+  assert.match(server,/if\(contactQuality\.hardRejected\)/);
+  for(const token of ['List-Unsubscribe','manage preferences','view in browser','Precedence','X-Mailchimp','generic_or_role_mailbox','unsubscribe_or_list_mail','bulk_or_campaign_mail','transactional_or_bulk_mail']){
+    assert.match(server,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  }
+});
