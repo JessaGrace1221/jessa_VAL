@@ -1443,7 +1443,7 @@ Every dynamic top module must be tied to a real path.
 | Focus module | Trigger | Write target | Surface | User action | Receipt |
 |---|---|---|---|---|---|
 | Critical Project Issue | Payment issue, deadline, failed dependency, blocked/unclear owner, angry stakeholder, relationship tension, service/access risk, launch/legal/contract risk | Project Risk Packet + Project Manager Action Packet + recommended next move | Project top module and Alignment | Approve recommendation/draft, answer scoped question, add context, approve owner assignment | Issue receipt, updated project packet, Home handled receipt when resolved |
-| Needs Your Judgment | Missing decision blocks safe progress | Project Manager Judgment Packet + decision/action packet | Project top module | Choose, add context, hold | Decision receipt |
+| Needs Your Judgment | Option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action approval, unclear owner, or one missing answer blocks safe progress | Project Manager Judgment Packet + decision/action packet + prepared artifact when useful | Project top module, Alignment, Leverage if prepared work exists | Choose option, approve recommendation, add context, ask scoped question, prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | Prepared For You | Draft/SOP/workflow/document/follow-up prepared | Project Prepared Work Packet | Project top module/action layer, Leverage when reviewable | Review, refine, approve, reject | Prepared-work receipt |
 | Today's Reprioritization | Start of day or new evidence changes priority | Project Manager Focus Packet | Project top module | Accept, change priority, ask why | Reprioritization receipt |
 | Project Movement | Work completed/slipped, source added, meeting/document/dependency changed | Project Movement Packet | Project top module/recent activity | Open source, add context, ask what changed | Movement receipt |
@@ -1509,6 +1509,48 @@ VAL has 4 questions
   -> ask final question
   -> allow additional context
   -> continue preparing/resolving
+```
+
+Needs Your Judgment rules:
+
+```text
+Judgment needed
+  -> prepare clear options when options exist
+  -> recommend one path
+  -> attach brief clickable source proof
+  -> explain consequence if delayed
+  -> prepare action packet
+  -> prepare draft/artifact when useful and route it to Leverage
+  -> place judgment at top of Project Manager page
+  -> route consequential judgment to Alignment
+```
+
+One-answer blocker:
+
+```text
+I need one answer before I can prepare this.
+```
+
+If one missing answer blocks project movement or prepared work, it belongs in Alignment.
+
+Owner assignment:
+
+```text
+VAL can infer likely owner from evidence, but must ask before assigning ownership when the assignment is consequential or ambiguous.
+```
+
+Use:
+
+```text
+Put a pin in it.
+```
+
+Do not use `not now` as the primary label.
+
+Decision receipt should be one simple line:
+
+```text
+VAL just updated the project plan.
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:

@@ -522,6 +522,11 @@ Dedicated prompt suite:
 | Critical issue source proof | `{{projects.current.critical_project_issue.source_proof}}` | new/derived | object | source receipt linker | One-sentence clickable source proof, never a long source dump. |
 | Critical issue recommended move | `{{projects.current.critical_project_issue.recommended_move}}` | new/derived | object | Project Manager Round Table | Next recommended move, draft if useful, owner suggestion requiring approval when applicable. |
 | Critical issue handled receipt | `{{projects.current.critical_project_issue.handled_receipt}}` | new/derived | object | source processing spine | Home welcome/context receipt shown when the issue is actually handled. |
+| Needs judgment item | `{{projects.current.needs_judgment_item}}` | new/derived | object | Project Manager Round Table | Decision item requiring user judgment before safe progress. |
+| Needs judgment options | `{{projects.current.needs_judgment_item.options}}` | new/derived | array | Project Manager Round Table | Clear options when the user needs to choose between paths. |
+| Needs judgment recommendation | `{{projects.current.needs_judgment_item.recommendation}}` | new/derived | object | Project Manager Round Table | VAL's recommended path with brief source proof and consequence if delayed. |
+| One-answer blocker | `{{projects.current.needs_judgment_item.one_answer_blocker}}` | new/derived | object | Project Manager Round Table | "I need one answer before I can prepare this" item for Alignment when blocking movement or prepared work. |
+| Judgment decision receipt | `{{projects.current.needs_judgment_item.decision_receipt}}` | new/derived | object | source processing spine | One-line receipt after the user decides or puts a pin in it. |
 | Project charter | `{{projects.current.charter}}` | new/derived | object | Project Manager Round Table, project interview | Business case, purpose, goals, scope, timeline, stakeholders, risks. |
 | Project constraints | `{{projects.current.constraints}}` | new/derived | object | Project Manager Round Table | Scope, time, cost, quality trade-offs and impacts. |
 | Project lifecycle phase | `{{projects.current.lifecycle_phase}}` | new/derived | enum/object | Project Manager Round Table | Initiation, planning, execution, monitor/control, closure, plus current phase evidence. |

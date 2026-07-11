@@ -877,7 +877,7 @@ The top module must be backed by a Project Manager Action Packet or Project Mana
 | Module | Trigger | What VAL must do | Visible surface | User action | Receipt |
 |---|---|---|---|---|---|
 | `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, angry stakeholder, relationship tension, high-risk trade-off | Create risk/next-action packet, notify Alignment, update project status, prepare next recommended move | Top module, Alignment, Project action layer | Approve recommendation, approve draft, answer scoped question, add context, approve owner assignment | Issue receipt + updated project packet + handled Home receipt when resolved |
-| `Needs Your Judgment` | PM cannot safely move without user decision | Create decision packet with options, recommendation, source proof, consequences | Top module and Project action layer | Choose option, add context, hold | Decision receipt |
+| `Needs Your Judgment` | PM cannot safely move without user judgment, especially option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action, or one missing answer | Create decision packet with options, recommendation, brief source proof, consequence if delayed, and action/prepared-work packet when possible | Top module, Alignment, Project action layer, Leverage if VAL prepared something | Choose option, approve recommendation, add context, ask scoped question, ask VAL to prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | `Prepared For You` | VAL prepared draft, SOP, workflow, note, schedule, document, or follow-up | Persist artifact, link to project/source, register in Leverage if reviewable | Top module or action layer; Leverage when appropriate | Review, refine, approve, reject | Prepared-work receipt |
 | `Today's Reprioritization` | Start of day, new source since last review, changed priority/risk | Re-rank project priorities, identify risk today, clarify who needs context | Top module | Accept priority, ask why, change priority | Reprioritization receipt |
 | `Project Movement` | Task completed/slipped, source added, meeting happened, document changed, dependency moved | Create movement packet and update current reality | Top module or recent activity | Open source, add context, ask what changed | Movement receipt |
@@ -981,6 +981,92 @@ Example:
 
 ```text
 I handled the payment issue for Project XYZ. VAL linked the invoice, prepared the follow-up, and updated the project manager packet. Yay, go us. Let's see what's next.
+```
+
+### Needs Your Judgment Contract
+
+Needs Your Judgment is the decision layer. It appears when the Project Manager cannot safely move the project without the user's judgment.
+
+Counts as needing judgment:
+
+- choosing between options
+- unclear owner
+- strategic trade-off
+- sensitive relationship decision
+- approving scope change
+- deciding whether to escalate
+- approving external action
+- confirming whether VAL should create, send, schedule, assign, or update something
+- one missing answer before VAL can prepare the work
+
+Where it appears:
+
+```text
+Needs judgment
+  -> top of Project Manager page
+  -> Home Alignment card
+  -> Leverage if VAL prepared a reviewable draft/artifact/action packet
+```
+
+Anything consequential belongs in Alignment.
+
+Before asking the user, VAL should prepare:
+
+- clear options when there are options
+- VAL's recommendation
+- brief clickable source proof
+- consequence if delayed
+- action packet when an action may follow
+- draft/prepared artifact when useful, then place it in Leverage
+
+Owner handling:
+
+VAL should know who the work appears to belong to when the evidence is clear. If assigning ownership creates consequence or ambiguity, VAL should ask before assignment.
+
+One-answer blocker:
+
+```text
+I need one answer before I can prepare this.
+```
+
+This should appear in Alignment when the missing answer blocks meaningful project movement or prepared work.
+
+Allowed actions:
+
+- choose option
+- approve VAL's recommendation
+- add context
+- ask scoped question
+- ask VAL to prepare a draft
+- approve external action
+- put a pin in it
+
+Use executive language:
+
+```text
+Put a pin in it.
+```
+
+Do not use `not now` as the primary user-facing action label.
+
+Receipt rule:
+
+After the user decides, the receipt should be one simple line:
+
+```text
+VAL just updated the project plan.
+```
+
+or:
+
+```text
+VAL just prepared the follow-up for review.
+```
+
+or:
+
+```text
+VAL just put a pin in this and will keep watching it.
 ```
 
 ### Handled Work Copy Rule
