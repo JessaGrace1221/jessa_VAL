@@ -2456,10 +2456,22 @@ button,a{font:inherit}
   pointer-events:none;
 }
 .retrieval-system.open{
-  z-index:30;
+  z-index:1300;
 }
 .retrieval-system[data-active-drawer="correspondence"]{
   width:min(1180px,calc(100vw - 80px));
+}
+.retrieval-system[data-active-drawer="relationship"]{
+  inset:0;
+  left:0;
+  bottom:0;
+  width:auto;
+  transform:none;
+  perspective:none;
+}
+.retrieval-system[data-active-drawer="relationship"]::before,
+.retrieval-system[data-active-drawer="relationship"] .drawer-pull{
+  display:none;
 }
 .retrieval-system::before{
   content:"";
@@ -5269,15 +5281,19 @@ button.drawer-link{
 .relationship-rolodex-section button{
   width:max-content;
   max-width:100%;
-  border:0;
-  background:transparent;
-  padding:0;
+  border:1px solid rgba(91,105,79,.18);
+  border-radius:999px;
+  background:rgba(255,249,239,.54);
+  padding:7px 11px;
   text-align:left;
   cursor:pointer;
+  box-shadow:0 8px 18px rgba(18,24,18,.06);
 }
 .relationship-rolodex-section button:hover,
 .relationship-rolodex-section button:focus-visible{
   color:rgba(91,105,79,.95);
+  border-color:rgba(91,105,79,.32);
+  background:rgba(255,255,250,.84);
   outline:none;
 }
 .relationship-rolodex-section span{
@@ -5779,9 +5795,29 @@ button.drawer-link{
   box-shadow:0 10px 22px rgba(79,48,38,.12);
 }
 .drawer-tray.relationship-open{
+  position:absolute;
+  z-index:1301;
+  inset:24px 30px 18px;
+  max-height:none;
+  overflow:auto;
+  overscroll-behavior:contain;
   background:var(--frost-open-surface);
   border-color:var(--frost-open-line);
   box-shadow:var(--frost-open-shadow),inset 0 1px 0 rgba(255,255,255,.82);
+}
+.drawer-tray.relationship-open .relationship-detail{
+  min-height:0;
+}
+.drawer-tray.relationship-open .relationship-detail.show-index{
+  display:grid;
+  grid-template-rows:auto auto minmax(220px,1fr);
+}
+.drawer-tray.relationship-open .relationship-rolodex{
+  max-height:none;
+  min-height:220px;
+}
+.drawer-tray.relationship-open .relationship-rolodex[data-relationship-density="compact"]{
+  max-height:none;
 }
 .relationship-detail,
 .relationship-detail .relationship-dossier-layer,
@@ -6450,6 +6486,7 @@ button.drawer-link{
   .drawer-pull:hover,.drawer-pull[aria-expanded="true"]{transform:none}
   .drawer-tray{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden}
   .retrieval-system.open .drawer-tray{max-height:min(70vh,640px);padding:18px;margin-top:0;overflow:auto}
+  .drawer-tray.relationship-open{position:absolute;inset:12px;max-height:none;padding:18px;overflow:auto}
   .drawer-cowork-orb{right:18px;bottom:86px;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
       .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.stewardship-network-grid,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.project-manager-operating-system,.project-manager-judgment,.project-manager-grid,.project-manager-sop-grid,.project-manager-columns,.project-manager-story,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}

@@ -2183,7 +2183,9 @@ function appendRelationshipSectionHeader(state, count){
   header.className = 'relationship-rolodex-section';
   header.dataset.relationshipSection = state;
   const title = document.createElement(state === 'people_to_watch' ? 'button' : 'strong');
-  title.textContent = copy.title;
+  title.textContent = state === 'people_to_watch'
+    ? (relationshipPeopleToWatchExpanded ? 'Hide People To Watch' : 'Show People To Watch')
+    : copy.title;
   if(state === 'people_to_watch'){
     title.type = 'button';
     title.dataset.relationshipToggleWatch = '1';
@@ -2193,7 +2195,9 @@ function appendRelationshipSectionHeader(state, count){
   note.textContent = copy.note;
   const total = document.createElement('small');
   if(state === 'people_to_watch'){
-    total.textContent = count + ' ' + (count === 1 ? 'relationship is' : 'relationships are') + ' being monitored. No action is needed.';
+    total.textContent = relationshipPeopleToWatchExpanded
+      ? count + ' monitored ' + (count === 1 ? 'relationship' : 'relationships') + ' shown.'
+      : count + ' ' + (count === 1 ? 'relationship is' : 'relationships are') + ' being monitored. Open when you want to review them.';
   }else{
     total.textContent = count + ' ' + (count === 1 ? 'person' : 'people');
   }
@@ -11754,6 +11758,7 @@ async function runTeachVal(mode){
 
 function restoreRelationshipWindow(){
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'relationship';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
   drawerTray.setAttribute('aria-hidden', 'false');
@@ -15210,9 +15215,11 @@ relationshipDrawerLink.addEventListener('click', () => {
   relationshipDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#relationship-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
+    retrievalSystem.dataset.activeDrawer = 'relationship';
     drawerIndexPacketReceipt({node:relationshipDrawerLink, packetName:'relationship_packet', action:'drawer:relationships', label:'Stewardship drawer', downstreamConsumers:['relationship_drawer','project_packet','email_packet','home_source_packet']});
     openRelationshipIndex();
   } else {
+    retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
 });
@@ -15363,11 +15370,13 @@ closeRelationshipDetail.addEventListener('click', () => {
   const detail = document.querySelector('#relationship-detail');
   if(detail?.classList.contains('show-index')){
     drawerTray.classList.remove('relationship-open');
+    retrievalSystem.removeAttribute('data-active-drawer');
     relationshipDrawerLink.setAttribute('aria-expanded', 'false');
     detail.setAttribute('aria-hidden', 'true');
     return;
   }
   drawerTray.classList.add('relationship-open');
+  retrievalSystem.dataset.activeDrawer = 'relationship';
   relationshipDrawerLink.setAttribute('aria-expanded', 'true');
   detail?.setAttribute('aria-hidden', 'false');
   openRelationshipIndex();
