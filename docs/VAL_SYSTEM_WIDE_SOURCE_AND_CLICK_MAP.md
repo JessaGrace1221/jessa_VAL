@@ -774,6 +774,8 @@ Do not write a visible "No action taken" sentence in the primary email detail. T
 
 This is the cleanest boundary because the Co-Work packet can explicitly name the allowed context and block everything else.
 
+Co-Work should follow `VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md`: a full executive workspace with previous conversations on the left, open working space, clear composer, obvious voice controls, and scoped context boundaries.
+
 Allowed context:
 
 - the selected latest email
@@ -2049,6 +2051,8 @@ Required stable elements:
 Do not redesign this panel during the source-spine work unless the user explicitly asks for it.
 
 The panel may show quiet contextual notices only when they support the existing panel purpose and do not replace the calendar/Co-Work/Teach VAL functions.
+
+The Co-Work control should open the full Co-Work workspace described in `VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md`, not a cramped chat widget.
 
 Inputs:
 
