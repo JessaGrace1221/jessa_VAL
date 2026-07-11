@@ -375,8 +375,10 @@ Dedicated classification prompt suite:
 | Executive meaning | `{{emails.current.executive_meaning}}` | new/derived | array | Executive Inbox classification | Explain why surfaced. |
 | If delayed | `{{emails.current.if_delayed}}` | new/derived | string | Executive Inbox classification | Timing consequence. |
 | Notice lane | `{{emails.current.notice_lane}}` | new/derived | enum | email classifier | Quiet Notices, Executive Inbox, Alignment candidate, Documents, Projects, or suppress. |
+| Notice surface posture | `{{emails.current.notice_surface_posture}}` | new/derived | enum | email classifier | Quiet lower-right control, Alignment escalation, Executive Inbox escalation, or hidden/source-only. |
 | Operational alert type | `{{emails.current.operational_alert_type}}` | new/derived | enum | email classifier | Receipt, invoice, shipping, login_security, two_factor, automated_notification, payment_issue, deadline, service_risk, other. |
 | Finance/project document signal | `{{emails.current.finance_project_document_signal}}` | new/derived | object | document/project observer | Receipt/invoice attachment handling, project finance evidence, suggested project creation. |
+| Project assignment action | `{{emails.current.project_assignment_action}}` | new/derived | object | document/project observer | "Assign this to a project" action with existing project options or new project creation when match is unclear. |
 | Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to/CC/BCC, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
 | Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
 | Suppression override evidence | `{{emails.current.suppression_override_evidence}}` | new/derived | array | relationship resolver | Calendar, transcript, sent/replied email, or manual important evidence that can override unsubscribe/bulk suppression. |

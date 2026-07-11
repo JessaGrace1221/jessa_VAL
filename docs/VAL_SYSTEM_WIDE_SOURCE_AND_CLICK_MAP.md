@@ -507,9 +507,10 @@ Receipt or invoice email arrives
   -> store source
   -> inspect attachments carefully
   -> route PDFs/attachments to Documents
-  -> link to existing project when clear
+  -> automatically link to obvious matching project when clear
   -> create project/finance evidence when relevant
-  -> suggest project creation when the financial document implies a project but none exists
+  -> if project match is unclear, create Quiet Notices action: "Assign this to a project"
+  -> user may attach to an existing project or create a new project
 ```
 
 Reason:
@@ -537,6 +538,17 @@ Quiet Notices is a secondary, low-pressure lane:
 This is here if you need it.
 ```
 
+Quiet Notices should be visually quiet, such as a small lower-right control or drawer entry. It should not compete with Home, Executive Inbox, Alignment, or Leverage.
+
+Default posture:
+
+```text
+Quiet lower-right notice
+  -> opens Notices / Notifications
+  -> shows low-pressure operational items
+  -> includes "Assign this to a project" when a receipt/invoice needs placement
+```
+
 If any receipt, invoice, system notice, or automated email contains an important deadline, payment issue, service interruption, account access risk, or other consequence, it should become executive-worthy.
 
 Required escalation:
@@ -545,6 +557,7 @@ Required escalation:
 System/finance notice contains deadline or payment issue
   -> Executive Inbox
   -> Home Alignment priority candidate
+  -> Alignment drawer/card if it becomes the top priority
   -> relevant project/document packet
   -> no relationship packet unless separate relationship evidence exists
 ```
@@ -1228,6 +1241,8 @@ Every document must answer:
 | Existing project match | Link document to project packet. |
 | Person-specific document | Link document to person packet. |
 | Unknown project but clear ongoing work | Suggested project review update. |
+| Receipt/invoice with obvious project match | Automatically link to project and create finance/project evidence. |
+| Receipt/invoice with unclear project match | Quiet Notices action: "Assign this to a project." |
 | Contract/proposal/SOW/invoice | Project + external action risk gate. |
 | Reference document | Document library only unless relevance admits. |
 
