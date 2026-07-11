@@ -1472,7 +1472,7 @@ Every dynamic top module must be tied to a real path.
 | Project Movement | Forward/backward movement: task, document, payment, question, clarification, meeting, dependency, status, or open-loop change | Project Movement Packet + open-loop update | Home welcome/context, Project top module/recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | Execution Adjustment | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Project Execution Adjustment Packet + plan/draft update when useful | Project top module; Alignment only when open-loop judgment is needed; Velocity if project reality moved; Leverage if prepared work exists | Accept adjustment, choose another option, ask alternatives, add context, update project plan, draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
 | Project Reset | End of day, after meetings, after major actions, after open loops change, when user opens VAL the next morning, or stale open loops need restatement | Project Reset Packet | Project page always; Home welcome/context only when something shifted or needs attention; Velocity when meaningful movement is recorded; Alignment only when an unresolved open loop needs the user | Confirm, add context, prepare tomorrow's first move, create task, put a pin in it until date/time | Reset receipt |
-| Quietly Watching | No user action needed but monitoring rules exist | Project monitoring rule/status packet | Project top module only when nothing higher exists | Open watcher, add context, change rule | Monitoring receipt |
+| Quietly Watching | No user action needed but project monitoring rules exist | Project watch item + Board of Observers summary | Board of Observers project-by-project top section; Project page quiet section or top module only when nothing higher exists; Home only when watch condition changes | Open watcher, change rule, add context, prepare next move, put a pin in it, stop watching | Watching receipt |
 
 Path:
 
@@ -1830,6 +1830,74 @@ Receipt example:
 
 ```text
 VAL just reset this project for tomorrow: two loops closed, one decision still needs you.
+```
+
+Quietly Watching / Board of Observers rules:
+
+```text
+Source or user action creates a monitoring condition
+  -> identify project if applicable
+  -> write project watch item
+  -> add/update Board of Observers project summary
+  -> keep watching without creating a task
+  -> escalate only when the watched condition changes or becomes actionable
+```
+
+The Board of Observers is the primary surface for quiet watching.
+
+Top section:
+
+```text
+Project-by-project watching summary
+Projects listed alphabetically for now
+```
+
+Each project watch summary should show:
+
+```text
+Project name
+What VAL is observing
+What would trigger action
+Last checked or source proof
+Whether anything needs the user
+Available actions
+```
+
+Actions:
+
+```text
+Open source
+Change a rule
+Add context
+Ask VAL to prepare something
+Put a pin in it
+Stop watching
+```
+
+Layout rule:
+
+```text
+Board of Observers top: project-by-project watching summary
+Board of Observers below: existing observer details, diagnostics, and observer-specific information
+```
+
+Home rule:
+
+```text
+Quiet watching does not show on Home by default.
+Home may show quiet watching only when a watch condition changes, becomes actionable, or the user explicitly opens a watching surface.
+```
+
+Alignment rule:
+
+```text
+A watched item becomes Alignment only when it becomes an open loop needing executive attention.
+```
+
+Receipt example:
+
+```text
+VAL is watching for Anthony's signed agreement. No action is needed right now.
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:

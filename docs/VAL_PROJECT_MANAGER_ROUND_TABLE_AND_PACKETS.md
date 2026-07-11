@@ -911,7 +911,7 @@ Closed loops should leave Alignment and produce a simple receipt.
 | `Project Movement` | Forward or backward movement: task/document/payment/question/clarification/meeting/dependency/status/open-loop change | Create movement packet with direction, update current reality, update open loops, feed Velocity and Project | Home welcome/context, Project top module or recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, ask VAL to prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | `Execution Adjustment` | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Make the trade-off explicit, show options, recommend the least-risk path, and prepare plan/draft updates when useful | Project top module; Alignment only when the trade-off creates an open loop needing judgment; Velocity if it reflects movement; Leverage if VAL prepared work | Accept VAL's adjustment, choose another option, ask for alternatives, add context, ask VAL to update the project plan, ask VAL to draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
 | `Project Reset` | End of day, after meetings, after major actions, after open loops change, and when the user opens VAL the next morning | Summarize what moved, what closed, what opened, what remains unresolved, and tomorrow's likely first move | Project page always; Home welcome/context only when something shifted or needs attention; Velocity when reset records meaningful movement; Alignment only if an unresolved loop needs the user | Confirm, add context, ask VAL to prepare tomorrow's first move, create task, put a pin in it until date/time | Reset receipt |
-| `Quietly Watching` | Nothing needs user attention but monitoring rules exist | Show what VAL is watching and why no action is needed | Top module only when no higher module exists | Open watcher, add context, change watch rule | Monitoring receipt |
+| `Quietly Watching` | Nothing needs user attention but project monitoring rules exist | Write project watch items to the Board of Observers and show what VAL is watching without creating a task | Board of Observers project-by-project top section; Project page lower/quiet section or top module only when no higher module exists; Home only if a watch condition changes | Open watcher, change rule, add context, ask VAL to prepare next move, put a pin in it, stop watching | Watching receipt |
 
 ### Module Path Completeness
 
@@ -1574,6 +1574,92 @@ Receipt:
 
 ```text
 VAL just reset this project for tomorrow: two loops closed, one decision still needs you.
+```
+
+### Quietly Watching / Board Of Observers Contract
+
+Quietly Watching is the monitoring layer.
+
+It should make the Board of Observers more powerful by showing what VAL is actively watching across projects without turning every watched item into a task, alert, or Alignment item.
+
+Primary surface:
+
+```text
+Board of Observers
+```
+
+The top portion of the Board of Observers page should be project-by-project.
+
+Default ordering:
+
+```text
+Projects listed alphabetically for now.
+```
+
+Each project row/section should answer:
+
+```text
+Project name
+What VAL is observing on this project
+What would trigger action
+Last checked or last source proof
+Whether anything needs the user
+Available actions
+```
+
+Examples of watched items:
+
+- waiting for a reply
+- waiting for payment
+- waiting for a document
+- watching a launch dependency
+- watching stakeholder tension
+- watching until a pinned date/time
+- watching a project handoff
+- watching whether a promised action happens
+- watching whether a relationship or team dynamic improves/worsens
+
+Required actions should always be available from the Board of Observers watch item:
+
+- change a rule
+- add context
+- ask VAL to prepare something
+- open source
+- put a pin in it
+- stop watching
+
+The Board of Observers layout should be:
+
+```text
+Top: project-by-project watching summary
+Below: existing Board of Observers details, diagnostics, and observer-specific information
+```
+
+Do not remove the lower existing observer details. The project-by-project watching summary should sit above them.
+
+Project page rule:
+
+```text
+Project pages may show Quietly Watching in a lower/quiet section, or as the top module only when no higher-priority module exists.
+```
+
+Home rule:
+
+```text
+Home should not show quiet watching by default.
+Home may show it only when a watch condition changes, a watched item becomes actionable, or the user explicitly opens a "what are you watching?" surface.
+```
+
+Alignment rule:
+
+```text
+Quietly Watching becomes Alignment only when a watched item becomes an open loop needing executive attention.
+```
+
+Receipt:
+
+```text
+VAL is watching for Anthony's signed agreement. No action is needed right now.
 ```
 
 ### Handled Work Copy Rule
