@@ -121,11 +121,11 @@ For Stewardship, the next product direction is documentation-first and introduct
 
 - Suggested Introductions
 - Create an Introduction
-- People
+- Network
 - V1 visible UI documented in `docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md`
 - evidence-weighted admission, with 90-day sent mail as the strongest automatic signal
 - block inbound-only/spam/generic/unsubscribe/bulk-mail senders from Stewardship
-- packets limited to needs, offers, relationship to user, and evidence
+- packets limited to needs, offers, relationship to user, internal constraints, and evidence
 - introduction outcome learning
 - drafts require explicit approval before any external action
 

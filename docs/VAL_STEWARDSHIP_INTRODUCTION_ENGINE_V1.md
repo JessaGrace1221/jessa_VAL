@@ -87,8 +87,7 @@ Example:
 ```text
 Greg <-> Michele
 
-Greg is looking for organizations exploring executive AI.
-Michele helps leadership teams adopt AI responsibly.
+Because Greg is looking for executive AI adoption partners, and Michele has spent years helping leadership teams implement AI responsibly.
 
 Confidence: High
 
@@ -103,6 +102,8 @@ Review Draft
 Rules:
 
 - Every suggested introduction must lead to draft review.
+- Every suggested introduction must have a single clear `Because...` sentence.
+- If VAL cannot write that sentence cleanly, the suggestion should not appear.
 - No suggestion may appear only because two people share a keyword.
 - No suggestion may appear without source evidence from both sides.
 - No external message may be sent without explicit approval.
@@ -154,11 +155,11 @@ I do not see a strong reason to introduce these two yet.
 
 - If identity or evidence is insufficient, the draft button should be blocked with a plain reason.
 
-### 3. People
+### 3. Network
 
 Purpose:
 
-Provide a searchable set of admitted people that supports introduction decisions.
+Provide a searchable relationship network that supports introduction decisions.
 
 This is not a CRM.
 
@@ -169,7 +170,7 @@ It should support one introduction-centered workflow:
 - search
 - select
 - inspect needs, offers, and evidence
-- find matches
+- see best matches automatically
 - create introductions
 
 Each person should show only enough to support introduction decisions:
@@ -181,16 +182,16 @@ Each person should show only enough to support introduction decisions:
 - recent evidence
 - introduction readiness
 
-Primary person action:
+When a person is opened, VAL should already compare that person against the admitted network and show:
 
 ```text
-Find Matches
+Best Matches
 ```
 
-Clicking `Find Matches` asks:
+If an explicit command is still needed, use:
 
 ```text
-Who in your network best complements this person's needs and offers?
+Who Should [Name] Meet?
 ```
 
 VAL should then compare the selected person's packet against other admitted person packets and return possible introductions, not a generic profile view.
@@ -237,10 +238,32 @@ Each V1 person packet should maintain only these living sections:
       "last_seen_at": ""
     }
   ],
+  "constraints": [
+    {
+      "constraint": "",
+      "type": "preference|avoidance|already_knows|timing|consent_required|sensitivity|missing_piece",
+      "evidence": [],
+      "confidence": "low|medium|high",
+      "last_seen_at": ""
+    }
+  ],
   "evidence": [],
   "introduction_readiness": "not_ready|needs_review|ready"
 }
 ```
+
+Constraints are internal unless they explain why an introduction is recommended, blocked, or should be consent-first.
+
+Examples:
+
+- looking for nonprofit leadership
+- not looking for venture capital
+- prefers warm introductions only
+- avoids vendors
+- already knows Greg
+- recently declined AI consulting
+- already working together
+- do not introduce without asking first
 
 Everything else can wait.
 
@@ -511,12 +534,13 @@ Good:
 ```text
 Suggested Introductions
 Create Introduction
-People
+Network
 Needs
 Offers
 Why this could matter
 Evidence
-Find Matches
+Best Matches
+Who Should [Name] Meet?
 Review Draft
 Approve Introduction
 Not now
@@ -652,7 +676,7 @@ After approval, implement in this order:
 6. Reduce packet extraction to needs, offers, relationship, evidence.
 7. Replace the current Stewardship drawer with the three V1 areas.
 8. Add manual two-person introduction comparison.
-9. Add `Find Matches` from a selected person.
+9. Add automatic `Best Matches` from a selected Network person.
 10. Add suggested introduction records.
 11. Add draft review with approval required.
 12. Add introduction outcome learning.

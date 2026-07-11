@@ -158,7 +158,7 @@ The visible drawer should reduce to:
 
 1. Suggested Introductions
 2. Create an Introduction
-3. People
+3. Network
 
 Packets remain infrastructure only. The executive should not browse packet machinery.
 
@@ -167,7 +167,8 @@ The packet sections for V1 are:
 1. Needs
 2. Offers
 3. Relationship to user
-4. Evidence
+4. Internal constraints / missing pieces
+5. Evidence
 
 The primary question is:
 

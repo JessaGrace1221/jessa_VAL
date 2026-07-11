@@ -73,7 +73,7 @@ The drawer has exactly three primary areas.
 
 1. Suggested Introductions
 2. Create An Introduction
-3. People
+3. Network
 
 No other primary Stewardship areas should appear in V1.
 
@@ -105,7 +105,7 @@ Empty state:
 ```text
 No suggested introductions are ready yet.
 
-VAL is still learning what people need and offer. You can create an introduction manually or open People to find matches.
+VAL is still learning what people need and offer. You can create an introduction manually or open Network to discover possible matches.
 ```
 
 Suggested introduction card:
@@ -114,8 +114,7 @@ Suggested introduction card:
 Greg <-> Michele
 
 Why this could matter
-Greg is exploring executive AI adoption.
-Michele helps leadership teams adopt AI responsibly.
+Because Greg is looking for executive AI adoption partners, and Michele has spent years helping leadership teams implement AI responsibly.
 
 Confidence
 High
@@ -145,6 +144,8 @@ Required fields:
 Rules:
 
 - Do not show a suggestion unless there is evidence from both people.
+- Every suggested introduction must have a single clear `Because...` sentence.
+- If VAL cannot write that sentence cleanly, the suggestion should not appear.
 - Do not show a suggestion merely because two people share a keyword.
 - Do not show a suggestion when either identity is unresolved.
 - Do not show a suggestion when either person is admitted only through weak or noisy evidence.
@@ -182,7 +183,7 @@ Greg offers: access to operators evaluating AI workflows.
 Michele offers: executive adoption strategy and facilitation.
 
 Why this could matter
-This may be useful because Greg is actively looking at AI strategy and Michele helps leaders implement AI responsibly.
+Because Greg is actively looking at AI strategy, and Michele helps leaders implement AI responsibly.
 
 Evidence
 - Greg discussed AI strategy on July 3.
@@ -210,17 +211,19 @@ Rules:
 - Draft Introduction remains blocked until identities and evidence are strong enough.
 - The UI should make "not a fit" feel like a responsible outcome, not an error.
 
-## 3. People
+## 3. Network
 
 Purpose:
 
-Provide the smallest useful searchable set of admitted people for introduction workflows.
+Provide the smallest useful searchable relationship network for introduction workflows.
 
 This is not a CRM.
 
 This is not a dossier browser.
 
-People supports:
+Network is a discovery surface for introductions.
+
+Network supports:
 
 - search
 - select a person
@@ -228,10 +231,10 @@ People supports:
 - see offers
 - see how the executive knows them
 - see recent evidence
-- find matches
+- see best matches automatically
 - choose them for a manual introduction
 
-People row:
+Network row:
 
 ```text
 Michele Julian
@@ -239,7 +242,7 @@ Helps leadership teams adopt AI responsibly.
 Needs: teams ready for executive AI implementation.
 Offers: strategy, facilitation, adoption support.
 
-[Find Matches]
+Best match: Greg
 ```
 
 Person detail:
@@ -261,17 +264,87 @@ Evidence
 - Transcript, July 3: executive AI adoption discussion.
 - Sent email, July 5: follow-up on AI implementation.
 
-[Find Matches]
+Best Matches
+1. Greg
+Because Greg is looking for executive AI adoption partners, and Michele has spent years helping leadership teams implement AI responsibly.
+
+2. Terry
+Because Terry needs a trusted nonprofit operator perspective, and Michele can help frame responsible executive adoption.
+
+[Who Should Michele Meet?]
 [Use In Introduction]
 ```
 
 Rules:
 
-- People must be admitted through trusted signals before appearing.
+- Network must search for best matches automatically when a person is opened.
+- If an explicit command is still needed, the button should say `Who Should [Name] Meet?`, not `Find Matches`.
+- Network people must be admitted through trusted signals before appearing.
 - Trusted signals include recent sent email, recent reply, calendar attendee, meaningful transcript participant, confirmed CRM contact, user-marked important, manual selection, and prior approved introduction history.
 - Inbound-only senders do not appear unless another trusted signal admits them.
 - Spam, bulk mail, unsubscribe/list senders, no-reply/system addresses, generic mailboxes, receipts, and resource rooms do not appear.
 - Calendar attendees are contacts unless they are owner/self, private blocks, resource rooms, system addresses, or generic mailboxes.
+
+## Internal Match Constraints
+
+VAL should compare more than visible needs and offers.
+
+Internally, person packets should also maintain:
+
+```text
+Missing Piece / Constraints
+```
+
+Examples:
+
+- looking for nonprofit leadership
+- not looking for venture capital
+- prefers warm introductions only
+- avoids vendors
+- already knows Greg
+- recently declined AI consulting
+- already working together
+- do not introduce without asking first
+
+Rules:
+
+- Constraints are internal unless they explain a recommendation or block a draft.
+- Constraints should prevent technically matching but socially awkward introductions.
+- If two people already know each other, VAL should not recommend an introduction unless there is a new, specific reason.
+- If one person avoids vendors, VAL should not suggest a vendor-style introduction.
+- If someone prefers warm introductions only, VAL should prepare a consent-first draft or block direct introduction drafting.
+
+## Introduction Quality Gate
+
+Every suggested or manually generated introduction must pass this test:
+
+```text
+Can VAL write one clean sentence explaining why these two people should meet?
+```
+
+The sentence should start with:
+
+```text
+Because...
+```
+
+Good:
+
+```text
+Because Greg is looking for executive AI adoption partners, and Michele has spent years helping leadership teams implement AI responsibly.
+```
+
+Weak:
+
+```text
+Because both people are connected to AI.
+```
+
+If the sentence is weak, generic, keyword-based, or socially awkward, VAL should say:
+
+```text
+I do not see a strong reason to introduce these two yet.
+```
 
 ## Review Draft Surface
 
@@ -282,7 +355,7 @@ Required content:
 ```text
 Introduction Draft
 
-People
+Introduction
 Greg <-> Michele
 
 Why this introduction may matter
@@ -374,6 +447,7 @@ Do not show these phrases in Stewardship V1:
 - packet maturity
 - source posture
 - CRM identity needs review, unless the page is specifically an identity review page
+- Find Matches
 - GHL
 - undefined
 - supporting source
@@ -398,7 +472,7 @@ Review Draft
 
 Incorrect outcomes:
 
-- Terry is absent from People despite transcript evidence.
+- Terry is absent from Network despite transcript evidence.
 - Kareemah is present but no match is found.
 - VAL only says "no confident introduction is ready" when the transcript explicitly contains the intended introduction.
 - The review page drops the transcript reason.
@@ -412,7 +486,7 @@ Build in this order:
 
 1. Replace the current Stewardship drawer layout with the three V1 areas.
 2. Remove old relationship-dashboard sections and generic action buttons.
-3. Use the admitted People endpoint as the selectable people pool.
+3. Use the admitted people endpoint as the selectable Network pool.
 4. Add the Create An Introduction two-person selector.
 5. Add placeholder suggested-introduction cards only when real evidence exists.
 6. Ensure Review Draft carries forward the same needs, offers, why, and evidence.
@@ -427,8 +501,8 @@ The V1 UI is complete when the executive can:
 3. Pick two admitted people.
 4. See needs, offers, why it may matter, and evidence.
 5. Ask VAL to draft an introduction only when evidence is strong enough.
-6. Open People.
-7. Find matches for a person.
-8. Avoid spam/noise/non-contacts in the people picker.
+6. Open Network.
+7. See Best Matches automatically for a selected person.
+8. Avoid spam/noise/non-contacts in the Network picker.
 
 The UI is not complete if it still feels like a relationship management dashboard.

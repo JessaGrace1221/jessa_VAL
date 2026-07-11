@@ -46,7 +46,7 @@ The drawer should reduce to:
 
 1. Suggested Introductions
 2. Create an Introduction
-3. People
+3. Network
 
 The user wants the next implementation to resolve the polluted relationship list urgently.
 
@@ -87,7 +87,9 @@ After explicit implementation approval, make the introduction engine real withou
 - extract needs/offers/relationship/evidence into simple packets
 - create suggested introduction records from packet comparisons
 - let the user manually choose two people and compare their packets
-- add `Find Matches` from the People section
+- add automatic `Best Matches` for a selected Network person
+- use the one-sentence `Because...` quality gate before showing or drafting an introduction
+- use internal constraints / missing pieces to block socially awkward matches
 - draft introductions only when both identities and evidence are strong enough
 - learn from introduction outcomes without exposing analytics
 - require explicit approval before sending anything
@@ -154,7 +156,7 @@ docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
 docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
 ```
 
-The next Stewardship implementation step should follow that spec: use evidence-weighted admission with 90-day sent mail as the strongest automatic signal, reject inbound-only/spam/generic/unsubscribe/bulk-mail senders, build simple needs/offers/relationship/evidence packets, and show only suggested or manually-created introductions plus People/Find Matches.
+The next Stewardship implementation step should follow that spec: use evidence-weighted admission with 90-day sent mail as the strongest automatic signal, reject inbound-only/spam/generic/unsubscribe/bulk-mail senders, build simple needs/offers/relationship/internal-constraints/evidence packets, and show only suggested or manually-created introductions plus Network/Best Matches.
 
 Before requesting implementation approval, documentation must include:
 
