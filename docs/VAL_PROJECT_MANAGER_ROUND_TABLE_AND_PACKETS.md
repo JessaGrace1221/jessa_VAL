@@ -750,7 +750,7 @@ Feeds:
 
 ### Project Index
 
-The index shows admitted projects only.
+The index shows admitted projects only. It may appear as a drawer, side list, card, or navigation entry.
 
 Each row should show:
 
@@ -765,7 +765,70 @@ Each row should show:
 
 Do not show candidate projects, quiet evidence, unrelated source counts, raw context, or audit language in the main index.
 
-### Project Dossier
+### Full Project Manager Page
+
+Opening a project should lead to a full-page Project Manager experience, not a cramped drawer card.
+
+The Projects drawer/card is the entry point. The active project page is the working surface.
+
+Purpose:
+
+```text
+Give the executive a project manager who can show what is happening, what matters, what VAL is doing, what needs judgment, and what can be acted on now.
+```
+
+This page should feel like a competent Project Manager has every base covered, not like a database view.
+
+The full page should include:
+
+- project navigation/sidebar or project list
+- project breadcrumb
+- project identity header
+- project snapshot
+- key facts
+- recent activity
+- next best actions
+- main Project Manager reasoning sections
+- project-manager action layer
+- scoped action buttons
+- bottom action rail
+- lower Project finance/document summary
+
+Recommended page architecture:
+
+```text
+Left rail
+  -> Projects navigation and recent projects
+
+Header
+  -> project name, type, owner, stage/phase, dates, team, health
+
+Main column
+  -> Identity
+  -> Observation
+  -> Interpretation
+  -> Meaning
+  -> Wisdom
+  -> Project Manager actions
+  -> Finance/document summary near bottom
+
+Right rail
+  -> Project Snapshot
+  -> Key Facts
+  -> Recent Activity
+  -> Next Best Actions
+
+Bottom action rail
+  -> Message Project / Co-Work
+  -> Create Task
+  -> Log Note
+  -> Schedule
+  -> More
+```
+
+The screenshot reference `projects card.png` points in the right direction: a full-page, calm executive project workspace with a navigation rail, strong project identity, main reasoning stack, right-side project facts/actions, and an action rail.
+
+### Project Dossier Sections
 
 The dossier should be organized by user need:
 
@@ -778,6 +841,34 @@ The dossier should be organized by user need:
 7. Story: living narrative and timeline by meaning.
 8. Related context: recent activity, related work, quick facts.
 
+The PM 101 source material adds required operational sections:
+
+- Project Charter: business case, purpose, goals, scope, timeline, stakeholders, risks.
+- Constraints: scope, time, cost, and quality trade-offs.
+- Lifecycle Phase: initiation, planning, execution, monitor/control, closure.
+- Work Breakdown Structure: objectives, activities, tasks.
+- Stakeholders and Sponsors: executive sponsor, project leadership, teams, support areas.
+- Communication: recurring meetings, stakeholder management, status transparency, progress celebration.
+- Project Plan: timelines, budget, task tracking, issue resolution, risk management.
+- Lessons Learned: closure, reporting, customer sign-off, what VAL learned.
+
+The day-in-the-life source material adds required operating behaviors:
+
+- reprioritize before reacting
+- scan for blockers, updates, and noise
+- detect early warning signs
+- clarify misunderstandings
+- resolve small conflicts before they grow
+- make trade-offs explicit
+- protect momentum while managing risk
+- align stakeholders to reality
+- document decisions immediately
+- close loops the same day
+- summarize meeting outcomes
+- reduce ambiguity
+- review what actually moved the project forward
+- capture unresolved risks and tomorrow's likely trade-offs
+
 For projects with an SOP, the dossier must also show:
 
 - selected SOP
@@ -789,6 +880,119 @@ For projects with an SOP, the dossier must also show:
 - what VAL is watching after launch
 
 This section should feel like a project manager has every base covered.
+
+### Project Manager Action Layer
+
+The Project Dossier must not merely describe the project. It must show what the dedicated Project Manager is doing, preparing, monitoring, updating, or asking for.
+
+Every displayed Project Manager action must be intensely actionable and scoped.
+
+Examples:
+
+- `VAL built the SOP draft for this project.`
+- `VAL linked Anthony's invoice to this project.`
+- `VAL found a payment issue.`
+- `VAL prepared the follow-up email.`
+- `VAL updated the relationship role for Michelle.`
+- `VAL noticed the launch workflow is blocked.`
+- `VAL created a project finance/document summary.`
+
+Each displayed action must have:
+
+- a plain-English action statement
+- source proof
+- affected packet or artifact
+- current status
+- next available user action
+- scoped Co-Work entry
+- receipt or pending receipt
+
+The action row is not a generic note. It is a doorway into one specific piece of project-manager work.
+
+### Project Manager Scoped Co-Work
+
+When the user clicks a Project Manager action, Co-Work must open with only:
+
+1. the active project packet,
+2. the selected Project Manager action packet,
+3. the source receipts directly attached to that action,
+4. the specific artifact/document/SOP/workflow/commitment/relationship object involved.
+
+It must not pull in the entire project history, unrelated project actions, unrelated documents, unrelated people, unrelated emails, or global memory.
+
+Example:
+
+```text
+Displayed action:
+VAL built the onboarding SOP draft.
+
+Click:
+Ask VAL / Add context / Review this
+
+Co-Work context:
+  -> current project
+  -> selected SOP draft action
+  -> SOP draft artifact
+  -> source receipts that caused the SOP draft
+  -> no unrelated project context
+```
+
+Required Co-Work opening posture:
+
+```text
+We are looking only at this project item.
+```
+
+Allowed user actions:
+
+- add context to this item
+- ask a question about this item
+- refine the prepared artifact
+- approve, reject, or hold the item when applicable
+- link the item to a document, relationship, commitment, SOP, or project phase when applicable
+
+Forbidden:
+
+- blend another project into this item
+- answer from unrelated source memory
+- expose raw packet/debug context
+- mutate the project broadly when the user only clicked one action
+- treat the whole Project Dossier as the Co-Work scope
+
+### Project Manager Action Packet
+
+Every displayed Project Manager action must have a packet.
+
+Required variables:
+
+- `project_id`
+- `project_manager_action_id`
+- `action_statement`
+- `action_type`
+- `what_val_did_or_noticed`
+- `affected_artifact_type`
+- `affected_artifact_id`
+- `source_receipts`
+- `status`
+- `next_user_action`
+- `allowed_actions`
+- `forbidden_actions`
+- `cowork_scope`
+- `receipt_expected`
+
+Feeds:
+
+- Project Dossier action layer
+- scoped Project Co-Work
+- Leverage when the action includes reviewable prepared work
+- Alignment when the action is a priority/risk/payment issue
+- Documents/Commitments/Relationships when the action updates those packets
+
+Must not:
+
+- render without source proof
+- open generic project chat
+- use the action as permission to change unrelated project fields
 
 ### Co-Work From Projects
 

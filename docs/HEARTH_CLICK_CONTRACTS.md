@@ -90,7 +90,7 @@ Global rule:
 |---|---|---|---|---|---|---|---|
 | Open drawers | `.drawer-pull` | `drawer_index_packet` | Drawer retrieval rule | Drawer availability only | Open drawer tray, close all drawers | Do not load unrelated detail panels | Drawer tray opens |
 | Stewardship drawer | `.relationship-drawer-link` | `relationship_packet` index state | Stewardship understanding prompt suite | CRM contact, email/calendar/transcript/project/document refs | Open Stewardship view, All people, scoped Stewardship actions | Do not expose internal packet/debug language in the drawer | Stewardship drawer opens |
-| Projects drawer | `.project-drawer-link` | `project_packet` index state | Project understanding prompt suite | Project source, linked people/docs/reviews | Open project file, Co-Work, Ask priority, Show alternatives | Do not create project records without explicit create flow | Project drawer opens |
+| Projects drawer/card | `.project-drawer-link` | `project_packet` index state | Project understanding prompt suite | Project source, linked people/docs/reviews | Open full Project Manager page, create/review project candidate | Do not create project records without explicit create flow | Projects index opens |
 | Timeline & Tasks drawer | `.timeline-drawer-link` | `timeline_packet` | Calendar/transcript/task observer rules | Calendar events, transcripts, proposed reviews, tasks | Co-Work, review transcript proposals | Do not create notes/tasks without review | Timeline drawer opens |
 | Executive Inbox drawer | `.correspondence-drawer-link` | `email_packet` | Executive Inbox classification/draft prompt suite | Email thread, draft, source refs | Co-Work, Review, Prepare draft, Tighten draft, Send packet | Do not send directly from drawer click | Executive Inbox drawer opens |
 | Commitments drawer | `.commitment-drawer-link` | `commitment_packet` | Commitment observer/task support prompt suite | Email/calendar/transcript/task evidence | Co-Work, Draft Email, Create Task, Schedule, status actions, Show Source | Do not send; status mutations need visible user action | Commitment drawer opens/status receipt |
@@ -113,13 +113,14 @@ Global rule:
 
 | Surface | Trigger | Variable packet | Prompt or rule | Source-of-source | Allowed actions | Never do | Receipt |
 |---|---|---|---|---|---|---|---|
-| Project row/profile | `data-project-open-profile` | `project_packet` for selected project | Project dossier resolver | Project source and linked graph | Select/open project | Do not mix project context | Project brief updates |
+| Project row/profile | `data-project-open-profile` | `project_packet` for selected project | Project dossier resolver | Project source and linked graph | Open full Project Manager page | Do not mix project context or render only a cramped card when a full page is required | Full Project Manager page opens |
 | Create project | `data-project-create-toggle`, `data-project-create-form`, `data-project-create-cancel` | Project creation packet from form fields/files | Project create/review rule | User-entered source and uploads | Create/cancel | Do not create from empty or unrelated form data | Project creation receipt |
 | Project source review | `data-project-review-update` | Project source review packet | Project source learning approval rule | Pending project source update | Approve/reject project-source learning | Do not change project judgment directly | Approval/rejection receipt |
 | Open project file | `data-project-action="open_project_file"` | `project_packet` | Project file receipt rule | Current project evidence | Ask priority, Show alternatives | Do not mutate project | Project workspace receipt |
 | Ask priority | `data-project-action="ask_priority"` | `project_packet` | Project priority judge prompt/rule | Decision evidence | Open project file, Show alternatives | Do not create tasks or reprioritize unrelated projects | Priority workspace receipt |
 | Show alternatives | `data-project-action="show_alternatives"` | `project_packet` | Project alternatives rule | Current project evidence | Ask priority, Open project file | Do not rank from unrelated context | Alternatives workspace receipt |
 | Project Co-Work | `data-project-action="cowork_project"` | `cowork_packet` with `projects.current` | Co-Work prompt suite | Active project source refs | Think/Draft/Back | Do not create external actions | Scoped Co-Work workspace |
+| Project Manager action | `data-project-manager-action` | `project_manager_action_packet` plus current `project_packet` | Project Manager action Co-Work rule | Source receipts attached to the one selected project action | Add context, Ask, Refine, Approve/Reject/Hold when applicable, Link to related packet | Do not open whole-project chat, unrelated documents, unrelated people, unrelated source memory, or broad project mutation | Item-scoped Co-Work workspace and action receipt |
 
 ## Timeline And Meeting Prep
 

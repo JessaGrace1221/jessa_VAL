@@ -514,7 +514,17 @@ Dedicated prompt suite:
 | CRM task sync plan | `{{crm.task_sync_plan}}` | new/derived | object | CRM Task Sync Planner | Link/create/update/keep task sync recommendation. |
 | CRM opportunity resolution | `{{crm.opportunity.resolution}}` | new/derived | object | CRM Opportunity Resolver | Relationship value, opportunity value, lifecycle/stage candidates. |
 | CRM proposal/invoice plan | `{{crm.document_plan}}` | new/derived | object | Proposal / Invoice Planner | Proposal, invoice, estimate, quote, or contract prep plan. |
+| Project Manager page | `{{projects.current.project_manager_page}}` | new/derived | object | Project Manager Round Table | Full-page project experience: header, charter, constraints, phase, workstreams, stakeholders, risk, actions, prepared work, activity, next actions, finance summary. |
+| Project charter | `{{projects.current.charter}}` | new/derived | object | Project Manager Round Table, project interview | Business case, purpose, goals, scope, timeline, stakeholders, risks. |
+| Project constraints | `{{projects.current.constraints}}` | new/derived | object | Project Manager Round Table | Scope, time, cost, quality trade-offs and impacts. |
+| Project lifecycle phase | `{{projects.current.lifecycle_phase}}` | new/derived | enum/object | Project Manager Round Table | Initiation, planning, execution, monitor/control, closure, plus current phase evidence. |
+| Project work breakdown | `{{projects.current.work_breakdown}}` | new/derived | object | Project Manager Round Table | Objectives, activities, tasks, owners, dependencies, milestones. |
+| Project communication rhythm | `{{projects.current.communication_rhythm}}` | new/derived | object | Project Manager Round Table | Recurring meetings, stakeholder updates, transparency/status cadence, progress celebration. |
+| Project manager operating signals | `{{projects.current.pm_operating_signals}}` | new/derived | object | Project Manager Round Table | Blockers, hidden dependencies, trade-offs, ownership clarity, decision fatigue, loop closure, tomorrow risks. |
 | Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Quiet lower Project-drawer-only summary with Receipts, Invoices, Payment Issues, Important Documents, and Open Finance Follow-ups. |
+| Project Manager action | `{{projects.current.project_manager_action}}` | new/derived | object | Project Manager Round Table | One specific action VAL did, prepared, noticed, linked, blocked, monitored, or needs context for. |
+| Project Manager action list | `{{projects.current.project_manager_actions}}` | new/derived | array | Project Manager Round Table | Action layer for the Project drawer; each row must have its own scoped packet. |
+| Project Manager action Co-Work scope | `{{projects.current.project_manager_action.cowork_scope}}` | new/derived | object | Project click contract | Current project, selected action, attached source receipts, affected artifact/object only. |
 | CRM send plan | `{{crm.send_plan}}` | new/derived | object | SMS / Email Send Planner | CRM-routed SMS/email preparation and permission requirements. |
 | CRM calendar invite plan | `{{crm.calendar_invite_plan}}` | new/derived | object | CRM Calendar Invite Planner | Prepared invite candidate and missing confirmations. |
 | CRM action permission | `{{crm.action_permission}}` | new/derived | object | CRM Action Permission Classifier | Whether action is prepare-only, auto-safe, approval-required, never-auto, or refused. |

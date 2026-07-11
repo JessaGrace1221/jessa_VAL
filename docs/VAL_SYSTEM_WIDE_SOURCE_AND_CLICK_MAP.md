@@ -1324,9 +1324,111 @@ Every document must answer:
 ### Current Code Anchors
 
 - Project index/dossier routes in `server.js`
+- Project Manager specification: [VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md](./VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md)
+- Click contract: [HEARTH_CLICK_CONTRACTS.md](./HEARTH_CLICK_CONTRACTS.md)
 - Relationship/project understanding docs
 - Review updates: `services/valReviewUpdates.js`
 - Project UI in `hearth-prototype.js`
+
+### Required Project Manager Principle
+
+Projects is VAL's execution command center.
+
+The Project drawer/card is an entry point. The active project itself should open as a full Project Manager page.
+
+The Project Manager page must show what the dedicated Project Manager is doing, has done, is preparing, is watching, or needs from the user.
+
+Every displayed Project Manager action must be clickable only if it has a scoped action packet.
+
+Required path:
+
+```text
+Source arrives
+  -> Witness
+  -> Executive Relevance
+  -> Project Admission Packet
+  -> Project Manager Round Table
+  -> Project Manager Action Packet
+  -> Project Dossier action layer
+  -> item-scoped Co-Work / review / approval / receipt
+```
+
+Click scope rule:
+
+```text
+Project Manager action click
+  -> current project
+  -> selected project-manager action
+  -> attached source receipts
+  -> affected artifact/object only
+  -> no unrelated project context
+```
+
+User-facing opening posture:
+
+```text
+We are looking only at this project item.
+```
+
+This applies when the Project Manager says VAL built, linked, prepared, noticed, updated, monitored, blocked, assigned, summarized, or needs context for one specific thing.
+
+### Full Project Manager Page Path
+
+Required click path:
+
+```text
+Projects card / drawer row
+  -> admitted project
+  -> full Project Manager page
+  -> Project Manager Packet
+  -> page sections
+  -> project-manager action packets
+  -> item-scoped Co-Work / review / approval
+```
+
+The page must not be a generic CRM/project record.
+
+It should answer:
+
+```text
+What is this project?
+Where does it stand?
+What is VAL doing?
+What needs judgment?
+What is blocked?
+What is next?
+What did VAL prepare?
+What changed since the last review?
+```
+
+Required full-page sections:
+
+- identity/header
+- current status
+- project charter
+- constraints: scope, time, cost, quality
+- lifecycle phase
+- workstreams / work breakdown
+- stakeholders, sponsors, and team
+- communication/status rhythm
+- risk, blockers, and trade-offs
+- Project Manager actions
+- prepared work
+- recent activity
+- next best actions
+- finance/document summary near the bottom
+- lessons learned when applicable
+
+The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
+
+- reprioritize before reacting
+- scan for blockers, updates, and noise
+- detect hidden dependencies and early warning signs
+- clarify ownership and misunderstandings
+- make trade-offs explicit
+- close loops the same day
+- document decisions immediately
+- prepare tomorrow's likely trade-offs
 
 ### Required Project Admission
 
