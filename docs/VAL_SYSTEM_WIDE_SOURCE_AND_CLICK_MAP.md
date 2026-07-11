@@ -531,11 +531,35 @@ email list / selected thread
 
 The user should be able to read the email, glance right, edit the prepared draft, and approve it.
 
+The primary button should say:
+
+```text
+Approve and send
+```
+
 Approval means send.
 
 If the draft is not yet ready for sending, the primary action should not say approve/send. It should ask for the missing context or show that the draft is still being prepared.
 
 Provider drafts should not be created unless the system can guarantee edits remain synchronized with the version that will be sent.
+
+### Missing Context Instead Of Draft
+
+If VAL needs more context before it can draft safely, the right-side panel should show a scoped question/chat box in place of the draft.
+
+User-facing posture:
+
+```text
+Answer these questions so VAL can create this draft, then you can approve and send.
+```
+
+Rules:
+
+- The question box is scoped to the selected email thread and admitted relationship/project packet.
+- VAL asks only the missing information needed to create the draft.
+- VAL must not open a broad chat automatically.
+- When the user answers, VAL updates the draft packet and replaces the question box with the editable draft.
+- The final action remains `Approve and send`.
 
 Example "What VAL did from this email":
 
