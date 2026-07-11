@@ -319,6 +319,7 @@ Each observer receives only admitted source facts plus relevant existing packet 
 | Source | Always stored? | Can create person? | Can create project? | Can create prepared work? | Can enter Home? | Notes |
 |---|---:|---:|---:|---:|---:|---|
 | Sent email recipient | Yes | Yes, strongest automatic signal | Yes, if project evidence exists | Yes, if commitment/draft exists | Sometimes | If the user is in communication with them, they are a relationship. |
+| Sent email CC/BCC recipient | Yes | Yes, if human/contact-like | Maybe | Maybe | Sometimes | If an email is sent to anyone, that is relationship evidence. |
 | Replied email thread | Yes | Yes | Yes | Yes | Sometimes | A reply is reciprocal relationship evidence. |
 | Person included in a thread the user replied to | Yes | Yes, if human/contact-like | Maybe | Maybe | Sometimes | Includes three-way introductions and group threads. |
 | Inbound-only email | Yes if not spam | No by itself | No by itself | Rarely | Rarely | Cannot create relationship without another trusted signal. |
@@ -352,16 +353,18 @@ Every email must answer:
 
 1. Is this spam, bulk, unsubscribe, receipt, notification, system, or no-reply?
 2. Did the user send to or reply to this person?
-3. Was this person included in any thread the user replied to?
-4. Has the user manually marked this person important or blocked?
-5. Does it contain a commitment, document, project, deadline, question, relationship signal, or draftable response?
-6. Which consumers are allowed to use it?
+3. Was this person included in `To`, `CC`, or `BCC` on an email the user sent?
+4. Was this person included in any thread the user replied to?
+5. Has the user manually marked this person important or blocked?
+6. Does it contain a commitment, document, project, deadline, question, relationship signal, or draftable response?
+7. Which consumers are allowed to use it?
 
 ### Required Routes
 
 | Signal | Route |
 |---|---|
 | User sent or replied | Update person packet relationship evidence. |
+| User sent with person in To/CC/BCC | Update person packet relationship evidence for human/contact-like recipients. |
 | User replied to thread containing person | Update person packet relationship evidence for human/contact-like participants. |
 | Inbound-only from human | Store source; do not create relationship unless another trusted signal admits. |
 | User marks person important | Promote or preserve person packet and raise priority. |
@@ -380,7 +383,7 @@ Email relationship admission should use a graph of reciprocal communication, not
 
 Gold-standard email relationship signals:
 
-- the user sent an email to the person
+- the user sent an email to the person in `To`, `CC`, or `BCC`
 - the user replied directly to the person
 - the person was included in an email thread where the user replied
 - the person was introduced in a thread where the user participated
@@ -393,6 +396,16 @@ If the user is in communication with them, they are a relationship.
 ```
 
 The relationship may be large or small, warm or practical, but it is still a relationship packet candidate.
+
+Recipient-channel rule:
+
+```text
+If an email is sent to anyone, that is relationship evidence.
+```
+
+This includes `To`, `CC`, and `BCC` when the recipient resolves to a human or contact-like entity.
+
+Known CRM/archive BCC destinations, routing aliases, support queues, no-reply/system addresses, and other non-human destinations should be classified as system/source destinations rather than person relationships.
 
 Three-way introduction example:
 

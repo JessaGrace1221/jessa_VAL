@@ -349,6 +349,8 @@ Dedicated classification prompt suite:
 | From | `{{emails.current.from}}` | existing | object | Gmail/Outlook | Sender matching. |
 | To | `{{emails.current.to}}` | existing | array | Gmail/Outlook | Recipient awareness. |
 | CC | `{{emails.current.cc}}` | existing | array | Gmail/Outlook | Stakeholders. |
+| BCC | `{{emails.current.bcc}}` | new/derived | array | Gmail/Outlook sent mail | Relationship evidence when user sent to a human/contact-like recipient; system/archive destinations should be filtered. |
+| Recipient channels | `{{emails.current.recipient_channels}}` | new/derived | object | email recipient resolver | Normalized To/CC/BCC participants and whether each is human, system, CRM/archive, alias, or unknown. |
 | Date | `{{emails.current.date}}` | existing | datetime | Gmail/Outlook | Freshness. |
 | Snippet | `{{emails.current.snippet}}` | existing | string | Gmail/Outlook | Fast preview. |
 | Body preview | `{{emails.current.body_preview}}` | existing | string | Gmail/Outlook | Classification. |
@@ -372,7 +374,7 @@ Dedicated classification prompt suite:
 | Communication classification | `{{emails.current.communication_classification}}` | new/derived | object | Executive Inbox classification | Conversation-first routing. |
 | Executive meaning | `{{emails.current.executive_meaning}}` | new/derived | array | Executive Inbox classification | Explain why surfaced. |
 | If delayed | `{{emails.current.if_delayed}}` | new/derived | string | Executive Inbox classification | Timing consequence. |
-| Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
+| Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to/CC/BCC, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
 | Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
 
 ## Email Thread Variables
