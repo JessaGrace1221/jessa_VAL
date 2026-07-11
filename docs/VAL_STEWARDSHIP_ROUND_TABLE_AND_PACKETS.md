@@ -6,6 +6,8 @@ The Stewardship drawer replaces the user-facing name "Relationships." Internal c
 
 This document applies the constitutional reasoning architecture in [VAL_EXECUTIVE_REASONING_ARCHITECTURE.md](./VAL_EXECUTIVE_REASONING_ARCHITECTURE.md) to Stewardship.
 
+For the practical packet admission, maturity, sorting, and executive display contract, read [VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md](./VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md).
+
 ## Core Thesis
 
 VAL users are relationship builders.

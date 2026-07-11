@@ -81,6 +81,7 @@ Read the source-of-truth docs before changing each drawer:
 - `docs/VAL_ROUND_TABLE_MEMORY_AND_RECOGNITION.md`
 - `docs/VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md`
 - `docs/VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md`
+- `docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md`
 - `docs/VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md`
 - `docs/VAL_PROMPT_ARCHITECTURE.md`
 - `docs/VAL_TRANSCRIPT_INTAKE_PROMPTS.md`
@@ -105,6 +106,14 @@ Read the source-of-truth docs before changing each drawer:
 - Do not make buttons clickable unless they have a real, useful behavior.
 
 ## Required Checks Before Deploy
+
+Before implementation, read:
+
+```text
+docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
+```
+
+The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, sort by usefulness, and show match packets only when the evidence can support an executive review.
 
 Run at minimum:
 

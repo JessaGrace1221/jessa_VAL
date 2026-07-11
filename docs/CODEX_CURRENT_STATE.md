@@ -30,6 +30,24 @@ The app has been recovered to the July 10 live standard:
 - Projects as actionable dossiers
 - Lead Intelligence as the three-level scraper board
 
+## Stewardship Packet Sorting Spec
+
+The current Stewardship direction is now documented in:
+
+```text
+docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
+```
+
+Use that spec before changing the Stewardship drawer, relationship admission logic, person packets, introduction matching, or relationship list sorting.
+
+The executive goal is not "show relationships." The goal is:
+
+```text
+Create powerful packets for each real relationship, then sort those packets by executive usefulness.
+```
+
+The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely compare the packet against other people for a possible introduction.
+
 ## Absolute Guardrail
 
 If a future change conflicts with `docs/CODEX_HANDOFF.md`, stop and read the handoff first.
