@@ -6513,10 +6513,39 @@ async function prepareRelationshipIntroReview(profile = {}){
   return relationshipIntroReviewFromResult(profile, result);
 }
 
+function introCandidateName(candidate = {}){
+  const person = candidate.personB || candidate.other || candidate.person || {};
+  const contactIds = candidate.contactIds || {};
+  return candidate.name || candidate.title || person.name || person.email || candidate.displayName || contactIds.other || 'this person';
+}
+
+function introCandidateReason(candidate = {}){
+  return candidate.reason || candidate.meaning || candidate.whyThisMayMatter || candidate.summary || candidate.whatValPrepared || 'Potential relationship leverage.';
+}
+
+function normalizedIntroCandidate(candidate = {}){
+  return {
+    ...candidate,
+    name: introCandidateName(candidate),
+    reason: introCandidateReason(candidate),
+    confidence: Number(candidate.confidence || 0)
+  };
+}
+
+function normalizedIntroCandidates(items = []){
+  const seen = new Set();
+  return (Array.isArray(items) ? items : []).map(normalizedIntroCandidate).filter((item) => {
+    const key = [item.id, item.name, item.reason].filter(Boolean).join('|').toLowerCase();
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function introReviewLines(profile = {}){
   const review = profile.introReview || {};
-  const needs = Array.isArray(review.whoNeedsThisPerson) ? review.whoNeedsThisPerson : [];
-  const needed = Array.isArray(review.whoThisPersonNeeds) ? review.whoThisPersonNeeds : [];
+  const needs = normalizedIntroCandidates(review.whoNeedsThisPerson);
+  const needed = normalizedIntroCandidates(review.whoThisPersonNeeds);
   function lines(title, items){
     return [title].concat((items.length ? items : [{name:'No confident match yet', reason:'VAL needs stronger evidence before recommending an introduction.', confidence:0}]).map((item) => (
       item.name + ': ' + item.reason + (item.confidence ? ' Confidence ' + Math.round(item.confidence * 100) + '%.' : '')
@@ -6528,7 +6557,7 @@ function introReviewLines(profile = {}){
 function introReviewActions(profile = {}){
   const review = profile.introReview || {};
   const actions = [];
-  [...(review.whoNeedsThisPerson || []), ...(review.whoThisPersonNeeds || [])].slice(0, 3).forEach((item, index) => {
+  normalizedIntroCandidates([...(review.whoNeedsThisPerson || []), ...(review.whoThisPersonNeeds || [])]).slice(0, 3).forEach((item, index) => {
     actions.push({label:'Draft intro for ' + item.name, workflow:'introDraft:' + index});
   });
   return relationshipContextActions(actions, profile);
@@ -6536,14 +6565,14 @@ function introReviewActions(profile = {}){
 
 function introDraftCandidates(profile = {}){
   const review = profile.introReview || {};
-  return [...(review.whoNeedsThisPerson || []), ...(review.whoThisPersonNeeds || [])].slice(0, 3);
+  return normalizedIntroCandidates([...(review.whoNeedsThisPerson || []), ...(review.whoThisPersonNeeds || [])]).slice(0, 3);
 }
 
 function introDraftBody(profile = {}, candidate = {}){
   const userName = 'Jessa';
-  const person = candidate.name || 'there';
+  const person = introCandidateName(candidate) || 'there';
   const firstName = person.split(/\s+/)[0] || person;
-  const why = candidate.reason || 'I thought there may be useful overlap in what you are each carrying right now.';
+  const why = introCandidateReason(candidate) || 'I thought there may be useful overlap in what you are each carrying right now.';
   return [
     'Subject: Introduction: ' + (profile.name || 'VAL relationship') + ' <> ' + person,
     '',
@@ -6568,8 +6597,8 @@ function openIntroDraftReview(candidateIndex = 0){
     title: 'Introduction draft held for review.',
     meaning: 'VAL prepared the draft language, but nothing leaves the desk yet.',
     understanding: [
-      'Candidate: ' + (candidate.name || 'Relationship'),
-      'Why this intro may matter: ' + (candidate.reason || 'Potential relationship leverage.'),
+      'Candidate: ' + introCandidateName(candidate),
+      'Why this intro may matter: ' + introCandidateReason(candidate),
       'No email, LinkedIn message, calendar invite, scrape, import, or CRM write happened from this click.'
     ],
     recommendation: 'Review the wording and the reason before approving, refining, or teaching VAL that this is not the right introduction.',
