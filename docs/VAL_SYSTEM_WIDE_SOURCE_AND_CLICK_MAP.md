@@ -323,7 +323,7 @@ Each observer receives only admitted source facts plus relevant existing packet 
 | Replied email thread | Yes | Yes | Yes | Yes | Sometimes | A reply is reciprocal relationship evidence. |
 | Person included in a thread the user replied to | Yes | Yes, if human/contact-like | Maybe | Maybe | Sometimes | Includes three-way introductions and group threads. |
 | Inbound-only email | Yes if not spam | No by itself | No by itself | Rarely | Rarely | Cannot create relationship without another trusted signal. |
-| Email with unsubscribe/bulk/list headers | Maybe source-only | No | No | No | No | Marketing/newsletter unless user explicitly marks important. |
+| Email with unsubscribe/bulk/list headers | Maybe source-only | No by itself | No | No | No | Does not belong in Executive Inbox unless stronger relationship evidence overrides. |
 | No-reply/system/receipt | Maybe source-only | No | No | No | No | Never a relationship. |
 | Transcript attendee | Yes | Yes | Yes, if project named or implied | Yes | Sometimes | Attendees are real relationship candidates. |
 | Person named in transcript | Yes | Candidate or identity review | Maybe | Maybe | Maybe | Must resolve identity before acting. |
@@ -367,6 +367,7 @@ Every email must answer:
 | User sent with person in To/CC/BCC | Update person packet relationship evidence for human/contact-like recipients. |
 | User replied to thread containing person | Update person packet relationship evidence for human/contact-like participants. |
 | Inbound-only from human | Store source; do not create relationship unless another trusted signal admits. |
+| Inbound email contains unsubscribe link | Suppress from Executive Inbox by default. |
 | User marks person important | Promote or preserve person packet and raise priority. |
 | User marks "Never show me email from this person again" | Suppress from Executive Inbox and relationship surfacing unless user reverses. |
 | Attachment/document request | Document observer and project observer. |
@@ -451,6 +452,44 @@ User suppresses sender
 ```
 
 Unsubscribe links, list headers, bulk sender patterns, no-reply addresses, notification senders, receipts, and obvious system messages should default to source-only or suppressed unless the user explicitly marks the sender important.
+
+### Newsletter And Unsubscribe Rule
+
+If an inbound email contains an unsubscribe link, it does not belong in the Executive Inbox by default.
+
+Default behavior:
+
+```text
+Inbound email contains unsubscribe link
+  -> classify as newsletter/marketing/bulk unless stronger evidence overrides
+  -> store source if useful
+  -> suppress from Executive Inbox
+  -> do not create a relationship by itself
+  -> do not create Stewardship candidate
+```
+
+This applies even when the sender display name looks like a real person.
+
+Override behavior:
+
+```text
+Suppressed/unsubscribe sender later appears in:
+  -> calendar event
+  -> transcript
+  -> email the user sends
+  -> email thread the user replies to
+  -> manual important mark
+
+Then:
+  -> promote or admit as real relationship
+  -> keep unsubscribe evidence as source context, not an active inbox blocker
+```
+
+Rule:
+
+```text
+Unsubscribe suppresses inbox visibility. Real relationship evidence can override suppression.
+```
 
 ### Document/Attachment Email Rule
 

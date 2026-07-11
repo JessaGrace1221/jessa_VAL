@@ -376,6 +376,7 @@ Dedicated classification prompt suite:
 | If delayed | `{{emails.current.if_delayed}}` | new/derived | string | Executive Inbox classification | Timing consequence. |
 | Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to/CC/BCC, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
 | Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
+| Suppression override evidence | `{{emails.current.suppression_override_evidence}}` | new/derived | array | relationship resolver | Calendar, transcript, sent/replied email, or manual important evidence that can override unsubscribe/bulk suppression. |
 
 ## Email Thread Variables
 
