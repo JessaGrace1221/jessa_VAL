@@ -974,7 +974,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /activeCoworkHeldContext = ''/);
   assert.match(hearthJs, /function orientHomeCoworkFromInput/);
   assert.match(hearthJs, /VAL is finding the right context/);
-  assert.doesNotMatch(hearthJs, /data-home-cowork-submit/);
+  assert.match(hearthJs, /data-home-cowork-submit/);
+  assert.match(hearthJs, /runCowork\('think'\)/);
   assert.match(hearthJs, /const observerBoardState/);
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);

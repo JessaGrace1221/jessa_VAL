@@ -15243,6 +15243,7 @@ function renderHomeCoworkPreview(options = {}){
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
       '<span class="home-cowork-divider" aria-hidden="true"></span>',
       '<input data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" autocomplete="on" autocorrect="on" spellcheck="true">',
+      '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
       '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
@@ -16328,7 +16329,7 @@ workspaceInputPanel.addEventListener('submit', (event) => {
     }
     return;
   }
-  orientHomeCoworkFromInput();
+  runCowork('think');
 });
 workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;

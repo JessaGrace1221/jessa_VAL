@@ -1586,7 +1586,7 @@ button,a{font:inherit}
 }
 .home-cowork-chatbar{
   display:grid;
-  grid-template-columns:54px 1px minmax(0,1fr) auto auto auto;
+  grid-template-columns:54px 1px minmax(0,1fr) auto auto auto auto;
   align-items:center;
   gap:9px;
   min-height:68px;
@@ -1638,6 +1638,17 @@ button,a{font:inherit}
   background:rgba(231,235,213,.5);
   outline:none;
 }
+.home-cowork-chatbar [data-home-cowork-submit]{
+  background:rgba(77,95,69,.92);
+  border-color:rgba(77,95,69,.92);
+  color:rgba(255,252,247,.98);
+  padding:0 14px;
+}
+.home-cowork-chatbar [data-home-cowork-submit]:hover,
+.home-cowork-chatbar [data-home-cowork-submit]:focus-visible{
+  background:rgba(54,70,49,.96);
+  border-color:rgba(54,70,49,.96);
+}
 @media (max-width:640px){
   .desk-workspace.home-cowork-mode .workspace-panel{
     min-height:calc(100vh - 36px);
@@ -1653,6 +1664,10 @@ button,a{font:inherit}
   .home-cowork-chatbar button{
     min-height:32px;
     padding:0 9px;
+  }
+  .home-cowork-chatbar [data-home-cowork-submit]{
+    grid-column:3;
+    justify-self:end;
   }
   .home-cowork-chatbar button[data-workspace-tool="voice"]{
     grid-column:1;
