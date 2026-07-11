@@ -40,7 +40,15 @@ Read and follow:
 docs/CODEX_DOCUMENTATION_FIRST_RULE.md
 ```
 
-Do not treat a conversation as permission to implement. If the user gives product feedback that changes direction, document the new direction first, show it to the user, and only implement after approval.
+Do not treat a conversation as permission to implement. If the user gives product feedback that changes direction, document the new direction first and show it to the user.
+
+Implementation may begin only after explicit approval such as:
+
+```text
+Approved. Implement this documentation.
+This product definition is correct. Proceed to code.
+Build exactly what is documented here.
+```
 
 ### Visual Standard
 

@@ -46,7 +46,17 @@ The executive goal is not "show relationships." The goal is:
 Create powerful packets for each real relationship, then sort those packets by executive usefulness.
 ```
 
-The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely compare the packet against other people for a possible introduction.
+More precisely:
+
+```text
+Stewardship = Network Connection System.
+Primary product outcome = a valuable, responsible connection.
+Primary knowledge object = person packet.
+Primary action object = connection commitment or connection opportunity.
+Primary UI = promised connections, reviewable opportunities, and specific missing-context blockers.
+```
+
+The packet must answer who the person is, what they need, what they offer, what evidence supports those claims, and whether VAL can safely compare the packet against other people for a possible introduction. The connection record is the action object that turns that packet knowledge into something the executive can review.
 
 ## Absolute Guardrail
 

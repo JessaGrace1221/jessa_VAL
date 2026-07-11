@@ -2,7 +2,7 @@
 
 Updated: 2026-07-11
 
-Purpose: define how VAL should create powerful relationship packets and sort them into an executive-useful Stewardship surface.
+Purpose: define how VAL should create powerful relationship packets, use them to create responsible connection records, and sort those records into an executive-useful Stewardship surface.
 
 This spec tightens [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md). The older document defines the philosophy and Round Table architecture. This document defines the practical product contract for packet creation, relationship admission, packet maturity, sorting, and executive display.
 
@@ -21,8 +21,25 @@ VAL's job is:
 1. Build a source-backed packet for each real relationship.
 2. Keep that packet alive as new evidence arrives.
 3. Compare packets against one another.
-4. Sort the relationships and introduction opportunities by usefulness.
-5. Show only the executive-ready conclusion, source posture, and review path.
+4. Create explicit connection commitments and connection opportunities.
+5. Sort promised connections, reviewable opportunities, and missing-context blockers by usefulness.
+6. Show only the executive-ready conclusion, source posture, and review path.
+
+## Stewardship Object Hierarchy
+
+Stewardship must not become a better contact profile.
+
+The hierarchy is:
+
+```text
+Stewardship = Network Connection System.
+Primary product outcome = a valuable, responsible connection.
+Primary knowledge object = person packet.
+Primary action object = connection commitment or connection opportunity.
+Primary UI = promised connections, reviewable opportunities, and specific missing-context blockers.
+```
+
+Person packets exist so VAL can connect people responsibly. The drawer does not exist to display packets.
 
 ## Core Distinction
 
@@ -35,6 +52,59 @@ There are three different things:
 | Stewardship match | A comparison between packets that says who may need whom, why, and whether an introduction draft is warranted. | A sent message or automatic action. |
 
 The packet is the foundation. The match is a decision made from multiple packets.
+
+## Connection Records
+
+Stewardship needs a dedicated connection layer in addition to person packets.
+
+### Connection Commitment
+
+Create this when the user explicitly promises, requests, or approves an introduction.
+
+```json
+{
+  "record_type": "connection_commitment",
+  "person_a_id": "",
+  "person_b_id": "",
+  "stated_direction": "a_to_b|b_to_a|mutual|unknown",
+  "user_statement": "",
+  "reason_stated": "",
+  "source_receipts": [],
+  "promised_at": "",
+  "status": "needs_context|draft_ready|ready_for_review|completed|declined|stale",
+  "missing_context": [],
+  "prepared_intro_id": "",
+  "external_action_requires_approval": true
+}
+```
+
+An explicit connection commitment has priority over an inferred opportunity.
+
+### Connection Opportunity
+
+Create this when VAL discovers a possible need-and-offer match that the user did not explicitly state.
+
+```json
+{
+  "record_type": "connection_opportunity",
+  "person_with_need_id": "",
+  "person_with_offer_id": "",
+  "need": "",
+  "offer": "",
+  "why_the_match_matters": "",
+  "timing_reason": "",
+  "need_source_receipts": [],
+  "offer_source_receipts": [],
+  "relationship_permission_receipts": [],
+  "confidence": "low|medium|high",
+  "status": "watch|needs_source_review|ready_for_review|draft_ready|do_not_introduce",
+  "risks": [],
+  "missing_context": [],
+  "external_action_requires_approval": true
+}
+```
+
+Do not use the same status or data model for an explicit promise and an inferred opportunity.
 
 ## Relationship Admission
 
@@ -307,15 +377,33 @@ Offer language may be inferred only when there is source support.
 
 ## Stewardship Sorting
 
-The executive list should not sort alphabetically by default.
+The executive list should be connection-first. It should not sort alphabetically by default.
 
 It should sort by usefulness.
+
+### Primary Stewardship Sections
+
+The primary Stewardship surface should be organized around connection outcomes:
+
+1. Connections You Promised
+2. Connections Worth Reviewing
+3. More Context Needed
+4. People To Watch
+
+Every visible primary-surface item must lead toward one of four outcomes:
+
+1. Complete a promised connection.
+2. Review a valuable possible connection.
+3. Learn the missing context needed to make a connection responsibly.
+4. Do nothing yet.
+
+If an item does not support one of these outcomes, it does not belong on the primary Stewardship surface.
 
 ### Primary Sort Lanes
 
 | Lane | Meaning | Example Executive Copy |
 |---|---|---|
-| Ready To Review | Strong enough match exists; user should review why these people belong in the same conversation. | `Review introduction: Terry may need Kareemah's adaptive nonprofit experience.` |
+| Ready To Review | Strong enough match exists; user should review why these people belong in the same conversation. | `Review introduction: Terrie may need Kareemah's adaptive nonprofit experience.` |
 | Needs Source Review | VAL sees a possible match, but source evidence is not human-readable enough yet. | `Possible introduction, but review transcript/source first.` |
 | Waiting On Loop | Relationship has open loops or follow-up obligations. | `Waiting: 3 open loops need source review.` |
 | Needs Identity Cleanup | Person is likely real but CRM/contact identity is unresolved. | `Link the real person before matching.` |
@@ -393,13 +481,14 @@ The match packet can prepare a draft introduction only when:
 
 The executive should see:
 
-1. Person name.
-2. Plain relationship state.
-3. Why they are on the list.
-4. Best next review/action.
-5. Source posture.
-6. Review introductions button when there is something to review.
-7. Refresh observers when the packet needs more evidence.
+1. Promised connections first.
+2. Reviewable connection opportunities second.
+3. Missing-context blockers third.
+4. People worth watching only when they may become useful connection nodes.
+5. Plain explanation of why the connection matters.
+6. Specific missing fact when action is blocked.
+7. Review introduction when there is something real to review.
+8. Refresh/review sources only when the packet needs more evidence.
 
 The executive should not see:
 
@@ -414,6 +503,7 @@ The executive should not see:
 - unrelated open loops from another person
 - draft buttons that do not create useful drafts
 - introduction suggestions without evidence
+- relationship-profile, dossier, temperature, open-loop, or history surfaces as the center of the drawer
 
 ### Temperature Copy
 
@@ -471,6 +561,177 @@ Then explain the specific missing variable:
 - possible match is stale
 - permission/trust is unclear
 
+## Required Documentation Change Summary For Next Implementation
+
+Before implementing the next Stewardship change, the documentation and implementation plan must show:
+
+1. What product behavior is being introduced: connection commitments and connection opportunities become first-class Stewardship objects.
+2. What existing behavior it replaces: primary Stewardship surfaces centered on relationship profiles, temperature, open loops, generic history, or packet maturity.
+3. What remains valid: person packets, source receipts, identity admission gates, need/offer extraction, Leverage approval, and no external action without approval.
+4. What is now deprecated: relationship-profile-first Stewardship, open-loop-count-driven ranking, generic "packet needs evidence" copy, and review pages disconnected from the person/context evidence.
+5. Which existing UI, prompts, data fields, services, and tests conflict with the new definition.
+6. What must be removed or prevented from rendering.
+7. What is outside the next implementation scope.
+
+Codex must not preserve contradictory legacy behavior merely because it already exists.
+
+## Stewardship Reference Acceptance Case
+
+This is the mandatory reference test for Stewardship.
+
+### Source Evidence Received
+
+Transcript source contains a direct user commitment:
+
+```text
+I will introduce Terrie to Kareemah.
+```
+
+or a semantically equivalent statement:
+
+```text
+I want to connect you with Kareemah.
+I should introduce Terrie and Kareemah.
+Terrie needs to meet Kareemah.
+```
+
+### Expected Identity Resolution
+
+VAL must resolve:
+
+- Terrie as a real person packet or create a thin packet requiring identity review.
+- Kareemah as a real person packet or create a thin packet requiring identity review.
+
+If either identity cannot be resolved, the commitment still exists, but its status is `needs_context`.
+
+### Expected Person Packet Changes
+
+Terrie packet receives:
+
+- source receipt for the transcript promise
+- possible need related to the stated reason
+- relationship context from inbox, sent mail, CC'd mail, CRM, calendar, transcripts, documents, projects, tasks, and approved enrichment when available
+
+Kareemah packet receives:
+
+- source receipt for the transcript promise
+- possible offer related to the stated reason
+- relationship context from inbox, sent mail, CC'd mail, CRM, calendar, transcripts, documents, projects, tasks, and approved enrichment when available
+
+Scraped/enriched public data may explain who Kareemah is or what she plausibly offers, but it must not prove the user relationship, current need, permission, or promised introduction.
+
+### Expected Connection Record
+
+VAL creates or updates:
+
+```json
+{
+  "record_type": "connection_commitment",
+  "person_a_id": "terrie",
+  "person_b_id": "kareemah",
+  "stated_direction": "unknown",
+  "user_statement": "I will introduce Terrie to Kareemah.",
+  "reason_stated": "",
+  "source_receipts": [
+    {
+      "source_type": "transcript",
+      "source_id": "",
+      "summary": "User stated they would introduce Terrie to Kareemah."
+    }
+  ],
+  "status": "needs_context|draft_ready|ready_for_review",
+  "missing_context": [],
+  "external_action_requires_approval": true
+}
+```
+
+### Expected Reasoning Output
+
+VAL must answer:
+
+- What did the user promise?
+- Who are the two people?
+- What does Terrie need?
+- What does Kareemah offer?
+- Why might this connection matter now?
+- What source proves each claim?
+- What remains unknown?
+- Is it responsible to draft now, or should VAL ask/review one missing fact first?
+
+### Exact Executive-Facing Result
+
+The Stewardship primary surface should show a promised connection near the top:
+
+```text
+Connections You Promised
+
+Introduce Terrie and Kareemah
+
+You said you would introduce Terrie to Kareemah.
+VAL found the promise in your transcript and is checking both person packets for why the connection matters.
+
+Next step: Review introduction context.
+```
+
+If enough context exists:
+
+```text
+Next step: Review prepared introduction.
+```
+
+If context is missing, name the missing fact:
+
+```text
+Missing context: VAL needs Kareemah's current role/source-backed offer before drafting.
+```
+
+### Action Available To The User
+
+Allowed actions:
+
+- Review introduction
+- Add missing context
+- Mark completed
+- Not appropriate anymore
+- Watch quietly
+
+### Approval Gate
+
+VAL may prepare a draft when the context is sufficient.
+
+VAL must place the draft in Leverage for user review.
+
+VAL must not send an email, message, calendar invite, CRM write, or external action without explicit user approval.
+
+### Expected Leverage Draft
+
+Leverage should show:
+
+```text
+Prepared introduction: Terrie <> Kareemah
+
+Why VAL prepared it:
+You said you wanted to introduce them, and the source-backed packets indicate a plausible need/offer fit.
+
+Status:
+Ready for review. Nothing has been sent.
+```
+
+### Incorrect Outputs That Must Not Appear
+
+The result is incorrect if the promise appears only as:
+
+- a transcript summary
+- a generic task
+- an open loop
+- a relationship-history event
+- an isolated note on Terrie's profile
+- an isolated note on Kareemah's profile
+- a temperature change
+- a vague follow-up recommendation
+- a generic "packet needs evidence" message
+- a debug/observer/provider/prompt label
+
 ## Quality Bar
 
 A Stewardship result is useful only if the executive can answer, in under 10 seconds:
@@ -518,4 +779,3 @@ As of 2026-07-11:
 - No passive inbound-only email address in Stewardship as a relationship.
 - No debug language in the executive surface.
 - No generic "AI prepared something" copy when the specific value can be named.
-

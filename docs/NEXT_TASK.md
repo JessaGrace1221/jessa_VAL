@@ -120,7 +120,18 @@ Before implementation, read:
 docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md
 ```
 
-The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, sort by usefulness, and show match packets only when the evidence can support an executive review.
+The next Stewardship implementation step should follow that spec: admit only real relationships, build durable person packets, extract needs/offers from source evidence, create first-class connection commitments/opportunities, sort by usefulness, and show match packets only when the evidence can support an executive review.
+
+Before requesting implementation approval, documentation must include:
+
+- what new behavior is being introduced
+- what existing behavior it replaces
+- what remains valid
+- what is deprecated
+- what conflicting UI/prompts/services/tests must be removed or prevented
+- at least one visible-output example
+
+The mandatory first example is the Terrie/Kareemah promised-introduction case in `docs/VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md`.
 
 Run at minimum:
 
