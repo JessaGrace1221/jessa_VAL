@@ -665,6 +665,60 @@ The visible result should be:
 
 If any ambiguity or risk appears, fall back to the right-side missing-context panel instead of executing automatically.
 
+### Scheduling Conflict And Alternate-Time Rules
+
+If the recipient accepts one of VAL's suggested times but that time is no longer available by the time VAL checks the calendar, VAL should continue handling the scheduling loop automatically.
+
+Required behavior:
+
+```text
+Accepted suggested time is no longer available
+  -> VAL checks calendar again
+  -> VAL replies with new available times, or the calendar booking link
+  -> no Leverage item
+  -> no user approval required
+  -> internal receipt stored
+```
+
+Tone example:
+
+```text
+It looks like that time is no longer available on Jessa's calendar. Here are a few other options...
+```
+
+Or:
+
+```text
+It looks like that time is no longer available. Here is Jessa's calendar link so you can choose a time that works for you.
+```
+
+If the recipient suggests a different time that VAL did not offer, and that time is available, VAL may pencil it in but should ask the user to confirm.
+
+Required behavior:
+
+```text
+Recipient suggests a different available time
+  -> VAL checks calendar
+  -> VAL pencils in the time as tentative/internal hold
+  -> VAL sends or prepares a soft reply only if safe
+  -> VAL creates a Leverage / Ready For You confirmation item
+  -> user confirms or rejects
+```
+
+Target recipient-facing posture:
+
+```text
+You're in luck, Jessa is available at that time. I'm going to pencil you in for now and ask Jessa to confirm it.
+```
+
+Target Leverage item:
+
+```text
+I penciled in Susie for next Thursday at 1:00. Does this work for you?
+```
+
+This is different from accepting VAL's own suggested time. A recipient-proposed alternate time deserves user confirmation because VAL did not previously offer that slot.
+
 Example draft logic:
 
 ```text
