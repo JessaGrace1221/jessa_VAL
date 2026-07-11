@@ -1394,11 +1394,28 @@ It should answer:
 What is this project?
 Where does it stand?
 What is VAL doing?
+What has VAL already handled?
 What needs judgment?
 What is blocked?
 What is next?
 What did VAL prepare?
 What changed since the last review?
+What can safely wait because VAL is watching it?
+```
+
+The first screen is dynamic. It should not always start with identity, snapshot, or project charter.
+
+Dynamic top-module priority:
+
+```text
+Critical project issue
+  -> Needs your judgment
+  -> Prepared for you
+  -> Today's reprioritization
+  -> Project movement
+  -> Execution adjustment
+  -> Project reset
+  -> Quietly watching
 ```
 
 Required full-page sections:
@@ -1418,6 +1435,37 @@ Required full-page sections:
 - next best actions
 - finance/document summary near the bottom
 - lessons learned when applicable
+
+### Dynamic Project Manager Focus Map
+
+Every dynamic top module must be tied to a real path.
+
+| Focus module | Trigger | Write target | Surface | User action | Receipt |
+|---|---|---|---|---|---|
+| Critical Project Issue | Payment issue, deadline, failed dependency, blocked owner, service/access risk | Project Risk Packet + Project Manager Action Packet | Project top module, Alignment if admitted | Decide, assign, approve, ask scoped question | Issue receipt |
+| Needs Your Judgment | Missing decision blocks safe progress | Project Manager Judgment Packet + decision/action packet | Project top module | Choose, add context, hold | Decision receipt |
+| Prepared For You | Draft/SOP/workflow/document/follow-up prepared | Project Prepared Work Packet | Project top module/action layer, Leverage when reviewable | Review, refine, approve, reject | Prepared-work receipt |
+| Today's Reprioritization | Start of day or new evidence changes priority | Project Manager Focus Packet | Project top module | Accept, change priority, ask why | Reprioritization receipt |
+| Project Movement | Work completed/slipped, source added, meeting/document/dependency changed | Project Movement Packet | Project top module/recent activity | Open source, add context, ask what changed | Movement receipt |
+| Execution Adjustment | Scope/time/cost/quality trade-off appears | Project Risk/Judgment Packet | Project top module | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
+| Project Reset | End of day, after meeting/action, stale open loops | Project Receipt/Reset Packet | Project top module or reset section | Confirm, add context, create tomorrow task | Reset receipt |
+| Quietly Watching | No user action needed but monitoring rules exist | Project monitoring rule/status packet | Project top module only when nothing higher exists | Open watcher, add context, change rule | Monitoring receipt |
+
+Path:
+
+```text
+Source/time trigger
+  -> Witness observation
+  -> Project Manager Round Table
+  -> dynamic focus module selection
+  -> Project Manager Focus/Action Packet
+  -> full Project Manager page top module
+  -> item-scoped action
+  -> receipt
+  -> project memory update
+```
+
+If this path is incomplete, VAL must not imply that something is being handled.
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
 

@@ -779,6 +779,32 @@ Give the executive a project manager who can show what is happening, what matter
 
 This page should feel like a competent Project Manager has every base covered, not like a database view.
 
+Core trust promise:
+
+```text
+This page is how the user knows things are being handled.
+```
+
+The first screen must not be a static project profile. It must be dynamic around the Project Manager's current operating moment.
+
+The top of the page should answer:
+
+```text
+What is the Project Manager handling right now?
+What has VAL already handled?
+What needs executive judgment?
+What can safely wait because VAL is watching it?
+```
+
+If VAL shows that something is being handled, the page must also show the path that proves it:
+
+- what source triggered the project-manager work
+- what VAL did, noticed, prepared, linked, or monitored
+- what packet/artifact changed
+- where the result now lives
+- what the user can do next
+- what receipt proves it happened
+
 The full page should include:
 
 - project navigation/sidebar or project list
@@ -827,6 +853,78 @@ Bottom action rail
 ```
 
 The screenshot reference `projects card.png` points in the right direction: a full-page, calm executive project workspace with a navigation rail, strong project identity, main reasoning stack, right-side project facts/actions, and an action rail.
+
+### Dynamic Project Manager Focus
+
+The top module of the Project Manager page is selected dynamically.
+
+It should not always be Identity, Snapshot, or Project Charter. Those are stable context. The top module should reflect what the Project Manager is doing at that point in the project/day.
+
+Priority order:
+
+1. Critical blocker, payment issue, deadline, owner gap, or executive-risk item.
+2. User decision needed.
+3. Prepared work ready for approval.
+4. Today's reprioritization.
+5. Active project movement.
+6. End-of-day reset / tomorrow preparation.
+7. Quiet monitoring if nothing needs attention.
+
+The top module must be backed by a Project Manager Action Packet or Project Manager Focus Packet. It must not be generated as decorative summary copy.
+
+### Dynamic Focus Modules
+
+| Module | Trigger | What VAL must do | Visible surface | User action | Receipt |
+|---|---|---|---|---|---|
+| `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, high-risk trade-off | Create risk/next-action packet, notify Alignment if executive-worthy, update project status | Top module, Alignment when admitted, Project action layer | Decide, approve draft, assign owner, ask scoped question | Issue receipt + updated project packet |
+| `Needs Your Judgment` | PM cannot safely move without user decision | Create decision packet with options, recommendation, source proof, consequences | Top module and Project action layer | Choose option, add context, hold | Decision receipt |
+| `Prepared For You` | VAL prepared draft, SOP, workflow, note, schedule, document, or follow-up | Persist artifact, link to project/source, register in Leverage if reviewable | Top module or action layer; Leverage when appropriate | Review, refine, approve, reject | Prepared-work receipt |
+| `Today's Reprioritization` | Start of day, new source since last review, changed priority/risk | Re-rank project priorities, identify risk today, clarify who needs context | Top module | Accept priority, ask why, change priority | Reprioritization receipt |
+| `Project Movement` | Task completed/slipped, source added, meeting happened, document changed, dependency moved | Create movement packet and update current reality | Top module or recent activity | Open source, add context, ask what changed | Movement receipt |
+| `Execution Adjustment` | Scope/time/cost/quality trade-off appears | Make trade-off explicit, show impact, recommend least-risk move | Top module when active | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
+| `Project Reset` | End of day, after meeting, after major action, stale open loops | Summarize what moved, decisions made, unresolved risks, tomorrow prep | Top module or lower reset card | Confirm, add missing context, create tomorrow task | Reset receipt |
+| `Quietly Watching` | Nothing needs user attention but monitoring rules exist | Show what VAL is watching and why no action is needed | Top module only when no higher module exists | Open watcher, add context, change watch rule | Monitoring receipt |
+
+### Module Path Completeness
+
+Every dynamic focus module must pass this path:
+
+```text
+Source or time trigger
+  -> Witness observation
+  -> Project Manager Round Table
+  -> Focus module selection
+  -> Project Manager Focus/Action Packet
+  -> Project page top module
+  -> item-scoped user action
+  -> receipt
+  -> updated project memory
+```
+
+If any step is missing, the page must not imply that VAL handled the item.
+
+### Handled Work Copy Rule
+
+Allowed:
+
+```text
+VAL linked this invoice to Project X.
+VAL prepared the follow-up email for review.
+VAL found a payment issue from this project.
+VAL is watching the launch workflow dependency.
+Nothing needs your attention right now; VAL is watching the open loops.
+```
+
+Not allowed:
+
+```text
+Project updated.
+Insight generated.
+Context found.
+Things are moving.
+```
+
+The user should always understand what was handled, why it matters, and what VAL will do next.
 
 ### Project Dossier Sections
 
