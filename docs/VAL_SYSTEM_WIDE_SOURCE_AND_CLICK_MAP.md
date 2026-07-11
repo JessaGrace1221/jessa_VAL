@@ -114,6 +114,22 @@ This applies to:
 - calendar suggestions
 - Ready For You / Leverage work
 
+## Path Completeness Rule
+
+Every new behavior documented in this map must include an implementation-grade path.
+
+For each source or click, the map must answer:
+
+1. What source/event starts the path?
+2. Which classifier or observer receives it?
+3. Which packet, record, or memory object gets written?
+4. Which visible surface shows the result?
+5. Which action can the user take?
+6. What receipt proves the action happened?
+7. What happens if confidence is low or the match is unclear?
+
+Do not treat an idea as mapped until the intake path, write target, visible surface, review/action path, and receipt are all named.
+
 ## Prepared Output Vocabulary
 
 The word "draft" must not be used loosely.
@@ -509,6 +525,8 @@ Receipt or invoice email arrives
   -> route PDFs/attachments to Documents
   -> automatically link to obvious matching project when clear
   -> create project/finance evidence when relevant
+  -> update project finance/document summary
+  -> show quiet receipt: "VAL linked this to Project X"
   -> if project match is unclear, create Quiet Notices action: "Assign this to a project"
   -> user may attach to an existing project or create a new project
 ```
@@ -546,8 +564,30 @@ Default posture:
 Quiet lower-right notice
   -> opens Notices / Notifications
   -> shows low-pressure operational items
+  -> shows quiet receipts such as "VAL linked this to Project X"
   -> includes "Assign this to a project" when a receipt/invoice needs placement
 ```
+
+If the user is already viewing the email in Executive Inbox, the email detail should also show the quiet pre-read receipt:
+
+```text
+VAL linked this to Project X.
+```
+
+If the receipt/invoice created or updated a project finance summary, include that in the quiet receipt.
+
+New project from receipt/invoice:
+
+```text
+User creates new project from receipt/invoice
+  -> project packet created
+  -> source email/document linked
+  -> finance/document summary created automatically
+  -> receipt/invoice added as first finance evidence
+  -> Quiet Notices receipt recorded
+```
+
+Every project should have a finance/document summary, even if it starts empty.
 
 If any receipt, invoice, system notice, or automated email contains an important deadline, payment issue, service interruption, account access risk, or other consequence, it should become executive-worthy.
 
@@ -1241,8 +1281,9 @@ Every document must answer:
 | Existing project match | Link document to project packet. |
 | Person-specific document | Link document to person packet. |
 | Unknown project but clear ongoing work | Suggested project review update. |
-| Receipt/invoice with obvious project match | Automatically link to project and create finance/project evidence. |
+| Receipt/invoice with obvious project match | Automatically link to project, create finance/project evidence, update finance/document summary, and record quiet receipt. |
 | Receipt/invoice with unclear project match | Quiet Notices action: "Assign this to a project." |
+| New project from receipt/invoice | Create project packet and finance/document summary automatically. |
 | Contract/proposal/SOW/invoice | Project + external action risk gate. |
 | Reference document | Document library only unless relevance admits. |
 

@@ -379,6 +379,7 @@ Dedicated classification prompt suite:
 | Operational alert type | `{{emails.current.operational_alert_type}}` | new/derived | enum | email classifier | Receipt, invoice, shipping, login_security, two_factor, automated_notification, payment_issue, deadline, service_risk, other. |
 | Finance/project document signal | `{{emails.current.finance_project_document_signal}}` | new/derived | object | document/project observer | Receipt/invoice attachment handling, project finance evidence, suggested project creation. |
 | Project assignment action | `{{emails.current.project_assignment_action}}` | new/derived | object | document/project observer | "Assign this to a project" action with existing project options or new project creation when match is unclear. |
+| Quiet action receipt | `{{emails.current.quiet_action_receipt}}` | new/derived | object | source processing spine | Quiet receipts such as "VAL linked this to Project X" for Notices or email detail. |
 | Relationship admission graph | `{{emails.current.relationship_admission_graph}}` | new/derived | object | Email relationship resolver | Sent-to/CC/BCC, replied-to, thread participant, intro thread, calendar/transcript/CRM/manual evidence. |
 | Sender suppression status | `{{emails.current.sender_suppression_status}}` | new/derived | enum | user decision, spam/bulk classifier | Decide whether to hide sender from Executive Inbox and relationship surfacing. |
 | Suppression override evidence | `{{emails.current.suppression_override_evidence}}` | new/derived | array | relationship resolver | Calendar, transcript, sent/replied email, or manual important evidence that can override unsubscribe/bulk suppression. |
@@ -512,6 +513,7 @@ Dedicated prompt suite:
 | CRM task sync plan | `{{crm.task_sync_plan}}` | new/derived | object | CRM Task Sync Planner | Link/create/update/keep task sync recommendation. |
 | CRM opportunity resolution | `{{crm.opportunity.resolution}}` | new/derived | object | CRM Opportunity Resolver | Relationship value, opportunity value, lifecycle/stage candidates. |
 | CRM proposal/invoice plan | `{{crm.document_plan}}` | new/derived | object | Proposal / Invoice Planner | Proposal, invoice, estimate, quote, or contract prep plan. |
+| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Receipts, invoices, payment issues, source documents, totals if available, and open finance follow-ups for every project. |
 | CRM send plan | `{{crm.send_plan}}` | new/derived | object | SMS / Email Send Planner | CRM-routed SMS/email preparation and permission requirements. |
 | CRM calendar invite plan | `{{crm.calendar_invite_plan}}` | new/derived | object | CRM Calendar Invite Planner | Prepared invite candidate and missing confirmations. |
 | CRM action permission | `{{crm.action_permission}}` | new/derived | object | CRM Action Permission Classifier | Whether action is prepare-only, auto-safe, approval-required, never-auto, or refused. |
