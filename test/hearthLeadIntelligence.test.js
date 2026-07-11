@@ -788,11 +788,15 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.doesNotMatch(hearthHtml, /<button type="button" data-relationship-action="cowork_relationship">Co-Work with VAL<\/button>/);
   assert.match(hearthJs, /mode === 'relationship'/);
   assert.doesNotMatch(hearthHtml, /data-relationship-action="teach_temperature"/);
-  for(const sort of ['attention', 'warmest', 'changed', 'alpha']){
+  for(const sort of ['attention', 'changed', 'alpha']){
     assert.match(hearthHtml, new RegExp(`<option value="${sort}"`));
   }
-  for(const filter of ['needs_attention', 'warm', 'strategic', 'new', 'waiting']){
+  assert.doesNotMatch(hearthHtml, /<option value="warmest"/);
+  for(const filter of ['active_stewardship', 'identity_review', 'people_to_watch']){
     assert.match(hearthHtml, new RegExp(`data-relationship-state-filter="${filter}"`));
+  }
+  for(const filter of ['needs_attention', 'warm', 'strategic', 'new', 'waiting']){
+    assert.doesNotMatch(hearthHtml, new RegExp(`data-relationship-state-filter="${filter}"`));
   }
   assert.match(hearthJs, /const relationshipTemperatureModel/);
   assert.match(hearthJs, /function filteredRelationshipIndexItems/);
@@ -814,7 +818,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /temperatureConflict: item\.temperatureConflict \|\| null/);
   assert.match(hearthJs, /temperatureConflict: fallback\.temperatureConflict \|\| null/);
   assert.match(hearthJs, /rolodex-temperature-review/);
-  assert.match(hearthJs, /Review temperature/);
+  assert.match(hearthJs, /Review relationship understanding/);
   assert.match(hearthJs, /function renderRelationshipTemperatureReview/);
   assert.match(hearthJs, /Review before treating this temperature as durable judgment/);
   assert.match(hearthJs, /function dedupeRelationshipProfiles/);
@@ -826,7 +830,7 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /function hydrateRelationshipProjectLinks/);
   assert.match(hearthJs, /\/api\/projects\/links\?relationshipId=/);
   assert.match(hearthJs, /function relationshipProjectLookupId/);
-  assert.match(hearthJs, /temperature:'What should VAL understand about this relationship temperature or state\?'/);
+  assert.match(hearthJs, /temperature:'What should VAL understand about this relationship status or current posture\?'/);
   assert.match(hearthJs, /function relationshipTemperatureTeachingContext/);
   assert.match(hearthJs, /actionId === 'cowork_relationship'/);
   assert.match(hearthJs, /Competing evidence:/);
@@ -844,28 +848,28 @@ test('Relationship Rolodex can scale with search, state filters, and a canonical
   assert.match(hearthJs, /let relationshipTeachMode = 'relationship'/);
   assert.match(hearthJs, /relationshipTeachMode = reason/);
   assert.match(hearthJs, /Temperature teaching is ready for review/);
-  assert.match(hearthJs, /Correction type: relationship temperature/);
+  assert.match(hearthJs, /Correction type: relationship understanding/);
   assert.match(hearthJs, /Review update queued: relationship_temperature_correction/);
-  assert.match(hearthJs, /Temperature review pending · correction waiting/);
-  assert.match(hearthJs, /Open temperature correction review/);
+  assert.match(hearthJs, /Understanding review pending/);
+  assert.match(hearthJs, /Open relationship understanding correction review/);
   assert.match(hearthJs, /row\.className = 'relationship-rolodex-row'/);
   assert.match(hearthJs, /pending\.dataset\.relationshipPendingTemperatureReview = item\.id/);
   assert.match(hearthJs, /function openPendingRelationshipTemperatureReviewFromRolodex/);
   assert.match(hearthJs, /event\.target\.closest\('\[data-relationship-pending-temperature-review\]'\)/);
   assert.match(hearthJs, /await openPendingRelationshipTemperatureReviewFromRolodex\(pendingTemperatureReview\)/);
   assert.match(hearthJs, /relationshipPendingTemperatureReviewFor\(profile\) \|\| profile\.temperatureReviewPending/);
-  assert.match(hearthJs, /Review temperature correction/);
-  assert.match(hearthJs, /Approve temperature learning/);
-  assert.match(hearthJs, /Reject temperature learning/);
+  assert.match(hearthJs, /Review understanding correction/);
+  assert.match(hearthJs, /Relationship understanding learning approved locally/);
+  assert.match(hearthJs, /Relationship understanding learning rejected/);
   assert.match(hearthJs, /syncRelationshipTemperatureReviewState\(result\.update \|\| update\)/);
-  assert.match(hearthJs, /Relationship Temperature/);
+  assert.match(hearthJs, /Relationship Understanding/);
   assert.match(hearthJs, /Current read', 'Correction', 'Evidence', 'Decision/);
   assert.match(hearthJs, /What shifted', 'Evidence VAL used', 'What to decide/);
   assert.match(hearthJs, /Proposed teaching:/);
   assert.match(hearthJs, /Evidence held:/);
   assert.match(hearthJs, /Boundary: approval records local Teach VAL learning only/);
-  assert.match(hearthJs, /does not directly change relationship temperature/);
-  assert.match(hearthJs, /Teach temperature again/);
+  assert.match(hearthJs, /does not directly change visible relationship status/);
+  assert.match(hearthJs, /Teach relationship understanding again/);
   assert.match(hearthJs, /actionId === 'teach_temperature'/);
   assert.match(hearthJs, /async function hydrateRelationshipIndex/);
   assert.match(hearthJs, /\/api\/relationships\/index\?limit=120/);
@@ -1994,12 +1998,12 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /peopleWhoNeedThem/);
   assert.match(hearthJs, /peopleTheyShouldMeet/);
   assert.match(hearthJs, /relationship-action-group/);
-  assert.match(hearthJs, /Observer controls/);
+  assert.match(hearthJs, /Source check/);
   assert.match(hearthJs, /function renderRelationshipPrimaryActions/);
   assert.match(hearthJs, /function relationshipActionsWithStewardshipReview/);
   assert.match(hearthJs, /relationshipReviewIntroductionsAction\(\)/);
-  assert.match(hearthJs, /Refresh observers/);
-  assert.match(hearthJs, /Review next move/);
+  assert.match(hearthJs, /Check for new evidence/);
+  assert.match(hearthJs, /Review prepared move/);
   assert.match(hearthJs, /linkedinSignal/);
   assert.match(hearthJs, /sourceReceipts/);
   assert.match(hearthJs, /linkedInLatestPosts/);
@@ -2020,9 +2024,9 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /LinkedIn activity is ready to review/);
   assert.match(hearthJs, /LinkedIn comment drafted for review/);
   assert.match(hearthJs, /LinkedIn DM drafted for review/);
-  assert.match(hearthJs, /Observer refresh is ready for review/);
-  assert.match(hearthJs, /Next relationship move is ready for review/);
-  assert.match(hearthJs, /who may need this person, who this person may need, and what move would serve the relationship/);
+  assert.match(hearthJs, /Source check is ready for review/);
+  assert.match(hearthJs, /Next Stewardship move is ready for review/);
+  assert.match(hearthJs, /including introductions only when they are the right move/);
   assert.match(hearthJs, /function openRelationshipIntroReview/);
   assert.match(hearthJs, /return \['Leverage', 'Fit', 'Review', 'Approval'\]/);
   assert.match(hearthJs, /let workspaceReturnTarget = 'home'/);
@@ -2033,7 +2037,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /relationshipAllPeople/);
   assert.match(hearthJs, /updateWorkspaceReturnButton/);
   assert.match(hearthJs, /returnButton\.textContent = label/);
-  assert.match(hearthJs, /openWorkspaceShell\('Relationship stewardship review', \{returnTarget:'relationship'\}\)/);
+  assert.match(hearthJs, /openWorkspaceShell\('Stewardship move review', \{returnTarget:'relationship'\}\)/);
   assert.match(hearthJs, /Who needs this person/);
   assert.match(hearthJs, /Who this person needs/);
   assert.match(hearthJs, /introDraft:/);
@@ -2059,7 +2063,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /sourceType: 'relationship_profile'/);
   assert.match(hearthJs, /sourceReceipts: person\.sourceReceipts/);
   assert.match(hearthJs, /function relationshipSuggestedActions/);
-  assert.match(hearthJs, /Observer controls/);
+  assert.match(hearthJs, /Source check/);
   assert.match(hearthJs, /refresh_relationship_observers/);
   assert.doesNotMatch(hearthJs, /Draft LinkedIn Comment',type:'endpoint'/);
   assert.match(hearthJs, /function openRelationshipTeachWorkspace/);
@@ -2143,7 +2147,7 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
   assert.match(hearthJs, /source:selectedSource/);
   assert.match(hearthJs, /await openRelationshipProfileFromFolder\(profileId, relationshipProfileButton\)/);
   assert.match(hearthJs, /await handleRelationshipActionClick\(relationshipAction\.dataset\.relationshipAction, relationshipAction\)/);
-  assert.match(hearthHtml, /data-relationship-action="ask_alignment"/);
+  assert.match(hearthHtml, /data-relationship-action="refresh_relationship_observers"/);
   assert.match(hearthHtml, /data-relationship-section-actions="identity"/);
   assert.match(hearthHtml, /data-relationship-list="peopleWhoNeedThem"/);
   assert.match(hearthHtml, /data-relationship-list="peopleTheyShouldMeet"/);
@@ -2183,7 +2187,7 @@ test('Relationship drawer reads the canonical relationship dossier when availabl
 });
 
 test('Relationship actions can return focus to the desk lenses', () => {
-  assert.match(hearthHtml, /<button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention<\/button>/);
+  assert.match(hearthHtml, /<button type="button" data-relationship-action="refresh_relationship_observers">Check for new evidence<\/button>/);
   assert.match(hearthJs, /function handleRelationshipAction/);
   assert.match(hearthJs, /relationship:draft_message/);
   assert.match(hearthJs, /relationship:create_task/);

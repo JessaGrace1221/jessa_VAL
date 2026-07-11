@@ -5208,10 +5208,10 @@ button.drawer-link{
 }
 .relationship-rolodex button[data-relationship-open-profile]{
   display:grid;
-  grid-template-columns:minmax(130px,1.1fr) minmax(118px,.9fr) minmax(140px,.85fr) minmax(160px,1.4fr);
-  gap:12px;
-  align-items:center;
-  min-height:48px;
+  grid-template-columns:minmax(130px,.72fr) minmax(150px,.8fr) minmax(220px,1.25fr) minmax(180px,1fr);
+  gap:8px 12px;
+  align-items:start;
+  min-height:72px;
   border:1px solid rgba(79,48,38,.13);
   border-radius:7px;
   background:
@@ -5223,9 +5223,9 @@ button.drawer-link{
   box-shadow:0 10px 24px rgba(79,48,38,.08);
 }
 .relationship-rolodex[data-relationship-density="compact"] button[data-relationship-open-profile]{
-  grid-template-columns:minmax(112px,.95fr) minmax(96px,.75fr) minmax(118px,.75fr) minmax(150px,1.2fr);
+  grid-template-columns:minmax(118px,.7fr) minmax(140px,.75fr) minmax(200px,1.2fr) minmax(160px,1fr);
   gap:8px;
-  min-height:42px;
+  min-height:68px;
   padding:7px 9px;
   box-shadow:0 7px 16px rgba(79,48,38,.06);
 }
@@ -5259,11 +5259,26 @@ button.drawer-link{
 .relationship-rolodex-section:first-child{
   margin-top:0;
 }
-.relationship-rolodex-section strong{
+.relationship-rolodex-section strong,
+.relationship-rolodex-section button{
   color:rgba(34,19,15,.9);
   font:800 .72rem/1.15 var(--body);
   letter-spacing:.04em;
   text-transform:uppercase;
+}
+.relationship-rolodex-section button{
+  width:max-content;
+  max-width:100%;
+  border:0;
+  background:transparent;
+  padding:0;
+  text-align:left;
+  cursor:pointer;
+}
+.relationship-rolodex-section button:hover,
+.relationship-rolodex-section button:focus-visible{
+  color:rgba(91,105,79,.95);
+  outline:none;
 }
 .relationship-rolodex-section span{
   color:rgba(45,27,22,.58);
@@ -5279,17 +5294,37 @@ button.drawer-link{
 .rolodex-name{
   font:750 .86rem/1.15 var(--body);
 }
-.rolodex-company,
-.rolodex-signal{
+.rolodex-status{
+  color:rgba(34,19,15,.9);
+  font-size:.74rem;
+  font-weight:850;
+  line-height:1.22;
+}
+.rolodex-why,
+.rolodex-open,
+.rolodex-next,
+.rolodex-evidence{
   color:rgba(45,27,22,.66);
   font-size:.72rem;
   line-height:1.25;
 }
+.rolodex-why,
+.rolodex-evidence{
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+}
+.rolodex-evidence{
+  grid-column:3/-1;
+}
 .relationship-rolodex[data-relationship-density="compact"] .rolodex-name{
   font-size:.8rem;
 }
-.relationship-rolodex[data-relationship-density="compact"] .rolodex-company,
-.relationship-rolodex[data-relationship-density="compact"] .rolodex-signal{
+.relationship-rolodex[data-relationship-density="compact"] .rolodex-why,
+.relationship-rolodex[data-relationship-density="compact"] .rolodex-open,
+.relationship-rolodex[data-relationship-density="compact"] .rolodex-next,
+.relationship-rolodex[data-relationship-density="compact"] .rolodex-evidence{
   display:-webkit-box;
   -webkit-box-orient:vertical;
   -webkit-line-clamp:2;
@@ -6431,6 +6466,7 @@ button.drawer-link{
       .project-source-grid article:first-child{grid-column:1}
       .relationship-rolodex-section{grid-template-columns:1fr;gap:3px}
       .relationship-rolodex button[data-relationship-open-profile]{grid-template-columns:1fr;gap:5px;min-height:0}
+      .rolodex-evidence{grid-column:auto}
       .project-rolodex button[data-project-open-profile]{grid-template-columns:1fr;gap:5px;min-height:0}
       .rolodex-temperature{grid-template-columns:52px auto;max-width:220px}
       .rolodex-temperature i{width:52px}

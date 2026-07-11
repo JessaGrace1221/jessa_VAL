@@ -232,13 +232,13 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(commandCenter,/<h3>Executive Assessment<\/h3>/);
   assert.match(commandCenter,/<h3>Strategic Importance<\/h3>/);
   assert.match(commandCenter,/<h3>Executive Reminder<\/h3>/);
-  assert.match(commandCenter,/<h3>Observer Notes<\/h3>/);
+  assert.match(commandCenter,/<h3>Evidence Notes<\/h3>/);
   assert.match(commandCenter,/<h3>Executive Actions<\/h3>/);
   assert.match(commandCenter,/CRM contact ID/);
   assert.match(commandCenter,/LinkedIn Signal/);
-  assert.match(commandCenter,/Source Receipts/);
+  assert.match(commandCenter,/Source Evidence/);
   assert.match(commandCenter,/Review LinkedIn activity/);
-  assert.match(commandCenter,/Refresh observers/);
+  assert.match(commandCenter,/Check for new evidence/);
   assert.match(commandCenter,/review_linkedin_activity/);
   assert.match(commandCenter,/Next relationship move ready/);
   assert.match(commandCenter,/introReviewHtml/);

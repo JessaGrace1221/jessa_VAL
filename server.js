@@ -16125,6 +16125,53 @@ function relationshipIndexPrimarySignal(profile={},state='warm'){
   if(state==='new')return 'New: identity is known, but VAL needs more evidence.';
   return 'Warm: no urgent risk or waiting loop is currently surfaced.';
 }
+function stewardshipExecutiveVisibilityForIndex(packetItem={},profile={}){
+  const visibility=packetItem.executiveVisibility||packetItem.packet?.executive_visibility||{};
+  const raw=visibility.visibility||'hidden';
+  const mapped=raw==='active_queue'?'active_stewardship':raw;
+  const openLoops=(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const opportunities=(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean);
+  const packet=packetItem.packet||{};
+  const maturity=packetItem.packetMaturity||packet.packet_maturity||{};
+  const admission=packetItem.relationshipAdmission||packet.relationship_admission||profile.relationshipAdmission||{};
+  const canEvaluate=!!(packetItem.canEvaluateMoves||packet.packet_state?.can_evaluate_moves);
+  const sourceSummary=packet.who_this_person_is?.source_receipts?.[0]?.summary||profile.summary||packet.relationship_origin?.first_meaningful_signal||'Source-backed relationship context is attached.';
+  const openMatter=openLoops[0]||packet.relationship_state?.open_loops?.[0]||opportunities[0]||'No current open matter is ready.';
+  let status='No move right now';
+  let nextMove='No action is needed right now.';
+  let whyNow='No source-backed timing trigger is active.';
+  let state='hidden';
+  if(admission.admission_status==='blocked_by_identity'||maturity.maturity==='blocked_by_identity'||mapped==='identity_review'){
+    state='identity_review';
+    status='Needs identity review';
+    nextMove='Review the contact match before VAL uses this relationship.';
+    whyNow='Meaningful context exists, but the person is not safely resolved.';
+  }else if(mapped==='active_stewardship'||(canEvaluate&&(openLoops.length||opportunities.length))){
+    state='active_stewardship';
+    status=openLoops.length||opportunities.length?'Move suggested: Review next stewardship move':'Move suggested: Review relationship context';
+    nextMove=openLoops.length?'Review the open relationship matter.':(opportunities.length?'Review the suggested stewardship move.':'Review the next stewardship move.');
+    whyNow=openLoops[0]||opportunities[0]||visibility.attention_reason||'VAL has enough source-backed context to ask for executive judgment.';
+  }else if(mapped==='people_to_watch'){
+    state='people_to_watch';
+    status='Understanding developing';
+    nextMove='VAL is watching for a named trigger before asking for action.';
+    whyNow=visibility.attention_reason||maturity.why||'VAL recognizes the relationship but does not yet have a responsible move.';
+  }
+  return {
+    state,
+    status,
+    statusMeaning:maturity.why||visibility.why_visible_or_hidden||'VAL is sorting this relationship by current Stewardship posture.',
+    whyThisMatters:profile.summary||packet.who_this_person_is?.summary||sourceSummary,
+    whatIsOpen:state==='identity_review'?'Contact identity needs review.':openMatter,
+    nextMove,
+    whyNow,
+    evidencePosture:sourceSummary,
+    collapsedByDefault:state==='people_to_watch',
+    watchTrigger:state==='people_to_watch'?(visibility.attention_reason||maturity.missing_variables?.[0]||'new source-backed context'):'',
+    canEvaluateMoves:canEvaluate,
+    hidden:state==='hidden'
+  };
+}
 function relationshipProfilePrimaryEmail(profile={}){
   const metadata=profile.metadata||{};
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
@@ -16315,6 +16362,8 @@ function relationshipIndexItemFromProfile(profile={}){
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
   const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
+  const packetItem=relationshipPersonPacketItemFromProfile(profile);
+  const executiveUi=stewardshipExecutiveVisibilityForIndex(packetItem,profile);
   return {
     id:String(id),
     query:{name,email,targetId:id,contactId},
@@ -16345,7 +16394,19 @@ function relationshipIndexItemFromProfile(profile={}){
     certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
-    personPacket:metadata.personPacket||null,
+    personPacket:packetItem.packet||metadata.personPacket||null,
+    packetMaturity:packetItem.packetMaturity||null,
+    evidenceBindings:packetItem.evidenceBindings||[],
+    executiveVisibility:packetItem.executiveVisibility||null,
+    canEvaluateMoves:packetItem.canEvaluateMoves||false,
+    stewardshipUi:executiveUi,
+    stewardshipStatus:executiveUi.status,
+    stewardshipState:executiveUi.state,
+    whyThisPersonMatters:executiveUi.whyThisMatters,
+    whatIsOpen:executiveUi.whatIsOpen,
+    nextStewardshipMove:executiveUi.nextMove,
+    whyNow:executiveUi.whyNow,
+    evidencePosture:executiveUi.evidencePosture,
     relationshipAdmission:admission,
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
   };

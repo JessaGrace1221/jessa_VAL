@@ -332,19 +332,16 @@
           <label>
             <span>Sort</span>
             <select data-relationship-sort>
-              <option value="attention">Attention first</option>
-              <option value="warmest">Warmest</option>
-              <option value="changed">Recently changed</option>
+              <option value="attention">Judgment first</option>
+              <option value="changed">New evidence</option>
               <option value="alpha">A-Z</option>
             </select>
           </label>
           <div class="relationship-state-filters" aria-label="Relationship state filters">
             <button type="button" class="active" data-relationship-state-filter="all">All</button>
-            <button type="button" data-relationship-state-filter="needs_attention">Needs attention</button>
-            <button type="button" data-relationship-state-filter="warm">Warm</button>
-            <button type="button" data-relationship-state-filter="strategic">Strategic</button>
-            <button type="button" data-relationship-state-filter="new">New</button>
-            <button type="button" data-relationship-state-filter="waiting">Waiting</button>
+            <button type="button" data-relationship-state-filter="active_stewardship">Active stewardship</button>
+            <button type="button" data-relationship-state-filter="identity_review">Needs identity review</button>
+            <button type="button" data-relationship-state-filter="people_to_watch">People to watch</button>
           </div>
           <p class="relationship-index-source" data-relationship-index-source>Local preview · canonical index will appear when available</p>
         </div>
@@ -388,7 +385,7 @@
             </div>
           </section>
           <div class="relationship-actions" aria-label="Executive relationship actions">
-            <button type="button" data-open-room="alignment" data-relationship-action="ask_alignment">Ask what deserves attention</button>
+            <button type="button" data-relationship-action="refresh_relationship_observers">Check for new evidence</button>
           </div>
           <div class="relationship-project-panel" aria-label="Linked projects">
             <div class="relationship-project-panel-header">

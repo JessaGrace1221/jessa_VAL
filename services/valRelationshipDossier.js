@@ -330,7 +330,7 @@ function relationshipDossierActions({id='',name='',email='',recommendedAction=''
     },
     {
       id:'refresh_relationship_observers',
-      label:'Refresh observers',
+      label:'Check for new evidence',
       intent:'observe',
       observerScope,
       type:'endpoint',

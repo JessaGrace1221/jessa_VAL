@@ -977,6 +977,7 @@ let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
 let relationshipIndexSourceLabel = 'Local preview';
 let relationshipPersonPacketIndex = {};
+let relationshipPeopleToWatchExpanded = false;
 let relationshipTeachMode = 'relationship';
 let relationshipTeachSection = 'relationship';
 let activeRelationshipActionSection = '';
@@ -1732,23 +1733,75 @@ function dedupeRelationshipProfiles(profiles = {}){
   }, {});
 }
 
+function relationshipStewardshipUi(profile = {}){
+  const packet = profile.personPacket || {};
+  const packetState = packet.packet_state || {};
+  const packetMaturity = profile.packetMaturity || packet.packet_maturity || {};
+  const admission = profile.relationshipAdmission || packet.relationship_admission || {};
+  const visibility = profile.executiveVisibility || packet.executive_visibility || {};
+  const supplied = profile.stewardshipUi || {};
+  const rawState = supplied.state || profile.stewardshipState || visibility.visibility || '';
+  const normalizedState = rawState === 'active_queue' ? 'active_stewardship' : rawState;
+  const openLoops = Array.isArray(profile.openLoops) ? profile.openLoops : [];
+  const needs = Array.isArray(profile.packetNeeds) ? profile.packetNeeds : [];
+  const offers = Array.isArray(profile.packetOffers) ? profile.packetOffers : [];
+  const sourceReceipts = packet.who_this_person_is?.source_receipts || packet.relationship_origin?.source_receipts || [];
+  const firstSource = sourceReceipts[0] || {};
+  const canEvaluateMoves = Boolean(profile.canEvaluateMoves || packetState.can_evaluate_moves);
+  let state = normalizedState || 'hidden';
+  if(!normalizedState){
+    if(admission.admission_status === 'blocked_by_identity' || packetMaturity.maturity === 'blocked_by_identity') state = 'identity_review';
+    else if(canEvaluateMoves && (openLoops.length || profile.nextStewardshipMove || profile.nextMove)) state = 'active_stewardship';
+    else if(['developing','usable','strong'].includes(packetState.maturity || packetMaturity.maturity)) state = 'people_to_watch';
+  }
+  let status = supplied.status || profile.stewardshipStatus || 'No move right now';
+  if(state === 'identity_review') status = 'Needs identity review';
+  if(state === 'people_to_watch' && !supplied.status && !profile.stewardshipStatus) status = 'Understanding developing';
+  if(state === 'active_stewardship' && !/^Move suggested/i.test(status)){
+    const moveName = profile.nextStewardshipMove || profile.nextMove || openLoops[0] || 'Review next stewardship move';
+    status = 'Move suggested: ' + String(moveName).replace(/^Review\s+/i, 'Review ');
+  }
+  const whyThisMatters = supplied.whyThisMatters || profile.whyThisPersonMatters || profile.summary || packet.who_this_person_is?.summary || profile.signal || 'VAL has source-backed relationship context for this person.';
+  const whatIsOpen = supplied.whatIsOpen || profile.whatIsOpen || openLoops[0] || (state === 'identity_review' ? 'Contact identity needs review.' : 'No current open matter is ready.');
+  const nextMove = supplied.nextMove || profile.nextStewardshipMove || profile.nextMove || (state === 'people_to_watch' ? 'Watch for a named evidence trigger.' : (state === 'identity_review' ? 'Review the contact match.' : 'No action is needed right now.'));
+  const whyNow = supplied.whyNow || profile.whyNow || visibility.attention_reason || packetMaturity.why || firstSource.summary || 'No source-backed timing trigger is active.';
+  const evidencePosture = supplied.evidencePosture || profile.evidencePosture || firstSource.summary || profile.sourceEvidence || profile.sourceReceipts || 'Source-backed evidence is available for review.';
+  return {
+    state,
+    status,
+    statusMeaning: supplied.statusMeaning || packetMaturity.why || visibility.why_visible_or_hidden || '',
+    whyThisMatters,
+    whatIsOpen,
+    nextMove,
+    whyNow,
+    evidencePosture,
+    watchTrigger: supplied.watchTrigger || visibility.attention_reason || packetMaturity.missing_variables?.[0] || '',
+    collapsedByDefault: state === 'people_to_watch',
+    canEvaluateMoves
+  };
+}
+
 function relationshipIndexItems(){
-  return Object.entries(dedupeRelationshipProfiles(relationshipIndexSourceProfiles())).map(([id, profile]) => ({
-    id,
-    profile,
-    name: profile.name || 'Unnamed relationship',
-    company: profile.company || String(profile.contact || '').split('·')[0]?.trim() || 'Relationship',
-    temperature: profile.temperature || 'Unknown',
-    temperatureScore: Math.max(0, Math.min(100, Number(profile.temperatureScore || 50))),
-    trajectory: profile.trajectory || profile.role || 'Watch',
-    state: profile.relationshipState || relationshipStateFromTemperature(profile),
-    stateLabel: profile.relationshipStateLabel || relationshipTemperatureModel[profile.relationshipState]?.label || profile.temperature || 'Watch',
-    sourceEvidence: profile.sourceEvidence || profile.sourceReceipts || 'Evidence is pending source review.',
-    confidence: Math.max(0, Math.min(1, Number(profile.confidence || 0.6))),
-    lastChangedAt: profile.lastChangedAt || '',
-    signal: profile.signal || profile.certainty || profile.evidence || 'No current relationship signal is attached.',
-    temperatureReviewPending: relationshipPendingTemperatureReviewFor(profile) || profile.temperatureReviewPending || null
-  }));
+  return Object.entries(dedupeRelationshipProfiles(relationshipIndexSourceProfiles())).map(([id, profile]) => {
+    const stewardship = relationshipStewardshipUi(profile);
+    return {
+      id,
+      profile,
+      stewardship,
+      name: profile.name || 'Unnamed relationship',
+      company: profile.company || String(profile.contact || '').split('·')[0]?.trim() || 'Relationship',
+      temperature: profile.temperature || 'Unknown',
+      temperatureScore: Math.max(0, Math.min(100, Number(profile.temperatureScore || 50))),
+      trajectory: profile.trajectory || profile.role || 'Watch',
+      state: stewardship.state,
+      stateLabel: stewardship.status,
+      sourceEvidence: stewardship.evidencePosture || profile.sourceEvidence || profile.sourceReceipts || 'Evidence is pending source review.',
+      confidence: Math.max(0, Math.min(1, Number(profile.confidence || 0.6))),
+      lastChangedAt: profile.lastChangedAt || '',
+      signal: stewardship.whyThisMatters || profile.signal || profile.certainty || profile.evidence || 'No current relationship signal is attached.',
+      temperatureReviewPending: relationshipPendingTemperatureReviewFor(profile) || profile.temperatureReviewPending || null
+    };
+  }).filter((item) => item.state !== 'hidden');
 }
 
 function relationshipProfileFromIndexItem(item = {}){
@@ -1780,6 +1833,15 @@ function relationshipProfileFromIndexItem(item = {}){
     trajectory: item.trajectory || item.relationshipStatus || 'Watch',
     relationshipState: item.relationshipState || item.state || relationshipStateFromTemperature(item),
     relationshipStateLabel: item.relationshipStateLabel || item.stateLabel || item.temperature || 'Warm',
+    stewardshipUi: item.stewardshipUi || item.stewardship || null,
+    stewardshipStatus: item.stewardshipStatus || item.stewardshipUi?.status || '',
+    stewardshipState: item.stewardshipState || item.stewardshipUi?.state || '',
+    whyThisPersonMatters: item.whyThisPersonMatters || item.stewardshipUi?.whyThisMatters || '',
+    whatIsOpen: item.whatIsOpen || item.stewardshipUi?.whatIsOpen || '',
+    nextStewardshipMove: item.nextStewardshipMove || item.stewardshipUi?.nextMove || '',
+    whyNow: item.whyNow || item.stewardshipUi?.whyNow || '',
+    evidencePosture: item.evidencePosture || item.stewardshipUi?.evidencePosture || '',
+    canEvaluateMoves: Boolean(item.canEvaluateMoves || item.stewardshipUi?.canEvaluateMoves),
     temperatureMeaning: item.temperatureMeaning || relationshipTemperatureModel[item.relationshipState || item.state]?.meaning || '',
     temperatureObservers: item.temperatureObservers || relationshipTemperatureModel[item.relationshipState || item.state]?.observers || [],
     temperatureScoreRange: item.temperatureScoreRange || relationshipTemperatureModel[item.relationshipState || item.state]?.scoreRange || [],
@@ -1800,6 +1862,9 @@ function relationshipProfileFromIndexItem(item = {}){
     sourceReceipts: item.sourceReceipts || 'VAL relationship index · CRM identity link required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
     personPacket,
+    packetMaturity: item.packetMaturity || personPacket?.packet_maturity || null,
+    evidenceBindings: item.evidenceBindings || personPacket?.evidence_bindings || [],
+    executiveVisibility: item.executiveVisibility || personPacket?.executive_visibility || null,
     personPacketMaturity: item.maturity || packetState.maturity || '',
     personPacketNeedsReview: Boolean(item.needsReview || packetState.needs_review),
     personPacketMissingVariables: item.missingVariables || packetState.missing_variables || [],
@@ -1864,6 +1929,12 @@ function relationshipProfileWithPersonPacket(profile = {}){
   return {
     ...profile,
     personPacket: packet,
+    packetMaturity: item?.packetMaturity || packet.packet_maturity || profile.packetMaturity || null,
+    evidenceBindings: item?.evidenceBindings || packet.evidence_bindings || profile.evidenceBindings || [],
+    executiveVisibility: item?.executiveVisibility || packet.executive_visibility || profile.executiveVisibility || null,
+    relationshipAdmission: item?.relationshipAdmission || packet.relationship_admission || profile.relationshipAdmission || null,
+    canEvaluateMoves: Boolean(item?.canEvaluateMoves || state.can_evaluate_moves || profile.canEvaluateMoves),
+    stewardshipUi: profile.stewardshipUi || item?.stewardshipUi || null,
     personPacketMaturity: item?.maturity || state.maturity || profile.personPacketMaturity || '',
     personPacketNeedsReview: Boolean(item?.needsReview || state.needs_review || profile.personPacketNeedsReview),
     personPacketMissingVariables: item?.missingVariables || state.missing_variables || profile.personPacketMissingVariables || [],
@@ -2011,33 +2082,24 @@ async function hydrateRelationshipIndex(){
 }
 
 const relationshipStateAttentionRank = {
-  needs_attention: 0,
-  waiting: 1,
-  strategic: 2,
-  warm: 3,
-  new: 4
+  active_stewardship: 0,
+  identity_review: 1,
+  people_to_watch: 2,
+  hidden: 9
 };
 
 const relationshipSectionCopy = {
-  needs_attention: {
-    title: 'Needs attention',
-    note: 'Trust, clarity, or follow-through should be handled before action.'
+  active_stewardship: {
+    title: 'Active Stewardship Queue',
+    note: 'These relationships deserve your judgment now.'
   },
-  waiting: {
-    title: 'Waiting',
-    note: 'A loop is open; clarity matters more than pressure.'
+  identity_review: {
+    title: 'Needs Identity Review',
+    note: 'Meaningful context exists, but identity must be corrected before VAL uses it.'
   },
-  strategic: {
-    title: 'Strategic',
-    note: 'These relationships create leverage and deserve deliberate handling.'
-  },
-  warm: {
-    title: 'Warm',
-    note: 'Healthy enough for thoughtful continuation.'
-  },
-  new: {
-    title: 'New',
-    note: 'Known identity, still gathering enough evidence for judgment.'
+  people_to_watch: {
+    title: 'People To Watch',
+    note: 'Relationships VAL is responsibly monitoring so you do not have to hold them in your head.'
   }
 };
 
@@ -2057,10 +2119,12 @@ function relationshipItemMatchesSearch(item, query){
   const haystack = [
     item.name,
     item.company,
-    item.temperature,
-    item.trajectory,
     item.stateLabel,
     item.signal,
+    item.stewardship?.whyThisMatters,
+    item.stewardship?.whatIsOpen,
+    item.stewardship?.nextMove,
+    item.stewardship?.whyNow,
     item.sourceEvidence,
     item.profile.role,
     item.profile.contact
@@ -2084,9 +2148,6 @@ function relationshipChangedTime(item = {}){
 
 function sortRelationshipIndexItems(items = []){
   return [...items].sort((a, b) => {
-    if(relationshipSortMode === 'warmest'){
-      return b.temperatureScore - a.temperatureScore || a.name.localeCompare(b.name);
-    }
     if(relationshipSortMode === 'changed'){
       return relationshipChangedTime(b) - relationshipChangedTime(a) || a.name.localeCompare(b.name);
     }
@@ -2121,12 +2182,21 @@ function appendRelationshipSectionHeader(state, count){
   const header = document.createElement('div');
   header.className = 'relationship-rolodex-section';
   header.dataset.relationshipSection = state;
-  const title = document.createElement('strong');
+  const title = document.createElement(state === 'people_to_watch' ? 'button' : 'strong');
   title.textContent = copy.title;
+  if(state === 'people_to_watch'){
+    title.type = 'button';
+    title.dataset.relationshipToggleWatch = '1';
+    title.setAttribute('aria-expanded', String(relationshipPeopleToWatchExpanded));
+  }
   const note = document.createElement('span');
   note.textContent = copy.note;
   const total = document.createElement('small');
-  total.textContent = count + ' ' + (count === 1 ? 'person' : 'people');
+  if(state === 'people_to_watch'){
+    total.textContent = count + ' ' + (count === 1 ? 'relationship is' : 'relationships are') + ' being monitored. No action is needed.';
+  }else{
+    total.textContent = count + ' ' + (count === 1 ? 'person' : 'people');
+  }
   header.append(title, note, total);
   relationshipRolodex.appendChild(header);
 }
@@ -2146,41 +2216,41 @@ function appendRelationshipRolodexRow(item){
   button.type = 'button';
   button.dataset.relationshipOpenProfile = item.id;
   button.dataset.relationshipState = item.state;
-  button.setAttribute('title', item.sourceEvidence + ' Confidence: ' + Math.round(item.confidence * 100) + '%.');
+  button.setAttribute('title', item.stewardship.evidencePosture || item.sourceEvidence || 'Open relationship context.');
   button.style.setProperty('--temperature-score', item.temperatureScore + '%');
   const name = document.createElement('span');
   name.className = 'rolodex-name';
   name.textContent = item.name;
-  const company = document.createElement('span');
-  company.className = 'rolodex-company';
-  company.textContent = item.company;
-  const temperature = document.createElement('span');
-  temperature.className = 'rolodex-temperature';
-  const gauge = document.createElement('i');
-  gauge.setAttribute('aria-hidden', 'true');
-  const tempLabel = document.createElement('b');
-  tempLabel.textContent = item.temperature;
-  const trajectory = document.createElement('em');
-  trajectory.textContent = item.signal || item.temperatureMeaning || item.stateLabel || item.trajectory;
-  temperature.append(gauge, tempLabel, trajectory);
-  const signal = document.createElement('span');
-  signal.className = 'rolodex-signal';
-  signal.textContent = item.sourceEvidence || item.profile?.sourceEvidence || item.signal;
-  button.append(name, company, temperature, signal);
+  const status = document.createElement('span');
+  status.className = 'rolodex-status';
+  status.textContent = item.stewardship.status;
+  const why = document.createElement('span');
+  why.className = 'rolodex-why';
+  why.textContent = 'Why this matters: ' + item.stewardship.whyThisMatters;
+  const open = document.createElement('span');
+  open.className = 'rolodex-open';
+  open.textContent = 'Open: ' + item.stewardship.whatIsOpen;
+  const next = document.createElement('span');
+  next.className = 'rolodex-next';
+  next.textContent = 'VAL next move: ' + item.stewardship.nextMove;
+  const evidence = document.createElement('span');
+  evidence.className = 'rolodex-evidence';
+  evidence.textContent = 'Evidence: ' + item.stewardship.evidencePosture;
+  button.append(name, status, why, open, next, evidence);
   if(item.temperatureReviewPending?.status === 'pending'){
     const pending = document.createElement('button');
     pending.type = 'button';
     pending.className = 'rolodex-temperature-pending';
     pending.dataset.relationshipPendingTemperatureReview = item.id;
-    pending.setAttribute('title', 'Open temperature correction review');
-    pending.textContent = 'Temperature review pending · correction waiting';
+    pending.setAttribute('title', 'Open relationship understanding correction review');
+    pending.textContent = 'Understanding review pending';
     row.appendChild(pending);
   }
   if(item.profile?.temperatureConflict || item.temperatureConflict){
     const conflict = item.profile?.temperatureConflict || item.temperatureConflict;
     const review = document.createElement('span');
     review.className = 'rolodex-temperature-review';
-    review.textContent = 'Review temperature · ' + (conflict.challengerState || 'conflicting signal') + ' also has evidence';
+    review.textContent = 'Review relationship understanding · ' + (conflict.challengerState || 'conflicting signal') + ' also has evidence';
     button.appendChild(review);
   }
   row.insertBefore(button, row.firstChild);
@@ -2208,6 +2278,7 @@ function renderRelationshipRolodex(){
       currentSection = item.state;
       appendRelationshipSectionHeader(item.state, sectionCounts[item.state] || 0);
     }
+    if(showSections && item.state === 'people_to_watch' && !relationshipPeopleToWatchExpanded) return;
     appendRelationshipRolodexRow(item);
   });
 }
@@ -2345,7 +2416,7 @@ function relationshipTemperatureTeachingContext(profile = {}){
   const conflict = profile.temperatureConflict;
   const evidence = Array.isArray(profile.temperatureEvidence) ? profile.temperatureEvidence.slice(0, 3) : [];
   const lines = [
-    'Current temperature: ' + (profile.temperature || profile.relationshipStateLabel || 'Not set'),
+    'Current understanding: ' + (profile.stewardshipStatus || profile.relationshipStateLabel || profile.temperature || 'Not set'),
     conflict ? 'Competing evidence: ' + (conflict.challengerState || 'another state') + ' also has evidence.' : 'No competing temperature state is currently flagged.',
     profile.temperatureMeaning ? 'Current meaning: ' + profile.temperatureMeaning : ''
   ].filter(Boolean);
@@ -2430,22 +2501,22 @@ function relationshipTemperatureReviewUpdateLines(update = {}){
     value.currentTemperature ? 'Current read: ' + value.currentTemperature : '',
     value.correction ? 'Proposed teaching: ' + value.correction : (update.summary ? 'Proposed teaching: ' + update.summary : ''),
     refs.length ? 'Evidence held: ' + refs.map((ref) => ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.source_type || ref.sourceType || 'supporting evidence').filter(Boolean).join(' / ') : '',
-    'Boundary: approval records local Teach VAL learning only. It does not directly change relationship temperature, CRM, messages, or external systems.'
+    'Boundary: approval records local Teach VAL learning only. It does not directly change visible relationship status, CRM, messages, or external systems.'
   ].filter(Boolean);
 }
 
 async function openRelationshipTemperatureReviewQueue(){
   if(mockScrapers || !canUseApi){
     setWorkspaceContent({
-      lens: 'Relationship Temperature',
-      title: 'Temperature correction is waiting for review.',
-      meaning: 'In live VAL, this opens the pending temperature correction without leaving the Hearth.',
+      lens: 'Relationship Understanding',
+      title: 'Relationship understanding correction is waiting for review.',
+      meaning: 'In live VAL, this opens the pending relationship-understanding correction without leaving the Hearth.',
       understanding: ['Mock-safe mode is on.', 'No backend review queue was changed.', 'No durable memory, CRM update, message, or relationship fact changed.'],
       recommendation: 'Approve or reject from the live review queue when the local VAL API is available.',
-      actions: relationshipContextActions([{label:'Teach temperature again', workflow:'relationship:teach_temperature'}]),
-      label: 'Relationship temperature review queue'
+      actions: relationshipContextActions([{label:'Teach relationship understanding again', workflow:'relationship:teach_temperature'}]),
+      label: 'Relationship understanding review queue'
     });
-    openWorkspaceShell('Relationship temperature review queue', {returnTarget:'relationship'});
+    openWorkspaceShell('Relationship understanding review queue', {returnTarget:'relationship'});
     return;
   }
   let update = activeRelationshipTemperatureReviewUpdate;
@@ -2456,30 +2527,30 @@ async function openRelationshipTemperatureReviewQueue(){
   }
   if(!update){
     setWorkspaceContent({
-      lens: 'Relationship Temperature',
-      title: 'No temperature corrections are waiting.',
-      meaning: 'The relationship temperature review queue is clear.',
+      lens: 'Relationship Understanding',
+      title: 'No relationship understanding corrections are waiting.',
+      meaning: 'The relationship understanding review queue is clear.',
       understanding: ['No pending relationship_temperature_correction update was found.', 'No durable memory, CRM update, message, or relationship fact changed.', 'You can teach VAL temperature again from the relationship brief.'],
       recommendation: 'Return to the relationship or all people.',
-      actions: relationshipContextActions([{label:'Teach temperature again', workflow:'relationship:teach_temperature'}]),
-      label: 'Relationship temperature review empty'
+      actions: relationshipContextActions([{label:'Teach relationship understanding again', workflow:'relationship:teach_temperature'}]),
+      label: 'Relationship understanding review empty'
     });
-    openWorkspaceShell('Relationship temperature review empty', {returnTarget:'relationship'});
+    openWorkspaceShell('Relationship understanding review empty', {returnTarget:'relationship'});
     return;
   }
   setWorkspaceContent({
-    lens: 'Relationship Temperature',
-    title: 'Review relationship temperature correction.',
-    meaning: 'This is the approval gate for one relationship-temperature correction. It can teach future judgment, but it cannot move the temperature by itself.',
+    lens: 'Relationship Understanding',
+    title: 'Review relationship understanding correction.',
+    meaning: 'This is the approval gate for one relationship-understanding correction. It can teach future judgment, but it cannot move the visible status by itself.',
     understanding: relationshipTemperatureReviewUpdateLines(update),
     recommendation: 'Approve if this should become local learning for future relationship judgment. Reject if the evidence is too thin, too stale, or aimed at the wrong relationship.',
     actions: relationshipContextActions([
       {label:'Approve temperature learning', workflow:'relationshipTemperatureApprove'},
       {label:'Reject temperature learning', workflow:'relationshipTemperatureReject'}
     ]),
-    label: 'Relationship temperature review approval'
+    label: 'Relationship understanding review approval'
   });
-  openWorkspaceShell('Relationship temperature review approval', {returnTarget:'relationship'});
+  openWorkspaceShell('Relationship understanding review approval', {returnTarget:'relationship'});
 }
 
 async function openPendingRelationshipTemperatureReviewFromRolodex(pendingNode){
@@ -2499,13 +2570,13 @@ async function decideRelationshipTemperatureReview(action){
     return;
   }
   const approved = action === 'approve';
-  const result = await postJson('/api/val/review-updates/' + encodeURIComponent(update.id) + '/' + (approved ? 'approve' : 'reject'), approved ? {note:'Approved from Hearth relationship temperature review.'} : {reason:'Rejected from Hearth relationship temperature review.'});
+  const result = await postJson('/api/val/review-updates/' + encodeURIComponent(update.id) + '/' + (approved ? 'approve' : 'reject'), approved ? {note:'Approved from Hearth relationship understanding review.'} : {reason:'Rejected from Hearth relationship understanding review.'});
   activeRelationshipTemperatureReviewUpdate = result.update || null;
   syncRelationshipTemperatureReviewState(result.update || update);
   setWorkspaceContent({
-    lens: 'Relationship Temperature',
-    title: approved ? 'Temperature learning approved locally.' : 'Temperature learning rejected.',
-    meaning: approved ? 'VAL recorded this as local relationship-temperature learning, without changing the relationship temperature directly.' : 'VAL set this correction aside without creating memory or changing the relationship.',
+    lens: 'Relationship Understanding',
+    title: approved ? 'Relationship understanding learning approved locally.' : 'Relationship understanding learning rejected.',
+    meaning: approved ? 'VAL recorded this as local relationship-understanding learning, without changing the visible status directly.' : 'VAL set this correction aside without creating memory or changing the relationship.',
     understanding: [
       'Review update: ' + (result.update?.updateType || 'relationship_temperature_correction'),
       'Status: ' + (result.update?.status || (approved ? 'approved' : 'rejected')),
@@ -2513,10 +2584,10 @@ async function decideRelationshipTemperatureReview(action){
       'No CRM update, message, scrape, import, external action, or direct relationship-temperature change happened.'
     ].filter(Boolean),
     recommendation: approved ? 'Use this as a learning receipt, not a temperature mutation. Future observer-backed movement still needs evidence.' : 'Return to the relationship and teach VAL again only if there is better evidence.',
-    actions: relationshipContextActions([{label:'Review another temperature correction', workflow:'relationshipTemperatureReview'}]),
-    label: 'Relationship temperature review decision'
+    actions: relationshipContextActions([{label:'Review another understanding correction', workflow:'relationshipTemperatureReview'}]),
+    label: 'Relationship understanding review decision'
   });
-  openWorkspaceShell('Relationship temperature review decision', {returnTarget:'relationship'});
+  openWorkspaceShell('Relationship understanding review decision', {returnTarget:'relationship'});
 }
 
 function openRelationshipIndex(){
@@ -5670,6 +5741,33 @@ async function handleProjectActionClick(actionId = '', node = null){
 
 function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
   const profile = relationshipProfileWithPersonPacket({...(providedProfile || relationshipProfiles[profileId] || relationshipProfiles.aric), profileId});
+  const stewardship = relationshipStewardshipUi(profile);
+  const needs = Array.isArray(profile.packetNeeds) && profile.packetNeeds.length ? profile.packetNeeds : (Array.isArray(profile.openLoops) ? profile.openLoops : []);
+  const offers = Array.isArray(profile.packetOffers) && profile.packetOffers.length ? profile.packetOffers : (Array.isArray(profile.valueTheyCreate) ? profile.valueTheyCreate : []);
+  profile.stewardshipStatus = stewardship.status;
+  profile.stewardshipAboutLabel = 'Who this person is';
+  profile.stewardshipAboutTitle = profile.stewardshipStatus || 'Relationship context';
+  profile.stewardshipAbout = [
+    profile.stewardshipAbout || profile.evidence || profile.signal || '',
+    stewardship.statusMeaning ? 'Status: ' + stewardship.statusMeaning : ''
+  ].filter(Boolean).join(' ');
+  profile.stewardshipValueLabel = 'What they need';
+  profile.stewardshipValueTitle = needs.length ? 'Source-backed needs and open gaps' : 'No source-backed need is ready yet';
+  profile.stewardshipNeedLabel = 'What they offer';
+  profile.stewardshipNeedTitle = offers.length ? 'Source-backed offers and strengths' : 'No source-backed offer is ready yet';
+  profile.peopleWhoNeedThem = needs.length ? needs : [stewardship.whatIsOpen || 'No current open matter is ready.'];
+  profile.peopleTheyShouldMeet = offers.length ? offers : [stewardship.nextMove || 'No move right now.'];
+  profile.keyFacts = [
+    stewardship.status,
+    stewardship.whyNow,
+    profile.personPacketMaturity ? 'Understanding: ' + profile.personPacketMaturity : ''
+  ].filter(Boolean);
+  profile.openLoops = [stewardship.whatIsOpen].filter(Boolean);
+  profile.executiveAdvice = [
+    'Recommended move: ' + stewardship.nextMove,
+    'Why now: ' + stewardship.whyNow
+  ].filter(Boolean);
+  profile.recentActivity = [stewardship.evidencePosture].filter(Boolean);
   activeRelationshipProfile = profile;
   document.querySelectorAll('[data-relationship-field]').forEach((node) => {
     const field = node.dataset.relationshipField;
@@ -6206,7 +6304,7 @@ function preferredRelationshipActions(actions = []){
 }
 
 function relationshipReviewIntroductionsAction(){
-  return {id:'find_relationship_introductions',label:'Review next move',type:'endpoint',willDo:'Prepare review-only stewardship moves from person packets.',willNotDo:'No message, introduction, calendar event, or CRM change will happen.'};
+  return {id:'find_relationship_introductions',label:'Review prepared move',type:'endpoint',willDo:'Prepare review-only Stewardship moves from source-backed relationship understanding.',willNotDo:'No message, introduction, calendar event, or CRM change will happen.'};
 }
 
 function relationshipActionsWithStewardshipReview(actions = [], profile = {}){
@@ -6251,7 +6349,7 @@ function relationshipSuggestedActions(profile = {}){
 function renderRelationshipActions(profile = {}){
   const container = document.querySelector('.relationship-actions');
   if(!container) return;
-  const safeActions = profile.unresolvedIdentity ? [] : [{id:'refresh_relationship_observers',label:'Refresh observers',type:'endpoint',willDo:'Refresh the source trail before trusting this relationship brief.',willNotDo:'No message, CRM update, import, or external action will happen.'}];
+  const safeActions = profile.unresolvedIdentity ? [] : [{id:'refresh_relationship_observers',label:'Check for new evidence',type:'endpoint',willDo:'Check new sources, identity resolution, evidence binding, maturity, visibility, and next-move readiness.',willNotDo:'No message, CRM update, import, or external action will happen.'}];
   const actionHtml = (action) => {
     const label = escapeHtml(action.label || 'Review');
     const title = escapeHtml([action.willDo, action.willNotDo].filter(Boolean).join(' '));
@@ -6262,7 +6360,7 @@ function renderRelationshipActions(profile = {}){
     return '<button type="button" data-relationship-action="' + escapeHtml(action.id) + '" title="' + title + '" onclick="event.preventDefault();event.stopPropagation();handleRelationshipActionClick(this.dataset.relationshipAction,this);return false;">' + label + '</button>';
   };
   const groups = [
-    {label:'Observer controls', ids:['refresh_relationship_observers']}
+    {label:'Source check', ids:['refresh_relationship_observers']}
   ];
   const groupedHtml = groups.map((group) => {
     const groupActions = safeActions.filter((action) => group.ids.includes(action.id));
@@ -6280,7 +6378,12 @@ function renderRelationshipPrimaryActions(profile = {}){
     container.innerHTML = '';
     return;
   }
-  container.innerHTML = '<button type="button" data-relationship-action="find_relationship_introductions" title="Review the next thoughtful relationship move from person packets. Nothing will be sent.">Review next move</button>';
+  const stewardship = relationshipStewardshipUi(profile);
+  if(!stewardship.canEvaluateMoves && !/^Move suggested/i.test(stewardship.status)){
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = '<button type="button" data-relationship-action="find_relationship_introductions" title="Review the next thoughtful relationship move. Nothing will be sent.">Review prepared move</button>';
 }
 
 function relationshipSectionActions(profile = {}, section = ''){
@@ -6587,7 +6690,7 @@ function introReviewLines(profile = {}){
   const needed = normalizedIntroCandidates(review.whoThisPersonNeeds);
   function lines(title, items){
     return [title].concat((items.length ? items : [{name:'No confident move yet', reason:'VAL needs stronger evidence before recommending a relationship move.', confidence:0}]).map((item) => (
-      item.name + ': ' + item.reason + (item.confidence ? ' Confidence ' + Math.round(item.confidence * 100) + '%.' : '')
+      item.name + ': ' + item.reason
     )));
   }
   return lines('Who needs this person', needs).concat(lines('Who this person needs', needed));
@@ -6648,9 +6751,9 @@ function openIntroDraftReview(candidateIndex = 0){
   const profile = activeRelationshipProfile || relationshipProfiles.aric;
   const candidate = introDraftCandidates(profile)[Number(candidateIndex)] || introDraftCandidates(profile)[0] || null;
   if(!candidate){
-    setWorkspaceContent({
-      lens: 'Relationship Leverage',
-      title: 'This relationship move is not draft-ready yet.',
+  setWorkspaceContent({
+    lens: 'Stewardship Move Review',
+    title: 'This relationship move is not draft-ready yet.',
       meaning: 'VAL does not have a clean, identity-safe introduction candidate for ' + (profile.name || 'this relationship') + '.',
       understanding: [
         'A real relationship or known identity is required on both sides.',
@@ -6662,14 +6765,14 @@ function openIntroDraftReview(candidateIndex = 0){
         {label:'Back to move review', workflow:'relationship:find_relationship_introductions'},
         {label:'All people', workflow:'relationshipAllPeople'}
       ], profile),
-      label: 'Relationship move not draft-ready'
+      label: 'Stewardship move not draft-ready'
     });
-    openWorkspaceShell('Relationship move not draft-ready', {returnTarget:'relationship'});
+    openWorkspaceShell('Stewardship move not draft-ready', {returnTarget:'relationship'});
     return;
   }
   activeIntroDraftCandidate = {profile,candidate,draftBody:introDraftBody(profile,candidate)};
   setWorkspaceContent({
-    lens: 'Relationship Leverage',
+    lens: 'Stewardship Move Review',
     title: 'Introduction draft held for review.',
     meaning: 'VAL prepared the draft language, but nothing leaves the desk yet.',
     understanding: [
@@ -6685,7 +6788,7 @@ function openIntroDraftReview(candidateIndex = 0){
       {label:'Teach VAL', workflow:'introTeach'},
       {label:'Back to move review', workflow:'relationship:find_relationship_introductions'}
     ], profile),
-    label: 'Introduction draft review'
+    label: 'Stewardship introduction draft review'
   });
   renderWorkspaceInput({
     label: 'Prepared introduction draft',
@@ -6694,7 +6797,7 @@ function openIntroDraftReview(candidateIndex = 0){
     mode: 'intro-draft',
     value: activeIntroDraftCandidate.draftBody
   });
-  openWorkspaceShell('Introduction draft review', {returnTarget:'relationship'});
+  openWorkspaceShell('Stewardship introduction draft review', {returnTarget:'relationship'});
 }
 
 async function openRelationshipIntroReview(profile = {}){
@@ -6721,10 +6824,10 @@ async function openRelationshipIntroReview(profile = {}){
   const candidates = introDraftCandidates(reviewedProfile);
   const sourceContext = relationshipIntroSourceContext(reviewedProfile);
   setWorkspaceContent({
-    lens: 'Relationship Leverage',
-    title: candidates.length ? 'Next relationship move is ready for review.' : 'No relationship move is ready yet.',
+    lens: 'Stewardship Move Review',
+    title: candidates.length ? 'Next Stewardship move is ready for review.' : 'No Stewardship move is ready yet.',
     meaning: candidates.length
-      ? 'VAL looked in both directions around ' + name + ': who may need this person, who this person may need, and what move would serve the relationship.'
+      ? 'VAL looked at what thoughtful next move may serve ' + name + ', including introductions only when they are the right move.'
       : 'VAL checked the current relationship packets around ' + name + ', but did not find a clean, identity-safe stewardship move.',
     understanding: candidates.length ? sourceContext.concat(introReviewLines(reviewedProfile)) : sourceContext.concat([
       'Move readiness: no identity-safe move is ready yet.',
@@ -6735,10 +6838,10 @@ async function openRelationshipIntroReview(profile = {}){
       ? 'Choose a move only if it would serve the relationship. The next step is a draft or commitment review, never an external action.'
       : 'Treat this as a relationship-context gap, not an action. Link the real person or teach VAL the relationship before drafting.',
     actions: introReviewActions(reviewedProfile),
-    label: 'Relationship stewardship review',
+    label: 'Stewardship move review',
     suppressClarityStandard:true
   });
-  openWorkspaceShell('Relationship stewardship review', {returnTarget:'relationship'});
+  openWorkspaceShell('Stewardship move review', {returnTarget:'relationship'});
 }
 
 function relationshipSectionLabel(section = ''){
@@ -6797,7 +6900,7 @@ function openRelationshipTeachWorkspace(reason = 'relationship', section = ''){
   const promptByReason = {
     wisdom:'What should VAL remember about this relationship wisdom?',
     importance:'How important is this relationship, and why?',
-    temperature:'What should VAL understand about this relationship temperature or state?',
+    temperature:'What should VAL understand about this relationship status or current posture?',
     relationship:'What should VAL understand differently about this relationship?'
   };
   setWorkspaceContent({
@@ -6954,10 +7057,10 @@ async function handleRelationshipAction(actionId){
   }
   if(actionId === 'refresh_relationship_observers'){
     showRelationshipReceipt({
-      title: 'Observer refresh is ready for review.',
-      meaning: profile.sourceReceipts || 'VAL can refresh the relationship source trail before this brief is trusted.',
-      understanding: ['CRM remains the identity anchor.', 'Public relationship context stays review-only.', 'No import, overwrite, message, or CRM update happens from this click.'],
-      recommendation: 'Refresh sources only when the relationship brief needs newer evidence before action.'
+      title: 'Source check is ready for review.',
+      meaning: profile.sourceReceipts || 'VAL can check for new evidence before this relationship brief is trusted.',
+      understanding: ['CRM remains the identity anchor.', 'New evidence must bind to the right person.', 'No import, overwrite, message, or CRM update happens from this click.'],
+      recommendation: 'Check for new evidence only when the relationship brief needs newer source context before action.'
     });
     return;
   }
@@ -13570,17 +13673,17 @@ async function handleWorkflowAction(action, node = null){
     setWorkspaceContent({
       lens: 'Teach VAL',
       title: mode === 'temperature' ? 'Temperature teaching is ready for review.' : 'Teaching is ready for review.',
-      meaning: mode === 'temperature' ? 'VAL prepared your relationship temperature correction for review before it changes future judgment.' : 'VAL prepared your relationship correction for review before it becomes memory.',
+      meaning: mode === 'temperature' ? 'VAL prepared your relationship understanding correction for review before it changes future judgment.' : 'VAL prepared your relationship correction for review before it becomes memory.',
       understanding: [
         'Relationship: ' + (profile.name || 'Relationship'),
-        mode === 'temperature' ? 'Correction type: relationship temperature' : '',
+        mode === 'temperature' ? 'Correction type: relationship understanding' : '',
         'Teaching: ' + teaching,
         reviewUpdateLine,
         'No durable memory, CRM update, message, scrape, import, or relationship fact changed from this prototype click.'
       ].filter(Boolean),
       recommendation: 'In live VAL, this would move to a review gate before becoming memory or changing future relationship judgment.',
       actions: relationshipContextActions((mode === 'temperature' ? [
-        {label:'Review temperature correction', workflow:'relationshipTemperatureReview'},
+        {label:'Review understanding correction', workflow:'relationshipTemperatureReview'},
         {label:'Teach temperature again', workflow:'relationship:teach_temperature'}
       ] : [
         {label:'Teach another nuance', workflow:'relationship:teach_wisdom'}
@@ -15415,6 +15518,7 @@ relationshipSortSelect?.addEventListener('change', () => {
 relationshipStateFilterButtons.forEach((button) => {
   button.addEventListener('click', () => {
     relationshipStateFilter = button.dataset.relationshipStateFilter || 'all';
+    if(relationshipStateFilter === 'people_to_watch') relationshipPeopleToWatchExpanded = true;
     relationshipStateFilterButtons.forEach((filterButton) => {
       const isActive = filterButton === button;
       filterButton.classList.toggle('active', isActive);
@@ -15629,6 +15733,14 @@ drawerTray.addEventListener('click', async (event) => {
     if(!preflight.ok) return;
     renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
     if(selected) renderCommitmentBrief(selected);
+    return;
+  }
+  const watchToggle = event.target.closest('[data-relationship-toggle-watch]');
+  if(watchToggle){
+    event.preventDefault();
+    event.stopPropagation();
+    relationshipPeopleToWatchExpanded = !relationshipPeopleToWatchExpanded;
+    renderRelationshipRolodex();
     return;
   }
   const pendingTemperatureReview = event.target.closest('[data-relationship-pending-temperature-review]');
