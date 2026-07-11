@@ -1,6 +1,6 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-10 18:24 EDT
+Last updated: 2026-07-11
 
 ## Absolute Baseline
 
@@ -9,9 +9,10 @@ The current live Railway deployment is THE TRUTH.
 Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Branch: `codex/executive-inbox-only`
-- Baseline commit: `dbc5d579c2549cc3353daca007bc7944741220c0`
-- Baseline commit message: `Simplify Stewardship network view`
+- Branch: `codex/stewardship-person-packets`
+- Baseline commit: `79e199a`
+- Baseline commit message: `Add Stewardship relationship evidence freshness map`
+- Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -19,6 +20,28 @@ Use this as the recovery baseline for all future work:
 Anything not included in this live deployed commit is trash until the user explicitly re-approves it.
 
 Do not preserve, merge, deploy, cherry-pick, or "finish" any waiting work from another branch, worktree, uncommitted state, older deployment, or abandoned chat unless it is first checked against this live baseline and the user explicitly confirms it belongs.
+
+## Current Strategic Pause
+
+On 2026-07-11, the user paused Stewardship-specific iteration.
+
+Do not keep polishing Stewardship until the larger source-routing problem is addressed.
+
+The new governing architecture document is:
+
+```text
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+```
+
+The next architecture pass must create a strict system-wide map where every email, transcript, calendar event, document, user correction, and external action receipt goes through the same source-processing spine before any drawer, packet, prompt, or click can use it.
+
+The user wants a system that can do this reliably:
+
+- A transcript from a conversation with Terrie should be available to every relevant observer. Stewardship should have flagged the explicit Terrie/Kareemah introduction.
+- An email from Anthony with documents should route to Documents and Projects, and should suggest a new project if no project exists.
+- Spam, newsletters, unsubscribe/bulk/no-reply/system senders must never leak into relationships.
+
+The next implementation should start from the shared source-processing spine, not from visible drawer tweaks.
 
 ## Why This Baseline Exists
 
@@ -290,7 +313,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `dbc5d579c2549cc3353daca007bc7944741220c0` or a descendant of it.
+Start from `79e199a` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 
@@ -304,7 +327,13 @@ If there is a conflict between a pending change and this handoff, this handoff w
 
 ## Next Product Work
 
-The user is done for the day and needs to be able to pick up exactly here.
+The user paused Stewardship-specific iteration and wants the next session to pick up from the system-wide source map.
+
+Start with:
+
+```text
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+```
 
 The user is auditing the Stewardship drawer and wants the next session to dig into the user's inbox as a context source for:
 

@@ -1,6 +1,6 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-10 18:24 EDT
+Updated: 2026-07-11
 
 ## Current Working State
 
@@ -11,11 +11,46 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Branch: `codex/executive-inbox-only`
-- Commit: `dbc5d579c2549cc3353daca007bc7944741220c0`
-- Commit message: `Simplify Stewardship network view`
+- Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
+- Branch: `codex/stewardship-person-packets`
+- Commit: `79e199a`
+- Commit message: `Add Stewardship relationship evidence freshness map`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
+
+The July 10 recovery baseline is now historical context. The current live Railway deployment above is the operative truth.
+
+## Current Architecture Pause
+
+The user paused Stewardship-specific iteration on 2026-07-11.
+
+Reason:
+
+```text
+Stewardship is showing a symptom of a bigger system-wide source-routing problem.
+```
+
+The next work is not more Stewardship UI polish.
+
+The next work is a strict system-wide source and click map:
+
+```text
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+```
+
+That document now governs the next architecture pass.
+
+Core new rule:
+
+```text
+Every email, transcript, calendar event, document, user correction, and external action receipt must enter VAL through one strict source-processing spine before any drawer, packet, prompt, or click can use it.
+```
+
+Examples that must drive the next implementation:
+
+- Terrie transcript should create a first-class introduction opportunity for Terrie/Kareemah.
+- Anthony email with documents should route to Documents and Project observer, and suggest a new project if no project exists.
+- Spam/newsletter/unsubscribe/bulk/no-reply/system senders must not create relationships.
 
 ## Product Stance
 
@@ -117,7 +152,15 @@ Live verification confirmed:
 
 Continue only from this live baseline.
 
-For Stewardship, the next product direction is documentation-first and introduction-only:
+Do documentation-first architecture work from:
+
+```text
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+```
+
+Then implement the shared `source_processing_record` and source router before returning to drawer-specific behavior.
+
+Stewardship V1 remains introduction-only, but it is paused until the system-wide source pass exists:
 
 - Suggested Introductions
 - Create an Introduction
