@@ -513,7 +513,7 @@ Dedicated prompt suite:
 | CRM task sync plan | `{{crm.task_sync_plan}}` | new/derived | object | CRM Task Sync Planner | Link/create/update/keep task sync recommendation. |
 | CRM opportunity resolution | `{{crm.opportunity.resolution}}` | new/derived | object | CRM Opportunity Resolver | Relationship value, opportunity value, lifecycle/stage candidates. |
 | CRM proposal/invoice plan | `{{crm.document_plan}}` | new/derived | object | Proposal / Invoice Planner | Proposal, invoice, estimate, quote, or contract prep plan. |
-| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Receipts, invoices, payment issues, source documents, totals if available, and open finance follow-ups for every project. |
+| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Project-drawer-only summary with Receipts, Invoices, Payment Issues, Important Documents, and Open Finance Follow-ups. |
 | CRM send plan | `{{crm.send_plan}}` | new/derived | object | SMS / Email Send Planner | CRM-routed SMS/email preparation and permission requirements. |
 | CRM calendar invite plan | `{{crm.calendar_invite_plan}}` | new/derived | object | CRM Calendar Invite Planner | Prepared invite candidate and missing confirmations. |
 | CRM action permission | `{{crm.action_permission}}` | new/derived | object | CRM Action Permission Classifier | Whether action is prepare-only, auto-safe, approval-required, never-auto, or refused. |

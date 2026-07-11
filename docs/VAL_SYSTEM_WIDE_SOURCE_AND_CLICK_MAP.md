@@ -589,6 +589,24 @@ User creates new project from receipt/invoice
 
 Every project should have a finance/document summary, even if it starts empty.
 
+Project finance/document summary visible sections:
+
+```text
+Receipts
+Invoices
+Payment Issues
+Important Documents
+Open Finance Follow-ups
+```
+
+Visibility rule:
+
+```text
+Project finance/document summaries live inside the Project drawer only.
+```
+
+Quiet Notices may show that VAL linked or assigned a receipt/invoice, but it should not render the full finance/document summary. Keep the summary in the Project drawer so the operational notice lane stays simple.
+
 If any receipt, invoice, system notice, or automated email contains an important deadline, payment issue, service interruption, account access risk, or other consequence, it should become executive-worthy.
 
 Required escalation:
