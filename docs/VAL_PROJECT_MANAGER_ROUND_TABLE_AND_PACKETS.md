@@ -879,7 +879,7 @@ The top module must be backed by a Project Manager Action Packet or Project Mana
 | `Critical Project Issue` | Payment issue, deadline, failed dependency, blocked owner, service/access risk, angry stakeholder, relationship tension, high-risk trade-off | Create risk/next-action packet, notify Alignment, update project status, prepare next recommended move | Top module, Alignment, Project action layer | Approve recommendation, approve draft, answer scoped question, add context, approve owner assignment | Issue receipt + updated project packet + handled Home receipt when resolved |
 | `Needs Your Judgment` | PM cannot safely move without user judgment, especially option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action, or one missing answer | Create decision packet with options, recommendation, brief source proof, consequence if delayed, and action/prepared-work packet when possible | Top module, Alignment, Project action layer, Leverage if VAL prepared something | Choose option, approve recommendation, add context, ask scoped question, ask VAL to prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | `Prepared For You` | VAL drafted or prepared something ready for user review and approval | Persist artifact, link to project/source, prove why/what/where/what is needed, register in Project and Leverage | Project top module or action layer, and Leverage | Review, edit/refine, approve, ask scoped question, add context, send/publish/schedule/create after approval, put a pin in it | Simple action receipt |
-| `Today's Reprioritization` | Start of day, new source since last review, changed priority/risk | Re-rank project priorities, identify risk today, clarify who needs context | Top module | Accept priority, ask why, change priority | Reprioritization receipt |
+| `Today's Reprioritization` | Any new project-related source or event, start of day, user opens project page, or changed priority/risk | Re-scan project emails, transcripts, calendar, documents, commitments, payment/project issues, and relationship tension; set new priority order | Top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare something, create task if needed, message stakeholder only when identity/context are safe, put a pin in it until date/time | Reprioritization receipt |
 | `Project Movement` | Task completed/slipped, source added, meeting happened, document changed, dependency moved | Create movement packet and update current reality | Top module or recent activity | Open source, add context, ask what changed | Movement receipt |
 | `Execution Adjustment` | Scope/time/cost/quality trade-off appears | Make trade-off explicit, show impact, recommend least-risk move | Top module when active | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
 | `Project Reset` | End of day, after meeting, after major action, stale open loops | Summarize what moved, decisions made, unresolved risks, tomorrow prep | Top module or lower reset card | Confirm, add missing context, create tomorrow task | Reset receipt |
@@ -1149,6 +1149,89 @@ VAL just created the project task list.
 VAL just sent the approved stakeholder update.
 VAL just saved the SOP draft.
 VAL just added the invoice follow-up to Project X.
+```
+
+### Today's Reprioritization Contract
+
+The day-in-the-life project manager source says strong PMs reprioritize before reacting. They ask what changed, what is at risk, and who may need clarity before they ask.
+
+VAL should make this stronger than a human project manager by reorienting whenever something new happens in the project.
+
+Triggers:
+
+- start of day
+- user opens project page
+- new project email
+- transcript processed
+- calendar attendee/event change
+- missed task or commitment
+- stakeholder tension
+- payment issue
+- new document
+- project-related receipt/invoice
+- dependency changes
+- prepared work changes
+- any source/event tied to the project
+
+Required behavior:
+
+```text
+Project-related change arrives
+  -> re-scan project emails
+  -> re-scan project transcripts
+  -> re-scan project calendar
+  -> re-scan documents
+  -> re-scan commitments/tasks
+  -> re-scan payment/project issues
+  -> re-scan relationship tension/stakeholder health
+  -> update priority order
+  -> recommend what should happen first
+  -> show reprioritized module at top if priority changed
+```
+
+Top module should show, in order:
+
+1. what VAL recommends first
+2. what changed
+3. what is at risk
+4. who needs clarity
+5. what VAL already handled
+
+The top recommendation changes dynamically based on the latest admitted project evidence.
+
+Priority list behavior:
+
+The user should be able to see the priority list and click a different item to make it the top priority.
+
+Allowed actions:
+
+- accept priority
+- choose a different priority
+- ask why
+- add context
+- ask VAL to prepare something
+- create task if needed
+- message stakeholder only when stakeholder identity and context are safe
+- put a pin in it
+
+Stakeholder message caution:
+
+VAL may prepare stakeholder messaging only when it is attached to the right stakeholder and has enough project context. If not, it should ask for context first.
+
+Put a pin in it rule:
+
+```text
+User clicks "Put a pin in it"
+  -> VAL asks "Until when?"
+  -> user can pick date and time
+  -> VAL stores pin-until timestamp
+  -> VAL keeps watching but removes it from the top until the chosen time or new critical evidence appears
+```
+
+Receipt:
+
+```text
+VAL just reprioritized Project X for today and is watching the partner timeline.
 ```
 
 ### Handled Work Copy Rule

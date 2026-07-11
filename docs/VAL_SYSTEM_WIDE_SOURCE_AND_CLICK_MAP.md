@@ -1445,7 +1445,7 @@ Every dynamic top module must be tied to a real path.
 | Critical Project Issue | Payment issue, deadline, failed dependency, blocked/unclear owner, angry stakeholder, relationship tension, service/access risk, launch/legal/contract risk | Project Risk Packet + Project Manager Action Packet + recommended next move | Project top module and Alignment | Approve recommendation/draft, answer scoped question, add context, approve owner assignment | Issue receipt, updated project packet, Home handled receipt when resolved |
 | Needs Your Judgment | Option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action approval, unclear owner, or one missing answer blocks safe progress | Project Manager Judgment Packet + decision/action packet + prepared artifact when useful | Project top module, Alignment, Leverage if prepared work exists | Choose option, approve recommendation, add context, ask scoped question, prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | Prepared For You | VAL drafted/prepared something ready for review and approval | Project Prepared Work Packet + persisted artifact + surface registration | Project top module/action layer and Leverage | Review, edit/refine, approve, ask scoped question, add context, execute after approval, put a pin in it | Simple action receipt |
-| Today's Reprioritization | Start of day or new evidence changes priority | Project Manager Focus Packet | Project top module | Accept, change priority, ask why | Reprioritization receipt |
+| Today's Reprioritization | Any new project-related source/event or user opens project page | Project Manager Focus Packet + updated project priority order | Project top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare, create task if needed, safe stakeholder message, put a pin in it until date/time | Reprioritization receipt |
 | Project Movement | Work completed/slipped, source added, meeting/document/dependency changed | Project Movement Packet | Project top module/recent activity | Open source, add context, ask what changed | Movement receipt |
 | Execution Adjustment | Scope/time/cost/quality trade-off appears | Project Risk/Judgment Packet | Project top module | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
 | Project Reset | End of day, after meeting/action, stale open loops | Project Receipt/Reset Packet | Project top module or reset section | Confirm, add context, create tomorrow task | Reset receipt |
@@ -1588,6 +1588,46 @@ Prepared work receipt:
 
 ```text
 VAL just created/sent/saved/added [what it did].
+```
+
+Today's Reprioritization rules:
+
+```text
+Any project-related change
+  -> re-scan emails/transcripts/calendar/documents/commitments/payment issues/relationship tension tied to project
+  -> update priority order
+  -> recommend what should happen first
+  -> show top module if priority changed
+```
+
+Top module order:
+
+```text
+What VAL recommends first
+What changed
+What is at risk
+Who needs clarity
+What VAL already handled
+```
+
+User may choose a different priority from the priority list.
+
+Stakeholder messaging is allowed only when VAL has the right stakeholder identity and enough context.
+
+Global `Put a pin in it` rule:
+
+```text
+Put a pin in it
+  -> ask "Until when?"
+  -> user selects date/time
+  -> store pin-until timestamp
+  -> keep watching
+```
+
+Receipt:
+
+```text
+VAL just reprioritized Project X for today and is watching the partner timeline.
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
