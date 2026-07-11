@@ -16113,6 +16113,89 @@ async function listRelationshipProfiles({limit=80}={}){
   }
   return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
 }
+function calendarAttendeeLooksLikeResource(attendee={}){
+  const email=normalizeContextEmail(attendee.email||attendee.address||'');
+  const name=String(attendee.name||attendee.displayName||'').toLowerCase();
+  const local=email.split('@')[0]||'';
+  return /\b(room|conference|calendar|resource|zoom|meet|teams|webex|no.?reply|donotreply|notification|booking|appointments?)\b/i.test([local,name].join(' '));
+}
+function calendarAttendeeProfileFromEvent(attendee={},event={}){
+  const email=normalizeContextEmail(attendee.email||attendee.address||'');
+  const name=cleanPersonName(attendee.name||attendee.displayName||'',email);
+  if((!email&&!name)||calendarAttendeeLooksLikeResource({name,email}))return null;
+  const quality=relationshipContactQuality({
+    email:{subject:event.title||event.summary||'',snippet:event.description||'',from:{name,email}},
+    participant:{name,email},
+    role:'calendar_attendee'
+  });
+  if(quality.hardRejected)return null;
+  const title=event.title||event.summary||'Calendar meeting';
+  const occurredAt=event.startTime||event.start||event.date||event.createdAt||new Date().toISOString();
+  const eventDate=occurredAt&&!Number.isNaN(new Date(occurredAt).getTime())?new Date(occurredAt).toLocaleDateString('en-US'):'recently';
+  const displayName=name&&name!=='Unknown'?name:(email||'Calendar attendee');
+  const summary=`Direct meeting participant from ${title}${eventDate?' on '+eventDate:''}.`;
+  const evidence=relationshipEvidence('calendar_meeting',summary,occurredAt,'high',event.id||event.eventId||'');
+  return {
+    id:`calendar:${crypto.createHash('sha1').update([tenantId(),email||displayName,event.id||event.eventId||title].join('|')).digest('hex').slice(0,24)}`,
+    profileType:'person',
+    profileKey:relationshipProfileKeyForTarget({profileType:'person',displayName,email}),
+    personId:'',
+    displayName,
+    summary,
+    relationshipStatus:'meeting participant',
+    confidence:0.82,
+    lastObservedAt:occurredAt,
+    observationCount:1,
+    openLoopCount:0,
+    promiseCount:0,
+    riskCount:0,
+    opportunityCount:0,
+    preferenceCount:0,
+    emotionalContext:[],
+    relationshipSignals:[{content:'Direct meeting participant',summary,sourceType:'calendar',sourceId:event.id||event.eventId||''}],
+    risks:[],
+    opportunities:[],
+    preferences:[],
+    openLoops:[],
+    evidence:[evidence],
+    metadata:{
+      source:'calendar_attendee',
+      email,
+      calendarEventId:event.id||event.eventId||'',
+      calendarTitle:title,
+      calendarStart:occurredAt,
+      calendarSource:event.source||event.calendarName||'calendar',
+      relationshipAdmissionSignals:['meeting_participant'],
+      relationshipIntakeReason:'meeting_participant',
+      relationshipContactQuality:{...quality,accepted:true,trustedSignals:[...new Set([...(quality.trustedSignals||[]),'meeting_participant'])]}
+    },
+    updatedAt:new Date().toISOString()
+  };
+}
+async function calendarRelationshipProfiles({limit=120,days=90}={}){
+  const now=new Date();
+  const start=new Date(now);start.setDate(start.getDate()-Math.max(Number(days)||90,1));
+  const end=new Date(now);end.setDate(end.getDate()+Math.max(Math.min(Number(days)||90,90),14));
+  const {events}=await loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
+  const owner=relationshipOwnerIdentity();
+  const profiles=[];
+  const seen=new Set();
+  for(const event of events||[]){
+    if(!event||String(event.status||'').toLowerCase()==='cancelled')continue;
+    if(sidebarCalendarEventLooksPrivateBlock(event))continue;
+    for(const attendee of inferAttendeesFromEvent(event)){
+      if(isOwnerRelationship(attendee,owner))continue;
+      const profile=calendarAttendeeProfileFromEvent(attendee,event);
+      if(!profile)continue;
+      const key=profile.profileKey||profile.metadata?.email||profile.displayName;
+      if(!key||seen.has(key))continue;
+      seen.add(key);
+      profiles.push(profile);
+      if(profiles.length>=limit)return profiles;
+    }
+  }
+  return profiles;
+}
 async function listProjectProfiles({limit=80}={}){
   const capped=Math.max(1,Math.min(Number(limit)||80,200));
   return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
@@ -16308,6 +16391,7 @@ function relationshipProfileContactQuality(profile={}){
   const email=relationshipProfilePrimaryEmail(profile);
   const name=profile.displayName||profile.display_name||profile.name||'';
   const stored=metadata.relationshipContactQuality||metadata.contactQuality||metadata.targetMetadata?.relationshipContactQuality||null;
+  const admissionSignals=Array.isArray(metadata.relationshipAdmissionSignals)?metadata.relationshipAdmissionSignals:[];
   const reasons=[];
   const trustedSignals=[];
   if(stored){
@@ -16322,7 +16406,14 @@ function relationshipProfileContactQuality(profile={}){
   if(email&&!name&&!relationshipEmailLooksHumanNamed('',email))reasons.push('no_plausible_human_name');
   if(knownRelationshipEmailAlias(email))trustedSignals.push('known_alias');
   if(relationshipProfileHasRealIdentity(profile))trustedSignals.push('confirmed_contact');
-  const hardRejected=reasons.some(reason=>/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_reply|no_plausible_human|stored_contact_quality_rejected|inbound_or_unconfirmed/i.test(String(reason)))&&!trustedSignals.includes('confirmed_contact')&&!trustedSignals.includes('known_alias');
+  if(admissionSignals.includes('meeting_participant'))trustedSignals.push('meeting_participant');
+  if(admissionSignals.includes('recent_sent_email'))trustedSignals.push('recent_sent_email');
+  if(admissionSignals.includes('recent_reply'))trustedSignals.push('recent_reply');
+  const trustedIdentitySource=trustedSignals.some(signal=>['confirmed_contact','known_alias','meeting_participant','recent_sent_email','recent_reply'].includes(signal));
+  const trustedOverride=trustedSignals.some(signal=>['confirmed_contact','known_alias'].includes(signal));
+  const nonRescuableNoise=reasons.some(reason=>/unsubscribe|list_mail|bulk|campaign|generic|role_mailbox|system|transactional|no_reply|stored_contact_quality_rejected/i.test(String(reason)));
+  const identityGap=reasons.some(reason=>/no_plausible_human|inbound_or_unconfirmed/i.test(String(reason)));
+  const hardRejected=(nonRescuableNoise&&!trustedOverride)||(identityGap&&!trustedIdentitySource);
   return {
     accepted:!hardRejected,
     hardRejected,
@@ -16337,12 +16428,30 @@ function stewardshipRelationshipAdmission(profile={}){
   const genericMailbox=relationshipEmailLooksGeneric(email);
   const metadata=profile.metadata||{};
   const contactQuality=relationshipProfileContactQuality(profile);
+  const admissionSignals=Array.isArray(metadata.relationshipAdmissionSignals)?metadata.relationshipAdmissionSignals:[];
   if(contactQuality.hardRejected){
     return {
       admission_status:'rejected',
       admitted:false,
       reason:contactQuality.reasons[0]||'contact_quality_rejected',
       relationship_signals:contactQuality.trustedSignals,
+      email,
+      alias:alias||null,
+      rawHandle,
+      genericMailbox,
+      contactQuality
+    };
+  }
+  if(admissionSignals.includes('meeting_participant')){
+    return {
+      admission_status:'admitted',
+      admitted:true,
+      reason:'direct_meeting_participant',
+      relationship_signals:['meeting_participant'],
+      source_receipts:(Array.isArray(profile.evidence)?profile.evidence:[]).slice(0,8),
+      identity_confidence:relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email)?'medium':'high',
+      rejection_signals:[],
+      review_required:false,
       email,
       alias:alias||null,
       rawHandle,
@@ -24359,7 +24468,9 @@ app.get('/api/relationships/index',async(req,res)=>{
       const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
     }
-    const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,260)}))
+    const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
+    const calendarProfiles=await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
+    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
       .filter(profile=>profile.profileType==='person')
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))
@@ -24373,7 +24484,9 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
     const includeThin=String(req.query.includeThin||'1')!=='0';
-    const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,260)}))
+    const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
+    const calendarProfiles=DEMO_MODE?[]:await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
+    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
       .filter(profile=>profile.profileType==='person')
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))

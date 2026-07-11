@@ -316,6 +316,12 @@ A person may appear in Stewardship V1 if at least one of these is true:
 - They are selected manually by the user.
 - They have prior approved introduction history.
 
+Calendar attendees are trusted contacts for Stewardship admission.
+
+If a person is a direct attendee in Google Calendar, Outlook Calendar, VAL calendar context, or GHL calendar context, VAL should treat that person as a real contact unless the attendee is clearly the owner, a resource room, a no-reply/system address, a generic mailbox, or a private/personal calendar block.
+
+Calendar admission should not require a recent sent email.
+
 Each admitted person should receive an admission confidence:
 
 ```json
