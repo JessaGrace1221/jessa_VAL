@@ -1,24 +1,61 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-11
+Updated: 2026-07-11 end-of-day handoff
 
 ## Current Working State
 
-The current live Railway app is the baseline.
+The current live Railway app remains the product-behavior baseline.
 
 Do not use older local state, queued changes, abandoned worktrees, or waiting deployments as source truth.
 
-Baseline:
+Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
 - Branch: `codex/stewardship-person-packets`
-- Commit: `79e199a`
-- Commit message: `Add Stewardship relationship evidence freshness map`
+- Live baseline commit: `79e199a`
+- Live baseline commit message: `Add Stewardship relationship evidence freshness map`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
 The July 10 recovery baseline is now historical context. The current live Railway deployment above is the operative truth.
+
+## End-Of-Day Branch State
+
+The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11 and one focused Co-Work bug fix.
+
+Current handoff branch:
+
+```text
+Branch: codex/stewardship-person-packets
+Latest pushed commit: 980d245
+Latest pushed commit message: Document Co-Work V1 workspace spec
+```
+
+These branch changes are safe handoff material, but do not assume they are deployed to Railway unless deployment is explicitly checked or the user approves deployment.
+
+Today’s pushed commits to preserve:
+
+```text
+980d245 Document Co-Work V1 workspace spec
+6bbe31f Fix Hearth Co-Work submit response
+1acd722 Add Project Manager V1 build spec
+27d861e Document board of observers watching flow
+63a9f1e Document project reset flow
+f3fa716 Document project execution adjustment flow
+d11928c Document project movement open loop flow
+9178196 Document project reprioritization flow
+8e30457 Document project prepared work flow
+e2b5955 Document project judgment decision flow
+11455b5 Document critical project issue handling
+40cd192 Document dynamic Project Manager focus modules
+d58c650 Document full page Project Manager experience
+b4dcb79 Document payment issue alignment priority
+5869ae0 Document project finance summary visibility
+cd00aa8 Document path completeness and project finance receipts
+023cc32 Document quiet notices project assignment flow
+77f69f1 Document operational notice email routing
+```
 
 ## Current Architecture Pause
 
@@ -51,6 +88,124 @@ Examples that must drive the next implementation:
 - Terrie transcript should create a first-class introduction opportunity for Terrie/Kareemah.
 - Anthony email with documents should route to Documents and Project observer, and suggest a new project if no project exists.
 - Spam/newsletter/unsubscribe/bulk/no-reply/system senders must not create relationships.
+
+## 2026-07-11 Documentation Stack To Preserve
+
+The user and Codex spent the day documenting a stricter system map and Project Manager/Co-Work direction. This must not be lost or summarized away.
+
+Read these exact documents before next implementation:
+
+```text
+docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
+docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
+docs/VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+docs/VAL_CONTEXT_REGISTRY.md
+docs/HEARTH_CLICK_CONTRACTS.md
+```
+
+The Project Manager V1 build spec is now the single implementation target for the full Project Manager page.
+
+The Co-Work V1 build spec is documentation-only and currently awaits user approval before implementation.
+
+The Co-Work bug fix was implemented and pushed:
+
+```text
+Commit: 6bbe31f
+Change: Hearth Co-Work submit now calls runCowork('think') and has a real Send button.
+Verification: node --check hearth-prototype.js; node --test test/hearthLeadIntelligence.test.js
+```
+
+Do not confuse that small bug fix with the larger Co-Work V1 workspace redesign. The larger redesign is documented but not implemented.
+
+## 2026-07-11 Product Decisions To Preserve Exactly
+
+### Home
+
+Home has four major visible areas:
+
+- Velocity: what happened.
+- Alignment: the open-loop command center.
+- Leverage / Ready For You: prepared work ready for review.
+- Right-hand panel: keep substantially as-is with next calendar event, full calendar access, Co-Work icon/control, and Teach VAL button/control.
+
+Alignment is all about open loops. It is not a general priority shelf.
+
+### Project Manager
+
+Projects should open to a full Project Manager page, not a cramped drawer card.
+
+Core promise:
+
+```text
+This page is how the user knows things are being handled.
+```
+
+Project Manager V1 dynamic module order:
+
+1. Critical Project Issue
+2. Needs Your Judgment
+3. Prepared For You
+4. Today's Reprioritization
+5. Project Movement
+6. Execution Adjustment
+7. Project Reset
+8. Quietly Watching
+
+Use:
+
+```text
+docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
+```
+
+as the implementation-facing source.
+
+### Open Loops / Alignment
+
+User language:
+
+```text
+If something was presented and has not been done, it is an open loop.
+```
+
+Alignment surfaces the open loop that most needs executive attention now.
+
+Closed loops leave Alignment and produce receipts.
+
+### Board Of Observers
+
+Quietly Watching belongs primarily on the Board of Observers.
+
+The top of Board of Observers should show project-by-project quiet watching summaries, alphabetically for now.
+
+Each project section should show:
+
+- project name
+- what VAL is observing
+- what would trigger action
+- last checked/source proof
+- whether anything needs the user
+- available actions
+
+The existing lower observer details should remain below that top section.
+
+### Co-Work With VAL
+
+The user tested Co-Work and found that it repeated what they typed but did not respond. That was fixed in commit `6bbe31f`.
+
+The larger Co-Work V1 direction is documented but not implemented:
+
+```text
+docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
+```
+
+User requirement:
+
+```text
+Co-Work with VAL needs to be bigger, clearer, exactly like ChatGPT with previous conversations on the left, open space, clean and clear and functional for an executive on mobile or desktop. Voice options need to be obvious.
+```
+
+The current Hearth Co-Work widget should be treated as an entry point into the full workspace, not the final V1 experience.
 
 ## Product Stance
 
@@ -137,10 +292,18 @@ node --test test/hearthLeadIntelligence.test.js test/valRelationshipDossier.test
 git diff --check
 ```
 
+Additional current verification on 2026-07-11 after the Co-Work submit fix:
+
+```bash
+node --check hearth-prototype.js
+node --test test/hearthLeadIntelligence.test.js
+git diff --check
+```
+
 Result:
 
 ```text
-62/62 tests passing
+56/56 focused Hearth tests passing
 ```
 
 Live verification confirmed:
@@ -178,18 +341,21 @@ Do not rebuild the removed relationship dossier/card sections.
 
 The user stopped here for the day and wants the next session to pick up without re-litigating the recovery work.
 
-Next focus:
+Next focus when the user returns:
 
-- dig into the user's inbox/sent/CC'd email context for VAL onboarding and Stewardship
-- remember that read/replied-to emails do not belong in active Executive Inbox, but they do matter as context across VAL
-- preserve Round Table / packet / custom field / AI prompt-layering architecture across all remaining drawers
+1. Confirm whether the user approves implementing `docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md`.
+2. If approved, implement Co-Work as a full executive workspace with previous conversations on the left, open working space, large composer, obvious voice controls, mobile drawer for conversations, and scoped context boundaries.
+3. If not implementing Co-Work yet, continue documentation-first through the remaining drawers:
+   - Calendar
+   - Documents
+   - Commitments / Tasks
+   - People / Relationships beyond Stewardship
+   - Co-Work with VAL as a full scoped experience
 
-Next drawers after Stewardship:
+Remember:
 
-1. Projects
-2. Commitments / task list
-3. Documents
-4. Lead Intelligence
-5. VAL onboarding / updating
+- read/replied-to emails do not belong in active Executive Inbox, but they do matter as context across VAL
+- preserve Round Table / packet / custom field / AI prompt-layering architecture
+- do not expose machinery in executive UI
 
 Major frustration to avoid: do not expose internal reasoning machinery, stale fake records, generic filler, or half-working buttons. The user needs calm executive surfaces that reduce cognitive load.

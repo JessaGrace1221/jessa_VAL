@@ -1,6 +1,6 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-11
+Last updated: 2026-07-11 end-of-day handoff
 
 ## Absolute Baseline
 
@@ -20,6 +20,74 @@ Use this as the recovery baseline for all future work:
 Anything not included in this live deployed commit is trash until the user explicitly re-approves it.
 
 Do not preserve, merge, deploy, cherry-pick, or "finish" any waiting work from another branch, worktree, uncommitted state, older deployment, or abandoned chat unless it is first checked against this live baseline and the user explicitly confirms it belongs.
+
+## End-Of-Day Branch Handoff
+
+The user asked to keep every inch of the day safe for morning handoff.
+
+Current handoff branch:
+
+```text
+Branch: codex/stewardship-person-packets
+Latest pushed commit: 980d245
+Latest pushed commit message: Document Co-Work V1 workspace spec
+```
+
+Important distinction:
+
+```text
+Production remains the behavioral truth.
+The branch contains today's approved documentation stack and one focused Co-Work bug fix.
+Do not assume branch changes are deployed to Railway unless deployment is explicitly checked or approved.
+```
+
+The day’s important commits, in newest-first order:
+
+```text
+980d245 Document Co-Work V1 workspace spec
+6bbe31f Fix Hearth Co-Work submit response
+1acd722 Add Project Manager V1 build spec
+27d861e Document board of observers watching flow
+63a9f1e Document project reset flow
+f3fa716 Document project execution adjustment flow
+d11928c Document project movement open loop flow
+9178196 Document project reprioritization flow
+8e30457 Document project prepared work flow
+e2b5955 Document project judgment decision flow
+11455b5 Document critical project issue handling
+40cd192 Document dynamic Project Manager focus modules
+d58c650 Document full page Project Manager experience
+b4dcb79 Document payment issue alignment priority
+5869ae0 Document project finance summary visibility
+cd00aa8 Document path completeness and project finance receipts
+023cc32 Document quiet notices project assignment flow
+77f69f1 Document operational notice email routing
+```
+
+Read these first tomorrow:
+
+```text
+docs/CODEX_HANDOFF.md
+docs/CODEX_CURRENT_STATE.md
+docs/NEXT_TASK.md
+docs/CODEX_DOCUMENTATION_FIRST_RULE.md
+docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
+docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
+docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
+docs/HEARTH_CLICK_CONTRACTS.md
+```
+
+The Project Manager V1 spec is approved consolidation and is the build target.
+
+The Co-Work V1 workspace spec is a draft for user approval before implementation.
+
+The Co-Work submit bug fix is implemented:
+
+```text
+Commit: 6bbe31f
+What changed: home Co-Work now has a Send button and submit calls runCowork('think') instead of only echoing the user input into context.
+Verified with: node --check hearth-prototype.js; node --test test/hearthLeadIntelligence.test.js
+```
 
 ## Current Strategic Pause
 
@@ -95,10 +163,18 @@ Home is not a dashboard and not an inbox.
 The three Home cards remain:
 
 - Velocity: what changed.
-- Alignment: the one priority that deserves judgment.
+- Alignment: the open-loop command center.
 - Leverage: drafts/prepared work VAL shaped while the user was away.
 
 Do not reintroduce prototype state controls, canned explanation panels, generic KPI cards, or static architecture filler.
+
+Important 2026-07-11 correction:
+
+```text
+The alignment card is all about open loops.
+```
+
+Alignment is not a general priority list. It shows the open loop that most needs executive attention now.
 
 ### Transcripts Standard
 
@@ -244,6 +320,53 @@ Preserve the idea that Projects are grounded by:
 - next narrow move
 
 Do not flatten Projects into vague summaries or task-board theater.
+
+2026-07-11 Project Manager V1 direction:
+
+```text
+docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
+```
+
+Projects should open to a full Project Manager page.
+
+Core trust promise:
+
+```text
+This page is how the user knows things are being handled.
+```
+
+Dynamic top modules:
+
+1. Critical Project Issue
+2. Needs Your Judgment
+3. Prepared For You
+4. Today's Reprioritization
+5. Project Movement
+6. Execution Adjustment
+7. Project Reset
+8. Quietly Watching
+
+Board of Observers should become the primary Quietly Watching surface, with project-by-project watch summaries at the top and existing observer details below.
+
+### Co-Work With VAL Standard
+
+Co-Work must not remain a tiny, cramped widget.
+
+The user explicitly said:
+
+```text
+We need the co-work with VAL to be bigger, clearer... exactly like ChatGPT with the previous conversations on the left - open space -- clean and clear and functional the way an executive needs it to look and feel whether on mobile or desktop. Also the voice options needs to be obvious.
+```
+
+The governing draft spec is:
+
+```text
+docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
+```
+
+Do not implement this larger redesign until the user approves the documentation.
+
+The current Hearth Co-Work widget is only an entry point into the future full workspace.
 
 ### Lead Intelligence Standard
 
