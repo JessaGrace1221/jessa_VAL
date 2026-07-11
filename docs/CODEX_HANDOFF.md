@@ -28,6 +28,20 @@ The recovery work brought the app back to an acceptable live stance. That curren
 
 ## What Must Stay True
 
+### Documentation-First Rule
+
+Going forward, documentation comes before implementation.
+
+Before Codex makes non-trivial product, architecture, prompt, drawer, packet, or executive-surface changes, it must draft or update the relevant documentation and wait for user feedback.
+
+Read and follow:
+
+```text
+docs/CODEX_DOCUMENTATION_FIRST_RULE.md
+```
+
+Do not treat a conversation as permission to implement. If the user gives product feedback that changes direction, document the new direction first, show it to the user, and only implement after approval.
+
 ### Visual Standard
 
 The Hearth drawers must keep the clean frosted-white/translucent standard.

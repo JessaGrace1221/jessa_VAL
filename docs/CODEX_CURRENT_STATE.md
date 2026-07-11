@@ -54,6 +54,18 @@ If a future change conflicts with `docs/CODEX_HANDOFF.md`, stop and read the han
 
 The handoff wins over any stale code, stale docs, stale deployment, or old chat instruction.
 
+## Documentation-First Workflow
+
+The user has now explicitly required documentation before implementation.
+
+Follow:
+
+```text
+docs/CODEX_DOCUMENTATION_FIRST_RULE.md
+```
+
+For any non-trivial product or architecture work, update the docs first and wait for user feedback before writing code.
+
 ## Current Verification
 
 The baseline commit was deployed to Railway and live-verified.

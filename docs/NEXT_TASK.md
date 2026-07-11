@@ -9,6 +9,7 @@ Read first:
 ```text
 docs/CODEX_HANDOFF.md
 docs/CODEX_CURRENT_STATE.md
+docs/CODEX_DOCUMENTATION_FIRST_RULE.md
 docs/audits/2026-07-10-live-truth-baseline.md
 ```
 
@@ -21,6 +22,12 @@ dbc5d579c2549cc3353daca007bc7944741220c0
 If it does not, stop before changing code.
 
 ## Immediate Product Direction
+
+Do not implement first.
+
+The user now requires all relevant documentation before product/code changes so she can give feedback.
+
+The next Stewardship move is documentation-only unless the user explicitly approves implementation after reviewing the docs.
 
 The next work should continue the Stewardship drawer from the approved live baseline.
 
