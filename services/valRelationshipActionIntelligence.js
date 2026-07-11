@@ -124,6 +124,26 @@ function evidenceSignalText(contact={},receipts=[]){
     ...receipts.map(item=>[item.source_type,item.title,item.summary,item.relationship_context].filter(Boolean).join(' '))
   ].filter(Boolean).join(' ').toLowerCase();
 }
+function relationshipEvidenceMapForContact(contact={}){
+  const raw=contact.relationshipEvidenceMap||contact.relationship_evidence_map||{};
+  const admissionSources=safeArray(raw.admissionSources||raw.admission_sources||contact.admissionSources||contact.admission_sources);
+  const directCommunicationSources=safeArray(raw.directCommunicationSources||raw.direct_communication_sources||contact.directCommunicationSources||contact.direct_communication_sources);
+  const lastDirectCommunicationAt=firstText(contact.lastDirectCommunicationAt,contact.last_direct_communication_at,raw.lastDirectCommunicationAt,raw.last_direct_communication_at);
+  const lastDirectCommunicationSource=firstText(contact.lastDirectCommunicationSource,contact.last_direct_communication_source,raw.lastDirectCommunicationSource,raw.last_direct_communication_source);
+  return {
+    version:raw.version||'stewardship_relationship_evidence_map_v1',
+    admission_sources:[...new Set(admissionSources.map(value=>compactText(value,80)).filter(Boolean))],
+    direct_communication_sources:[...new Set(directCommunicationSources.map(value=>compactText(value,80)).filter(Boolean))],
+    source_counts:raw.sourceCounts||raw.source_counts||{},
+    last_direct_communication_at:lastDirectCommunicationAt,
+    last_direct_communication_source:lastDirectCommunicationSource,
+    recent_direct_communication_window_days:Number(raw.recentDirectCommunicationWindowDays||raw.recent_direct_communication_window_days||14),
+    fresh_for_suggested_introductions:raw.freshForSuggestedIntroductions===true||raw.fresh_for_suggested_introductions===true,
+    introduction_evidence:safeArray(raw.introductionEvidence||raw.introduction_evidence).slice(0,8),
+    packet_refresh_order:safeArray(raw.packetRefreshOrder||raw.packet_refresh_order),
+    updated_at:firstText(raw.updatedAt,raw.updated_at)
+  };
+}
 function relationshipAdmissionDecision(input={}){
   const contact=input.contact||input;
   const identity=input.identity||packetIdentity(contact);
@@ -273,6 +293,8 @@ function personPacketFromContact(contact={},options={}){
   const identity=packetIdentity(contact);
   const firstSeen=firstText(contact.firstSeenAt,contact.createdAt,contact.lastObservedAt,contact.lastInteractionAt,contact.receivedAt,contact.sentAt);
   const lastSignal=firstText(contact.lastMeaningfulSignalAt,contact.lastObservedAt,contact.lastInteractionAt,contact.updatedAt,contact.receivedAt,contact.sentAt,firstSeen);
+  const relationshipEvidenceMap=relationshipEvidenceMapForContact(contact);
+  const lastDirectCommunicationAt=firstText(relationshipEvidenceMap.last_direct_communication_at,contact.lastDirectCommunicationAt,contact.last_direct_communication_at);
   const shell={
     packet_type:'person_packet',
     packet_id:options.packetId||packetIdForContact(contact),
@@ -294,9 +316,12 @@ function personPacketFromContact(contact={},options={}){
     relationship_state:{
       status:firstText(contact.relationshipStatus,contact.relationship_status,contact.status,contact.state)||'unknown',
       last_meaningful_signal_at:lastSignal,
+      last_direct_communication_at:lastDirectCommunicationAt,
+      last_direct_communication_source:relationshipEvidenceMap.last_direct_communication_source,
       open_loops:normalizedList(contact.openLoops),
       source_receipts:evidence.slice(0,5)
     },
+    relationship_evidence_map:relationshipEvidenceMap,
     evidence:{
       email_receipts:evidence.filter(item=>/email|gmail|outlook/i.test(item.source_type)),
       sent_email_receipts:evidence.filter(item=>/sent/i.test(item.source_type)),
@@ -328,6 +353,7 @@ function personPacketFromContact(contact={},options={}){
       evidence.length?'':'source_receipts'
     ].filter(Boolean),
     can_evaluate_moves:!!maturityDecision.can_evaluate_moves,
+    fresh_for_suggested_introductions:relationshipEvidenceMap.fresh_for_suggested_introductions===true,
     updated_at:options.updatedAt||new Date().toISOString()
   };
   return shell;

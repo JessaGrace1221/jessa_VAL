@@ -191,6 +191,28 @@ test('relationship admission accepts user intent before reciprocity',()=>{
   assert.ok(taught.relationship_admission.relationship_signals.includes('user_teaching'));
 });
 
+test('person packets preserve relationship evidence map and freshness fields',()=>{
+  const packet=personPacketFromContact({
+    contactId:'crm_terrie',
+    name:'Terrie Wehse',
+    email:'terrie@example.com',
+    relationshipEvidenceMap:{
+      admissionSources:['transcript_attendee'],
+      directCommunicationSources:['transcript_conversation_with_user'],
+      lastDirectCommunicationAt:'2026-07-10T12:00:00.000Z',
+      lastDirectCommunicationSource:'transcript_conversation_with_user',
+      freshForSuggestedIntroductions:true
+    },
+    evidence:[{type:'transcript',summary:'Jessa told Terrie she wanted to introduce her to Kareemah.',supportsPersonIds:['crm_terrie'],supportsClaims:['Jessa wants to introduce Terrie to Kareemah.']}],
+    needs:['Mission-aligned support for her work'],
+    offers:['Community-building experience']
+  });
+  assert.equal(packet.relationship_evidence_map.last_direct_communication_at,'2026-07-10T12:00:00.000Z');
+  assert.deepEqual(packet.relationship_evidence_map.admission_sources,['transcript_attendee']);
+  assert.equal(packet.relationship_state.last_direct_communication_source,'transcript_conversation_with_user');
+  assert.equal(packet.packet_state.fresh_for_suggested_introductions,true);
+});
+
 test('meaningful evidence with unsafe identity becomes blocked and cannot match',()=>{
   const blocked=personPacketFromContact({
     name:'mike',

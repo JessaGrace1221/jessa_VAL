@@ -818,6 +818,10 @@ test('Stewardship V1 is an introduction engine with Network discovery', () => {
   assert.match(hearthJs, /function stewardshipLooksLikePerson/);
   assert.match(hearthJs, /function stewardshipNameTokens/);
   assert.match(hearthJs, /function stewardshipIntroFit/);
+  assert.match(hearthJs, /function stewardshipRelationshipEvidenceMap/);
+  assert.match(hearthJs, /function stewardshipHasRecentDirectCommunication/);
+  assert.match(hearthJs, /function stewardshipPairPassesFreshness/);
+  assert.match(hearthJs, /recent direct communication with at least one person in the last 14 days/);
   assert.match(hearthJs, /function renderStewardshipSuggestions/);
   assert.match(hearthJs, /function renderStewardshipComparison/);
   assert.match(hearthJs, /function renderStewardshipNetworkDetail/);
@@ -835,6 +839,11 @@ test('Stewardship V1 is an introduction engine with Network discovery', () => {
   assert.match(hearthJs, /explicit \? 20 : 0/);
   assert.match(relationshipActionService, /function genericStewardshipClassifierText/);
   assert.match(relationshipActionService, /genericStewardshipClassifierText\(item\)/);
+  assert.match(relationshipActionService, /function relationshipEvidenceMapForContact/);
+  assert.match(relationshipActionService, /relationship_evidence_map:relationshipEvidenceMap/);
+  assert.match(server, /function relationshipEvidenceMapFromRows/);
+  assert.match(server, /STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS=14/);
+  assert.match(server, /freshForSuggestedIntroductions/);
   assert.match(hearthJs, /Can VAL write one clean sentence|Because /);
   assert.match(hearthJs, /I do not see a strong reason to introduce these two yet/);
   assert.match(hearthJs, /Best Matches/);
@@ -1965,6 +1974,8 @@ test('Stewardship drawer behaves like a V1 introduction workspace', () => {
   assert.doesNotMatch(hearthHtml, /data-relationship-field="stewardshipAbout"/);
   assert.match(hearthJs, /const relationshipProfiles/);
   assert.match(hearthJs, /function stewardshipIntroFit/);
+  assert.match(hearthJs, /stewardshipPairPassesFreshness\(a, b\)/);
+  assert.match(hearthJs, /lastDirectCommunicationAt/);
   assert.match(hearthJs, /function stewardshipBestMatches/);
   assert.match(hearthJs, /function renderStewardshipSuggestions/);
   assert.match(hearthJs, /function renderStewardshipComparison/);

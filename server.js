@@ -15669,6 +15669,119 @@ function relationshipProfileKeyForTarget(target={}){
   if(target.profileType==='project')return target.projectId?`project:${target.projectId}`:`project:${normalizeContextName(target.displayName||target.name||'unknown')||'unknown'}`;
   return '';
 }
+const STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS=14;
+function relationshipTimelineMetadata(row={}){
+  return evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{})||{};
+}
+function relationshipTimelineSourceType(row={}){
+  const metadata=relationshipTimelineMetadata(row);
+  return String(metadata.sourceType||metadata.source_type||row.sourceType||row.source_type||'').toLowerCase();
+}
+function relationshipTimelineText(row={}){
+  const metadata=relationshipTimelineMetadata(row);
+  return [
+    row.observationType||row.observation_type,
+    row.content,
+    row.exactQuote||row.exact_quote,
+    metadata.sourceType||metadata.source_type,
+    metadata.evidenceTitle||metadata.evidence_title,
+    metadata.sourceId||metadata.source_id
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function relationshipEvidenceSourceBucket(row={}){
+  const source=relationshipTimelineSourceType(row);
+  const text=relationshipTimelineText(row);
+  if(/calendar|meeting|invite|zoom|gcal/.test(source)||/\b(calendar|meeting|attendee|invite|zoom)\b/.test(text))return 'calendar';
+  if(/transcript|conversation|call/.test(source)||/\b(transcript|speaker|said|told)\b/.test(text))return 'transcript';
+  if(/gmail|outlook|email|sent/.test(source)||/\b(email|sent|replied|reply|inbox|outbound)\b/.test(text))return 'email';
+  if(/crm|ghl|contact/.test(source)||/\b(crm|contact)\b/.test(text))return 'crm';
+  if(/outscraper|apollo|linkedin|public|enrichment/.test(source)||/\b(outscraper|apollo|linkedin|public enrichment)\b/.test(text))return 'public';
+  return 'other';
+}
+function relationshipTimelineAdmissionSource(row={}){
+  const text=relationshipTimelineText(row);
+  const bucket=relationshipEvidenceSourceBucket(row);
+  if(bucket==='calendar')return 'calendar_attendee';
+  if(bucket==='transcript')return 'transcript_attendee_or_named_person';
+  if(bucket==='email'&&/\b(sent email|outbound|user sent|jessa sent|direct email|sent_email)\b/.test(text))return 'recent_sent_email';
+  if(bucket==='email'&&/\b(user replied|you replied|jessa replied|reply from user|person replied|replied to user|inbound reply|responded to)\b/.test(text))return 'recent_reply';
+  if(bucket==='crm')return 'confirmed_crm_context';
+  if(/\b(user teaching|teach_val|user confirmed|important|vip)\b/.test(text))return 'user_marked_important';
+  if(bucket==='public')return 'public_enrichment_only';
+  return bucket+'_evidence';
+}
+function relationshipTimelineDirectCommunicationSource(row={}){
+  const text=relationshipTimelineText(row);
+  const bucket=relationshipEvidenceSourceBucket(row);
+  if(bucket==='email'&&/\b(sent email|outbound|user sent|jessa sent|direct email|sent_email)\b/.test(text))return 'user_sent_email';
+  if(bucket==='email'&&/\b(user replied|you replied|jessa replied|reply from user)\b/.test(text))return 'user_replied';
+  if(bucket==='email'&&/\b(person replied|replied to user|inbound reply|responded to)\b/.test(text))return 'person_replied';
+  if(bucket==='calendar')return 'meeting_with_user';
+  if(bucket==='transcript')return 'transcript_conversation_with_user';
+  return '';
+}
+function relationshipTimelineOccurredAt(row={}){
+  return row.occurredAt||row.occurred_at||row.createdAt||row.created_at||'';
+}
+function relationshipDateWithinDays(value='',days=STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS){
+  const time=interactionDate(value);
+  if(!time)return false;
+  const diff=Date.now()-time;
+  return diff>=0&&diff<=days*24*60*60*1000;
+}
+function relationshipEvidenceMapFromRows(rows=[],target={},buckets={}){
+  const sourceCounts={email:0,calendar:0,transcript:0,crm:0,public:0,other:0};
+  const admissionSources=new Set();
+  const directCommunicationSources=new Set();
+  const introductionEvidence=[];
+  let lastDirectCommunicationAt='';
+  let lastDirectCommunicationSource='';
+  for(const row of Array.isArray(rows)?rows:[]){
+    const bucket=relationshipEvidenceSourceBucket(row);
+    sourceCounts[bucket]=(sourceCounts[bucket]||0)+1;
+    const admissionSource=relationshipTimelineAdmissionSource(row);
+    if(admissionSource&&admissionSource!=='public_enrichment_only')admissionSources.add(admissionSource);
+    const directSource=relationshipTimelineDirectCommunicationSource(row);
+    const occurredAt=relationshipTimelineOccurredAt(row);
+    if(directSource){
+      directCommunicationSources.add(directSource);
+      if(!lastDirectCommunicationAt||interactionDate(occurredAt)>interactionDate(lastDirectCommunicationAt)){
+        lastDirectCommunicationAt=occurredAt;
+        lastDirectCommunicationSource=directSource;
+      }
+    }
+    const text=relationshipTimelineText(row);
+    if(/\b(introduce|intro|connect|should meet|should talk|want to introduce|want to connect|make that introduction)\b/.test(text)){
+      introductionEvidence.push({
+        source_type:bucket,
+        source_id:relationshipTimelineMetadata(row).sourceId||relationshipTimelineMetadata(row).source_id||row.evidenceItemId||row.evidence_item_id||'',
+        summary:String(row.content||row.exactQuote||row.exact_quote||'').slice(0,360),
+        occurred_at:occurredAt
+      });
+    }
+  }
+  const metadata=evidenceJsonValue(target.metadataJson||target.metadata_json||target.metadata,{})||{};
+  const existing=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||{};
+  const existingAdmission=Array.isArray(existing.admissionSources)?existing.admissionSources:(Array.isArray(existing.admission_sources)?existing.admission_sources:[]);
+  const existingDirect=Array.isArray(existing.directCommunicationSources)?existing.directCommunicationSources:(Array.isArray(existing.direct_communication_sources)?existing.direct_communication_sources:[]);
+  existingAdmission.forEach(source=>source&&admissionSources.add(source));
+  existingDirect.forEach(source=>source&&directCommunicationSources.add(source));
+  if(!lastDirectCommunicationAt)lastDirectCommunicationAt=existing.lastDirectCommunicationAt||existing.last_direct_communication_at||'';
+  if(!lastDirectCommunicationSource)lastDirectCommunicationSource=existing.lastDirectCommunicationSource||existing.last_direct_communication_source||'';
+  return {
+    version:'stewardship_relationship_evidence_map_v1',
+    admissionSources:[...admissionSources],
+    directCommunicationSources:[...directCommunicationSources],
+    sourceCounts,
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    recentDirectCommunicationWindowDays:STEWARDSHIP_SUGGESTED_INTRO_RECENCY_DAYS,
+    freshForSuggestedIntroductions:relationshipDateWithinDays(lastDirectCommunicationAt),
+    introductionEvidence:introductionEvidence.slice(0,8),
+    packetRefreshOrder:['load_durable_person_packet','load_source_bound_evidence','scan_transcripts','scan_sent_or_replied_email','scan_calendar_attendees','scan_crm_project_document_context','enrich_admitted_person_only','update_packet','compare_for_introductions'],
+    updatedAt:new Date().toISOString()
+  };
+}
 function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   const metadata={...(target.metadataJson||target.metadata||{})};
   if((target.profileType||target.profile_type)!=='person')return metadata;
@@ -15677,6 +15790,7 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   const email=target.email||(String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'');
   const alias=knownRelationshipEmailAlias(email);
   const contactId=realRelationshipContactId(target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'');
+  const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||relationshipEvidenceMapFromRows([],target,buckets);
   const packet=personPacketFromContact({
     contactId,
     crmContactId:realRelationshipContactId(metadata.crmContactId)||contactId,
@@ -15689,6 +15803,9 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     summary:target.summary||'',
     firstSeenAt:target.createdAt||target.created_at||target.lastObservedAt||target.last_observed_at||'',
     lastMeaningfulSignalAt:target.lastObservedAt||target.last_observed_at||target.updatedAt||target.updated_at||'',
+    lastDirectCommunicationAt:relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'',
+    lastDirectCommunicationSource:relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'',
+    relationshipEvidenceMap,
     firstMeaningfulSignal:target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
     openLoops:contentList(buckets.openLoops||target.openLoops||target.open_loops),
     risks:contentList(buckets.risks||target.risks),
@@ -15705,6 +15822,7 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     ...metadata,
     email:metadata.email||email,
     knownAlias:metadata.knownAlias||alias||null,
+    relationshipEvidenceMap,
     personPacket:packet,
     personPacketUpdatedAt:new Date().toISOString(),
     personPacketSource:'relationship_profile'
@@ -15807,6 +15925,8 @@ async function recalculateRelationshipProfile(profileType,profileKey){
     if(bucket)buckets[bucket].push({content:event.content,exactQuote:event.exactQuote||'',confidence:event.confidence||0,dueAt:event.dueAt||'',occurredAt:event.occurredAt||event.createdAt||'',observationType:event.observationType});
   }
   const payload={summary:rows[0]?.content?`Latest observation: ${String(rows[0].content).slice(0,220)}`:'',relationshipStatus:rows.length?'observed':'quiet',confidence:rows.reduce((m,r)=>Math.max(m,Number(r.confidence)||0),0),lastObservedAt:rows[0]?.occurredAt||rows[0]?.createdAt||null,observationCount:rows.length,openLoopCount:buckets.openLoops.length,promiseCount:rows.filter(r=>['promise','commitment'].includes(r.observationType)).length,riskCount:buckets.risks.length,opportunityCount:buckets.opportunities.length,preferenceCount:buckets.preferences.length,emotionalContextJson:buckets.emotionalContext.slice(0,12),relationshipSignalsJson:buckets.relationshipSignals.slice(0,12),risksJson:buckets.risks.slice(0,12),opportunitiesJson:buckets.opportunities.slice(0,12),preferencesJson:buckets.preferences.slice(0,12),openLoopsJson:buckets.openLoops.slice(0,12)};
+  const existingMetadata=evidenceJsonValue(profile?.metadataJson||profile?.metadata_json||profile?.metadata,{});
+  const relationshipEvidenceMap=relationshipEvidenceMapFromRows(rows,{...(profile||{}),metadataJson:existingMetadata},buckets);
   const packetMetadata=relationshipProfilePersonPacketMetadata({
     ...(profile||{}),
     profileType,
@@ -15815,7 +15935,7 @@ async function recalculateRelationshipProfile(profileType,profileKey){
     summary:payload.summary,
     relationshipStatus:payload.relationshipStatus,
     lastObservedAt:payload.lastObservedAt,
-    metadataJson:evidenceJsonValue(profile?.metadataJson||profile?.metadata_json||profile?.metadata,{})
+    metadataJson:{...existingMetadata,relationshipEvidenceMap}
   },buckets);
   if(DEMO_MODE||!pgPool){
     if(profile)Object.assign(profile,payload,{metadataJson:packetMetadata,updatedAt:new Date().toISOString()});
@@ -16613,6 +16733,10 @@ function relationshipIndexItemFromProfile(profile={}){
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   const packetItem=relationshipPersonPacketItemFromProfile(profile);
   const executiveUi=stewardshipExecutiveVisibilityForIndex(packetItem,profile);
+  const relationshipEvidenceMap=packetItem.relationshipEvidenceMap||metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||packetItem.packet?.relationship_evidence_map||{};
+  const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
+  const lastDirectCommunicationSource=relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'';
+  const freshForSuggestedIntroductions=relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipEvidenceMap.fresh_for_suggested_introductions===true||relationshipDateWithinDays(lastDirectCommunicationAt);
   return {
     id:String(id),
     query:{name,email,targetId:id,contactId},
@@ -16648,6 +16772,10 @@ function relationshipIndexItemFromProfile(profile={}){
     evidenceBindings:packetItem.evidenceBindings||[],
     executiveVisibility:packetItem.executiveVisibility||null,
     canEvaluateMoves:packetItem.canEvaluateMoves||false,
+    relationshipEvidenceMap,
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    freshForSuggestedIntroductions,
     stewardshipUi:executiveUi,
     stewardshipStatus:executiveUi.status,
     stewardshipState:executiveUi.state,
@@ -16665,7 +16793,10 @@ function relationshipPersonPacketItemFromProfile(profile={}){
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const email=admission.email||metadata.email||'';
-  const packet=profile.personPacket||metadata.personPacket||personPacketFromContact({
+  const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||profile.relationshipEvidenceMap||profile.relationship_evidence_map||{};
+  const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
+  const lastDirectCommunicationSource=relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'';
+  const rawPacket=profile.personPacket||metadata.personPacket||personPacketFromContact({
     contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||''),
     knownIdentity:!!alias,
     name:alias?.name||profile.displayName||profile.display_name||profile.name||'Relationship',
@@ -16675,6 +16806,9 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     relationshipStatus:alias?.relationshipStatus||profile.relationshipStatus||profile.relationship_status||'observed',
     summary:profile.summary||'',
     lastObservedAt:profile.lastObservedAt||profile.last_observed_at||'',
+    lastDirectCommunicationAt,
+    lastDirectCommunicationSource,
+    relationshipEvidenceMap,
     openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     risks:(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
@@ -16684,6 +16818,19 @@ function relationshipPersonPacketItemFromProfile(profile={}){
       ...(Array.isArray(profile.evidence)?profile.evidence:[])
     ].filter(Boolean)
   });
+  const packet={
+    ...rawPacket,
+    relationship_evidence_map:rawPacket.relationship_evidence_map||relationshipEvidenceMap,
+    relationship_state:{
+      ...(rawPacket.relationship_state||{}),
+      last_direct_communication_at:rawPacket.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt,
+      last_direct_communication_source:rawPacket.relationship_state?.last_direct_communication_source||lastDirectCommunicationSource
+    },
+    packet_state:{
+      ...(rawPacket.packet_state||{}),
+      fresh_for_suggested_introductions:rawPacket.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(rawPacket.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt)
+    }
+  };
   return {
     profileId:profile.id||'',
     profileKey:profile.profileKey||profile.profile_key||'',
@@ -16697,6 +16844,10 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     needsReview:!!packet.packet_state?.needs_review,
     missingVariables:packet.packet_state?.missing_variables||[],
     lastMeaningfulSignalAt:packet.relationship_state?.last_meaningful_signal_at||profile.lastObservedAt||profile.last_observed_at||'',
+    lastDirectCommunicationAt:packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt,
+    lastDirectCommunicationSource:packet.relationship_state?.last_direct_communication_source||lastDirectCommunicationSource,
+    relationshipEvidenceMap:packet.relationship_evidence_map||relationshipEvidenceMap,
+    freshForSuggestedIntroductions:packet.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt),
     relationshipAdmission:admission,
     noExternalAction:true
   };

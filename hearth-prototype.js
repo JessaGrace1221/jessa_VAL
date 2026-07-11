@@ -1950,10 +1950,38 @@ function stewardshipNameTokens(profile = {}){
   return String(profile.name || '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 4 && !['relationship','observed','unknown'].includes(word));
 }
 
+function stewardshipRelationshipEvidenceMap(profile = {}){
+  return profile.relationshipEvidenceMap || profile.relationship_evidence_map || profile.personPacket?.relationship_evidence_map || {};
+}
+
+function stewardshipRecentDirectCommunicationAt(profile = {}){
+  const map = stewardshipRelationshipEvidenceMap(profile);
+  return profile.lastDirectCommunicationAt || profile.last_direct_communication_at || map.lastDirectCommunicationAt || map.last_direct_communication_at || profile.personPacket?.relationship_state?.last_direct_communication_at || '';
+}
+
+function stewardshipDateWithinDays(value = '', days = 14){
+  const time = Date.parse(value);
+  if(!time) return false;
+  const diff = Date.now() - time;
+  return diff >= 0 && diff <= days * 24 * 60 * 60 * 1000;
+}
+
+function stewardshipHasRecentDirectCommunication(profile = {}, days = 14){
+  const map = stewardshipRelationshipEvidenceMap(profile);
+  return Boolean(profile.freshForSuggestedIntroductions || profile.fresh_for_suggested_introductions || map.freshForSuggestedIntroductions || map.fresh_for_suggested_introductions || stewardshipDateWithinDays(stewardshipRecentDirectCommunicationAt(profile), days));
+}
+
+function stewardshipPairPassesFreshness(a = {}, b = {}){
+  return stewardshipHasRecentDirectCommunication(a, 14) || stewardshipHasRecentDirectCommunication(b, 14);
+}
+
 function stewardshipIntroFit(a = {}, b = {}){
   if(!a || !b || a === b) return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['two different people']};
   if(!stewardshipLooksLikePerson(a) || !stewardshipLooksLikePerson(b)){
     return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['two named people with relationship packets']};
+  }
+  if(!stewardshipPairPassesFreshness(a, b)){
+    return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['recent direct communication with at least one person in the last 14 days']};
   }
   if(stewardshipAlreadyKnows(a, b)){
     return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['they may already know or be working with each other']};
@@ -2013,6 +2041,7 @@ function relationshipProfileFromIndexItem(item = {}){
   const personPacket = item.personPacket || item.packet || null;
   const packetState = personPacket?.packet_state || {};
   const packetIdentity = personPacket?.person || {};
+  const relationshipEvidenceMap = item.relationshipEvidenceMap || item.relationship_evidence_map || personPacket?.relationship_evidence_map || {};
   const packetSummary = personPacket?.who_this_person_is?.summary || '';
   const packetNeeds = Array.isArray(personPacket?.what_this_person_needs) ? personPacket.what_this_person_needs.map((row) => row.need || row.summary || row.why_it_matters).filter(Boolean) : [];
   const packetOffers = Array.isArray(personPacket?.what_this_person_offers) ? personPacket.what_this_person_offers.map((row) => row.offer || row.summary || row.why_it_matters).filter(Boolean) : [];
@@ -2066,6 +2095,10 @@ function relationshipProfileFromIndexItem(item = {}){
     sourceReceipts: item.sourceReceipts || 'VAL relationship index · CRM identity link required before dossier attachment',
     projectLinks: Array.isArray(item.projectLinks) ? item.projectLinks : [],
     personPacket,
+    relationshipEvidenceMap,
+    lastDirectCommunicationAt: item.lastDirectCommunicationAt || item.last_direct_communication_at || relationshipEvidenceMap.lastDirectCommunicationAt || relationshipEvidenceMap.last_direct_communication_at || personPacket?.relationship_state?.last_direct_communication_at || '',
+    lastDirectCommunicationSource: item.lastDirectCommunicationSource || item.last_direct_communication_source || relationshipEvidenceMap.lastDirectCommunicationSource || relationshipEvidenceMap.last_direct_communication_source || personPacket?.relationship_state?.last_direct_communication_source || '',
+    freshForSuggestedIntroductions: Boolean(item.freshForSuggestedIntroductions || item.fresh_for_suggested_introductions || relationshipEvidenceMap.freshForSuggestedIntroductions || relationshipEvidenceMap.fresh_for_suggested_introductions || packetState.fresh_for_suggested_introductions),
     packetMaturity: item.packetMaturity || personPacket?.packet_maturity || null,
     evidenceBindings: item.evidenceBindings || personPacket?.evidence_bindings || [],
     executiveVisibility: item.executiveVisibility || personPacket?.executive_visibility || null,
@@ -2130,6 +2163,7 @@ function relationshipProfileWithPersonPacket(profile = {}){
   const needs = Array.isArray(packet.what_this_person_needs) ? packet.what_this_person_needs.map((row) => row.need || row.summary || row.why_it_matters).filter(Boolean) : [];
   const offers = Array.isArray(packet.what_this_person_offers) ? packet.what_this_person_offers.map((row) => row.offer || row.summary || row.why_it_matters).filter(Boolean) : [];
   const state = packet.packet_state || {};
+  const relationshipEvidenceMap = item?.relationshipEvidenceMap || item?.relationship_evidence_map || profile.relationshipEvidenceMap || packet.relationship_evidence_map || {};
   return {
     ...profile,
     personPacket: packet,
@@ -2137,6 +2171,10 @@ function relationshipProfileWithPersonPacket(profile = {}){
     evidenceBindings: item?.evidenceBindings || packet.evidence_bindings || profile.evidenceBindings || [],
     executiveVisibility: item?.executiveVisibility || packet.executive_visibility || profile.executiveVisibility || null,
     relationshipAdmission: item?.relationshipAdmission || packet.relationship_admission || profile.relationshipAdmission || null,
+    relationshipEvidenceMap,
+    lastDirectCommunicationAt: item?.lastDirectCommunicationAt || profile.lastDirectCommunicationAt || relationshipEvidenceMap.lastDirectCommunicationAt || relationshipEvidenceMap.last_direct_communication_at || packet.relationship_state?.last_direct_communication_at || '',
+    lastDirectCommunicationSource: item?.lastDirectCommunicationSource || profile.lastDirectCommunicationSource || relationshipEvidenceMap.lastDirectCommunicationSource || relationshipEvidenceMap.last_direct_communication_source || packet.relationship_state?.last_direct_communication_source || '',
+    freshForSuggestedIntroductions: Boolean(item?.freshForSuggestedIntroductions || profile.freshForSuggestedIntroductions || relationshipEvidenceMap.freshForSuggestedIntroductions || relationshipEvidenceMap.fresh_for_suggested_introductions || state.fresh_for_suggested_introductions),
     canEvaluateMoves: Boolean(item?.canEvaluateMoves || state.can_evaluate_moves || profile.canEvaluateMoves),
     stewardshipUi: profile.stewardshipUi || item?.stewardshipUi || null,
     personPacketMaturity: item?.maturity || state.maturity || profile.personPacketMaturity || '',
