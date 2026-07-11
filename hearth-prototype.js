@@ -158,6 +158,13 @@ const relationshipSearchInput = document.querySelector('[data-relationship-searc
 const relationshipSortSelect = document.querySelector('[data-relationship-sort]');
 const relationshipIndexSource = document.querySelector('[data-relationship-index-source]');
 const relationshipStateFilterButtons = Array.from(document.querySelectorAll('[data-relationship-state-filter]'));
+const stewardshipViewButtons = Array.from(document.querySelectorAll('[data-stewardship-view]'));
+const stewardshipPanels = Array.from(document.querySelectorAll('[data-stewardship-panel]'));
+const stewardshipSuggestions = document.querySelector('[data-stewardship-suggestions]');
+const stewardshipPersonASelect = document.querySelector('[data-stewardship-person-a]');
+const stewardshipPersonBSelect = document.querySelector('[data-stewardship-person-b]');
+const stewardshipComparison = document.querySelector('[data-stewardship-comparison]');
+const stewardshipNetworkDetail = document.querySelector('[data-stewardship-network-detail]');
 const relationshipProjectPanel = document.querySelector('[data-relationship-project-panel]');
 const relationshipProjectCount = document.querySelector('[data-relationship-project-count]');
 const relationshipDocumentPanel = document.querySelector('[data-relationship-document-panel]');
@@ -978,6 +985,10 @@ let relationshipIndexRequest = null;
 let relationshipIndexSourceLabel = 'Local preview';
 let relationshipPersonPacketIndex = {};
 let relationshipPeopleToWatchExpanded = false;
+let stewardshipActiveView = 'suggested';
+let stewardshipSelectedNetworkId = '';
+let stewardshipPersonAId = '';
+let stewardshipPersonBId = '';
 let relationshipTeachMode = 'relationship';
 let relationshipTeachSection = 'relationship';
 let activeRelationshipActionSection = '';
@@ -1804,6 +1815,144 @@ function relationshipIndexItems(){
   }).filter((item) => item.state !== 'hidden');
 }
 
+function stewardshipPeople(){
+  return relationshipIndexItems()
+    .filter((item) => item?.profile)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function stewardshipPersonById(id = ''){
+  return stewardshipPeople().find((item) => item.id === id)?.profile || relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id] || null;
+}
+
+function stewardshipCleanList(values = [], fallback = ''){
+  const seen = new Set();
+  const rows = (Array.isArray(values) ? values : [values]).map((item) => {
+    if(!item) return '';
+    if(typeof item === 'string') return item;
+    return item.need || item.offer || item.summary || item.content || item.text || item.reason || item.title || '';
+  }).map((line) => relationshipCleanSourceText(line, 170)).filter((line) => {
+    const key = line.toLowerCase();
+    if(!line || seen.has(key) || /^no (current|source-backed|confident|move)/i.test(line)) return false;
+    seen.add(key);
+    return true;
+  });
+  return rows.length ? rows.slice(0, 4) : (fallback ? [fallback] : []);
+}
+
+function stewardshipNeeds(profile = {}){
+  return stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, 'No clear need is ready yet.');
+}
+
+function stewardshipOffers(profile = {}){
+  return stewardshipCleanList(profile.packetOffers?.length ? profile.packetOffers : profile.valueTheyCreate, 'No clear offer is ready yet.');
+}
+
+function stewardshipEvidence(profile = {}){
+  const packet = profile.personPacket || {};
+  const receipts = []
+    .concat(packet.who_this_person_is?.source_receipts || [])
+    .concat(packet.relationship_origin?.source_receipts || [])
+    .concat(Array.isArray(profile.evidenceBindings) ? profile.evidenceBindings : []);
+  const rows = stewardshipCleanList(receipts.map((item) => item.summary || item.relationship_context || item.title || item.source_type || ''), '');
+  return rows.length ? rows : stewardshipCleanList([profile.evidencePosture, profile.sourceEvidence, profile.signal, profile.summary], 'Evidence is still developing.');
+}
+
+function stewardshipRelationshipLine(profile = {}){
+  return relationshipCleanSourceText(profile.stewardshipAbout || profile.identity || profile.contact || profile.company || profile.role || 'Known through current VAL relationship evidence.', 220);
+}
+
+function stewardshipTextForMatch(profile = {}){
+  return [
+    profile.name,
+    profile.company,
+    profile.role,
+    profile.summary,
+    profile.signal,
+    profile.evidence,
+    profile.sourceEvidence,
+    profile.evidencePosture,
+    stewardshipNeeds(profile).join(' '),
+    stewardshipOffers(profile).join(' '),
+    stewardshipEvidence(profile).join(' ')
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function stewardshipTokens(value = ''){
+  const blocked = new Set(['this','that','with','from','they','them','need','needs','offer','offers','relationship','context','current','source','evidence','people','person','help','helps','work','working','meeting','discussion','recent','review']);
+  return String(value || '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 4 && !blocked.has(word));
+}
+
+function stewardshipOverlapScore(left = '', right = ''){
+  const a = new Set(stewardshipTokens(left));
+  const b = new Set(stewardshipTokens(right));
+  if(!a.size || !b.size) return 0;
+  let overlap = 0;
+  a.forEach((word) => { if(b.has(word)) overlap += 1; });
+  return overlap;
+}
+
+function stewardshipAlreadyKnows(a = {}, b = {}){
+  const text = stewardshipTextForMatch(a) + ' ' + stewardshipTextForMatch(b);
+  const aFirst = String(a.name || '').split(/\s+/)[0]?.toLowerCase();
+  const bFirst = String(b.name || '').split(/\s+/)[0]?.toLowerCase();
+  return Boolean(aFirst && bFirst && new RegExp('already\\s+(knows|know|met|working with)\\s+' + bFirst + '|' + bFirst + '\\s+already\\s+(knows|know|met|working with)\\s+' + aFirst, 'i').test(text));
+}
+
+function stewardshipExplicitIntroSignal(a = {}, b = {}){
+  const text = stewardshipTextForMatch(a) + ' ' + stewardshipTextForMatch(b);
+  const aFirst = String(a.name || '').split(/\s+/)[0]?.toLowerCase();
+  const bFirst = String(b.name || '').split(/\s+/)[0]?.toLowerCase();
+  return Boolean(aFirst && bFirst && text.includes(aFirst) && text.includes(bFirst) && /\b(introduce|intro|connect|meet|should meet)\b/i.test(text));
+}
+
+function stewardshipIntroFit(a = {}, b = {}){
+  if(!a || !b || a === b) return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['two different people']};
+  if(stewardshipAlreadyKnows(a, b)){
+    return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['they may already know or be working with each other']};
+  }
+  const aNeeds = stewardshipNeeds(a);
+  const bNeeds = stewardshipNeeds(b);
+  const aOffers = stewardshipOffers(a);
+  const bOffers = stewardshipOffers(b);
+  const aNeedsBOffers = stewardshipOverlapScore(aNeeds.join(' '), bOffers.join(' '));
+  const bNeedsAOffers = stewardshipOverlapScore(bNeeds.join(' '), aOffers.join(' '));
+  const explicit = stewardshipExplicitIntroSignal(a, b);
+  const score = aNeedsBOffers + bNeedsAOffers + (explicit ? 6 : 0);
+  const missing = [];
+  if(!aNeedsBOffers && !explicit) missing.push('clear need from ' + (a.name || 'Person A') + ' that ' + (b.name || 'Person B') + ' can meet');
+  if(!bNeedsAOffers && !explicit) missing.push('clear need from ' + (b.name || 'Person B') + ' that ' + (a.name || 'Person A') + ' can meet');
+  const ready = explicit || score >= 2;
+  const because = ready
+    ? 'Because ' + (a.name || 'Person A') + ' needs ' + relationshipCleanSourceText(aNeeds[0] || 'support this network can provide', 90).replace(/\.$/, '') + ', and ' + (b.name || 'Person B') + ' offers ' + relationshipCleanSourceText(bOffers[0] || 'relevant context', 90).replace(/\.$/, '') + '.'
+    : 'I do not see a strong reason to introduce these two yet.';
+  return {ready, score, because, missing, aNeeds, bNeeds, aOffers, bOffers, evidence:[...stewardshipEvidence(a).slice(0, 2), ...stewardshipEvidence(b).slice(0, 2)]};
+}
+
+function stewardshipBestMatches(profile = {}, limit = 3){
+  return stewardshipPeople()
+    .map((item) => ({item, profile:item.profile, fit:stewardshipIntroFit(profile, item.profile)}))
+    .filter((row) => row.profile && row.profile !== profile && row.fit.ready)
+    .sort((a, b) => b.fit.score - a.fit.score || a.item.name.localeCompare(b.item.name))
+    .slice(0, limit);
+}
+
+function stewardshipDraftPreview(a = {}, b = {}, fit = stewardshipIntroFit(a, b)){
+  if(!fit.ready) return '';
+  return [
+    'Subject: Introduction: ' + (a.name || 'Person A') + ' <> ' + (b.name || 'Person B'),
+    '',
+    'Hi ' + (a.name || 'there') + ' and ' + (b.name || 'there') + ',',
+    '',
+    fit.because,
+    '',
+    'I thought it may be worth a brief conversation if it feels useful to both of you.',
+    '',
+    'Warmly,',
+    'Jessa'
+  ].join('\n');
+}
+
 function relationshipProfileFromIndexItem(item = {}){
   const id = item.id || item.profileKey || item.name || 'relationship';
   const personPacket = item.personPacket || item.packet || null;
@@ -2219,72 +2368,211 @@ function appendRelationshipRolodexRow(item){
   const button = document.createElement('button');
   button.type = 'button';
   button.dataset.relationshipOpenProfile = item.id;
-  button.dataset.relationshipState = item.state;
-  button.setAttribute('title', item.stewardship.evidencePosture || item.sourceEvidence || 'Open relationship context.');
-  button.style.setProperty('--temperature-score', item.temperatureScore + '%');
+  button.classList.toggle('active', item.id === stewardshipSelectedNetworkId);
+  button.setAttribute('title', 'Open Network context for ' + item.name + '.');
   const name = document.createElement('span');
   name.className = 'rolodex-name';
   name.textContent = item.name;
   const status = document.createElement('span');
   status.className = 'rolodex-status';
-  status.textContent = item.stewardship.status;
+  status.textContent = relationshipCleanSourceText(item.profile.role || item.company || 'Network', 90);
   const why = document.createElement('span');
   why.className = 'rolodex-why';
-  why.textContent = 'Why this matters: ' + item.stewardship.whyThisMatters;
+  why.textContent = 'Needs: ' + stewardshipNeeds(item.profile)[0];
   const open = document.createElement('span');
   open.className = 'rolodex-open';
-  open.textContent = 'Open: ' + item.stewardship.whatIsOpen;
+  open.textContent = 'Offers: ' + stewardshipOffers(item.profile)[0];
   const next = document.createElement('span');
   next.className = 'rolodex-next';
-  next.textContent = 'VAL next move: ' + item.stewardship.nextMove;
+  const best = stewardshipBestMatches(item.profile, 1)[0];
+  next.textContent = best ? 'Best match: ' + best.item.name : 'Best match: not ready yet';
   const evidence = document.createElement('span');
   evidence.className = 'rolodex-evidence';
-  evidence.textContent = 'Evidence: ' + item.stewardship.evidencePosture;
+  evidence.textContent = 'Evidence: ' + stewardshipEvidence(item.profile)[0];
   button.append(name, status, why, open, next, evidence);
-  if(item.temperatureReviewPending?.status === 'pending'){
-    const pending = document.createElement('button');
-    pending.type = 'button';
-    pending.className = 'rolodex-temperature-pending';
-    pending.dataset.relationshipPendingTemperatureReview = item.id;
-    pending.setAttribute('title', 'Open relationship understanding correction review');
-    pending.textContent = 'Understanding review pending';
-    row.appendChild(pending);
-  }
-  if(item.profile?.temperatureConflict || item.temperatureConflict){
-    const conflict = item.profile?.temperatureConflict || item.temperatureConflict;
-    const review = document.createElement('span');
-    review.className = 'rolodex-temperature-review';
-    review.textContent = 'Review relationship understanding · ' + (conflict.challengerState || 'conflicting signal') + ' also has evidence';
-    button.appendChild(review);
-  }
   row.insertBefore(button, row.firstChild);
   relationshipRolodex.appendChild(row);
 }
 
+function renderStewardshipNetworkDetail(profile = null){
+  if(!stewardshipNetworkDetail) return;
+  if(!profile){
+    stewardshipNetworkDetail.innerHTML = '<span>Select a person</span><p>VAL will show needs, offers, evidence, and best matches when you choose someone from the Network.</p>';
+    return;
+  }
+  const matches = stewardshipBestMatches(profile, 3);
+  const matchMarkup = matches.length
+    ? '<ol>' + matches.map((match) => '<li><strong>' + escapeHtml(match.item.name) + '</strong><p>' + escapeHtml(match.fit.because) + '</p><button type="button" data-stewardship-create-with="' + escapeHtml(match.item.id) + '">Use In Introduction</button></li>').join('') + '</ol>'
+    : '<p>I do not see a strong reason to introduce ' + escapeHtml(profile.name || 'this person') + ' yet.</p><button type="button" data-stewardship-who-should-meet="' + escapeHtml(stewardshipSelectedNetworkId) + '">Who Should ' + escapeHtml(relationshipFirstName(profile)) + ' Meet?</button>';
+  stewardshipNetworkDetail.innerHTML = [
+    '<span>Network</span>',
+    '<h5>' + escapeHtml(profile.name || 'Relationship') + '</h5>',
+    '<p>' + escapeHtml(stewardshipRelationshipLine(profile)) + '</p>',
+    '<div class="stewardship-four-grid">',
+    stewardshipMiniList('Needs', stewardshipNeeds(profile)),
+    stewardshipMiniList('Offers', stewardshipOffers(profile)),
+    stewardshipMiniList('Relationship', [stewardshipRelationshipLine(profile)]),
+    stewardshipMiniList('Evidence', stewardshipEvidence(profile)),
+    '</div>',
+    '<div class="stewardship-best-matches"><strong>Best Matches</strong>' + matchMarkup + '</div>'
+  ].join('');
+}
+
+function setStewardshipView(view = 'suggested'){
+  stewardshipActiveView = ['suggested','create','network'].includes(view) ? view : 'suggested';
+  stewardshipViewButtons.forEach((button) => {
+    const active = button.dataset.stewardshipView === stewardshipActiveView;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  stewardshipPanels.forEach((panel) => {
+    const active = panel.dataset.stewardshipPanel === stewardshipActiveView;
+    panel.hidden = !active;
+    panel.classList.toggle('active', active);
+  });
+  renderRelationshipRolodex();
+}
+
+function openStewardshipDraftReview(a = {}, b = {}, fit = stewardshipIntroFit(a, b)){
+  if(!fit.ready){
+    setWorkspaceContent({
+      lens: 'Introduction Review',
+      title: 'This introduction is not draft-ready yet.',
+      meaning: fit.because,
+      understanding: (fit.missing || ['VAL needs stronger evidence before drafting.']).concat(['No email, invite, message, CRM write, or external action happened.']),
+      recommendation: 'Treat silence as a responsible answer until the packet evidence is stronger.',
+      actions: relationshipContextActions([{label:'Back to Create Introduction', workflow:'relationshipAllPeople'}]),
+      label: 'Introduction not draft-ready'
+    });
+    openWorkspaceShell('Introduction not draft-ready', {returnTarget:'relationship'});
+    return;
+  }
+  setWorkspaceContent({
+    lens: 'Introduction Draft',
+    title: 'Introduction draft held for review.',
+    meaning: fit.because,
+    understanding: [
+      'People: ' + (a.name || 'Person A') + ' <> ' + (b.name || 'Person B'),
+      'Evidence: ' + (fit.evidence || []).slice(0, 2).join(' | '),
+      'No email, invite, message, CRM write, or external action happened.'
+    ],
+    recommendation: 'Review the reason and wording before approving anything outside VAL.',
+    actions: relationshipContextActions([
+      {label:'Approve draft for review queue', workflow:'introApprove'},
+      {label:'Edit draft', workflow:'introRefine'},
+      {label:'Not now', workflow:'introDismiss'}
+    ]),
+    label: 'Introduction draft review',
+    suppressClarityStandard:true
+  });
+  renderWorkspaceInput({
+    label: 'Prepared introduction draft',
+    placeholder: 'VAL prepared draft language for review.',
+    helper: 'Editing this text only changes the review draft. It does not send, expose recipients, write CRM, or create a calendar event.',
+    mode: 'intro-draft',
+    value: stewardshipDraftPreview(a, b, fit)
+  });
+  openWorkspaceShell('Introduction draft review', {returnTarget:'relationship'});
+}
+
 function renderRelationshipRolodex(){
-  if(!relationshipRolodex) return;
   updateRelationshipIndexSourceLabel();
+  renderStewardshipSuggestions();
+  renderStewardshipCreateControls();
+  renderStewardshipNetworkList();
+}
+
+function renderStewardshipSuggestions(){
+  if(!stewardshipSuggestions) return;
+  const people = stewardshipPeople();
+  const suggestions = [];
+  for(const item of people){
+    if(suggestions.length >= 3) break;
+    const matches = stewardshipBestMatches(item.profile, 1);
+    if(matches.length) suggestions.push({a:item, b:matches[0].item, fit:matches[0].fit});
+  }
+  stewardshipSuggestions.innerHTML = '';
+  if(!suggestions.length){
+    stewardshipSuggestions.innerHTML = '<article class="stewardship-empty"><strong>No suggested introductions are ready yet.</strong><p>VAL is still learning what people need and offer. You can create an introduction manually or open Network to discover possible matches.</p></article>';
+    return;
+  }
+  suggestions.forEach((suggestion, index) => {
+    const card = document.createElement('article');
+    card.className = 'stewardship-suggestion-card';
+    card.innerHTML = [
+      '<span>Suggested Introduction</span>',
+      '<h5>' + escapeHtml(suggestion.a.name || 'Person A') + ' &lt;-&gt; ' + escapeHtml(suggestion.b.name || 'Person B') + '</h5>',
+      '<p><strong>Why this could matter</strong><br>' + escapeHtml(suggestion.fit.because) + '</p>',
+      '<p><strong>Evidence</strong><br>' + escapeHtml((suggestion.fit.evidence || []).slice(0, 2).join(' | ') || 'Source evidence is attached to both packets.') + '</p>',
+      '<button type="button" data-stewardship-draft-pair="' + index + '">Review Draft</button>'
+    ].join('');
+    card.dataset.stewardshipA = suggestion.a.id;
+    card.dataset.stewardshipB = suggestion.b.id;
+    stewardshipSuggestions.appendChild(card);
+  });
+}
+
+function renderStewardshipCreateControls(){
+  if(!stewardshipPersonASelect || !stewardshipPersonBSelect) return;
+  const people = stewardshipPeople();
+  const options = '<option value="">Choose a person</option>' + people.map((item) => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + '</option>').join('');
+  if(stewardshipPersonASelect.innerHTML !== options) stewardshipPersonASelect.innerHTML = options;
+  if(stewardshipPersonBSelect.innerHTML !== options) stewardshipPersonBSelect.innerHTML = options;
+  stewardshipPersonASelect.value = stewardshipPersonAId;
+  stewardshipPersonBSelect.value = stewardshipPersonBId;
+  renderStewardshipComparison();
+}
+
+function renderStewardshipComparison(){
+  if(!stewardshipComparison) return;
+  const a = stewardshipPersonById(stewardshipPersonAId);
+  const b = stewardshipPersonById(stewardshipPersonBId);
+  if(!a || !b){
+    stewardshipComparison.innerHTML = '<article class="stewardship-empty"><strong>Choose two people.</strong><p>VAL will compare needs, offers, constraints, and evidence before drafting anything.</p></article>';
+    return;
+  }
+  const fit = stewardshipIntroFit(a, b);
+  const missing = fit.missing?.length ? '<ul>' + fit.missing.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul>' : '';
+  stewardshipComparison.innerHTML = [
+    '<article class="stewardship-comparison-card">',
+    '<span>Create Introduction</span>',
+    '<h5>' + escapeHtml(a.name || 'Person A') + ' and ' + escapeHtml(b.name || 'Person B') + '</h5>',
+    '<div class="stewardship-four-grid">',
+    stewardshipMiniList('Needs', [a.name + ' needs: ' + stewardshipNeeds(a)[0], b.name + ' needs: ' + stewardshipNeeds(b)[0]]),
+    stewardshipMiniList('Offers', [a.name + ' offers: ' + stewardshipOffers(a)[0], b.name + ' offers: ' + stewardshipOffers(b)[0]]),
+    stewardshipMiniList('Evidence', fit.evidence || []),
+    stewardshipMiniList('Missing Piece / Constraints', fit.ready ? ['No blocking constraint is visible yet.'] : (fit.missing || [])),
+    '</div>',
+    '<p><strong>Why this could matter</strong><br>' + escapeHtml(fit.because) + '</p>',
+    fit.ready ? '<pre>' + escapeHtml(stewardshipDraftPreview(a, b, fit)) + '</pre><button type="button" data-stewardship-review-manual>Draft Introduction</button>' : '<div class="stewardship-not-fit"><strong>I do not see a strong reason to introduce these two yet.</strong>' + missing + '</div>',
+    '</article>'
+  ].join('');
+}
+
+function stewardshipMiniList(title = '', rows = []){
+  const cleanRows = stewardshipCleanList(rows, 'Not enough evidence yet.');
+  return '<section><strong>' + escapeHtml(title) + '</strong><ul>' + cleanRows.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul></section>';
+}
+
+function renderStewardshipNetworkList(){
+  if(!relationshipRolodex) return;
   relationshipRolodex.innerHTML = '';
-  const items = filteredRelationshipIndexItems();
+  const query = relationshipIndexSearch.trim().toLowerCase();
+  const items = stewardshipPeople().filter((item) => relationshipItemMatchesSearch(item, query));
   relationshipRolodex.dataset.relationshipDensity = items.length >= 12 ? 'compact' : 'comfortable';
   if(!items.length){
     const empty = document.createElement('p');
     empty.className = 'relationship-rolodex-empty';
-    empty.textContent = relationshipRolodexEmptyText();
+    empty.textContent = query ? 'No Network matches this search.' : 'No admitted Network people are ready yet.';
     relationshipRolodex.appendChild(empty);
+    renderStewardshipNetworkDetail(null);
     return;
   }
-  const showSections = shouldShowRelationshipSections();
-  const sectionCounts = showSections ? relationshipSectionCounts(items) : {};
-  let currentSection = '';
   items.forEach((item) => {
-    if(showSections && item.state !== currentSection){
-      currentSection = item.state;
-      appendRelationshipSectionHeader(item.state, sectionCounts[item.state] || 0);
-    }
-    if(showSections && item.state === 'people_to_watch' && !relationshipPeopleToWatchExpanded) return;
     appendRelationshipRolodexRow(item);
   });
+  if(!stewardshipSelectedNetworkId || !items.some((item) => item.id === stewardshipSelectedNetworkId)) stewardshipSelectedNetworkId = items[0].id;
+  renderStewardshipNetworkDetail(stewardshipPersonById(stewardshipSelectedNetworkId));
 }
 
 function setRelationshipDetailMode(mode = 'brief'){
@@ -2601,11 +2889,9 @@ function openRelationshipIndex(){
     button.classList.toggle('active', button.dataset.relationshipStateFilter === relationshipStateFilter);
     button.setAttribute('aria-pressed', String(button.classList.contains('active')));
   });
-  renderRelationshipRolodex();
   hydrateRelationshipIndex();
-  const nameField = document.querySelector('[data-relationship-field="name"]');
-  if(nameField) nameField.textContent = 'Relationships';
   setRelationshipDetailMode('index');
+  setStewardshipView(stewardshipActiveView || 'suggested');
 }
 
 function projectIndexItems(){
@@ -15537,6 +15823,20 @@ relationshipStateFilterButtons.forEach((button) => {
   });
 });
 
+stewardshipViewButtons.forEach((button) => {
+  button.addEventListener('click', () => setStewardshipView(button.dataset.stewardshipView || 'suggested'));
+});
+
+stewardshipPersonASelect?.addEventListener('change', () => {
+  stewardshipPersonAId = stewardshipPersonASelect.value || '';
+  renderStewardshipComparison();
+});
+
+stewardshipPersonBSelect?.addEventListener('change', () => {
+  stewardshipPersonBId = stewardshipPersonBSelect.value || '';
+  renderStewardshipComparison();
+});
+
 drawerTray.addEventListener('click', async (event) => {
   const transcriptImport = event.target.closest('[data-transcript-import-krisp], [data-transcript-import-krisp-direct]');
   if(transcriptImport){
@@ -15752,6 +16052,42 @@ drawerTray.addEventListener('click', async (event) => {
     renderRelationshipRolodex();
     return;
   }
+  const suggestedDraft = event.target.closest('[data-stewardship-draft-pair]');
+  if(suggestedDraft){
+    event.preventDefault();
+    event.stopPropagation();
+    const card = suggestedDraft.closest('[data-stewardship-a][data-stewardship-b]');
+    const a = stewardshipPersonById(card?.dataset.stewardshipA || '');
+    const b = stewardshipPersonById(card?.dataset.stewardshipB || '');
+    openStewardshipDraftReview(a, b, stewardshipIntroFit(a, b));
+    return;
+  }
+  const manualDraft = event.target.closest('[data-stewardship-review-manual]');
+  if(manualDraft){
+    event.preventDefault();
+    event.stopPropagation();
+    const a = stewardshipPersonById(stewardshipPersonAId);
+    const b = stewardshipPersonById(stewardshipPersonBId);
+    openStewardshipDraftReview(a, b, stewardshipIntroFit(a, b));
+    return;
+  }
+  const createWith = event.target.closest('[data-stewardship-create-with]');
+  if(createWith){
+    event.preventDefault();
+    event.stopPropagation();
+    stewardshipPersonAId = stewardshipSelectedNetworkId;
+    stewardshipPersonBId = createWith.dataset.stewardshipCreateWith || '';
+    setStewardshipView('create');
+    return;
+  }
+  const whoShouldMeet = event.target.closest('[data-stewardship-who-should-meet]');
+  if(whoShouldMeet){
+    event.preventDefault();
+    event.stopPropagation();
+    stewardshipSelectedNetworkId = whoShouldMeet.dataset.stewardshipWhoShouldMeet || stewardshipSelectedNetworkId;
+    renderStewardshipNetworkDetail(stewardshipPersonById(stewardshipSelectedNetworkId));
+    return;
+  }
   const pendingTemperatureReview = event.target.closest('[data-relationship-pending-temperature-review]');
   if(pendingTemperatureReview){
     event.preventDefault();
@@ -15764,7 +16100,8 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const profileId = relationshipProfileButton.dataset.relationshipOpenProfile;
-    await openRelationshipProfileFromFolder(profileId, relationshipProfileButton);
+    stewardshipSelectedNetworkId = profileId;
+    renderStewardshipNetworkList();
     return;
   }
   const projectProfileButton = event.target.closest('[data-project-open-profile]');

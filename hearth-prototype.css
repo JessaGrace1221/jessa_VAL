@@ -5214,6 +5214,204 @@ button.drawer-link{
     linear-gradient(180deg,rgba(255,249,239,.56),rgba(227,204,177,.42)),
     rgba(255,249,239,.36);
 }
+.relationship-intro-tabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:9px;
+  margin:10px 0 14px;
+}
+.relationship-intro-tabs button{
+  min-height:36px;
+  border:1px solid rgba(79,48,38,.14);
+  border-radius:999px;
+  background:rgba(255,249,239,.42);
+  color:rgba(58,33,27,.76);
+  padding:0 14px;
+  font-size:.7rem;
+  font-weight:900;
+}
+.relationship-intro-tabs button.active{
+  border-color:rgba(91,105,79,.3);
+  background:rgba(91,105,79,.9);
+  color:var(--paper);
+}
+.relationship-v1-panel{
+  display:none;
+}
+.relationship-v1-panel.active{
+  display:grid;
+  gap:12px;
+  min-height:0;
+}
+.stewardship-intro-section{
+  display:grid;
+  gap:14px;
+}
+.stewardship-suggested-list{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+.stewardship-suggestion-card,
+.stewardship-comparison-card,
+.stewardship-empty,
+.stewardship-network-detail{
+  border:1px solid rgba(79,48,38,.13);
+  border-radius:8px;
+  background:
+    linear-gradient(180deg,rgba(255,249,239,.78),rgba(255,249,239,.48)),
+    rgba(227,204,177,.24);
+  color:rgba(45,27,22,.78);
+  padding:14px;
+  box-shadow:0 12px 28px rgba(79,48,38,.08),inset 0 1px 0 rgba(255,255,255,.66);
+}
+.stewardship-suggestion-card{
+  display:grid;
+  gap:10px;
+  align-content:start;
+  min-height:260px;
+}
+.stewardship-suggestion-card span,
+.stewardship-network-detail>span,
+.stewardship-comparison-card>span,
+.stewardship-empty>strong,
+.stewardship-best-matches>strong{
+  color:rgba(91,105,79,.84);
+  font:850 .62rem var(--mono);
+  letter-spacing:.15em;
+  text-transform:uppercase;
+}
+.stewardship-suggestion-card h5,
+.stewardship-network-detail h5,
+.stewardship-comparison-card h5{
+  margin:0;
+  color:rgba(34,19,15,.94);
+  font:900 1rem/1.15 var(--body);
+}
+.stewardship-suggestion-card p,
+.stewardship-empty p,
+.stewardship-network-detail p,
+.stewardship-comparison-card p{
+  margin:0;
+  color:rgba(45,27,22,.68);
+  font-size:.76rem;
+  line-height:1.4;
+}
+.stewardship-suggestion-card button,
+.stewardship-comparison-card button,
+.stewardship-network-detail button{
+  width:max-content;
+  max-width:100%;
+  min-height:34px;
+  border:1px solid rgba(91,105,79,.22);
+  border-radius:999px;
+  background:rgba(91,105,79,.92);
+  color:var(--paper);
+  padding:0 13px;
+  font-size:.7rem;
+  font-weight:900;
+}
+.stewardship-create-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.stewardship-create-grid label,
+.stewardship-network-search{
+  display:grid;
+  gap:6px;
+}
+.stewardship-create-grid span,
+.stewardship-network-search span{
+  color:rgba(45,27,22,.62);
+  font-size:.66rem;
+  font-weight:850;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.stewardship-create-grid select,
+.stewardship-network-search input{
+  min-height:38px;
+  border:1px solid rgba(79,48,38,.16);
+  border-radius:7px;
+  background:rgba(255,249,239,.62);
+  color:rgba(34,19,15,.92);
+  padding:0 11px;
+  font:750 .78rem var(--body);
+}
+.stewardship-comparison{
+  display:grid;
+  gap:12px;
+}
+.stewardship-four-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.stewardship-four-grid section{
+  min-height:96px;
+  border:1px solid rgba(79,48,38,.1);
+  border-radius:7px;
+  background:rgba(255,255,250,.42);
+  padding:10px;
+}
+.stewardship-four-grid strong{
+  display:block;
+  margin-bottom:6px;
+  color:rgba(91,105,79,.84);
+  font:850 .62rem var(--mono);
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+.stewardship-four-grid ul,
+.stewardship-best-matches ol,
+.stewardship-not-fit ul{
+  margin:0;
+  padding-left:18px;
+}
+.stewardship-four-grid li,
+.stewardship-best-matches li,
+.stewardship-not-fit li{
+  color:rgba(45,27,22,.7);
+  font-size:.72rem;
+  line-height:1.35;
+  margin:3px 0;
+}
+.stewardship-comparison-card pre{
+  white-space:pre-wrap;
+  margin:0;
+  border:1px solid rgba(79,48,38,.1);
+  border-radius:7px;
+  background:rgba(255,255,250,.58);
+  color:rgba(34,19,15,.86);
+  padding:12px;
+  font:.74rem/1.45 var(--body);
+}
+.stewardship-network-layout{
+  display:grid;
+  grid-template-columns:minmax(320px,.85fr) minmax(360px,1fr);
+  gap:14px;
+  min-height:0;
+}
+.relationship-detail.show-index .stewardship-network-layout .relationship-rolodex{
+  display:grid;
+}
+.stewardship-network-detail{
+  display:grid;
+  gap:12px;
+  align-content:start;
+  min-width:0;
+}
+.stewardship-best-matches{
+  display:grid;
+  gap:8px;
+}
+.stewardship-best-matches li{
+  margin-bottom:8px;
+}
+.stewardship-best-matches li p{
+  margin:3px 0 7px;
+}
 .relationship-rolodex-row{
   display:grid;
   gap:5px;
