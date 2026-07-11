@@ -368,6 +368,14 @@ Every email must answer:
 | Relationship warmth/risk | Relationship packet only if person admitted. |
 | Introduction language | Stewardship intro observer if identities resolve. |
 
+### Document/Attachment Email Rule
+
+This rule applies to all emails with documents, attachments, proposals, spreadsheets, project files, SOWs, drafts, or project-like material.
+
+Anthony is only the example name. Do not special-case Anthony.
+
+When any person sends documents or project-like material, VAL must route the source through Email, Documents, Projects, and any relevant entity packets before deciding what should be visible.
+
 ### Example: Anthony Document Email
 
 Expected behavior:
@@ -709,6 +717,21 @@ Home may show only:
 - Leverage: prepared work ready for review.
 - Right-hand panel: contextual notices, quiet status, and source receipts that orient the executive without becoming a task queue.
 
+### Home Right-Hand Panel
+
+The right-hand panel should remain substantially as it is now.
+
+Required stable elements:
+
+- next calendar event
+- button/control that opens the full calendar view
+- Co-Work with VAL icon/control
+- Teach VAL button/control
+
+Do not redesign this panel during the source-spine work unless the user explicitly asks for it.
+
+The panel may show quiet contextual notices only when they support the existing panel purpose and do not replace the calendar/Co-Work/Teach VAL functions.
+
 Inputs:
 
 - Executive Briefing
@@ -737,6 +760,23 @@ Home must not show:
 | Top priority requiring judgment | Alignment. |
 | Meaningful change in source reality | Velocity. |
 | Processed source with nothing needed | Usually quiet; visible no-action receipt inside source detail, especially transcripts. |
+
+## Leverage / Ready For You Ordering
+
+Leverage / Ready For You should be ordered chronologically by creation time.
+
+Default order:
+
+```text
+oldest reviewable item at the top
+most recent reviewable item at the bottom
+```
+
+Reason:
+
+The executive should be able to move through prepared work in the order it was created, remember the flow of meetings and source events, and avoid losing older prepared items under newer ones.
+
+Leverage may still display artifact type, source, and urgency labels, but those labels should not become the default grouping unless the user later asks for it.
 
 ## Click Processing Map
 
