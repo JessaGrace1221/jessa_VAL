@@ -1995,6 +1995,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /peopleTheyShouldMeet/);
   assert.match(hearthJs, /relationship-action-group/);
   assert.match(hearthJs, /Actions VAL can take with this relationship/);
+  assert.match(hearthJs, /function relationshipActionsWithStewardshipReview/);
+  assert.match(hearthJs, /relationshipReviewIntroductionsAction\(\)/);
   assert.match(hearthJs, /Draft reply/);
   assert.match(hearthJs, /Create follow-up task/);
   assert.match(hearthJs, /Draft check-in/);

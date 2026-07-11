@@ -6204,6 +6204,16 @@ function preferredRelationshipActions(actions = []){
   return preferred.map((id) => actions.find((action) => action.id === id)).filter(Boolean);
 }
 
+function relationshipReviewIntroductionsAction(){
+  return {id:'find_relationship_introductions',label:'Review introductions',type:'endpoint',willDo:'Prepare review-only introduction candidates.',willNotDo:'No introduction will be sent.'};
+}
+
+function relationshipActionsWithStewardshipReview(actions = [], profile = {}){
+  if(profile.unresolvedIdentity) return actions;
+  if(actions.some((action) => action.id === 'find_relationship_introductions')) return actions;
+  return actions.concat(relationshipReviewIntroductionsAction());
+}
+
 function relationshipSuggestedActions(profile = {}){
   if(profile.unresolvedIdentity){
     return [
@@ -6220,12 +6230,12 @@ function relationshipSuggestedActions(profile = {}){
       {id:'create_task',label:'Create follow-up task',type:'endpoint',willDo:'Prepare a task connected to this relationship loop.',willNotDo:'No external system will be changed without approval.'},
       {id:'ask_alignment',label:'Ask what matters now',type:'workspace',workspace:'alignment'}
     );
-    return actions;
+    return relationshipActionsWithStewardshipReview(actions, profile);
   }
   if(state.includes('strategic') || evidence.includes('partner') || evidence.includes('momentum')){
     actions.push(
       {id:'cowork_relationship',label:'Co-Work with VAL',type:'workspace',willDo:'Think with VAL using this relationship file.',willNotDo:'No email, CRM update, task, or post will happen.'},
-      {id:'find_relationship_introductions',label:'Review introductions',type:'endpoint',willDo:'Prepare review-only introduction candidates.',willNotDo:'No introduction will be sent.'},
+      relationshipReviewIntroductionsAction(),
       {id:'review_linkedin_activity',label:'Review LinkedIn signal',type:'endpoint',willDo:'Show the latest known LinkedIn signal.',willNotDo:'No post, comment, scrape, message, or CRM change will happen.'}
     );
     return actions;
@@ -6241,7 +6251,7 @@ function renderRelationshipActions(profile = {}){
   const container = document.querySelector('.relationship-actions');
   if(!container) return;
   const actions = preferredRelationshipActions(Array.isArray(profile.actions) ? profile.actions : []);
-  const safeActions = actions.length ? actions : relationshipSuggestedActions(profile);
+  const safeActions = relationshipActionsWithStewardshipReview(actions.length ? actions : relationshipSuggestedActions(profile), profile);
   const actionHtml = (action) => {
     const label = escapeHtml(action.label || 'Review');
     const title = escapeHtml([action.willDo, action.willNotDo].filter(Boolean).join(' '));
