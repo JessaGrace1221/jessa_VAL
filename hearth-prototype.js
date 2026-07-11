@@ -6727,7 +6727,7 @@ function openRelationshipFullFile(profile = {}){
     recommendation: profile.wisdom || 'Use this relationship file to understand before acting.',
     actions: relationshipContextActions([
       {label:'Teach VAL', workflow:'relationship:teach_wisdom'},
-      {label:'Find Introductions', workflow:'relationship:find_relationship_introductions'}
+      {label:'Review introductions', workflow:'relationship:find_relationship_introductions'}
     ], profile),
     label: 'Relationship full file workspace'
   });

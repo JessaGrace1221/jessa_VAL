@@ -311,7 +311,7 @@ function relationshipDossierActions({id='',name='',email='',recommendedAction=''
     },
     {
       id:'find_relationship_introductions',
-      label:'Find introductions',
+      label:'Review introductions',
       intent:'leverage',
       observerScope,
       type:'endpoint',
@@ -468,7 +468,7 @@ function relationshipBriefFromDossier(dossier={}){
     actions:{
       communicate:[actionRef('draft_message','Draft Email'),actionRef('draft_linkedin_comment','Draft LinkedIn Comment'),actionRef('draft_linkedin_dm','Draft LinkedIn DM')].filter(Boolean),
       plan:[actionRef('create_task','Create Task')].filter(Boolean),
-      think:[actionRef('brainstorm','Brainstorm'),actionRef('ask_alignment','Ask VAL'),actionRef('review_linkedin_activity','Review LinkedIn'),actionRef('find_relationship_introductions','Find Introductions')].filter(Boolean),
+      think:[actionRef('brainstorm','Brainstorm'),actionRef('ask_alignment','Ask VAL'),actionRef('review_linkedin_activity','Review LinkedIn'),actionRef('find_relationship_introductions','Review introductions')].filter(Boolean),
       teach:[actionRef('mark_vip','Update Relationship'),actionRef('not_important','Correct Judgment'),actionRef('snooze','Protect Attention')].filter(Boolean)
     },
     sourceReceipts:sourceReceipt

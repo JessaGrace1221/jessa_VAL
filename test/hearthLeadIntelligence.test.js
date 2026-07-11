@@ -2006,7 +2006,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /linkedInLatestPosts/);
   assert.match(hearthJs, /review_linkedin_activity/);
   assert.match(hearthJs, /find_relationship_introductions/);
-  assert.match(hearthJs, /Find Introductions/);
+  assert.doesNotMatch(hearthJs, /Find Introductions/);
+  assert.doesNotMatch(hearthJs, /Find introductions/);
   assert.match(hearthJs, /function relationshipIntroCandidatePackets/);
   assert.match(hearthJs, /function prepareRelationshipIntroReview/);
   assert.match(hearthJs, /crmContacts/);
