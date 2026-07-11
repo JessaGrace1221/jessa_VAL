@@ -324,7 +324,9 @@ Each observer receives only admitted source facts plus relevant existing packet 
 | Person included in a thread the user replied to | Yes | Yes, if human/contact-like | Maybe | Maybe | Sometimes | Includes three-way introductions and group threads. |
 | Inbound-only email | Yes if not spam | No by itself | No by itself | Rarely | Rarely | Cannot create relationship without another trusted signal. |
 | Email with unsubscribe/bulk/list headers | Maybe source-only | No by itself | No | No | No | Does not belong in Executive Inbox unless stronger relationship evidence overrides. |
-| No-reply/system/receipt | Maybe source-only | No | No | No | No | Never a relationship. |
+| Receipt or invoice email | Yes | No by itself | Yes, if project/finance evidence exists | Maybe | Yes, if deadline/payment issue | Can be operationally important without being a relationship. |
+| Shipping notice/login/security alert/automated notification | Maybe source-only | No | No by itself | Rarely | Rarely, only if urgent/risky | Quiet Notices lane unless it creates priority risk. |
+| No-reply/system source | Maybe source-only | No | No | No by itself | Rarely | Never a relationship. |
 | Transcript attendee | Yes | Yes | Yes, if project named or implied | Yes | Sometimes | Attendees are real relationship candidates. |
 | Person named in transcript | Yes | Candidate or identity review | Maybe | Maybe | Maybe | Must resolve identity before acting. |
 | Explicit transcript intro statement | Yes | Yes | Maybe | Yes | Maybe | Must create Stewardship introduction opportunity. |
@@ -351,7 +353,7 @@ Each observer receives only admitted source facts plus relevant existing packet 
 
 Every email must answer:
 
-1. Is this spam, bulk, unsubscribe, receipt, notification, system, or no-reply?
+1. Is this spam, bulk, unsubscribe, receipt, invoice, shipping notice, security alert, notification, system, or no-reply?
 2. Did the user send to or reply to this person?
 3. Was this person included in `To`, `CC`, or `BCC` on an email the user sent?
 4. Was this person included in any thread the user replied to?
@@ -368,6 +370,9 @@ Every email must answer:
 | User replied to thread containing person | Update person packet relationship evidence for human/contact-like participants. |
 | Inbound-only from human | Store source; do not create relationship unless another trusted signal admits. |
 | Inbound email contains unsubscribe link | Suppress from Executive Inbox by default. |
+| Receipt or invoice, especially with attachment | Route to Documents, Projects, and finance/project context. |
+| Shipping notice/login/security alert/automated notification | Route to Quiet Notices unless urgent/risky. |
+| Payment issue or important deadline | Route to Executive Inbox and Home Alignment. |
 | User marks person important | Promote or preserve person packet and raise priority. |
 | User marks "Never show me email from this person again" | Suppress from Executive Inbox and relationship surfacing unless user reverses. |
 | Attachment/document request | Document observer and project observer. |
@@ -489,6 +494,59 @@ Rule:
 
 ```text
 Unsubscribe suppresses inbox visibility. Real relationship evidence can override suppression.
+```
+
+### Notices, Receipts, Invoices, And Operational Alerts
+
+Receipts and invoices are not relationships by themselves, but they can be operationally important.
+
+Required behavior for receipts/invoices:
+
+```text
+Receipt or invoice email arrives
+  -> store source
+  -> inspect attachments carefully
+  -> route PDFs/attachments to Documents
+  -> link to existing project when clear
+  -> create project/finance evidence when relevant
+  -> suggest project creation when the financial document implies a project but none exists
+```
+
+Reason:
+
+```text
+Project management includes tracking project finances.
+```
+
+Shipping notices, login/security alerts, two-factor/security codes, and generic automated notifications should not clutter Executive Inbox.
+
+Default behavior:
+
+```text
+Automated notice arrives
+  -> store if useful
+  -> route to Quiet Notices / Notifications
+  -> do not create relationship
+  -> do not create Stewardship candidate
+  -> do not enter Executive Inbox unless urgent or risky
+```
+
+Quiet Notices is a secondary, low-pressure lane:
+
+```text
+This is here if you need it.
+```
+
+If any receipt, invoice, system notice, or automated email contains an important deadline, payment issue, service interruption, account access risk, or other consequence, it should become executive-worthy.
+
+Required escalation:
+
+```text
+System/finance notice contains deadline or payment issue
+  -> Executive Inbox
+  -> Home Alignment priority candidate
+  -> relevant project/document packet
+  -> no relationship packet unless separate relationship evidence exists
 ```
 
 ### Document/Attachment Email Rule
