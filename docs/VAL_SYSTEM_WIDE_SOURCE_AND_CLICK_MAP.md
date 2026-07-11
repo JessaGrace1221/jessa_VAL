@@ -239,7 +239,7 @@ Put this artifact here.
 | Introduction draft | Stewardship, Leverage / Ready For You, both person profiles | Home Leverage if timely | "Introduction ready" unless both identities and source refs are attached. |
 | Project suggestion | Projects drawer and relevant source surface | Home right panel if noteworthy | "Project created" unless user approves creation. |
 | Document review | Documents drawer and relevant project/person/email | Leverage if review is needed | "Reviewed" before user or VAL review result exists. |
-| Task draft | Commitments and Leverage / Ready For You | Home Alignment if top priority | "Task created" unless task record exists. |
+| Task draft | Commitments and Leverage / Ready For You | Home Alignment if it exposes or blocks an open loop | "Task created" unless task record exists. |
 | Calendar proposal | Calendar event/Timeline and Leverage | Home if priority | "Scheduled" unless provider confirms. |
 
 Leverage and Ready For You are the same product concept in different visible language. Implementation may keep `ready_for_you` naming, but executive-facing copy should treat Leverage as the place where reviewable prepared work lives.
@@ -249,9 +249,32 @@ Leverage and Ready For You are the same product concept in different visible lan
 Home has four major visible areas:
 
 1. Velocity: what happened.
-2. Alignment: the top priority requiring judgment.
+2. Alignment: the open-loop command center.
 3. Leverage: things VAL drafted/prepared and are ready for review.
 4. Right-hand panel: contextual notices, source receipts, quiet status, and supporting orientation.
+
+Alignment is not a generic priority shelf. Alignment is where VAL surfaces the open loop that most needs executive attention now.
+
+An Alignment item must answer:
+
+```text
+What loop is open?
+What is needed to close it?
+Why now?
+What can VAL do next?
+```
+
+Examples of Alignment-worthy open loops:
+
+- a missing decision blocks work
+- a question needs the executive's judgment
+- a payment issue or deadline needs attention
+- a stakeholder tension needs a next move
+- VAL needs one answer before it can prepare or send something
+- an accepted action is still unhandled
+- a pinned item has reached its unpin time
+
+Closed loops do not belong in Alignment. They belong in receipts, Velocity, the welcome/context message, and the relevant project/source surface.
 
 When VAL says it prepared something, it should appear:
 
@@ -1446,7 +1469,7 @@ Every dynamic top module must be tied to a real path.
 | Needs Your Judgment | Option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action approval, unclear owner, or one missing answer blocks safe progress | Project Manager Judgment Packet + decision/action packet + prepared artifact when useful | Project top module, Alignment, Leverage if prepared work exists | Choose option, approve recommendation, add context, ask scoped question, prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | Prepared For You | VAL drafted/prepared something ready for review and approval | Project Prepared Work Packet + persisted artifact + surface registration | Project top module/action layer and Leverage | Review, edit/refine, approve, ask scoped question, add context, execute after approval, put a pin in it | Simple action receipt |
 | Today's Reprioritization | Any new project-related source/event or user opens project page | Project Manager Focus Packet + updated project priority order | Project top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare, create task if needed, safe stakeholder message, put a pin in it until date/time | Reprioritization receipt |
-| Project Movement | Work completed/slipped, source added, meeting/document/dependency changed | Project Movement Packet | Project top module/recent activity | Open source, add context, ask what changed | Movement receipt |
+| Project Movement | Forward/backward movement: task, document, payment, question, clarification, meeting, dependency, status, or open-loop change | Project Movement Packet + open-loop update | Home welcome/context, Project top module/recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | Execution Adjustment | Scope/time/cost/quality trade-off appears | Project Risk/Judgment Packet | Project top module | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
 | Project Reset | End of day, after meeting/action, stale open loops | Project Receipt/Reset Packet | Project top module or reset section | Confirm, add context, create tomorrow task | Reset receipt |
 | Quietly Watching | No user action needed but monitoring rules exist | Project monitoring rule/status packet | Project top module only when nothing higher exists | Open watcher, add context, change rule | Monitoring receipt |
@@ -1630,6 +1653,70 @@ Receipt:
 VAL just reprioritized Project X for today and is watching the partner timeline.
 ```
 
+Project Movement rules:
+
+```text
+Movement detected
+  -> classify direction as forward or backward
+  -> update project current reality
+  -> update open loops
+  -> if an open loop needs executive attention, create/update Alignment open-loop packet
+  -> create movement packet
+  -> show in Home welcome/context
+  -> show in Project Manager page
+  -> show in Velocity
+  -> show in Project action layer
+```
+
+Open-loop rule:
+
+```text
+If something was presented and has not been done, it is an open loop.
+```
+
+Alignment rule:
+
+```text
+Alignment is for open loops.
+Movement appears in Alignment only when it opens, reopens, blocks, or escalates a loop that needs executive attention.
+Closed-loop movement appears as a receipt, in Velocity when meaningful, and on the relevant project/source surface.
+```
+
+Visible movement display:
+
+```text
+What changed
+Forward or backward
+One-line source proof
+Follow up action
+```
+
+Do not show visible clutter:
+
+```text
+why this matters
+affected people
+broad priority analysis
+affected document/task/deadline lists
+```
+
+Movement source proof should be one line and clickable when possible.
+
+Primary movement action should be whatever VAL believes is needed, such as:
+
+```text
+Follow up
+```
+
+Unpin behavior:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user selects date/time
+  -> surface again at that date/time: "This is unpinned. Let's work on it."
+```
+
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:
 
 - reprioritize before reacting
@@ -1761,7 +1848,7 @@ Home is downstream. Home does not decide source truth.
 Home may show only:
 
 - Velocity: what changed and passed Velocity Round Table.
-- Alignment: one priority with Why Now Packet.
+- Alignment: the most important open loop with a Why Now Packet.
 - Leverage: prepared work ready for review.
 - Right-hand panel: contextual notices, quiet status, and source receipts that orient the executive without becoming a task queue.
 
@@ -1805,7 +1892,8 @@ Home must not show:
 | Email draft ready | Leverage. |
 | Introduction draft ready | Leverage, and Stewardship. |
 | Meeting overview ready | Leverage only if it needs review or creates prepared follow-up; otherwise Calendar/Transcript surfaces. |
-| Top priority requiring judgment | Alignment. |
+| Open loop requiring judgment, escalation, answer, or next move | Alignment. |
+| Open loop closed or handled | Welcome/context receipt, Velocity when meaningful, and relevant source/project surface. |
 | Meaningful change in source reality | Velocity. |
 | Processed source with nothing needed | Usually quiet; visible no-action receipt inside source detail, especially transcripts. |
 

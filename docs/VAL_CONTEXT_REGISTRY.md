@@ -269,9 +269,17 @@ Dedicated understanding prompt suite:
 | Project current truth | `{{projects.current.current_truth}}` | new | string | Intelligence Pass | Best current statement of reality. |
 | Project blockers | `{{projects.current.blockers}}` | new/derived | array | transcripts, email, tasks, CRM | Highest leverage and meeting prep. |
 | Project momentum | `{{projects.current.momentum}}` | new/derived | array | transcripts, email, CRM | Identify leverage. |
+| Project movement items | `{{projects.current.movement_items}}` | new/derived | array | Project Movement Observer | Forward/backward movement, one-line source proof, open-loop status, and follow-up action. |
+| Project movement direction | `{{projects.current.movement.current.direction}}` | new/derived | enum | Project Movement Observer | `forward`, `backward`, or `neutral`. |
+| Project movement source proof | `{{projects.current.movement.current.one_line_source_proof}}` | new/derived | object | source receipt linker | Brief clickable proof for movement, never a long explanation. |
+| Project movement follow-up action | `{{projects.current.movement.current.follow_up_action}}` | new/derived | object | Project Movement Observer | Primary action VAL believes is needed, often `Follow up`. |
+| Project movement receipt | `{{projects.current.movement.current.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL logs or acts on movement. |
 | Project risks | `{{projects.current.risks}}` | existing/derived | array | relationship profiles/evidence | Escalation. |
 | Project opportunities | `{{projects.current.opportunities}}` | existing/derived | array | relationship profiles/evidence/CRM | Opportunity detection. |
 | Project open loops | `{{projects.current.open_loops}}` | existing/derived | array | tasks/evidence | Task prioritization. |
+| Project Alignment open loop | `{{projects.current.alignment_open_loop}}` | new/derived | object | Project Manager Round Table | The unresolved loop, if any, that should surface in Home Alignment. |
+| Project Alignment why now | `{{projects.current.alignment_open_loop.why_now}}` | new/derived | string/object | Project Manager Round Table | Why this open loop needs executive attention now. |
+| Project Alignment close action | `{{projects.current.alignment_open_loop.close_action}}` | new/derived | object | Project click contract | The next action VAL believes can close or advance the loop. |
 | Related people | `{{projects.current.people}}` | derived/new | array | evidence/CRM/Teach VAL | Relationship-aware drafting. |
 | Project thirty-second truth | `{{projects.current.thirty_second_truth}}` | new/derived | string | Understanding prompts | Fast re-entry into what matters. |
 | Project one-sentence understanding | `{{projects.current.one_sentence_understanding}}` | new/derived | string | Understanding prompts | Current project truth in one sentence. |

@@ -419,27 +419,30 @@ Required variables:
 
 - `project_id`
 - `what_changed`
+- `movement_direction`
+- `open_loop_created_or_closed`
 - `source_type`
 - `source_id`
 - `timestamp`
-- `why_it_may_matter`
-- `affected_relationships`
-- `affected_commitments`
-- `affected_documents`
-- `affected_deadlines`
+- `one_line_source_proof`
+- `follow_up_action`
+- `pin_until`
 - `source_receipt`
 - `source_of_source`
 
 Feeds:
 
 - Projects drawer change history
-- Velocity only when passed by the Velocity Round Table
+- Home welcome/context message
+- Velocity
+- Project action layer
 - Relationship dossier when a relationship role changes
 
 Must not:
 
 - say `Something changed`
 - show movement without the exact source it opens
+- clutter the main movement display with why-it-matters, affected people, priority analysis, or broad impact analysis
 
 ### 4. Project Manager Judgment Packet
 
@@ -872,6 +875,31 @@ Priority order:
 
 The top module must be backed by a Project Manager Action Packet or Project Manager Focus Packet. It must not be generated as decorative summary copy.
 
+### Alignment Is Open Loops
+
+Alignment is the open-loop command center.
+
+It is not a general priority list, a project feed, or a place for every interesting risk. A project item routes to Alignment only when there is an unresolved loop that needs executive attention, judgment, escalation, an answer, or approval before the loop can close.
+
+An Alignment-bound project packet must answer:
+
+```text
+What loop is open?
+What is needed to close it?
+Why now?
+What can VAL do next?
+```
+
+Examples:
+
+- `Critical Project Issue` routes to Alignment when the issue creates an unresolved loop.
+- `Needs Your Judgment` routes to Alignment when the user's answer is the blocker.
+- `Prepared For You` routes to Alignment only when approval or missing context blocks closure; otherwise it belongs in Leverage.
+- `Project Movement` routes to Alignment only when movement opens, reopens, or blocks a loop; closed-loop movement belongs in Velocity and receipts.
+- `Put a pin in it` creates a timed open loop that returns to Alignment when the unpin time arrives.
+
+Closed loops should leave Alignment and produce a simple receipt.
+
 ### Dynamic Focus Modules
 
 | Module | Trigger | What VAL must do | Visible surface | User action | Receipt |
@@ -880,7 +908,7 @@ The top module must be backed by a Project Manager Action Packet or Project Mana
 | `Needs Your Judgment` | PM cannot safely move without user judgment, especially option choice, strategic trade-off, sensitive relationship decision, scope change, escalation, external action, or one missing answer | Create decision packet with options, recommendation, brief source proof, consequence if delayed, and action/prepared-work packet when possible | Top module, Alignment, Project action layer, Leverage if VAL prepared something | Choose option, approve recommendation, add context, ask scoped question, ask VAL to prepare draft, approve external action, put a pin in it | One-line decision receipt |
 | `Prepared For You` | VAL drafted or prepared something ready for user review and approval | Persist artifact, link to project/source, prove why/what/where/what is needed, register in Project and Leverage | Project top module or action layer, and Leverage | Review, edit/refine, approve, ask scoped question, add context, send/publish/schedule/create after approval, put a pin in it | Simple action receipt |
 | `Today's Reprioritization` | Any new project-related source or event, start of day, user opens project page, or changed priority/risk | Re-scan project emails, transcripts, calendar, documents, commitments, payment/project issues, and relationship tension; set new priority order | Top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare something, create task if needed, message stakeholder only when identity/context are safe, put a pin in it until date/time | Reprioritization receipt |
-| `Project Movement` | Task completed/slipped, source added, meeting happened, document changed, dependency moved | Create movement packet and update current reality | Top module or recent activity | Open source, add context, ask what changed | Movement receipt |
+| `Project Movement` | Forward or backward movement: task/document/payment/question/clarification/meeting/dependency/status/open-loop change | Create movement packet with direction, update current reality, update open loops, feed Velocity and Project | Home welcome/context, Project top module or recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, ask VAL to prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | `Execution Adjustment` | Scope/time/cost/quality trade-off appears | Make trade-off explicit, show impact, recommend least-risk move | Top module when active | Choose trade-off, ask alternatives, escalate | Trade-off receipt |
 | `Project Reset` | End of day, after meeting, after major action, stale open loops | Summarize what moved, decisions made, unresolved risks, tomorrow prep | Top module or lower reset card | Confirm, add missing context, create tomorrow task | Reset receipt |
 | `Quietly Watching` | Nothing needs user attention but monitoring rules exist | Show what VAL is watching and why no action is needed | Top module only when no higher module exists | Open watcher, add context, change watch rule | Monitoring receipt |
@@ -1232,6 +1260,113 @@ Receipt:
 
 ```text
 VAL just reprioritized Project X for today and is watching the partner timeline.
+```
+
+### Project Movement Contract
+
+Project movement is directional. Movement can move the project forward or backward.
+
+Open-loop principle:
+
+```text
+If something was presented and has not been done, it is an open loop.
+```
+
+Closing loops is one of VAL's project-manager superpowers. VAL should notice when loops open, move, close, stall, or reverse without making the surface overly granular.
+
+Forward movement examples:
+
+- invoice paid
+- document opened
+- question asked
+- clarification made
+- document sent that the user had been asking for
+- meeting held
+- task completed
+- dependency resolved
+- decision made
+- SOP/workflow updated
+- stakeholder replied constructively
+
+Backward movement examples:
+
+- payment not received
+- important meeting canceled
+- task slipped
+- dependency failed
+- stakeholder tension worsened
+- document still missing
+- client reversed direction
+- owner went unclear
+
+Required visible display:
+
+```text
+What changed
+Movement direction: forward/backward
+One-line source proof
+Follow up action
+```
+
+Do not add visible clutter such as:
+
+- why this matters
+- affected people
+- broad priority analysis
+- affected document/task/deadline lists
+- generic follow-up explanation
+
+The executive understands why movement matters. Keep the movement surface clean.
+
+Where movement appears:
+
+```text
+Project movement
+  -> Home welcome/context message
+  -> Project Manager page
+  -> Velocity card
+  -> Project action layer
+```
+
+Source proof:
+
+Use one brief line. Make it clickable when possible.
+
+Examples:
+
+```text
+Source proof: Anthony sent the requested invoice PDF.
+Source proof: The client canceled tomorrow's launch meeting.
+```
+
+Allowed actions:
+
+- open source
+- follow up
+- ask what changed
+- add context
+- ask VAL to prepare next step
+- create task
+- update project plan
+- message stakeholder only when identity/context are safe
+- put a pin in it
+
+The primary action should be the action VAL believes is needed, such as `Follow up`.
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just logged the website draft as completed and updated the launch project.
 ```
 
 ### Handled Work Copy Rule
