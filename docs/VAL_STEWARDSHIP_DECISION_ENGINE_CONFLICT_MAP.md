@@ -14,13 +14,15 @@ Current Stewardship is closer than it was, but it is still not yet the decision 
 
 The biggest conflicts are:
 
-1. admission is not yet a first-class decision with `admitted|rejected|blocked_by_identity|watch`
+1. admission is not yet a first-class decision with `admitted|rejected|blocked_by_identity`
 2. relationship packet maturity is still computed loosely and does not include `blocked_by_identity`
-3. next-move logic is still mostly introduction matching with a broader label
-4. explicit commitments are not yet ranked above inferred opportunities
-5. the UI still exposes older concepts such as temperature, waiting state, open-loop counts, observer posture, and dossier sections
-6. tests still lock in legacy internal names and temperature/open-loop behavior
-7. prompt/docs still contain older "who should meet whom" and opportunity-map framing in places
+3. admission and executive visibility are still blended
+4. source receipts are not yet bound tightly enough to the exact person and claim they support
+5. next-move logic is still mostly introduction matching with a broader label
+6. explicit commitments are not yet ranked above inferred opportunities
+7. the UI still exposes older concepts such as temperature, waiting state, open-loop counts, observer posture, and dossier sections
+8. tests still lock in legacy internal names and temperature/open-loop behavior
+9. prompt/docs still contain older "who should meet whom" and opportunity-map framing in places
 
 The next implementation should not start with UI polish. It should start by building the admission and maturity gate, because every useful executive surface depends on knowing which people belong in Stewardship at all.
 
@@ -46,11 +48,12 @@ Conflict with spec:
 
 ```json
 {
-  "admission_status": "admitted|rejected|blocked_by_identity|watch"
+  "admission_status": "admitted|rejected|blocked_by_identity"
 }
 ```
 
 - The spec requires maturity to describe reliable relationship understanding, not contact completeness.
+- The spec requires source-to-person evidence binding before maturity or moves are calculated.
 - The spec requires multiple move types: introduce, follow up, reconnect, ask question, send something, wait/watch, do nothing.
 - The spec requires explicit commitments to outrank inferred opportunities.
 - The spec requires rejection tests before choosing a move.
@@ -59,6 +62,7 @@ Conflict with spec:
 What must change:
 
 - Add a formal relationship admission function.
+- Add a formal evidence binding function so source receipts support only the correct person and claim.
 - Add a formal packet maturity function.
 - Rename or wrap introduction-specific functions behind a move engine.
 - Preserve introduction as one move type, not the matching engine itself.
@@ -88,7 +92,8 @@ Current behavior:
 Conflict with spec:
 
 - A sender can still become a relationship-looking object if upstream profile construction treats them as meaningful.
-- The system does not yet store why a person was admitted, rejected, blocked, or watched.
+- The system does not yet store why a person was admitted, rejected, or blocked by identity.
+- The system does not yet separate admitted relationships from relationships visible in the active executive queue.
 - Blocked identity is not consistently represented as a hidden/internal packet barred from matching.
 - The route does not yet consider follow-up, ask-question, send-something, wait/watch, or do-nothing as first-class moves.
 
@@ -96,11 +101,16 @@ What must change:
 
 - Add one service-level admission gate used by index, person-packets, and matching.
 - Store admission output on every packet/profile.
-- Use admission status to decide visibility:
+- Add a separate executive visibility decision:
   - `admitted`: visible when maturity/queue rules allow
-  - `watch`: internal or People To Watch only
-  - `blocked_by_identity`: identity review only, no matching
-  - `rejected`: no Stewardship item
+  - `active_queue`: relationship deserves attention now
+  - `people_to_watch`: real relationship, monitor only
+  - `identity_review`: meaningful evidence, identity unsafe
+  - `hidden`: admitted but no executive attention needed
+- Use admission status only to decide whether VAL may maintain the relationship:
+  - `admitted`: maintain packet
+  - `blocked_by_identity`: internal identity review, no matching
+  - `rejected`: no Stewardship relationship
 - Rename route behavior internally after compatibility is safe.
 
 What remains valid:
@@ -221,6 +231,8 @@ Conflict with spec:
 
 - Admission decision is missing as a durable structured output.
 - Maturity does not include `blocked_by_identity`.
+- Executive visibility is missing as a durable structured output.
+- Source receipts do not yet require explicit source-to-person and source-to-claim binding.
 - Next move output does not fully match the spec:
 
 ```json
@@ -244,7 +256,9 @@ Conflict with spec:
 What must change:
 
 - Add `relationship_admission` to packet/profile output.
+- Add `evidence_bindings` or equivalent source-to-person binding output before maturity is calculated.
 - Add `packet_maturity` output separate from relationship value/importance.
+- Add `executive_visibility` output separate from admission.
 - Add `next_move_decision` output separate from the person packet.
 - Add `stewardship_commitment` for direct user commitments.
 
@@ -307,10 +321,12 @@ Required future tests:
 - sent email without reply can be admitted when user intent is clear
 - explicit user teaching admits a person
 - blocked identity prevents matching
+- evidence attached to one person cannot mature another person's packet
+- evidence mentioning two people must specify which claims and people it supports
 - thin packet cannot prepare work
 - developing packet can ask a precise question or wait/watch
 - usable packet can consider moves
-- strong packet can prepare work for approval
+- specific ready move can prepare work for approval, even when the broader packet is only usable
 - explicit Terrie/Kareemah commitment outranks inferred intro
 - Michele does not inherit Mike evidence
 - Mark returns wait/watch or do-nothing with a clear reason
@@ -399,16 +415,24 @@ Do not start with UI redesign.
 First slice:
 
 1. Add `relationshipAdmissionDecision(input)` in `services/valRelationshipActionIntelligence.js` or a new focused service.
-2. Add `packetMaturityDecision(personPacket, admissionDecision)`.
-3. Wire admission/maturity into person packet output without changing visible UI yet.
-4. Add tests for:
+2. Add source-to-person evidence binding and prevent cross-person evidence inheritance.
+3. Add `packetMaturityDecision(personPacket, admissionDecision, evidenceBindings)`.
+4. Add explicit fields:
+   - `admission_status`
+   - `packet_maturity`
+   - `executive_visibility`
+   - `can_evaluate_moves`
+5. Wire these fields into person packet output without changing visible UI yet.
+6. Prevent rejected and blocked identities from entering move matching.
+7. Add tests for:
    - spam inbound rejected
    - sent email admitted without reply
    - explicit user teaching admitted
    - blocked identity created and barred from matching
+   - Michele/Mike-style evidence contamination blocked
    - public enrichment alone cannot exceed thin
-5. Update `/api/relationships/person-packets` to include admission/maturity fields.
-6. Do not change the visible Stewardship layout until the data gate is correct.
+8. Update `/api/relationships/person-packets` to include admission, evidence binding, maturity, visibility, and move-evaluation fields.
+9. Do not change the visible Stewardship layout until the data gate is correct.
 
 Why this first:
 
@@ -423,10 +447,13 @@ Minimum acceptance tests before UI work:
 
 - one-way cold inbound sender returns `admission_status: rejected`
 - repeated newsletter/promotional sender returns `admission_status: rejected`
-- sent email to new real person returns `admission_status: admitted` or `watch`
+- sent email to new real person returns `admission_status: admitted`
 - user teaching returns `admission_status: admitted`
 - meaningful transcript mention with unresolved identity returns `blocked_by_identity`
 - blocked identity does not appear in introduction/move candidates
+- admitted but not currently important relationship returns `executive_visibility.visibility: hidden`
+- relationship worth monitoring returns `executive_visibility.visibility: people_to_watch`
+- evidence binding prevents a Mike source from maturing Michele's packet
 - direct "I will introduce Terrie to Kareemah" creates explicit introduction commitment
 - explicit commitment ranks above inferred overlap
 - Michele/Mike evidence does not cross-contaminate

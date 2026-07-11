@@ -68,6 +68,22 @@ A person must have evidence of a real relationship or meaningful user intent, no
 
 Reciprocal communication strengthens admission but is not always required. A user-initiated action or explicit user teaching can establish a real relationship before reciprocity exists.
 
+Admission and executive visibility are separate decisions.
+
+Admission answers:
+
+```text
+Is this a real relationship VAL should maintain?
+```
+
+Visibility answers:
+
+```text
+Does this relationship deserve executive attention now?
+```
+
+A person may be a real admitted relationship and still not belong in the active Stewardship queue.
+
 ### Required Identity Standard
 
 Before a person can become a normal relationship packet, VAL must have:
@@ -106,7 +122,7 @@ Admit a person into Stewardship when at least one meaningful relationship signal
 
 ### Do Not Admit A Person When
 
-Do not create a visible Stewardship relationship when the only evidence is:
+Do not admit a person into Stewardship when the only evidence is:
 
 - one-way inbound email with no user response or meaningful engagement
 - cold outreach
@@ -156,7 +172,7 @@ The executive must not see fabricated identity details.
 
 ```json
 {
-  "admission_status": "admitted|rejected|blocked_by_identity|watch",
+  "admission_status": "admitted|rejected|blocked_by_identity",
   "person_id": "",
   "reason": "",
   "source_receipts": [],
@@ -167,7 +183,66 @@ The executive must not see fabricated identity details.
 }
 ```
 
-## 2. Person Packet Maturity
+## 2. Source-To-Person Evidence Binding
+
+Before VAL calculates packet maturity or next moves, every source receipt must be bound to the person or people it actually supports.
+
+Evidence may not be inherited by another person merely because:
+
+- they appear in the same transcript
+- they belong to the same project
+- their names occur near each other
+- one source references both people
+
+This prevents Michele/Mike-style contamination, where one person's commitment or context appears on another person's packet.
+
+### Evidence Binding Output
+
+```json
+{
+  "source_id": "",
+  "source_type": "email|transcript|calendar|crm|document|task|user_teaching",
+  "supports_person_ids": [],
+  "supports_claims": [],
+  "relationship_context": "",
+  "resolution_method": "direct_identity|speaker_match|email_match|user_confirmed|inferred",
+  "review_required": false
+}
+```
+
+Evidence with `review_required: true` may support internal review, but it must not create confident claims, mature a packet, or prepare work until resolved.
+
+## 3. Executive Visibility
+
+Visibility determines whether and where an admitted relationship appears to the executive.
+
+It does not decide whether the relationship is real.
+
+It does not decide the person's value.
+
+It is a queueing and attention decision.
+
+### Visibility Output
+
+```json
+{
+  "visibility": "active_queue|people_to_watch|identity_review|hidden",
+  "why_visible_or_hidden": "",
+  "attention_reason": "",
+  "review_required": false
+}
+```
+
+Use:
+
+- `active_queue` when a relationship move, explicit commitment, blocking question, or time-sensitive matter deserves executive attention now
+- `people_to_watch` when the person is real and worth monitoring, but no move is ready
+- `identity_review` when meaningful evidence exists but identity resolution blocks safe use
+- `hidden` when the person is admitted but no executive attention is currently needed
+
+`watch` belongs here or in the next-move engine as `wait_watch`. It must not be an admission status.
+
+## 4. Person Packet Maturity
 
 Packet maturity describes how much reliable relationship understanding VAL has.
 
@@ -176,6 +251,14 @@ It does not describe how valuable the person is.
 It does not describe relationship importance.
 
 It does not describe popularity, email volume, status, or influence.
+
+Packet maturity determines whether VAL has enough relationship understanding to evaluate moves.
+
+Move readiness determines whether a specific action may be prepared.
+
+A strong packet may still have no responsible move.
+
+A usable packet may have an explicit, source-backed commitment that is ready to draft.
 
 ### Blocked By Identity
 
@@ -251,7 +334,7 @@ Executive behavior:
 
 - may create reviewable next-move candidates
 - may appear in the primary Stewardship queue
-- may prepare a draft only when the selected move independently passes its own threshold
+- may evaluate moves when the selected move independently passes its own threshold
 
 ### Strong
 
@@ -267,8 +350,8 @@ Use when:
 
 Executive behavior:
 
-- VAL may prepare work for user approval
-- VAL may route prepared work into Leverage
+- VAL may evaluate moves with stronger relationship understanding
+- VAL may route prepared work into Leverage only when a specific move passes its own readiness threshold
 - VAL may never send or execute without approval
 
 ### Maturity Calculation
@@ -302,12 +385,11 @@ Public enrichment alone must not increase a packet beyond thin.
   "supporting_receipts": [],
   "missing_variables": [],
   "contradictions": [],
-  "can_consider_next_move": false,
-  "can_prepare_work": false
+  "can_evaluate_moves": false
 }
 ```
 
-## 3. Next Move Decision Engine
+## 5. Next Move Decision Engine
 
 For every usable or strong packet, VAL asks:
 
@@ -519,7 +601,7 @@ If the move cannot pass these tests, it must be rejected or downgraded to wait, 
 }
 ```
 
-## 4. Executive UI Contract
+## 6. Executive UI Contract
 
 The primary Stewardship surface should help the executive understand the judgment in under ten seconds.
 
@@ -653,7 +735,7 @@ The person detail view may show:
 
 It must not become an activity dump or internal dossier.
 
-## 5. Acceptance Examples
+## 7. Acceptance Examples
 
 ### Example A: Terrie Should Meet Kareemah
 
