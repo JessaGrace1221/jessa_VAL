@@ -58,6 +58,132 @@ Those may return later only after the introduction engine is trusted.
 Stewardship helps you make the right introductions by understanding what people need and what they can offer.
 ```
 
+## Relationship Evidence Map
+
+Stewardship V1 must be powered by a durable relationship evidence map, not by ad hoc guessing when a button is clicked.
+
+The map answers:
+
+- who counts as a relationship
+- which source admitted them
+- what evidence is attached to them
+- what VAL believes they need
+- what VAL believes they offer
+- what introduction commitments or opportunities mention them
+- what still needs review
+
+### Admission Sources
+
+The following sources can admit or update relationships.
+
+Calendar:
+
+- Event attendees are relationships.
+- Attendee names and emails should be normalized into person packets.
+- Calendar title, organizer, meeting time, and attendee role are evidence context, not person names.
+- Calendar events may prove the relationship exists, but they do not automatically prove a need or offer.
+
+Email:
+
+- People the user sends email to are relationships.
+- People the user replies to are relationships.
+- People who only send inbound mail are not relationships unless another trusted source admits them.
+- Unsubscribe links, newsletters, bulk mail, promotions, receipts, automated senders, no-reply addresses, and generic mailboxes are not relationships.
+- Email subjects and classifier labels are evidence routing signals, not needs/offers by themselves.
+
+Transcripts:
+
+- Transcript attendees are relationships.
+- Named people explicitly discussed in the transcript may become relationships or identity-review candidates.
+- Transcript statements are high-value evidence for needs, offers, and promised introductions.
+- If the user says they want to introduce Person A to Person B, that becomes a structured introduction commitment/opportunity, not a generic relationship signal.
+
+CRM:
+
+- Confirmed CRM contacts are relationships when they are connected to user context, sent mail, calendar, transcript, or user teaching.
+- CRM identity can help merge packets, but CRM existence alone should not create an action-ready introduction.
+
+User Teaching:
+
+- Any person the user manually marks as important is a relationship.
+- User teaching can correct names, aliases, relationship importance, needs, offers, and introduction preferences.
+
+Outscraper / Public Enrichment:
+
+- Public enrichment may add context to an already-admitted relationship.
+- Public enrichment must not admit a relationship by itself.
+- Public enrichment must not prove current need, permission, or user relationship.
+- Public enrichment is supporting context only.
+
+### Relationship Click Flow
+
+When the executive clicks a relationship, VAL should follow this order:
+
+1. Load the durable person packet.
+2. Load source-bound evidence already attached to that person.
+3. Scan transcripts for source-grounded context about that person:
+   - explicit needs
+   - explicit offers
+   - introduction commitments
+   - named people the user said they should meet
+   - reasons the introduction would matter
+4. Scan sent/replied email for relationship context:
+   - recent direct contact
+   - commitments
+   - stated needs
+   - stated offers
+   - permission or warmth
+5. Scan calendar attendee history:
+   - shared meetings
+   - recentness
+   - event context
+   - other attendees who may be relevant
+6. Scan CRM notes and linked projects/documents if available.
+7. Add Outscraper/public enrichment only after the real relationship is admitted.
+8. Update and hold the packet for future reference.
+9. Compare against other packets only after the clicked person's packet has been refreshed.
+
+### Durable Packet Rule
+
+All source-derived relationship context should be held for future reference.
+
+VAL should not recompute from scratch every time the drawer is opened.
+
+Instead, VAL should maintain a durable packet with:
+
+- identity and aliases
+- admission sources
+- needs
+- offers
+- relationship to the executive
+- source receipts
+- transcript snippets
+- email snippets
+- calendar evidence
+- public enrichment, if available
+- introduction commitments
+- previous introduction outcomes
+- review flags
+
+When new evidence appears, VAL should update the packet and preserve the previous evidence trail.
+
+### No Guessing Rule
+
+Suggested introductions must come from the relationship evidence map.
+
+They must not be created from:
+
+- raw calendar titles
+- task names
+- transcript titles
+- email classifier labels
+- generic evidence summaries
+- artifact names
+- source snippets without resolved people
+- keyword overlap alone
+
+If the map does not contain enough person-specific context, VAL should say no suggestion is ready.
+
 ## V1 Drawer Structure
 
 The Stewardship drawer should have only three areas.
@@ -682,19 +808,27 @@ Do not implement until the user explicitly approves this documentation.
 
 After approval, implement in this order:
 
-1. Add a 90-day sent-mail recipient admission pass.
-2. Add evidence-weighted admission signals beyond recent sent mail.
+1. Build the durable relationship evidence map.
+2. Add source-specific admission rules:
+   - calendar attendees are relationships
+   - sent/replied email contacts are relationships
+   - transcript attendees are relationships
+   - user-taught important people are relationships
+   - public enrichment cannot admit a person by itself
 3. Block inbound-only senders from Stewardship person lists unless another trusted signal admits them.
 4. Add unsubscribe, generic-mailbox, bulk-mail, marketing, automated-sender, and non-human sender rejection.
 5. Normalize aliases so the same real person is not split across email addresses.
-6. Reduce packet extraction to needs, offers, relationship, evidence.
-7. Replace the current Stewardship drawer with the three V1 areas.
-8. Add manual two-person introduction comparison.
-9. Add automatic `Best Matches` from a selected Network person.
-10. Add suggested introduction records.
-11. Add draft review with approval required.
-12. Add introduction outcome learning.
-13. Add tests proving spam/inbound-only/unsubscribe contacts do not appear.
+6. On relationship click, refresh the packet from transcripts, sent/replied email, calendar history, CRM/project/document context, and then Outscraper/public enrichment.
+7. Store refreshed packet data durably for future use.
+8. Reduce packet extraction to needs, offers, relationship, evidence, and introduction commitments.
+9. Replace the current Stewardship drawer with the three V1 areas.
+10. Add manual two-person introduction comparison.
+11. Add automatic `Best Matches` from a selected Network person only after packet refresh.
+12. Add suggested introduction records from the durable map.
+13. Add draft review with approval required.
+14. Add introduction outcome learning.
+15. Add tests proving spam/inbound-only/unsubscribe contacts do not appear.
+16. Add tests proving calendar titles, task names, transcript titles, and classifier labels cannot appear as people, needs, offers, or suggested introductions.
 
 ## Explicitly Out Of Scope For V1
 
