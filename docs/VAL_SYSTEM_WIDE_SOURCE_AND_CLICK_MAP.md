@@ -605,14 +605,28 @@ Visibility rule:
 Project finance/document summaries live inside the Project drawer only.
 ```
 
+Placement rule:
+
+```text
+Place the finance/document summary quietly toward the bottom of the Project drawer.
+```
+
 Quiet Notices may show that VAL linked or assigned a receipt/invoice, but it should not render the full finance/document summary. Keep the summary in the Project drawer so the operational notice lane stays simple.
 
 If any receipt, invoice, system notice, or automated email contains an important deadline, payment issue, service interruption, account access risk, or other consequence, it should become executive-worthy.
 
+Payment issues are always Alignment candidates.
+
+Required Alignment language:
+
+```text
+This comes from your project manager for Project XYZ. It is important that we handle this as soon as possible so you can move on to bigger things.
+```
+
 Required escalation:
 
 ```text
-System/finance notice contains deadline or payment issue
+System/finance notice contains payment issue, deadline, or consequence
   -> Executive Inbox
   -> Home Alignment priority candidate
   -> Alignment drawer/card if it becomes the top priority

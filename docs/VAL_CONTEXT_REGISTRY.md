@@ -377,6 +377,7 @@ Dedicated classification prompt suite:
 | Notice lane | `{{emails.current.notice_lane}}` | new/derived | enum | email classifier | Quiet Notices, Executive Inbox, Alignment candidate, Documents, Projects, or suppress. |
 | Notice surface posture | `{{emails.current.notice_surface_posture}}` | new/derived | enum | email classifier | Quiet lower-right control, Alignment escalation, Executive Inbox escalation, or hidden/source-only. |
 | Operational alert type | `{{emails.current.operational_alert_type}}` | new/derived | enum | email classifier | Receipt, invoice, shipping, login_security, two_factor, automated_notification, payment_issue, deadline, service_risk, other. |
+| Payment issue alignment copy | `{{emails.current.payment_issue_alignment_copy}}` | new/derived | object | project manager observer | Project-manager-framed Alignment copy for payment issues. |
 | Finance/project document signal | `{{emails.current.finance_project_document_signal}}` | new/derived | object | document/project observer | Receipt/invoice attachment handling, project finance evidence, suggested project creation. |
 | Project assignment action | `{{emails.current.project_assignment_action}}` | new/derived | object | document/project observer | "Assign this to a project" action with existing project options or new project creation when match is unclear. |
 | Quiet action receipt | `{{emails.current.quiet_action_receipt}}` | new/derived | object | source processing spine | Quiet receipts such as "VAL linked this to Project X" for Notices or email detail. |
@@ -513,7 +514,7 @@ Dedicated prompt suite:
 | CRM task sync plan | `{{crm.task_sync_plan}}` | new/derived | object | CRM Task Sync Planner | Link/create/update/keep task sync recommendation. |
 | CRM opportunity resolution | `{{crm.opportunity.resolution}}` | new/derived | object | CRM Opportunity Resolver | Relationship value, opportunity value, lifecycle/stage candidates. |
 | CRM proposal/invoice plan | `{{crm.document_plan}}` | new/derived | object | Proposal / Invoice Planner | Proposal, invoice, estimate, quote, or contract prep plan. |
-| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Project-drawer-only summary with Receipts, Invoices, Payment Issues, Important Documents, and Open Finance Follow-ups. |
+| Project finance/document summary | `{{projects.current.finance_document_summary}}` | new/derived | object | document/project observer | Quiet lower Project-drawer-only summary with Receipts, Invoices, Payment Issues, Important Documents, and Open Finance Follow-ups. |
 | CRM send plan | `{{crm.send_plan}}` | new/derived | object | SMS / Email Send Planner | CRM-routed SMS/email preparation and permission requirements. |
 | CRM calendar invite plan | `{{crm.calendar_invite_plan}}` | new/derived | object | CRM Calendar Invite Planner | Prepared invite candidate and missing confirmations. |
 | CRM action permission | `{{crm.action_permission}}` | new/derived | object | CRM Action Permission Classifier | Whether action is prepare-only, auto-safe, approval-required, never-auto, or refused. |
