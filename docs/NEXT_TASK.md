@@ -37,6 +37,13 @@ The next problem is system-wide:
 Every email, transcript, calendar event, document, user correction, and external action receipt must go through one strict source-processing spine before any drawer, packet, prompt, or click can use it.
 ```
 
+There are now two required spines:
+
+```text
+Source Processing Spine: what arrived, what it means, and what systems may use it.
+Output Delivery Spine: what VAL prepared, where it is stored, where it appears, and what action the user can take.
+```
+
 Do not start with UI polish.
 
 Do not add more local special cases to Stewardship.
@@ -46,6 +53,11 @@ Build the spine that makes Stewardship, Projects, Documents, Executive Inbox, Me
 ## Required First Implementation
 
 Implement the first version of a shared `source_processing_record`.
+
+Also implement the first version of:
+
+- `prepared_artifact_record`
+- `surface_registration`
 
 It should support:
 
@@ -59,6 +71,8 @@ It should support:
 - prepared work candidates
 - no-action receipt
 - unknowns
+
+Prepared artifacts should not be considered "ready" unless they are persisted, registered to a visible surface, retrievable, visible, and attached to a working review action.
 
 Follow:
 
@@ -144,14 +158,18 @@ Relevant existing functions/routes include:
 ## Implementation Order
 
 1. Add the shared source-processing schema/helper.
-2. Add source classification helpers for spam/bulk/system/self/private/resource/source-only.
-3. Route transcript processing through the source-processing record.
-4. Add explicit introduction opportunity extraction from transcripts.
-5. Route email sync/classification through the source-processing record.
-6. Add attachment/document/project suggestion routing for email.
-7. Route calendar attendees through the source-processing record.
-8. Add tests for the four acceptance cases.
-9. Only then return to Stewardship UI and suggestions.
+2. Add the prepared artifact schema/helper.
+3. Add the surface registration schema/helper.
+4. Add source classification helpers for spam/bulk/system/self/private/resource/source-only.
+5. Route transcript processing through the source-processing record.
+6. Add explicit introduction opportunity extraction from transcripts.
+7. Add meeting overview and empty-transcript no-action delivery rules.
+8. Route email sync/classification through the source-processing record.
+9. Add attachment/document/project suggestion routing for email.
+10. Add "What VAL did from this email" receipts.
+11. Route calendar attendees through the source-processing record.
+12. Add tests for the acceptance cases.
+13. Only then return to Stewardship UI and suggestions.
 
 ## Do Not Do
 

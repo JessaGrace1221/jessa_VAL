@@ -44,7 +44,20 @@ VAL optimizes for relationship judgment, project judgment, priority judgment, an
 
 Knowledge exists so better decisions and more thoughtful actions can be prepared.
 
-## The One Spine
+## The Two Spines
+
+VAL has two mandatory system-wide maps:
+
+1. Source Processing Spine: what arrived, what it means, and which packets/systems may use it.
+2. Output Delivery Spine: what VAL prepared, where it is stored, where it appears, and what the user can do with it.
+
+Generated and available are not the same thing.
+
+The system must never say something is created, prepared, written, or ready merely because a model returned text.
+
+Nothing is considered created, prepared, written, or ready until it has been persisted, registered to a visible surface, successfully retrieved by that surface, and given a working review action.
+
+## Source Processing Spine
 
 Every source follows this sequence:
 
@@ -65,6 +78,171 @@ Raw source
 ```
 
 If a step is skipped, VAL becomes noisy.
+
+## Output Delivery Spine
+
+Every prepared output follows this sequence:
+
+```text
+Judgment selected
+  -> Output requested
+  -> Artifact generated
+  -> Artifact validated
+  -> Artifact persisted
+  -> Artifact linked to source and entities
+  -> Surface registration created
+  -> Surface query confirms retrieval
+  -> UI renders artifact
+  -> Review action enabled
+  -> User sees artifact
+  -> Interaction receipt recorded
+```
+
+If a step is skipped, VAL creates invisible intelligence.
+
+This applies to:
+
+- email drafts
+- meeting overviews
+- meeting follow-ups
+- introductions
+- project suggestions
+- tasks
+- proposals
+- document reviews
+- reminders
+- calendar suggestions
+- Ready For You / Leverage work
+
+## Prepared Output Vocabulary
+
+The word "draft" must not be used loosely.
+
+| Term | Meaning | What VAL may say |
+|---|---|---|
+| Generated Content | Text exists only inside a processing response or temporary memory. | "VAL generated candidate text." |
+| Prepared Artifact | Validated content has been persisted inside VAL. | "VAL prepared an artifact." |
+| Reviewable Draft | A prepared artifact is registered and visible in a user-facing review surface. | "Ready for review." |
+| Provider Draft | A real draft exists in Gmail, Outlook, CRM, or another external provider. | "Saved as a Gmail/Outlook draft." |
+| Approved Action | User approved execution or external creation. | "Approved." |
+| Executed Action | External provider confirmed completion. | "Sent", "created", "scheduled", or provider-specific confirmation. |
+
+VAL should only say "ready for review" when it is a Reviewable Draft.
+
+VAL should only say "saved as a Gmail draft" or "saved as an Outlook draft" when the provider confirms that provider draft exists.
+
+For email, the safer default is:
+
+```text
+Keep the draft in VAL as a Reviewable Draft until the user approves sending.
+```
+
+If VAL ever creates a provider draft before final sending, edits made by the user must remain synchronized with the final sent version. If sync cannot be guaranteed, VAL should not create the provider draft first.
+
+## Prepared Artifact Record
+
+Every prepared output must create a `prepared_artifact_record`.
+
+Required shape:
+
+```json
+{
+  "artifact_id": "",
+  "artifact_type": "email_draft|meeting_overview|meeting_follow_up|introduction_draft|project_suggestion|task_draft|document_review|calendar_proposal|proposal_draft|other",
+  "status": "requested|generating|generated|validated|persisted|registered|visible|approved|executed|rejected|failed",
+  "title": "",
+  "body": {},
+  "source_refs": [],
+  "person_refs": [],
+  "project_refs": [],
+  "meeting_refs": [],
+  "document_refs": [],
+  "commitment_refs": [],
+  "created_by_observer": "",
+  "created_by_round_table": "",
+  "storage_target": "",
+  "storage_record_id": "",
+  "surface_targets": [],
+  "surface_registration_ids": [],
+  "approval_required": true,
+  "allowed_actions": [],
+  "validation": {
+    "has_content": false,
+    "has_source_refs": false,
+    "has_entity_links": false,
+    "has_surface_target": false,
+    "retrievable": false,
+    "visible": false
+  },
+  "failure_reason": "",
+  "created_at": "",
+  "updated_at": ""
+}
+```
+
+This is the system-wide definition of ready.
+
+## Surface Registration Record
+
+Every prepared artifact must explicitly register where it should appear.
+
+No UI should search around and infer what might belong there.
+
+Required shape:
+
+```json
+{
+  "surface_registration_id": "",
+  "artifact_id": "",
+  "surface": "home_velocity|home_alignment|home_leverage|home_right_panel|executive_inbox|meeting_overview|calendar_event|project_drawer|stewardship|ready_for_you|transcript_detail|document_drawer|commitment_drawer",
+  "section": "",
+  "priority": "",
+  "visibility_state": "queued|visible|dismissed|expired|blocked",
+  "display_title": "",
+  "display_summary": "",
+  "primary_action": "",
+  "secondary_actions": [],
+  "source_refs": [],
+  "created_at": ""
+}
+```
+
+The source pass or downstream artifact system must say:
+
+```text
+Put this artifact here.
+```
+
+## Output Visibility Rules
+
+| Artifact | Must appear | May also appear | Must not say |
+|---|---|---|---|
+| Email draft | Leverage / Ready For You and relevant Executive Inbox thread | Home Leverage if timely | "Sent" or "Gmail draft saved" unless provider confirms. |
+| Meeting overview | Transcript detail and Calendar event detail | Meeting Prep, Leverage / Ready For You, Home if executive-worthy | "Overview written" until visible in at least one surface. |
+| Meeting follow-up | Leverage / Ready For You and relevant meeting/transcript | Executive Inbox if email reply needed | "Ready" unless review action works. |
+| Introduction draft | Stewardship, Leverage / Ready For You, both person profiles | Home Leverage if timely | "Introduction ready" unless both identities and source refs are attached. |
+| Project suggestion | Projects drawer and relevant source surface | Home right panel if noteworthy | "Project created" unless user approves creation. |
+| Document review | Documents drawer and relevant project/person/email | Leverage if review is needed | "Reviewed" before user or VAL review result exists. |
+| Task draft | Commitments and Leverage / Ready For You | Home Alignment if top priority | "Task created" unless task record exists. |
+| Calendar proposal | Calendar event/Timeline and Leverage | Home if priority | "Scheduled" unless provider confirms. |
+
+Leverage and Ready For You are the same product concept in different visible language. Implementation may keep `ready_for_you` naming, but executive-facing copy should treat Leverage as the place where reviewable prepared work lives.
+
+## Home Output Contract
+
+Home has four major visible areas:
+
+1. Velocity: what happened.
+2. Alignment: the top priority requiring judgment.
+3. Leverage: things VAL drafted/prepared and are ready for review.
+4. Right-hand panel: contextual notices, source receipts, quiet status, and supporting orientation.
+
+When VAL says it prepared something, it should appear:
+
+- on the Leverage card / Ready For You system, and
+- in the relevant drawer or entity surface.
+
+Who knows where the executive will start. The same prepared artifact must be discoverable from both the executive queue and the source-specific place where it belongs.
 
 ## What Each Layer Is Allowed To Do
 
@@ -201,8 +379,11 @@ Anthony email arrives with documents
   -> Relevance: project_eligible + document_eligible + possibly executive_attention
   -> Document observer: create document references
   -> Project observer: if no matching project exists, create "Suggested new project" review update
-  -> Executive Inbox: only if user judgment/reply is needed
-  -> Ready For You: prepare project intake summary or document review, not external action
+  -> Executive Inbox: show the email if the user should know Anthony sent what was requested
+  -> Documents: show the attached/linked documents
+  -> Projects: link to matching project or show suggested project review
+  -> Home right-hand panel or welcome context: "Anthony sent you what you asked for"
+  -> Leverage / Ready For You: only if VAL prepared a review, summary, draft, or project intake artifact
 ```
 
 Incorrect outcomes:
@@ -211,7 +392,24 @@ Incorrect outcomes:
 - Losing the documents because the email did not need a reply.
 - Adding documents nowhere.
 - Creating a project silently without approval.
+- Sending the item to Leverage when VAL did not actually prepare work.
 - Showing generic "email may involve document follow-up" text.
+
+Executive Inbox detail for this email must include:
+
+- readable full email content
+- prior messages in the thread
+- ability to chat with VAL about the email thread
+- a visible "What VAL did from this email" section
+
+Example "What VAL did from this email":
+
+```text
+VAL added these documents to Documents.
+VAL linked them to Project X.
+VAL prepared a suggested new project review because no existing project clearly matched.
+No email was sent and no project was created without approval.
+```
 
 ## Transcript Processing Map
 
@@ -305,6 +503,48 @@ Every calendar event must answer:
 | Event includes documents/agenda | Document/project observer. |
 | Prep-worthy meeting | Meeting prep packet and Ready For You candidate. |
 | Routine/focus/private block | Store or suppress; no person/project creation. |
+
+### Meeting Overview Visibility
+
+For every real meeting, the before/after context must be visible in every place an executive might reasonably start.
+
+Before the meeting:
+
+```text
+Calendar event
+  -> Meeting Prep packet
+  -> visible inside Calendar event detail
+  -> optionally visible in Leverage / Ready For You if VAL prepared something
+  -> optionally visible on Home if executive-worthy
+```
+
+After a linked transcript:
+
+```text
+Transcript processed
+  -> Meeting Overview artifact
+  -> visible inside Transcript detail
+  -> visible inside Calendar event detail
+  -> linked to attendee person packets
+  -> linked to project packet if applicable
+  -> follow-up draft visible in Leverage / Ready For You if prepared
+```
+
+Recurring meetings must preserve continuity:
+
+- last meeting overview
+- open follow-ups from prior meeting
+- what changed since last meeting
+- what is coming up in the next meeting
+- attendee/person/project context
+
+If a transcript contains no tasks, no follow-ups, no commitments, no project change, and no relationship signal, the transcript detail should show a visible no-action receipt:
+
+```text
+Nothing needs your attention from this transcript.
+```
+
+This is especially important for transcripts so the user does not waste cognitive energy opening something empty.
 
 ## Document Processing Map
 
@@ -439,6 +679,25 @@ Manual introduction creation requirements:
 4. Drafting remains review-only.
 5. Sending requires explicit approval.
 
+### Introduction Output Visibility
+
+Suggested introductions and introduction drafts must appear in:
+
+- Stewardship Suggested Introductions
+- Leverage / Ready For You
+- the profile for Person A
+- the profile for Person B
+
+They may also appear in Home Leverage when timely or especially high value.
+
+The canonical review action is still review-only:
+
+```text
+Review Draft -> edit/refine -> approve/send
+```
+
+No external email is sent until explicit approval.
+
 ## Home Processing Map
 
 Home is downstream. Home does not decide source truth.
@@ -448,6 +707,7 @@ Home may show only:
 - Velocity: what changed and passed Velocity Round Table.
 - Alignment: one priority with Why Now Packet.
 - Leverage: prepared work ready for review.
+- Right-hand panel: contextual notices, quiet status, and source receipts that orient the executive without becoming a task queue.
 
 Inputs:
 
@@ -465,6 +725,18 @@ Home must not show:
 - generic "interesting" facts
 - unadmitted relationship/project context
 - debug packet language
+
+### Home Placement Rules
+
+| Event/result | Home placement |
+|---|---|
+| "Anthony sent you what you asked for" | Right-hand panel or welcome/context notice; not Leverage unless VAL prepared a review artifact. |
+| Email draft ready | Leverage. |
+| Introduction draft ready | Leverage, and Stewardship. |
+| Meeting overview ready | Leverage only if it needs review or creates prepared follow-up; otherwise Calendar/Transcript surfaces. |
+| Top priority requiring judgment | Alignment. |
+| Meaningful change in source reality | Velocity. |
+| Processed source with nothing needed | Usually quiet; visible no-action receipt inside source detail, especially transcripts. |
 
 ## Click Processing Map
 
@@ -555,6 +827,8 @@ Required output:
   "domain_routes": [],
   "packet_updates": [],
   "review_updates": [],
+  "prepared_artifact_records": [],
+  "surface_registrations": [],
   "ready_for_you_candidates": [],
   "external_action_packets": [],
   "no_action_receipt": ""
@@ -568,15 +842,17 @@ Do not start by fixing Stewardship UI again.
 Start with the spine.
 
 1. Define `source_processing_record` schema and tests.
-2. Add shared source classifier helpers for spam/bulk/system/self/private/resource/source-only.
-3. Route transcripts through a first-class source pass that emits intro commitments, project signals, document signals, and person updates.
-4. Route synced email through the same source pass, including attachment/document/project-suggestion handling.
-5. Route calendar events through the same source pass, including attendee admission and private/resource filtering.
-6. Create first-class `introduction_opportunity` records from transcripts/emails/user teaching.
-7. Create first-class `suggested_project` review updates from emails/documents/transcripts.
-8. Update drawers to consume only packet/review outputs from the source pass.
-9. Add click preflight tests proving each click uses the correct packet and source.
-10. Backfill existing sources through the new pass.
+2. Define `prepared_artifact_record` schema and tests.
+3. Define `surface_registration` schema and tests.
+4. Add shared source classifier helpers for spam/bulk/system/self/private/resource/source-only.
+5. Route transcripts through a first-class source pass that emits intro commitments, project signals, document signals, person updates, prepared artifacts, surface registrations, and no-action receipts.
+6. Route synced email through the same source pass, including attachment/document/project-suggestion handling and "What VAL did from this email" receipts.
+7. Route calendar events through the same source pass, including attendee admission, recurring-meeting continuity, meeting overview visibility, and private/resource filtering.
+8. Create first-class `introduction_opportunity` records from transcripts/emails/user teaching.
+9. Create first-class `suggested_project` review updates from emails/documents/transcripts.
+10. Update drawers to consume only packet/review/artifact/registration outputs from the source and delivery passes.
+11. Add click preflight tests proving each click uses the correct packet, artifact, source, and review action.
+12. Backfill existing sources through the new pass.
 
 ## Acceptance Cases
 
@@ -588,6 +864,8 @@ Given a transcript where Jessa tells Terrie she wants to introduce her to Kareem
 - Kareemah is resolved or put in identity review.
 - The transcript creates an `introduction_opportunity`.
 - Stewardship Suggested Introductions shows it after identity resolution.
+- Leverage / Ready For You shows the reviewable introduction draft if VAL prepared one.
+- Both person profiles show the suggested introduction.
 - The reason is source-specific, not generic.
 - Review Draft uses transcript evidence.
 
@@ -599,7 +877,9 @@ Given an email from Anthony with documents:
 - Attachments/documents are routed to Document observer.
 - Project observer checks for existing project.
 - If no project exists, VAL creates a suggested project review update.
-- Executive Inbox only shows the email if a user reply/decision is needed.
+- Executive Inbox can show the email as "Anthony sent what you asked for" with readable full content and prior thread messages.
+- Executive Inbox shows what VAL did with the email: document links, project links, suggested project review, or no prepared work.
+- Leverage / Ready For You is used only if VAL prepared a reviewable artifact.
 
 ### Spam/Newsletter
 
@@ -619,6 +899,17 @@ Given a calendar event with human attendees:
 - Resource rooms/system addresses are blocked.
 - Event title is not treated as a person.
 - Meeting prep may consume attendee packets and recent evidence.
+- Meeting overview appears in Calendar event detail and Transcript detail after a linked transcript exists.
+- Recurring meetings show prior-meeting continuity.
+
+### Empty Transcript
+
+Given a transcript with no tasks, follow-ups, commitments, project changes, or relationship signals:
+
+- Source is stored.
+- Transcript detail shows "Nothing needs your attention from this transcript."
+- No Leverage / Ready For You item is created.
+- No Stewardship, Project, Executive Inbox, or Home item is created.
 
 ## Non-Negotiables
 
@@ -630,6 +921,7 @@ Given a calendar event with human attendees:
 - No generic classifier text is allowed as a visible reason.
 - No external action happens without explicit approval.
 - Every prepared draft/action must keep source refs.
+- No prepared output is considered ready until it is persisted, registered, retrievable, visible, and has a working review action.
 - Every rejected suggestion teaches VAL not to repeat it.
 
 ## Relationship To Existing Docs
