@@ -416,12 +416,28 @@ When the user clicks an Executive Inbox email, the main view should show:
 
 1. A quiet pre-read VAL status note.
 2. The full latest email only.
-3. A clear button to show the full thread.
+3. A clear provider-native button to show the full thread/conversation.
 4. `Chat with VAL about this thread`.
 
 The full thread should not be expanded by default.
 
 The user should be able to read the current email first without being buried in the entire thread history.
+
+### Thread Button Language
+
+The button for prior messages should use provider-native language where possible.
+
+If the connected source is Gmail, use the thread/conversation language closest to Gmail conventions.
+
+If the connected source is Outlook, use the conversation/thread language closest to Outlook conventions.
+
+Do not force one universal label if it makes the experience feel unfamiliar to the user's connected email provider.
+
+The functional meaning is always:
+
+```text
+Show the prior messages in this email thread/conversation.
+```
 
 ### Pre-Read VAL Status Placement
 
@@ -500,6 +516,26 @@ User-facing copy should stay simple:
 ```text
 Chat with VAL about this thread
 ```
+
+### Reply Draft Placement
+
+If VAL prepared a reply draft for the selected email, the draft should appear in the right-side draft panel while the latest email remains readable in the main panel.
+
+This preserves the current three-panel executive pattern:
+
+```text
+email list / selected thread
+  -> latest email in main reading area
+  -> editable draft waiting in the right panel
+```
+
+The user should be able to read the email, glance right, edit the prepared draft, and approve it.
+
+Approval means send.
+
+If the draft is not yet ready for sending, the primary action should not say approve/send. It should ask for the missing context or show that the draft is still being prepared.
+
+Provider drafts should not be created unless the system can guarantee edits remain synchronized with the version that will be sent.
 
 Example "What VAL did from this email":
 
