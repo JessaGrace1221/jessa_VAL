@@ -152,11 +152,54 @@ A person should not appear under People To Watch merely because their packet is 
 
 There must be a reason to watch.
 
+People To Watch is collapsed by default.
+
+The section is not hidden completely, but it should not compete with the active Stewardship queue.
+
+The active Stewardship queue means:
+
+```text
+These are the relationships that deserve your judgment now.
+```
+
+People To Watch means:
+
+```text
+These are relationships VAL is responsibly monitoring so you do not have to hold them in your head.
+```
+
+The collapsed section header may show:
+
+- number of watched people
+- number with newly changed evidence
+- number approaching a named trigger
+
+Collapsed header examples:
+
+```text
+People To Watch
+4 relationships are being monitored. No action is needed.
+```
+
+```text
+People To Watch
+1 relationship has new context worth reviewing.
+```
+
+The section should automatically expand or promote a person into the active queue only when:
+
+- the named watch trigger occurs
+- new evidence materially changes the packet
+- a responsible move becomes available
+- identity becomes resolvable
+- timing becomes relevant
+- the user explicitly opens the section
+
 Good:
 
 ```text
 Kareemah
-Packet developing
+Understanding developing
 VAL has evidence of Kareemah's nonprofit experience, but her current role is not yet confirmed.
 Watch for:
 A current role update or direct confirmation of the work she is doing now.
@@ -302,6 +345,13 @@ The visible status should instead explain the current Stewardship posture.
 
 ### Approved Visible Statuses
 
+The clean visible status set is:
+
+- Needs identity review
+- Understanding developing
+- Move suggested: [named move]
+- No move right now
+
 #### Needs Identity Review
 
 Meaning:
@@ -312,31 +362,17 @@ Executive implication:
 
 Correct the identity before VAL uses this person in recommendations or prepared work.
 
-#### Packet Developing
+#### Understanding Developing
 
 Meaning:
 
-VAL recognizes a real relationship but does not yet have enough source-backed understanding to recommend a move.
+VAL recognizes a real relationship but does not yet have enough reliable context to recommend a move.
 
 Executive implication:
 
 Add context, review one missing fact, or allow VAL to keep learning.
 
 This status should usually appear under People To Watch, not in the active queue.
-
-#### Ready To Evaluate
-
-Meaning:
-
-VAL has enough reliable context to consider possible stewardship moves, but no move has yet passed the full decision tests.
-
-Executive implication:
-
-VAL may evaluate introductions, follow-ups, reconnections, questions, resources, waiting, or no action.
-
-This may be a temporary internal-to-visible bridge state.
-
-It should not appear prominently unless executive review is useful.
 
 #### Move Suggested
 
@@ -375,6 +411,26 @@ No action is needed.
 These people should normally remain hidden from the active queue.
 
 They may appear in the person detail view when the user searches for them directly.
+
+### Internal Bridge Status
+
+#### Ready To Evaluate
+
+Internal status only.
+
+Do not show this as a visible executive status unless there is an actual executive decision to make.
+
+When the user has something to review, use `Ready for review` on the prepared work or move review surface instead.
+
+Meaning:
+
+VAL has enough reliable context to consider possible stewardship moves, but no move has yet passed the full decision tests.
+
+Internal implication:
+
+VAL may evaluate introductions, follow-ups, reconnections, questions, resources, waiting, or no action.
+
+If move evaluation is still happening internally, keep the relationship hidden rather than exposing this transitional status.
 
 ### Status Is Not A Score
 
@@ -1079,8 +1135,7 @@ After explicit documentation approval, the first UI implementation should:
    - Active Stewardship Queue
 2. Replace vague temperature labels with:
    - Needs identity review
-   - Packet developing
-   - Ready to evaluate
+   - Understanding developing
    - Move suggested
    - No move right now
 3. Create the first executive list row using:
@@ -1110,7 +1165,8 @@ After explicit documentation approval, the first UI implementation should:
 - rejected senders do not appear
 - hidden admitted relationships do not appear in the active queue
 - blocked identities appear only under Needs Identity Review
-- developing packets appear under People To Watch only when a specific watch reason exists
+- developing relationships appear under collapsed People To Watch only when a specific watch reason exists
+- People To Watch promotes a person only when a named trigger, material evidence change, responsible move, resolvable identity, timing relevance, or explicit user expansion occurs
 - explicit commitments rank above inferred moves
 - no-action relationships remain hidden
 - every active row shows a named open matter or move
@@ -1139,5 +1195,3 @@ Approved. Implement this documentation.
 ```
 
 This spec is ready for a documentation-first review.
-
-The main decision to verify is whether People To Watch should be visible as a normal section by default or collapsed unless it contains a specific, meaningful trigger.
