@@ -973,14 +973,14 @@ window.relationshipDossierAction=function(dossierId,actionId,section,candidateKe
   apiFetch((window.PROXY||'')+(action.endpoint||'/api/relationships/actions'),{method:action.method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:actionId,contact:contact,dossier:dossier,candidate:introCandidate})}).then(function(data){
     function introReviewHtml(surface){
       if(!surface||!Array.isArray(surface.sections))return '';
-      return '<section class="relationship-action-panel intro-review-surface"><h4>'+safe(surface.title||'Introduction leverage ready')+'</h4><p>'+safe(surface.summary||data.message||'VAL prepared review-only introduction candidates.')+'</p>'
+      return '<section class="relationship-action-panel intro-review-surface"><h4>'+safe(surface.title||'Next relationship move ready')+'</h4><p>'+safe(surface.summary||data.message||'VAL prepared review-only stewardship moves from person packets.')+'</p>'
         +surface.sections.map(function(section){
           var cards=(section.cards||[]).slice(0,4).map(function(card){
             var candidate=(data.candidates||[]).find(function(item){return item.id===card.id;})||card;
             var candidateKey=dossierId+':'+card.id;
             window.relationshipIntroCandidateRegistry[candidateKey]=candidate;
             return '<article class="intro-review-card"><strong>'+safe(card.title||'Relationship')+'</strong><p>'+safe(card.meaning||'Potential relationship leverage.')+'</p><small>Confidence '+Math.round(Number(card.confidence||0)*100)+'% · CRM IDs attached</small><div><button onclick="relationshipDossierAction(\''+jsString(dossierId)+'\',\'draft_intro_candidate\',\'intro\',\''+jsString(candidateKey)+'\')" title="Creates only a reviewable internal draft. Nothing is sent.">Draft intro for review</button><button onclick="openDashboardTarget(\'person\',\''+jsString(card.contactIds&&card.contactIds.other||'')+'\')" title="Opens the other relationship brief when available.">Open brief</button></div></article>';
-          }).join('')||'<article class="intro-review-card quiet"><p>No confident match yet.</p></article>';
+          }).join('')||'<article class="intro-review-card quiet"><p>No confident move yet.</p></article>';
           return '<div class="intro-review-section"><h5>'+safe(section.title||'Direction')+'</h5><p>'+safe(section.question||'Review this direction.')+'</p>'+cards+'</div>';
         }).join('')
         +'<p class="intro-review-boundary">'+safe(surface.boundary||'Review first. Nothing external happened.')+'</p></section>';
@@ -989,18 +989,18 @@ window.relationshipDossierAction=function(dossierId,actionId,section,candidateKe
       return (items||[]).slice(0,4).map(function(item){
         var other=(item.personB&&item.personB.name)||item.name||'Relationship';
         return '- '+other+': '+(item.whyThisMayMatter||'Potential relationship leverage.')+' Confidence '+Math.round((item.confidence||0)*100)+'%.';
-      }).join('\n')||'- No confident match yet.';
+      }).join('\n')||'- No confident move yet.';
     }
     if(data.draft)say('Draft prepared','Draft saved for review. Nothing was sent.\n\nSubject: '+(data.draft.subject||'Relationship follow-up'));
     else if(data.task){say('Task created',data.task.title||'Relationship task created.');if(typeof valTasksLoad==='function')valTasksLoad();}
     else if(data.observers){say('Observer refresh preview',(data.message||'Observers are ready for review.')+'\n\n'+data.observers.map(function(o){return (o.label||o.id)+': '+(o.status||'watching');}).join('\n'));}
     else if(data.whoNeedsThisPerson||data.whoThisPersonNeeds){
       if(panel&&data.reviewSurface)panel.innerHTML=introReviewHtml(data.reviewSurface);
-      else say('Introduction leverage ready',
-        (data.message||'VAL prepared review-only introduction candidates.')+'\n\n'
+      else say('Next relationship move ready',
+        (data.message||'VAL prepared review-only stewardship moves from person packets.')+'\n\n'
         +'Who needs this person:\n'+introLines(data.whoNeedsThisPerson)+'\n\n'
         +'Who this person needs:\n'+introLines(data.whoThisPersonNeeds)+'\n\n'
-        +'Boundary: no introduction was sent and no contact was exposed without review.');
+        +'Boundary: no relationship move was executed and no contact was exposed without review.');
     }
     else if(data.content)say('Relationship thinking',data.content);
     else say('Relationship updated',data.status||data.action||'VAL recorded the relationship action.');

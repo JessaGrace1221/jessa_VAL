@@ -1307,8 +1307,8 @@ test('Stewardship drawer contract keeps round table packet and user view separat
     'Ways They Create Value',
     'Opportunities to Help',
     'network cluster',
-    'Introduction Opportunity Packet',
-    'Prepared introduction drafts feed the Home Leverage card',
+    'stewardship move packet',
+    'Prepared introduction drafts feed the Home Leverage card only when the stewardship move type is introduction',
     'The user should not see:',
     'packet names',
     'source-of-source',
@@ -1999,7 +1999,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /function relationshipActionsWithStewardshipReview/);
   assert.match(hearthJs, /relationshipReviewIntroductionsAction\(\)/);
   assert.match(hearthJs, /Refresh observers/);
-  assert.match(hearthJs, /Review introductions/);
+  assert.match(hearthJs, /Review next move/);
   assert.match(hearthJs, /linkedinSignal/);
   assert.match(hearthJs, /sourceReceipts/);
   assert.match(hearthJs, /linkedInLatestPosts/);
@@ -2021,8 +2021,8 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /LinkedIn comment drafted for review/);
   assert.match(hearthJs, /LinkedIn DM drafted for review/);
   assert.match(hearthJs, /Observer refresh is ready for review/);
-  assert.match(hearthJs, /Introduction leverage is ready for review/);
-  assert.match(hearthJs, /who needs this person, and who this person needs/);
+  assert.match(hearthJs, /Next relationship move is ready for review/);
+  assert.match(hearthJs, /who may need this person, who this person may need, and what move would serve the relationship/);
   assert.match(hearthJs, /function openRelationshipIntroReview/);
   assert.match(hearthJs, /return \['Leverage', 'Fit', 'Review', 'Approval'\]/);
   assert.match(hearthJs, /let workspaceReturnTarget = 'home'/);
@@ -2033,7 +2033,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /relationshipAllPeople/);
   assert.match(hearthJs, /updateWorkspaceReturnButton/);
   assert.match(hearthJs, /returnButton\.textContent = label/);
-  assert.match(hearthJs, /openWorkspaceShell\('Relationship introduction review', \{returnTarget:'relationship'\}\)/);
+  assert.match(hearthJs, /openWorkspaceShell\('Relationship stewardship review', \{returnTarget:'relationship'\}\)/);
   assert.match(hearthJs, /Who needs this person/);
   assert.match(hearthJs, /Who this person needs/);
   assert.match(hearthJs, /introDraft:/);
@@ -2042,7 +2042,7 @@ test('Relationship drawer behaves like a selectable file cabinet', () => {
   assert.match(hearthJs, /Approve draft for review queue/);
   assert.match(hearthJs, /Refine wording/);
   assert.match(hearthJs, /Not this intro/);
-  assert.match(hearthJs, /Teach VAL about this introduction/);
+  assert.match(hearthJs, /Teach VAL about this relationship move/);
   assert.match(hearthJs, /Introduction draft approved for the review queue/);
   assert.match(hearthJs, /No email, LinkedIn message, calendar invite, scrape, import, or CRM write happened/);
   assert.match(hearthJs, /function relationshipRouteUrl/);

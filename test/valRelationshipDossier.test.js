@@ -115,7 +115,7 @@ test('relationship dossier actions are shared safe commands for all observers',(
   assert.match(actions.find(action=>action.id==='draft_linkedin_comment').willNotDo,/will not post, comment, message, scrape live data, or change CRM/);
   assert.match(actions.find(action=>action.id==='draft_linkedin_dm').willNotDo,/will not send, post, comment, message, scrape live data, or change CRM/);
   assert.match(actions.find(action=>action.id==='review_linkedin_activity').willNotDo,/will not post, comment, message, scrape live data, or change CRM/);
-  assert.match(actions.find(action=>action.id==='find_relationship_introductions').willNotDo,/will not send introductions, expose contacts, create calendar events, scrape live data, or change CRM/);
+  assert.match(actions.find(action=>action.id==='find_relationship_introductions').willNotDo,/will not send messages, make introductions, expose contacts, create calendar events, scrape live data, or change CRM/);
   assert.match(actions.find(action=>action.id==='refresh_relationship_observers').willNotDo,/will not import, overwrite, post, message, or change CRM/);
   assert.match(actions.find(action=>action.id==='create_task').willNotDo,/will not invite anyone/);
   assert.ok(actions.every(action=>action.observerScope.includes('dashboard')));
@@ -199,7 +199,7 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/status:'linkedin_dm_drafted'/);
   assert.match(server,/status:'linkedin_activity_ready'/);
   assert.match(server,/status:'observer_refresh_preview'/);
-  assert.match(server,/status:'relationship_introductions_ready'/);
+  assert.match(server,/status:'relationship_stewardship_moves_ready'/);
   assert.match(server,/status:'introduction_draft_created'/);
   assert.match(server,/draftType:prepared\.draftType/);
   assert.match(server,/whoNeedsThisPerson/);
@@ -207,7 +207,8 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(server,/currentPersonPacket/);
   assert.match(server,/stewardshipMatchPackets/);
   assert.match(server,/personPacketFromContact\(currentContact\)/);
-  assert.match(server,/relationshipIntroReviewSurface/);
+  assert.match(server,/relationshipStewardshipReviewSurface/);
+  assert.match(server,/stewardshipMovePackets/);
   assert.match(server,/reviewSurface/);
   assert.match(server,/const effectiveAction=action==='create_task_from_loop'\?'create_task':action/);
   assert.match(server,/status:'teach_val_review_required'/);
@@ -239,7 +240,7 @@ test('VAL surfaces are wired to read relationship dossiers when needed',()=>{
   assert.match(commandCenter,/Review LinkedIn activity/);
   assert.match(commandCenter,/Refresh observers/);
   assert.match(commandCenter,/review_linkedin_activity/);
-  assert.match(commandCenter,/Introduction leverage ready/);
+  assert.match(commandCenter,/Next relationship move ready/);
   assert.match(commandCenter,/introReviewHtml/);
   assert.match(commandCenter,/relationshipIntroCandidateRegistry/);
   assert.match(commandCenter,/candidate:introCandidate/);

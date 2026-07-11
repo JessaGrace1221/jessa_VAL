@@ -164,11 +164,54 @@ function contactFromPersonPacket(packet={}){
     evidence:safeArray(packet.who_this_person_is?.source_receipts||packet.relationship_state?.source_receipts)
   };
 }
-function stewardshipMatchPacket({currentPacket={},candidatePacket={},candidate={},direction={},score=0}={}){
+function stewardshipMovePacket({currentPacket={},candidatePacket={},candidate={},direction={},score=0,stewardshipType='introduction'}={}){
   const currentContact=contactFromPersonPacket(currentPacket);
   const candidateContact=contactFromPersonPacket(candidatePacket);
+  const source_receipts=sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_move');
+  const ready=score>0&&contactId(currentContact)&&contactId(candidateContact);
+  const moveLabel=stewardshipType==='introduction'?'Review possible introduction':'Review next relationship move';
+  const reason=compactText(candidate.whyThisMayMatter||`${currentContact.name||'This person'} and ${candidateContact.name||'this person'} may have useful overlap in their person packets.`,260);
+  return {
+    packet_type:'stewardship_move_packet',
+    stewardship_type:stewardshipType,
+    focus_person_packet_id:currentPacket.packet_id||'',
+    compared_person_packet_ids:[candidatePacket.packet_id||''].filter(Boolean),
+    candidate_contact_id:candidateContact.contactId||'',
+    current_contact_id:currentContact.contactId||'',
+    candidate_name:candidateContact.name||candidateContact.email||'Relationship',
+    recommended_move:{
+      type:stewardshipType,
+      label:moveLabel,
+      status:ready?'ready_for_review':'waiting_for_evidence',
+      summary:ready?reason:'VAL needs stronger packet evidence before recommending a relationship move.',
+      next_step:stewardshipType==='introduction'?'Draft an introduction for review only if the reason serves both people.':'Prepare the relationship move for executive review only.',
+      approval_required:true
+    },
+    why_this_may_matter:reason,
+    direction:{
+      who_needs_this_person:direction.whoNeedsThisPerson||0,
+      who_this_person_needs:direction.whoThisPersonNeeds||0,
+      primary:direction.primary||''
+    },
+    packet_basis:{
+      focus_needs:safeArray(currentPacket.what_this_person_needs),
+      focus_offers:safeArray(currentPacket.what_this_person_offers),
+      candidate_needs:safeArray(candidatePacket.what_this_person_needs),
+      candidate_offers:safeArray(candidatePacket.what_this_person_offers)
+    },
+    source_receipts,
+    review_posture:'Human review required. VAL should prepare judgment, not execute the move.',
+    no_external_action:true
+  };
+}
+function stewardshipMatchPacket({currentPacket={},candidatePacket={},candidate={},direction={},score=0}={}){
+  const movePacket=stewardshipMovePacket({currentPacket,candidatePacket,candidate,direction,score,stewardshipType:candidate.stewardshipType||'introduction'});
+  const currentContact=contactFromPersonPacket(currentPacket);
+  const candidateContact=contactFromPersonPacket(candidatePacket);
+  const source_receipts=sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match');
   return {
     packet_type:'stewardship_match_packet',
+    stewardship_move_packet:movePacket,
     focus_person_packet_id:currentPacket.packet_id||'',
     compared_person_packet_ids:[candidatePacket.packet_id||''].filter(Boolean),
     candidate_contact_id:candidateContact.contactId||'',
@@ -181,20 +224,22 @@ function stewardshipMatchPacket({currentPacket={},candidatePacket={},candidate={
       person:candidateContact.name,
       reason:compactText(candidate.whyThisMayMatter||`${candidateContact.name} may offer something ${currentContact.name} needs.`,240),
       need_met:personPacketText(currentPacket,'needs'),
-      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      source_receipts,
       approval_status:'ready_for_review'
     }]:[],
     people_who_need_them:direction.whoNeedsThisPerson>0?[{
       person:candidateContact.name,
       reason:compactText(candidate.whyThisMayMatter||`${candidateContact.name} may need something ${currentContact.name} offers.`,240),
       offer_matched:personPacketText(currentPacket,'offers'),
-      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      source_receipts,
       approval_status:'ready_for_review'
     }]:[],
     next_stewardship_move:{
-      move:score>0?'Review introduction candidate.':'Watch quietly until stronger evidence appears.',
+      move:movePacket.recommended_move.label,
+      type:movePacket.stewardship_type,
+      status:movePacket.recommended_move.status,
       why:compactText(candidate.whyThisMayMatter||'',240),
-      source_receipts:sourceReceipts([...(currentPacket.relationship_origin?.source_receipts||[]),...(candidatePacket.relationship_origin?.source_receipts||[])], 'stewardship_match'),
+      source_receipts,
       approval_required:true
     },
     no_external_action:true
@@ -251,6 +296,8 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
       const candidate={
         id:`intro_${currentId}_${otherId}`.toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180),
         type:'relationship_introduction_candidate',
+        stewardshipType:'introduction',
+        recommendedMove:'Review possible introduction',
         status:score>0?'candidate':'weak_signal',
         personA:{name:currentName,contactId:currentId,email:currentContactForMatch.email||''},
         personB:{name:candidateContact.name||candidateContact.email||'Contact',contactId:otherId,email:candidateContact.email||''},
@@ -274,6 +321,7 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
           ].join('\n')
         }
       };
+      candidate.stewardshipMovePacket=stewardshipMovePacket({currentPacket,candidatePacket,candidate,direction,score,stewardshipType:'introduction'});
       candidate.stewardshipMatchPacket=stewardshipMatchPacket({currentPacket,candidatePacket,candidate,direction,score});
       return candidate;
     })
@@ -325,13 +373,33 @@ function relationshipIntroReviewSurface({currentContact={},whoNeedsThisPerson=[]
   ];
   return {
     kind:'relationship_introduction_review',
-    title:'Introduction leverage review',
-    summary:`VAL looked in both directions around ${currentName}: who needs them, and who they may need.`,
+    title:'Next relationship move review',
+    summary:`VAL looked in both directions around ${currentName}: who may need them, and who they may need.`,
     sections,
     emptyState:safeArray(candidates).length?'':'No identity-safe introduction candidate has enough evidence yet.',
     boundary:'Review first. VAL will not send an introduction, expose contact details, create a calendar event, scrape live data, import records, or change CRM from this surface.',
     requiresApproval:true,
     noExternalAction:true
+  };
+}
+
+function relationshipStewardshipReviewSurface({currentContact={},whoNeedsThisPerson=[],whoThisPersonNeeds=[],candidates=[]}={}){
+  const introSurface=relationshipIntroReviewSurface({currentContact,whoNeedsThisPerson,whoThisPersonNeeds,candidates});
+  const currentName=compactText(currentContact.name||currentContact.email||'this person',120);
+  return {
+    ...introSurface,
+    kind:'relationship_stewardship_review',
+    title:'Next relationship move review',
+    summary:`VAL checked the relationship packets around ${currentName} for thoughtful next moves. Introductions are only one possible move.`,
+    emptyState:safeArray(candidates).length?'':'No identity-safe stewardship move has enough evidence yet.',
+    boundary:'Review first. VAL will not send messages, make introductions, expose contact details, create calendar events, scrape live data, import records, or change CRM from this surface.',
+    moveTypes:['introduction','follow_up','reconnection','congratulations','resource','referral','meeting','reminder','check_in','clarifying_question','wait_or_watch'],
+    sections:introSurface.sections.map(section=>({
+      ...section,
+      question:section.id==='who_needs_this_person'
+        ? 'Who might be helped by this person, and what move would serve them?'
+        : 'Who or what might help this person, and what move would serve them?'
+    }))
   };
 }
 
@@ -377,4 +445,4 @@ function relationshipIntroDraft(candidate={}){
   };
 }
 
-module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket,stewardshipMatchPacket};
+module.exports={relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket,stewardshipMatchPacket,stewardshipMovePacket};

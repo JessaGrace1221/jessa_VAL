@@ -189,10 +189,10 @@ For each possible match, VAL asks:
 2. Does Person B need something Person A offers?
 3. Is there recent evidence that makes the match timely?
 4. Is the relationship permission and trust level appropriate?
-5. Would the introduction create real value for both sides?
+5. Would the proposed move create real value for the relationship?
 6. Is the confidence high enough to draft, or should VAL only watch/ask?
 
-The output of this layer is a match packet or introduction opportunity packet, not a mutation of the person packet into fixed truth.
+The output of this layer is a stewardship match packet or stewardship move packet, not a mutation of the person packet into fixed truth.
 
 Stewardship should be able to say:
 
@@ -200,6 +200,7 @@ Stewardship should be able to say:
 - who this person should meet because that person offers something they need
 - why the match matters now
 - whether VAL should prepare a draft, ask a clarifying question, watch quietly, or do nothing
+- Prepared introduction drafts feed the Home Leverage card only when the stewardship move type is introduction
 
 ## Stewardship Round Table
 

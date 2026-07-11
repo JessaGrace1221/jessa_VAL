@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {relationshipIntroCandidates,contactId,introductionDirection,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket}=require('../services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,contactId,introductionDirection,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,contactFromPersonPacket}=require('../services/valRelationshipActionIntelligence');
 
 test('relationship action intelligence requires canonical CRM contact identity',()=>{
   assert.equal(contactId({id:'local_1',name:'Local Person'}),'');
@@ -39,7 +39,11 @@ test('relationship action intelligence drafts review-only intro candidates betwe
   assert.equal(candidate.noExternalAction,true);
   assert.equal(candidate.personPackets.current.packet_type,'person_packet');
   assert.equal(candidate.personPackets.candidate.packet_type,'person_packet');
+  assert.equal(candidate.stewardshipMovePacket.packet_type,'stewardship_move_packet');
+  assert.equal(candidate.stewardshipMovePacket.stewardship_type,'introduction');
+  assert.equal(candidate.stewardshipMovePacket.recommended_move.status,'ready_for_review');
   assert.equal(candidate.stewardshipMatchPacket.packet_type,'stewardship_match_packet');
+  assert.equal(candidate.stewardshipMatchPacket.stewardship_move_packet.packet_type,'stewardship_move_packet');
   assert.equal(candidate.stewardshipMatchPacket.no_external_action,true);
   assert.equal(candidate.direction.whoNeedsThisPerson>0,true);
   assert.equal(candidate.direction.whoThisPersonNeeds>0,true);
@@ -106,23 +110,24 @@ test('relationship introduction direction separates who needs this person from w
   assert.match(direction.primary,/who_needs_this_person|who_this_person_needs/);
 });
 
-test('relationship introduction review surface preserves two directions and approval boundary',()=>{
+test('relationship stewardship review surface preserves two directions and approval boundary',()=>{
   const intro=relationshipIntroCandidates({
     currentContact:{contactId:'crm_aric',name:'Aric',offers:['operator systems'],needs:['foundation access']},
     crmContacts:[{contactId:'crm_foundation',name:'HopeMakers',needs:['operator systems'],offers:['foundation access']}]
   });
-  const surface=relationshipIntroReviewSurface({
+  const surface=relationshipStewardshipReviewSurface({
     currentContact:{contactId:'crm_aric',name:'Aric'},
     whoNeedsThisPerson:intro.candidates,
     whoThisPersonNeeds:intro.candidates,
     candidates:intro.candidates
   });
-  assert.equal(surface.kind,'relationship_introduction_review');
+  assert.equal(surface.kind,'relationship_stewardship_review');
+  assert.match(surface.summary,/Introductions are only one possible move/);
   assert.equal(surface.sections.length,2);
   assert.equal(surface.sections[0].id,'who_needs_this_person');
   assert.equal(surface.sections[1].id,'who_this_person_needs');
   assert.ok(surface.sections[0].cards[0].nextActions.some(action=>action.id==='draft_intro_candidate'&&action.requiresApproval));
-  assert.match(surface.boundary,/will not send an introduction/);
+  assert.match(surface.boundary,/will not send messages, make introductions/);
   assert.equal(surface.noExternalAction,true);
 });
 

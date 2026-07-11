@@ -5922,7 +5922,7 @@ function relationshipStewardshipNetwork(understanding = {}, fallback = {}){
     about: relationshipCleanSourceText(summary, 240),
     peopleWhoNeedThem: relationshipNetworkMatchList(network.people_who_need_them, review.whoNeedsThisPerson || []),
     peopleTheyShouldMeet: relationshipNetworkMatchList(network.people_they_should_meet, review.whoThisPersonNeeds || []),
-    noMatchReason: network.no_match_reason || 'No confident network introduction is ready yet.',
+    noMatchReason: network.no_match_reason || 'No confident stewardship move is ready yet.',
     name
   };
 }
@@ -6182,8 +6182,8 @@ function relationshipHasAny(profile = {}, keys = []){
 function renderRelationshipDossierSections(profile = {}){
   const listFallbacks = {
     keyFacts: [profile.relationshipStateLabel || profile.relationshipState, profile.temperature && profile.temperature + ' temperature', profile.trajectory && profile.trajectory + ' trajectory'].filter(Boolean),
-    peopleWhoNeedThem: ['No confident network introduction is ready yet.'],
-    peopleTheyShouldMeet: ['No confident network introduction is ready yet.'],
+    peopleWhoNeedThem: ['No confident stewardship move is ready yet.'],
+    peopleTheyShouldMeet: ['No confident stewardship move is ready yet.'],
     whatChanged: [profile.evidence || profile.signal].filter(Boolean),
     executiveAdvice: [profile.certainty || 'Protect the relationship by acting from what is known, not from urgency.'].filter(Boolean),
     activeThreads: [profile.company || profile.role].filter(Boolean),
@@ -6206,7 +6206,7 @@ function preferredRelationshipActions(actions = []){
 }
 
 function relationshipReviewIntroductionsAction(){
-  return {id:'find_relationship_introductions',label:'Review introductions',type:'endpoint',willDo:'Prepare review-only introduction candidates.',willNotDo:'No introduction will be sent.'};
+  return {id:'find_relationship_introductions',label:'Review next move',type:'endpoint',willDo:'Prepare review-only stewardship moves from person packets.',willNotDo:'No message, introduction, calendar event, or CRM change will happen.'};
 }
 
 function relationshipActionsWithStewardshipReview(actions = [], profile = {}){
@@ -6280,7 +6280,7 @@ function renderRelationshipPrimaryActions(profile = {}){
     container.innerHTML = '';
     return;
   }
-  container.innerHTML = '<button type="button" data-relationship-action="find_relationship_introductions" title="Review who this person may need and who may need this person. Nothing will be sent.">Review introductions</button>';
+  container.innerHTML = '<button type="button" data-relationship-action="find_relationship_introductions" title="Review the next thoughtful relationship move from person packets. Nothing will be sent.">Review next move</button>';
 }
 
 function relationshipSectionActions(profile = {}, section = ''){
@@ -6527,6 +6527,7 @@ function relationshipIntroReviewFromResult(profile = {}, result = {}){
       whoThisPersonNeeds: Array.isArray(result.whoThisPersonNeeds) ? result.whoThisPersonNeeds : [],
       candidates: Array.isArray(result.candidates) ? result.candidates : [],
       reviewSurface: result.reviewSurface || null,
+      stewardshipMovePackets: result.stewardshipMovePackets || [],
       stewardshipMatchPackets: result.stewardshipMatchPackets || [],
       updatedAt: new Date().toISOString()
     },
@@ -6585,7 +6586,7 @@ function introReviewLines(profile = {}){
   const needs = normalizedIntroCandidates(review.whoNeedsThisPerson);
   const needed = normalizedIntroCandidates(review.whoThisPersonNeeds);
   function lines(title, items){
-    return [title].concat((items.length ? items : [{name:'No confident match yet', reason:'VAL needs stronger evidence before recommending an introduction.', confidence:0}]).map((item) => (
+    return [title].concat((items.length ? items : [{name:'No confident move yet', reason:'VAL needs stronger evidence before recommending a relationship move.', confidence:0}]).map((item) => (
       item.name + ': ' + item.reason + (item.confidence ? ' Confidence ' + Math.round(item.confidence * 100) + '%.' : '')
     )));
   }
@@ -6636,8 +6637,8 @@ function relationshipIntroSourceContext(profile = {}){
   const shouldMeet = Array.isArray(profile.peopleTheyShouldMeet) ? profile.peopleTheyShouldMeet : [];
   return [
     'Who ' + name + ' is: ' + (whoTheyAre || 'VAL needs more relationship context before it can summarize this person.'),
-    'Who may need ' + name + ': ' + (needThem.length ? needThem.slice(0, 2).join(' | ') : 'No confident introduction is ready yet.'),
-    'Who ' + name + ' may need: ' + (shouldMeet.length ? shouldMeet.slice(0, 2).join(' | ') : 'No confident introduction is ready yet.'),
+    'Who may need ' + name + ': ' + (needThem.length ? needThem.slice(0, 2).join(' | ') : 'No confident stewardship move is ready yet.'),
+    'Who ' + name + ' may need: ' + (shouldMeet.length ? shouldMeet.slice(0, 2).join(' | ') : 'No confident stewardship move is ready yet.'),
     profile.keyFacts?.length ? 'Current facts: ' + profile.keyFacts.slice(0, 3).join(' | ') : '',
     profile.sourceReceipts ? 'Source posture: ' + profile.sourceReceipts : ''
   ].filter(Boolean);
@@ -6649,21 +6650,21 @@ function openIntroDraftReview(candidateIndex = 0){
   if(!candidate){
     setWorkspaceContent({
       lens: 'Relationship Leverage',
-      title: 'This introduction is not draft-ready yet.',
+      title: 'This relationship move is not draft-ready yet.',
       meaning: 'VAL does not have a clean, identity-safe introduction candidate for ' + (profile.name || 'this relationship') + '.',
       understanding: [
         'A real relationship or known identity is required on both sides.',
         'Raw email handles, one-way inbound messages, spam-like senders, and unresolved observed mentions are not enough.',
         'Nothing was sent, exposed, written to CRM, imported, scraped, or scheduled.'
       ],
-      recommendation: 'Link the real person or teach VAL the relationship before asking it to draft an introduction.',
+      recommendation: 'Link the real person or teach VAL the relationship before asking it to draft a move.',
       actions: relationshipContextActions([
-        {label:'Back to introduction review', workflow:'relationship:find_relationship_introductions'},
+        {label:'Back to move review', workflow:'relationship:find_relationship_introductions'},
         {label:'All people', workflow:'relationshipAllPeople'}
       ], profile),
-      label: 'Introduction not draft-ready'
+      label: 'Relationship move not draft-ready'
     });
-    openWorkspaceShell('Introduction not draft-ready', {returnTarget:'relationship'});
+    openWorkspaceShell('Relationship move not draft-ready', {returnTarget:'relationship'});
     return;
   }
   activeIntroDraftCandidate = {profile,candidate,draftBody:introDraftBody(profile,candidate)};
@@ -6682,7 +6683,7 @@ function openIntroDraftReview(candidateIndex = 0){
       {label:'Refine wording', workflow:'introRefine'},
       {label:'Not this intro', workflow:'introDismiss'},
       {label:'Teach VAL', workflow:'introTeach'},
-      {label:'Back to introduction review', workflow:'relationship:find_relationship_introductions'}
+      {label:'Back to move review', workflow:'relationship:find_relationship_introductions'}
     ], profile),
     label: 'Introduction draft review'
   });
@@ -6700,9 +6701,9 @@ async function openRelationshipIntroReview(profile = {}){
   let reviewedProfile = profile;
   if(canUseApi){
     showRelationshipReceipt({
-      title: 'Reviewing possible introductions.',
-      meaning: 'VAL is comparing this relationship against the current Stewardship context.',
-      understanding: ['This is internal review only.', 'No introduction, message, calendar invite, scrape, import, or CRM update will happen.'],
+      title: 'Reviewing possible relationship moves.',
+      meaning: 'VAL is comparing this relationship against current person packets and commitments.',
+      understanding: ['This is internal review only.', 'No message, introduction, calendar invite, scrape, import, or CRM update will happen.'],
       recommendation: 'VAL will open the review surface when the comparison is ready.'
     });
     try{
@@ -6721,23 +6722,23 @@ async function openRelationshipIntroReview(profile = {}){
   const sourceContext = relationshipIntroSourceContext(reviewedProfile);
   setWorkspaceContent({
     lens: 'Relationship Leverage',
-    title: candidates.length ? 'Introduction leverage is ready for review.' : 'No introduction is ready yet.',
+    title: candidates.length ? 'Next relationship move is ready for review.' : 'No relationship move is ready yet.',
     meaning: candidates.length
-      ? 'VAL looked in both directions around ' + name + ': who needs this person, and who this person needs.'
-      : 'VAL checked the current relationship packets around ' + name + ', but did not find a clean, identity-safe introduction candidate.',
+      ? 'VAL looked in both directions around ' + name + ': who may need this person, who this person may need, and what move would serve the relationship.'
+      : 'VAL checked the current relationship packets around ' + name + ', but did not find a clean, identity-safe stewardship move.',
     understanding: candidates.length ? sourceContext.concat(introReviewLines(reviewedProfile)) : sourceContext.concat([
-      'Draft readiness: no identity-safe match is ready yet.',
-      'Why: VAL needs reciprocal relationship evidence, a linked CRM identity, a known alias, or your teaching before suggesting an introduction.',
-      'Boundary: observed source overlap is not enough to expose two people to one another.'
+      'Move readiness: no identity-safe move is ready yet.',
+      'Why: VAL needs reciprocal relationship evidence, a linked CRM identity, a known alias, a commitment, or your teaching before suggesting a move.',
+      'Boundary: observed source overlap is not enough to send, introduce, schedule, or expose anyone.'
     ]),
     recommendation: candidates.length
-      ? 'Choose an introduction only if it would serve both people. The next step is a draft for review, never a sent email.'
+      ? 'Choose a move only if it would serve the relationship. The next step is a draft or commitment review, never an external action.'
       : 'Treat this as a relationship-context gap, not an action. Link the real person or teach VAL the relationship before drafting.',
     actions: introReviewActions(reviewedProfile),
-    label: 'Relationship introduction review',
+    label: 'Relationship stewardship review',
     suppressClarityStandard:true
   });
-  openWorkspaceShell('Relationship introduction review', {returnTarget:'relationship'});
+  openWorkspaceShell('Relationship stewardship review', {returnTarget:'relationship'});
 }
 
 function relationshipSectionLabel(section = ''){
@@ -6842,7 +6843,7 @@ function openRelationshipFullFile(profile = {}){
     recommendation: profile.wisdom || 'Use this relationship file to understand before acting.',
     actions: relationshipContextActions([
       {label:'Teach VAL', workflow:'relationship:teach_wisdom'},
-      {label:'Review introductions', workflow:'relationship:find_relationship_introductions'}
+      {label:'Review next move', workflow:'relationship:find_relationship_introductions'}
     ], profile),
     label: 'Relationship full file workspace'
   });
@@ -13490,7 +13491,7 @@ async function handleWorkflowAction(action, node = null){
         'No email, LinkedIn message, calendar invite, scrape, import, or CRM write happened.'
       ],
       recommendation: 'The next real step would be the external-action approval gate, where recipients and wording are confirmed again.',
-      actions: relationshipContextActions([{label:'Back to introduction review', workflow:'relationship:find_relationship_introductions'}]),
+      actions: relationshipContextActions([{label:'Back to move review', workflow:'relationship:find_relationship_introductions'}]),
       label: 'Introduction draft approved locally'
     });
     openWorkspaceShell('Introduction draft approved locally', {returnTarget:'relationship'});
@@ -13514,7 +13515,7 @@ async function handleWorkflowAction(action, node = null){
       meaning: 'VAL kept the relationship context but removed this intro from the current review posture.',
       understanding: ['Nothing was sent.', 'No contact was exposed.', 'No CRM record, calendar event, scrape, import, or durable memory changed.'],
       recommendation: 'This is useful teaching signal: the existence of overlap does not automatically mean an introduction should happen.',
-      actions: relationshipContextActions([{label:'Back to introduction review', workflow:'relationship:find_relationship_introductions'}, {label:'Teach VAL why', workflow:'introTeach'}]),
+      actions: relationshipContextActions([{label:'Back to move review', workflow:'relationship:find_relationship_introductions'}, {label:'Teach VAL why', workflow:'introTeach'}]),
       label: 'Introduction dismissed locally'
     });
     openWorkspaceShell('Introduction dismissed locally', {returnTarget:'relationship'});
@@ -13523,12 +13524,12 @@ async function handleWorkflowAction(action, node = null){
   if(command === 'introTeach'){
     setWorkspaceContent({
       lens: 'Teach VAL',
-      title: 'Teach VAL about this introduction.',
-      meaning: 'You can explain why this introduction is right, wrong, too soon, too vague, or missing context.',
+      title: 'Teach VAL about this relationship move.',
+      meaning: 'You can explain why this move is right, wrong, too soon, too vague, or missing context.',
       understanding: ['Teaching stays reviewable.', 'VAL should learn judgment, not just preference.', 'No durable memory is saved from this prototype click.'],
       recommendation: 'Name the relationship principle VAL should remember before suggesting this kind of introduction again.',
       actions: relationshipContextActions([{label:'Back to draft', workflow:'introDraft:0'}]),
-      label: 'Teach VAL introduction judgment'
+      label: 'Teach VAL relationship judgment'
     });
     renderWorkspaceInput({
       label: 'What should VAL learn?',

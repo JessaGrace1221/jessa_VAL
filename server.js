@@ -32,7 +32,7 @@ const {registerValExternalActionsRoutes} = require('./services/valExternalAction
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
-const {relationshipIntroCandidates,relationshipIntroReviewSurface,relationshipIntroDraft,personPacketFromContact} = require('./services/valRelationshipActionIntelligence');
+const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact} = require('./services/valRelationshipActionIntelligence');
 const {
   normalizeEmailAddress,
   normalizePhoneNumber,
@@ -24563,15 +24563,17 @@ app.post('/api/relationships/actions',async(req,res)=>{
         if(direction.whoThisPersonNeeds>0||direction.primary==='who_this_person_needs') out.whoThisPersonNeeds.push(candidate);
         return out;
       },{whoNeedsThisPerson:[],whoThisPersonNeeds:[]});
-      const reviewSurface=relationshipIntroReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
+      const reviewSurface=relationshipStewardshipReviewSurface({currentContact,whoNeedsThisPerson:directional.whoNeedsThisPerson,whoThisPersonNeeds:directional.whoThisPersonNeeds,candidates:introResult.candidates||[]});
       const stewardshipMatchPackets=(introResult.candidates||[]).map(candidate=>candidate.stewardshipMatchPacket).filter(Boolean);
+      const stewardshipMovePackets=(introResult.candidates||[]).map(candidate=>candidate.stewardshipMovePacket||candidate.stewardshipMatchPacket?.stewardship_move_packet).filter(Boolean);
       return res.json({
         ok:true,
         action,
-        status:'relationship_introductions_ready',
-        message:'VAL prepared introduction candidates in both directions. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
+        status:'relationship_stewardship_moves_ready',
+        message:'VAL prepared review-only relationship moves from person packets. Introductions are one possible move. Nothing was sent, exposed, scheduled, scraped, imported, or changed in CRM.',
         contactId:crmContactId,
         currentPersonPacket,
+        stewardshipMovePackets,
         stewardshipMatchPackets,
         whoNeedsThisPerson:directional.whoNeedsThisPerson,
         whoThisPersonNeeds:directional.whoThisPersonNeeds,
