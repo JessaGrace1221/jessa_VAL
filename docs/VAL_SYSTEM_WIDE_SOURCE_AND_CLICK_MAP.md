@@ -414,7 +414,7 @@ Executive Inbox detail for this email must include:
 
 When the user clicks an Executive Inbox email, the main view should show:
 
-1. A quiet `What VAL did with this` note only when VAL actually did something useful from the email.
+1. A quiet pre-read VAL status note.
 2. The full latest email only.
 3. A clear button to show the full thread.
 4. `Chat with VAL about this thread`.
@@ -423,9 +423,9 @@ The full thread should not be expanded by default.
 
 The user should be able to read the current email first without being buried in the entire thread history.
 
-### What VAL Did Placement
+### Pre-Read VAL Status Placement
 
-When present, `What VAL did with this` should appear above the email body.
+The pre-read VAL status should appear above the email body.
 
 Purpose:
 
@@ -449,9 +449,19 @@ What VAL did with this
 Added the attached documents to Documents and linked them to Project X. No reply was sent.
 ```
 
-If VAL did nothing beyond storing the email, do not show this section.
+If VAL did nothing beyond storing the email, show a subtle ellipsis:
 
-Do not create a visible "No action taken" message in the primary email detail. No-action receipts belong in internal/audit context unless the source type specifically benefits from a visible no-action receipt, such as empty transcripts.
+```text
+...
+```
+
+Meaning:
+
+```text
+VAL looked at this email before the user opened it and found nothing it needed to place, prepare, link, or queue.
+```
+
+Do not write a visible "No action taken" sentence in the primary email detail. The ellipsis is enough. Full no-action receipts belong in internal/audit context unless the source type specifically benefits from a visible no-action receipt, such as empty transcripts.
 
 ### Email Thread Chat Boundary
 
