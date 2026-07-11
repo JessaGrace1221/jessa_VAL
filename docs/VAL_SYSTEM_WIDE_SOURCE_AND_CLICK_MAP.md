@@ -843,14 +843,50 @@ Every transcript must answer:
 | Signal | Route |
 |---|---|
 | Attendee | Person packet admission/update. |
-| Named person | Person candidate or identity review. |
-| "I want to introduce A to B" | Stewardship introduction opportunity. |
+| Named person | Person packet update, person candidate, or identity review, depending on evidence strength. |
+| "I want to introduce A to B" | Reviewable Stewardship introduction opportunity in Leverage and Stewardship. |
 | Commitment/promise | Commitment packet and Ready For You if preparable. |
 | Project movement | Project packet. |
 | New project idea | Suggested project review update. |
 | Document/proposal/SOW mentioned | Document/project observer. |
 | Meeting follow-up | Ready For You and/or Executive Inbox draft. |
 | User preference/rule | Teach VAL candidate, approval required. |
+
+### Transcript Relationship Admission
+
+If someone is in a meeting with the user, that person is a relationship. Transcript attendees are a gold-standard relationship signal for VAL.
+
+Required behavior:
+
+```text
+Transcript processed
+  -> resolve attendees/participants
+  -> create or update person packet for each real human attendee
+  -> attach transcript as relationship evidence
+  -> scan named people for relationship/action/project/introduction relevance
+  -> create or update packets for named people when evidence is strong enough
+  -> otherwise create identity review or candidate record
+```
+
+Named people should not be ignored. However, attendee admission is stronger than a passing mention. A named person becomes packet-worthy when the transcript ties them to a relationship, need, offer, commitment, project, document, decision, or explicit introduction.
+
+### Explicit Introduction Mentions
+
+When a transcript clearly says the user wants to introduce one person to another, VAL should create a reviewable introduction opportunity immediately.
+
+Required behavior:
+
+```text
+Transcript says "I want to introduce X to Y"
+  -> create introduction opportunity record
+  -> update both person packets with source-bound needs/offers/evidence
+  -> create Leverage / Ready For You item: "I found an introduction you mentioned. Review?"
+  -> show in Stewardship Suggested Introductions
+  -> show on relevant person profiles
+  -> draft only after identities resolve
+```
+
+This should not wait for the user to click a search or match button. Explicit user intent in a transcript is stronger than inferred keyword matching.
 
 ### Example: Terrie Transcript
 
@@ -864,6 +900,7 @@ Conversation with Terrie is processed
   -> Stewardship intro observer: create explicit introduction opportunity
   -> Person packets: update Terrie needs/offers/evidence and Kareemah relevant offer/evidence if source-bound
   -> Suggested Introductions: Terrie <-> Kareemah appears because explicit transcript evidence exists
+  -> Leverage: "I found an introduction you mentioned. Review?"
   -> Review Draft: draft is prepared only after identities resolve
 ```
 

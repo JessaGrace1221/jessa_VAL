@@ -407,6 +407,9 @@ Dedicated prompt suite:
 | Key decisions | `{{transcripts.current.key_decisions}}` | existing | array | transcript summaries | Decision tracking. |
 | Open questions | `{{transcripts.current.open_questions}}` | existing | array | transcript summaries | Follow-up. |
 | Relationship updates | `{{transcripts.current.relationship_updates}}` | existing | array | transcript summaries | Context updates. |
+| Attendee relationship candidates | `{{transcripts.current.attendee_relationship_candidates}}` | new/derived | array | Transcript attendee resolver | Gold-standard relationship packet admission for real human attendees. |
+| Named person candidates | `{{transcripts.current.named_person_candidates}}` | new/derived | array | Transcript entity resolver | Packet update, candidate record, or identity review for named people. |
+| Explicit introduction mentions | `{{transcripts.current.explicit_introduction_mentions}}` | new/derived | array | Transcript introduction observer | Create Leverage/Stewardship introduction opportunities from explicit user intent. |
 | Action items | `{{transcripts.current.action_items}}` | existing/derived | array | transcript tasks/metadata | Task creation. |
 | Capacity and tone context | `{{transcripts.current.capacity_and_tone_context}}` | new/derived | array | Transcript intake | Safer capacity, tone, and relationship judgment. |
 | Emotional context legacy alias | `{{transcripts.current.emotional_context}}` | legacy/new-derived | array | Intelligence Pass | Use `capacity_and_tone_context` in new prompts. |
