@@ -1471,7 +1471,7 @@ Every dynamic top module must be tied to a real path.
 | Today's Reprioritization | Any new project-related source/event or user opens project page | Project Manager Focus Packet + updated project priority order | Project top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare, create task if needed, safe stakeholder message, put a pin in it until date/time | Reprioritization receipt |
 | Project Movement | Forward/backward movement: task, document, payment, question, clarification, meeting, dependency, status, or open-loop change | Project Movement Packet + open-loop update | Home welcome/context, Project top module/recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | Execution Adjustment | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Project Execution Adjustment Packet + plan/draft update when useful | Project top module; Alignment only when open-loop judgment is needed; Velocity if project reality moved; Leverage if prepared work exists | Accept adjustment, choose another option, ask alternatives, add context, update project plan, draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
-| Project Reset | End of day, after meeting/action, stale open loops | Project Receipt/Reset Packet | Project top module or reset section | Confirm, add context, create tomorrow task | Reset receipt |
+| Project Reset | End of day, after meetings, after major actions, after open loops change, when user opens VAL the next morning, or stale open loops need restatement | Project Reset Packet | Project page always; Home welcome/context only when something shifted or needs attention; Velocity when meaningful movement is recorded; Alignment only when an unresolved open loop needs the user | Confirm, add context, prepare tomorrow's first move, create task, put a pin in it until date/time | Reset receipt |
 | Quietly Watching | No user action needed but monitoring rules exist | Project monitoring rule/status packet | Project top module only when nothing higher exists | Open watcher, add context, change rule | Monitoring receipt |
 
 Path:
@@ -1775,6 +1775,61 @@ Receipt example:
 
 ```text
 VAL just updated the launch plan to protect quality and moved the content deadline to Friday.
+```
+
+Project Reset rules:
+
+```text
+End of day, meeting, major action, open-loop change, morning open, or stale-loop trigger
+  -> scan project movement
+  -> scan open loops
+  -> scan prepared work
+  -> scan decisions made
+  -> scan unresolved issues
+  -> write Project Reset Packet
+  -> update Project Manager page
+```
+
+Project Reset answers:
+
+```text
+What moved
+What closed
+What opened
+What is still unresolved
+Tomorrow's likely first move
+```
+
+Home routing rule:
+
+```text
+Project Reset appears in Home welcome/context only when something shifted, closed, opened, or needs attention.
+```
+
+Surface routing:
+
+```text
+Project page: always stores the reset
+Home welcome/context: only when something changed or needs attention
+Velocity: when reset records meaningful movement
+Alignment: only when reset identifies an unresolved open loop needing the user
+Leverage: only when VAL prepared something reviewable during reset
+```
+
+Allowed actions:
+
+```text
+Confirm
+Add context
+Ask VAL to prepare tomorrow's first move
+Create task
+Put a pin in it
+```
+
+Receipt example:
+
+```text
+VAL just reset this project for tomorrow: two loops closed, one decision still needs you.
 ```
 
 The Project Manager page should be driven by the Project Manager Round Table and PM source material, especially:

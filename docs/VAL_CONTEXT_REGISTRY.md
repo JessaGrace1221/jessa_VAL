@@ -549,6 +549,13 @@ Dedicated prompt suite:
 | Execution adjustment options | `{{projects.current.execution_adjustment.options}}` | new/derived | array | Project Manager Round Table | Clear options the executive can choose between. |
 | Execution adjustment recommendation | `{{projects.current.execution_adjustment.recommendation}}` | new/derived | object | Project Manager Round Table | VAL's least-risk recommended adjustment with source proof and consequence if delayed. |
 | Execution adjustment receipt | `{{projects.current.execution_adjustment.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL updates the plan, prepares work, or records the chosen trade-off. |
+| Project reset packet | `{{projects.current.reset_packet}}` | new/derived | object | Project Manager Round Table | Residue-clearing reset after end of day, meetings, major actions, open-loop changes, morning open, or stale loops. |
+| Project reset movement | `{{projects.current.reset_packet.what_moved}}` | new/derived | array/string | Project Reset Observer | What moved since the previous reset. |
+| Project reset closed loops | `{{projects.current.reset_packet.closed_loops}}` | new/derived | array | Project Reset Observer | Loops that closed during the reset period. |
+| Project reset opened loops | `{{projects.current.reset_packet.opened_loops}}` | new/derived | array | Project Reset Observer | Loops that opened or reopened during the reset period. |
+| Project reset unresolved items | `{{projects.current.reset_packet.unresolved_items}}` | new/derived | array | Project Reset Observer | What is still unresolved and may need Alignment if executive attention is required. |
+| Project reset tomorrow move | `{{projects.current.reset_packet.tomorrow_first_move}}` | new/derived | object/string | Project Manager Round Table | VAL's likely first move for tomorrow. |
+| Project reset receipt | `{{projects.current.reset_packet.receipt}}` | new/derived | object | source processing spine | One-line reset receipt, e.g. loops closed and decisions still needed. |
 | Project charter | `{{projects.current.charter}}` | new/derived | object | Project Manager Round Table, project interview | Business case, purpose, goals, scope, timeline, stakeholders, risks. |
 | Project constraints | `{{projects.current.constraints}}` | new/derived | object | Project Manager Round Table | Scope, time, cost, quality trade-offs and impacts. |
 | Project lifecycle phase | `{{projects.current.lifecycle_phase}}` | new/derived | enum/object | Project Manager Round Table | Initiation, planning, execution, monitor/control, closure, plus current phase evidence. |

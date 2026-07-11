@@ -910,7 +910,7 @@ Closed loops should leave Alignment and produce a simple receipt.
 | `Today's Reprioritization` | Any new project-related source or event, start of day, user opens project page, or changed priority/risk | Re-scan project emails, transcripts, calendar, documents, commitments, payment/project issues, and relationship tension; set new priority order | Top module when reprioritized | Accept, choose different top priority, ask why, add context, ask VAL to prepare something, create task if needed, message stakeholder only when identity/context are safe, put a pin in it until date/time | Reprioritization receipt |
 | `Project Movement` | Forward or backward movement: task/document/payment/question/clarification/meeting/dependency/status/open-loop change | Create movement packet with direction, update current reality, update open loops, feed Velocity and Project | Home welcome/context, Project top module or recent activity, Velocity, Project action layer | Open source, follow up, ask what changed, add context, ask VAL to prepare next step, create task, update project plan, safe stakeholder message, put a pin in it until date/time | Movement receipt |
 | `Execution Adjustment` | Scope, time, cost, quality, resource, stakeholder expectation, dependency, launch, or risk trade-off appears | Make the trade-off explicit, show options, recommend the least-risk path, and prepare plan/draft updates when useful | Project top module; Alignment only when the trade-off creates an open loop needing judgment; Velocity if it reflects movement; Leverage if VAL prepared work | Accept VAL's adjustment, choose another option, ask for alternatives, add context, ask VAL to update the project plan, ask VAL to draft stakeholder message, put a pin in it until date/time | Trade-off adjustment receipt |
-| `Project Reset` | End of day, after meeting, after major action, stale open loops | Summarize what moved, decisions made, unresolved risks, tomorrow prep | Top module or lower reset card | Confirm, add missing context, create tomorrow task | Reset receipt |
+| `Project Reset` | End of day, after meetings, after major actions, after open loops change, and when the user opens VAL the next morning | Summarize what moved, what closed, what opened, what remains unresolved, and tomorrow's likely first move | Project page always; Home welcome/context only when something shifted or needs attention; Velocity when reset records meaningful movement; Alignment only if an unresolved loop needs the user | Confirm, add context, ask VAL to prepare tomorrow's first move, create task, put a pin in it until date/time | Reset receipt |
 | `Quietly Watching` | Nothing needs user attention but monitoring rules exist | Show what VAL is watching and why no action is needed | Top module only when no higher module exists | Open watcher, add context, change watch rule | Monitoring receipt |
 
 ### Module Path Completeness
@@ -1493,6 +1493,87 @@ Receipt:
 
 ```text
 VAL just updated the launch plan to protect quality and moved the content deadline to Friday.
+```
+
+### Project Reset Contract
+
+Project Reset is the residue-clearing module.
+
+It exists so the executive does not have to keep the state of the project in their head after meetings, actions, movement, or the end of the day.
+
+Automatic triggers:
+
+- end of day
+- after meetings
+- after major actions
+- after open loops change
+- when the user opens VAL the next morning
+- when stale open loops need a clean restatement
+
+Required processing path:
+
+```text
+Reset trigger
+  -> scan project movement
+  -> scan open loops
+  -> scan prepared work
+  -> scan decisions made
+  -> scan unresolved issues
+  -> create Project Reset Packet
+  -> update Project Manager page
+  -> route to Home, Velocity, Alignment, or Leverage only when the relevant gate is met
+```
+
+Required summary:
+
+```text
+What moved
+What closed
+What opened
+What is still unresolved
+Tomorrow's likely first move
+```
+
+Home rule:
+
+```text
+Project Reset appears in Home welcome/context only when something shifted, closed, opened, or needs attention.
+```
+
+Do not show every project reset on Home. Multiple projects will make Home crowded if reset becomes a generic daily digest.
+
+Surface routing:
+
+```text
+Project page: always stores the reset
+Home welcome/context: only when something changed or needs attention
+Velocity: when reset records meaningful movement
+Alignment: only when reset identifies an unresolved open loop needing the user
+Leverage: only when VAL prepared something reviewable during reset
+```
+
+Allowed actions:
+
+- confirm
+- add context
+- ask VAL to prepare tomorrow's first move
+- create task
+- put a pin in it
+
+Put a pin in it follows the global pin rule:
+
+```text
+Put a pin in it
+  -> ask "When do you want me to unpin this for you?"
+  -> user picks date/time
+  -> VAL stores pin-until timestamp
+  -> when date/time arrives, VAL surfaces: "This is unpinned. Let's work on it."
+```
+
+Receipt:
+
+```text
+VAL just reset this project for tomorrow: two loops closed, one decision still needs you.
 ```
 
 ### Handled Work Copy Rule
