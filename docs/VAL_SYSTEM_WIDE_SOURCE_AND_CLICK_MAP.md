@@ -611,6 +611,36 @@ Required behavior:
 6. Keep the draft in VAL for review.
 7. User edits, then clicks `Approve and send`.
 
+VAL should not ask the user before offering times when the email's requested scheduling window and the user's calendar availability are clear.
+
+Reason:
+
+```text
+Scheduling should remove executive work. It should not make the user do the scheduling work inside VAL.
+```
+
+If the email asks for "next week", "Tuesday afternoon", "sometime this month", or another clear enough window, VAL should inspect the calendar and prepare the reply.
+
+If the requested window is impossible or unclear, VAL may ask the smallest possible question in the right-side missing-context panel.
+
+Follow-up scheduling behavior:
+
+```text
+Recipient accepts a suggested time
+  -> VAL confirms the selected time is still available
+  -> VAL prepares the calendar appointment
+  -> VAL prepares the confirmation reply
+  -> User reviews/approves unless a future explicit scheduling automation rule allows this exact case
+```
+
+Target confirmation language:
+
+```text
+Great, I put that in Jessa's calendar. She's looking forward to meeting next Tuesday at 3:00.
+```
+
+Until the user explicitly approves autonomous scheduling, creating the calendar event and sending the confirmation remain approval-gated external actions.
+
 Example draft logic:
 
 ```text
@@ -625,6 +655,16 @@ Onboarding must collect:
 ```
 
 If the calendar link is missing, the right panel should ask for it as missing context and offer to save it for future scheduling replies.
+
+V1 supports one default calendar booking link.
+
+Reason:
+
+```text
+Most scheduling should be clean and simple: one main calendar link, with unavailable time already blocked.
+```
+
+Future versions may support multiple booking links, such as discovery call, client meeting, or internal meeting. Do not build multi-link complexity into V1 unless the user explicitly requests it later.
 
 Example "What VAL did from this email":
 
