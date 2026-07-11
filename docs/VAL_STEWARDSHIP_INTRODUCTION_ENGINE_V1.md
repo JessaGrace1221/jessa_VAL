@@ -164,8 +164,27 @@ Instead, VAL should maintain a durable packet with:
 - introduction commitments
 - previous introduction outcomes
 - review flags
+- last direct communication with the user
 
 When new evidence appears, VAL should update the packet and preserve the previous evidence trail.
+
+### Suggested Introduction Freshness Gate
+
+VAL must not suggest an introduction unless at least one of the two people has communicated directly with the user in the last 14 days.
+
+Direct communication means:
+
+- the user sent them an email
+- the user replied to them
+- they replied to the user
+- they attended a meeting with the user
+- they spoke with the user in a transcript-connected conversation
+
+This is an eligibility rule for Suggested Introductions, not an admission rule.
+
+A person can still exist in Network if they are a real relationship, but they should not appear in Suggested Introductions unless the pair passes the 14-day direct-communication gate.
+
+Public enrichment, old transcript mentions, CRM existence, generic relationship signals, or source snippets do not satisfy this freshness gate by themselves.
 
 ### No Guessing Rule
 
@@ -232,6 +251,7 @@ Rules:
 - If VAL cannot write that sentence cleanly, the suggestion should not appear.
 - No suggestion may appear only because two people share a keyword.
 - No suggestion may appear without source evidence from both sides.
+- No suggestion may appear unless at least one of the two people communicated directly with the user in the last 14 days.
 - No external message may be sent without explicit approval.
 
 Classifier labels are not packet content:
@@ -824,11 +844,13 @@ After approval, implement in this order:
 9. Replace the current Stewardship drawer with the three V1 areas.
 10. Add manual two-person introduction comparison.
 11. Add automatic `Best Matches` from a selected Network person only after packet refresh.
-12. Add suggested introduction records from the durable map.
-13. Add draft review with approval required.
-14. Add introduction outcome learning.
-15. Add tests proving spam/inbound-only/unsubscribe contacts do not appear.
-16. Add tests proving calendar titles, task names, transcript titles, and classifier labels cannot appear as people, needs, offers, or suggested introductions.
+12. Add the 14-day direct-communication freshness gate for Suggested Introductions.
+13. Add suggested introduction records from the durable map.
+14. Add draft review with approval required.
+15. Add introduction outcome learning.
+16. Add tests proving spam/inbound-only/unsubscribe contacts do not appear.
+17. Add tests proving calendar titles, task names, transcript titles, and classifier labels cannot appear as people, needs, offers, or suggested introductions.
+18. Add tests proving Suggested Introductions hide pairs where neither person has direct user communication in the last 14 days.
 
 ## Explicitly Out Of Scope For V1
 
