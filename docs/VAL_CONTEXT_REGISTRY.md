@@ -430,9 +430,11 @@ Dedicated prompt suite:
 | Recovery time | `{{calendar.recovery_time}}` | new/derived | object | calendar analyzer | Energy planning. |
 | Relevant events | `{{calendar.relevant_events}}` | derived | array | resolver | Email/chat/relationship context. |
 | Attendees today | `{{calendar.today.attendees}}` | derived | array | calendar APIs | Important people matching. |
+| Human attendee candidates | `{{calendar.current_event.human_attendee_candidates}}` | new/derived | array | Attendee Resolver | Create or update relationship packets for real human attendees. |
 | Meeting context | `{{calendar.current_event.meeting_context}}` | new/derived | object | Meeting Context Builder | Purpose, timing, and likely reason for the meeting. |
 | Attendee resolution | `{{calendar.current_event.attendee_resolution}}` | new/derived | object | Attendee Resolver | Match attendees to contacts, CRM, prior emails, transcripts, projects, and enrichment identifiers. |
 | Internal meeting context | `{{calendar.current_event.internal_context}}` | new/derived | object | Internal Context Gatherer | Known relationship, project, CRM, transcript, and email context. |
+| Recurring meeting continuity | `{{calendar.current_event.recurring_meeting_continuity}}` | new/derived | object | Meeting Context Builder | Last meeting, this meeting, open loops, relevant changes, and attendee/project continuity. |
 | External research plan | `{{calendar.current_event.external_research_plan}}` | new/derived | object | External Research Planner | Plan public/API research only when it improves meeting judgment. |
 | Enrichment summary | `{{calendar.current_event.enrichment_summary}}` | new/derived | object | Apollo/Outscraper enrichment planner/summarizer | API-enriched attendee or company context. |
 | Public signals | `{{calendar.current_event.public_signals}}` | new/derived | array | Public Signal Summarizer | Recent public or enriched signals relevant to the meeting. |

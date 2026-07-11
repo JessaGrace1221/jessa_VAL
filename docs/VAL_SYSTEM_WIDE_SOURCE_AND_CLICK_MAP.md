@@ -906,6 +906,30 @@ Every calendar event must answer:
 | Prep-worthy meeting | Meeting prep packet and Ready For You candidate. |
 | Routine/focus/private block | Store or suppress; no person/project creation. |
 
+### Attendee Relationship Admission
+
+When a new calendar event arrives, VAL should automatically create or update relationship packets for every human attendee.
+
+Required behavior:
+
+```text
+Calendar event arrives
+  -> classify event
+  -> resolve attendees
+  -> filter out self, rooms, resources, system addresses, private blocks, and generic calendars
+  -> create or update person packet for each human attendee
+  -> attach the event as relationship evidence
+  -> link relevant project, email thread, transcript, or document context when available
+```
+
+Rule:
+
+```text
+Calendar attendees are real relationship candidates unless evidence says they are not human contacts.
+```
+
+This does not mean every attendee becomes visible in every executive surface. Admission into packets is separate from visibility. The executive UI should only surface the relationship when there is a reason to review, prepare, introduce, or act.
+
 ### Meeting Overview Visibility
 
 For every real meeting, the before/after context must be visible in every place an executive might reasonably start.
@@ -939,6 +963,17 @@ Recurring meetings must preserve continuity:
 - what changed since last meeting
 - what is coming up in the next meeting
 - attendee/person/project context
+
+Recurring meeting calendar detail should include a continuity block:
+
+```text
+Last meeting
+This meeting
+Open loops
+Relevant changes
+```
+
+This block belongs inside the calendar event view and may also feed meeting prep, Home, Leverage, transcript detail, and project/relationship surfaces when relevant.
 
 If a transcript contains no tasks, no follow-ups, no commitments, no project change, and no relationship signal, the transcript detail should show a visible no-action receipt:
 
