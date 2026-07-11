@@ -181,6 +181,7 @@ Dedicated onboarding prompt suite:
 | Priority rules | `{{user.priority_rules}}` | new/derived | array | Teach VAL, corrections, decisions | Define what counts as high priority. |
 | Approval preferences | `{{user.approval_preferences}}` | new/derived | object | rules, user decisions | Know what can be prepared vs executed. |
 | Calendar booking link | `{{user.calendar_booking_link}}` | new | string | Teach VAL onboarding, user settings, scheduling draft correction | Include as fallback in scheduling replies when suggested times do not work. |
+| Calendar booking confirmation owner | `{{user.calendar_booking_confirmation_owner}}` | new | enum | Teach VAL onboarding, user settings | V1 default: CRM/calendar system sends booking confirmations; VAL should not send duplicate personal confirmation emails for calendar-link bookings. |
 
 ## Important People Variables
 

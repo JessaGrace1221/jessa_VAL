@@ -733,6 +733,14 @@ The visible calendar hold should read like:
 Penciled in: Susie
 ```
 
+The penciled-in hold should include the source email thread link or source note in the calendar description.
+
+Reason:
+
+```text
+When the user opens the hold, they should be able to quickly recognize, "Oh yeah, I know what this is about."
+```
+
 If the user confirms the Leverage item:
 
 ```text
@@ -762,6 +770,14 @@ I know I penciled you in, but Jessa actually is not going to be available at tha
 ```
 
 This should end the scheduling loop. Do not keep offering new rounds of times after the user rejects a recipient-proposed alternate time.
+
+If the recipient books through the user's calendar link, VAL should not send a separate personal confirmation email in V1.
+
+Reason:
+
+```text
+The CRM/calendar system already handles booking confirmations. VAL should not duplicate that loop.
+```
 
 Example draft logic:
 
