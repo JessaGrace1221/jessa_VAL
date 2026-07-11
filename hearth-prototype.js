@@ -1840,6 +1840,22 @@ function stewardshipCleanList(values = [], fallback = ''){
   return rows.length ? rows.slice(0, 4) : (fallback ? [fallback] : []);
 }
 
+function stewardshipIsFallbackRow(line = ''){
+  return /^(No clear (need|offer) is ready yet|Evidence is still developing)\.?$/i.test(String(line || '').trim());
+}
+
+function stewardshipActionableRows(rows = []){
+  return (Array.isArray(rows) ? rows : [rows]).filter((line) => line && !stewardshipIsFallbackRow(line));
+}
+
+function stewardshipLooksLikePerson(profile = {}){
+  const name = String(profile.name || '').trim();
+  if(!name || /^\d{7,}$/.test(name)) return false;
+  if(/^(meet\s*up|zoom|gmail|google|calendar|unknown|observed|info|support|hello|noreply|no-reply)$/i.test(name)) return false;
+  if(/@/.test(name)) return false;
+  return /[a-z]/i.test(name);
+}
+
 function stewardshipNeeds(profile = {}){
   return stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, 'No clear need is ready yet.');
 }
@@ -1879,7 +1895,7 @@ function stewardshipTextForMatch(profile = {}){
 }
 
 function stewardshipTokens(value = ''){
-  const blocked = new Set(['this','that','with','from','they','them','need','needs','offer','offers','relationship','context','current','source','evidence','people','person','help','helps','work','working','meeting','discussion','recent','review']);
+  const blocked = new Set(['this','that','with','from','they','them','need','needs','offer','offers','relationship','context','current','source','evidence','people','person','help','helps','work','working','meeting','discussion','recent','review','clear','ready','still','developing']);
   return String(value || '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 4 && !blocked.has(word));
 }
 
@@ -1900,7 +1916,20 @@ function stewardshipAlreadyKnows(a = {}, b = {}){
 }
 
 function stewardshipExplicitIntroSignal(a = {}, b = {}){
-  const text = stewardshipTextForMatch(a) + ' ' + stewardshipTextForMatch(b);
+  const text = [
+    a.summary,
+    a.signal,
+    a.evidence,
+    a.sourceEvidence,
+    a.evidencePosture,
+    stewardshipEvidence(a).join(' '),
+    b.summary,
+    b.signal,
+    b.evidence,
+    b.sourceEvidence,
+    b.evidencePosture,
+    stewardshipEvidence(b).join(' ')
+  ].filter(Boolean).join(' ').toLowerCase();
   const aFirst = String(a.name || '').split(/\s+/)[0]?.toLowerCase();
   const bFirst = String(b.name || '').split(/\s+/)[0]?.toLowerCase();
   return Boolean(aFirst && bFirst && text.includes(aFirst) && text.includes(bFirst) && /\b(introduce|intro|connect|meet|should meet)\b/i.test(text));
@@ -1908,6 +1937,9 @@ function stewardshipExplicitIntroSignal(a = {}, b = {}){
 
 function stewardshipIntroFit(a = {}, b = {}){
   if(!a || !b || a === b) return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['two different people']};
+  if(!stewardshipLooksLikePerson(a) || !stewardshipLooksLikePerson(b)){
+    return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['two named people with relationship packets']};
+  }
   if(stewardshipAlreadyKnows(a, b)){
     return {ready:false, score:0, because:'I do not see a strong reason to introduce these two yet.', missing:['they may already know or be working with each other']};
   }
@@ -1915,16 +1947,22 @@ function stewardshipIntroFit(a = {}, b = {}){
   const bNeeds = stewardshipNeeds(b);
   const aOffers = stewardshipOffers(a);
   const bOffers = stewardshipOffers(b);
-  const aNeedsBOffers = stewardshipOverlapScore(aNeeds.join(' '), bOffers.join(' '));
-  const bNeedsAOffers = stewardshipOverlapScore(bNeeds.join(' '), aOffers.join(' '));
+  const aActionableNeeds = stewardshipActionableRows(aNeeds);
+  const bActionableNeeds = stewardshipActionableRows(bNeeds);
+  const aActionableOffers = stewardshipActionableRows(aOffers);
+  const bActionableOffers = stewardshipActionableRows(bOffers);
+  const aNeedsBOffers = stewardshipOverlapScore(aActionableNeeds.join(' '), bActionableOffers.join(' '));
+  const bNeedsAOffers = stewardshipOverlapScore(bActionableNeeds.join(' '), aActionableOffers.join(' '));
   const explicit = stewardshipExplicitIntroSignal(a, b);
   const score = aNeedsBOffers + bNeedsAOffers + (explicit ? 6 : 0);
   const missing = [];
+  if(!aActionableNeeds.length && !bActionableNeeds.length) missing.push('at least one real need from either person');
+  if(!aActionableOffers.length && !bActionableOffers.length) missing.push('at least one real offer from either person');
   if(!aNeedsBOffers && !explicit) missing.push('clear need from ' + (a.name || 'Person A') + ' that ' + (b.name || 'Person B') + ' can meet');
   if(!bNeedsAOffers && !explicit) missing.push('clear need from ' + (b.name || 'Person B') + ' that ' + (a.name || 'Person A') + ' can meet');
   const ready = explicit || score >= 2;
   const because = ready
-    ? 'Because ' + (a.name || 'Person A') + ' needs ' + relationshipCleanSourceText(aNeeds[0] || 'support this network can provide', 90).replace(/\.$/, '') + ', and ' + (b.name || 'Person B') + ' offers ' + relationshipCleanSourceText(bOffers[0] || 'relevant context', 90).replace(/\.$/, '') + '.'
+    ? 'Because ' + (a.name || 'Person A') + ' needs ' + relationshipCleanSourceText(aActionableNeeds[0] || bActionableNeeds[0] || 'support this network can provide', 90).replace(/\.$/, '') + ', and ' + (b.name || 'Person B') + ' offers ' + relationshipCleanSourceText(bActionableOffers[0] || aActionableOffers[0] || 'relevant context', 90).replace(/\.$/, '') + '.'
     : 'I do not see a strong reason to introduce these two yet.';
   return {ready, score, because, missing, aNeeds, bNeeds, aOffers, bOffers, evidence:[...stewardshipEvidence(a).slice(0, 2), ...stewardshipEvidence(b).slice(0, 2)]};
 }
