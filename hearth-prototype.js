@@ -5685,6 +5685,7 @@ function renderRelationshipProfile(profileId = 'aric', providedProfile = null){
     button.setAttribute('aria-pressed', String(active));
   });
   renderRelationshipActions(profile);
+  renderRelationshipPrimaryActions(profile);
   renderRelationshipSectionActions(profile);
   renderRelationshipDossierSections(profile);
   renderRelationshipTemperatureReview(profile);
@@ -6200,7 +6201,7 @@ function renderRelationshipDossierSections(profile = {}){
 }
 
 function preferredRelationshipActions(actions = []){
-  const preferred = ['search_ghl_contacts','review_new_contact_candidate','ask_alignment','draft_message','draft_linkedin_comment','draft_linkedin_dm','create_task','brainstorm','review_linkedin_activity','find_relationship_introductions','refresh_relationship_observers'];
+  const preferred = ['find_relationship_introductions','search_ghl_contacts','review_new_contact_candidate','ask_alignment','draft_message','draft_linkedin_comment','draft_linkedin_dm','create_task','brainstorm','review_linkedin_activity','refresh_relationship_observers'];
   return preferred.map((id) => actions.find((action) => action.id === id)).filter(Boolean);
 }
 
@@ -6271,6 +6272,16 @@ function renderRelationshipActions(profile = {}){
       : '';
   }).join('');
   container.innerHTML = groupedHtml || safeActions.map(actionHtml).join('');
+}
+
+function renderRelationshipPrimaryActions(profile = {}){
+  const container = document.querySelector('.relationship-primary-actions');
+  if(!container) return;
+  if(profile.unresolvedIdentity){
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = '<button type="button" data-relationship-action="find_relationship_introductions" title="Review who this person may need and who may need this person. Nothing will be sent.">Review introductions</button>';
 }
 
 function relationshipSectionActions(profile = {}, section = ''){
@@ -6616,6 +6627,23 @@ function introDraftBody(profile = {}, candidate = {}){
   ].join('\n');
 }
 
+function relationshipIntroSourceContext(profile = {}){
+  const name = profile.name || 'this person';
+  const whoTheyAre = [
+    profile.stewardshipAboutTitle && profile.stewardshipAboutTitle !== 'Relationship context' ? profile.stewardshipAboutTitle : '',
+    profile.stewardshipAbout || profile.evidence || profile.signal || ''
+  ].filter(Boolean).join(': ');
+  const needThem = Array.isArray(profile.peopleWhoNeedThem) ? profile.peopleWhoNeedThem : [];
+  const shouldMeet = Array.isArray(profile.peopleTheyShouldMeet) ? profile.peopleTheyShouldMeet : [];
+  return [
+    'Who ' + name + ' is: ' + (whoTheyAre || 'VAL needs more relationship context before it can summarize this person.'),
+    'Who may need ' + name + ': ' + (needThem.length ? needThem.slice(0, 2).join(' | ') : 'No confident introduction is ready yet.'),
+    'Who ' + name + ' may need: ' + (shouldMeet.length ? shouldMeet.slice(0, 2).join(' | ') : 'No confident introduction is ready yet.'),
+    profile.keyFacts?.length ? 'Current facts: ' + profile.keyFacts.slice(0, 3).join(' | ') : '',
+    profile.sourceReceipts ? 'Source posture: ' + profile.sourceReceipts : ''
+  ].filter(Boolean);
+}
+
 function openIntroDraftReview(candidateIndex = 0){
   const profile = activeRelationshipProfile || relationshipProfiles.aric;
   const candidate = introDraftCandidates(profile)[Number(candidateIndex)] || introDraftCandidates(profile)[0] || null;
@@ -6691,23 +6719,24 @@ async function openRelationshipIntroReview(profile = {}){
   }
   const name = reviewedProfile.name || 'this relationship';
   const candidates = introDraftCandidates(reviewedProfile);
+  const sourceContext = relationshipIntroSourceContext(reviewedProfile);
   setWorkspaceContent({
     lens: 'Relationship Leverage',
     title: candidates.length ? 'Introduction leverage is ready for review.' : 'No introduction is ready yet.',
     meaning: candidates.length
       ? 'VAL looked in both directions around ' + name + ': who needs this person, and who this person needs.'
       : 'VAL checked the current relationship packets around ' + name + ', but did not find a clean, identity-safe introduction candidate.',
-    understanding: candidates.length ? introReviewLines(reviewedProfile) : [
-      'Who needs this person',
-      'No identity-safe match is ready yet.',
-      'Who this person needs',
-      'VAL needs reciprocal relationship evidence, a linked CRM identity, a known alias, or your teaching before suggesting an introduction.'
-    ],
+    understanding: candidates.length ? sourceContext.concat(introReviewLines(reviewedProfile)) : sourceContext.concat([
+      'Draft readiness: no identity-safe match is ready yet.',
+      'Why: VAL needs reciprocal relationship evidence, a linked CRM identity, a known alias, or your teaching before suggesting an introduction.',
+      'Boundary: observed source overlap is not enough to expose two people to one another.'
+    ]),
     recommendation: candidates.length
       ? 'Choose an introduction only if it would serve both people. The next step is a draft for review, never a sent email.'
       : 'Treat this as a relationship-context gap, not an action. Link the real person or teach VAL the relationship before drafting.',
     actions: introReviewActions(reviewedProfile),
-    label: 'Relationship introduction review'
+    label: 'Relationship introduction review',
+    suppressClarityStandard:true
   });
   openWorkspaceShell('Relationship introduction review', {returnTarget:'relationship'});
 }

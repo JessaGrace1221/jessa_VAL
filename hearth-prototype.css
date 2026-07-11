@@ -5639,6 +5639,27 @@ button.drawer-link{
   gap:9px;
   align-items:stretch;
 }
+.relationship-primary-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin:12px 0 18px;
+}
+.relationship-primary-actions button{
+  min-height:42px;
+  border:1px solid rgba(88,48,37,.2);
+  border-radius:999px;
+  background:rgba(91,105,79,.92);
+  color:var(--paper);
+  padding:0 18px;
+  font-size:.74rem;
+  font-weight:900;
+  box-shadow:0 14px 30px rgba(79,48,38,.12);
+}
+.relationship-primary-actions button:hover{
+  transform:translateY(-1px);
+  box-shadow:0 18px 34px rgba(79,48,38,.16);
+}
 .relationship-action-group{
   display:grid;
   gap:8px;

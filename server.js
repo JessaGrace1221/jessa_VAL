@@ -16133,20 +16133,67 @@ function relationshipDisplayNameLooksLikeRawHandle(name='',email=''){
   if(email&&clean===String(email).split('@')[0].toLowerCase())return true;
   return /^[a-z0-9._-]+$/.test(clean)&&!/\s/.test(clean);
 }
+function relationshipEmailLooksGeneric(email=''){
+  const normalized=normalizeContextEmail(email);
+  if(!normalized)return false;
+  const local=normalized.split('@')[0]||'';
+  return /^(info|support|hello|team|contact|admin|office|newsletter|marketing|receipts?|payments?|invoice|billing|orders?|cs|reply|donotreply|no.?reply|notifications?|comments-noreply|drive-shares|workspace-noreply|azure-noreply)$/i.test(local);
+}
 function stewardshipRelationshipAdmission(profile={}){
   const email=relationshipProfilePrimaryEmail(profile);
   const alias=knownRelationshipEmailAlias(email);
   const rawHandle=relationshipDisplayNameLooksLikeRawHandle(profile.displayName||profile.name||'',email);
-  const admitted=!!alias || relationshipProfileHasRealIdentity(profile) || (!rawHandle && Number(profile.observationCount||0)>0);
+  const genericMailbox=relationshipEmailLooksGeneric(email);
+  const admitted=!!alias || relationshipProfileHasRealIdentity(profile);
   return {
     admitted,
     reason: admitted
-      ? (alias?'known_email_alias':(relationshipProfileHasRealIdentity(profile)?'linked_identity':'named_relationship_evidence'))
+      ? (alias?'known_email_alias':'linked_identity')
       : 'email_only_or_unconfirmed_observation',
     email,
     alias: alias||null,
-    rawHandle
+    rawHandle,
+    genericMailbox
   };
+}
+function relationshipTimelineHasOutboundOrReply(rows=[]){
+  return (Array.isArray(rows)?rows:[]).some(row=>{
+    const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+    const text=[
+      row.content,
+      row.exactQuote||row.exact_quote,
+      metadata.sourceType||metadata.source_type,
+      metadata.evidenceTitle||metadata.evidence_title
+    ].join(' ').toLowerCase();
+    return /\b(sent email|outbound|user replied|you replied|jessa replied|jessa sent|replied to|responded to|waiting on response)\b/.test(text);
+  });
+}
+async function stewardshipRelationshipAdmissionForProfile(profile={}){
+  const base=stewardshipRelationshipAdmission(profile);
+  if(base.admitted)return base;
+  const rows=await relationshipTimelineRows(profile.profileType||profile.profile_type||'person',profile.profileKey||profile.profile_key||'').catch(()=>[]);
+  if(!base.rawHandle&&!base.genericMailbox&&relationshipTimelineHasOutboundOrReply(rows)){
+    return {...base,admitted:true,reason:'outbound_or_replied_email_evidence'};
+  }
+  return base;
+}
+function dedupeStewardshipProfiles(profiles=[]){
+  const byKey=new Map();
+  for(const profile of Array.isArray(profiles)?profiles:[]){
+    const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
+    const key=admission.email||profile.profileKey||profile.profile_key||profile.id||profile.displayName||profile.name||'';
+    if(!key)continue;
+    const existing=byKey.get(key);
+    if(!existing){
+      byKey.set(key,profile);
+      continue;
+    }
+    const existingAdmission=existing.relationshipAdmission||stewardshipRelationshipAdmission(existing);
+    const existingScore=(existingAdmission.reason==='known_email_alias'?3:0)+(relationshipProfileHasRealIdentity(existing)?2:0)+(Number(existing.observationCount||existing.observation_count||0)>0?1:0);
+    const nextScore=(admission.reason==='known_email_alias'?3:0)+(relationshipProfileHasRealIdentity(profile)?2:0)+(Number(profile.observationCount||profile.observation_count||0)>0?1:0);
+    if(nextScore>existingScore)byKey.set(key,profile);
+  }
+  return [...byKey.values()];
 }
 function relationshipIndexItemFromProfile(profile={}){
   const temperatureEvidence=relationshipIndexTemperatureEvidence(profile);
@@ -16155,7 +16202,7 @@ function relationshipIndexItemFromProfile(profile={}){
   const temperatureContract=relationshipIndexTemperatureContract(state);
   const metadata=profile.metadata||{};
   const signal=(profile.risks?.[0]?.content)||(profile.openLoops?.[0]?.content)||(profile.opportunities?.[0]?.content)||(profile.relationshipSignals?.[0]?.content)||profile.summary||'Relationship context is available for review.';
-  const admission=stewardshipRelationshipAdmission(profile);
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
   const contactId=realRelationshipContactId(profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id)||resolvedCrmContactId(profile)||'';
@@ -16199,7 +16246,7 @@ function relationshipIndexItemFromProfile(profile={}){
 }
 function relationshipPersonPacketItemFromProfile(profile={}){
   const metadata=profile.metadata||{};
-  const admission=stewardshipRelationshipAdmission(profile);
+  const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const email=admission.email||metadata.email||'';
   const packet=profile.personPacket||metadata.personPacket||personPacketFromContact({
@@ -23995,11 +24042,13 @@ app.get('/api/relationships/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
     if(DEMO_MODE){
-      const profiles=(await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted).slice(0,limit);
+      const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
     }
-    const profiles=(await listRelationshipProfiles({limit:Math.max(limit,220)}))
-      .filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted)
+    const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,260)}))
+      .filter(profile=>profile.profileType==='person')
+      .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
+      .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
     res.json({ok:true,source:'relationship_profiles',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
   }catch(e){
@@ -24010,8 +24059,10 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
     const includeThin=String(req.query.includeThin||'1')!=='0';
-    const profiles=(await listRelationshipProfiles({limit:Math.max(limit,220)}))
-      .filter(profile=>profile.profileType==='person'&&stewardshipRelationshipAdmission(profile).admitted)
+    const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,260)}))
+      .filter(profile=>profile.profileType==='person')
+      .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
+      .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
     const packets=profiles
       .map(relationshipPersonPacketItemFromProfile)
