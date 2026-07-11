@@ -8,6 +8,8 @@ This document applies the constitutional reasoning architecture in [VAL_EXECUTIV
 
 For the practical packet admission, maturity, sorting, and executive display contract, read [VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md](./VAL_STEWARDSHIP_PACKET_SORTING_SPEC.md).
 
+For the current decision-engine authority, read [VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md](./VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md). For the implementation audit that must be resolved before more runtime work, read [VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md](./VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md).
+
 ## Core Thesis
 
 VAL users are relationship builders.

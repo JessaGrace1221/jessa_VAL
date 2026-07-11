@@ -6,6 +6,8 @@ Purpose: define how VAL should create powerful relationship packets, use them to
 
 This spec tightens [VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md](./VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md). The older document defines the philosophy and Round Table architecture. This document defines the practical product contract for packet creation, relationship admission, packet maturity, sorting, and executive display.
 
+Decision-engine authority: [VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md](./VAL_STEWARDSHIP_DECISION_ENGINE_SPEC.md) defines the current admission, maturity, next-move, and executive UI rules. [VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md](./VAL_STEWARDSHIP_DECISION_ENGINE_CONFLICT_MAP.md) documents where the current implementation still conflicts with that model. Do not implement more Stewardship runtime changes until the user explicitly approves the decision-engine documentation.
+
 ## Executive Promise
 
 Stewardship should answer one executive question:
