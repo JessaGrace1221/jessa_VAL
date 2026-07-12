@@ -1,10 +1,17 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-12 live promotion
+Updated: 2026-07-12 live promotion plus Co-Work hotfix
 
 ## 2026-07-12 Progress Note
 
 The first source-processing / Project Managers slice is now live on `codex/stewardship-person-packets`.
+
+Post-promotion hotfix:
+
+- Co-Work now opens immediately before packet hydration completes.
+- Co-Work packet receipts hydrate in the background.
+- Co-Work renders above open drawers at `z-index:1800`, including the Project Managers drawer Co-Work route.
+- The live app is now deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e` from commit `5aecdde Fix Co-Work open timing and drawer layering`.
 
 Implemented:
 
@@ -35,13 +42,15 @@ git diff --check
 
 Verified live:
 
-- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
+- Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
 - Production root returns `200`.
 - `/api/config/status` returns `VAL Proxy OK`.
 - `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
 - `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with `surfaceRegistrations: []`.
 - Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, and source-processing surface registration fetch.
 - Live POST `/api/val/source-processing/relationship-document-email` without real auth returns `Authentication required`.
+- Live `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`.
+- Production browser smoke confirms main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`.
 
 Remaining validation / next work:
 
@@ -69,35 +78,24 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: a731181
-Railway deployment: 7b561aab-dace-4179-b74d-f2afd4fe38ad
+Live baseline commit: 5aecdde
+Railway deployment: dcaeec98-f345-4496-8b2c-23e46b6a6b1e
 Working branch: codex/stewardship-person-packets
-Latest live code promotion commit: a731181
+Latest live code promotion commit: 5aecdde
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `a731181`, pull the branch before continuing.
+If the branch is not at or after `5aecdde`, pull the branch before continuing.
 
-## First Morning Question
+## Current Next Step
 
-Ask the user whether to implement the documented Co-Work V1 workspace.
+Do not ask the old Co-Work V1 first question. The user approved the current sequencing:
 
-The relevant doc is:
-
-```text
-docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
-```
-
-The user specifically asked for:
-
-```text
-Co-Work with VAL to be bigger, clearer, exactly like ChatGPT with previous conversations on the left, open space, clean and clear and functional for an executive on mobile or desktop, with obvious voice options.
-```
-
-This documentation is drafted and pushed, but not yet approved for implementation.
-
-Do not implement the full Co-Work redesign until the user approves.
+1. Keep stale demo/contact residue for the later VAL drawer/onboarding pass.
+2. Continue the source-processing spine.
+3. Next narrow target: source-processing receipts such as "What VAL did from this email/document" so Executive Inbox, Documents, Project Managers, Ready For You, and Home can all speak from the same recorded truth.
+4. Run browser-visible/authenticated validation if a connected email session is available.
 
 ## What Is Already Implemented
 

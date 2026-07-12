@@ -1,10 +1,10 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-12 live promotion
+Last updated: 2026-07-12 live promotion plus Co-Work hotfix
 
 ## 2026-07-12 Live Continuation
 
-The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`.
+The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix.
 
 New implementation:
 
@@ -33,6 +33,7 @@ Behavior implemented:
 - live email intelligence and intelligence backfill route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggested-project review path
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
 - the one no-action source-processing smoke-test record created during deployment validation was deleted from production
+- Co-Work opens immediately before packet hydration completes, hydrates packet receipts in the background, and renders above open drawers at `z-index:1800`
 
 Verified:
 
@@ -50,6 +51,8 @@ Live verification completed:
 - production `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with an empty array
 - production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, and the source-processing surface registration fetch
 - unauthenticated production POST to `/api/val/source-processing/relationship-document-email` returns `Authentication required`
+- production `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`
+- production browser smoke confirmed main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`, with no browser console errors
 
 Still future work:
 
@@ -64,9 +67,9 @@ Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Branch: `codex/stewardship-person-packets`
-- Baseline commit: `a731181`
-- Baseline commit message: `Guard source processing public test writes`
-- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
+- Baseline commit: `5aecdde`
+- Baseline commit message: `Fix Co-Work open timing and drawer layering`
+- Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -83,8 +86,8 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: a731181
-Latest live code promotion message: Guard source processing public test writes
+Latest live code promotion commit: 5aecdde
+Latest live code promotion message: Fix Co-Work open timing and drawer layering
 ```
 
 Important distinction:
@@ -92,12 +95,15 @@ Important distinction:
 ```text
 Production remains the behavioral truth.
 The branch contains today's approved documentation stack, Co-Work bug fix, and live Project Managers/source-processing slice.
-Branch changes through a731181 are deployed to Railway production deployment 7b561aab-dace-4179-b74d-f2afd4fe38ad.
+Branch changes through 5aecdde are deployed to Railway production deployment dcaeec98-f345-4496-8b2c-23e46b6a6b1e.
 ```
 
 The day’s important commits, in newest-first order:
 
 ```text
+5aecdde Fix Co-Work open timing and drawer layering
+da00a9b Clarify live promotion handoff wording
+fd3b0af Record Project Managers live promotion
 a731181 Guard source processing public test writes
 59d62dd Add Project Managers source processing slice
 0f27230 Update end-of-day handoff docs
@@ -509,7 +515,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `a731181` or a descendant of it unless the user explicitly resets the baseline again.
+Start from `5aecdde` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 

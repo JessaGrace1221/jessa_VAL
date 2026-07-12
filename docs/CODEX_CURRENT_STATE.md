@@ -1,10 +1,10 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-12 live promotion
+Updated: 2026-07-12 live promotion plus Co-Work hotfix
 
 ## 2026-07-12 Production Implementation State
 
-Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`.
+Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix.
 
 This is now deployed production truth.
 
@@ -25,6 +25,7 @@ Implemented live:
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into the source-processing intake, using Gmail/Outlook attachment metadata and the same Project Managers yes/no review path
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
 - the one no-action source-processing smoke-test record created during deployment validation was deleted from production
+- Co-Work now opens immediately before packet hydration completes, hydrates packet receipts in the background, and renders above open drawers at `z-index:1800`
 
 Remaining after this live promotion:
 
@@ -40,10 +41,10 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
+- Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `a731181`
-- Live baseline commit message: `Guard source processing public test writes`
+- Live baseline commit: `5aecdde`
+- Live baseline commit message: `Fix Co-Work open timing and drawer layering`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
@@ -57,15 +58,18 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: a731181
-Latest live code promotion message: Guard source processing public test writes
+Latest live code promotion commit: 5aecdde
+Latest live code promotion message: Fix Co-Work open timing and drawer layering
 ```
 
-These branch changes are deployed to Railway production as deployment `7b561aab-dace-4179-b74d-f2afd4fe38ad`.
+These branch changes are deployed to Railway production as deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`.
 
 Today’s pushed commits to preserve:
 
 ```text
+5aecdde Fix Co-Work open timing and drawer layering
+da00a9b Clarify live promotion handoff wording
+fd3b0af Record Project Managers live promotion
 a731181 Guard source processing public test writes
 59d62dd Add Project Managers source processing slice
 0f27230 Update end-of-day handoff docs

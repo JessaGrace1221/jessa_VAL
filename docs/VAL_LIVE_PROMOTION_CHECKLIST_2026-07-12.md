@@ -2,6 +2,8 @@
 
 Purpose: promote the handoff-approved Project Managers / source-processing slice as one cohesive live release.
 
+Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix was also promoted. The current live truth is now deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e` from commit `5aecdde Fix Co-Work open timing and drawer layering`.
+
 This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HANDOFF.md` remains the source handoff.
 
 ## Current Live Truth Check
@@ -9,9 +11,10 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
-- Live branch commit: `a731181`
-- Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice.
+- Live Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
+- Live branch commit: `5aecdde`
+- Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice and the immediate Co-Work open path.
+- Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800`.
 - Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
 - Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
 - Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
@@ -48,6 +51,9 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 - Deployed Railway deployment `7b561aab-dace-4179-b74d-f2afd4fe38ad`.
 - Verified live source-processing POST now returns `Authentication required`.
 - Deleted the one no-action source-processing smoke-test record created during validation.
+- Committed and pushed `5aecdde Fix Co-Work open timing and drawer layering`.
+- Deployed Railway deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`.
+- Verified production main Co-Work and Project Managers drawer Co-Work open immediately at `z-index:1800` above drawer `z-index:1300`.
 
 ## Verification Already Run Locally
 
@@ -103,6 +109,7 @@ Do not block this promotion on those unless a later diff touches the failing are
 - `Put a pin in it` due reminders can surface in Project Managers and Home Alignment.
 - Owner reassignment persists one owner only.
 - Co-Work opens with locked project/action context.
+- Main and drawer-scoped Co-Work open immediately before packet hydration and do not render behind drawers.
 
 ## Known Non-Blockers For This Promotion
 
