@@ -2,7 +2,7 @@
 
 Purpose: promote the handoff-approved Project Managers / source-processing slice as one cohesive live release.
 
-Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix and the first source-processing "What VAL did" receipt slice were also promoted. The current live product truth is now deployment `bad2fd11-adbf-455a-99a0-a92840397af0` from commit `fb8a7bb Add source-processing what VAL did receipts`.
+Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix, the first source-processing "What VAL did" receipt slice, and Google Drive share/link document evidence handling were also promoted. The current live product truth is now deployment `e94868f0-555c-428a-9554-c78832f9a52e` from commit `e98449a Treat Google Drive shares as document evidence`.
 
 This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HANDOFF.md` remains the source handoff.
 
@@ -11,15 +11,15 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
-- Live branch commit: `fb8a7bb`
+- Live Railway deployment: `e94868f0-555c-428a-9554-c78832f9a52e`
+- Live branch commit: `e98449a`
 - Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice, the immediate Co-Work open path, and receipt markers `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
 - Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800` and includes `.project-suggestion-receipt`.
 - Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
 - Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
 - Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
 
-Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, and the first shared "What VAL did" receipt path is deployed.
+Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, the first shared "What VAL did" receipt path is deployed, and Google Drive share/link evidence is included in relationship-document intake.
 
 ## Cohesion Rule
 
@@ -42,6 +42,7 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 | Owner reassignment supports existing or new relationship owner | Implemented | Hearth JS tests and protected route smoke | Owner metadata persists; link receipt is local only |
 | Live email intelligence/backfill route admitted relationship document attachments into source-processing | Implemented | `server.js`, `test/valSourceProcessing.test.js`, `test/intelligenceBackfill.test.js` | Authenticated connected email validation or controlled source-processing request proves path |
 | Shared "What VAL did" receipts follow source records into review/work surfaces | Implemented | `services/valSourceProcessing.js`, `hearth-prototype.js`, `test/valSourceProcessing.test.js`, `test/hearthLeadIntelligence.test.js` | Project Managers suggestion row can show `VAL handled:` from the shared receipt |
+| Google Drive shares/Docs links count as document evidence | Implemented | `server.js`, `test/valSourceProcessing.test.js` | Authenticated email validation sees Drive share/link evidence route through the same source-processing path |
 
 ## Live Promotion Result
 
@@ -59,13 +60,18 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 - Committed and pushed `fb8a7bb Add source-processing what VAL did receipts`.
 - Deployed Railway deployment `bad2fd11-adbf-455a-99a0-a92840397af0`.
 - Verified live JS/CSS receipt markers, live auth protection for source-processing POST, and live source-processing records route health with empty records after cleanup.
+- Committed and pushed `e98449a Treat Google Drive shares as document evidence`.
+- Deployed Railway deployment `e94868f0-555c-428a-9554-c78832f9a52e`.
+- Verified production health, source-processing records route health, and unauthenticated mutation protection after deploy.
 
 ## Verification Already Run Locally
 
 ```text
 node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 node --check services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valSourceProcessingSchema.js server.js hearth-prototype.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js
+node --check server.js services/valSourceProcessing.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
+node --test --test-reporter=dot test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 git diff --check
 ```
 
@@ -125,5 +131,6 @@ Do not block this promotion on those unless a later diff touches the failing are
 
 - Broader source types beyond relationship-sent email documents are future work.
 - Authenticated connected-email validation of a real suggestion plus visible receipt line is still future work.
+- The real unread Gmail attachment and a real Drive share/link still need browser-visible authenticated validation.
 - Full standalone Co-Work V1 workspace redesign is documented but not part of this release.
 - The full test suite has five unrelated pre-existing contract failures.

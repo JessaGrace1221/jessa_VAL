@@ -1,6 +1,6 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix and source-processing receipts
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, and Drive document evidence
 
 ## 2026-07-12 Progress Note
 
@@ -18,7 +18,13 @@ Post-hotfix source-processing receipt slice:
 - Source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document.
 - The same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
 - Project Managers suggestion rows can render a quiet `VAL handled:` line from the shared receipt.
-- The live app is now deployment `bad2fd11-adbf-455a-99a0-a92840397af0` from commit `fb8a7bb Add source-processing what VAL did receipts`.
+- That receipt slice was deployed as `bad2fd11-adbf-455a-99a0-a92840397af0` from commit `fb8a7bb Add source-processing what VAL did receipts`.
+
+Drive/document evidence hardening:
+
+- `relationship-document-email` now treats Google Drive/Docs links and Google Drive share notifications as document evidence.
+- Drive share notifications can use the parsed real sharer instead of Google's no-reply sender for admitted-relationship matching.
+- The live app is now deployment `e94868f0-555c-428a-9554-c78832f9a52e` from commit `e98449a Treat Google Drive shares as document evidence`.
 
 Implemented:
 
@@ -36,6 +42,7 @@ Implemented:
 - Assigned color-named Project Managers now appear in the Project Manager page header as a subtle accent and assignee cue, and the assignment is included in the project manager packet.
 - Owner reassignment now lives in the People involved card: the executive can choose an existing relationship or create a new local relationship owner; VAL persists the single owner in project metadata and records a no-external-action relationship/project link.
 - Live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggestion path.
+- Google Drive/Docs links and Drive share notifications now count as document evidence for the same relationship-document source-processing path.
 - Shared "What VAL did" receipts now follow relationship-document source processing into source records, prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
 - Backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available.
 - The one no-action source-processing smoke-test record created during deployment validation was deleted from production.
@@ -45,13 +52,15 @@ Verified locally:
 ```text
 node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 node --check services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valSourceProcessingSchema.js server.js hearth-prototype.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js
+node --check server.js services/valSourceProcessing.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
+node --test --test-reporter=dot test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 git diff --check
 ```
 
 Verified live:
 
-- Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
+- Railway deployment: `e94868f0-555c-428a-9554-c78832f9a52e`
 - Production root returns `200`.
 - `/api/config/status` returns `VAL Proxy OK`.
 - `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
@@ -65,7 +74,7 @@ Verified live:
 
 Remaining validation / next work:
 
-- Run browser-visible/authenticated validation if a connected email session is available, specifically checking a real relationship-document suggestion and its visible `VAL handled:` receipt line.
+- Run browser-visible/authenticated validation if a connected email session is available, specifically checking the one unread Gmail attachment, any real Drive share/link case, the suggested project surface, and its visible `VAL handled:` receipt line.
 - Continue into broader source types or the next approved platform slice.
 
 ## Start Here
@@ -89,15 +98,15 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: fb8a7bb
-Railway deployment: bad2fd11-adbf-455a-99a0-a92840397af0
+Live baseline commit: e98449a
+Railway deployment: e94868f0-555c-428a-9554-c78832f9a52e
 Working branch: codex/stewardship-person-packets
-Latest live code promotion commit: fb8a7bb
+Latest live code promotion commit: e98449a
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `fb8a7bb`, pull the branch before continuing.
+If the branch is not at or after `e98449a`, pull the branch before continuing.
 
 ## Current Next Step
 
@@ -106,8 +115,9 @@ Do not ask the old Co-Work V1 first question. The user approved the current sequ
 1. Keep stale demo/contact residue for the later VAL drawer/onboarding pass.
 2. Continue the source-processing spine.
 3. The first source-processing receipt target, "What VAL did from this email/document," is implemented and live.
-4. Next: run browser-visible/authenticated validation if a connected email session is available.
-5. Then broaden the source-processing spine to the next source type, likely transcripts/calendar events, while preserving the same no-action/action receipt pattern.
+4. Google Drive shared docs/links now count as document evidence in the same relationship-document path.
+5. Next: run browser-visible/authenticated validation if a connected email session is available.
+6. Then broaden the source-processing spine to the next source type, likely transcripts/calendar events, while preserving the same no-action/action receipt pattern.
 
 ## What Is Already Implemented
 

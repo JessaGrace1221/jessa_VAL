@@ -1,10 +1,10 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix and source-processing receipts
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, and Drive document evidence
 
 ## 2026-07-12 Production Implementation State
 
-Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, the focused Co-Work open-timing and drawer-layering hotfix, and the first shared source-processing "What VAL did" receipt slice.
+Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, the focused Co-Work open-timing and drawer-layering hotfix, the first shared source-processing "What VAL did" receipt slice, and Google Drive share/link handling as document evidence.
 
 This is now deployed production truth.
 
@@ -23,6 +23,7 @@ Implemented live:
 - assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
 - owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into the source-processing intake, using Gmail/Outlook attachment metadata and the same Project Managers yes/no review path
+- `relationship-document-email` now treats Google Drive/Docs links and Google Drive share-notification evidence as documents, while preserving the admitted-relationship gate
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document, and that same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from the shared source-processing receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -31,7 +32,7 @@ Implemented live:
 
 Remaining after this live promotion:
 
-- browser-visible/authenticated validation against real connected email data, including the visible receipt line
+- browser-visible/authenticated validation against the one unread Gmail attachment and any real Drive share/link case, including the visible receipt line
 - broader source types beyond relationship-sent email documents
 
 ## Current Working State
@@ -43,10 +44,10 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
+- Railway deployment: `e94868f0-555c-428a-9554-c78832f9a52e`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `fb8a7bb`
-- Live baseline commit message: `Add source-processing what VAL did receipts`
+- Live baseline commit: `e98449a`
+- Live baseline commit message: `Treat Google Drive shares as document evidence`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
@@ -54,21 +55,23 @@ The July 10 recovery baseline and July 11 handoff baseline are now historical co
 
 ## End-Of-Day Branch State
 
-The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, and the shared source-processing receipt slice.
+The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, the shared source-processing receipt slice, and Drive-share document evidence hardening.
 
 Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: fb8a7bb
-Latest live code promotion message: Add source-processing what VAL did receipts
+Latest live code promotion commit: e98449a
+Latest live code promotion message: Treat Google Drive shares as document evidence
 ```
 
-These product-code branch changes are deployed to Railway production as deployment `bad2fd11-adbf-455a-99a0-a92840397af0`.
+These product-code branch changes are deployed to Railway production as deployment `e94868f0-555c-428a-9554-c78832f9a52e`.
 
 Today’s pushed commits to preserve:
 
 ```text
+e98449a Treat Google Drive shares as document evidence
+35f0f97 Record source-processing receipt live promotion
 fb8a7bb Add source-processing what VAL did receipts
 486d8d5 Sync handoff docs to Co-Work live baseline
 5aecdde Fix Co-Work open timing and drawer layering
