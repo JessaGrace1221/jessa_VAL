@@ -56,10 +56,14 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/sourceProcessingAttachmentLooksLikeDocument/);
   assert.match(server,/function sourceProcessingDriveDocumentsFromEmail/);
   assert.match(server,/function sourceProcessingDriveSharerFromEmail/);
+  assert.match(server,/function sourceProcessingProjectOwnerFromProfile/);
   assert.match(server,/sourceProcessingDriveDocumentsFromEmail\(email\)/);
   assert.match(server,/sourceProcessingGoogleDriveDocumentType/);
   assert.match(server,/google_drive_share/);
   assert.match(server,/google_drive_share_notice/);
+  assert.match(server,/matched_existing_project_owner/);
+  assert.match(server,/const profiles=await listRelationshipProfiles\(\{limit:260\}\)/);
+  assert.doesNotMatch(server,/listRelationshipProfiles\(\{limit:260\}\)\.catch\(\(\)=>\[\]\)\)\.filter\(profile=>profile\.profileType==='person'\)/);
   assert.match(server,/google_drive_sharer_not_admitted_relationship/);
   assert.match(server,/sender_not_admitted_relationship/);
   const emailPayload=server.slice(

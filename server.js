@@ -9759,6 +9759,34 @@ function relationshipProfileMatchesName(profile={},name=''){
     packet.person?.name
   ].some(value=>String(value||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase()===needle);
 }
+function sourceProcessingProjectOwnerFromProfile(profile={},email='',name=''){
+  if(profile.profileType!=='project'&&profile.profile_type!=='project')return null;
+  const metadata=profile.metadata||profile.metadataJson||profile.metadata_json||{};
+  const candidates=[
+    metadata.owner,
+    metadata.relationship,
+    profile.owner,
+    profile.projectOwner,
+    profile.project_owner
+  ].filter(Boolean);
+  const normalizedEmail=normalizeContextEmail(email);
+  const normalizedName=String(name||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+  const match=candidates.find(candidate=>{
+    const candidateEmail=normalizeContextEmail(candidate.email||candidate.contactEmail||candidate.relationshipEmail||'');
+    const candidateName=String(candidate.name||candidate.relationshipName||candidate.displayName||candidate.email||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+    return (normalizedEmail&&candidateEmail===normalizedEmail) || (normalizedName&&candidateName===normalizedName);
+  });
+  if(!match)return null;
+  return {
+    id:match.id||match.relationshipId||match.contactId||match.email||match.name,
+    name:match.name||match.relationshipName||match.displayName||match.email||name,
+    displayName:match.name||match.relationshipName||match.displayName||match.email||name,
+    email:normalizeContextEmail(match.email||match.contactEmail||match.relationshipEmail||email),
+    source:'project_owner',
+    projectId:profile.projectId||profile.project_id||profile.id||'',
+    projectName:profile.displayName||profile.display_name||profile.name||metadata.projectName||''
+  };
+}
 function sourceProcessingEmailIsGoogleDriveNotice(email={}){
   const from=normalizeContextEmail(email.from?.email||'');
   const local=from.split('@')[0]||'';
@@ -9787,23 +9815,25 @@ function sourceProcessingDriveSharerFromEmail(email={}){
 async function sourceProcessingRelationshipFromEmail(email={},profiles=[]){
   const driveSharer=sourceProcessingDriveSharerFromEmail(email);
   const candidateEmail=normalizeContextEmail(driveSharer?.email||email.from?.email||'');
+  const candidateName=driveSharer?.name||email.from?.name||'';
   const profile=(profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesEmail(item,candidateEmail))
-    || (driveSharer?.name ? (profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesName(item,driveSharer.name)) : null);
-  const senderEmail=normalizeContextEmail(driveSharer?.email||relationshipProfilePrimaryEmail(profile)||email.from?.email||'');
+    || (candidateName ? (profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesName(item,candidateName)) : null);
+  const projectOwnerMatch=(profiles||[]).map(item=>sourceProcessingProjectOwnerFromProfile(item,candidateEmail,candidateName)).find(Boolean);
+  const senderEmail=normalizeContextEmail(driveSharer?.email||relationshipProfilePrimaryEmail(profile)||projectOwnerMatch?.email||email.from?.email||'');
   const alias=knownRelationshipEmailAlias(senderEmail);
   const admission=profile?await stewardshipRelationshipAdmissionForProfile(profile).catch(()=>stewardshipRelationshipAdmission(profile)):null;
-  const admitted=!!alias||admission?.admitted===true;
-  const displayName=alias?.name||profile?.displayName||driveSharer?.name||email.from?.name||senderEmail||'Relationship';
+  const admitted=!!alias||admission?.admitted===true||!!projectOwnerMatch;
+  const displayName=alias?.name||profile?.displayName||projectOwnerMatch?.name||driveSharer?.name||email.from?.name||senderEmail||'Relationship';
   return {
-    id:profile?.id||profile?.personId||profile?.profileKey||senderEmail,
+    id:profile?.id||profile?.personId||profile?.profileKey||projectOwnerMatch?.id||senderEmail,
     profileKey:profile?.profileKey||'',
     name:displayName,
     displayName,
     email:senderEmail,
-    relationshipStatus:alias?.relationshipStatus||profile?.relationshipStatus||'',
+    relationshipStatus:alias?.relationshipStatus||profile?.relationshipStatus||(projectOwnerMatch?'project_owner':''),
     admitted,
     admissionStatus:admitted?'admitted':'not_admitted',
-    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':(driveSharer?'google_drive_sharer_not_admitted_relationship':'sender_not_admitted_relationship'),email:senderEmail,alias:alias||null,driveSharer:driveSharer||null}
+    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':(projectOwnerMatch?'matched_existing_project_owner':(driveSharer?'google_drive_sharer_not_admitted_relationship':'sender_not_admitted_relationship')),email:senderEmail,alias:alias||null,driveSharer:driveSharer||null,projectOwner:projectOwnerMatch||null}
   };
 }
 async function processEmailDocumentSourceProcessing(emails=[],{origin='email_intelligence'}={}){
@@ -9813,7 +9843,7 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
     .map(email=>({email,documents:sourceProcessingDocumentsFromEmail(email)}))
     .filter(item=>item.documents.length>0);
   if(!candidates.length)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,errors:[],noExternalAction:true};
-  const profiles=(await listRelationshipProfiles({limit:260}).catch(()=>[])).filter(profile=>profile.profileType==='person');
+  const profiles=await listRelationshipProfiles({limit:260}).catch(()=>[]);
   const results=await mapWithConcurrency(candidates,3,async({email,documents})=>{
     const relationship=await sourceProcessingRelationshipFromEmail(email,profiles);
     if(!relationship.admitted){
