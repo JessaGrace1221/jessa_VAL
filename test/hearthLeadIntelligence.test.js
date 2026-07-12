@@ -180,6 +180,10 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function projectInterviewStage/);
   assert.match(hearthJs, /PROJECT_INTERVIEW_STAGE_CONTRACTS/);
   assert.match(hearthJs, /target_page_boxes/);
+  assert.match(hearthJs, /function valProjectManagerImportQuestionLines/);
+  assert.match(hearthJs, /Project Manager page-ready project candidates/);
+  assert.match(hearthJs, /project_candidate_action: yes_create_project, no_not_project, or unsure_ask_user/);
+  assert.match(hearthJs, /Feeds Project Manager page boxes: /);
   assert.match(hearthJs, /function projectInterviewNextQuestion/);
   assert.match(hearthJs, /owner_monitoring_answered/);
   assert.match(hearthJs, /workstreams_answered/);
@@ -1316,8 +1320,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-question-box-contract-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-question-box-contract-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-witnessing-import-contract-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-witnessing-import-contract-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
@@ -2087,6 +2091,13 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /valAiImportPromptCards/);
   assert.match(hearthJs, /ChatGPT \/ Claude import/);
   assert.match(hearthJs, /ai_history_import/);
+  assert.match(hearthJs, /For section 5, use this exact Project Manager import contract/);
+  assert.match(hearthJs, /What should this project be called, and what outcome should it create\?/);
+  assert.match(hearthJs, /Who owns this project, what is the next move, and what should VAL monitor\?/);
+  assert.match(hearthJs, /What are the main workstreams VAL should track for this project\?/);
+  assert.match(hearthJs, /What milestones prove this project is moving\?/);
+  assert.match(hearthJs, /How should VAL help protect and grow the relationships connected to this project\?/);
+  assert.match(hearthJs, /What should VAL prepare, organize, or ask about next for this project\?/);
   assert.match(hearthJs, /data-workspace-prompt-copy/);
   assert.match(hearthJs, /working_agreements/);
   assert.match(hearthJs, /linkedin_strategy/);

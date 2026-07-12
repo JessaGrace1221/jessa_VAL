@@ -15005,6 +15005,18 @@ function renderValWitnessingLineList(lines = [], className = ''){
   )).join('');
 }
 
+function valProjectManagerImportQuestionLines(){
+  return ['first_question','owner_monitoring','workstreams','milestones','relationship_nurture','prepared_work'].map((stage, index) => {
+    const contract = projectInterviewStageContract(stage);
+    return [
+      (index + 1) + '. ' + contract.question,
+      '   Feeds Project Manager page boxes: ' + contract.pageBoxes.join(', ') + '.',
+      '   Target packet field: ' + contract.targetPacketField + '.',
+      '   If you do not have evidence, write: Unknown - ask user.'
+    ].join('\n');
+  }).join('\n');
+}
+
 const valUniversalAiImportPrompt = `I am beginning a Witnessing Session with VAL, an executive AI partner that helps protect my time, relationships, work, voice, commitments, and judgment.
 
 Please review what you know from our prior conversations and create one VAL import packet.
@@ -15018,12 +15030,26 @@ Return the packet in these sections:
 2. The relationships, people, communities, or audiences that appear important
 3. Communication voice, writing style, phrases, tones, and examples worth preserving
 4. Current projects, commitments, open loops, and decisions already made
-5. Boundaries, capacity signals, health/family/care context, or protected priorities I have mentioned
-6. Documents, templates, frameworks, profiles, assessments, or examples VAL should ask me to upload or classify
-7. Things that seem current, stale, uncertain, or contradicted by later context
-8. What VAL should never assume without asking me
-9. Questions VAL should carry forward and investigate over time
-10. A concise structured summary VAL can import as evidence
+5. Project Manager page-ready project candidates
+6. Boundaries, capacity signals, health/family/care context, or protected priorities I have mentioned
+7. Documents, templates, frameworks, profiles, assessments, or examples VAL should ask me to upload or classify
+8. Things that seem current, stale, uncertain, or contradicted by later context
+9. What VAL should never assume without asking me
+10. Questions VAL should carry forward and investigate over time
+11. A concise structured summary VAL can import as evidence
+
+For section 5, use this exact Project Manager import contract.
+Only create a project candidate when the evidence describes a real body of work with an owner, outcome, or document/source trail. Do not turn vague interests, values, people, or old ideas into projects.
+
+For each possible project, start with:
+- project_candidate_action: yes_create_project, no_not_project, or unsure_ask_user
+- evidence: the wording or prior context that made you classify it this way
+- relationship_or_source: the person, relationship, document, thread, or conversation this came from
+- uncertainty: what VAL should confirm with me before creating or filling the project
+
+If project_candidate_action is yes_create_project or unsure_ask_user, answer these exact Project Manager questions:
+
+${valProjectManagerImportQuestionLines()}
 
 For every meaningful point, include the wording or context that supports it when you can.
 Mark uncertainty clearly.

@@ -455,6 +455,10 @@ test('Teach VAL uses ChatGPT context prompts without the voice onboarding step',
   assert.match(server,/witness_never_compromised/);
   assert.match(server,/Do not flatter, diagnose, or promote durable memory automatically/);
   assert.match(server,/stage:'current_projects'/);
+  assert.match(server,/What are the main workstreams VAL should track for this project\?/);
+  assert.match(server,/Project Manager page questions exactly/);
+  assert.match(server,/data\.project_manager_import_packet/);
+  assert.match(server,/yes_create_project, no_not_project, unsure_ask_user/);
   assert.match(server,/prompt:card\.prompt/);
   assert.doesNotMatch(server,/state\.stage=state\.stage==='welcome'\?'voice_interview'/);
   assert.doesNotMatch(server,/external_ai_imports:imports\.map\(i=>\(\{category:i\.category,prompt_used/);
