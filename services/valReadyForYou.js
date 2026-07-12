@@ -475,6 +475,7 @@ function createValReadyForYouService({
     listItems,
     listItemsWithReceipts,
     buildQueue,
+    saveItem,
     approve:(id,decision={})=>updateState(id,{status:'approved',decision:{...decision,external_action:false}}),
     reject:(id,decision={})=>updateState(id,{status:'rejected',decision:{...decision,external_action:false}}),
     snooze:(id,{until='',minutes=60,reason=''}={})=>{

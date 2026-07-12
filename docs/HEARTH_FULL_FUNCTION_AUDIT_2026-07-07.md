@@ -27,7 +27,7 @@ For every click, I checked:
 - Calendar panel and meeting prep: `/api/calendar/sidebar` and `/api/val/calendar/meeting-prep`.
 - Executive Inbox drawer: `/api/val/ready-for-you/build`, `/api/val/email/review-drafts`, `/api/val/email/generate-draft`, `/api/val/email/revise-draft`, and external-action send packets.
 - Relationships drawer: `/api/relationships/index`, `/api/relationships/dossier`, `/api/projects/links`, relationship review updates, and document references.
-- Projects drawer: `/api/projects/index`, `/api/projects/dossier`, `/api/projects/create`, `/api/projects/links`, project review updates, and project document references.
+- Project Managers drawer: `/api/projects/index`, `/api/projects/dossier`, `/api/projects/create`, `/api/projects/links`, project review updates, and project document references.
 - Timeline & Tasks: `/api/val/context-debug`, transcript proposal review updates, and local meeting/task evidence.
 - Commitments drawer: `/api/val/commitments`, draft-email, create-task, and status endpoints.
 - Documents drawer: `/api/val/documents`, `/api/val/documents/reference`, `/api/val/ready-for-you/build`, and send packets.

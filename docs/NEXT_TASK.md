@@ -2,6 +2,41 @@
 
 Updated: 2026-07-11 end-of-day handoff
 
+## 2026-07-12 Progress Note
+
+The first source-processing / Project Managers slice is now implemented locally on `codex/stewardship-person-packets`.
+
+Implemented:
+
+- `source_processing_records`, `prepared_artifact_records`, and `surface_registrations` schema/service/route foundations.
+- Relationship-sent documents can create a `create_project_from_relationship_documents` review update.
+- The Project Managers drawer now has a subtle top `From documents` suggestion lane, hidden when empty.
+- Suggested project choices are wired to the review-update approval path:
+  - `Yes, create this project and assign it a manager`
+  - `No, this is not a project`
+- Approval creates one local project owner and assigns a color-named Project Manager.
+- Suggested project surfaces are filtered to pending review updates, so approved/rejected suggestions do not reappear.
+- The same suggested project is registered for Project Managers and Leverage / Ready For You.
+- `Put a pin in it` now persists project reminders, records `reopened_at` when due, surfaces due pins in Project Managers and Home Alignment as newly reopened loops, and lets the executive mark the reminder handled without changing the project itself.
+- Scoped Project Managers Co-Work now opens from a subtle top `Co-Work` button and from each project packet/action row; it locks context to the selected project, selected action, source receipts, and affected artifact/object only.
+- Assigned color-named Project Managers now appear in the Project Manager page header as a subtle accent and assignee cue, and the assignment is included in the project manager packet.
+- Owner reassignment now lives in the People involved card: the executive can choose an existing relationship or create a new local relationship owner; VAL persists the single owner in project metadata and records a no-external-action relationship/project link.
+- Live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggestion path.
+
+Verified locally:
+
+```text
+node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
+git diff --check
+```
+
+Remaining local validation / handoff work:
+
+- Restart the local server after the latest `server.js` edits and smoke-check served assets/routes.
+- Run browser-visible/authenticated validation if a connected email session is available.
+- Decide whether to deploy this local slice or continue into broader source types.
+
 ## Start Here
 
 Read first:
@@ -89,7 +124,7 @@ The Project Manager spec includes:
 - Project Reset
 - Quietly Watching / Board of Observers
 
-Use this spec before implementing Projects.
+Use this spec before implementing Project Managers.
 
 ## Current Product Direction
 
@@ -112,9 +147,11 @@ Do not start with UI polish.
 
 Do not add more local special cases to Stewardship.
 
-Build the spine that makes Stewardship, Projects, Documents, Executive Inbox, Meeting Prep, Commitments, Ready For You, and Home read from the same source truth.
+Build the spine that makes Stewardship, Project Managers, Documents, Executive Inbox, Meeting Prep, Commitments, Ready For You, and Home read from the same source truth.
 
-Exception: if the user approves the Co-Work V1 documentation in the morning, implement Co-Work first because the user just identified it as actively broken/insufficient.
+The user chose this sequence because it moves the needle for all of VAL, not only Project Managers.
+
+Do not implement Co-Work V1 as a standalone first step. Co-Work scoped actions should be included in the first Project Managers slice after the source spine can create source-backed project suggestions and action packets.
 
 ## Required First Implementation
 
@@ -167,6 +204,10 @@ An email from Anthony with documents must:
 - route documents/attachments to Document observer
 - route project-like context to Project observer
 - suggest a new project review update if no project exists
+- show two simple choices: `Yes, create this project and assign it a manager` and `No, this is not a project`
+- only suggest projects when a relationship sends documents
+- use documents as the minimum evidence threshold, especially agreements, scopes, decks, proposals, spreadsheets, SOWs, and similar project material
+- keep documents visible in both the Documents drawer and the Project Manager page
 - avoid showing the email in Executive Inbox unless user judgment/reply is required
 
 ### Spam/Newsletter
@@ -234,8 +275,9 @@ Relevant existing functions/routes include:
 9. Add attachment/document/project suggestion routing for email.
 10. Add "What VAL did from this email" receipts.
 11. Route calendar attendees through the source-processing record.
-12. Add tests for the acceptance cases.
-13. Only then return to Stewardship UI and suggestions.
+12. Add Project Managers first-slice actions: approve/reject suggested project, assign one color-named manager, choose/create owner, open scoped Co-Work, and persist `Put a pin in it` reminders.
+13. Add tests for the acceptance cases.
+14. Only then return to Stewardship UI and suggestions.
 
 ## Do Not Do
 
@@ -245,6 +287,7 @@ Relevant existing functions/routes include:
 - Do not use public enrichment to admit relationships.
 - Do not allow inbound-only senders to become relationships by volume.
 - Do not create projects silently from emails/documents.
+- Do not suggest a project from a document sender who is not an admitted relationship.
 - Do not send, publish, mutate CRM, schedule, or create external actions without explicit approval.
 - Do not expose source-processing machinery in executive UI.
 
@@ -263,7 +306,30 @@ git diff --check
 
 Add new tests for the source spine as implementation begins.
 
-## If Co-Work V1 Is Approved First
+## Project Managers First Slice Requirements
+
+The first Project Managers implementation slice must include:
+
+1. Source spine support for relationship-sent documents.
+2. Suggested project review updates with simple yes/no creation.
+3. One assigned project owner.
+4. Reassignment by choosing an existing relationship or creating a new one.
+5. Named project managers using color names, not human names.
+6. Project Manager page headers that reflect the assigned manager color.
+7. `Put a pin in it` with real persistence, reminder wakeup, Alignment resurfacing, and reminder-handled receipts.
+8. Scoped Co-Work actions attached to the selected project, selected action, source receipts, and affected artifact only.
+
+Suggested manager color-name pool:
+
+```text
+Frost, Pearl, Alabaster, Snow, Ivory, Cotton, Lace, Porcelain,
+Rose, Blush, Coral, Peach, Taffy, Ballet Slipper,
+Sage, Fern, Olive, Moss, Seafoam, Mint, Basil, Pistachio
+```
+
+Avoid names that feel too human, too muddy, or too cute for executive operations.
+
+## If Full Co-Work V1 Is Approved Later
 
 Implement from:
 

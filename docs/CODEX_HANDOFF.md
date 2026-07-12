@@ -2,6 +2,50 @@
 
 Last updated: 2026-07-11 end-of-day handoff
 
+## 2026-07-12 Local Continuation
+
+The first system-wide source-processing / Project Managers implementation slice has started locally on `codex/stewardship-person-packets`.
+
+New local implementation:
+
+- `services/valSourceProcessingSchema.js`
+- `services/valSourceProcessing.js`
+- `services/valSourceProcessingRoutes.js`
+- `test/valSourceProcessing.test.js`
+- `services/valProjectPinsSchema.js`
+- `services/valProjectPins.js`
+- `services/valProjectPinsRoutes.js`
+- `test/valProjectPins.test.js`
+
+Behavior implemented:
+
+- relationship-sent documents create source-processing records
+- admitted relationship senders with document evidence can produce a suggested-project review update
+- suggested projects register to both Project Managers and Leverage / Ready For You
+- the Project Managers drawer has a subtle top suggestion lane above the project index
+- approval/rejection uses the existing review-update route
+- approval creates one local project owner and assigns a color-named Project Manager
+- pending-only surface filtering prevents approved/rejected suggestions from resurfacing
+- `Put a pin in it` persists project reminders, records `reopened_at` when the reminder becomes due, surfaces due pins in Project Managers and Home Alignment as newly reopened loops, and provides a `Mark reminder handled` action that clears only the reminder loop
+- scoped Project Managers Co-Work opens from a subtle top action and from project packet/action rows, preflights `project_packet`, and locks held context to the selected project, selected action, source receipts, and affected artifact/object only
+- assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
+- owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
+- live email intelligence and intelligence backfill route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggested-project review path
+
+Verified:
+
+```text
+node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
+git diff --check
+```
+
+Still not production truth:
+
+- browser-visible/authenticated validation against real connected email data is still needed
+- deployment decision and production verification are still needed
+- broader source types beyond relationship-sent email documents are still future work
+
 ## Absolute Baseline
 
 The current live Railway deployment is THE TRUTH.
@@ -106,10 +150,12 @@ The next architecture pass must create a strict system-wide map where every emai
 The user wants a system that can do this reliably:
 
 - A transcript from a conversation with Terrie should be available to every relevant observer. Stewardship should have flagged the explicit Terrie/Kareemah introduction.
-- An email from Anthony with documents should route to Documents and Projects, and should suggest a new project if no project exists.
+- An email from Anthony with documents should route to Documents and Project Managers, and should suggest a new project if no project exists.
 - Spam, newsletters, unsubscribe/bulk/no-reply/system senders must never leak into relationships.
 
 The next implementation should start from the shared source-processing spine, not from visible drawer tweaks.
+
+The user confirmed this sequence because it moves the needle for all of VAL, not only Project Managers.
 
 ## Why This Baseline Exists
 
@@ -305,9 +351,11 @@ Do not reintroduce visible sections like:
 
 Round Table and packet logic may exist behind the scenes. The executive surface should show the distilled stewardship recommendation, not the machinery.
 
-### Projects Standard
+### Project Managers Standard
 
-Projects must remain actionable project dossiers, not generic project management cards.
+The drawer is called `Project Managers`.
+
+Project Managers must remain actionable project dossiers, not generic project management cards.
 
 Preserve the idea that Projects are grounded by:
 
@@ -327,7 +375,19 @@ Do not flatten Projects into vague summaries or task-board theater.
 docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
 ```
 
-Projects should open to a full Project Manager page.
+Project Managers should open to a full Project Manager page.
+
+Implementation decisions now approved:
+
+- suggest projects only when an admitted relationship sends documents
+- minimum evidence is documents, especially agreements, scopes, decks, proposals, spreadsheets, SOWs, and similar project material
+- show simple project-suggestion choices: `Yes, create this project and assign it a manager` and `No, this is not a project`
+- documents remain visible in both the Documents drawer and the Project Manager page
+- V1 has one project owner
+- the executive can reassign ownership by choosing a relationship or creating a new one
+- keep `Put a pin in it` persisted and reminder-wired; due pins should surface in Project Managers and Alignment as newly reopened loops until the reminder is handled
+- keep scoped Co-Work actions in the first Project Managers slice; the visible entry should stay subtle, and the held context must not leak beyond the selected project/action packet
+- assign color-named Project Managers and use the color subtly in each Project Manager page header
 
 Core trust promise:
 
@@ -477,7 +537,7 @@ For context gathering, inspect the user's inbox and sent history carefully, espe
 
 After the current Stewardship pass, the next drawers to work through are:
 
-1. Projects
+1. Project Managers
 2. Commitments / task list
 3. Documents
 4. Lead Intelligence

@@ -69,6 +69,8 @@ test('email backfill keeps the evidence-first rule',()=>{
   assert.match(body,/saveEmailEvidenceBatch/);
   assert.match(body,/relationshipIntake/);
   assert.match(body,/personPackets/);
+  assert.match(body,/processEmailDocumentSourceProcessing\(emails,\{origin:'email_backfill'\}/);
+  assert.match(body,/sourceProcessing:\{projectManagers:projectManagerIntake\}/);
   assert.doesNotMatch(body,/saveTask\(/);
   assert.doesNotMatch(body,/create_task/);
 });

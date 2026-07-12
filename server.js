@@ -27,6 +27,10 @@ const {registerValCommitmentsRoutes} = require('./services/valCommitmentsRoutes'
 const {registerValDocumentsRoutes} = require('./services/valDocumentsRoutes');
 const {ensureValReviewUpdatesTables} = require('./services/valReviewUpdatesSchema');
 const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRoutes');
+const {ensureValSourceProcessingTables} = require('./services/valSourceProcessingSchema');
+const {registerValSourceProcessingRoutes} = require('./services/valSourceProcessingRoutes');
+const {ensureValProjectPinsTables} = require('./services/valProjectPinsSchema');
+const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes');
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
@@ -6671,6 +6675,8 @@ async function initValDb(){
   await ensureValMeetingPrepTables({dbQuery,logger:console});
   await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
   await ensureValReviewUpdatesTables({dbQuery,logger:console});
+  await ensureValSourceProcessingTables({dbQuery,logger:console});
+  await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
@@ -8129,6 +8135,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       return acc;
     },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
     relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,80);
+    const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=preparedDraftResults.filter(Boolean).length;
@@ -8147,11 +8154,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       relationshipIntake,
-      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
+      sourceProcessing:{projectManagers:projectManagerIntake},
+      summary:{total:emails.length,buckets,draftsPrepared,waitingOnResponse,forwardingSuggestions,ignoredLowPriority,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerDocumentEmails:projectManagerIntake.eligible||0,projectManagerSuggestions:projectManagerIntake.suggestions||0,ruleSuggestions:0,savedRules:rules.filter(r=>r.isActive!==false).length,activeDays,activeWindow:`${activeDays}-day active conversations plus unresolved sent follow-ups`},
       rules
     };
   }catch(e){
@@ -9170,6 +9178,27 @@ function extractGmailBody(payload){
   }
   return '';
 }
+function extractGmailAttachments(payload,acc=[]){
+  if(!payload)return acc;
+  const filename=String(payload.filename||'').trim();
+  if(filename){
+    const headers=payload.headers||[];
+    const header=name=>headers.find(h=>String(h.name||'').toLowerCase()===name.toLowerCase())?.value||'';
+    acc.push({
+      id:payload.body?.attachmentId||filename,
+      attachmentId:payload.body?.attachmentId||'',
+      filename,
+      name:filename,
+      mimeType:payload.mimeType||'',
+      contentType:payload.mimeType||'',
+      size:Number(payload.body?.size)||0,
+      disposition:header('Content-Disposition')||'',
+      source:'gmail_payload'
+    });
+  }
+  for(const part of payload.parts||[])extractGmailAttachments(part,acc);
+  return acc;
+}
 function normalizeGmailMessage(md){
   const headers=md.payload?.headers||[];
   const header=name=>headers.find(h=>String(h.name||'').toLowerCase()===name.toLowerCase())?.value||'';
@@ -9177,7 +9206,7 @@ function normalizeGmailMessage(md){
   const bodyText=extractGmailBody(md.payload)||md.snippet||'';
   const to=String(header('To')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
   const cc=String(header('Cc')||'').split(',').map(parseEmailAddress).filter(v=>v.email);
-  const attachments=JSON.stringify(md.payload||{}).includes('"filename"');
+  const attachments=extractGmailAttachments(md.payload);
   const parsedDate=header('Date') ? new Date(header('Date')) : null;
   const internalDate=md.internalDate ? new Date(Number(md.internalDate)) : null;
   const date=parsedDate&&!isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : (internalDate&&!isNaN(internalDate.getTime()) ? internalDate.toISOString() : '');
@@ -9201,7 +9230,9 @@ function normalizeGmailMessage(md){
       xCampaign:header('X-Campaign')||header('X-Mailchimp-Campaign-Id')||header('X-SES-Outgoing')
     },
     labels:md.labelIds||[],
-    hasAttachments:attachments,
+    attachments,
+    attachmentsJson:attachments,
+    hasAttachments:attachments.length>0,
     webLink:`https://mail.google.com/mail/u/0/#inbox/${md.threadId||md.id}`,
     classification:'',
     recommendedAction:'',
@@ -9578,6 +9609,134 @@ async function saveEmailEvidence(email){
 async function saveEmailEvidenceBatch(emails=[]){
   return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
 }
+function sourceProcessingAttachmentLooksLikeDocument(attachment={}){
+  const filename=String(attachment.filename||attachment.fileName||attachment.name||attachment.title||'').trim();
+  const type=String(attachment.mimeType||attachment.contentType||attachment.type||'').toLowerCase();
+  if(!filename)return false;
+  if(/\.(ics|vcf|png|jpe?g|gif|webp|svg)$/i.test(filename)&&!/\b(proposal|agreement|contract|scope|deck|brief|sow|statement.of.work|worksheet|plan)\b/i.test(filename))return false;
+  return /\.(pdf|docx?|pptx?|key|pages|rtf|txt|md|xlsx?|csv)$/i.test(filename)
+    || /\b(pdf|msword|wordprocessingml|presentationml|spreadsheetml|powerpoint|excel|csv|plain|rtf)\b/i.test(type)
+    || /\b(proposal|agreement|contract|scope|deck|brief|sow|statement.of.work|worksheet|plan)\b/i.test(filename);
+}
+function sourceProcessingDocumentsFromEmail(email={}){
+  const attachments=[
+    ...(Array.isArray(email.attachments)?email.attachments:[]),
+    ...(Array.isArray(email.attachmentsJson)?email.attachmentsJson:[]),
+    ...(Array.isArray(email.attachments_json)?email.attachments_json:[])
+  ];
+  const seen=new Set();
+  return attachments
+    .filter(sourceProcessingAttachmentLooksLikeDocument)
+    .filter(attachment=>{
+      const key=[attachment.id,attachment.attachmentId,attachment.filename,attachment.name].filter(Boolean).join(':');
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    })
+    .map((attachment,index)=>{
+      const filename=String(attachment.filename||attachment.fileName||attachment.name||attachment.title||`Document ${index+1}`).trim();
+      return {
+        id:attachment.id||attachment.attachmentId||`${email.messageId||email.threadId||'email'}:${filename}`,
+        title:filename,
+        filename,
+        type:attachment.mimeType||attachment.contentType||attachment.type||'email_attachment',
+        mimeType:attachment.mimeType||attachment.contentType||'',
+        sourceType:`${email.provider||'email'}_attachment`,
+        sourceId:[email.messageId||email.id||email.threadId||'email',attachment.id||attachment.attachmentId||filename].join(':'),
+        sourceUrl:email.webLink||'',
+        summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`
+      };
+    });
+}
+function sourceProcessingEmailSourceType(email={}){
+  if(email.provider==='outlook')return 'outlook_email';
+  if(email.provider==='gmail')return 'gmail_email';
+  return 'email_message';
+}
+function relationshipProfileMatchesEmail(profile={},email=''){
+  const normalized=normalizeContextEmail(email);
+  if(!normalized)return false;
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return [
+    relationshipProfilePrimaryEmail(profile),
+    metadata.email,
+    metadata.targetMetadata?.email,
+    packet.person?.email_addresses?.[0]
+  ].some(value=>normalizeContextEmail(value)===normalized);
+}
+async function sourceProcessingRelationshipFromEmail(email={},profiles=[]){
+  const senderEmail=normalizeContextEmail(email.from?.email||'');
+  const alias=knownRelationshipEmailAlias(senderEmail);
+  const profile=(profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesEmail(item,senderEmail));
+  const admission=profile?await stewardshipRelationshipAdmissionForProfile(profile).catch(()=>stewardshipRelationshipAdmission(profile)):null;
+  const admitted=!!alias||admission?.admitted===true;
+  const displayName=alias?.name||profile?.displayName||email.from?.name||senderEmail||'Relationship';
+  return {
+    id:profile?.id||profile?.personId||profile?.profileKey||senderEmail,
+    profileKey:profile?.profileKey||'',
+    name:displayName,
+    displayName,
+    email:senderEmail,
+    relationshipStatus:alias?.relationshipStatus||profile?.relationshipStatus||'',
+    admitted,
+    admissionStatus:admitted?'admitted':'not_admitted',
+    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':'sender_not_admitted_relationship',email:senderEmail,alias:alias||null}
+  };
+}
+async function processEmailDocumentSourceProcessing(emails=[],{origin='email_intelligence'}={}){
+  if(!valSourceProcessing?.processRelationshipDocumentEmail)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,errors:[],noExternalAction:true};
+  const candidates=(emails||[])
+    .filter(email=>!emailWasSentByOwner(email))
+    .map(email=>({email,documents:sourceProcessingDocumentsFromEmail(email)}))
+    .filter(item=>item.documents.length>0);
+  if(!candidates.length)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,errors:[],noExternalAction:true};
+  const profiles=(await listRelationshipProfiles({limit:260}).catch(()=>[])).filter(profile=>profile.profileType==='person');
+  const results=await mapWithConcurrency(candidates,3,async({email,documents})=>{
+    const relationship=await sourceProcessingRelationshipFromEmail(email,profiles);
+    if(!relationship.admitted){
+      return {ok:true,skipped:true,reason:'sender_not_admitted_relationship',messageId:email.messageId||'',documentCount:documents.length,noExternalAction:true};
+    }
+    const result=await valSourceProcessing.processRelationshipDocumentEmail({
+      relationship,
+      source:{
+        provider:email.provider||'email',
+        sourceType:sourceProcessingEmailSourceType(email),
+        sourceId:email.messageId||email.id||email.threadId||'',
+        messageId:email.messageId||'',
+        threadId:email.threadId||'',
+        subject:email.subject||'Relationship document email',
+        receivedAt:email.receivedAt||email.date||'',
+        webLink:email.webLink||'',
+        attachments:documents,
+        origin
+      },
+      documents,
+      confidence:0.74
+    });
+    return {
+      ok:result.ok!==false,
+      skipped:false,
+      messageId:email.messageId||'',
+      sourceProcessingRecordId:result.sourceProcessingRecord?.id||'',
+      projectSuggestionId:result.projectSuggestion?.id||'',
+      existingProjectId:result.existingProject?.projectId||result.existingProject?.id||'',
+      documentCount:documents.length,
+      noExternalAction:true
+    };
+  }).catch(error=>[{ok:false,error:error.message,noExternalAction:true}]);
+  return {
+    ok:!results.some(result=>result.ok===false),
+    origin,
+    processed:results.filter(result=>!result.skipped&&!result.error).length,
+    eligible:candidates.length,
+    suggestions:results.filter(result=>result.projectSuggestionId).length,
+    existingProjects:results.filter(result=>result.existingProjectId).length,
+    skipped:results.filter(result=>result.skipped).length,
+    errors:results.filter(result=>result.error).map(result=>result.error),
+    records:results.filter(result=>result.sourceProcessingRecordId).map(result=>({id:result.sourceProcessingRecordId,projectSuggestionId:result.projectSuggestionId||'',messageId:result.messageId||'',documentCount:result.documentCount||0})),
+    noExternalAction:true
+  };
+}
 function emailNeedsResponseSignal(email){
   return /\b(proposal|contract|pricing|introduction|intro|please confirm|let me know|waiting on|can you review|next steps|following up|recap|circle back|review this|thoughts|approve|approval)\b/i.test([email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' '));
 }
@@ -9704,11 +9863,26 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
 async function fetchUnifiedGmailEmails(limit=20){
   return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
 }
-function normalizeOutlookMessage(m){
+function normalizeOutlookAttachment(attachment={}){
+  const filename=String(attachment.name||attachment.filename||'').trim();
+  return {
+    id:attachment.id||filename,
+    attachmentId:attachment.id||'',
+    filename,
+    name:filename,
+    mimeType:attachment.contentType||attachment.mimeType||'',
+    contentType:attachment.contentType||attachment.mimeType||'',
+    size:Number(attachment.size)||0,
+    isInline:!!attachment.isInline,
+    source:'microsoft_graph'
+  };
+}
+function normalizeOutlookMessage(m,attachments=[]){
   const from=m.from?.emailAddress||{};
   const to=(m.toRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
   const cc=(m.ccRecipients||[]).map(r=>({name:r.emailAddress?.name||'',email:String(r.emailAddress?.address||'').toLowerCase()})).filter(v=>v.email);
   const bodyText=String(m.bodyPreview||m.body?.content||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  const normalizedAttachments=(attachments.length?attachments:(m.attachments||[])).map(normalizeOutlookAttachment).filter(a=>a.filename&&!a.isInline);
   return {
     provider:'outlook',
     messageId:m.id||'',
@@ -9720,7 +9894,9 @@ function normalizeOutlookMessage(m){
     snippet:m.bodyPreview||'',
     bodyPreview:bodyText.slice(0,700),
     bodyText,
-    hasAttachments:!!m.hasAttachments,
+    attachments:normalizedAttachments,
+    attachmentsJson:normalizedAttachments,
+    hasAttachments:!!m.hasAttachments||normalizedAttachments.length>0,
     webLink:m.webLink||'',
     classification:'',
     recommendedAction:'',
@@ -9730,6 +9906,18 @@ function normalizeOutlookMessage(m){
     confidence:'medium'
   };
 }
+async function fetchOutlookMessageAttachments(token,messageId){
+  if(!token||!messageId)return [];
+  try{
+    const url=`https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`;
+    const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+    const d=await readJsonResponse(r);
+    if(!r.ok)return [];
+    return (d.value||[]).map(normalizeOutlookAttachment).filter(a=>a.filename&&!a.isInline);
+  }catch(e){
+    return [];
+  }
+}
 async function fetchUnifiedOutlookEmails(limit=20){
   const token=await getMicrosoftToken();
   if(!token)return {emails:[],needsAuth:true,provider:'outlook'};
@@ -9737,7 +9925,9 @@ async function fetchUnifiedOutlookEmails(limit=20){
   const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
   const d=await readJsonResponse(r);
   if(!r.ok)return {emails:[],needsAuth:r.status===401,error:d.error?.message||`Microsoft Graph ${r.status}`,provider:'outlook'};
-  return {emails:(d.value||[]).map(normalizeOutlookMessage),needsAuth:false,provider:'outlook'};
+  const rows=d.value||[];
+  const attachmentLists=await mapWithConcurrency(rows,4,async message=>message.hasAttachments?fetchOutlookMessageAttachments(token,message.id):[]);
+  return {emails:rows.map((message,index)=>normalizeOutlookMessage(message,attachmentLists[index]||[])),needsAuth:false,provider:'outlook'};
 }
 
 function inboxCommandIntent(text=''){
@@ -10704,7 +10894,8 @@ async function backfillEmailEvidence({days=90,limit=100}={}){
     return acc;
   },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
   relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,120);
-  return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,providerErrors};
+  const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_backfill'}).catch(error=>({ok:false,origin:'email_backfill',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
+  return {processed:emails.length,saved:saved.filter(Boolean).length,relationshipIntake,sourceProcessing:{projectManagers:projectManagerIntake},providerErrors};
 }
 async function backfillValIntelligence(options={}){
   if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before backfilling VAL intelligence.');
@@ -16899,6 +17090,9 @@ function projectIndexItemFromProfile(profile={}){
     ].filter(Boolean).join(' · '),
     confidence:Number(profile.confidence||0.6),
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
+    owner:metadata.owner||null,
+    assignedProjectManager:metadata.assignedProjectManager||null,
+    metadataJson:metadata,
     sourceDetails,
     sopId:metadata.sopId||intake.sopId||'',
     sopName:metadata.sopName||'',
@@ -17821,8 +18015,7 @@ async function saveRelationshipProjectLink(input={}){
   const relationshipId=String(input.relationshipId||input.relationship_id||input.contactId||input.contact_id||input.personId||input.person_id||input.email||input.name||'').trim();
   if(!projectId||!relationshipId)return null;
   const existing=(await listEvidenceLinks({sourceType:'relationship_profile',sourceId:relationshipId,targetType:'project_profile',targetId:projectId,relationship:'linked_to_project',limit:1}).catch(()=>[]))[0];
-  if(existing)return existing;
-  return saveEvidenceLink({
+  const link=existing||await saveEvidenceLink({
     sourceType:'relationship_profile',
     sourceId:relationshipId,
     sourceLabel:input.relationshipName||input.name||input.email||relationshipId,
@@ -17840,6 +18033,64 @@ async function saveRelationshipProjectLink(input={}){
       noExternalAction:true
     }
   });
+  if(input.assignAsOwner||input.projectOwner||input.relationshipRole==='owner'){
+    const owner=await updateProjectOwnerMetadata({
+      projectId,
+      projectName:input.projectName||'',
+      owner:{
+        type:'relationship',
+        id:relationshipId,
+        name:input.relationshipName||input.name||relationshipId,
+        email:input.email||'',
+        contactId:input.contactId||input.contact_id||'',
+        source:'user_reassigned',
+        reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+      }
+    }).catch(()=>null);
+    if(owner)link.projectOwner=owner;
+  }
+  return link;
+}
+
+async function updateProjectOwnerMetadata({projectId='',projectName='',owner={}}={}){
+  const cleanProjectId=String(projectId||'').trim();
+  const cleanOwnerName=String(owner.name||owner.relationshipName||owner.email||owner.id||'').trim();
+  if(!cleanProjectId||!cleanOwnerName)return null;
+  const nextOwner={
+    type:'relationship',
+    id:String(owner.id||owner.relationshipId||owner.contactId||owner.email||cleanOwnerName),
+    name:cleanOwnerName,
+    email:owner.email||'',
+    contactId:owner.contactId||owner.contact_id||'',
+    source:owner.source||'user_reassigned',
+    reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+  };
+  const patch={owner:nextOwner,ownerReassignedAt:new Date().toISOString(),noExternalAction:true};
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles')||[];
+    const row=rows.find(item=>item.tenantId===tenantId()&&item.profileType==='project'&&[item.projectId,item.profileKey,item.id,item.displayName].filter(Boolean).map(String).includes(cleanProjectId));
+    if(row){
+      row.metadataJson={...evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),...patch};
+      row.updatedAt=new Date().toISOString();
+      return nextOwner;
+    }
+    return nextOwner;
+  }
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery(`update relationship_profiles set metadata_json=metadata_json || $1::jsonb, updated_at=now() where tenant_id=$2 and profile_type='project' and (project_id=$3 or profile_key=$3 or id=$3 or display_name=$4) returning *`,[JSON.stringify(patch),tenantId(),cleanProjectId,projectName||cleanProjectId]);
+    return r.rows?.[0]?nextOwner:null;
+  }
+  const store=valStore();
+  const rows=transcriptFileArray(store,'relationshipProfiles');
+  const row=rows.find(item=>item.tenantId===tenantId()&&item.profileType==='project'&&[item.projectId,item.profileKey,item.id,item.displayName].filter(Boolean).map(String).includes(cleanProjectId));
+  if(row){
+    row.metadataJson={...evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{}),...patch};
+    row.updatedAt=new Date().toISOString();
+    saveValStore(store);
+    return nextOwner;
+  }
+  return null;
 }
 
 async function saveCalendarProjectLink(input={}){
@@ -23741,6 +23992,33 @@ const valReviewUpdates = registerValReviewUpdatesRoutes(app,{
   auditLog,
   logger:console
 });
+const valSourceProcessing = registerValSourceProcessingRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  reviewUpdatesService:valReviewUpdates,
+  readyForYouService:valReadyForYou,
+  listProjectProfiles,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+const valProjectPins = registerValProjectPinsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
 async function executeGmailDraftPacket({packet,payload}){
   const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.compose']);
   if((status.missingScopes||[]).length)throw new Error('Gmail compose scope missing');
@@ -24627,6 +24905,33 @@ app.get('/api/relationships/index',async(req,res)=>{
       .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
     res.json({ok:true,source:'relationship_profiles',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/create',async(req,res)=>{
+  try{
+    const name=String(req.body.name||req.body.displayName||'').trim();
+    const email=String(req.body.email||'').trim();
+    const summary=String(req.body.summary||req.body.detail||'Created from Project Managers.').trim();
+    if(!name&&!email)return res.status(400).json({ok:false,error:'Relationship name or email is required.'});
+    const displayName=name||email;
+    const row=await saveRelationshipProfile({
+      profileType:'person',
+      displayName,
+      email,
+      summary,
+      relationshipStatus:'created locally',
+      confidence:0.58,
+      metadataJson:{
+        source:req.body.source||'project_owner_reassignment',
+        email,
+        role:req.body.role||req.body.detail||'',
+        noExternalAction:true
+      }
+    });
+    const relationship=relationshipIndexItemFromProfile(publicRelationshipProfile(row));
+    res.json({ok:true,relationship,message:'Relationship created locally for project ownership. No CRM update, message, task, calendar change, or external action happened.',noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }

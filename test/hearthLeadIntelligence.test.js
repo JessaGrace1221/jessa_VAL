@@ -134,7 +134,7 @@ test('Lead Intelligence drawer opens only its own detail panel', () => {
   assert.doesNotMatch(hearthCss, /\.drawer-tray\.source-open \.source-detail/);
 });
 
-test('Projects drawer opens project dossiers from the Hearth instead of a dashboard shortcut', () => {
+test('Project Managers drawer opens project dossiers from the Hearth instead of a dashboard shortcut', () => {
   assert.match(hearthHtml, /class="drawer-link project-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="project-detail"/);
   assert.match(hearthHtml, /id="project-detail"/);
@@ -149,6 +149,8 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthHtml, /name="documents"/);
   assert.match(hearthHtml, /name="relationships"/);
   assert.match(hearthHtml, /name="rawContext"/);
+  assert.match(hearthHtml, /data-project-suggestions/);
+  assert.match(hearthHtml, /Suggested projects from relationship documents/);
   assert.match(hearthHtml, /data-project-rolodex/);
   assert.match(hearthHtml, /data-project-manager-profile/);
   assert.doesNotMatch(hearthHtml, /data-project-source-panel/);
@@ -170,9 +172,49 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function projectIsDrawerAdmitted/);
   assert.match(hearthJs, /function projectManagerPacket/);
   assert.match(hearthJs, /function renderProjectManagerProfile/);
+  assert.match(hearthJs, /PROJECT_MANAGER_HEADER_COLORS/);
+  assert.match(hearthJs, /function projectManagerAssignment/);
+  assert.match(hearthJs, /assigned_project_manager/);
+  assert.match(hearthJs, /project_manager_assignment_packet/);
+  assert.match(hearthJs, /project_owner_packet/);
+  assert.match(hearthJs, /function projectOwnerAssignment/);
+  assert.match(hearthJs, /function renderProjectOwnerControl/);
+  assert.match(hearthJs, /function assignProjectOwnerById/);
+  assert.match(hearthJs, /function createProjectOwnerRelationshipFromForm/);
+  assert.match(hearthJs, /data-project-owner-choice/);
+  assert.match(hearthJs, /data-project-owner-create-form/);
+  assert.match(hearthJs, /\/api\/projects\/link-relationship/);
+  assert.match(hearthJs, /\/api\/relationships\/create/);
+  assert.match(hearthJs, /assignAsOwner:true/);
+  assert.match(hearthJs, /data-project-manager-family/);
+  assert.match(hearthJs, /project-manager-assignee/);
+  assert.match(hearthJs, /Assigned to /);
   assert.match(hearthJs, /function openProjectFieldCowork/);
+  assert.match(hearthJs, /function openProjectScopedCowork/);
+  assert.match(hearthJs, /function projectScopedCoworkPacket/);
   assert.match(hearthJs, /function applyProjectFieldUpdate/);
   assert.match(hearthJs, /function renderProjectRelationshipPicker/);
+  assert.match(hearthJs, /function renderProjectPinControl/);
+  assert.match(hearthJs, /function createProjectPinFromForm/);
+  assert.match(hearthJs, /function hydrateAlignmentFromProjectPins/);
+  assert.match(hearthJs, /function completeProjectPinFromAlignment/);
+  assert.match(hearthJs, /\/api\/val\/project-pins/);
+  assert.match(hearthJs, /\/api\/val\/project-pins\/alignment\?limit=3/);
+  assert.match(hearthJs, /\/api\/val\/project-pins\/' \+ encodeURIComponent\(pinId\) \+ '\/complete/);
+  assert.match(hearthJs, /Put a pin in it/);
+  assert.match(hearthJs, /It will reopen in Project Managers and Alignment/);
+  assert.match(hearthJs, /Mark reminder handled/);
+  assert.match(hearthJs, /Only the reminder loop was cleared/);
+  assert.match(hearthJs, /data-project-cowork-scope="project_overview"/);
+  assert.match(hearthJs, /project_scoped_cowork_packet/);
+  assert.match(hearthJs, /selected_action_label/);
+  assert.match(hearthJs, /affected_object/);
+  assert.match(hearthJs, /source_receipts/);
+  assert.match(hearthJs, /lockContext:true/);
+  assert.match(hearthJs, /activeCoworkContextLocked/);
+  assert.match(hearthJs, /activeProjectCoworkTarget\.mode !== 'project_cowork'/);
+  assert.match(hearthJs, /project:cowork:/);
+  assert.match(hearthJs, /packetName:'project_packet'/);
   assert.match(hearthJs, /heading:spec\.question/);
   assert.match(hearthJs, /detail:spec\.detail/);
   assert.match(hearthJs, /What consequence, opportunity, relationship, or business reason makes this project worth attention/);
@@ -208,6 +250,13 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthJs, /function renderProjectPreparedWorkPanel/);
   assert.match(hearthJs, /preparedWork/);
   assert.match(hearthJs, /function hydrateProjectReviewUpdates/);
+  assert.match(hearthJs, /function hydrateProjectSuggestions/);
+  assert.match(hearthJs, /function renderProjectSuggestions/);
+  assert.match(hearthJs, /function decideProjectSuggestion/);
+  assert.match(hearthJs, /\/api\/val\/source-processing\/surface-registrations\?surface=project_managers&status=visible&reviewStatus=pending&limit=5/);
+  assert.match(hearthJs, /data-project-suggestion-action/);
+  assert.match(hearthJs, /Yes, create this project and assign it a manager/);
+  assert.match(hearthJs, /No, this is not a project/);
   assert.match(hearthJs, /function openProjectSourceReview/);
   assert.match(hearthJs, /function decideProjectSourceReview/);
   assert.match(hearthJs, /function syncProjectReviewState/);
@@ -253,27 +302,45 @@ test('Projects drawer opens project dossiers from the Hearth instead of a dashbo
   assert.match(hearthCss, /\.project-create-form/);
   assert.match(hearthCss, /\.project-file-upload/);
   assert.match(hearthCss, /\.project-create-status/);
+  assert.match(hearthCss, /\.project-suggestions/);
+  assert.match(hearthCss, /\.project-suggestion-row/);
+  assert.match(hearthCss, /\.project-suggestion-actions/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]\[aria-pressed="true"\]/);
   assert.match(hearthCss, /\.project-rolodex-empty/);
   assert.match(hearthCss, /\.project-manager-dossier/);
   assert.match(hearthCss, /\.project-manager-hero/);
+  assert.match(hearthCss, /--project-manager-color/);
+  assert.match(hearthCss, /\.project-manager-identity-line/);
+  assert.match(hearthCss, /\.project-manager-assignee/);
+  assert.match(hearthCss, /\.project-owner-control/);
+  assert.match(hearthCss, /\.project-owner-choices/);
+  assert.match(hearthCss, /\.project-owner-create/);
   assert.match(hearthCss, /\.project-manager-judgment/);
   assert.match(hearthCss, /\.project-manager-grid/);
   assert.match(hearthCss, /\.project-manager-columns/);
   assert.match(hearthCss, /\.project-manager-story/);
   assert.match(hearthCss, /\.project-manager-clickable/);
   assert.match(hearthCss, /\.project-relationship-picker/);
+  assert.match(hearthCss, /\.project-manager-hero-actions/);
+  assert.match(hearthCss, /\.project-manager-cowork-chip/);
+  assert.match(hearthCss, /\.project-pin-form/);
+  assert.match(hearthCss, /\.project-pin-status/);
   assert.match(hearthCss, /\.project-actions/);
 });
 
-test('Projects drawer has a live project index source contract', () => {
+test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /app\.get\('\/api\/projects\/index'/);
   assert.match(server, /app\.get\('\/api\/projects\/dossier'/);
   assert.match(server, /app\.get\('\/api\/projects\/links'/);
   assert.match(server, /app\.post\('\/api\/projects\/link-relationship'/);
+  assert.match(server, /app\.post\('\/api\/relationships\/create'/);
+  assert.match(server, /function updateProjectOwnerMetadata/);
+  assert.match(server, /assignAsOwner/);
   assert.match(server, /app\.post\('\/api\/projects\/link-calendar-event'/);
   assert.match(server, /app\.post\('\/api\/projects\/create',upload\.any\(\)/);
+  assert.match(server, /ensureValProjectPinsTables/);
+  assert.match(server, /registerValProjectPinsRoutes/);
   assert.match(server, /async function listProjectProfiles/);
   assert.match(server, /async function saveRelationshipProjectLink/);
   assert.match(server, /relationship:'linked_to_project'/);
@@ -354,7 +421,7 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
 test('Hearth drawers keep the shared frost surface and packet contracts', () => {
   const drawerContracts = [
     ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
-    ['Projects', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
+    ['Project Managers', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
     ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
     ['Commitments', 'commitment-drawer-link', 'commitment-open', 'commitment-detail', 'commitment_packet', 'drawer.commitments'],

@@ -4551,6 +4551,137 @@ button.drawer-link{
   font-size:.68rem;
   line-height:1.3;
 }
+.project-suggestions[hidden]{
+  display:none;
+}
+.project-suggestions{
+  display:grid;
+  gap:7px;
+  margin:2px 0 3px;
+  padding:8px 2px 10px;
+  border-top:1px solid rgba(79,48,38,.1);
+  border-bottom:1px solid rgba(79,48,38,.08);
+  background:linear-gradient(180deg,rgba(255,255,252,.38),rgba(241,248,237,.22));
+}
+.project-suggestion-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  color:rgba(64,86,61,.76);
+  font:800 .58rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  padding:0 7px;
+}
+.project-suggestion-header small{
+  color:rgba(45,27,22,.52);
+  font:700 .58rem var(--body);
+  letter-spacing:0;
+  text-transform:none;
+}
+.project-suggestion-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(210px,.36fr);
+  gap:10px;
+  align-items:center;
+  min-width:0;
+  border:1px solid rgba(79,48,38,.12);
+  border-radius:7px;
+  background:rgba(255,255,252,.56);
+  padding:9px;
+  box-shadow:0 10px 22px rgba(79,48,38,.06);
+}
+.project-suggestion-copy{
+  display:grid;
+  gap:4px;
+  min-width:0;
+}
+.project-suggestion-kicker{
+  color:rgba(64,86,61,.74);
+  font:800 .58rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.project-suggestion-copy strong{
+  color:rgba(34,19,15,.92);
+  font:760 .86rem/1.15 var(--body);
+}
+.project-suggestion-copy p{
+  margin:0;
+  color:rgba(45,27,22,.66);
+  font-size:.72rem;
+  line-height:1.3;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+  overflow:hidden;
+}
+.project-suggestion-copy small{
+  color:rgba(45,27,22,.54);
+  font-size:.66rem;
+  line-height:1.25;
+}
+.project-suggestion-manager{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  max-width:100%;
+  gap:6px;
+  min-height:22px;
+  border:1px solid rgba(64,86,61,.14);
+  border-radius:999px;
+  color:rgba(52,66,47,.82);
+  background:rgba(232,241,220,.34);
+  padding:0 8px 0 5px;
+  font:800 .62rem var(--body);
+}
+.project-suggestion-manager i{
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  border:1px solid rgba(45,27,22,.18);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+}
+.project-suggestion-actions{
+  display:grid;
+  gap:6px;
+  min-width:0;
+}
+.project-suggestion-actions button{
+  min-height:32px;
+  border:1px solid rgba(64,86,61,.18);
+  border-radius:7px;
+  background:rgba(232,241,220,.48);
+  color:rgba(34,19,15,.82);
+  padding:6px 9px;
+  font:850 .62rem/1.15 var(--body);
+  white-space:normal;
+  text-align:center;
+}
+.project-suggestion-actions button:nth-child(2){
+  border-color:rgba(100,57,43,.14);
+  background:rgba(255,249,239,.5);
+  color:rgba(58,33,27,.74);
+}
+.project-suggestion-actions button:hover,
+.project-suggestion-actions button:focus-visible{
+  border-color:rgba(64,86,61,.32);
+  background:rgba(232,241,220,.7);
+  outline:none;
+}
+.project-suggestion-actions button:disabled{
+  opacity:.56;
+  cursor:progress;
+}
+@media(max-width:760px){
+  .project-suggestion-row{
+    grid-template-columns:1fr;
+  }
+  .project-pin-form{
+    grid-template-columns:1fr;
+  }
+}
 .project-rolodex{
   display:grid;
   gap:7px;
@@ -4642,21 +4773,72 @@ button.drawer-link{
   backdrop-filter:blur(18px);
 }
 .project-manager-hero{
+  position:relative;
   display:grid;
   grid-template-columns:64px minmax(0,1fr);
   align-items:center;
   gap:15px;
   padding:16px;
+  overflow:hidden;
+  border-color:var(--project-manager-color-border,rgba(91,105,79,.14));
+  background:
+    linear-gradient(90deg,var(--project-manager-color-soft,rgba(232,241,220,.26)),transparent 42%),
+    radial-gradient(circle at 0% 0%,rgba(255,255,255,.88),transparent 16rem),
+    linear-gradient(135deg,rgba(255,255,252,.84),rgba(250,251,247,.66) 54%,rgba(241,248,237,.46)),
+    rgba(255,255,252,.6);
+}
+.project-manager-hero::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:3px;
+  background:var(--project-manager-color,rgba(91,105,79,.72));
+  opacity:.82;
+}
+.project-manager-hero .project-mark{
+  position:relative;
+  z-index:1;
+  border:1px solid var(--project-manager-color-border,rgba(255,255,255,.28));
+  background:
+    linear-gradient(135deg,var(--project-manager-color,rgba(64,86,61,.92)),rgba(64,86,61,.36));
+  color:var(--project-manager-color-text,var(--paper));
+  box-shadow:0 12px 28px rgba(58,33,27,.14),inset 0 1px 0 rgba(255,255,255,.36);
+}
+.project-manager-identity-line{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
 }
 .project-manager-eyebrow{
-  margin:0 0 5px;
+  margin:0;
   font:700 .56rem var(--mono);
   letter-spacing:.18em;
   text-transform:uppercase;
   color:rgba(64,86,61,.76);
 }
+.project-manager-assignee{
+  display:inline-flex;
+  align-items:center;
+  min-height:21px;
+  gap:6px;
+  border:1px solid var(--project-manager-color-border,rgba(64,86,61,.16));
+  border-radius:999px;
+  background:rgba(255,255,252,.66);
+  color:rgba(47,33,27,.82);
+  padding:0 8px;
+  font:800 .6rem var(--body);
+}
+.project-manager-assignee i{
+  display:block;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:var(--project-manager-color,rgba(64,86,61,.72));
+  box-shadow:0 0 0 1px rgba(255,255,255,.7);
+}
 .project-manager-hero h4{
-  margin:0;
+  margin:6px 0 0;
   color:rgba(34,19,15,.94);
   font:500 2rem/1 var(--serif);
   letter-spacing:0;
@@ -4689,6 +4871,77 @@ button.drawer-link{
   font:800 .62rem var(--body);
   letter-spacing:0;
   text-transform:none;
+}
+.project-manager-hero-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:12px;
+}
+.project-manager-hero-actions button,
+.project-pin-form button{
+  min-height:30px;
+  border:1px solid rgba(64,86,61,.18);
+  border-radius:7px;
+  background:rgba(232,241,220,.48);
+  color:rgba(34,19,15,.82);
+  padding:6px 10px;
+  font:850 .68rem/1.1 var(--body);
+}
+.project-manager-hero-actions button:hover,
+.project-manager-hero-actions button:focus-visible,
+.project-pin-form button:hover,
+.project-pin-form button:focus-visible{
+  border-color:rgba(64,86,61,.32);
+  background:rgba(232,241,220,.7);
+  outline:none;
+}
+.project-pin-form{
+  display:grid;
+  grid-template-columns:minmax(180px,.62fr) minmax(220px,1fr) auto;
+  gap:8px;
+  align-items:end;
+  margin-top:11px;
+  padding:10px;
+  border:1px solid rgba(79,48,38,.12);
+  border-radius:7px;
+  background:rgba(255,255,252,.54);
+}
+.project-pin-form label{
+  display:grid;
+  gap:5px;
+  margin:0;
+}
+.project-pin-form label span{
+  color:rgba(64,86,61,.74);
+  font:800 .58rem var(--mono);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.project-pin-form input{
+  min-width:0;
+  min-height:32px;
+  border:1px solid rgba(79,48,38,.16);
+  border-radius:7px;
+  background:rgba(255,255,252,.72);
+  color:rgba(34,19,15,.9);
+  padding:6px 8px;
+  font:.72rem var(--body);
+}
+.project-pin-form div{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.project-pin-form button:nth-child(2){
+  background:rgba(255,249,239,.5);
+  color:rgba(58,33,27,.74);
+}
+.project-pin-status{
+  margin:9px 0 0;
+  color:rgba(52,66,47,.76);
+  font-size:.7rem;
+  line-height:1.3;
 }
 .project-manager-judgment{
   display:grid;
@@ -4730,6 +4983,27 @@ button.drawer-link{
   box-shadow:0 18px 38px rgba(18,24,18,.1),inset 0 1px 0 rgba(255,255,255,.76);
   outline:none;
   transform:translateY(-1px);
+}
+.project-manager-cowork-chip{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:max-content;
+  min-height:24px;
+  margin-top:4px;
+  border:1px solid rgba(64,86,61,.16);
+  border-radius:999px;
+  background:rgba(232,241,220,.42);
+  color:rgba(52,66,47,.78);
+  padding:4px 8px;
+  font:850 .58rem/1 var(--body);
+  letter-spacing:0;
+  text-transform:none;
+}
+.project-manager-clickable:hover .project-manager-cowork-chip,
+.project-manager-clickable:focus-visible .project-manager-cowork-chip{
+  border-color:rgba(64,86,61,.3);
+  background:rgba(232,241,220,.66);
 }
 .project-manager-judgment article{
   min-height:132px;
@@ -4791,6 +5065,96 @@ button.drawer-link{
 .project-relationship-picker{
   display:grid;
   gap:8px;
+}
+.project-owner-control{
+  display:grid;
+  gap:8px;
+  padding:10px;
+  border:1px solid rgba(64,86,61,.13);
+  border-radius:7px;
+  background:rgba(255,255,252,.54);
+}
+.project-owner-current{
+  display:grid;
+  gap:3px;
+}
+.project-owner-current span{
+  color:rgba(64,86,61,.74);
+  font:800 .56rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.project-owner-current strong{
+  color:rgba(34,19,15,.92);
+  font:760 .86rem/1.15 var(--body);
+}
+.project-owner-current small,
+.project-owner-status,
+.project-owner-choices small{
+  color:rgba(45,27,22,.62);
+  font-size:.68rem;
+  line-height:1.32;
+}
+.project-owner-choices{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.project-owner-choices button,
+.project-owner-create button{
+  min-height:28px;
+  border:1px solid rgba(64,86,61,.16);
+  border-radius:999px;
+  background:rgba(232,241,220,.38);
+  color:rgba(52,66,47,.84);
+  padding:5px 8px;
+  font:780 .62rem/1.1 var(--body);
+}
+.project-owner-choices button[aria-pressed="true"]{
+  border-color:rgba(64,86,61,.34);
+  background:rgba(232,241,220,.68);
+}
+.project-owner-choices button strong{
+  font:inherit;
+}
+.project-owner-choices button span{
+  margin-left:4px;
+  color:rgba(52,66,47,.62);
+  font:inherit;
+}
+.project-owner-create{
+  display:grid;
+  gap:7px;
+}
+.project-owner-create summary{
+  width:max-content;
+  color:rgba(100,57,43,.76);
+  cursor:pointer;
+  font:820 .64rem var(--body);
+}
+.project-owner-create form{
+  display:grid;
+  grid-template-columns:minmax(120px,1fr) minmax(140px,1fr) minmax(140px,1fr) auto;
+  gap:6px;
+  align-items:center;
+}
+.project-owner-create input{
+  min-width:0;
+  min-height:30px;
+  border:1px solid rgba(79,48,38,.14);
+  border-radius:7px;
+  background:rgba(255,255,252,.76);
+  color:rgba(34,19,15,.9);
+  padding:6px 8px;
+  font:.7rem var(--body);
+}
+.project-owner-status{
+  margin:0;
+}
+@media(max-width:700px){
+  .project-owner-create form{
+    grid-template-columns:1fr;
+  }
 }
 .project-relationship-picker button{
   display:flex;

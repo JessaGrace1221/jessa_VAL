@@ -4,6 +4,18 @@ Updated: 2026-07-11
 
 Status: documentation baseline for the next architecture pass.
 
+2026-07-12 local progress:
+
+- first `source_processing_records`, `prepared_artifact_records`, and `surface_registrations` implementation is in place
+- admitted relationship-sent documents can produce suggested Project Managers review updates
+- Project Managers and Leverage / Ready For You can read the same suggested-project surface registration
+- project `Put a pin in it` reminders now persist, record `reopened_at`, and surface due pins in Home Alignment as newly reopened loops
+- scoped Project Managers Co-Work now preflights `project_packet` and locks held context to the selected project, selected action, source receipts, and affected artifact/object only
+- assigned color-named Project Managers now appear in the Project Manager page header and in the project manager packet
+- owner reassignment now updates project metadata and records no-external-action relationship/project link receipts
+- live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing with Gmail/Outlook attachment metadata
+- remaining work is authenticated validation, production deployment/verification, and broader source types
+
 ## Current Baseline
 
 The current production deployment is the baseline for this map.
@@ -237,7 +249,7 @@ Put this artifact here.
 | Meeting overview | Transcript detail and Calendar event detail | Meeting Prep, Leverage / Ready For You, Home if executive-worthy | "Overview written" until visible in at least one surface. |
 | Meeting follow-up | Leverage / Ready For You and relevant meeting/transcript | Executive Inbox if email reply needed | "Ready" unless review action works. |
 | Introduction draft | Stewardship, Leverage / Ready For You, both person profiles | Home Leverage if timely | "Introduction ready" unless both identities and source refs are attached. |
-| Project suggestion | Projects drawer and relevant source surface | Home right panel if noteworthy | "Project created" unless user approves creation. |
+| Project suggestion | Project Managers drawer and relevant source surface | Home right panel if noteworthy | "Project created" unless user approves creation. |
 | Document review | Documents drawer and relevant project/person/email | Leverage if review is needed | "Reviewed" before user or VAL review result exists. |
 | Task draft | Commitments and Leverage / Ready For You | Home Alignment if it exposes or blocks an open loop | "Task created" unless task record exists. |
 | Calendar proposal | Calendar event/Timeline and Leverage | Home if priority | "Scheduled" unless provider confirms. |
@@ -663,7 +675,11 @@ This rule applies to all emails with documents, attachments, proposals, spreadsh
 
 Anthony is only the example name. Do not special-case Anthony.
 
-When any person sends documents or project-like material, VAL must route the source through Email, Documents, Projects, and any relevant entity packets before deciding what should be visible.
+When an admitted relationship sends documents or project-like material, VAL must route the source through Email, Documents, Project Managers, and any relevant entity packets before deciding what should be visible.
+
+Do not create suggested projects from non-relationship senders.
+
+Minimum project-suggestion evidence is a document, such as an agreement, scope, deck, proposal, spreadsheet, SOW, project file, deliverable, or contract.
 
 ### Example: Anthony Document Email
 
@@ -678,7 +694,8 @@ Anthony email arrives with documents
   -> Project observer: if no matching project exists, create "Suggested new project" review update
   -> Executive Inbox: show the email if the user should know Anthony sent what was requested
   -> Documents: show the attached/linked documents
-  -> Projects: link to matching project or show suggested project review
+  -> Project Managers: link to matching project or show suggested project review
+  -> Suggested project choice: Yes, create this project and assign it a manager / No, this is not a project
   -> Home right-hand panel or welcome context: "Anthony sent you what you asked for"
   -> Leverage / Ready For You: only if VAL prepared a review, summary, draft, or project intake artifact
 ```
@@ -1357,9 +1374,9 @@ Every document must answer:
 
 ### Required Project Manager Principle
 
-Projects is VAL's execution command center.
+Project Managers is VAL's execution command center.
 
-The Project drawer/card is an entry point. The active project itself should open as a full Project Manager page.
+The Project Managers drawer/card is an entry point. The active project itself should open as a full Project Manager page.
 
 The Project Manager page must show what the dedicated Project Manager is doing, has done, is preparing, is watching, or needs from the user.
 
@@ -1402,7 +1419,7 @@ This applies when the Project Manager says VAL built, linked, prepared, noticed,
 Required click path:
 
 ```text
-Projects card / drawer row
+Project Managers card / drawer row
   -> admitted project
   -> full Project Manager page
   -> Project Manager Packet
@@ -1647,12 +1664,14 @@ Put a pin in it
   -> user selects date/time
   -> store pin-until timestamp
   -> keep watching
+  -> at that time, reopen the loop in Project Managers and Home Alignment
+  -> let the user open the project, pin it again, or mark only the reminder handled
 ```
 
 Receipt:
 
 ```text
-VAL just reprioritized Project X for today and is watching the partner timeline.
+Reminder cleared. The project record stayed intact. No external action was taken.
 ```
 
 Project Movement rules:
@@ -2204,6 +2223,8 @@ Do not start by fixing Stewardship UI again.
 
 Start with the spine.
 
+The user chose this sequence because the shared source-processing spine will improve all of VAL, not only Project Managers.
+
 1. Define `source_processing_record` schema and tests.
 2. Define `prepared_artifact_record` schema and tests.
 3. Define `surface_registration` schema and tests.
@@ -2212,10 +2233,11 @@ Start with the spine.
 6. Route synced email through the same source pass, including attachment/document/project-suggestion handling and "What VAL did from this email" receipts.
 7. Route calendar events through the same source pass, including attendee admission, recurring-meeting continuity, meeting overview visibility, and private/resource filtering.
 8. Create first-class `introduction_opportunity` records from transcripts/emails/user teaching.
-9. Create first-class `suggested_project` review updates from emails/documents/transcripts.
+9. Create first-class `suggested_project` review updates from relationship-sent documents.
 10. Update drawers to consume only packet/review/artifact/registration outputs from the source and delivery passes.
 11. Add click preflight tests proving each click uses the correct packet, artifact, source, and review action.
-12. Backfill existing sources through the new pass.
+12. Implement Project Managers first-slice actions: approve/reject suggested project, assign one color-named manager, choose/create owner, keep scoped Co-Work locked to the selected project/action packet, and keep `Put a pin in it` reminders persisted with Alignment resurfacing.
+13. Backfill existing sources through the new pass.
 
 ## Acceptance Cases
 
@@ -2239,10 +2261,14 @@ Given an email from Anthony with documents:
 - Email source is stored.
 - Attachments/documents are routed to Document observer.
 - Project observer checks for existing project.
-- If no project exists, VAL creates a suggested project review update.
+- If Anthony is an admitted relationship and no project exists, VAL creates a suggested project review update.
+- The suggested project shows `Yes, create this project and assign it a manager` and `No, this is not a project`.
+- If approved, VAL creates the project, assigns one color-named Project Manager, and asks for or infers the one project owner with reassignment support.
+- If rejected, VAL records the rejection and does not repeat the same suggestion from the same source pattern.
 - Executive Inbox can show the email as "Anthony sent what you asked for" with readable full content and prior thread messages.
 - Executive Inbox shows what VAL did with the email: document links, project links, suggested project review, or no prepared work.
 - Leverage / Ready For You is used only if VAL prepared a reviewable artifact.
+- Documents remain visible in both Documents and the Project Manager page.
 
 ### Spam/Newsletter
 

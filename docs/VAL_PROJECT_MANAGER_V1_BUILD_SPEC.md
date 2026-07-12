@@ -30,11 +30,125 @@ What is the next best move?
 
 ## First Principle
 
-The Projects drawer/card is only the entry point.
+The visible drawer is called `Project Managers`.
+
+The Project Managers drawer/card is only the entry point.
 
 Opening a project should lead to a full Project Manager page.
 
 The first screen must be dynamic. It should not always start with identity, snapshot, or project charter. Those are stable context. The top of the page should reflect what the Project Manager is handling right now.
+
+## 2026-07-12 Implementation Status
+
+The first source-backed Project Managers suggestion slice is implemented locally:
+
+- admitted relationship + documents can create a suggested-project review update
+- Project Managers shows pending suggestions at the top, subtly, above the project index
+- the suggestion uses the two simple decisions:
+  - `Yes, create this project and assign it a manager`
+  - `No, this is not a project`
+- approval creates a local project shell with one owner and a color-named Project Manager
+- documents are recorded for both the Documents drawer and Project Manager page
+- the same prepared suggestion is registered to Project Managers and Leverage / Ready For You
+- `Put a pin in it` persists project reminders, records `reopened_at` when due, reopens due pins in Home Alignment, and lets the executive clear the reminder loop without marking the project complete
+- scoped Project Managers Co-Work opens from a subtle top action and from project packet/action rows, with locked context for the selected project, selected action, source receipts, and affected artifact/object only
+- the Project Manager page header now reflects the assigned color-named manager with a subtle accent, assignee pill, and project packet assignment field
+- owner reassignment is available from the People involved card: choose an existing relationship or create a new local relationship owner, persist the owner in project metadata, and record a no-external-action relationship/project link
+- live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same suggested-project review path
+
+Still required before production truth:
+
+- browser-visible/authenticated validation against real connected email data
+- deployment decision and production verification
+- broader source types beyond relationship-sent email documents
+
+## Current Sequencing Decision
+
+Implement the shared source-processing spine before building Project Managers as a larger visible surface.
+
+Reason:
+
+```text
+This moves the needle for all of VAL, not just Project Managers.
+```
+
+Project Managers is the first major product proof of the spine, but it should not own private source-routing logic.
+
+Required order:
+
+1. Build the shared source-processing records and source router.
+2. Route relationship-sent documents through Documents and Project observer logic.
+3. Create suggested project review updates when no project exists.
+4. Let the user approve or reject the project suggestion.
+5. Create the Project Manager page only from approved/admitted project packets.
+6. Wire scoped Co-Work and `Put a pin in it` as part of the first Project Managers slice.
+
+## Project Suggestion Rule
+
+Project Managers should suggest new projects only when a relationship sends documents.
+
+Minimum evidence is documents. Typical evidence includes:
+
+- agreements
+- scopes
+- decks
+- proposals
+- spreadsheets
+- SOWs
+- project files
+- deliverables
+- contracts
+
+The suggestion should be extremely simple:
+
+```text
+Yes, create this project and assign it a manager.
+No, this is not a project.
+```
+
+Do not silently create projects from emails or documents.
+
+Do not suggest a project from a sender who is not an admitted relationship.
+
+If the user says no, VAL should remember that rejection and avoid repeating the same suggestion from the same source pattern.
+
+## Documents Placement
+
+Documents live in both places:
+
+- Documents drawer: the full document/reference library.
+- Project Manager page: documents attached to that project, with source proof and project relevance.
+
+Do not move documents out of the Documents drawer just because they are linked to a project.
+
+## Ownership
+
+V1 has one project owner.
+
+The executive can reassign the owner by:
+
+- choosing an existing relationship
+- creating a new relationship when the owner does not exist yet
+
+VAL may infer a likely owner from evidence, but ownership assignment remains explicit when consequential or ambiguous.
+
+## Assigned Project Manager Names
+
+Each project may be assigned a named Project Manager.
+
+The name should be a color name rather than a human name. This keeps the experience warm and memorable without pretending VAL has separate human staff.
+
+Use calm, executive-safe color names drawn from white, rose, and green families. Good candidates:
+
+```text
+Frost, Pearl, Alabaster, Snow, Ivory, Cotton, Lace, Porcelain,
+Rose, Blush, Coral, Peach, Taffy, Ballet Slipper,
+Sage, Fern, Olive, Moss, Seafoam, Mint, Basil, Pistachio
+```
+
+The Project Manager page header uses the assigned manager color as a subtle visual identity: a small assignee chip, a narrow accent, and color-aware project mark. This is an ownership cue, not a decorative theme.
+
+Do not use muddy, dark, or overly whimsical manager names.
 
 ## Page Structure
 
@@ -485,7 +599,11 @@ User clicks "Put a pin in it"
   -> VAL stores pin-until timestamp
   -> VAL keeps watching
   -> at date/time, VAL surfaces: "This is unpinned. Let's work on it."
+  -> Home Alignment treats it as a newly reopened loop only after the chosen unpin time
+  -> user may open the Project Manager page, pin it again, or mark the reminder handled
 ```
+
+This is now locally implemented with real persistence, `reopened_at` marking, Alignment resurfacing, and reminder-handled receipts. Keep it as a reminder loop, not a project-completion action.
 
 ### Scoped Questions
 
@@ -508,6 +626,8 @@ Every Project Manager action must open Co-Work scoped to:
 - affected artifact/object only
 
 Do not let broad unrelated context leak in.
+
+Scoped Co-Work is now locally implemented in the first Project Managers slice, even though the full standalone Co-Work V1 workspace is still a later build. Keep the visible top entry subtle, keep row-level Co-Work available from project packet/action rows, and keep the held context locked so typing does not erase or broaden the selected project/action packet.
 
 ## Source-To-Project Processing
 
@@ -585,6 +705,10 @@ Project Manager V1 is acceptable only if:
 10. Board of Observers has a project-by-project quiet-watching summary at the top.
 11. Every action opens scoped context, not broad generic chat.
 12. `Put a pin in it` asks for a date/time and resurfaces at that time.
+13. Relationship-sent documents can create a suggested project review with simple yes/no approval.
+14. Project creation assigns one color-named Project Manager.
+15. Project owner reassignment can choose a relationship or create a new one.
+16. Scoped Co-Work opens from first-slice Project Manager actions.
 
 ## Non-Goals For V1
 

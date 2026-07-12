@@ -2,6 +2,34 @@
 
 Updated: 2026-07-11 end-of-day handoff
 
+## 2026-07-12 Local Implementation State
+
+Local branch `codex/stewardship-person-packets` now includes the first source-processing / Project Managers slice.
+
+This is not yet recorded here as deployed production truth.
+
+Implemented locally:
+
+- shared source-processing service, schema, and routes for `source_processing_records`, `prepared_artifact_records`, and `surface_registrations`
+- relationship-sent document intake endpoint
+- suggested project review updates from admitted relationship senders with document evidence
+- Project Managers top suggestion lane, shown subtly above the project index and hidden when empty
+- review actions for `Yes, create this project and assign it a manager` / `No, this is not a project`
+- approval creates a local project shell with one owner and a color-named Project Manager
+- Project Managers and Leverage / Ready For You surface registrations for the same suggested project
+- project-level `Put a pin in it` persistence with due reminders resurfacing in Project Managers and Home Alignment as newly reopened loops
+- reminder-handled receipts clear the pin from Alignment without marking the project itself complete
+- scoped Project Managers Co-Work from the subtle top action and project packet/action rows, with locked context for the selected project, selected action, source receipts, and affected artifact/object only
+- assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
+- owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
+- live email intelligence and intelligence backfill now route admitted relationship document attachments into the source-processing intake, using Gmail/Outlook attachment metadata and the same Project Managers yes/no review path
+
+Still remaining before this local work becomes production truth:
+
+- browser-visible/authenticated validation against real connected email data
+- deployment decision and production verification
+- broader source types beyond relationship-sent email documents
+
 ## Current Working State
 
 The current live Railway app remains the product-behavior baseline.
@@ -131,9 +159,11 @@ Home has four major visible areas:
 
 Alignment is all about open loops. It is not a general priority shelf.
 
-### Project Manager
+### Project Managers
 
-Projects should open to a full Project Manager page, not a cramped drawer card.
+The drawer is called `Project Managers`.
+
+Project Managers should open to a full Project Manager page, not a cramped drawer card.
 
 Core promise:
 
@@ -343,14 +373,17 @@ The user stopped here for the day and wants the next session to pick up without 
 
 Next focus when the user returns:
 
-1. Confirm whether the user approves implementing `docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md`.
-2. If approved, implement Co-Work as a full executive workspace with previous conversations on the left, open working space, large composer, obvious voice controls, mobile drawer for conversations, and scoped context boundaries.
-3. If not implementing Co-Work yet, continue documentation-first through the remaining drawers:
-   - Calendar
+1. Build the shared source-processing spine first.
+2. Use relationship-sent documents as the first Project Managers proof case.
+3. Suggested projects should show `Yes, create this project and assign it a manager` and `No, this is not a project`.
+4. Project Manager V1 should include one owner, reassignment by relationship/create-new-relationship, color-named managers, real `Put a pin in it` reminders, and scoped Co-Work actions in the first slice.
+5. Then continue through:
+   - Project Managers
+   - Commitments / task list
    - Documents
-   - Commitments / Tasks
-   - People / Relationships beyond Stewardship
+   - Lead Intelligence
    - Co-Work with VAL as a full scoped experience
+   - VAL onboarding/updating
 
 Remember:
 

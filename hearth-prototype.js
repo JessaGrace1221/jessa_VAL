@@ -135,6 +135,7 @@ let activeCommitmentFilter = 'all';
 let currentDocumentItems = [];
 let activeDocumentItem = null;
 const projectRolodex = document.querySelector('[data-project-rolodex]');
+const projectSuggestions = document.querySelector('[data-project-suggestions]');
 const projectIndexSource = document.querySelector('[data-project-index-source]');
 const projectCreateToggle = document.querySelector('[data-project-create-toggle]');
 const projectCreateForm = document.querySelector('[data-project-create-form]');
@@ -207,6 +208,7 @@ let activeValOnboardingSessionId = '';
 let activeValWitnessingSessionId = '';
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
+let activeCoworkContextLocked = false;
 let currentCalendarEvents = [];
 let currentMeetingEvents = [];
 let calendarPanelShouldScrollToCurrent = false;
@@ -411,7 +413,7 @@ const hearthClickContractRegistry = [
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
   {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Stewardship understanding prompt suite', actions:'Open Stewardship view, filter, search, sort, scoped Stewardship actions', never:'Do not expose internal packet/debug language in the drawer'},
-  {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open file, Co-Work, ask priority, show alternatives, review source learning', never:'Do not create or mutate project records without explicit flow'},
+  {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-cowork-scope],[data-project-cowork-field],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open full Project Manager page, scoped Co-Work, review source learning, create explicit project records only through the creation flow', never:'Do not create, mutate, or broaden project context without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
   {selector:'.commitment-drawer-link,[data-commitment-item],[data-commitment-filter],[data-commitment-action]', contract:'drawer.commitments', packet:'commitment_packet', rule:'Commitment observer/task support rules', actions:'Co-Work, draft email, create task, schedule, status, show source', never:'Do not send; status changes need visible user action'},
@@ -963,7 +965,7 @@ const projectProfiles = {
     decision: 'Separate source action from project priority',
     decisionEvidence: 'A lead can be valid without becoming the next project move.',
     nextMove: 'Review approved leads against current projects',
-    nextMoveEvidence: 'Use Lead Intelligence as source material, then decide priority in the Projects drawer.',
+    nextMoveEvidence: 'Use Lead Intelligence as source material, then decide priority in the Project Managers drawer.',
     sourceReceipts: 'Lead Intelligence · CRM duplicate checks · project notes',
     sourceDetails: {
       files: [],
@@ -975,6 +977,31 @@ const projectProfiles = {
     href: './dashboard.html?view=projects&projectId=client-pipeline'
   }
 };
+
+const PROJECT_MANAGER_HEADER_COLORS = [
+  {name:'Frost',hex:'#e7f7f7',family:'white'},
+  {name:'Pearl',hex:'#f8f8f5',family:'white'},
+  {name:'Alabaster',hex:'#f3efe5',family:'white'},
+  {name:'Snow',hex:'#edf8f8',family:'white'},
+  {name:'Ivory',hex:'#f7f1df',family:'white'},
+  {name:'Cotton',hex:'#fbfbf4',family:'white'},
+  {name:'Lace',hex:'#f7eee8',family:'white'},
+  {name:'Porcelain',hex:'#fbfbf8',family:'white'},
+  {name:'Rose',hex:'#f48aa8',family:'rose'},
+  {name:'Blush',hex:'#f7b6d5',family:'rose'},
+  {name:'Coral',hex:'#ff735f',family:'rose'},
+  {name:'Peach',hex:'#fa8f7f',family:'rose'},
+  {name:'Taffy',hex:'#ee78bf',family:'rose'},
+  {name:'Ballet Slipper',hex:'#e99abc',family:'rose'},
+  {name:'Sage',hex:'#78916f',family:'green'},
+  {name:'Fern',hex:'#5eb866',family:'green'},
+  {name:'Olive',hex:'#9abc6a',family:'green'},
+  {name:'Moss',hex:'#3e6d1f',family:'green'},
+  {name:'Seafoam',hex:'#41dfa7',family:'green'},
+  {name:'Mint',hex:'#94e3bb',family:'green'},
+  {name:'Basil',hex:'#2d6332',family:'green'},
+  {name:'Pistachio',hex:'#bad8c7',family:'green'}
+];
 
 let relationshipIndexSearch = '';
 let relationshipStateFilter = 'all';
@@ -996,6 +1023,12 @@ let projectIndexProfiles = {};
 let projectIndexLoaded = false;
 let projectIndexRequest = null;
 let projectIndexSourceLabel = 'Local project preview';
+let currentProjectSuggestionItems = [];
+let projectSuggestionRequest = null;
+let projectPinComposerOpen = false;
+const projectPinStatusByProject = {};
+const projectOwnerStatusByProject = {};
+let projectPinAlignmentRequest = null;
 
 function updateRelationshipIndexSourceLabel(){
   if(!relationshipIndexSource) return;
@@ -3185,6 +3218,114 @@ function projectCleanText(value, fallback = ''){
   return text || fallback;
 }
 
+function projectMetadataObject(value = {}){
+  const raw = value?.metadataJson || value?.metadata_json || value?.metadata || {};
+  if(typeof raw === 'string'){
+    try{
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    }catch(error){
+      return {};
+    }
+  }
+  return raw && typeof raw === 'object' ? raw : {};
+}
+
+function projectPersonName(value = ''){
+  if(typeof value === 'string') return projectCleanText(value);
+  if(!value || typeof value !== 'object') return '';
+  return projectCleanText(value.name || value.displayName || value.relationshipName || value.email || value.id || value.contactId || value.profileKey || '');
+}
+
+function projectOwnerFromValue(value = {}){
+  if(typeof value === 'string'){
+    const name = projectCleanText(value);
+    return name && name !== '[object Object]' ? {name, id:name, source:'text'} : null;
+  }
+  if(!value || typeof value !== 'object') return null;
+  const name = projectPersonName(value);
+  if(!name) return null;
+  return {
+    type:value.type || value.ownerType || 'relationship',
+    id:String(value.id || value.relationshipId || value.profileId || value.contactId || value.contact_id || value.personId || value.person_id || value.profileKey || value.email || name),
+    name,
+    email:value.email || '',
+    detail:value.detail || value.role || value.company || value.relationshipStatus || value.source || '',
+    source:value.source || 'project_owner'
+  };
+}
+
+function projectManagerHeaderColorByName(name = ''){
+  const clean = String(name || '').trim().toLowerCase();
+  if(!clean) return null;
+  return PROJECT_MANAGER_HEADER_COLORS.find((color) => color.name.toLowerCase() === clean) || null;
+}
+
+function projectManagerHeaderColorFor(value = ''){
+  const key = String(value || 'project').toLowerCase().replace(/[^a-z0-9:_-]+/g, '_').slice(0, 180);
+  const total = [...key].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  return PROJECT_MANAGER_HEADER_COLORS[total % PROJECT_MANAGER_HEADER_COLORS.length];
+}
+
+function projectManagerHexToRgb(hex = ''){
+  let clean = String(hex || '').trim().replace(/^#/, '');
+  if(clean.length === 3) clean = clean.split('').map((part) => part + part).join('');
+  if(!/^[0-9a-f]{6}$/i.test(clean)) return null;
+  const value = Number.parseInt(clean, 16);
+  return {
+    r:(value >> 16) & 255,
+    g:(value >> 8) & 255,
+    b:value & 255
+  };
+}
+
+function projectManagerColorText(hex = ''){
+  const rgb = projectManagerHexToRgb(hex);
+  if(!rgb) return 'rgba(34,19,15,.88)';
+  const brightness = ((rgb.r * 299) + (rgb.g * 587) + (rgb.b * 114)) / 1000;
+  return brightness < 126 ? 'rgba(255,255,252,.94)' : 'rgba(34,19,15,.88)';
+}
+
+function projectManagerColorStyle(manager = {}){
+  const hex = /^#[0-9a-f]{3,6}$/i.test(manager.hex || '') ? manager.hex : '#f8f8f5';
+  const rgb = projectManagerHexToRgb(hex) || {r:248,g:248,b:245};
+  return [
+    '--project-manager-color:' + hex,
+    '--project-manager-color-soft:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',.22)',
+    '--project-manager-color-border:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',.58)',
+    '--project-manager-color-text:' + projectManagerColorText(hex)
+  ].join(';');
+}
+
+function projectManagerAssignment(project = {}){
+  const metadata = projectMetadataObject(project);
+  const dossier = project.dossier || {};
+  const dossierMetadata = projectMetadataObject(dossier);
+  const dossierCard = dossier.card || {};
+  const assigned = project.assignedProjectManager ||
+    metadata.assignedProjectManager ||
+    metadata.projectManager ||
+    project.projectManager ||
+    project.manager ||
+    project.project_manager ||
+    dossierCard.assignedProjectManager ||
+    dossierMetadata.assignedProjectManager ||
+    dossierMetadata.projectManager ||
+    null;
+  const manager = typeof assigned === 'string' ? {name:assigned} : (assigned && typeof assigned === 'object' ? assigned : {});
+  const stableValue = project.id || project.projectId || project.profileKey || project.name || metadata.projectId || metadata.projectName || 'project';
+  const fallback = projectManagerHeaderColorFor(stableValue);
+  const named = projectManagerHeaderColorByName(manager.name);
+  const name = projectCleanText(manager.name || named?.name || fallback.name, fallback.name);
+  const hex = /^#[0-9a-f]{3,6}$/i.test(manager.hex || '') ? manager.hex : (named?.hex || fallback.hex);
+  return {
+    name,
+    hex,
+    family: manager.family || named?.family || fallback.family,
+    source: manager.name ? 'assigned_project_manager' : 'deterministic_project_manager'
+  };
+}
+
 function projectListFromValue(value){
   if(Array.isArray(value)) return value.map((item) => typeof item === 'string' ? item : (item.name || item.title || item.summary || item.label || '')).map((item) => projectCleanText(item)).filter(Boolean);
   return String(value || '')
@@ -3217,6 +3358,81 @@ function projectResolvedRelationships(project = {}, details = normalizedProjectS
     .filter((name, index, names) => names.findIndex((candidate) => candidate.toLowerCase() === name.toLowerCase()) === index)
     .filter((name) => text.includes(name.toLowerCase()));
   return matched.length ? matched : rawRelationships;
+}
+
+function projectRelationshipOptionFromProfile(profile = {}){
+  const query = profile.query || {};
+  const name = profile.name || profile.displayName || profile.identity || query.name || profile.email || '';
+  if(!name) return null;
+  const id = profile.profileId || profile.id || query.targetId || query.contactId || profile.contactId || profile.crmContactId || profile.personId || profile.profileKey || profile.email || name;
+  return {
+    id:String(id),
+    name,
+    email:query.email || profile.email || '',
+    contactId:query.contactId || profile.contactId || profile.crmContactId || profile.personId || '',
+    detail:profile.company || profile.role || profile.temperature || profile.relationshipStatus || '',
+    profile
+  };
+}
+
+function projectRelationshipOptions(){
+  const profiles = [
+    ...Object.values(relationshipProfiles || {}),
+    ...Object.values(relationshipIndexProfiles || {})
+  ];
+  const seen = new Set();
+  return profiles.map(projectRelationshipOptionFromProfile).filter(Boolean).filter((option) => {
+    const key = option.email ? 'email:' + option.email.toLowerCase() : option.name.toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 24);
+}
+
+function projectRelationshipOptionById(id = ''){
+  const clean = String(id || '');
+  return projectRelationshipOptions().find((option) => option.id === clean || option.name === clean || option.email === clean) || null;
+}
+
+function projectOwnerProjectKey(project = activeProjectProfile){
+  return project?.projectId || project?.id || project?.profileKey || project?.name || 'project';
+}
+
+function projectOwnerAssignment(project = {}, relationships = projectResolvedRelationships(project)){
+  const metadata = projectMetadataObject(project);
+  const dossier = project.dossier || {};
+  const dossierMetadata = projectMetadataObject(dossier);
+  const dossierCard = dossier.card || {};
+  const rawOwner = project.owner ||
+    project.nextStepOwner ||
+    project.projectOwner ||
+    metadata.owner ||
+    metadata.projectOwner ||
+    metadata.relationship ||
+    dossierCard.owner ||
+    dossierCard.projectOwner ||
+    dossierMetadata.owner ||
+    dossierMetadata.projectOwner ||
+    null;
+  let owner = projectOwnerFromValue(rawOwner);
+  if(!owner && relationships.length){
+    const matched = projectRelationshipOptions().find((option) => option.name.toLowerCase() === String(relationships[0]).toLowerCase());
+    owner = matched || {id:relationships[0], name:relationships[0], source:'relationship_context'};
+  }
+  if(!owner) return {id:'', name:'', detail:'', email:'', source:'missing_owner'};
+  const matched = projectRelationshipOptions().find((option) =>
+    [owner.id, owner.name, owner.email].filter(Boolean).some((value) =>
+      option.id === value || option.name.toLowerCase() === String(value).toLowerCase() || option.email.toLowerCase() === String(value).toLowerCase()
+    )
+  );
+  return {
+    ...owner,
+    id:String(matched?.id || owner.id || owner.name),
+    name:matched?.name || owner.name,
+    email:matched?.email || owner.email || '',
+    detail:owner.detail || matched?.detail || '',
+    source:owner.source || 'project_owner'
+  };
 }
 
 function projectAdmissionPacket(project = {}){
@@ -3280,12 +3496,14 @@ function projectManagerPacket(project = {}){
   const details = normalizedProjectSourceDetails(project);
   const sop = projectSopPacket(project);
   const relationships = projectResolvedRelationships(project, details);
+  const assignedProjectManager = projectManagerAssignment(project);
+  const ownerAssignment = projectOwnerAssignment(project, relationships);
   const docs = projectListFromValue(project.documents || details.documents);
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks : [];
   const prepared = Array.isArray(project.preparedWork) ? project.preparedWork : [];
   const reviewUpdates = Array.isArray(project.reviewUpdates) ? project.reviewUpdates : [];
   const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, 'No active blocker has been proven yet.');
-  const owner = projectCleanText(project.nextStepOwner || project.owner || relationships[0], 'VAL is still matching the responsible owner.');
+  const owner = projectCleanText(ownerAssignment.name, 'VAL is still matching the responsible owner.');
   const nextAction = projectCleanText(project.nextMove || project.recommendedAction, 'Decide the next narrow move.');
   const whyNow = projectCleanText(project.whyNow || project.nextMoveEvidence || project.decisionEvidence || project.signal, 'This project has enough evidence to deserve a clean next move.');
   return {
@@ -3299,8 +3517,11 @@ function projectManagerPacket(project = {}){
       current_state: projectCleanText(project.status, 'Active project'),
       strategic_importance: projectCleanText(project.strategicImportance || project.importance || project.signal, 'This work has enough consequence to coordinate.'),
       project_season: projectCleanText(project.projectSeason || project.season || project.momentum, 'Active coordination'),
+      assigned_project_manager: assignedProjectManager,
       source_receipts: admission.source_receipts
     },
+    project_manager_assignment_packet: assignedProjectManager,
+    project_owner_packet: ownerAssignment,
     project_movement_packets: [{
       what_changed: projectCleanText(project.signal || project.momentum, 'Project evidence is active enough for review.'),
       source_type: admission.source_type,
@@ -3352,9 +3573,93 @@ function projectManagerPacket(project = {}){
   };
 }
 
+function projectCoworkScopeLabel(field = ''){
+  if(field === 'project_overview') return 'Whole project';
+  return String(field || 'project_context').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function projectCoworkAffectedObject(field = '', project = {}, packet = {}){
+  const map = {
+    project_overview: 'project_manager_packet',
+    what_this_is: 'project_identity_packet',
+    why_it_matters: 'project_manager_judgment_packet.why_it_matters',
+    next_move: 'project_next_action_packet',
+    people_involved: 'project_relationships_packet',
+    prepared_work: 'project_prepared_work_packets',
+    documents_sources: 'project_identity_packet.source_receipts',
+    risk_blocker: 'project_risk_packet',
+    working_narrative: 'project_manager_judgment_packet.current_reality',
+    what_val_needs_next: 'project_interview_packet',
+    sop_fit: 'project_sop_packet',
+    project_phase: 'project_sop_packet.current_phase',
+    project_interview: 'project_interview_packet',
+    workstreams: 'project_sop_packet.default_workstreams',
+    milestones: 'project_sop_packet.standard_milestones',
+    monitoring_rules: 'project_sop_packet.monitoring_rules',
+    relationship_nurture: 'project_sop_packet.relationship_nurture_rules'
+  };
+  return {
+    object_type: map[field] || 'project_manager_packet',
+    object_label: projectCoworkScopeLabel(field),
+    project_id: project.projectId || project.id || packet.project_identity_packet?.project_id || '',
+    project_name: project.name || packet.project_identity_packet?.canonical_name || 'Project'
+  };
+}
+
+function projectCoworkSourceReceiptLines(project = {}, packet = {}){
+  const details = normalizedProjectSourceDetails(project);
+  return [
+    project.sourceReceipts || packet.source_receipts || '',
+    details.documents ? 'Documents: ' + details.documents : '',
+    details.relationships ? 'Relationships: ' + details.relationships : '',
+    details.rawContext ? 'Raw context: ' + details.rawContext : ''
+  ].map((line) => projectCleanText(line).slice(0, 900)).filter(Boolean).slice(0, 5);
+}
+
+function projectScopedCoworkPacket(field = 'project_overview', project = activeProjectProfile){
+  const item = project || activeProjectProfile || projectProfiles.frisson;
+  const packet = projectManagerPacket(item);
+  const spec = projectCoworkSpec(field);
+  const affectedObject = projectCoworkAffectedObject(field, item, packet);
+  const sourceReceipts = projectCoworkSourceReceiptLines(item, packet);
+  return {
+    packet_name: 'project_scoped_cowork_packet',
+    project_id: affectedObject.project_id,
+    project_name: affectedObject.project_name,
+    selected_action: field === 'project_overview' ? 'cowork_project_overview' : 'cowork_' + field,
+    selected_action_label: spec.title || projectCoworkScopeLabel(field),
+    affected_object: affectedObject,
+    source_receipts: sourceReceipts,
+    current_reality: packet.project_manager_judgment_packet.current_reality,
+    recommended_next_step: packet.project_next_action_packet.next_action,
+    allowed_actions: ['think','draft','compare','plan','summarize','ask_question','prepare_artifact_for_review'],
+    never_do: ['send_email','send_sms','create_calendar_event','update_crm','assign_task','publish_document','mutate_external_system'],
+    no_external_action: true
+  };
+}
+
+function projectScopedCoworkContextLines(scopedPacket = {}){
+  const receipts = Array.isArray(scopedPacket.source_receipts) ? scopedPacket.source_receipts : [];
+  return [
+    'Scoped packet: ' + scopedPacket.packet_name,
+    'Project: ' + (scopedPacket.project_name || 'Project'),
+    'Selected action: ' + (scopedPacket.selected_action_label || scopedPacket.selected_action || 'Project Co-Work'),
+    'Affected object only: ' + (scopedPacket.affected_object?.object_type || 'project_manager_packet'),
+    scopedPacket.current_reality ? 'Current reality: ' + scopedPacket.current_reality : '',
+    scopedPacket.recommended_next_step ? 'Recommended next step: ' + scopedPacket.recommended_next_step : '',
+    receipts.length ? 'Source receipts: ' + receipts.join(' | ') : 'Source receipts: no source receipts attached yet.',
+    'Allowed actions: think, draft, compare, plan, summarize, ask questions, and prepare review-only artifacts.',
+    'Never do: send, create calendar events, update CRM, assign tasks, publish, or mutate external systems from Co-Work.'
+  ].filter(Boolean);
+}
+
+function projectCoworkChip(){
+  return '<small class="project-manager-cowork-chip" aria-hidden="true">Co-Work</small>';
+}
+
 function projectManagerCard(label, title, body, extra = ''){
   const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-  return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(key) + '" aria-label="Update ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(body) + '</p>' + (extra ? '<small>' + escapeHtml(extra) + '</small>' : '') + '</article>';
+  return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(key) + '" aria-label="Co-Work on ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(body) + '</p>' + (extra ? '<small>' + escapeHtml(extra) + '</small>' : '') + projectCoworkChip() + '</article>';
 }
 
 function projectManagerList(items = [], emptyText = 'Nothing active here yet.'){
@@ -3364,24 +3669,7 @@ function projectManagerList(items = [], emptyText = 'Nothing active here yet.'){
 }
 
 function projectManagerDetailCard(field, label, html){
-  return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(field) + '" aria-label="Update ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span>' + html + '</article>';
-}
-
-function projectRelationshipOptions(){
-  const profiles = [
-    ...Object.values(relationshipProfiles || {}),
-    ...Object.values(relationshipIndexProfiles || {})
-  ];
-  const seen = new Set();
-  return profiles.map((profile) => {
-    const name = profile.name || profile.displayName || profile.identity || profile.email || '';
-    const id = profile.profileId || profile.id || profile.contactId || profile.email || name;
-    if(!name) return null;
-    const key = name.toLowerCase();
-    if(seen.has(key)) return null;
-    seen.add(key);
-    return {id, name, detail: profile.company || profile.role || profile.temperature || profile.relationshipStatus || ''};
-  }).filter(Boolean).slice(0, 24);
+  return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(field) + '" aria-label="Co-Work on ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span>' + html + projectCoworkChip() + '</article>';
 }
 
 function renderProjectRelationshipPicker(){
@@ -3391,6 +3679,96 @@ function renderProjectRelationshipPicker(){
       options.map((option) => '<button type="button" data-project-relationship-choice="' + escapeHtml(option.name) + '"><strong>' + escapeHtml(option.name) + '</strong>' + (option.detail ? '<span>' + escapeHtml(option.detail) + '</span>' : '') + '</button>').join(''),
       '<button type="button" class="create" data-project-relationship-create><strong>Create new relationship</strong><span>Add someone not listed here.</span></button>',
     '</div>'
+  ].join('');
+}
+
+function renderProjectOwnerControl(project = activeProjectProfile, owner = projectOwnerAssignment(project)){
+  const projectKey = projectOwnerProjectKey(project);
+  const status = projectOwnerStatusByProject[projectKey] || '';
+  const options = projectRelationshipOptions();
+  const ownerName = owner.name || 'Owner needs review';
+  const ownerDetail = owner.name ? (owner.detail || owner.email || 'One owner is attached to this project.') : 'Choose a relationship or create a new one.';
+  const choiceButtons = options.slice(0, 8).map((option) => {
+    const active = owner.name && option.name.toLowerCase() === owner.name.toLowerCase();
+    return '<button type="button" data-project-owner-choice="' + escapeHtml(option.id) + '"' + (active ? ' aria-pressed="true"' : '') + '><strong>' + escapeHtml(option.name) + '</strong>' + (option.detail ? '<span>' + escapeHtml(option.detail) + '</span>' : '') + '</button>';
+  }).join('');
+  return [
+    '<div class="project-owner-control" data-project-owner-control>',
+      '<div class="project-owner-current">',
+        '<span>Owner</span>',
+        '<strong>' + escapeHtml(ownerName) + '</strong>',
+        '<small>' + escapeHtml(ownerDetail) + '</small>',
+      '</div>',
+      '<div class="project-owner-choices" aria-label="Change project owner">',
+        choiceButtons || '<small>No relationship options loaded yet.</small>',
+      '</div>',
+      '<details class="project-owner-create">',
+        '<summary>Create new relationship owner</summary>',
+        '<form data-project-owner-create-form>',
+          '<input type="text" name="name" placeholder="Name" autocomplete="off" required>',
+          '<input type="email" name="email" placeholder="Email optional" autocomplete="off">',
+          '<input type="text" name="detail" placeholder="Role or context optional" autocomplete="off">',
+          '<button type="submit">Create and assign</button>',
+        '</form>',
+      '</details>',
+      status ? '<p class="project-owner-status">' + escapeHtml(status) + '</p>' : '',
+    '</div>'
+  ].join('');
+}
+
+function renderProjectPeopleAndOwner(project = activeProjectProfile, relationships = []){
+  const owner = projectOwnerAssignment(project, relationships);
+  const relationshipList = relationships.length
+    ? '<ul>' + projectManagerList(relationships) + '</ul>'
+    : renderProjectRelationshipPicker();
+  return renderProjectOwnerControl(project, owner) + relationshipList;
+}
+
+function projectPinProjectKey(project = activeProjectProfile){
+  return project?.projectId || project?.id || project?.profileKey || project?.name || 'project';
+}
+
+function projectPinDefaultDatetime(){
+  const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  date.setSeconds(0, 0);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function projectPinStatus(project = activeProjectProfile){
+  return projectPinStatusByProject[projectPinProjectKey(project)] || '';
+}
+
+function projectPinPrompt(project = activeProjectProfile){
+  const next = projectCleanText(project?.nextMove || project?.nextMoveEvidence || '', '');
+  return next || 'Revisit ' + (project?.name || 'this project');
+}
+
+function renderProjectPinControl(project = activeProjectProfile){
+  const status = projectPinStatus(project);
+  const form = projectPinComposerOpen ? [
+    '<form class="project-pin-form" data-project-pin-form>',
+      '<label>',
+        '<span>When do you want me to unpin this for you?</span>',
+        '<input type="datetime-local" name="pinUntil" value="' + escapeHtml(projectPinDefaultDatetime()) + '" required>',
+      '</label>',
+      '<label>',
+        '<span>What should come back?</span>',
+        '<input type="text" name="title" value="' + escapeHtml(projectPinPrompt(project)) + '" autocomplete="off" required>',
+      '</label>',
+      '<div>',
+        '<button type="submit">Pin it</button>',
+        '<button type="button" data-project-pin-cancel>Cancel</button>',
+      '</div>',
+    '</form>'
+  ].join('') : '';
+  return [
+    '<div class="project-manager-hero-actions">',
+      '<button type="button" data-project-cowork-scope="project_overview" aria-label="Co-Work with VAL on this project">Co-Work</button>',
+      '<button type="button" data-project-pin-open>Put a pin in it</button>',
+    '</div>',
+    form,
+    status ? '<p class="project-pin-status">' + escapeHtml(status) + '</p>' : ''
   ].join('');
 }
 
@@ -3414,6 +3792,7 @@ function renderProjectManagerProfile(project = {}){
   const next = packet.project_next_action_packet;
   const sop = packet.project_sop_packet;
   const interview = packet.project_interview_packet;
+  const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
   const details = normalizedProjectSourceDetails(project);
@@ -3428,20 +3807,23 @@ function renderProjectManagerProfile(project = {}){
   const riskTitle = projectHasSpecificSignal(project.blocker || project.blockedBy || project.risk || project.riskSummary, project) ? judgment.what_is_blocked : '';
   const riskBody = projectHasSpecificSignal(project.risk || project.riskSummary, project) ? judgment.what_is_at_risk : '';
   const detailCards = [
-    projectManagerDetailCard('people_involved', 'People involved', relationships.length ? '<ul>' + projectManagerList(relationships) + '</ul>' : renderProjectRelationshipPicker()),
+    projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
     prepared.length ? projectManagerDetailCard('prepared_work', 'Prepared work', '<ul>' + projectManagerList(prepared) + '</ul>') : '',
     documents.concat(graph).length ? projectManagerDetailCard('documents_sources', 'Documents / sources', '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>') : '',
     riskTitle || riskBody ? projectManagerDetailCard('risk_blocker', 'Risk / blocker', '<strong>' + escapeHtml(riskTitle || 'Possible blocker') + '</strong><p>' + escapeHtml(riskBody || 'Review before moving forward.') + '</p>') : ''
   ].filter(Boolean);
-  if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Projects';
+  if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
     ? 'Project manager view with ' + relationshipSubtitle + ' attached.'
     : 'Project manager view. Add the people, outcome, and first next move VAL should coordinate.';
   projectManagerProfile.innerHTML = [
-    '<section class="project-manager-hero">',
+    '<section class="project-manager-hero" data-project-manager-family="' + escapeHtml(assignedProjectManager.family || 'white') + '" style="' + escapeHtml(projectManagerColorStyle(assignedProjectManager)) + '">',
       '<div class="project-mark" aria-hidden="true">' + escapeHtml(project.initials || initialsFromName(identity.canonical_name)) + '</div>',
       '<div>',
-        '<p class="project-manager-eyebrow">Project Manager</p>',
+        '<div class="project-manager-identity-line">',
+          '<p class="project-manager-eyebrow">Project Manager</p>',
+          '<span class="project-manager-assignee"><i aria-hidden="true"></i>Assigned to ' + escapeHtml(assignedProjectManager.name) + '</span>',
+        '</div>',
         '<h4>' + escapeHtml(identity.canonical_name) + '</h4>',
         '<p>' + escapeHtml(projectSummary) + '</p>',
         '<div class="project-manager-tags">',
@@ -3450,6 +3832,7 @@ function renderProjectManagerProfile(project = {}){
           '<span>' + escapeHtml(sop.sop_name) + '</span>',
           relationships.slice(0, 2).map((name) => '<span>' + escapeHtml(name) + '</span>').join(''),
         '</div>',
+        renderProjectPinControl(project),
       '</div>',
     '</section>',
     '<section class="project-manager-operating-system" aria-label="Project operating system">',
@@ -3457,16 +3840,19 @@ function renderProjectManagerProfile(project = {}){
         '<span>Operating System</span>',
         '<strong>' + escapeHtml(sop.sop_name) + '</strong>',
         '<p>' + escapeHtml(sop.when_to_use) + '</p>',
+        projectCoworkChip(),
       '</article>',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
         '<span>Current Phase</span>',
         '<strong>' + escapeHtml(sop.current_phase) + '</strong>',
         '<p>' + escapeHtml((sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
+        projectCoworkChip(),
       '</article>',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_interview">',
         '<span>Project Interview</span>',
         '<strong>' + escapeHtml(interview.missing_fields.length ? 'Needs ' + interview.missing_fields.join(', ').replace(/_/g, ' ') : 'Ready to manage') + '</strong>',
         '<p>' + escapeHtml(interview.current_question) + '</p>',
+        projectCoworkChip(),
       '</article>',
     '</section>',
     '<section class="project-manager-judgment" aria-label="Project Manager judgment">',
@@ -3482,21 +3868,21 @@ function renderProjectManagerProfile(project = {}){
     '</section>',
     detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(project.livingNarrative || project.reality || judgment.current_reality || projectSummary, projectSummary)) + '</p></div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(relationships.length ? 'Name the outcome, the owner, and the first concrete move so VAL can manage this without scattering the context.' : 'Attach the right people first, then name the first concrete outcome.') + '</p></div>',
+      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(project.livingNarrative || project.reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
+      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(relationships.length ? 'Name the outcome, the owner, and the first concrete move so VAL can manage this without scattering the context.' : 'Attach the right people first, then name the first concrete outcome.') + '</p>' + projectCoworkChip() + '</div>',
     '</section>'
   ].join('');
 }
 
 function renderProjectManagerEmptyState(){
   activeProjectProfile = null;
-  if(projectTitle) projectTitle.textContent = 'Projects';
-  if(projectSubtitle) projectSubtitle.textContent = 'Projects will appear here when there is enough connected work to manage clearly.';
+  if(projectTitle) projectTitle.textContent = 'Project Managers';
+  if(projectSubtitle) projectSubtitle.textContent = 'Project Managers will appear here when there is enough connected work to manage clearly.';
   if(!projectManagerProfile) return;
   projectManagerProfile.innerHTML = [
     '<section class="project-manager-hero project-manager-empty">',
       '<div>',
-        '<p class="project-manager-eyebrow">Projects</p>',
+        '<p class="project-manager-eyebrow">Project Managers</p>',
         '<h4>No active projects yet.</h4>',
         '<p>Once there is a project ready to manage, it will appear here.</p>',
       '</div>',
@@ -3507,6 +3893,12 @@ function renderProjectManagerEmptyState(){
 function projectCoworkSpec(field = ''){
   const projectName = activeProjectProfile?.name || 'this project';
   const specs = {
+    project_overview: {
+      title: 'Co-Work on this project',
+      question: 'What should VAL help you think through for ' + projectName + '?',
+      detail: 'This stays scoped to the selected project, its source receipts, and the current Project Manager packet.',
+      placeholder: 'Help me think through the next move, risk, owner, draft, or decision for this project.'
+    },
     what_this_is: {
       title: 'Shape what this project is',
       question: 'What is ' + projectName + ', who is it for, and what outcome should it create?',
@@ -3611,23 +4003,48 @@ function projectCoworkSpec(field = ''){
   };
 }
 
-function openProjectFieldCowork(field = ''){
+async function openProjectScopedCowork(field = 'project_overview', node = null, options = {}){
   if(!activeProjectProfile) return;
+  const project = activeProjectProfile;
   const spec = projectCoworkSpec(field);
-  activeProjectCoworkTarget = {field, projectId:activeProjectProfile.id || activeProjectProfile.projectId || '', title:spec.title};
+  const scopedPacket = projectScopedCoworkPacket(field, project);
+  const action = 'project:cowork:' + field;
+  const baseSource = projectSource(project, action);
+  const source = {
+    ...baseSource,
+    sourceItem:{
+      ...(baseSource.sourceItem || {}),
+      scopedCoworkPacket:scopedPacket
+    }
+  };
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action, allowBlockedForInspection:true, source});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  activeProjectCoworkTarget = {
+    field,
+    mode: options.mode || (field === 'project_overview' ? 'project_cowork' : 'field_update'),
+    projectId:project.id || project.projectId || '',
+    title:spec.title,
+    scopedPacket
+  };
   openContextualCoworkSession({
     returnTarget:'project',
     title:spec.title,
     meaning:spec.question,
-    context:[
-      'Project: ' + (activeProjectProfile.name || 'Project'),
-      'Field: ' + field.replace(/_/g, ' ')
-    ],
-    recommendation:'Answer only for this one section. VAL will rewrite it as clear project-manager language and update the card.',
+    context:projectScopedCoworkContextLines(scopedPacket),
+    recommendation:field === 'project_overview'
+      ? 'Use this to think, draft, compare, or decide within this project only. Anything external still needs its own approval surface.'
+      : 'Answer only for this one section. VAL will rewrite it as clear project-manager language and update the card.',
     placeholder:spec.placeholder,
     heading:spec.question,
-    detail:spec.detail || 'VAL will rewrite this into clear project-manager language.'
+    detail:spec.detail || 'VAL will rewrite this into clear project-manager language.',
+    publicDetail:'Scoped to Project Managers: ' + projectCoworkScopeLabel(field) + '.',
+    lockContext:true
   });
+}
+
+function openProjectFieldCowork(field = '', node = null){
+  return openProjectScopedCowork(field, node, {mode:'field_update'});
 }
 
 function projectManagerRewrite(text = '', field = ''){
@@ -3726,6 +4143,136 @@ function renderProjectCoworkUpdatedResponse(rewritten = '', field = ''){
   response.innerHTML = [
     '<p><strong>Updated.</strong><br>' + escapeHtml(rewritten) + '<br><br>' + escapeHtml(projectFollowupQuestion(field)) + '</p>'
   ].join('');
+}
+
+function setProjectOwnerStatus(project = activeProjectProfile, message = ''){
+  const key = projectOwnerProjectKey(project);
+  if(message) projectOwnerStatusByProject[key] = message;
+  else delete projectOwnerStatusByProject[key];
+}
+
+function applyProjectOwner(option = {}, source = 'user_reassigned'){
+  if(!activeProjectProfile || !option.name) return null;
+  const owner = {
+    type:'relationship',
+    id:option.id || option.contactId || option.email || option.name,
+    name:option.name,
+    email:option.email || '',
+    detail:option.detail || '',
+    source,
+    reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+  };
+  activeProjectProfile.owner = owner;
+  activeProjectProfile.nextStepOwner = owner.name;
+  activeProjectProfile.metadataJson = {
+    ...projectMetadataObject(activeProjectProfile),
+    owner,
+    ownerReassignedAt:new Date().toISOString(),
+    noExternalAction:true
+  };
+  appendProjectRelationshipNames([owner.name]);
+  return owner;
+}
+
+async function persistProjectOwnerAssignment(option = {}, owner = {}){
+  if(!canUseApi || !activeProjectProfile) return null;
+  return postJson('/api/projects/link-relationship', {
+    projectId:activeProjectProfile.projectId || activeProjectProfile.id || activeProjectProfile.profileKey || activeProjectProfile.name,
+    projectName:activeProjectProfile.name || '',
+    relationshipId:option.id || owner.id || option.name,
+    relationshipName:option.name || owner.name,
+    contactId:option.contactId || '',
+    email:option.email || owner.email || '',
+    summary:(option.name || owner.name) + ' is the assigned owner for ' + (activeProjectProfile.name || 'this project') + '.',
+    assignAsOwner:true,
+    noExternalAction:true
+  });
+}
+
+async function assignProjectOwnerFromOption(option = {}, node = null){
+  if(!activeProjectProfile || !option?.name) return;
+  const previous = activeProjectProfile.owner || null;
+  const owner = applyProjectOwner(option);
+  setProjectOwnerStatus(activeProjectProfile, 'Owner changed to ' + owner.name + '. Saving local receipt...');
+  renderProjectManagerProfile(activeProjectProfile);
+  renderProjectRolodex();
+  const selectedSource = projectSource(activeProjectProfile, 'project:reassign_owner');
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'project:reassign_owner', allowBlockedForInspection:true, source:selectedSource});
+  if(!preflight.ok){
+    activeProjectProfile.owner = previous;
+    activeProjectProfile.nextStepOwner = projectPersonName(previous);
+    setProjectOwnerStatus(activeProjectProfile, 'Owner change stayed pending because the project packet was blocked.');
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  try{
+    const result = await persistProjectOwnerAssignment(option, owner);
+    if(result?.projectOwner) activeProjectProfile.owner = result.projectOwner;
+    setProjectOwnerStatus(activeProjectProfile, canUseApi ? 'Owner saved locally. No CRM, message, task, calendar, or external action happened.' : 'Owner changed in this local view. The local server is needed to save the receipt.');
+  }catch(error){
+    setProjectOwnerStatus(activeProjectProfile, 'Owner changed in this view, but the local receipt was not saved: ' + error.message);
+  }
+  renderProjectManagerProfile(activeProjectProfile);
+  renderProjectRolodex();
+}
+
+async function assignProjectOwnerById(ownerId = '', node = null){
+  const option = projectRelationshipOptionById(ownerId);
+  if(!option){
+    setProjectOwnerStatus(activeProjectProfile, 'That relationship option is no longer available.');
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  await assignProjectOwnerFromOption(option, node);
+}
+
+function rememberProjectOwnerRelationship(profile = {}){
+  const normalized = relationshipProfileFromIndexItem(profile);
+  const id = normalized.query?.targetId || normalized.id || normalized.profileKey || normalized.name;
+  if(id) relationshipIndexProfiles[id] = relationshipProfileWithPersonPacket(normalized);
+  return projectRelationshipOptionFromProfile(relationshipIndexProfiles[id] || normalized);
+}
+
+async function createProjectOwnerRelationshipFromForm(event){
+  event.preventDefault();
+  event.stopPropagation();
+  if(!activeProjectProfile) return;
+  const form = event.target;
+  const data = new FormData(form);
+  const name = projectCleanText(data.get('name'));
+  const email = projectCleanText(data.get('email'));
+  const detail = projectCleanText(data.get('detail'));
+  if(!name){
+    setProjectOwnerStatus(activeProjectProfile, 'Name the relationship before creating an owner.');
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  let option = {
+    id:'local-owner:' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    name,
+    email,
+    detail
+  };
+  setProjectOwnerStatus(activeProjectProfile, 'Creating local relationship owner...');
+  renderProjectManagerProfile(activeProjectProfile);
+  if(canUseApi){
+    try{
+      const created = await postJson('/api/relationships/create', {
+        name,
+        email,
+        summary:detail || 'Created from Project Managers owner reassignment.',
+        source:'project_owner_reassignment',
+        noExternalAction:true
+      });
+      if(created?.relationship) option = rememberProjectOwnerRelationship(created.relationship) || option;
+    }catch(error){
+      setProjectOwnerStatus(activeProjectProfile, 'Created owner in this view, but the relationship receipt was not saved: ' + error.message);
+    }
+  }else{
+    relationshipIndexProfiles[option.id] = relationshipProfileWithPersonPacket(relationshipProfileFromIndexItem({id:option.id,name,email,role:detail,relationshipStatus:'created locally'}));
+  }
+  await assignProjectOwnerFromOption(option, form.querySelector('button[type="submit"]') || form);
 }
 
 function projectSourceDetailCount(details){
@@ -4071,11 +4618,14 @@ function projectProfileFromIndexItem(item = {}){
   const signal = projectCompactText(item.signal || summary || 'Project signal available.', 150);
   const nextMove = projectJudgmentLabel(item.nextMove || item.recommendedAction || '', 'Decide the next narrow move', [summary, signal]);
   const sourceDetails = normalizedProjectSourceDetails(item);
+  const metadata = projectMetadataObject(item);
   return {
     ...item,
     id,
     name,
     initials: item.initials || name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'P',
+    owner: item.owner || metadata.owner || null,
+    assignedProjectManager: item.assignedProjectManager || metadata.assignedProjectManager || null,
     status: item.status || item.relationshipStatus || 'Observed',
     signal,
     reality: projectCompactText(item.reality || item.summary || 'Canonical project profile from VAL project index.', 420),
@@ -4094,6 +4644,320 @@ function projectProfileFromIndexItem(item = {}){
     reviewUpdates: Array.isArray(item.reviewUpdates) ? item.reviewUpdates : [],
     href: item.href || './dashboard.html?view=projects&projectId=' + encodeURIComponent(id)
   };
+}
+
+function projectSuggestionReviewId(item = {}){
+  return item.reviewUpdateId || item.review_update_id || item.surfaceTargetId || item.surface_target_id || '';
+}
+
+function projectSuggestionMetadata(item = {}){
+  return item.metadataJson || item.metadata_json || {};
+}
+
+function projectSuggestionSourceRefs(item = {}){
+  return Array.isArray(item.sourceRefsJson) ? item.sourceRefsJson : (Array.isArray(item.source_refs_json) ? item.source_refs_json : []);
+}
+
+function projectSuggestionEvidenceLine(item = {}){
+  const meta = projectSuggestionMetadata(item);
+  const refs = projectSuggestionSourceRefs(item);
+  const documentCount = Number(meta.documentCount || 0);
+  const docLine = documentCount ? documentCount + ' document' + (documentCount === 1 ? '' : 's') : '';
+  const evidence = refs.map((ref) => ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.source_id || ref.sourceId || '').filter(Boolean)[0] || '';
+  return [docLine, evidence].filter(Boolean).join(' · ') || 'Document evidence attached.';
+}
+
+function findProjectSuggestionItem(reviewId = ''){
+  return currentProjectSuggestionItems.find((item) => String(projectSuggestionReviewId(item)) === String(reviewId)) || null;
+}
+
+function projectSuggestionSource(item = {}, action = ''){
+  const meta = projectSuggestionMetadata(item);
+  const manager = meta.assignedProjectManager || {};
+  const title = meta.projectName || String(item.title || '').replace(/^Suggested project:\s*/i, '') || 'Suggested project';
+  return {
+    sourceId: projectSuggestionReviewId(item) || item.id || title,
+    sourceType: 'project_suggestion_surface',
+    sourceLabel: title,
+    projectId: item.surfaceTargetId || item.surface_target_id || '',
+    projectName: title,
+    sourceItem: {
+      id: item.id || '',
+      reviewUpdateId: projectSuggestionReviewId(item),
+      title,
+      summary: item.summary || '',
+      assignedProjectManager: manager.name || '',
+      evidence: projectSuggestionEvidenceLine(item),
+      requestedAction: action,
+      noExternalAction:true
+    }
+  };
+}
+
+function appendProjectSuggestionRow(item = {}){
+  if(!projectSuggestions) return;
+  const reviewId = projectSuggestionReviewId(item);
+  if(!reviewId) return;
+  const meta = projectSuggestionMetadata(item);
+  const manager = meta.assignedProjectManager || {};
+  const title = meta.projectName || String(item.title || '').replace(/^Suggested project:\s*/i, '') || 'Suggested project';
+  const row = document.createElement('article');
+  row.className = 'project-suggestion-row';
+  const body = document.createElement('div');
+  body.className = 'project-suggestion-copy';
+  const kicker = document.createElement('span');
+  kicker.className = 'project-suggestion-kicker';
+  kicker.textContent = 'Suggested project';
+  const strong = document.createElement('strong');
+  strong.textContent = title;
+  const summary = document.createElement('p');
+  summary.textContent = item.summary || 'A relationship sent documents that may define a project.';
+  const evidence = document.createElement('small');
+  evidence.textContent = projectSuggestionEvidenceLine(item);
+  body.append(kicker, strong, summary, evidence);
+  if(manager.name){
+    const chip = document.createElement('span');
+    chip.className = 'project-suggestion-manager';
+    const swatch = document.createElement('i');
+    swatch.setAttribute('aria-hidden', 'true');
+    if(/^#[0-9a-f]{3,8}$/i.test(manager.hex || '')) swatch.style.backgroundColor = manager.hex;
+    chip.append(swatch, document.createTextNode(manager.name));
+    body.appendChild(chip);
+  }
+  const actions = document.createElement('div');
+  actions.className = 'project-suggestion-actions';
+  const approve = document.createElement('button');
+  approve.type = 'button';
+  approve.dataset.projectSuggestionAction = 'approve';
+  approve.dataset.projectSuggestionReview = reviewId;
+  approve.textContent = 'Yes, create this project and assign it a manager';
+  const reject = document.createElement('button');
+  reject.type = 'button';
+  reject.dataset.projectSuggestionAction = 'reject';
+  reject.dataset.projectSuggestionReview = reviewId;
+  reject.textContent = 'No, this is not a project';
+  actions.append(approve, reject);
+  row.append(body, actions);
+  projectSuggestions.appendChild(row);
+}
+
+function renderProjectSuggestions(){
+  if(!projectSuggestions) return;
+  projectSuggestions.innerHTML = '';
+  const items = currentProjectSuggestionItems.filter((item) => projectSuggestionReviewId(item));
+  projectSuggestions.hidden = !items.length;
+  if(!items.length) return;
+  const header = document.createElement('div');
+  header.className = 'project-suggestion-header';
+  const label = document.createElement('span');
+  label.textContent = 'From documents';
+  const count = document.createElement('small');
+  count.textContent = items.length + ' waiting';
+  header.append(label, count);
+  projectSuggestions.appendChild(header);
+  items.forEach(appendProjectSuggestionRow);
+}
+
+async function hydrateProjectSuggestions(){
+  renderProjectSuggestions();
+  if(!canUseApi || !projectSuggestions) return;
+  if(projectSuggestionRequest) return projectSuggestionRequest;
+  projectSuggestionRequest = getJson('/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5')
+    .then((data) => {
+      currentProjectSuggestionItems = Array.isArray(data?.surfaceRegistrations) ? data.surfaceRegistrations : [];
+      renderProjectSuggestions();
+    })
+    .catch((error) => {
+      currentProjectSuggestionItems = [];
+      renderProjectSuggestions();
+      console.warn('[hearth] project suggestions unavailable', error.message);
+    })
+    .finally(() => {
+      projectSuggestionRequest = null;
+    });
+  return projectSuggestionRequest;
+}
+
+async function decideProjectSuggestion(reviewId = '', action = '', node = null){
+  const item = findProjectSuggestionItem(reviewId);
+  if(!reviewId || !item) return;
+  const approved = action === 'approve';
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'projectSuggestion:' + (approved ? 'approve_create_project' : 'reject_not_project'), allowBlockedForInspection:true, source:projectSuggestionSource(item, action)});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  if(!canUseApi){
+    projectIndexSourceLabel = 'Project suggestion decisions need the local VAL server.';
+    updateProjectIndexSourceLabel();
+    return;
+  }
+  const rowButtons = node?.closest('.project-suggestion-row')?.querySelectorAll('button') || [];
+  rowButtons.forEach((button) => { button.disabled = true; });
+  try{
+    const result = await postJson('/api/val/review-updates/' + encodeURIComponent(reviewId) + '/' + (approved ? 'approve' : 'reject'), approved ? {note:'Yes, create this project and assign it a manager.'} : {reason:'No, this is not a project.'});
+    currentProjectSuggestionItems = currentProjectSuggestionItems.filter((candidate) => String(projectSuggestionReviewId(candidate)) !== String(reviewId));
+    renderProjectSuggestions();
+    projectIndexSourceLabel = approved ? 'Project created locally from relationship documents' : 'Suggested project dismissed';
+    updateProjectIndexSourceLabel();
+    if(approved){
+      projectIndexLoaded = false;
+      projectIndexRequest = null;
+      await hydrateProjectIndex();
+    } else {
+      await hydrateProjectSuggestions();
+    }
+    syncProjectReviewState(result.update || {id:reviewId,status:approved ? 'approved' : 'rejected'});
+  }catch(error){
+    projectIndexSourceLabel = 'Project suggestion was not updated: ' + error.message;
+    updateProjectIndexSourceLabel();
+    rowButtons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+function projectPinIsoFromLocal(value = ''){
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+function projectPinPayload(form){
+  const data = new FormData(form);
+  const project = activeProjectProfile || {};
+  const title = projectCleanText(data.get('title') || projectPinPrompt(project));
+  const pinUntil = projectPinIsoFromLocal(data.get('pinUntil') || '');
+  return {
+    projectId: project.projectId || project.id || project.name || '',
+    projectProfileId: project.id || '',
+    projectName: project.name || 'Project',
+    title,
+    summary: title,
+    pinUntil,
+    sourceType:'project_manager_page',
+    sourceId: project.projectId || project.id || project.name || '',
+    sourceTitle: project.name || 'Project',
+    sourceRefs:[{
+      sourceType:'project_manager_page',
+      sourceId: project.projectId || project.id || project.name || '',
+      quoteOrSummary: title,
+      confidence:0.9
+    }],
+    metadataJson:{projectProfileId:project.id || '',noExternalAction:true}
+  };
+}
+
+function normalizeProjectPinAlignmentItem(item = {}){
+  return {
+    ...item,
+    metadata: item.metadataJson || item.metadata || {},
+    target: item.target || {type:'project',id:item.projectId || '',name:item.projectName || 'Project',label:item.projectName || 'Project'},
+    sourceRefsJson: Array.isArray(item.sourceRefsJson) ? item.sourceRefsJson : [],
+    portalPhrases: Array.isArray(item.portalPhrases) ? item.portalPhrases : [item.projectName, item.title].filter(Boolean)
+  };
+}
+
+function isProjectPinAlignmentItem(item = {}){
+  const metadata = item.metadataJson || item.metadata || {};
+  return metadata.source === 'project_pin' || metadata.pinId || item.pinId || /^alignment_project_pin/i.test(String(item.id || ''));
+}
+
+function projectPinIdFromAlignmentItem(item = {}){
+  const metadata = item.metadataJson || item.metadata || {};
+  const id = metadata.pinId || item.pinId || item.projectPinId || '';
+  if(id) return String(id);
+  return String(item.id || '').replace(/^alignment_/, '');
+}
+
+function currentAlignmentIsProjectPin(){
+  const workspaceItem = currentState.rooms?.alignment?.workspace?.sourceItem || {};
+  const queueItem = homeRoomQueues.alignment?.[0]?.sourceItem || homeRoomQueues.alignment?.[0] || {};
+  return isProjectPinAlignmentItem(workspaceItem) || isProjectPinAlignmentItem(queueItem);
+}
+
+function updateAlignmentFromProjectPin(item = {}){
+  const pinItem = normalizeProjectPinAlignmentItem(item);
+  if(!homeAdmissionResult('alignment', pinItem).passed) return;
+  setHomeRoomQueue('alignment', [pinItem]);
+  const admitted = homeRoomQueues.alignment?.[0]?.sourceItem || pinItem;
+  const titleText = itemTitle(admitted, 'This is unpinned. Let\'s work on it.');
+  const meaningText = itemMeaning(admitted, 'A project loop has reopened at the time you chose.');
+  const sourceLabel = sourceActionLabel(admitted, 'Open Project Manager');
+  updateRoomFromBriefing('alignment', {
+    card: {
+      observation: roomCardObservation(admitted, titleText, 'alignment'),
+      implication: roomCardImplication(admitted, meaningText, 'alignment'),
+      invitation: 'Work it, pin it again, or close the loop.',
+      title: titleText,
+      summary: meaningText,
+      action: 'Review the reopened loop'
+    },
+    workspace: briefingWorkspace({
+      lens:'Alignment',
+      title:titleText,
+      meaning:meaningText,
+      understanding:workspaceUnderstanding(admitted, [
+        admitted.whyNow || '',
+        admitted.ifIgnored ? 'If ignored: ' + admitted.ifIgnored : '',
+        admitted.dueAt ? 'Unpinned at: ' + admitted.dueAt : ''
+      ]),
+      recommendation:admitted.actionNeeded || 'Open the Project Manager page and decide the next move.',
+      actions:suggestedHomeActionsForItem(admitted, 'alignment', sourceLabel),
+      confidence:admitted.confidence,
+      restraintReason:'A pin only enters Alignment when it reaches the user-chosen unpin time.',
+      sourceItem:admitted,
+      cardType:'highest_leverage'
+    })
+  });
+  setRoomCopy(currentState);
+}
+
+async function hydrateAlignmentFromProjectPins(){
+  if(!canUseApi) return;
+  if(projectPinAlignmentRequest) return projectPinAlignmentRequest;
+  projectPinAlignmentRequest = getJson('/api/val/project-pins/alignment?limit=3')
+    .then((data) => {
+      const items = Array.isArray(data?.alignmentItems) ? data.alignmentItems.map(normalizeProjectPinAlignmentItem) : [];
+      if(items.length) updateAlignmentFromProjectPin(items[0]);
+      else if(currentAlignmentIsProjectPin()){
+        setHomeRoomQueue('alignment', []);
+        clearHomeRoomForAdmission('alignment');
+        setRoomCopy(currentState);
+      }
+    })
+    .catch((error) => console.warn('[hearth] project pin alignment unavailable', error.message))
+    .finally(() => {
+      projectPinAlignmentRequest = null;
+    });
+  return projectPinAlignmentRequest;
+}
+
+async function createProjectPinFromForm(event){
+  event.preventDefault();
+  const form = event.target.closest('[data-project-pin-form]');
+  if(!form || !activeProjectProfile) return;
+  const payload = projectPinPayload(form);
+  const key = projectPinProjectKey(activeProjectProfile);
+  if(!payload.pinUntil){
+    projectPinStatusByProject[key] = 'Choose a valid date and time.';
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  if(!canUseApi){
+    projectPinStatusByProject[key] = 'The local VAL server is needed to save this pin. Nothing changed.';
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  projectPinStatusByProject[key] = 'Saving pin...';
+  renderProjectManagerProfile(activeProjectProfile);
+  try{
+    const result = await postJson('/api/val/project-pins', payload);
+    projectPinComposerOpen = false;
+    const date = new Date(result.pin?.pinUntil || payload.pinUntil);
+    const label = Number.isFinite(date.getTime()) ? date.toLocaleString([], {dateStyle:'medium', timeStyle:'short'}) : payload.pinUntil;
+    projectPinStatusByProject[key] = 'Pinned until ' + label + '. It will reopen in Project Managers and Alignment.';
+    renderProjectManagerProfile(activeProjectProfile);
+    await hydrateAlignmentFromProjectPins();
+  }catch(error){
+    projectPinStatusByProject[key] = 'Pin was not saved: ' + error.message;
+    renderProjectManagerProfile(activeProjectProfile);
+  }
 }
 
 async function hydrateProjectIndex(){
@@ -4277,6 +5141,8 @@ function projectProfileFromDossier(dossier = {}, fallback = {}){
     profileKey: identity.profileKey || card.profileKey || fallback.profileKey || '',
     name: identity.name || card.name || fallback.name || 'Project',
     initials: card.initials || fallback.initials || initialsFromName(identity.name || card.name || fallback.name || 'Project'),
+    owner: identity.owner || card.owner || fallback.owner || null,
+    assignedProjectManager: identity.assignedProjectManager || card.assignedProjectManager || fallback.assignedProjectManager || null,
     status: identity.status || currentReality.status || card.status || fallback.status || 'Observed',
     signal,
     reality,
@@ -4369,6 +5235,8 @@ async function createProjectFromDrawer(event){
 }
 
 function openProjectIndex(){
+  hydrateRelationshipIndex();
+  hydrateProjectSuggestions();
   renderProjectRolodex();
   const firstProject = projectIndexItems()[0];
   if(firstProject) renderProjectProfile(activeProjectProfile?.id || firstProject.id);
@@ -6011,28 +6879,14 @@ function showProjectReceipt({title, meaning, understanding = [], recommendation,
   openWorkspaceShell('Project action workspace', {returnTarget:'project'});
 }
 
-function openProjectCoworkSession(){
-  const project = activeProjectProfile || projectProfiles.frisson;
-  closeCalendarPanel();
-  openContextualCoworkSession({
-    returnTarget: 'project',
-    title: 'Project: ' + project.name,
-    meaning: 'VAL is holding the active project context privately.',
-    context: [
-      'Project: ' + project.name,
-      'Current reality: ' + (project.reality || project.status || 'Project context is available.'),
-      'Source receipts: ' + (project.sourceReceipts || 'Source receipts are not attached yet.'),
-      'No task, CRM update, calendar change, message, or project status change happens from this Co-Work space.'
-    ],
-    recommendation: 'Use this to think, draft, decide, or clarify what VAL should remember for this project.',
-    placeholder: 'What should VAL help you think through for ' + project.name + '?',
-    helper: 'Project context is held privately.'
-  });
+function openProjectCoworkSession(node = null){
+  return openProjectScopedCowork('project_overview', node, {mode:'project_cowork'});
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = ''}){
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
+  activeCoworkContextLocked = Boolean(lockContext);
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: safeTitle,
@@ -6045,17 +6899,17 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
   });
   deskWorkspace.classList.add('home-cowork-mode');
   renderHomeCoworkPreview({
-    heading: contextualCoworkHeading(safeTitle),
-    detail: coworkPublicDetail(returnTarget),
+    heading: heading || contextualCoworkHeading(safeTitle),
+    detail: publicDetail || detail || coworkPublicDetail(returnTarget),
     placeholder: placeholder || 'What should VAL help you think through here?'
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
 }
 
-function handleProjectAction(action){
+async function handleProjectAction(action){
   const project = activeProjectProfile || projectProfiles.frisson;
   if(action === 'cowork_project'){
-    openProjectCoworkSession();
+    await openProjectCoworkSession();
     return;
   }
   if(action === 'open_project_file'){
@@ -10826,6 +11680,13 @@ function suggestedRecommendationForHomeItem(item = {}, roomName = ''){
 function suggestedHomeActionsForItem(item = {}, roomName = '', sourceLabel = 'Open source behind this judgment'){
   const emailActions = homeEmailActions(item, sourceLabel);
   if(emailActions) return emailActions;
+  if(roomName === 'alignment' && isProjectPinAlignmentItem(item)){
+    return [
+      {label: 'Open Project Manager', homeAction: 'open_source'},
+      {label: 'Mark reminder handled', homeAction: 'complete_project_pin'},
+      {label: 'Show why VAL believes this', homeAction: 'review_evidence'}
+    ];
+  }
   const kind = preparedArtifactKind(item);
   const identityType = String(sourceIdentityForItem(item).type || '').toLowerCase();
   if(kind || identityType === 'draft'){
@@ -11593,11 +12454,16 @@ async function hydrateHomePresence(){
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
     hydratePreparedWorkQueue();
+    hydrateAlignmentFromProjectPins();
     renderWhyTodayPanel(briefing, 'loaded');
   }catch(error){
     renderWhyTodayPanel(null, 'unavailable');
     console.warn('Executive briefing unavailable:', error.message);
   }
+}
+
+if(canUseApi){
+  window.setInterval(() => hydrateAlignmentFromProjectPins(), 60000);
 }
 
 function setScraperLoading(type, message){
@@ -15108,6 +15974,81 @@ function renderPreparedApprovalReceipt(){
   });
 }
 
+async function completeProjectPinFromAlignment(){
+  const workspace = activeHomeWorkspace?.workspace || currentState.rooms?.alignment?.workspace || {};
+  const item = workspace.sourceItem || homeRoomQueues.alignment?.[0]?.sourceItem || homeRoomQueues.alignment?.[0] || {};
+  const pinId = projectPinIdFromAlignmentItem(item);
+  if(!pinId){
+    setWorkspaceContent({
+      lens: 'Alignment',
+      title: 'This reminder could not be cleared.',
+      meaning: 'VAL could not find the project-pin record behind this Alignment item.',
+      understanding: [itemTitle(item, 'Reopened project loop'), 'No external action was taken.'],
+      recommendation: 'Open the Project Manager page and handle the loop from there.',
+      actions: [
+        {label: 'Open Project Manager', homeAction: 'open_source'},
+        {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      ],
+      label: 'Project pin clear error',
+      sourceItem: item
+    });
+    return;
+  }
+  if(!canUseApi){
+    setWorkspaceContent({
+      lens: 'Alignment',
+      title: 'The reminder stayed pinned.',
+      meaning: 'The local VAL server is needed to clear a persisted project reminder.',
+      understanding: [itemTitle(item, 'Reopened project loop'), 'No external action was taken.'],
+      recommendation: 'Try again when the local service is available.',
+      actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+      label: 'Project pin clear unavailable',
+      sourceItem: item
+    });
+    return;
+  }
+  try{
+    await postJson('/api/val/project-pins/' + encodeURIComponent(pinId) + '/complete', {reason:'Handled from Alignment'});
+    setHomeRoomQueue('alignment', []);
+    clearHomeRoomForAdmission('alignment');
+    setRoomCopy(currentState);
+    setWorkspaceContent({
+      lens: 'Alignment Receipt',
+      title: 'Reminder cleared.',
+      meaning: 'VAL removed this reopened project reminder from Alignment.',
+      understanding: [
+        itemTitle(item, 'Reopened project loop'),
+        'Only the reminder loop was cleared.',
+        'The project record stayed intact.',
+        'No external action was taken.'
+      ],
+      recommendation: 'Return to the desk, or open Project Managers if the project itself still needs work.',
+      actions: [
+        {label: 'Open Project Managers', workflow: 'projectAllProjects'},
+        {label: 'Close and return to desk', workflow: 'cancel:meeting'}
+      ],
+      label: 'Project pin clear receipt',
+      sourceItem: item,
+      suppressClarityStandard: true
+    });
+    activeHomeWorkspace = {roomName:'alignment', workspace:{...workspace, sourceItem:item, cardType:workspace.cardType || 'highest_leverage'}};
+  }catch(error){
+    setWorkspaceContent({
+      lens: 'Alignment',
+      title: 'The reminder could not be cleared.',
+      meaning: 'Nothing external happened, and the project context stayed attached.',
+      understanding: [error.message, itemTitle(item, 'Reopened project loop')],
+      recommendation: 'Open the Project Manager page or try clearing the reminder again.',
+      actions: [
+        {label: 'Open Project Manager', homeAction: 'open_source'},
+        {label: 'Try again', homeAction: 'complete_project_pin'}
+      ],
+      label: 'Project pin clear failed',
+      sourceItem: item
+    });
+  }
+}
+
 async function handleHomeRoomAction(action, node = null){
   if(node?.dataset?.homeRoomItemAction){
     activateHomeQueueItem(node.dataset.homeRoomItemAction, node.dataset.homeRoomIndex);
@@ -15122,6 +16063,10 @@ async function handleHomeRoomAction(action, node = null){
   }
   if(action === 'approve_prepared'){
     renderPreparedApprovalReceipt();
+    return;
+  }
+  if(action === 'complete_project_pin'){
+    await completeProjectPinFromAlignment();
     return;
   }
   if(action === 'open_source'){
@@ -15198,6 +16143,7 @@ async function openMeetingPrep(){
 function openCoworkSession(){
   closeCalendarPanel();
   activeCoworkHeldContext = '';
+  activeCoworkContextLocked = false;
   setWorkspaceContent({
     lens: coworkSession.lens,
     title: coworkSession.title,
@@ -15304,6 +16250,7 @@ function orientHomeCoworkFromInput(){
   const input = workspaceInputValue('cowork');
   const context = workspaceInputPanel.querySelector('[data-home-cowork-context]') || scraperPreviewList.querySelector('[data-home-cowork-context]');
   if(!input || !context) return;
+  if(activeCoworkContextLocked) return;
   activeCoworkHeldContext = '';
   context.innerHTML = [
     '<strong>VAL is finding the right context.</strong>',
@@ -15398,6 +16345,9 @@ async function handlePrimaryAction(button){
 
 function closeWorkspace(){
   activeHomeWorkspace = null;
+  activeCoworkHeldContext = '';
+  activeCoworkContextLocked = false;
+  activeProjectCoworkTarget = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.add('desk-settling');
   hearth.classList.remove('calendar-prep-open');
@@ -15423,6 +16373,9 @@ function closeWorkspace(){
 function hideWorkspaceForDrawerNavigation(){
   if(hearth.dataset.distance !== 'judgment') return;
   activeHomeWorkspace = null;
+  activeCoworkHeldContext = '';
+  activeCoworkContextLocked = false;
+  activeProjectCoworkTarget = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.remove('calendar-prep-open');
   deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
@@ -15625,7 +16578,7 @@ projectDrawerLink.addEventListener('click', () => {
   projectDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#project-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
-    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Projects drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
+    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
     openProjectIndex();
   } else {
     renderDrawerPacketReceiptStrip(null);
@@ -15850,12 +16803,25 @@ document.querySelector('[data-project-create-cancel]')?.addEventListener('click'
 
 projectFileInput?.addEventListener('change', updateProjectFileReceipt);
 
-projectManagerProfile?.addEventListener('keydown', (event) => {
+projectManagerProfile?.addEventListener('keydown', async (event) => {
+  if(event.target.closest('button,a,input,select,textarea,summary')) return;
+  const scope = event.target.closest('[data-project-cowork-scope]');
   const card = event.target.closest('[data-project-cowork-field]');
-  if(!card || (event.key !== 'Enter' && event.key !== ' ')) return;
+  if((!scope && !card) || (event.key !== 'Enter' && event.key !== ' ')) return;
   event.preventDefault();
   event.stopPropagation();
-  openProjectFieldCowork(card.dataset.projectCoworkField);
+  if(scope) await openProjectScopedCowork(scope.dataset.projectCoworkScope, scope, {mode:'project_cowork'});
+  else await openProjectFieldCowork(card.dataset.projectCoworkField, card);
+});
+
+projectManagerProfile?.addEventListener('submit', (event) => {
+  if(event.target.matches('[data-project-pin-form]')){
+    createProjectPinFromForm(event);
+    return;
+  }
+  if(event.target.matches('[data-project-owner-create-form]')){
+    createProjectOwnerRelationshipFromForm(event);
+  }
 });
 
 async function openRelationshipProfileFromFolder(profileId = '', node = null){
@@ -16198,6 +17164,13 @@ drawerTray.addEventListener('click', async (event) => {
     renderStewardshipNetworkList();
     return;
   }
+  const projectSuggestionAction = event.target.closest('[data-project-suggestion-action]');
+  if(projectSuggestionAction){
+    event.preventDefault();
+    event.stopPropagation();
+    await decideProjectSuggestion(projectSuggestionAction.dataset.projectSuggestionReview, projectSuggestionAction.dataset.projectSuggestionAction, projectSuggestionAction);
+    return;
+  }
   const projectProfileButton = event.target.closest('[data-project-open-profile]');
   if(projectProfileButton){
     event.preventDefault();
@@ -16212,29 +17185,71 @@ drawerTray.addEventListener('click', async (event) => {
     appendProjectRelationshipNames([projectRelationshipChoice.dataset.projectRelationshipChoice]);
     renderProjectManagerProfile(activeProjectProfile);
     renderProjectRolodex();
-    openProjectFieldCowork('people_involved');
+    await openProjectFieldCowork('people_involved', projectRelationshipChoice);
+    return;
+  }
+  const projectOwnerChoice = event.target.closest('[data-project-owner-choice]');
+  if(projectOwnerChoice){
+    event.preventDefault();
+    event.stopPropagation();
+    await assignProjectOwnerById(projectOwnerChoice.dataset.projectOwnerChoice, projectOwnerChoice);
+    return;
+  }
+  const projectOwnerSummary = event.target.closest('.project-owner-create summary');
+  if(projectOwnerSummary){
+    event.stopPropagation();
+    return;
+  }
+  const projectOwnerInteractive = event.target.closest('.project-owner-control input, .project-owner-control button');
+  if(projectOwnerInteractive){
+    event.stopPropagation();
     return;
   }
   const projectRelationshipCreate = event.target.closest('[data-project-relationship-create]');
   if(projectRelationshipCreate){
     event.preventDefault();
     event.stopPropagation();
-    activeProjectCoworkTarget = {field:'people_involved', projectId:activeProjectProfile?.id || '', title:'Create a relationship for this project'};
+    activeProjectCoworkTarget = {field:'people_involved', mode:'field_update', projectId:activeProjectProfile?.id || '', title:'Create a relationship for this project'};
     openContextualCoworkSession({
       returnTarget:'project',
       title:'Create a relationship for this project',
       meaning:'Who should VAL add to this project?',
       context:['Project: ' + (activeProjectProfile?.name || 'Project')],
       recommendation:"Give VAL the person's name, company, role in the project, and anything important to remember.",
-      placeholder:'Name, company, role, and what VAL should remember.'
+      placeholder:'Name, company, role, and what VAL should remember.',
+      publicDetail:'Scoped to Project Managers: People involved.',
+      lockContext:true
     });
+    return;
+  }
+  const projectCoworkScope = event.target.closest('[data-project-cowork-scope]');
+  if(projectCoworkScope){
+    event.preventDefault();
+    event.stopPropagation();
+    await openProjectScopedCowork(projectCoworkScope.dataset.projectCoworkScope, projectCoworkScope, {mode:'project_cowork'});
+    return;
+  }
+  const projectPinOpen = event.target.closest('[data-project-pin-open]');
+  if(projectPinOpen){
+    event.preventDefault();
+    event.stopPropagation();
+    projectPinComposerOpen = true;
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  const projectPinCancel = event.target.closest('[data-project-pin-cancel]');
+  if(projectPinCancel){
+    event.preventDefault();
+    event.stopPropagation();
+    projectPinComposerOpen = false;
+    renderProjectManagerProfile(activeProjectProfile);
     return;
   }
   const projectCoworkCard = event.target.closest('[data-project-cowork-field]');
   if(projectCoworkCard){
     event.preventDefault();
     event.stopPropagation();
-    openProjectFieldCowork(projectCoworkCard.dataset.projectCoworkField);
+    await openProjectFieldCowork(projectCoworkCard.dataset.projectCoworkField, projectCoworkCard);
     return;
   }
   if(await handleRelationshipDetailClickEvent(event)){
@@ -16318,7 +17333,7 @@ linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceW
 workspaceInputPanel.addEventListener('submit', (event) => {
   if(!event.target.matches('[data-home-cowork-form]')) return;
   event.preventDefault();
-  if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field){
+  if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode !== 'project_cowork'){
     const input = workspaceInputValue('cowork');
     const rewritten = applyProjectFieldUpdate(activeProjectCoworkTarget.field, input);
     renderProjectCoworkUpdatedResponse(rewritten, activeProjectCoworkTarget.field);

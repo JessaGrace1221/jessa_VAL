@@ -34,11 +34,11 @@ Projects may only show an active project when all of these are true:
 4. The project can route back to the exact source or source-of-source behind each displayed claim.
 5. The project can feed downstream observers without blending unrelated relationship, inbox, transcript, calendar, document, or commitment context.
 
-If any of these are missing, the item stays as quiet evidence, a conversation, or a candidate project. It does not become an active Projects drawer item.
+If any of these are missing, the item stays as quiet evidence, a conversation, or a candidate project. It does not become an active Project Managers drawer item.
 
 ## Executive Questions
 
-The Projects drawer must answer the questions a user is already asking:
+The Project Managers drawer must answer the questions a user is already asking:
 
 | Layer | Executive question |
 |---|---|
@@ -226,7 +226,7 @@ Must not:
 
 ## Project Admission Rules
 
-Project admission happens after Witness and Executive Relevance, before the Projects drawer, Home, Meeting Prep, Co-Work, Relationships, or Leverage may use project context.
+Project admission happens after Witness and Executive Relevance, before the Project Managers drawer, Home, Meeting Prep, Co-Work, Relationships, or Leverage may use project context.
 
 ### Active Project Eligibility
 
@@ -271,7 +271,7 @@ Every project must carry exactly one state.
 |---|---|---|
 | `quiet_evidence` | True, stored, not project-worthy yet. | Source search or audit only |
 | `candidate_project` | Possible project, needs confirmation or more evidence. | Project review surface only |
-| `active_project` | Ongoing work with enough evidence to coordinate. | Projects drawer, related drawers |
+| `active_project` | Ongoing work with enough evidence to coordinate. | Project Managers drawer, related drawers |
 | `strategic_project` | Active work with high consequence, leverage, risk, or priority. | Projects, Home when admitted, Meeting Prep |
 | `blocked_project` | Work cannot move until a decision, owner, data, approval, or external action happens. | Projects, Alignment when Why Now is complete |
 | `prepared_project_work` | VAL has prepared work tied to the project. | Projects, Leverage when Can VAL Act is complete |
@@ -337,7 +337,7 @@ The Round Table must produce exactly one primary outcome:
 
 | Outcome | Meaning | Surface |
 |---|---|---|
-| `active_project_update` | Project changed and dossier should update. | Projects drawer |
+| `active_project_update` | Project changed and dossier should update. | Project Managers drawer |
 | `needs_executive_decision` | User judgment is required before work can move. | Alignment or Projects |
 | `prepared_work_ready` | VAL prepared work requiring review/approval. | Leverage and Projects |
 | `blocked_needs_context` | Missing data prevents safe progress. | Projects or Co-Work |
@@ -400,6 +400,7 @@ Required variables:
 - `current_state`
 - `strategic_importance`
 - `project_season`
+- `assigned_project_manager`
 - `created_by`
 - `created_from_source`
 - `source_receipts`
@@ -432,7 +433,7 @@ Required variables:
 
 Feeds:
 
-- Projects drawer change history
+- Project Managers drawer change history
 - Home welcome/context message
 - Velocity
 - Project action layer
@@ -608,6 +609,8 @@ Required variables:
 
 - `project_admission_packet`
 - `project_identity_packet`
+- `project_manager_assignment_packet`
+- `project_owner_packet`
 - `project_movement_packets`
 - `project_manager_judgment_packet`
 - `project_relationships_packet`
@@ -623,7 +626,7 @@ Required variables:
 
 Feeds:
 
-- Projects drawer
+- Project Managers drawer
 - Relationship Dossiers
 - Meeting Prep
 - Executive Inbox
@@ -772,7 +775,7 @@ Do not show candidate projects, quiet evidence, unrelated source counts, raw con
 
 Opening a project should lead to a full-page Project Manager experience, not a cramped drawer card.
 
-The Projects drawer/card is the entry point. The active project page is the working surface.
+The Project Managers drawer/card is the entry point. The active project page is the working surface.
 
 Purpose:
 
@@ -1890,7 +1893,7 @@ Source
   -> Project Admission Packet
   -> Project Manager Round Table
   -> Project Manager Packet
-  -> Projects drawer
+  -> Project Managers drawer
   -> Related drawers and Home only through their own admission gates
 ```
 
