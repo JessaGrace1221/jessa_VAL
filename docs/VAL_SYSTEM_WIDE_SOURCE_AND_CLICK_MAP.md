@@ -18,6 +18,7 @@ Status: documentation baseline for the next architecture pass.
 - source-processing document evidence now feeds the Documents drawer, and existing project owner metadata can admit document-email senders
 - unmatched document senders now persist source-only evidence for Documents instead of being skipped before source-processing records are created
 - Documents drawer now has a `Scan Gmail` intake action that runs the authenticated Gmail refresh/source-processing path and reports intake counts before the user interprets an empty search result
+- Executive Inbox selected-thread rendering now keeps the email body readable immediately and shows attachment metadata chips when Gmail returns attachments
 - remaining work is authenticated validation and broader source types
 
 ## Current Baseline
@@ -27,10 +28,10 @@ The current production deployment is the baseline for this map.
 - Production URL: `https://jessaval-production.up.railway.app`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
-- Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
+- Railway deployment: `e97b8555-3127-4b34-9a93-294023aa2824`
 - Branch: `codex/stewardship-person-packets`
-- Commit: `c820004`
-- Commit message: `Add Documents Gmail intake scan`
+- Commit: `6d88b98`
+- Commit message: `Make Executive Inbox thread readable`
 
 This supersedes the July 10 recovery baseline for future work. July 10 remains useful historical recovery context, but the current live Railway deployment is now the operative truth.
 

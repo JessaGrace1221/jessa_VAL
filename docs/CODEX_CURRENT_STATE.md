@@ -1,6 +1,6 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, and Documents Gmail intake scan
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, Documents Gmail intake scan, and Executive Inbox readable-thread fix
 
 ## 2026-07-12 Production Implementation State
 
@@ -28,6 +28,7 @@ Implemented live:
 - Documents now reads source-processing document evidence directly, so relationship email attachments such as an MOU can appear in the Documents drawer before the suggested project is approved
 - live document intake now saves source-only document evidence before relationship admission becomes a hard gate; unmatched senders still do not create Project Managers suggestions, but their documents no longer silently disappear from Documents
 - Documents now has a subtle `Scan Gmail` intake control that runs the authenticated Gmail refresh/source-processing path, refreshes Documents, and reports document-email/source-record/suggestion/source-only counts
+- Executive Inbox now keeps the selected email body directly under sender/date, preserves a longer readable body excerpt, and shows Gmail attachment metadata as chips when Gmail returns attachments
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document, and that same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from the shared source-processing receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -36,6 +37,7 @@ Implemented live:
 
 Remaining after this live promotion:
 
+- browser-visible/authenticated re-check of the Aric MOU in Executive Inbox: the email body should be immediately readable and an attachment chip should appear if Gmail returned attachment metadata
 - browser-visible/authenticated click of Documents `Scan Gmail` against the Aric MOU Gmail attachment and any real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line
 - if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
 - broader source types beyond relationship-sent email documents
@@ -49,10 +51,10 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
+- Railway deployment: `e97b8555-3127-4b34-9a93-294023aa2824`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `c820004`
-- Live baseline commit message: `Add Documents Gmail intake scan`
+- Live baseline commit: `6d88b98`
+- Live baseline commit message: `Make Executive Inbox thread readable`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
@@ -60,21 +62,22 @@ The July 10 recovery baseline and July 11 handoff baseline are now historical co
 
 ## End-Of-Day Branch State
 
-The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, the shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, and the Documents Gmail intake scan.
+The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, the shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, the Documents Gmail intake scan, and the Executive Inbox readable-thread fix.
 
 Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: c820004
-Latest live code promotion message: Add Documents Gmail intake scan
+Latest live code promotion commit: 6d88b98
+Latest live code promotion message: Make Executive Inbox thread readable
 ```
 
-These product-code branch changes are deployed to Railway production as deployment `f290ec10-a88c-45e7-9c18-5c64a3652dee`.
+These product-code branch changes are deployed to Railway production as deployment `e97b8555-3127-4b34-9a93-294023aa2824`.
 
 Today’s pushed commits to preserve:
 
 ```text
+6d88b98 Make Executive Inbox thread readable
 c820004 Add Documents Gmail intake scan
 13c8943 Preserve document evidence for unmatched senders
 be66920 Recognize project owners in document email intake

@@ -1,6 +1,6 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, and Documents Gmail intake scan
+Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, Documents Gmail intake scan, and Executive Inbox readable-thread fix
 
 ## 2026-07-12 Live Continuation
 
@@ -36,6 +36,7 @@ Behavior implemented:
 - the Documents drawer reads `source_processing_records` directly, so source-processed email attachments and Drive documents appear as reference-library rows before project approval
 - live document intake now persists source-only source-processing records for unmatched document senders instead of returning before record creation; these records can appear in Documents while still creating no Project Managers suggestion
 - Documents now has a subtle `Scan Gmail` control that runs `/api/email/gmail/refresh`, refreshes `/api/val/documents`, and reports document-email/source-record/suggestion/source-only counts in the drawer status line
+- Executive Inbox now renders the selected email body immediately under sender/date, preserves a longer readable body excerpt, and shows attachment metadata as chips when Gmail returns attachments
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` explaining what VAL did from the email/document, and the same receipt travels to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from that shared receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -64,12 +65,14 @@ Live verification completed:
 - production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, the source-processing surface registration fetch, `projectSuggestionReceiptLine`, and `whatValDidReceipt`
 - production `hearth-prototype.css` includes `.project-suggestion-receipt`
 - production `hearth-prototype.html/js/css` include `data-document-intake-scan`, `scanDocumentIntakeFromGmail`, `documentIntakeStatusLine`, and `.document-library-controls`
+- production `hearth-prototype.js/css` include `correspondenceAttachmentsFromSource`, `correspondence-thread-attachments`, `correspondenceCompactText(body,3600)`, and `align-content:start` for Executive Inbox thread cards
 - unauthenticated production POST to `/api/val/source-processing/relationship-document-email` returns `Authentication required`
 - production `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`
 - production browser smoke confirmed main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`, with no browser console errors
 
 Still future work:
 
+- browser-visible/authenticated re-check of Executive Inbox against the Aric MOU is still needed: the body should be immediately readable and an attachment chip should appear if Gmail returned attachment metadata
 - browser-visible/authenticated click of Documents `Scan Gmail` against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line, is still needed
 - if `Scan Gmail` reports zero document emails, inspect Gmail query/window/labels before changing Documents UI
 - if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
@@ -83,9 +86,9 @@ Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Branch: `codex/stewardship-person-packets`
-- Baseline commit: `c820004`
-- Baseline commit message: `Add Documents Gmail intake scan`
-- Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
+- Baseline commit: `6d88b98`
+- Baseline commit message: `Make Executive Inbox thread readable`
+- Railway deployment: `e97b8555-3127-4b34-9a93-294023aa2824`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -102,21 +105,22 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: c820004
-Latest live code promotion message: Add Documents Gmail intake scan
+Latest live code promotion commit: 6d88b98
+Latest live code promotion message: Make Executive Inbox thread readable
 ```
 
 Important distinction:
 
 ```text
 Production remains the behavioral truth.
-The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, and Documents Gmail intake scan.
-Product-code branch changes through c820004 are deployed to Railway production deployment f290ec10-a88c-45e7-9c18-5c64a3652dee.
+The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, Documents Gmail intake scan, and Executive Inbox readable-thread fix.
+Product-code branch changes through 6d88b98 are deployed to Railway production deployment e97b8555-3127-4b34-9a93-294023aa2824.
 ```
 
 Key pushed commits, in newest-first order:
 
 ```text
+6d88b98 Make Executive Inbox thread readable
 c820004 Add Documents Gmail intake scan
 13c8943 Preserve document evidence for unmatched senders
 be66920 Recognize project owners in document email intake
@@ -540,7 +544,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `c820004` or a descendant of it unless the user explicitly resets the baseline again.
+Start from `6d88b98` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 

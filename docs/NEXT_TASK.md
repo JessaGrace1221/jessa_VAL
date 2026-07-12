@@ -1,6 +1,6 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, and Documents Gmail intake scan
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, Documents Gmail intake scan, and Executive Inbox readable-thread fix
 
 ## 2026-07-12 Progress Note
 
@@ -32,7 +32,8 @@ Aric MOU validation fixes:
 - Document email intake now recognizes existing project owners, so Aric attached to Frisson can count as the admitted relationship for source-processing even when Executive Inbox has not separately matched him.
 - Document email intake now saves source-only evidence for unmatched document senders instead of skipping before source-processing can create a record; this keeps Documents from silently losing real attachments while Project Managers remains stricter.
 - Documents now has a subtle `Scan Gmail` intake control so the user can run authenticated document intake from the Documents drawer and see document-email/source-record/suggestion/source-only counts.
-- The live app is now deployment `f290ec10-a88c-45e7-9c18-5c64a3652dee` from commit `c820004 Add Documents Gmail intake scan`.
+- Executive Inbox now renders the selected email body immediately under sender/date instead of stretching it down the panel, preserves a longer readable body excerpt, and shows attachment chips when Gmail returns attachment metadata.
+- The live app is now deployment `e97b8555-3127-4b34-9a93-294023aa2824` from commit `6d88b98 Make Executive Inbox thread readable`.
 
 Implemented:
 
@@ -55,6 +56,7 @@ Implemented:
 - Documents drawer rows now include source-processing document evidence.
 - Unmatched document senders are persisted as source-only source-processing records and do not create Project Managers suggestions.
 - Documents drawer `Scan Gmail` runs `/api/email/gmail/refresh`, refreshes `/api/val/documents`, and reports the source-processing intake counts.
+- Executive Inbox message cards no longer stretch body text to the bottom of the selected thread panel, and attachment metadata is visible in the selected thread.
 - Shared "What VAL did" receipts now follow relationship-document source processing into source records, prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
 - Backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available.
 - The one no-action source-processing smoke-test record created during deployment validation was deleted from production.
@@ -74,7 +76,7 @@ git diff --check
 
 Verified live:
 
-- Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
+- Railway deployment: `e97b8555-3127-4b34-9a93-294023aa2824`
 - Production root returns `200`.
 - `/api/config/status` returns `VAL Proxy OK`.
 - `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
@@ -83,6 +85,7 @@ Verified live:
 - Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, source-processing surface registration fetch, `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
 - Live `hearth-prototype.css` contains `.project-suggestion-receipt`.
 - Live `hearth-prototype.html/js/css` contain `data-document-intake-scan`, `scanDocumentIntakeFromGmail`, `documentIntakeStatusLine`, and `.document-library-controls`.
+- Live `hearth-prototype.js/css` contain `correspondenceAttachmentsFromSource`, `correspondence-thread-attachments`, `correspondenceCompactText(body,3600)`, and `align-content:start` for Executive Inbox thread cards.
 - Live POST `/api/val/source-processing/relationship-document-email` without real auth returns `Authentication required`.
 - Live `/api/val/source-processing/records?limit=5` returns `{ ok: true, count: 0 }`, expected after cleanup.
 - Live `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`.
@@ -114,15 +117,15 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: c820004
-Railway deployment: f290ec10-a88c-45e7-9c18-5c64a3652dee
+Live baseline commit: 6d88b98
+Railway deployment: e97b8555-3127-4b34-9a93-294023aa2824
 Working branch: codex/stewardship-person-packets
-Latest live code promotion commit: c820004
+Latest live code promotion commit: 6d88b98
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `c820004`, pull the branch before continuing.
+If the branch is not at or after `6d88b98`, pull the branch before continuing.
 
 ## Current Next Step
 
@@ -132,8 +135,8 @@ Do not ask the old Co-Work V1 first question. The user approved the current sequ
 2. Continue the source-processing spine.
 3. The first source-processing receipt target, "What VAL did from this email/document," is implemented and live.
 4. Google Drive shared docs/links now count as document evidence in the same relationship-document path.
-5. Aric/Frisson MOU fixes are live: project-owner matching, Documents-from-source-processing, source-only preservation for unmatched document senders, and Documents `Scan Gmail` intake diagnostics.
-6. Next: ask the user to click Documents `Scan Gmail`, then read the status line and verify whether the MOU appears in Documents / Project Managers.
+5. Aric/Frisson MOU fixes are live: project-owner matching, Documents-from-source-processing, source-only preservation for unmatched document senders, Documents `Scan Gmail` intake diagnostics, and readable Executive Inbox thread rendering.
+6. Next: ask the user to hard refresh, reopen Executive Inbox, and verify whether the MOU body is readable immediately and whether an attachment chip appears. Then click Documents `Scan Gmail`, read the status line, and verify whether the MOU appears in Documents / Project Managers.
 7. Then broaden the source-processing spine to the next source type, likely transcripts/calendar events, while preserving the same no-action/action receipt pattern.
 
 ## What Is Already Implemented
