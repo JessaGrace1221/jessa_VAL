@@ -15,6 +15,7 @@ Status: documentation baseline for the next architecture pass.
 - owner reassignment now updates project metadata and records no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing with Gmail/Outlook attachment metadata
 - Google Drive/Docs links and Google Drive share notifications now count as document evidence for admitted-relationship source-processing
+- source-processing document evidence now feeds the Documents drawer, and existing project owner metadata can admit document-email senders
 - remaining work is authenticated validation and broader source types
 
 ## Current Baseline
@@ -24,10 +25,10 @@ The current production deployment is the baseline for this map.
 - Production URL: `https://jessaval-production.up.railway.app`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
-- Railway deployment: `e94868f0-555c-428a-9554-c78832f9a52e`
+- Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
 - Branch: `codex/stewardship-person-packets`
-- Commit: `e98449a`
-- Commit message: `Treat Google Drive shares as document evidence`
+- Commit: `be66920`
+- Commit message: `Recognize project owners in document email intake`
 
 This supersedes the July 10 recovery baseline for future work. July 10 remains useful historical recovery context, but the current live Railway deployment is now the operative truth.
 
@@ -682,7 +683,7 @@ This rule applies to all emails with documents, attachments, Google Drive/Docs l
 
 Anthony is only the example name. Do not special-case Anthony.
 
-When an admitted relationship sends or shares documents or project-like material, VAL must route the source through Email, Documents, Project Managers, and any relevant entity packets before deciding what should be visible.
+When an admitted relationship sends or shares documents or project-like material, VAL must route the source through Email, Documents, Project Managers, and any relevant entity packets before deciding what should be visible. Admission can come from a person relationship profile or from an existing project owner packet.
 
 Do not create suggested projects from non-relationship senders.
 

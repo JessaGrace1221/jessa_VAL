@@ -2,7 +2,7 @@
 
 Purpose: promote the handoff-approved Project Managers / source-processing slice as one cohesive live release.
 
-Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix, the first source-processing "What VAL did" receipt slice, and Google Drive share/link document evidence handling were also promoted. The current live product truth is now deployment `e94868f0-555c-428a-9554-c78832f9a52e` from commit `e98449a Treat Google Drive shares as document evidence`.
+Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix, the first source-processing "What VAL did" receipt slice, Google Drive share/link document evidence handling, and the Aric/Frisson MOU validation fixes were also promoted. The current live product truth is now deployment `53b59259-820a-4188-b463-9dfcbf4edbd7` from commit `be66920 Recognize project owners in document email intake`.
 
 This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HANDOFF.md` remains the source handoff.
 
@@ -11,15 +11,15 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live Railway deployment: `e94868f0-555c-428a-9554-c78832f9a52e`
-- Live branch commit: `e98449a`
+- Live Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
+- Live branch commit: `be66920`
 - Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice, the immediate Co-Work open path, and receipt markers `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
 - Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800` and includes `.project-suggestion-receipt`.
 - Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
 - Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
 - Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
 
-Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, the first shared "What VAL did" receipt path is deployed, and Google Drive share/link evidence is included in relationship-document intake.
+Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, the first shared "What VAL did" receipt path is deployed, Google Drive share/link evidence is included in relationship-document intake, and Aric/Frisson-style project-owner document intake is supported.
 
 ## Cohesion Rule
 
@@ -43,6 +43,8 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 | Live email intelligence/backfill route admitted relationship document attachments into source-processing | Implemented | `server.js`, `test/valSourceProcessing.test.js`, `test/intelligenceBackfill.test.js` | Authenticated connected email validation or controlled source-processing request proves path |
 | Shared "What VAL did" receipts follow source records into review/work surfaces | Implemented | `services/valSourceProcessing.js`, `hearth-prototype.js`, `test/valSourceProcessing.test.js`, `test/hearthLeadIntelligence.test.js` | Project Managers suggestion row can show `VAL handled:` from the shared receipt |
 | Google Drive shares/Docs links count as document evidence | Implemented | `server.js`, `test/valSourceProcessing.test.js` | Authenticated email validation sees Drive share/link evidence route through the same source-processing path |
+| Source-processing documents appear in Documents | Implemented | `services/valDocuments.js`, `test/valDocuments.test.js` | Aric MOU attachment appears in Documents after authenticated Gmail refresh |
+| Existing project owners can admit document-email senders | Implemented | `server.js`, `test/valSourceProcessing.test.js` | Aric attached to Frisson can qualify the MOU email for project suggestion processing |
 
 ## Live Promotion Result
 
@@ -63,6 +65,11 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 - Committed and pushed `e98449a Treat Google Drive shares as document evidence`.
 - Deployed Railway deployment `e94868f0-555c-428a-9554-c78832f9a52e`.
 - Verified production health, source-processing records route health, and unauthenticated mutation protection after deploy.
+- Committed and pushed `8c058b2 Show source-processing documents in Documents drawer`.
+- Deployed Railway deployment `b3cb3acc-95a3-46b8-bb3b-3554d070c10f`.
+- Committed and pushed `be66920 Recognize project owners in document email intake`.
+- Deployed Railway deployment `53b59259-820a-4188-b463-9dfcbf4edbd7`.
+- Verified production health after deploy. Authenticated browser re-run is required to prove the Aric MOU row and project suggestion in the user's session.
 
 ## Verification Already Run Locally
 
@@ -70,8 +77,10 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
 node --check services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valSourceProcessingSchema.js server.js hearth-prototype.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js
 node --check server.js services/valSourceProcessing.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --check services/valDocuments.js services/valDocumentsRoutes.js server.js test/valDocuments.test.js
 node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
 node --test --test-reporter=dot test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --test --test-reporter=dot test/valDocuments.test.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js test/valReadyForYou.test.js
 git diff --check
 ```
 
@@ -131,6 +140,6 @@ Do not block this promotion on those unless a later diff touches the failing are
 
 - Broader source types beyond relationship-sent email documents are future work.
 - Authenticated connected-email validation of a real suggestion plus visible receipt line is still future work.
-- The real unread Gmail attachment and a real Drive share/link still need browser-visible authenticated validation.
+- The Aric MOU Gmail attachment and a real Drive share/link still need browser-visible authenticated re-validation after the latest deployment.
 - Full standalone Co-Work V1 workspace redesign is documented but not part of this release.
 - The full test suite has five unrelated pre-existing contract failures.
