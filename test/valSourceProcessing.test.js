@@ -66,6 +66,9 @@ test('live email document intake routes admitted relationship attachments throug
   assert.doesNotMatch(server,/listRelationshipProfiles\(\{limit:260\}\)\.catch\(\(\)=>\[\]\)\)\.filter\(profile=>profile\.profileType==='person'\)/);
   assert.match(server,/google_drive_sharer_not_admitted_relationship/);
   assert.match(server,/sender_not_admitted_relationship/);
+  assert.doesNotMatch(server,/if\(!relationship\.admitted\)\{\s*return \{ok:true,skipped:true,reason:'sender_not_admitted_relationship'/);
+  assert.match(server,/skipped:!relationship\.admitted/);
+  assert.match(server,/reason:relationship\.admitted\?'':\(relationship\.relationshipAdmission\?\.reason\|\|'sender_not_admitted_relationship'\)/);
   const emailPayload=server.slice(
     server.indexOf('async function emailIntelligencePayload'),
     server.indexOf("app.get('/api/email/intelligence'")

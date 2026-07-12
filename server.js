@@ -9846,9 +9846,6 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
   const profiles=await listRelationshipProfiles({limit:260}).catch(()=>[]);
   const results=await mapWithConcurrency(candidates,3,async({email,documents})=>{
     const relationship=await sourceProcessingRelationshipFromEmail(email,profiles);
-    if(!relationship.admitted){
-      return {ok:true,skipped:true,reason:'sender_not_admitted_relationship',messageId:email.messageId||'',documentCount:documents.length,noExternalAction:true};
-    }
     const result=await valSourceProcessing.processRelationshipDocumentEmail({
       relationship,
       source:{
@@ -9868,7 +9865,8 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
     });
     return {
       ok:result.ok!==false,
-      skipped:false,
+      skipped:!relationship.admitted,
+      reason:relationship.admitted?'':(relationship.relationshipAdmission?.reason||'sender_not_admitted_relationship'),
       messageId:email.messageId||'',
       sourceProcessingRecordId:result.sourceProcessingRecord?.id||'',
       projectSuggestionId:result.projectSuggestion?.id||'',
