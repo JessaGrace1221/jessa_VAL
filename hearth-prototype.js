@@ -3290,6 +3290,7 @@ function projectInterviewStage(project = {}){
   const status = String(onboarding.status || '').toLowerCase();
   if(status === 'lanes_answered') return 'prepared_work';
   if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'lanes';
+  if(status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer)) return 'lanes';
   if(status === 'answered_first_question' || onboarding.firstAnswer) return 'owner_monitoring';
   if(projectNeedsOnboarding(project)) return 'first_question';
   return 'owner_monitoring';
@@ -4285,6 +4286,43 @@ function inferProjectMonitoringRules(text = ''){
   if(/\bcontribute your voice\b/i.test(clean)) rules.push('Contribute Your Voice process');
   if(/\bwebsite|developer/i.test(clean)) rules.push('Website implementation handoff');
   return rules.length ? Array.from(new Set(rules)) : [projectCompactText(clean, 160)].filter(Boolean);
+}
+
+function projectInterviewLooksLikeOwnerMonitoringAnswer(text = ''){
+  return /\b(i own|i am the owner|i'm the owner|owner|next step|next move|monitor|crm|payment|pipeline|contact forms?)\b/i.test(projectCleanText(text));
+}
+
+function normalizeProjectInterviewCarryover(project = {}){
+  const onboarding = projectOnboardingData(project);
+  const status = String(onboarding.status || '').toLowerCase();
+  const answer = projectCleanText(onboarding.ownerMonitoringAnswer || (status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer) ? onboarding.firstAnswer : ''));
+  if(!answer) return project;
+  const metadata = projectMetadataObject(project);
+  const owner = project.owner || metadata.owner || inferProjectInterviewOwner(answer);
+  const nextMove = project.nextMove || metadata.nextMove || inferProjectInterviewNextMove(answer);
+  const monitoringRules = Array.isArray(project.monitoringRules) && project.monitoringRules.length ? project.monitoringRules : (Array.isArray(metadata.monitoringRules) && metadata.monitoringRules.length ? metadata.monitoringRules : inferProjectMonitoringRules(answer));
+  project.needsProjectOnboarding = false;
+  project.ownerMonitoringNotes = project.ownerMonitoringNotes || metadata.ownerMonitoringNotes || answer;
+  if(owner) project.owner = owner;
+  if(owner?.name) project.nextStepOwner = project.nextStepOwner || metadata.nextStepOwner || owner.name;
+  if(nextMove) project.nextMove = nextMove;
+  project.monitoringRules = monitoringRules;
+  project.metadataJson = {
+    ...metadata,
+    owner:owner || null,
+    nextMove:project.nextMove || '',
+    nextStepOwner:project.nextStepOwner || '',
+    ownerMonitoringNotes:project.ownerMonitoringNotes,
+    monitoringRules,
+    needsProjectOnboarding:false,
+    projectOnboarding:{
+      ...onboarding,
+      status:'owner_monitoring_answered',
+      ownerMonitoringAnswer:answer
+    },
+    noExternalAction:true
+  };
+  return project;
 }
 
 function appendProjectRelationshipNames(names = []){
@@ -5956,7 +5994,7 @@ function renderProjectProfile(projectId = 'frisson'){
     renderProjectManagerEmptyState();
     return;
   }
-  activeProjectProfile = project;
+  activeProjectProfile = normalizeProjectInterviewCarryover(project);
   if(projectTitle) projectTitle.textContent = project.name || 'Projects';
   document.querySelectorAll('[data-project-field]').forEach((node) => {
     const field = node.dataset.projectField;

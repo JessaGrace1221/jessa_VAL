@@ -182,6 +182,8 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /owner_monitoring_answered/);
   assert.match(hearthJs, /function inferProjectInterviewOwner/);
   assert.match(hearthJs, /function inferProjectMonitoringRules/);
+  assert.match(hearthJs, /function projectInterviewLooksLikeOwnerMonitoringAnswer/);
+  assert.match(hearthJs, /function normalizeProjectInterviewCarryover/);
   assert.match(hearthJs, /function renderProjectOnboardingPanel/);
   assert.match(hearthJs, /function renderProjectRoundTableOverview/);
   assert.match(hearthJs, /needsProjectOnboarding:true/);
@@ -1306,8 +1308,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-interview-stages-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-interview-stages-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-interview-carryover-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-interview-carryover-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
