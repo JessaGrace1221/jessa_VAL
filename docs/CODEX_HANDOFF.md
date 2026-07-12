@@ -1,10 +1,10 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, and source-only document preservation
+Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, and Documents Gmail intake scan
 
 ## 2026-07-12 Live Continuation
 
-The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix, the shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, the Aric/Frisson MOU validation fixes, and source-only document preservation for unmatched document senders.
+The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix, the shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, the Aric/Frisson MOU validation fixes, source-only document preservation for unmatched document senders, and a Documents drawer Gmail intake scan control.
 
 New implementation:
 
@@ -35,6 +35,7 @@ Behavior implemented:
 - `relationship-document-email` can admit senders through existing project owner metadata, so a project owner like Aric attached to Frisson can produce document/project processing even before Executive Inbox has a separate relationship match
 - the Documents drawer reads `source_processing_records` directly, so source-processed email attachments and Drive documents appear as reference-library rows before project approval
 - live document intake now persists source-only source-processing records for unmatched document senders instead of returning before record creation; these records can appear in Documents while still creating no Project Managers suggestion
+- Documents now has a subtle `Scan Gmail` control that runs `/api/email/gmail/refresh`, refreshes `/api/val/documents`, and reports document-email/source-record/suggestion/source-only counts in the drawer status line
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` explaining what VAL did from the email/document, and the same receipt travels to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from that shared receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -62,13 +63,15 @@ Live verification completed:
 - production `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with an empty array
 - production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, the source-processing surface registration fetch, `projectSuggestionReceiptLine`, and `whatValDidReceipt`
 - production `hearth-prototype.css` includes `.project-suggestion-receipt`
+- production `hearth-prototype.html/js/css` include `data-document-intake-scan`, `scanDocumentIntakeFromGmail`, `documentIntakeStatusLine`, and `.document-library-controls`
 - unauthenticated production POST to `/api/val/source-processing/relationship-document-email` returns `Authentication required`
 - production `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`
 - production browser smoke confirmed main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`, with no browser console errors
 
 Still future work:
 
-- browser-visible/authenticated re-run against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line, is still needed
+- browser-visible/authenticated click of Documents `Scan Gmail` against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line, is still needed
+- if `Scan Gmail` reports zero document emails, inspect Gmail query/window/labels before changing Documents UI
 - if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
 - broader source types beyond relationship-sent email documents are still future work
 
@@ -80,9 +83,9 @@ Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Branch: `codex/stewardship-person-packets`
-- Baseline commit: `13c8943`
-- Baseline commit message: `Preserve document evidence for unmatched senders`
-- Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
+- Baseline commit: `c820004`
+- Baseline commit message: `Add Documents Gmail intake scan`
+- Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -99,21 +102,22 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: 13c8943
-Latest live code promotion message: Preserve document evidence for unmatched senders
+Latest live code promotion commit: c820004
+Latest live code promotion message: Add Documents Gmail intake scan
 ```
 
 Important distinction:
 
 ```text
 Production remains the behavioral truth.
-The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, and source-only document preservation for unmatched senders.
-Product-code branch changes through 13c8943 are deployed to Railway production deployment 3b79543b-0717-4c78-8d1b-6b1fccea3ff6.
+The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, and Documents Gmail intake scan.
+Product-code branch changes through c820004 are deployed to Railway production deployment f290ec10-a88c-45e7-9c18-5c64a3652dee.
 ```
 
 Key pushed commits, in newest-first order:
 
 ```text
+c820004 Add Documents Gmail intake scan
 13c8943 Preserve document evidence for unmatched senders
 be66920 Recognize project owners in document email intake
 8c058b2 Show source-processing documents in Documents drawer
@@ -536,7 +540,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `13c8943` or a descendant of it unless the user explicitly resets the baseline again.
+Start from `c820004` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 

@@ -2,7 +2,7 @@
 
 Purpose: promote the handoff-approved Project Managers / source-processing slice as one cohesive live release.
 
-Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix, the first source-processing "What VAL did" receipt slice, Google Drive share/link document evidence handling, the Aric/Frisson MOU validation fixes, and source-only document preservation for unmatched senders were also promoted. The current live product truth is now deployment `3b79543b-0717-4c78-8d1b-6b1fccea3ff6` from commit `13c8943 Preserve document evidence for unmatched senders`.
+Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix, the first source-processing "What VAL did" receipt slice, Google Drive share/link document evidence handling, the Aric/Frisson MOU validation fixes, source-only document preservation for unmatched senders, and a Documents Gmail intake scan were also promoted. The current live product truth is now deployment `f290ec10-a88c-45e7-9c18-5c64a3652dee` from commit `c820004 Add Documents Gmail intake scan`.
 
 This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HANDOFF.md` remains the source handoff.
 
@@ -11,15 +11,15 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
-- Live branch commit: `13c8943`
+- Live Railway deployment: `f290ec10-a88c-45e7-9c18-5c64a3652dee`
+- Live branch commit: `c820004`
 - Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice, the immediate Co-Work open path, and receipt markers `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
 - Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800` and includes `.project-suggestion-receipt`.
 - Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
 - Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
 - Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
 
-Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, the first shared "What VAL did" receipt path is deployed, Google Drive share/link evidence is included in relationship-document intake, Aric/Frisson-style project-owner document intake is supported, and unmatched document senders are preserved as source-only evidence instead of silently skipped.
+Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, the first shared "What VAL did" receipt path is deployed, Google Drive share/link evidence is included in relationship-document intake, Aric/Frisson-style project-owner document intake is supported, unmatched document senders are preserved as source-only evidence instead of silently skipped, and the Documents drawer can run the Gmail intake scan directly.
 
 ## Cohesion Rule
 
@@ -46,6 +46,7 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 | Source-processing documents appear in Documents | Implemented | `services/valDocuments.js`, `test/valDocuments.test.js` | Aric MOU attachment appears in Documents after authenticated Gmail refresh |
 | Existing project owners can admit document-email senders | Implemented | `server.js`, `test/valSourceProcessing.test.js` | Aric attached to Frisson can qualify the MOU email for project suggestion processing |
 | Unmatched document senders are preserved as source-only evidence | Implemented | `server.js`, `services/valSourceProcessing.js`, `test/valSourceProcessing.test.js` | If relationship admission misses Aric, the MOU still appears in Documents with no Project Managers suggestion |
+| Documents can trigger document-intake scan directly | Implemented | `hearth-prototype.html/js/css`, `test/hearthLeadIntelligence.test.js` | Click Documents `Scan Gmail`, read document-email/source-record/suggestion/source-only counts, and verify the MOU row |
 
 ## Live Promotion Result
 
@@ -74,6 +75,9 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 - Committed and pushed `13c8943 Preserve document evidence for unmatched senders`.
 - Deployed Railway deployment `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`.
 - Verified production health, source-processing records route health, and unauthenticated Documents `MOU` query behavior after deploy. Authenticated browser re-run is required to prove the Aric MOU row in the user's session.
+- Committed and pushed `c820004 Add Documents Gmail intake scan`.
+- Deployed Railway deployment `f290ec10-a88c-45e7-9c18-5c64a3652dee`.
+- Verified production health and live `hearth-prototype.html/js/css` markers for `data-document-intake-scan`, `scanDocumentIntakeFromGmail`, `documentIntakeStatusLine`, and `.document-library-controls`.
 
 ## Verification Already Run Locally
 
@@ -145,6 +149,7 @@ Do not block this promotion on those unless a later diff touches the failing are
 - Broader source types beyond relationship-sent email documents are future work.
 - Authenticated connected-email validation of a real suggestion plus visible receipt line is still future work.
 - The Aric MOU Gmail attachment and a real Drive share/link still need browser-visible authenticated re-validation after the latest deployment.
+- Use Documents `Scan Gmail` for that validation; a hard refresh alone is not sufficient proof that document intake re-ran.
 - If the MOU appears in Documents but not Project Managers, inspect saved relationship admission metadata before changing UI.
 - Full standalone Co-Work V1 workspace redesign is documented but not part of this release.
 - The full test suite has five unrelated pre-existing contract failures.
