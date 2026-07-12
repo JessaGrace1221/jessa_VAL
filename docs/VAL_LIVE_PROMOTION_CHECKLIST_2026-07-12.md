@@ -2,7 +2,7 @@
 
 Purpose: promote the handoff-approved Project Managers / source-processing slice as one cohesive live release.
 
-Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix was also promoted. The current live truth is now deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e` from commit `5aecdde Fix Co-Work open timing and drawer layering`.
+Update: after this promotion, a focused Co-Work open-timing and drawer-layering hotfix and the first source-processing "What VAL did" receipt slice were also promoted. The current live product truth is now deployment `bad2fd11-adbf-455a-99a0-a92840397af0` from commit `fb8a7bb Add source-processing what VAL did receipts`.
 
 This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HANDOFF.md` remains the source handoff.
 
@@ -11,15 +11,15 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
-- Live branch commit: `5aecdde`
-- Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice and the immediate Co-Work open path.
-- Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800`.
+- Live Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
+- Live branch commit: `fb8a7bb`
+- Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice, the immediate Co-Work open path, and receipt markers `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
+- Live `hearth-prototype.css`: renders Co-Work above open drawers at `z-index:1800` and includes `.project-suggestion-receipt`.
 - Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
 - Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
 - Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
 
-Conclusion: the handoff slice is now live. The source-processing read surface exists, and backend-only source-processing mutation is blocked in public Hearth test mode.
+Conclusion: the handoff slice is now live. The source-processing read surface exists, backend-only source-processing mutation is blocked in public Hearth test mode, and the first shared "What VAL did" receipt path is deployed.
 
 ## Cohesion Rule
 
@@ -41,6 +41,7 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 | Assigned color-named Project Manager appears in header and packet | Implemented | Hearth JS tests | Project Manager page header shows subtle color assignee |
 | Owner reassignment supports existing or new relationship owner | Implemented | Hearth JS tests and protected route smoke | Owner metadata persists; link receipt is local only |
 | Live email intelligence/backfill route admitted relationship document attachments into source-processing | Implemented | `server.js`, `test/valSourceProcessing.test.js`, `test/intelligenceBackfill.test.js` | Authenticated connected email validation or controlled source-processing request proves path |
+| Shared "What VAL did" receipts follow source records into review/work surfaces | Implemented | `services/valSourceProcessing.js`, `hearth-prototype.js`, `test/valSourceProcessing.test.js`, `test/hearthLeadIntelligence.test.js` | Project Managers suggestion row can show `VAL handled:` from the shared receipt |
 
 ## Live Promotion Result
 
@@ -54,11 +55,16 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 - Committed and pushed `5aecdde Fix Co-Work open timing and drawer layering`.
 - Deployed Railway deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`.
 - Verified production main Co-Work and Project Managers drawer Co-Work open immediately at `z-index:1800` above drawer `z-index:1300`.
+- Committed and pushed `486d8d5 Sync handoff docs to Co-Work live baseline`.
+- Committed and pushed `fb8a7bb Add source-processing what VAL did receipts`.
+- Deployed Railway deployment `bad2fd11-adbf-455a-99a0-a92840397af0`.
+- Verified live JS/CSS receipt markers, live auth protection for source-processing POST, and live source-processing records route health with empty records after cleanup.
 
 ## Verification Already Run Locally
 
 ```text
 node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --check services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valSourceProcessingSchema.js server.js hearth-prototype.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js
 node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
 git diff --check
 ```
@@ -69,6 +75,8 @@ Local runtime smoke:
 GET http://127.0.0.1:3000/ -> 200
 POST /api/val/source-processing/relationship-document-email without auth -> Authentication required
 POST /api/relationships/create without auth -> Authentication required
+served JS includes projectSuggestionReceiptLine / whatValDidReceipt / VAL handled:
+served CSS includes .project-suggestion-receipt
 ```
 
 Full-suite note:
@@ -103,6 +111,8 @@ Do not block this promotion on those unless a later diff touches the failing are
 - Live app returns `200`.
 - Live `/api/config/status` returns `VAL Proxy OK`.
 - Live Hearth bundle includes Project Managers/source-processing markers.
+- Live Hearth bundle includes receipt markers `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
+- Live Hearth CSS includes `.project-suggestion-receipt`.
 - Live `/api/val/source-processing/records` no longer returns `404`.
 - Project Managers drawer is named `Project Managers`.
 - Subtle top suggestion lane renders when pending suggestions exist and is hidden when empty.
@@ -114,5 +124,6 @@ Do not block this promotion on those unless a later diff touches the failing are
 ## Known Non-Blockers For This Promotion
 
 - Broader source types beyond relationship-sent email documents are future work.
+- Authenticated connected-email validation of a real suggestion plus visible receipt line is still future work.
 - Full standalone Co-Work V1 workspace redesign is documented but not part of this release.
 - The full test suite has five unrelated pre-existing contract failures.

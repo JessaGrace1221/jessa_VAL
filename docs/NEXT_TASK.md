@@ -1,6 +1,6 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix
+Updated: 2026-07-12 live promotion plus Co-Work hotfix and source-processing receipts
 
 ## 2026-07-12 Progress Note
 
@@ -11,7 +11,14 @@ Post-promotion hotfix:
 - Co-Work now opens immediately before packet hydration completes.
 - Co-Work packet receipts hydrate in the background.
 - Co-Work renders above open drawers at `z-index:1800`, including the Project Managers drawer Co-Work route.
-- The live app is now deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e` from commit `5aecdde Fix Co-Work open timing and drawer layering`.
+- That hotfix was deployed as `dcaeec98-f345-4496-8b2c-23e46b6a6b1e` from commit `5aecdde Fix Co-Work open timing and drawer layering`.
+
+Post-hotfix source-processing receipt slice:
+
+- Source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document.
+- The same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
+- Project Managers suggestion rows can render a quiet `VAL handled:` line from the shared receipt.
+- The live app is now deployment `bad2fd11-adbf-455a-99a0-a92840397af0` from commit `fb8a7bb Add source-processing what VAL did receipts`.
 
 Implemented:
 
@@ -29,6 +36,7 @@ Implemented:
 - Assigned color-named Project Managers now appear in the Project Manager page header as a subtle accent and assignee cue, and the assignment is included in the project manager packet.
 - Owner reassignment now lives in the People involved card: the executive can choose an existing relationship or create a new local relationship owner; VAL persists the single owner in project metadata and records a no-external-action relationship/project link.
 - Live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggestion path.
+- Shared "What VAL did" receipts now follow relationship-document source processing into source records, prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
 - Backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available.
 - The one no-action source-processing smoke-test record created during deployment validation was deleted from production.
 
@@ -36,25 +44,28 @@ Verified locally:
 
 ```text
 node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
+node --check services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valSourceProcessingSchema.js server.js hearth-prototype.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js
 node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
 git diff --check
 ```
 
 Verified live:
 
-- Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
+- Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
 - Production root returns `200`.
 - `/api/config/status` returns `VAL Proxy OK`.
 - `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
 - `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with `surfaceRegistrations: []`.
-- Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, and source-processing surface registration fetch.
+- Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, source-processing surface registration fetch, `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
+- Live `hearth-prototype.css` contains `.project-suggestion-receipt`.
 - Live POST `/api/val/source-processing/relationship-document-email` without real auth returns `Authentication required`.
+- Live `/api/val/source-processing/records?limit=5` returns `{ ok: true, count: 0 }`, expected after cleanup.
 - Live `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`.
 - Production browser smoke confirms main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`.
 
 Remaining validation / next work:
 
-- Run browser-visible/authenticated validation if a connected email session is available.
+- Run browser-visible/authenticated validation if a connected email session is available, specifically checking a real relationship-document suggestion and its visible `VAL handled:` receipt line.
 - Continue into broader source types or the next approved platform slice.
 
 ## Start Here
@@ -78,15 +89,15 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: 5aecdde
-Railway deployment: dcaeec98-f345-4496-8b2c-23e46b6a6b1e
+Live baseline commit: fb8a7bb
+Railway deployment: bad2fd11-adbf-455a-99a0-a92840397af0
 Working branch: codex/stewardship-person-packets
-Latest live code promotion commit: 5aecdde
+Latest live code promotion commit: fb8a7bb
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `5aecdde`, pull the branch before continuing.
+If the branch is not at or after `fb8a7bb`, pull the branch before continuing.
 
 ## Current Next Step
 
@@ -94,8 +105,9 @@ Do not ask the old Co-Work V1 first question. The user approved the current sequ
 
 1. Keep stale demo/contact residue for the later VAL drawer/onboarding pass.
 2. Continue the source-processing spine.
-3. Next narrow target: source-processing receipts such as "What VAL did from this email/document" so Executive Inbox, Documents, Project Managers, Ready For You, and Home can all speak from the same recorded truth.
-4. Run browser-visible/authenticated validation if a connected email session is available.
+3. The first source-processing receipt target, "What VAL did from this email/document," is implemented and live.
+4. Next: run browser-visible/authenticated validation if a connected email session is available.
+5. Then broaden the source-processing spine to the next source type, likely transcripts/calendar events, while preserving the same no-action/action receipt pattern.
 
 ## What Is Already Implemented
 

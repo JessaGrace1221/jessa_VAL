@@ -1,10 +1,10 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix
+Updated: 2026-07-12 live promotion plus Co-Work hotfix and source-processing receipts
 
 ## 2026-07-12 Production Implementation State
 
-Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix.
+Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, the focused Co-Work open-timing and drawer-layering hotfix, and the first shared source-processing "What VAL did" receipt slice.
 
 This is now deployed production truth.
 
@@ -23,13 +23,15 @@ Implemented live:
 - assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
 - owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into the source-processing intake, using Gmail/Outlook attachment metadata and the same Project Managers yes/no review path
+- source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document, and that same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
+- Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from the shared source-processing receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
 - the one no-action source-processing smoke-test record created during deployment validation was deleted from production
 - Co-Work now opens immediately before packet hydration completes, hydrates packet receipts in the background, and renders above open drawers at `z-index:1800`
 
 Remaining after this live promotion:
 
-- browser-visible/authenticated validation against real connected email data
+- browser-visible/authenticated validation against real connected email data, including the visible receipt line
 - broader source types beyond relationship-sent email documents
 
 ## Current Working State
@@ -41,10 +43,10 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`
+- Railway deployment: `bad2fd11-adbf-455a-99a0-a92840397af0`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `5aecdde`
-- Live baseline commit message: `Fix Co-Work open timing and drawer layering`
+- Live baseline commit: `fb8a7bb`
+- Live baseline commit message: `Add source-processing what VAL did receipts`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
@@ -52,21 +54,23 @@ The July 10 recovery baseline and July 11 handoff baseline are now historical co
 
 ## End-Of-Day Branch State
 
-The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11 and one focused Co-Work bug fix.
+The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, and the shared source-processing receipt slice.
 
 Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: 5aecdde
-Latest live code promotion message: Fix Co-Work open timing and drawer layering
+Latest live code promotion commit: fb8a7bb
+Latest live code promotion message: Add source-processing what VAL did receipts
 ```
 
-These branch changes are deployed to Railway production as deployment `dcaeec98-f345-4496-8b2c-23e46b6a6b1e`.
+These product-code branch changes are deployed to Railway production as deployment `bad2fd11-adbf-455a-99a0-a92840397af0`.
 
 Today’s pushed commits to preserve:
 
 ```text
+fb8a7bb Add source-processing what VAL did receipts
+486d8d5 Sync handoff docs to Co-Work live baseline
 5aecdde Fix Co-Work open timing and drawer layering
 da00a9b Clarify live promotion handoff wording
 fd3b0af Record Project Managers live promotion
