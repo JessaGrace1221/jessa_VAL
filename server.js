@@ -24075,6 +24075,8 @@ const valCommitments = registerValCommitmentsRoutes(app,{
   logger:console
 });
 const valDocuments = registerValDocumentsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
   getStore:valStore,
   listDrafts,
   listTranscriptRuns:async()=>valTranscriptIntelligence.listReadyForYouCandidates({limit:120}).then(rows=>rows.map(row=>row.run).filter(Boolean)),

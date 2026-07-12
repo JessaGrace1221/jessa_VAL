@@ -65,6 +65,36 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
       payload: {attachments: [{filename: 'contract.pdf', mimeType: 'application/pdf'}]},
       receivedAt: '2026-07-05T11:00:00Z'
     }],
+    sourceProcessingRecords: [{
+      id: 'source_atlas_mou',
+      tenantId: 'tenant_1',
+      userId: 'user_1',
+      sourceType: 'gmail_email',
+      sourceId: 'msg_atlas_mou',
+      sourceTitle: 'MOU for Atlas',
+      status: 'processed',
+      sourceReceiptJson: {
+        sourceType: 'gmail_email',
+        sourceId: 'msg_atlas_mou',
+        sourceTitle: 'MOU for Atlas',
+        relationship: {id: 'rel_greg', name: 'Greg', email: 'greg@example.com'},
+        documentCount: 1
+      },
+      witnessObservationsJson: [{
+        observer: 'witness',
+        observation: 'Greg sent an MOU document.',
+        documents: [{
+          id: 'doc_mou',
+          title: 'Atlas MOU.pdf',
+          type: 'application/pdf',
+          sourceType: 'gmail_attachment',
+          sourceId: 'msg_atlas_mou:doc_mou',
+          summary: 'MOU attached to the relationship email.'
+        }]
+      }],
+      metadataJson: {source: 'relationship_document_email'},
+      createdAt: '2026-07-05T11:30:00Z'
+    }],
     drafts: []
   };
 
@@ -101,11 +131,13 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
   assert.ok(all.documents.some(doc => doc.sourceType === 'val_file_upload'));
   assert.ok(all.documents.some(doc => doc.sourceType === 'hearth_project_source_upload'));
   assert.ok(all.documents.some(doc => doc.sourceType === 'hearth_project_intake'));
+  assert.ok(all.documents.some(doc => doc.sourceType === 'gmail_attachment' && doc.title === 'Atlas MOU.pdf'));
   assert.ok(all.documents.some(doc => doc.sourceType === 'google_docs'));
   assert.equal(all.summary.projects, 1);
 
   const relationship = await service.list({relationship: 'Greg'});
   assert.ok(relationship.documents.every(doc => documentMatches(doc, {relationship: 'Greg'})));
+  assert.ok(relationship.documents.some(doc => doc.id.includes('source-processing:source_atlas_mou')));
 
   const reference = await service.referenceFor({project: 'Atlas'});
   assert.match(reference.referenceRule, /must use linked documents/);

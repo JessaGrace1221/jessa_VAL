@@ -242,6 +242,55 @@ function googleDocDocuments(files=[]){
   }));
 }
 
+function sourceProcessingRecordDocuments(records=[]){
+  return safeArray(records).flatMap(record=>{
+    const sourceReceipt=jsonValue(record.sourceReceiptJson||record.source_receipt_json,{});
+    const witnessObservations=safeArray(jsonValue(record.witnessObservationsJson||record.witness_observations_json,[]));
+    const metadata=jsonValue(record.metadataJson||record.metadata_json,{});
+    const relationship=sourceReceipt.relationship||metadata.relationship||{};
+    const relationshipName=firstText(relationship.name,relationship.displayName,relationship.email);
+    const sourceType=firstText(record.sourceType,record.source_type,sourceReceipt.sourceType,sourceReceipt.source_type,'source_processing_record');
+    const sourceId=firstText(record.sourceId,record.source_id,sourceReceipt.sourceId,sourceReceipt.source_id,record.id);
+    const sourceTitle=firstText(record.sourceTitle,record.source_title,sourceReceipt.sourceTitle,sourceReceipt.source_title,'Relationship document email');
+    const status=firstText(record.status,'processed');
+    const projectName=firstText(metadata.projectName,metadata.project_name,metadata.project?.name,metadata.whatValDidReceipt?.source?.projectName);
+    const documents=witnessObservations.flatMap(obs=>safeArray(obs.documents))
+      .concat(safeArray(sourceReceipt.documents))
+      .concat(safeArray(metadata.documents));
+    const seen=new Set();
+    return documents.filter(doc=>{
+      const key=firstText(doc.sourceId,doc.source_id,doc.id,doc.title,doc.filename,doc.name);
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    }).map((doc,index)=>documentRecord({
+      id:`source-processing:${record.id}:${firstText(doc.sourceId,doc.source_id,doc.id,doc.title,index)}`,
+      sourceId:firstText(doc.sourceId,doc.source_id,doc.id,sourceId),
+      title:firstText(doc.title,doc.filename,doc.fileName,doc.name,sourceTitle),
+      type:firstText(doc.type,doc.kind,doc.mimeType,doc.contentType,'source_processing_document'),
+      status:status==='no_action'?'source_only':'needs_review',
+      source:'Source-processing document',
+      sourceType:firstText(doc.sourceType,doc.source_type,'source_processing_document'),
+      relationship:relationshipName,
+      relationshipLinks:relationshipName?[{
+        id:firstText(relationship.id,relationship.profileKey,relationship.email,relationshipName),
+        name:relationshipName,
+        email:firstText(relationship.email)
+      }]:[],
+      project:projectName,
+      projectLinks:projectName?[{id:stableKey(projectName),name:projectName}]:[],
+      sourceUrl:firstText(doc.sourceUrl,doc.url,doc.webUrl,doc.webViewLink,sourceReceipt.webLink,sourceReceipt.sourceUrl),
+      body:firstText(doc.text,doc.rawText,doc.summary,sourceTitle),
+      summary:firstText(doc.summary,sourceTitle),
+      createdAt:firstText(record.createdAt,record.created_at,sourceReceipt.receivedAt,sourceReceipt.received_at),
+      updatedAt:firstText(record.updatedAt,record.updated_at,record.createdAt,record.created_at),
+      referenceUse:'Use this document as source evidence for the linked relationship, project suggestion, or project dossier.',
+      needs:'Review the document context before approving a project, extracting obligations, or taking external action.',
+      sourceRefs:[{source_type:sourceType,source_id:sourceId,quote_or_summary:sourceTitle,confidence:0.82}],
+      raw:{sourceProcessingRecordId:record.id,document:doc,whatValDidReceipt:metadata.whatValDidReceipt||metadata.sourceProcessingReceipt||null}
+    }));
+  });
+}
+
 function dedupeDocuments(rows=[]){
   const byId=new Map();
   for(const row of rows){
@@ -273,6 +322,8 @@ function summaryFor(documents=[]){
 }
 
 function createValDocumentsService({
+  dbQuery=null,
+  hasPg=()=>false,
   getStore=()=>({}),
   listDrafts=null,
   listTranscriptRuns=null,
@@ -284,7 +335,7 @@ function createValDocumentsService({
 }={}){
   function store(){
     const s=getStore()||{};
-    for(const key of ['drafts','transcriptIntelligenceRuns','memoryItems','emailMessages','relationshipProfiles'])if(!Array.isArray(s[key]))s[key]=[];
+    for(const key of ['drafts','transcriptIntelligenceRuns','memoryItems','emailMessages','relationshipProfiles','sourceProcessingRecords'])if(!Array.isArray(s[key]))s[key]=[];
     return s;
   }
   async function loadDrafts(){
@@ -303,9 +354,16 @@ function createValDocumentsService({
     if(typeof listProjectProfiles==='function')return listProjectProfiles({limit:200}).catch(()=>[]);
     return store().relationshipProfiles.filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
+  async function loadSourceProcessingRecords(){
+    if(hasPg()&&typeof dbQuery==='function'){
+      const result=await dbQuery('select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit 200',[tenantId(),userId()]).catch(()=>({rows:[]}));
+      return result.rows||[];
+    }
+    return store().sourceProcessingRecords.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
+  }
   async function list({q='',relationship='',project='',limit=120,includeGoogle=false}={}){
     const unknowns=[];
-    const [drafts,runs,memory,projects] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects()]);
+    const [drafts,runs,memory,projects,sourceProcessingRecords] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords()]);
     let google=[];
     if(includeGoogle&&typeof searchGoogleDocs==='function'&&(q||relationship||project)){
       try{google=await searchGoogleDocs(q||relationship||project,8);}catch(e){unknowns.push({source:'google_docs',reason:e.message});}
@@ -318,6 +376,7 @@ function createValDocumentsService({
         .concat(memoryDocuments(memory))
         .concat(projectProfileDocuments(projects))
         .concat(emailAttachmentDocuments(store().emailMessages))
+        .concat(sourceProcessingRecordDocuments(sourceProcessingRecords))
         .concat(googleDocDocuments(google))
     );
     const filtered=rows.filter(doc=>documentMatches(doc,{q,relationship,project}));
@@ -331,7 +390,7 @@ function createValDocumentsService({
     const result=await list({relationship,project,limit});
     return {...result,referenceRule:'VAL must use linked documents as source evidence for relationship and project judgment.'};
   }
-  return {list,get,referenceFor,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments};
+  return {list,get,referenceFor,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments};
 }
 
-module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,documentMatches,summaryFor};
+module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments,documentMatches,summaryFor};
