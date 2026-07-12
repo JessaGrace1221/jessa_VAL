@@ -1028,7 +1028,9 @@ let projectIndexSourceLabel = 'Local project preview';
 let currentProjectSuggestionItems = [];
 let projectSuggestionRequest = null;
 let projectPinComposerOpen = false;
+let projectEditComposerOpen = false;
 const projectPinStatusByProject = {};
+const projectEditStatusByProject = {};
 const projectOwnerStatusByProject = {};
 let projectPinAlignmentRequest = null;
 
@@ -3741,13 +3743,50 @@ function projectPinStatus(project = activeProjectProfile){
   return projectPinStatusByProject[projectPinProjectKey(project)] || '';
 }
 
+function projectEditStatus(project = activeProjectProfile){
+  return projectEditStatusByProject[projectPinProjectKey(project)] || '';
+}
+
 function projectPinPrompt(project = activeProjectProfile){
   const next = projectCleanText(project?.nextMove || project?.nextMoveEvidence || '', '');
   return next || 'Revisit ' + (project?.name || 'this project');
 }
 
+function projectEditDocumentText(project = activeProjectProfile){
+  const details = normalizedProjectSourceDetails(project || {});
+  if(typeof project?.documents === 'string') return project.documents;
+  const documents = projectListFromValue(project?.documents || details.documents);
+  return documents.join('\n');
+}
+
+function renderProjectEditForm(project = activeProjectProfile){
+  if(!projectEditComposerOpen) return '';
+  const summary = projectCleanText(project?.summary || project?.reality || '');
+  return [
+    '<form class="project-edit-form" data-project-edit-form>',
+      '<label>',
+        '<span>Project name</span>',
+        '<input type="text" name="name" value="' + escapeHtml(project?.name || '') + '" autocomplete="off" required>',
+      '</label>',
+      '<label>',
+        '<span>Project summary</span>',
+        '<textarea name="summary" rows="3">' + escapeHtml(summary) + '</textarea>',
+      '</label>',
+      '<label>',
+        '<span>Documents / source notes</span>',
+        '<textarea name="documents" rows="3">' + escapeHtml(projectEditDocumentText(project)) + '</textarea>',
+      '</label>',
+      '<div>',
+        '<button type="submit">Save changes</button>',
+        '<button type="button" data-project-edit-cancel>Cancel</button>',
+      '</div>',
+    '</form>'
+  ].join('');
+}
+
 function renderProjectPinControl(project = activeProjectProfile){
-  const status = projectPinStatus(project);
+  const pinStatus = projectPinStatus(project);
+  const editStatus = projectEditStatus(project);
   const form = projectPinComposerOpen ? [
     '<form class="project-pin-form" data-project-pin-form>',
       '<label>',
@@ -3766,11 +3805,14 @@ function renderProjectPinControl(project = activeProjectProfile){
   ].join('') : '';
   return [
     '<div class="project-manager-hero-actions">',
+      '<button type="button" data-project-edit-open>Edit project</button>',
       '<button type="button" data-project-cowork-scope="project_overview" aria-label="Co-Work with VAL on this project">Co-Work</button>',
       '<button type="button" data-project-pin-open>Put a pin in it</button>',
     '</div>',
+    renderProjectEditForm(project),
     form,
-    status ? '<p class="project-pin-status">' + escapeHtml(status) + '</p>' : ''
+    editStatus ? '<p class="project-edit-status">' + escapeHtml(editStatus) + '</p>' : '',
+    pinStatus ? '<p class="project-pin-status">' + escapeHtml(pinStatus) + '</p>' : ''
   ].join('');
 }
 
@@ -5145,12 +5187,22 @@ function attachDocumentToProjectLocally(item = {}, project = {}){
   return assignment;
 }
 
+function projectReadableDocumentTitle(value = ''){
+  return projectCleanText(value)
+    .replace(/\.[a-z0-9]{2,8}$/i, '')
+    .replace(/\b(MOU|SOW|Agreement|Scope|Proposal|Contract|Deck)\b\s*/i, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function inferProjectNameFromDocument(item = {}){
   const title = projectCleanText(item.title || 'New project from document');
   const subject = projectCleanText(item.raw?.emailSubject || '');
-  const base = title.replace(/\.[a-z0-9]{2,5}$/i, '');
-  const slashMatch = (subject || base).match(/(?:MOU|SOW|Agreement|Scope|Proposal)\s+(?:for|with)?\s*([^/]+(?:\/\s*[^/]+)?)/i);
-  return projectCompactText((slashMatch?.[1] || base || subject || 'New project from document').replace(/\s+/g, ' ').trim(), 90);
+  const base = projectReadableDocumentTitle(title) || title.replace(/\.[a-z0-9]{2,8}$/i, '');
+  const slashMatch = (subject || base).match(/(?:MOU|SOW|Agreement|Scope|Proposal|Contract)\s+(?:(?:for|with)\b\s*)?([^/]+(?:\/\s*[^/]+)?)/i);
+  const inferred = slashMatch?.[1] || base || subject || 'New project from document';
+  return projectCompactText(projectReadableDocumentTitle(inferred) || inferred.replace(/\s+/g, ' ').trim(), 90);
 }
 
 function ensureLocalProjectIndexSeeded(){
@@ -5229,6 +5281,9 @@ async function decideProjectDocumentAssignment(documentId = '', action = '', nod
       attachDocumentToProjectLocally(item, suggestedProject);
       projectIndexSourceLabel = 'Document attached to ' + (suggestedProject.name || 'project') + '. No external action happened.';
     }else if(action === 'create_new'){
+      projectIndexSourceLabel = 'Creating project from document...';
+      updateProjectIndexSourceLabel();
+      if(node) node.textContent = 'Creating project...';
       const project = await createProjectFromDocumentAssignment(item);
       projectIndexSourceLabel = 'Project created from document and assigned to ' + projectManagerAssignment(project).name + '. No external action happened.';
     }else if(action === 'not_project'){
@@ -5272,6 +5327,103 @@ function projectPinPayload(form){
     }],
     metadataJson:{projectProfileId:project.id || '',noExternalAction:true}
   };
+}
+
+function projectEditPayload(form, project = activeProjectProfile){
+  const data = new FormData(form);
+  const name = projectCleanText(data.get('name') || project?.name || '');
+  return {
+    projectId: project?.projectId || project?.id || project?.profileKey || project?.name || '',
+    projectProfileId: project?.id || '',
+    profileKey: project?.profileKey || '',
+    previousName: project?.name || '',
+    name,
+    summary: projectCleanText(data.get('summary') || ''),
+    documents: projectCleanText(data.get('documents') || ''),
+    noExternalAction:true
+  };
+}
+
+function applyProjectEditLocally(project = activeProjectProfile, patch = {}, incoming = null){
+  const current = project || activeProjectProfile || {};
+  const incomingProject = incoming || {};
+  const currentDetails = normalizedProjectSourceDetails(current);
+  const incomingDetails = normalizedProjectSourceDetails(incomingProject);
+  const sourceDetails = {
+    ...currentDetails,
+    ...incomingDetails,
+    documents: Object.prototype.hasOwnProperty.call(patch, 'documents') ? patch.documents : (incomingDetails.documents || currentDetails.documents)
+  };
+  const currentMetadata = projectMetadataObject(current);
+  const incomingMetadata = projectMetadataObject(incomingProject);
+  const intake = {
+    ...(currentMetadata.intake || {}),
+    ...(incomingMetadata.intake || {})
+  };
+  if(Object.prototype.hasOwnProperty.call(patch, 'documents')) intake.documents = patch.documents;
+  const updated = projectProfileFromIndexItem({
+    ...current,
+    ...incomingProject,
+    id: current.id || incomingProject.id || patch.projectProfileId || patch.projectId || patch.profileKey || 'project',
+    projectId: current.projectId || incomingProject.projectId || patch.projectId || '',
+    profileKey: current.profileKey || incomingProject.profileKey || patch.profileKey || '',
+    name: patch.name || incomingProject.name || current.name || 'Project',
+    initials: initialsFromName(patch.name || incomingProject.name || current.name || 'Project'),
+    summary: patch.summary || incomingProject.summary || incomingProject.reality || current.summary || current.reality || '',
+    reality: patch.summary || incomingProject.reality || incomingProject.summary || current.reality || '',
+    documents: patch.documents || incomingProject.documents || current.documents || '',
+    sourceDetails,
+    metadataJson:{
+      ...currentMetadata,
+      ...incomingMetadata,
+      intake,
+      projectName: patch.name || incomingMetadata.projectName || currentMetadata.projectName || current.name || '',
+      updatedFrom:'hearth_project_edit',
+      noExternalAction:true
+    }
+  });
+  activeProjectProfile = updated;
+  if(updated.id) projectIndexProfiles[updated.id] = updated;
+  return updated;
+}
+
+async function saveProjectEditFromForm(event){
+  event.preventDefault();
+  const form = event.target.closest('[data-project-edit-form]');
+  if(!form || !activeProjectProfile) return;
+  const project = activeProjectProfile;
+  const key = projectPinProjectKey(project);
+  const payload = projectEditPayload(form, project);
+  if(!payload.name){
+    projectEditStatusByProject[key] = 'Name the project before saving.';
+    renderProjectManagerProfile(project);
+    return;
+  }
+  if(!canUseApi){
+    const updated = applyProjectEditLocally(project, payload);
+    projectEditComposerOpen = false;
+    projectEditStatusByProject[key] = 'Project updated in this view. The VAL server is needed to persist it after refresh.';
+    renderProjectRolodex();
+    renderProjectProfile(updated.id);
+    return;
+  }
+  projectEditStatusByProject[key] = 'Saving project changes...';
+  renderProjectManagerProfile(project);
+  try{
+    const result = await postJson('/api/projects/update', payload);
+    const incoming = result.dossier ? projectProfileFromDossier(result.dossier, project) : projectProfileFromIndexItem(result.project || {});
+    const updated = applyProjectEditLocally(project, payload, incoming);
+    projectEditComposerOpen = false;
+    projectEditStatusByProject[key] = result.message || 'Project updated locally. No external action happened.';
+    projectIndexLoaded = true;
+    projectIndexSourceLabel = result.source === 'demo_project_profiles' ? 'Demo project index' : 'Canonical project index';
+    updateProjectIndexSourceLabel();
+    renderProjectRolodex();
+    renderProjectProfile(updated.id);
+  }catch(error){
+    projectEditStatusByProject[key] = 'Project was not updated: ' + error.message;
+    renderProjectManagerProfile(project);
+  }
 }
 
 function normalizeProjectPinAlignmentItem(item = {}){
@@ -17396,6 +17548,10 @@ projectManagerProfile?.addEventListener('keydown', async (event) => {
 });
 
 projectManagerProfile?.addEventListener('submit', (event) => {
+  if(event.target.matches('[data-project-edit-form]')){
+    saveProjectEditFromForm(event);
+    return;
+  }
   if(event.target.matches('[data-project-pin-form]')){
     createProjectPinFromForm(event);
     return;
@@ -17817,10 +17973,28 @@ drawerTray.addEventListener('click', async (event) => {
     await openProjectScopedCowork(projectCoworkScope.dataset.projectCoworkScope, projectCoworkScope, {mode:'project_cowork'});
     return;
   }
+  const projectEditOpen = event.target.closest('[data-project-edit-open]');
+  if(projectEditOpen){
+    event.preventDefault();
+    event.stopPropagation();
+    projectEditComposerOpen = true;
+    projectPinComposerOpen = false;
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
+  const projectEditCancel = event.target.closest('[data-project-edit-cancel]');
+  if(projectEditCancel){
+    event.preventDefault();
+    event.stopPropagation();
+    projectEditComposerOpen = false;
+    renderProjectManagerProfile(activeProjectProfile);
+    return;
+  }
   const projectPinOpen = event.target.closest('[data-project-pin-open]');
   if(projectPinOpen){
     event.preventDefault();
     event.stopPropagation();
+    projectEditComposerOpen = false;
     projectPinComposerOpen = true;
     renderProjectManagerProfile(activeProjectProfile);
     return;

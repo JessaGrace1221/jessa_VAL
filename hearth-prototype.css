@@ -4746,7 +4746,8 @@ button.drawer-link{
   .project-suggestion-row{
     grid-template-columns:1fr;
   }
-  .project-pin-form{
+  .project-pin-form,
+  .project-edit-form{
     grid-template-columns:1fr;
   }
 }
@@ -4947,7 +4948,8 @@ button.drawer-link{
   margin-top:12px;
 }
 .project-manager-hero-actions button,
-.project-pin-form button{
+.project-pin-form button,
+.project-edit-form button{
   min-height:30px;
   border:1px solid rgba(64,86,61,.18);
   border-radius:7px;
@@ -4959,7 +4961,9 @@ button.drawer-link{
 .project-manager-hero-actions button:hover,
 .project-manager-hero-actions button:focus-visible,
 .project-pin-form button:hover,
-.project-pin-form button:focus-visible{
+.project-pin-form button:focus-visible,
+.project-edit-form button:hover,
+.project-edit-form button:focus-visible{
   border-color:rgba(64,86,61,.32);
   background:rgba(232,241,220,.7);
   outline:none;
@@ -4975,18 +4979,37 @@ button.drawer-link{
   border-radius:7px;
   background:rgba(255,255,252,.54);
 }
-.project-pin-form label{
+.project-edit-form{
+  display:grid;
+  grid-template-columns:minmax(180px,.42fr) minmax(260px,1fr);
+  gap:8px;
+  align-items:end;
+  margin-top:11px;
+  padding:10px;
+  border:1px solid rgba(79,48,38,.12);
+  border-radius:7px;
+  background:rgba(255,255,252,.54);
+}
+.project-edit-form label:nth-child(n+2),
+.project-edit-form div{
+  grid-column:1 / -1;
+}
+.project-pin-form label,
+.project-edit-form label{
   display:grid;
   gap:5px;
   margin:0;
 }
-.project-pin-form label span{
+.project-pin-form label span,
+.project-edit-form label span{
   color:rgba(64,86,61,.74);
   font:800 .58rem var(--mono);
   letter-spacing:.1em;
   text-transform:uppercase;
 }
-.project-pin-form input{
+.project-pin-form input,
+.project-edit-form input,
+.project-edit-form textarea{
   min-width:0;
   min-height:32px;
   border:1px solid rgba(79,48,38,.16);
@@ -4996,16 +5019,23 @@ button.drawer-link{
   padding:6px 8px;
   font:.72rem var(--body);
 }
-.project-pin-form div{
+.project-edit-form textarea{
+  resize:vertical;
+  line-height:1.35;
+}
+.project-pin-form div,
+.project-edit-form div{
   display:flex;
   gap:6px;
   flex-wrap:wrap;
 }
-.project-pin-form button:nth-child(2){
+.project-pin-form button:nth-child(2),
+.project-edit-form button:nth-child(2){
   background:rgba(255,249,239,.5);
   color:rgba(58,33,27,.74);
 }
-.project-pin-status{
+.project-pin-status,
+.project-edit-status{
   margin:9px 0 0;
   color:rgba(52,66,47,.76);
   font-size:.7rem;

@@ -197,9 +197,14 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function applyProjectFieldUpdate/);
   assert.match(hearthJs, /function renderProjectRelationshipPicker/);
   assert.match(hearthJs, /function renderProjectPinControl/);
+  assert.match(hearthJs, /function renderProjectEditForm/);
+  assert.match(hearthJs, /function saveProjectEditFromForm/);
   assert.match(hearthJs, /function createProjectPinFromForm/);
   assert.match(hearthJs, /function hydrateAlignmentFromProjectPins/);
   assert.match(hearthJs, /function completeProjectPinFromAlignment/);
+  assert.match(hearthJs, /data-project-edit-open/);
+  assert.match(hearthJs, /data-project-edit-form/);
+  assert.match(hearthJs, /\/api\/projects\/update/);
   assert.match(hearthJs, /\/api\/val\/project-pins/);
   assert.match(hearthJs, /\/api\/val\/project-pins\/alignment\?limit=3/);
   assert.match(hearthJs, /\/api\/val\/project-pins\/' \+ encodeURIComponent\(pinId\) \+ '\/complete/);
@@ -263,6 +268,8 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function suggestedProjectForDocument/);
   assert.match(hearthJs, /function persistDocumentProjectAssignment/);
   assert.match(hearthJs, /function decideProjectDocumentAssignment/);
+  assert.match(hearthJs, /function projectReadableDocumentTitle/);
+  assert.match(hearthJs, /Creating project from document/);
   assert.match(hearthJs, /document_project_assignment/);
   assert.match(hearthJs, /data-project-document-action/);
   assert.match(hearthJs, /Attach to ' \+ \(suggestedProject\.name/);
@@ -350,6 +357,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
 test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /app\.get\('\/api\/projects\/index'/);
   assert.match(server, /app\.get\('\/api\/projects\/dossier'/);
+  assert.match(server, /app\.post\('\/api\/projects\/update'/);
   assert.match(server, /app\.get\('\/api\/projects\/links'/);
   assert.match(server, /app\.post\('\/api\/projects\/link-relationship'/);
   assert.match(server, /app\.post\('\/api\/relationships\/create'/);
@@ -368,6 +376,8 @@ test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /demo-link-calendar-healthbridge/);
   assert.match(server, /No CRM update, message, task, calendar change, or external action happened/);
   assert.match(server, /function projectCreatePayload/);
+  assert.match(server, /function projectUpdatePayload/);
+  assert.match(server, /async function updateProjectProfileLocal/);
   assert.match(server, /async function saveProjectSourceFiles/);
   assert.match(server, /source:'hearth_project_source_upload'/);
   assert.match(server, /uploadedFiles/);
@@ -1266,8 +1276,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-doc-filter-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-doc-filter-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-edit-fix-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-edit-fix-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

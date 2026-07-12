@@ -16680,6 +16680,94 @@ async function listProjectProfiles({limit=80}={}){
   const capped=Math.max(1,Math.min(Number(limit)||80,200));
   return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
 }
+function projectProfileMatchesIdentifier(row={},identifier=''){
+  const needle=String(identifier||'').trim().toLowerCase();
+  if(!needle)return false;
+  const identifierVariants=new Set([needle,needle.startsWith('project:')?needle.replace(/^project:/,''):`project:${needle}`]);
+  const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+  return [
+    row.id,
+    row.profileKey,
+    row.profile_key,
+    row.projectId,
+    row.project_id,
+    row.displayName,
+    row.display_name,
+    row.name,
+    metadata.projectId,
+    metadata.project_id,
+    metadata.projectName,
+    metadata.project,
+    metadata.intake?.projectId,
+    metadata.intake?.project_id,
+    metadata.intake?.projectName
+  ].filter(Boolean).some(value=>identifierVariants.has(String(value).trim().toLowerCase()));
+}
+function projectUpdatePayload(body={}){
+  return {
+    name:String(body.name||body.projectName||body.displayName||'').replace(/\s+/g,' ').trim(),
+    summary:String(body.summary||body.description||body.currentReality||'').trim(),
+    documents:String(body.documents||body.documentNotes||body.documentsAndContracts||'').trim(),
+    relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
+    rawContext:String(body.rawContext||body.notes||'').trim(),
+    status:String(body.status||body.relationshipStatus||'').trim()
+  };
+}
+async function updateProjectProfileLocal(projectId='',patch={}){
+  const identifier=String(projectId||'').trim();
+  if(!identifier)return null;
+  const now=new Date().toISOString();
+  const projectProfileKey=identifier.startsWith('project:')?identifier:`project:${identifier}`;
+  const applyPatch=(row={})=>{
+    const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+    const intake={...(metadata.intake||{})};
+    if(Object.prototype.hasOwnProperty.call(patch,'documents'))intake.documents=patch.documents;
+    if(patch.relationships)intake.relationships=patch.relationships;
+    if(patch.rawContext)intake.rawContext=patch.rawContext;
+    const displayName=patch.name||row.displayName||row.display_name||row.name||metadata.projectName||'Project';
+    const summary=Object.prototype.hasOwnProperty.call(patch,'summary')?patch.summary:(row.summary||'');
+    const relationshipStatus=patch.status||row.relationshipStatus||row.relationship_status||'intake';
+    return {
+      ...row,
+      displayName,
+      summary,
+      relationshipStatus,
+      metadataJson:{
+        ...metadata,
+        intake,
+        projectName:displayName,
+        updatedFrom:'hearth_project_edit',
+        noExternalAction:true
+      },
+      updatedAt:now
+    };
+  };
+  if(DEMO_MODE){
+    const rows=transcriptDemoArray('relationshipProfiles')||[];
+    const index=rows.findIndex(row=>row.tenantId===tenantId()&&String(row.profileType||row.profile_type||'')==='project'&&projectProfileMatchesIdentifier(row,identifier));
+    if(index<0)return null;
+    rows[index]=applyPatch(rows[index]);
+    return publicRelationshipProfile(rows[index]);
+  }
+  await valDbReady;
+  if(pgPool){
+    const found=await dbQuery(`select * from relationship_profiles where tenant_id=$1 and profile_type='project' and (id=$2 or profile_key=$2 or project_id=$2 or display_name=$2 or profile_key=$3) limit 1`,[tenantId(),identifier,projectProfileKey]);
+    if(!found.rows?.length)return null;
+    const next=applyPatch(transcriptPgRow(found.rows[0]));
+    const updated=await dbQuery(`update relationship_profiles
+      set display_name=$3, summary=$4, relationship_status=$5, metadata_json=$6, updated_at=now()
+      where tenant_id=$1 and profile_type='project' and (id=$2 or profile_key=$2 or project_id=$2 or display_name=$2 or profile_key=$7)
+      returning *`,[tenantId(),identifier,next.displayName,next.summary,next.relationshipStatus,JSON.stringify(next.metadataJson),projectProfileKey]);
+    return publicRelationshipProfile(transcriptPgRow(updated.rows[0]));
+  }
+  const store=valStore();
+  const rows=transcriptFileArray(store,'relationshipProfiles');
+  const index=rows.findIndex(row=>row.tenantId===tenantId()&&String(row.profileType||row.profile_type||'')==='project'&&projectProfileMatchesIdentifier(row,identifier));
+  if(index<0)return null;
+  rows[index]=applyPatch(rows[index]);
+  saveValStore(store);
+  return publicRelationshipProfile(rows[index]);
+}
 const RELATIONSHIP_INDEX_TEMPERATURE_MODEL = {
   needs_attention: {
     label: 'Needs attention',
@@ -25180,6 +25268,27 @@ app.get('/api/projects/dossier',async(req,res)=>{
       ok:true,
       source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
       dossier
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/projects/update',async(req,res)=>{
+  try{
+    const projectId=String(req.body?.projectId||req.body?.projectProfileId||req.body?.id||req.body?.profileKey||'').trim();
+    const patch=projectUpdatePayload(req.body||{});
+    if(!projectId)return res.status(400).json({ok:false,error:'Project identifier is required.'});
+    if(!patch.name)return res.status(400).json({ok:false,error:'Project name is required.'});
+    const profile=await updateProjectProfileLocal(projectId,patch);
+    if(!profile)return res.status(404).json({ok:false,error:'project_profile_not_found',projectId});
+    const project=projectIndexItemFromProfile(profile);
+    res.json({
+      ok:true,
+      source:DEMO_MODE?'demo_project_profiles':'relationship_profiles',
+      project,
+      dossier:projectDossierFromProfile(profile),
+      message:'Project updated locally. No CRM update, task, calendar change, message, document write, or external action happened.',
+      noExternalAction:true
     });
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
