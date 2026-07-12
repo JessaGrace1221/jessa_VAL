@@ -4722,6 +4722,16 @@ button.drawer-link{
   background:rgba(255,249,239,.5);
   color:rgba(58,33,27,.74);
 }
+.project-document-assignment-actions button:nth-child(2){
+  border-color:rgba(64,86,61,.18);
+  background:rgba(232,241,220,.42);
+  color:rgba(34,19,15,.82);
+}
+.project-document-assignment-actions button:last-child{
+  border-color:rgba(100,57,43,.14);
+  background:rgba(255,249,239,.5);
+  color:rgba(58,33,27,.74);
+}
 .project-suggestion-actions button:hover,
 .project-suggestion-actions button:focus-visible{
   border-color:rgba(64,86,61,.32);

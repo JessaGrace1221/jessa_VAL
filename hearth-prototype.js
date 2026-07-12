@@ -135,6 +135,7 @@ let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
 let currentDocumentItems = [];
 let activeDocumentItem = null;
+const DOCUMENT_PROJECT_ASSIGNMENTS_STORAGE_KEY = 'val_document_project_assignments_v1';
 const projectRolodex = document.querySelector('[data-project-rolodex]');
 const projectSuggestions = document.querySelector('[data-project-suggestions]');
 const projectIndexSource = document.querySelector('[data-project-index-source]');
@@ -414,7 +415,7 @@ const hearthClickContractRegistry = [
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
   {selector:'.drawer-pull,.close-all-drawers', contract:'drawer.index', packet:'drawer_index_packet', rule:'Drawer retrieval rule', actions:'Open/close drawer tray', never:'Do not load unrelated drawer detail panels'},
   {selector:'.relationship-drawer-link,[data-relationship-profile],[data-relationship-open-profile],[data-relationship-state-filter],[data-relationship-action],[data-relationship-pending-temperature-review],[data-relationship-search],[data-relationship-sort]', contract:'drawer.relationships', packet:'relationship_packet', rule:'Stewardship understanding prompt suite', actions:'Open Stewardship view, filter, search, sort, scoped Stewardship actions', never:'Do not expose internal packet/debug language in the drawer'},
-  {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-cowork-scope],[data-project-cowork-field],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open full Project Manager page, scoped Co-Work, review source learning, create explicit project records only through the creation flow', never:'Do not create, mutate, or broaden project context without explicit flow'},
+  {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-cowork-scope],[data-project-cowork-field],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update],[data-project-document-action]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open full Project Manager page, scoped Co-Work, review source learning, assign documents to projects, create explicit project records only through the creation flow', never:'Do not create, mutate, or broaden project context without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
   {selector:'.commitment-drawer-link,[data-commitment-item],[data-commitment-filter],[data-commitment-action]', contract:'drawer.commitments', packet:'commitment_packet', rule:'Commitment observer/task support rules', actions:'Co-Work, draft email, create task, schedule, status, show source', never:'Do not send; status changes need visible user action'},
@@ -4675,6 +4676,214 @@ function projectSuggestionReceiptLine(item = {}){
   return summary ? 'VAL handled: ' + summary : '';
 }
 
+function readDocumentProjectAssignments(){
+  try{
+    const raw = localStorage.getItem(DOCUMENT_PROJECT_ASSIGNMENTS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  }catch(error){
+    return {};
+  }
+}
+
+function writeDocumentProjectAssignments(assignments = {}){
+  try{
+    localStorage.setItem(DOCUMENT_PROJECT_ASSIGNMENTS_STORAGE_KEY, JSON.stringify(assignments));
+  }catch(error){}
+}
+
+function documentProjectAssignmentFor(itemOrId = ''){
+  const id = typeof itemOrId === 'object' ? itemOrId?.id : itemOrId;
+  if(!id) return null;
+  return readDocumentProjectAssignments()[id] || null;
+}
+
+function documentWithProjectAssignment(item = {}){
+  if(!item?.id) return item;
+  const assignment = documentProjectAssignmentFor(item.id);
+  if(!assignment) return item;
+  const assigned = {
+    ...item,
+    projectAssignmentDecision: assignment.decision || '',
+    projectAssignmentAt: assignment.updatedAt || ''
+  };
+  if(assignment.projectName){
+    assigned.project = assignment.projectName;
+    assigned.projectId = assignment.projectId || item.projectId || item.project_id || '';
+  }
+  if(assignment.relationshipName && !assigned.relationship) assigned.relationship = assignment.relationshipName;
+  if(assignment.decision === 'not_project') assigned.needs = 'Reviewed in Project Managers: this document is reference material, not a managed project.';
+  return assigned;
+}
+
+function documentItemsWithProjectAssignments(items = []){
+  return items.map(documentWithProjectAssignment);
+}
+
+function persistDocumentProjectAssignment(item = {}, assignment = {}){
+  if(!item?.id) return null;
+  const stored = readDocumentProjectAssignments();
+  const next = {
+    ...(stored[item.id] || {}),
+    documentId:item.id,
+    documentTitle:item.title || 'Document',
+    relationshipName:assignment.relationshipName || item.relationship || '',
+    decision:assignment.decision || 'attached_existing_project',
+    projectId:assignment.projectId || '',
+    projectName:assignment.projectName || '',
+    updatedAt:new Date().toISOString(),
+    noExternalAction:true
+  };
+  stored[item.id] = next;
+  writeDocumentProjectAssignments(stored);
+  try{
+    const raw = localStorage.getItem('val_docs_v1');
+    const docs = raw ? JSON.parse(raw) : [];
+    if(Array.isArray(docs)){
+      const updated = docs.map((doc) => {
+        if(doc.id !== item.id) return doc;
+        return {
+          ...doc,
+          project:next.projectName || doc.project || doc.projectName || '',
+          projectId:next.projectId || doc.projectId || '',
+          projectAssignmentDecision:next.decision
+        };
+      });
+      localStorage.setItem('val_docs_v1', JSON.stringify(updated));
+    }
+  }catch(error){}
+  return next;
+}
+
+function documentProjectEvidenceLine(item = {}){
+  return [
+    item.relationship ? 'Relationship: ' + item.relationship : 'Relationship needs review',
+    item.source || item.origin || '',
+    item.type ? documentTypeLabel(item.type) : ''
+  ].filter(Boolean).join(' · ');
+}
+
+function documentNeedsProjectAssignment(item = {}){
+  if(!item?.id || !String(item.title || '').trim()) return false;
+  const assignment = documentProjectAssignmentFor(item.id);
+  if(assignment?.decision === 'not_project') return false;
+  if(String(item.project || assignment?.projectName || '').trim()) return false;
+  const text = [
+    item.title,
+    item.summary,
+    item.body,
+    item.source,
+    item.origin,
+    item.type,
+    item.status,
+    item.referenceUse,
+    item.needs
+  ].join(' ').toLowerCase();
+  return /gmail|attachment|created|draft|ready|proposal|agreement|scope|deck|mou|sow|contract|pdf|document/.test(text);
+}
+
+function projectDocumentAssignmentItems(){
+  const byId = new Map();
+  documentItemsWithProjectAssignments(currentDocumentItems.concat(localStoredDocuments()).concat(localDocumentItems)).forEach((item) => {
+    if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
+  });
+  return Array.from(byId.values()).filter(documentNeedsProjectAssignment).slice(0, 6);
+}
+
+function projectByLookupId(projectId = ''){
+  const clean = String(projectId || '');
+  return projectIndexItems().find((project) =>
+    [project.id, project.projectId, project.profileKey, project.name].filter(Boolean).some((value) => String(value) === clean)
+  ) || projectIndexProfiles[clean] || projectProfiles[clean] || null;
+}
+
+function projectDocumentMatchScore(project = {}, item = {}){
+  const text = [item.title, item.summary, item.body, item.relationship, item.source].join(' ').toLowerCase();
+  const name = String(project.name || '').toLowerCase();
+  if(!name || !text) return 0;
+  let score = text.includes(name) ? 8 : 0;
+  name.split(/[^a-z0-9]+/).filter((word) => word.length >= 4).forEach((word) => {
+    if(text.includes(word)) score += 2;
+  });
+  projectResolvedRelationships(project).forEach((name) => {
+    const relationship = String(name || '').toLowerCase();
+    if(relationship && text.includes(relationship)) score += 3;
+  });
+  return score;
+}
+
+function suggestedProjectForDocument(item = {}){
+  const scored = projectIndexItems()
+    .map((project) => ({project, score:projectDocumentMatchScore(project, item)}))
+    .filter((entry) => entry.score >= 2)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.project || null;
+}
+
+function projectDocumentAssignmentSource(item = {}, action = '', project = null){
+  return {
+    sourceId:item.id || item.title || 'document',
+    sourceType:'document_project_assignment',
+    sourceLabel:item.title || 'Document needs project',
+    projectId:project?.projectId || project?.id || '',
+    projectName:project?.name || '',
+    sourceItem:{
+      documentId:item.id || '',
+      title:item.title || 'Document',
+      relationship:item.relationship || '',
+      currentProject:item.project || '',
+      suggestedProject:project?.name || '',
+      source:item.source || item.origin || '',
+      evidence:documentProjectEvidenceLine(item),
+      requestedAction:action,
+      noExternalAction:true
+    }
+  };
+}
+
+function appendProjectDocumentAssignmentRow(item = {}){
+  if(!projectSuggestions || !item?.id) return;
+  const suggestedProject = suggestedProjectForDocument(item);
+  const row = document.createElement('article');
+  row.className = 'project-suggestion-row project-document-assignment-row';
+  const body = document.createElement('div');
+  body.className = 'project-suggestion-copy';
+  const kicker = document.createElement('span');
+  kicker.className = 'project-suggestion-kicker';
+  kicker.textContent = 'Document needs project';
+  const strong = document.createElement('strong');
+  strong.textContent = item.title || 'Untitled document';
+  const summary = document.createElement('p');
+  summary.textContent = item.summary || 'Choose whether this evidence belongs to an existing Project Manager or should start a new managed project.';
+  const evidence = document.createElement('small');
+  evidence.textContent = documentProjectEvidenceLine(item);
+  body.append(kicker, strong, summary, evidence);
+  const actions = document.createElement('div');
+  actions.className = 'project-suggestion-actions project-document-assignment-actions';
+  if(suggestedProject){
+    const attach = document.createElement('button');
+    attach.type = 'button';
+    attach.dataset.projectDocumentAction = 'attach_existing';
+    attach.dataset.projectDocumentId = item.id;
+    attach.dataset.projectDocumentProject = suggestedProject.id || suggestedProject.projectId || suggestedProject.name || '';
+    attach.textContent = 'Attach to ' + (suggestedProject.name || 'existing project');
+    actions.appendChild(attach);
+  }
+  const create = document.createElement('button');
+  create.type = 'button';
+  create.dataset.projectDocumentAction = 'create_new';
+  create.dataset.projectDocumentId = item.id;
+  create.textContent = 'Create new project and assign a manager';
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.dataset.projectDocumentAction = 'not_project';
+  dismiss.dataset.projectDocumentId = item.id;
+  dismiss.textContent = 'Not a project';
+  actions.append(create, dismiss);
+  row.append(body, actions);
+  projectSuggestions.appendChild(row);
+}
+
 function findProjectSuggestionItem(reviewId = ''){
   return currentProjectSuggestionItems.find((item) => String(projectSuggestionReviewId(item)) === String(reviewId)) || null;
 }
@@ -4760,17 +4969,20 @@ function renderProjectSuggestions(){
   if(!projectSuggestions) return;
   projectSuggestions.innerHTML = '';
   const items = currentProjectSuggestionItems.filter((item) => projectSuggestionReviewId(item));
-  projectSuggestions.hidden = !items.length;
-  if(!items.length) return;
+  const documentItems = projectDocumentAssignmentItems();
+  const total = items.length + documentItems.length;
+  projectSuggestions.hidden = !total;
+  if(!total) return;
   const header = document.createElement('div');
   header.className = 'project-suggestion-header';
   const label = document.createElement('span');
   label.textContent = 'From documents';
   const count = document.createElement('small');
-  count.textContent = items.length + ' waiting';
+  count.textContent = total + ' waiting';
   header.append(label, count);
   projectSuggestions.appendChild(header);
   items.forEach(appendProjectSuggestionRow);
+  documentItems.forEach(appendProjectDocumentAssignmentRow);
 }
 
 async function hydrateProjectSuggestions(){
@@ -4823,6 +5035,163 @@ async function decideProjectSuggestion(reviewId = '', action = '', node = null){
     syncProjectReviewState(result.update || {id:reviewId,status:approved ? 'approved' : 'rejected'});
   }catch(error){
     projectIndexSourceLabel = 'Project suggestion was not updated: ' + error.message;
+    updateProjectIndexSourceLabel();
+    rowButtons.forEach((button) => { button.disabled = false; });
+  }
+}
+
+function findProjectDocumentAssignmentItem(documentId = ''){
+  return projectDocumentAssignmentItems().find((item) => String(item.id || '') === String(documentId || '')) ||
+    currentDocumentItems.find((item) => String(item.id || '') === String(documentId || '')) ||
+    localStoredDocuments().find((item) => String(item.id || '') === String(documentId || '')) ||
+    null;
+}
+
+function documentProjectRecordFromItem(item = {}, project = {}){
+  return {
+    id:item.id || '',
+    title:item.title || 'Document',
+    type:item.type || 'document',
+    source:item.source || item.origin || 'VAL document',
+    relationship:item.relationship || '',
+    project:project.name || item.project || '',
+    summary:item.summary || item.referenceUse || 'Document evidence is attached to this Project Manager.',
+    referenceUse:item.referenceUse || 'Use as project evidence after review.',
+    noExternalAction:true
+  };
+}
+
+function syncDocumentProjectAssignmentToRows(item = {}, assignment = {}){
+  if(!item?.id) return;
+  const projectName = assignment.projectName || item.project || '';
+  const projectId = assignment.projectId || item.projectId || item.project_id || '';
+  currentDocumentItems = currentDocumentItems.map((row) => row.id === item.id ? documentWithProjectAssignment({...row, project:projectName, projectId}) : row);
+  if(activeDocumentItem?.id === item.id) activeDocumentItem = documentWithProjectAssignment({...activeDocumentItem, project:projectName, projectId});
+}
+
+function attachDocumentToProjectLocally(item = {}, project = {}){
+  if(!item?.id || !project) return null;
+  const projectId = project.projectId || project.id || project.profileKey || project.name || '';
+  const assignment = persistDocumentProjectAssignment(item, {
+    decision:'attached_existing_project',
+    projectId,
+    projectName:project.name || '',
+    relationshipName:item.relationship || ''
+  });
+  syncDocumentProjectAssignmentToRows(item, assignment || {});
+  const profile = projectIndexProfiles[project.id] || projectProfiles[project.id] || project;
+  const existingDocuments = Array.isArray(profile.documents) ? profile.documents : [];
+  const record = documentProjectRecordFromItem({...item, project:profile.name || project.name, projectId}, profile);
+  profile.documents = existingDocuments.some((doc) => doc.id === record.id || doc.title === record.title) ? existingDocuments : existingDocuments.concat(record);
+  const sourceDetails = normalizedProjectSourceDetails(profile);
+  const documentLine = projectListFromValue(sourceDetails.documents).concat(record.title).filter(Boolean);
+  profile.sourceDetails = {
+    ...sourceDetails,
+    documents:Array.from(new Set(documentLine)).join('; ')
+  };
+  if(profile.id) projectIndexProfiles[profile.id] = profile;
+  if(activeProjectProfile?.id === profile.id) renderProjectProfile(profile.id);
+  renderProjectSuggestions();
+  if(drawerTray?.classList.contains('document-open')) renderDocumentBrief(activeDocumentItem);
+  projectIndexSourceLabel = 'Document attached to ' + (profile.name || 'project') + ' locally';
+  updateProjectIndexSourceLabel();
+  return assignment;
+}
+
+function inferProjectNameFromDocument(item = {}){
+  const title = projectCleanText(item.title || 'New project from document');
+  const subject = projectCleanText(item.raw?.emailSubject || '');
+  const base = title.replace(/\.[a-z0-9]{2,5}$/i, '');
+  const slashMatch = (subject || base).match(/(?:MOU|SOW|Agreement|Scope|Proposal)\s+(?:for|with)?\s*([^/]+(?:\/\s*[^/]+)?)/i);
+  return projectCompactText((slashMatch?.[1] || base || subject || 'New project from document').replace(/\s+/g, ' ').trim(), 90);
+}
+
+function ensureLocalProjectIndexSeeded(){
+  if(projectIndexLoaded || Object.keys(projectIndexProfiles).length) return;
+  projectIndexProfiles = Object.values(projectProfiles).reduce((profiles, project) => {
+    profiles[project.id] = project;
+    return profiles;
+  }, {});
+}
+
+async function createProjectFromDocumentAssignment(item = {}){
+  const name = inferProjectNameFromDocument(item);
+  const summary = [
+    'Created from document evidence: ' + (item.title || 'Document') + '.',
+    item.summary || '',
+    item.relationship ? 'Relationship: ' + item.relationship + '.' : ''
+  ].filter(Boolean).join(' ');
+  if(canUseApi){
+    const payload = new FormData();
+    payload.append('name', name);
+    payload.append('summary', summary);
+    payload.append('documents', [item.title, item.summary, item.referenceUse].filter(Boolean).join('\n'));
+    payload.append('relationships', item.relationship || '');
+    payload.append('rawContext', 'Created from Project Managers document assignment. No external action happened.');
+    const result = await postFormData('/api/projects/create', payload);
+    const project = projectProfileFromIndexItem(result.project || result.dossier?.card || {name, summary});
+    if(project.id){
+      project.documents = [documentProjectRecordFromItem(item, project)];
+      projectIndexProfiles[project.id] = result.dossier ? projectProfileFromDossier(result.dossier, project) : project;
+      projectIndexLoaded = true;
+      attachDocumentToProjectLocally(item, projectIndexProfiles[project.id]);
+      renderProjectRolodex();
+      renderProjectProfile(project.id);
+      return projectIndexProfiles[project.id];
+    }
+  }
+  ensureLocalProjectIndexSeeded();
+  const id = 'document-project-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'document-project';
+  const project = projectProfileFromIndexItem({
+    id,
+    name,
+    status:'intake',
+    summary,
+    reality:summary,
+    signal:'A document needs a Project Manager decision.',
+    sourceReceipts:'Document evidence · Project Managers assignment',
+    sourceDetails:{
+      documents:item.title || 'Document',
+      relationships:item.relationship || '',
+      rawContext:item.summary || ''
+    },
+    relationships:item.relationship ? [item.relationship] : [],
+    explicitUserProject:true,
+    documents:[documentProjectRecordFromItem(item, {name})]
+  });
+  projectIndexProfiles[project.id] = project;
+  projectIndexLoaded = true;
+  attachDocumentToProjectLocally(item, project);
+  renderProjectRolodex();
+  renderProjectProfile(project.id);
+  return project;
+}
+
+async function decideProjectDocumentAssignment(documentId = '', action = '', node = null){
+  const item = findProjectDocumentAssignmentItem(documentId);
+  if(!item) return;
+  const suggestedProject = action === 'attach_existing' ? projectByLookupId(node?.dataset.projectDocumentProject || '') || suggestedProjectForDocument(item) : null;
+  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action:'projectDocument:' + action, allowBlockedForInspection:true, source:projectDocumentAssignmentSource(item, action, suggestedProject)});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  const rowButtons = node?.closest('.project-document-assignment-row')?.querySelectorAll('button') || [];
+  rowButtons.forEach((button) => { button.disabled = true; });
+  try{
+    if(action === 'attach_existing'){
+      if(!suggestedProject) throw new Error('No matching project was available to attach.');
+      attachDocumentToProjectLocally(item, suggestedProject);
+      projectIndexSourceLabel = 'Document attached to ' + (suggestedProject.name || 'project') + '. No external action happened.';
+    }else if(action === 'create_new'){
+      const project = await createProjectFromDocumentAssignment(item);
+      projectIndexSourceLabel = 'Project created from document and assigned to ' + projectManagerAssignment(project).name + '. No external action happened.';
+    }else if(action === 'not_project'){
+      persistDocumentProjectAssignment(item, {decision:'not_project', relationshipName:item.relationship || ''});
+      projectIndexSourceLabel = 'Document marked as reference only, not a project.';
+    }
+    renderProjectSuggestions();
+    updateProjectIndexSourceLabel();
+  }catch(error){
+    projectIndexSourceLabel = 'Document project assignment was not saved: ' + error.message;
     updateProjectIndexSourceLabel();
     rowButtons.forEach((button) => { button.disabled = false; });
   }
@@ -4992,6 +5361,7 @@ async function hydrateProjectIndex(){
         projectIndexSourceLabel = data.source === 'demo_project_profiles' ? 'Demo project index' : 'Canonical project index';
         updateProjectIndexSourceLabel();
         renderProjectRolodex();
+        renderProjectSuggestions();
         const firstProject = projectIndexItems()[0];
         if(firstProject) renderProjectProfile(firstProject.id);
         else renderProjectManagerEmptyState();
@@ -5483,7 +5853,7 @@ function localStoredDocuments(){
       origin: 'local_storage',
       raw: doc,
       noExternalAction: true
-    }));
+    })).map(documentWithProjectAssignment);
   }catch(error){
     return [];
   }
@@ -5804,7 +6174,7 @@ function scrollLeadIntelligenceActionsIntoView(){
 }
 
 async function hydrateDocumentDrawer(){
-  currentDocumentItems = localDocumentItems.concat(localStoredDocuments());
+  currentDocumentItems = documentItemsWithProjectAssignments(localDocumentItems.concat(localStoredDocuments()));
   activeDocumentItem = currentDocumentItems[0] || null;
   renderDocumentFilters();
   renderDocumentBrief(activeDocumentItem);
@@ -5819,10 +6189,11 @@ async function hydrateDocumentDrawer(){
     (documents.documents || []).map(normalizeCanonicalDocumentItem).concat(documentItemsFromReady(ready)).concat(documentItemsFromOnboarding(onboarding)).concat(currentDocumentItems).forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
     });
-    currentDocumentItems = Array.from(byId.values());
+    currentDocumentItems = documentItemsWithProjectAssignments(Array.from(byId.values()));
     activeDocumentItem = currentDocumentItems[0] || null;
     renderDocumentFilters();
     renderDocumentBrief(activeDocumentItem);
+    renderProjectSuggestions();
   }catch(error){
     if(documentStatus) documentStatus.textContent = 'Document services unavailable; showing local document previews only.';
   }
@@ -5845,10 +6216,11 @@ async function scanDocumentIntakeFromGmail(){
     const scannedDocuments = documentItemsFromGmailScan(result);
     if(scannedDocuments.length){
       const byId = new Map(scannedDocuments.concat(currentDocumentItems).map((item) => [item.id, item]));
-      currentDocumentItems = Array.from(byId.values());
+      currentDocumentItems = documentItemsWithProjectAssignments(Array.from(byId.values()));
       persistLocalDocumentItems(scannedDocuments);
       renderDocumentFilters();
       renderDocumentBrief(currentDocumentItems[0] || activeDocumentItem);
+      renderProjectSuggestions();
     }
     if(documentStatus) documentStatus.textContent = documentIntakeStatusLine(result);
   }catch(error){
@@ -17320,6 +17692,13 @@ drawerTray.addEventListener('click', async (event) => {
     const profileId = relationshipProfileButton.dataset.relationshipOpenProfile;
     stewardshipSelectedNetworkId = profileId;
     renderStewardshipNetworkList();
+    return;
+  }
+  const projectDocumentAction = event.target.closest('[data-project-document-action]');
+  if(projectDocumentAction){
+    event.preventDefault();
+    event.stopPropagation();
+    await decideProjectDocumentAssignment(projectDocumentAction.dataset.projectDocumentId, projectDocumentAction.dataset.projectDocumentAction, projectDocumentAction);
     return;
   }
   const projectSuggestionAction = event.target.closest('[data-project-suggestion-action]');

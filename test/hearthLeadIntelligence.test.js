@@ -138,6 +138,8 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthHtml, /class="drawer-link project-drawer-link"/);
   assert.match(hearthHtml, /aria-controls="project-detail"/);
   assert.match(hearthHtml, /id="project-detail"/);
+  assert.match(hearthHtml, /<p class="drawer-kicker">Project Managers<\/p>/);
+  assert.doesNotMatch(hearthHtml, /Project Dossiers/);
   assert.match(hearthHtml, /data-project-index-source/);
   assert.match(hearthHtml, /data-project-create-toggle/);
   assert.match(hearthHtml, /data-project-create-form/);
@@ -255,6 +257,17 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function projectSuggestionReceiptLine/);
   assert.match(hearthJs, /VAL handled:/);
   assert.match(hearthJs, /project-suggestion-receipt/);
+  assert.match(hearthJs, /DOCUMENT_PROJECT_ASSIGNMENTS_STORAGE_KEY/);
+  assert.match(hearthJs, /val_document_project_assignments_v1/);
+  assert.match(hearthJs, /function projectDocumentAssignmentItems/);
+  assert.match(hearthJs, /function suggestedProjectForDocument/);
+  assert.match(hearthJs, /function persistDocumentProjectAssignment/);
+  assert.match(hearthJs, /function decideProjectDocumentAssignment/);
+  assert.match(hearthJs, /document_project_assignment/);
+  assert.match(hearthJs, /data-project-document-action/);
+  assert.match(hearthJs, /Attach to ' \+ \(suggestedProject\.name/);
+  assert.match(hearthJs, /Create new project and assign a manager/);
+  assert.match(hearthJs, /projectDocument:/);
   assert.match(hearthJs, /function decideProjectSuggestion/);
   assert.match(hearthJs, /\/api\/val\/source-processing\/surface-registrations\?surface=project_managers&status=visible&reviewStatus=pending&limit=5/);
   assert.match(hearthJs, /data-project-suggestion-action/);
@@ -309,6 +322,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthCss, /\.project-suggestion-row/);
   assert.match(hearthCss, /\.project-suggestion-receipt/);
   assert.match(hearthCss, /\.project-suggestion-actions/);
+  assert.match(hearthCss, /\.project-document-assignment-actions/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]\[aria-pressed="true"\]/);
   assert.match(hearthCss, /\.project-rolodex-empty/);
@@ -812,6 +826,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /action:'document:scan_gmail'/);
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /function filteredDocumentItems/);
+  assert.match(hearthJs, /function documentItemsWithProjectAssignments/);
   assert.match(hearthJs, /function scrollDocumentActionsIntoView/);
   assert.match(hearthJs, /function documentSuggestedActions/);
   assert.match(hearthJs, /function documentSource/);
@@ -1245,8 +1260,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-open-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-open-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-doc-assign-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-doc-assign-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
