@@ -188,6 +188,7 @@ test('document index reads durable email message attachments from Postgres raw_j
   const result = await service.list({q: 'MOU', limit: 20});
   assert.equal(result.ok, true);
   assert.equal(result.count, 1);
+  assert.equal(result.sourceCounts.emailMessages, 1);
   assert.equal(result.documents[0].title, 'MOU ForeverFreedom Frisson.pdf');
   assert.equal(result.documents[0].relationship, 'Aric Soyring');
   assert.equal(result.documents[0].sourceType, 'email_attachment');

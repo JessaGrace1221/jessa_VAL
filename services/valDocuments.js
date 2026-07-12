@@ -367,16 +367,22 @@ function createValDocumentsService({
     if(typeof listProjectProfiles==='function')return listProjectProfiles({limit:200}).catch(()=>[]);
     return store().relationshipProfiles.filter(p=>p.profileType==='project'||p.profile_type==='project');
   }
-  async function loadSourceProcessingRecords(){
+  async function loadSourceProcessingRecords(unknowns=[]){
     if(hasPg()&&typeof dbQuery==='function'){
-      const result=await dbQuery('select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit 200',[tenantId(),userId()]).catch(()=>({rows:[]}));
+      const result=await dbQuery('select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit 200',[tenantId(),userId()]).catch(error=>{
+        unknowns.push({source:'source_processing_records',scope:'current_user',reason:error.message});
+        return {rows:[]};
+      });
       if((result.rows||[]).length)return result.rows||[];
-      const tenantResult=await dbQuery('select * from source_processing_records where tenant_id=$1 order by created_at desc limit 200',[tenantId()]).catch(()=>({rows:[]}));
+      const tenantResult=await dbQuery('select * from source_processing_records where tenant_id=$1 order by created_at desc limit 200',[tenantId()]).catch(error=>{
+        unknowns.push({source:'source_processing_records',scope:'tenant',reason:error.message});
+        return {rows:[]};
+      });
       return tenantResult.rows||[];
     }
     return store().sourceProcessingRecords.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
   }
-  async function loadEmailMessages(){
+  async function loadEmailMessages(unknowns=[]){
     if(hasPg()&&typeof dbQuery==='function'){
       const sql = `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
            from email_messages
@@ -404,16 +410,22 @@ function createValDocumentsService({
           order by coalesce(received_at,sent_at,created_at) desc
           limit 200`,
         [tenantId(),userId()]
-      ).catch(()=>({rows:[]}));
+      ).catch(error=>{
+        unknowns.push({source:'email_messages',scope:'current_user',reason:error.message});
+        return {rows:[]};
+      });
       if((result.rows||[]).length)return (result.rows||[]).map(mapRow);
-      const tenantResult=await dbQuery(sql,[tenantId()]).catch(()=>({rows:[]}));
+      const tenantResult=await dbQuery(sql,[tenantId()]).catch(error=>{
+        unknowns.push({source:'email_messages',scope:'tenant',reason:error.message});
+        return {rows:[]};
+      });
       return (tenantResult.rows||[]).map(mapRow);
     }
     return store().emailMessages.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
   }
   async function list({q='',relationship='',project='',limit=120,includeGoogle=false}={}){
     const unknowns=[];
-    const [drafts,runs,memory,projects,sourceProcessingRecords,emailMessages] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords(),loadEmailMessages()]);
+    const [drafts,runs,memory,projects,sourceProcessingRecords,emailMessages] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords(unknowns),loadEmailMessages(unknowns)]);
     let google=[];
     if(includeGoogle&&typeof searchGoogleDocs==='function'&&(q||relationship||project)){
       try{google=await searchGoogleDocs(q||relationship||project,8);}catch(e){unknowns.push({source:'google_docs',reason:e.message});}
@@ -431,7 +443,7 @@ function createValDocumentsService({
     );
     const filtered=rows.filter(doc=>documentMatches(doc,{q,relationship,project}));
     const capped=filtered.slice(0,Math.max(1,Math.min(Number(limit)||120,240)));
-    return {ok:true,documents:capped,summary:summaryFor(filtered),count:capped.length,totalMatches:filtered.length,source:'val_documents_index',unknowns,empty:capped.length===0};
+    return {ok:true,documents:capped,summary:summaryFor(filtered),count:capped.length,totalMatches:filtered.length,source:'val_documents_index',sourceCounts:{drafts:drafts.length,runs:runs.length,memory:memory.length,projects:projects.length,sourceProcessingRecords:sourceProcessingRecords.length,emailMessages:emailMessages.length,google:google.length},unknowns,empty:capped.length===0};
   }
   async function get(id){
     return (await list({limit:240})).documents.find(doc=>String(doc.id)===String(id))||null;
