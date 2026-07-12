@@ -4622,6 +4622,9 @@ button.drawer-link{
   font-size:.66rem;
   line-height:1.25;
 }
+.project-suggestion-receipt{
+  color:rgba(64,86,61,.72);
+}
 .project-suggestion-manager{
   display:inline-flex;
   align-items:center;

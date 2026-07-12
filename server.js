@@ -9720,6 +9720,7 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
       sourceProcessingRecordId:result.sourceProcessingRecord?.id||'',
       projectSuggestionId:result.projectSuggestion?.id||'',
       existingProjectId:result.existingProject?.projectId||result.existingProject?.id||'',
+      whatValDidReceipt:result.whatValDidReceipt||result.what_val_did_receipt||result.sourceProcessingRecord?.whatValDidReceipt||null,
       documentCount:documents.length,
       noExternalAction:true
     };
@@ -9733,7 +9734,7 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
     existingProjects:results.filter(result=>result.existingProjectId).length,
     skipped:results.filter(result=>result.skipped).length,
     errors:results.filter(result=>result.error).map(result=>result.error),
-    records:results.filter(result=>result.sourceProcessingRecordId).map(result=>({id:result.sourceProcessingRecordId,projectSuggestionId:result.projectSuggestionId||'',messageId:result.messageId||'',documentCount:result.documentCount||0})),
+    records:results.filter(result=>result.sourceProcessingRecordId).map(result=>({id:result.sourceProcessingRecordId,projectSuggestionId:result.projectSuggestionId||'',messageId:result.messageId||'',documentCount:result.documentCount||0,whatValDidReceipt:result.whatValDidReceipt||null})),
     noExternalAction:true
   };
 }

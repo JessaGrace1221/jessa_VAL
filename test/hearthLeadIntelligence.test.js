@@ -252,6 +252,9 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function hydrateProjectReviewUpdates/);
   assert.match(hearthJs, /function hydrateProjectSuggestions/);
   assert.match(hearthJs, /function renderProjectSuggestions/);
+  assert.match(hearthJs, /function projectSuggestionReceiptLine/);
+  assert.match(hearthJs, /VAL handled:/);
+  assert.match(hearthJs, /project-suggestion-receipt/);
   assert.match(hearthJs, /function decideProjectSuggestion/);
   assert.match(hearthJs, /\/api\/val\/source-processing\/surface-registrations\?surface=project_managers&status=visible&reviewStatus=pending&limit=5/);
   assert.match(hearthJs, /data-project-suggestion-action/);
@@ -304,6 +307,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthCss, /\.project-create-status/);
   assert.match(hearthCss, /\.project-suggestions/);
   assert.match(hearthCss, /\.project-suggestion-row/);
+  assert.match(hearthCss, /\.project-suggestion-receipt/);
   assert.match(hearthCss, /\.project-suggestion-actions/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]/);
   assert.match(hearthCss, /\.project-rolodex button\[data-project-open-profile\]\[aria-pressed="true"\]/);

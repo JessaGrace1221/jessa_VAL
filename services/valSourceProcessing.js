@@ -83,7 +83,69 @@ function projectLooksLike(project={},projectId='',projectName=''){
 function sourceRecordId(uuid,scope,sourceType,sourceId){
   return stableKey(`source_${scope.tenantId}_${scope.userId}_${sourceType}_${sourceId}`)||uuid('source');
 }
-function readyItemFromProjectSuggestion({update,sourceProcessingRecordId,preparedArtifactRecordId}={}){
+function surfaceLabel(value=''){
+  return String(value||'').replace(/_/g,' ').replace(/\b\w/g,char=>char.toUpperCase());
+}
+function sourceProcessingWhatValDidReceipt(record={},overrides={}){
+  const metadata=jsonValue(record.metadataJson||record.metadata_json,{});
+  const sourceReceipt=jsonValue(record.sourceReceiptJson||record.source_receipt_json,{});
+  const noAction=jsonValue(record.noActionReceiptJson||record.no_action_receipt_json,{});
+  const domainRoutes=safeArray(record.domainRoutesJson||record.domain_routes_json);
+  const reviewUpdates=safeArray(record.reviewUpdatesJson||record.review_updates_json);
+  const preparedWork=safeArray(record.preparedWorkCandidatesJson||record.prepared_work_candidates_json);
+  const sourceType=firstText(record.sourceType,record.source_type,sourceReceipt.sourceType,sourceReceipt.source_type,'source');
+  const sourceId=firstText(record.sourceId,record.source_id,sourceReceipt.sourceId,sourceReceipt.source_id);
+  const sourceTitle=firstText(record.sourceTitle,record.source_title,sourceReceipt.sourceTitle,sourceReceipt.source_title,sourceId,'source');
+  const documentCount=Number(sourceReceipt.documentCount||sourceReceipt.document_count||metadata.documentCount||metadata.document_count||0);
+  const reviewUpdateId=firstText(overrides.reviewUpdateId,metadata.reviewUpdateId,metadata.review_update_id,reviewUpdates[0]?.id);
+  const noActionReason=firstText(noAction.reason,metadata.noActionReason);
+  const routeLabels=domainRoutes.map(surfaceLabel).filter(Boolean);
+  const surfaces=safeArray(overrides.surfaces).length ? safeArray(overrides.surfaces) : safeArray(metadata.surfaces).concat(domainRoutes).filter(Boolean);
+  const actionLabels=[];
+  let summary='';
+  if(noActionReason){
+    actionLabels.push('Stored source-only receipt');
+    summary=`Kept "${sourceTitle}" as source-only: ${noActionReason}`;
+  }else if(reviewUpdateId){
+    actionLabels.push('Stored source receipt','Prepared yes/no project review','Registered Project Managers surface','Mirrored in Leverage');
+    const documentText=documentCount ? `${documentCount} document${documentCount===1?'':'s'}` : 'the document evidence';
+    summary=`Stored the source receipt for "${sourceTitle}", routed ${documentText} to Documents, prepared a Project Managers yes/no suggestion, and mirrored it in Leverage.`;
+  }else if(preparedWork.length){
+    actionLabels.push('Stored source receipt','Prepared reviewable work');
+    summary=`Stored the source receipt for "${sourceTitle}" and prepared ${preparedWork.length} reviewable item${preparedWork.length===1?'':'s'}.`;
+  }else if(routeLabels.length){
+    actionLabels.push('Stored source receipt','Routed source context');
+    summary=`Stored the source receipt for "${sourceTitle}" and routed it to ${routeLabels.join(', ')}.`;
+  }else{
+    actionLabels.push('Stored source receipt');
+    summary=`Stored the source receipt for "${sourceTitle}". No external action was taken.`;
+  }
+  return {
+    label:overrides.label || (/email/i.test(sourceType) ? 'What VAL did from this email' : (/document|attachment|file/i.test(sourceType) ? 'What VAL did from this document' : 'What VAL did from this source')),
+    summary:compactText(overrides.summary||summary,900),
+    actions:actionLabels.map(label=>({label,external_action:false})),
+    surfaces:[...new Set(surfaces)],
+    source:{sourceType,sourceId,sourceTitle},
+    documentCount,
+    reviewUpdateId,
+    preparedArtifactRecordId:firstText(overrides.preparedArtifactRecordId,metadata.preparedArtifactRecordId,metadata.prepared_artifact_record_id),
+    readyForYouItemId:firstText(overrides.readyForYouItemId,metadata.readyForYouItemId,metadata.ready_for_you_item_id),
+    noExternalAction:true,
+    externalActionTaken:false,
+    createdAt:record.createdAt||record.created_at||now(),
+    updatedAt:record.updatedAt||record.updated_at||now()
+  };
+}
+function withWhatValDidReceipt(record={}){
+  const metadata=jsonValue(record.metadataJson||record.metadata_json,{});
+  const receipt=sourceProcessingWhatValDidReceipt({...record,metadataJson:metadata});
+  return {
+    ...record,
+    metadataJson:{...metadata,whatValDidReceipt:receipt,sourceProcessingReceipt:receipt},
+    whatValDidReceipt:receipt
+  };
+}
+function readyItemFromProjectSuggestion({update,sourceProcessingRecordId,preparedArtifactRecordId,readyForYouItemId,whatValDidReceipt=null}={}){
   const value=update.proposedValueJson||update.proposed_value_json||{};
   const actions=safeArray(value.reviewActions).map(action=>({
     key:action.key,
@@ -92,7 +154,7 @@ function readyItemFromProjectSuggestion({update,sourceProcessingRecordId,prepare
     review_update_id:update.id
   }));
   return {
-    id:stableKey(`ready_project_suggestion_${update.id}`),
+    id:readyForYouItemId||stableKey(`ready_project_suggestion_${update.id}`),
     tenantId:update.tenantId||update.tenant_id||'default',
     userId:update.userId||update.user_id||'default',
     eventRunId:'',
@@ -107,7 +169,7 @@ function readyItemFromProjectSuggestion({update,sourceProcessingRecordId,prepare
     readinessJson:{status:'ready_for_review',review_update_id:update.id,project_id:value.projectId||'',project_name:value.projectName||''},
     whatValPrepared:'Prepared a suggested project review from relationship-sent documents. No project has been created yet.',
     whatUserNeedsToDo:'Choose whether this should become a project and receive an assigned Project Manager.',
-    whatValDid:'Stored the source receipt, routed the documents to Documents, prepared the Project Managers suggestion, and registered it in Leverage for review.',
+    whatValDid:whatValDidReceipt?.summary || 'Stored the source receipt, routed the documents to Documents, prepared the Project Managers suggestion, and registered it in Leverage for review.',
     whatOnlyUserCanDo:'Decide whether the document set is actually a project.',
     estimatedReviewMinutes:2,
     sourceRefsJson:safeArray(update.sourceRefsJson||update.source_refs_json),
@@ -116,7 +178,7 @@ function readyItemFromProjectSuggestion({update,sourceProcessingRecordId,prepare
     approvalPolicy:'approval_required',
     representationRisk:'medium',
     actionsJson:actions,
-    metadataJson:{source:'source_processing_spine',reviewUpdateId:update.id,sourceProcessingRecordId,preparedArtifactRecordId,noExternalAction:true,surfaces:['project_managers','home_leverage']},
+    metadataJson:{source:'source_processing_spine',reviewUpdateId:update.id,sourceProcessingRecordId,preparedArtifactRecordId,whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt,noExternalAction:true,surfaces:['project_managers','home_leverage']},
     decisionJson:{},
     createdAt:now(),
     updatedAt:now(),
@@ -164,12 +226,13 @@ function createValSourceProcessingService({
     return rowToCamel(r.rows?.[0]||row);
   }
   async function saveRecord(row){
+    const withReceipt=withWhatValDidReceipt(row);
     if(hasPg()){
-      return pgUpsert('source_processing_records',row,['id','tenantId','userId','sourceType','sourceId','sourceTitle','status','sourceReceiptJson','witnessObservationsJson','executiveRelevanceJson','domainRoutesJson','packetUpdatesJson','reviewUpdatesJson','preparedWorkCandidatesJson','noActionReceiptJson','unknownsJson','metadataJson','createdAt','updatedAt']);
+      return withWhatValDidReceipt(await pgUpsert('source_processing_records',withReceipt,['id','tenantId','userId','sourceType','sourceId','sourceTitle','status','sourceReceiptJson','witnessObservationsJson','executiveRelevanceJson','domainRoutesJson','packetUpdatesJson','reviewUpdatesJson','preparedWorkCandidatesJson','noActionReceiptJson','unknownsJson','metadataJson','createdAt','updatedAt']));
     }
     const s=store();const idx=s.sourceProcessingRecords.findIndex(r=>r.id===row.id);
-    if(idx>=0)s.sourceProcessingRecords[idx]={...s.sourceProcessingRecords[idx],...row,createdAt:s.sourceProcessingRecords[idx].createdAt||row.createdAt,updatedAt:now()};else s.sourceProcessingRecords.unshift(row);
-    saveStore(s);return idx>=0?s.sourceProcessingRecords[idx]:row;
+    if(idx>=0)s.sourceProcessingRecords[idx]={...s.sourceProcessingRecords[idx],...withReceipt,createdAt:s.sourceProcessingRecords[idx].createdAt||withReceipt.createdAt,updatedAt:now()};else s.sourceProcessingRecords.unshift(withReceipt);
+    saveStore(s);return idx>=0?s.sourceProcessingRecords[idx]:withReceipt;
   }
   async function savePreparedArtifact(row){
     if(hasPg()){
@@ -232,19 +295,19 @@ function createValSourceProcessingService({
       record.status='no_action';
       record.noActionReceiptJson={reason:'Document sender is not an admitted relationship, so VAL will not suggest a project.',sourceType,sourceId};
       const saved=await saveRecord(record);
-      return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
+      return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
     }
     if(!documents.length){
       record.status='no_action';
       record.noActionReceiptJson={reason:'No document evidence was present, so VAL will not suggest a project.',sourceType,sourceId};
       const saved=await saveRecord(record);
-      return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
+      return {ok:true,sourceProcessingRecord:saved,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_action_receipt:saved.noActionReceiptJson,no_external_action:true};
     }
     const existing=(await currentProjects()).find(project=>projectLooksLike(project,input.projectId||stableKey(projectName),projectName));
     if(existing){
       record.noActionReceiptJson={reason:'A matching project already exists. VAL should link documents rather than suggest a new project.',projectId:existing.projectId||existing.id||existing.profileKey||'',sourceType,sourceId};
       const saved=await saveRecord(record);
-      return {ok:true,sourceProcessingRecord:saved,existingProject:existing,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],no_external_action:true};
+      return {ok:true,sourceProcessingRecord:saved,existingProject:existing,projectSuggestion:null,readyForYouItem:null,surfaceRegistrations:[],whatValDidReceipt:saved.whatValDidReceipt,what_val_did_receipt:saved.whatValDidReceipt,no_external_action:true};
     }
     if(!reviewUpdatesService?.createRelationshipDocumentProjectSuggestion)throw new Error('Review update service does not support relationship document project suggestions.');
     const savedRecord=await saveRecord(record);
@@ -257,8 +320,17 @@ function createValSourceProcessingService({
       confidence:input.confidence||0.76
     });
     const update=projectSuggestion.update;
+    const preparedArtifactId=stableKey(`artifact_suggested_project_${update.id}`);
+    const readyForYouItemId=stableKey(`ready_project_suggestion_${update.id}`);
+    const whatValDidReceipt=sourceProcessingWhatValDidReceipt({
+      ...savedRecord,
+      reviewUpdatesJson:[{id:update.id,targetType:update.targetType,updateType:update.updateType}],
+      preparedWorkCandidatesJson:[{id:preparedArtifactId,artifactType:'suggested_project_review',reviewUpdateId:update.id}],
+      packetUpdatesJson:[{target:'project_packet',status:'review_required',reviewUpdateId:update.id}],
+      metadataJson:{...(savedRecord.metadataJson||{}),reviewUpdateId:update.id,preparedArtifactRecordId:preparedArtifactId,readyForYouItemId,surfaces:['project_managers','home_leverage']}
+    });
     const preparedArtifact=await savePreparedArtifact({
-      id:stableKey(`artifact_suggested_project_${update.id}`),
+      id:preparedArtifactId,
       tenantId:sc.tenantId,
       userId:sc.userId,
       sourceProcessingRecordId:savedRecord.id,
@@ -269,11 +341,11 @@ function createValSourceProcessingService({
       payloadJson:update.proposedValueJson||{},
       sourceRefsJson:safeArray(update.sourceRefsJson),
       reviewUpdateId:update.id,
-      metadataJson:{source:'source_processing_spine',noExternalAction:true},
+      metadataJson:{source:'source_processing_spine',whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt,noExternalAction:true},
       createdAt:now(),
       updatedAt:now()
     });
-    const readyItem=await saveReadyItem(readyItemFromProjectSuggestion({update:{...update,tenantId:sc.tenantId,userId:sc.userId},sourceProcessingRecordId:savedRecord.id,preparedArtifactRecordId:preparedArtifact.id}));
+    const readyItem=await saveReadyItem(readyItemFromProjectSuggestion({update:{...update,tenantId:sc.tenantId,userId:sc.userId},sourceProcessingRecordId:savedRecord.id,preparedArtifactRecordId:preparedArtifact.id,readyForYouItemId,whatValDidReceipt}));
     const projectSurface=await saveSurfaceRegistration({
       id:stableKey(`surface_project_managers_${update.id}`),
       tenantId:sc.tenantId,
@@ -290,7 +362,7 @@ function createValSourceProcessingService({
       status:'visible',
       actionJson:{primary:'approve_create_project',secondary:'reject_not_project'},
       sourceRefsJson:safeArray(update.sourceRefsJson),
-      metadataJson:{source:'source_processing_spine',ownedSurface:true,...surfaceMetadataFromProjectSuggestion(update)},
+      metadataJson:{source:'source_processing_spine',ownedSurface:true,whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt,...surfaceMetadataFromProjectSuggestion(update)},
       createdAt:now(),
       updatedAt:now()
     });
@@ -310,7 +382,7 @@ function createValSourceProcessingService({
       status:'visible',
       actionJson:{primary:'review_project_suggestion',reviewUpdateId:update.id},
       sourceRefsJson:safeArray(update.sourceRefsJson),
-      metadataJson:{source:'source_processing_spine',mirrors:'project_managers',...surfaceMetadataFromProjectSuggestion(update)},
+      metadataJson:{source:'source_processing_spine',mirrors:'project_managers',whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt,...surfaceMetadataFromProjectSuggestion(update)},
       createdAt:now(),
       updatedAt:now()
     });
@@ -319,17 +391,17 @@ function createValSourceProcessingService({
       reviewUpdatesJson:[{id:update.id,targetType:update.targetType,updateType:update.updateType}],
       preparedWorkCandidatesJson:[{id:preparedArtifact.id,artifactType:preparedArtifact.artifactType,reviewUpdateId:update.id}],
       packetUpdatesJson:[{target:'project_packet',status:'review_required',reviewUpdateId:update.id}],
-      metadataJson:{...(savedRecord.metadataJson||{}),reviewUpdateId:update.id,preparedArtifactRecordId:preparedArtifact.id,readyForYouItemId:readyItem.id,surfaceRegistrationIds:[projectSurface.id,leverageSurface.id]}
+      metadataJson:{...(savedRecord.metadataJson||{}),reviewUpdateId:update.id,preparedArtifactRecordId:preparedArtifact.id,readyForYouItemId:readyItem.id,surfaceRegistrationIds:[projectSurface.id,leverageSurface.id],whatValDidReceipt,sourceProcessingReceipt:whatValDidReceipt}
     });
-    return {ok:true,sourceProcessingRecord:finalRecord,projectSuggestion:update,preparedArtifactRecord:preparedArtifact,readyForYouItem:readyItem,surfaceRegistrations:[projectSurface,leverageSurface],no_external_action:true};
+    return {ok:true,sourceProcessingRecord:finalRecord,projectSuggestion:update,preparedArtifactRecord:preparedArtifact,readyForYouItem:readyItem,surfaceRegistrations:[projectSurface,leverageSurface],whatValDidReceipt:finalRecord.whatValDidReceipt,what_val_did_receipt:finalRecord.whatValDidReceipt,no_external_action:true};
   }
   async function listSourceRecords({limit=50}={}){
     const lim=Math.max(1,Math.min(Number(limit)||50,200));
     if(hasPg()){
       const r=await dbQuery(`select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit $3`,[tenantId(),userId(),lim]);
-      return {ok:true,records:(r.rows||[]).map(rowToCamel)};
+      return {ok:true,records:(r.rows||[]).map(rowToCamel).map(withWhatValDidReceipt)};
     }
-    return {ok:true,records:store().sourceProcessingRecords.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,lim)};
+    return {ok:true,records:store().sourceProcessingRecords.filter(r=>r.tenantId===tenantId()&&r.userId===userId()).slice(0,lim).map(withWhatValDidReceipt)};
   }
   async function listSurfaceRegistrations({surface='',status='visible',reviewStatus='',limit=50}={}){
     const lim=Math.max(1,Math.min(Number(limit)||50,200));
@@ -360,7 +432,7 @@ function createValSourceProcessingService({
       .slice(0,lim);
     return {ok:true,surfaceRegistrations:rows};
   }
-  return {processRelationshipDocumentEmail,listSourceRecords,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration};
+  return {processRelationshipDocumentEmail,listSourceRecords,listSurfaceRegistrations,saveRecord,savePreparedArtifact,saveSurfaceRegistration,sourceProcessingWhatValDidReceipt};
 }
 
-module.exports={createValSourceProcessingService,relationshipAdmitted,documentsFromInput,readyItemFromProjectSuggestion,surfaceMetadataFromProjectSuggestion};
+module.exports={createValSourceProcessingService,relationshipAdmitted,documentsFromInput,readyItemFromProjectSuggestion,surfaceMetadataFromProjectSuggestion,sourceProcessingWhatValDidReceipt};

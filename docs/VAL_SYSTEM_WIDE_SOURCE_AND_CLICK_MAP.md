@@ -338,6 +338,12 @@ Required shape:
   "packet_updates": [],
   "review_updates": [],
   "prepared_work": [],
+  "what_val_did_receipt": {
+    "label": "What VAL did from this source",
+    "summary": "",
+    "surfaces": [],
+    "no_external_action": true
+  },
   "no_action_receipt": "",
   "unknowns": []
 }
@@ -2213,6 +2219,7 @@ Required output:
   "surface_registrations": [],
   "ready_for_you_candidates": [],
   "external_action_packets": [],
+  "what_val_did_receipt": {},
   "no_action_receipt": ""
 }
 ```

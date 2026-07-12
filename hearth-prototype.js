@@ -4667,6 +4667,13 @@ function projectSuggestionEvidenceLine(item = {}){
   return [docLine, evidence].filter(Boolean).join(' · ') || 'Document evidence attached.';
 }
 
+function projectSuggestionReceiptLine(item = {}){
+  const meta = projectSuggestionMetadata(item);
+  const receipt = meta.whatValDidReceipt || meta.sourceProcessingReceipt || item.whatValDidReceipt || {};
+  const summary = String(receipt.summary || '').replace(/\s+/g, ' ').trim();
+  return summary ? 'VAL handled: ' + summary : '';
+}
+
 function findProjectSuggestionItem(reviewId = ''){
   return currentProjectSuggestionItems.find((item) => String(projectSuggestionReviewId(item)) === String(reviewId)) || null;
 }
@@ -4715,6 +4722,13 @@ function appendProjectSuggestionRow(item = {}){
   const evidence = document.createElement('small');
   evidence.textContent = projectSuggestionEvidenceLine(item);
   body.append(kicker, strong, summary, evidence);
+  const receiptLine = projectSuggestionReceiptLine(item);
+  if(receiptLine){
+    const receipt = document.createElement('small');
+    receipt.className = 'project-suggestion-receipt';
+    receipt.textContent = receiptLine;
+    body.appendChild(receipt);
+  }
   if(manager.name){
     const chip = document.createElement('span');
     chip.className = 'project-suggestion-manager';

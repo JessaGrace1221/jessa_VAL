@@ -62,6 +62,8 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(emailPayload,/processEmailDocumentSourceProcessing\(emails,\{origin:'email_intelligence'\}/);
   assert.match(emailPayload,/sourceProcessing:\{projectManagers:projectManagerIntake\}/);
   assert.match(emailPayload,/projectManagerSuggestions:projectManagerIntake\.suggestions/);
+  assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|result\.what_val_did_receipt/);
+  assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|null/);
 });
 
 test('relationship-sent documents create Project Managers and Leverage review surfaces',async()=>{
@@ -77,6 +79,10 @@ test('relationship-sent documents create Project Managers and Leverage review su
   assert.equal(result.ok,true);
   assert.equal(result.no_external_action,true);
   assert.equal(result.sourceProcessingRecord.executiveRelevanceJson.project_suggestion_eligible,true);
+  assert.equal(result.sourceProcessingRecord.whatValDidReceipt.label,'What VAL did from this email');
+  assert.match(result.sourceProcessingRecord.whatValDidReceipt.summary,/Stored the source receipt/);
+  assert.match(result.sourceProcessingRecord.whatValDidReceipt.summary,/Project Managers yes\/no suggestion/);
+  assert.equal(result.sourceProcessingRecord.metadataJson.whatValDidReceipt.noExternalAction,true);
   assert.equal(result.projectSuggestion.targetType,'suggested_project');
   assert.equal(result.projectSuggestion.updateType,'create_project_from_relationship_documents');
   assert.deepEqual(result.projectSuggestion.proposedValueJson.reviewActions.map(a=>a.label),[
@@ -91,6 +97,9 @@ test('relationship-sent documents create Project Managers and Leverage review su
   const projectSurface=result.surfaceRegistrations.find(r=>r.surface==='project_managers');
   assert.equal(projectSurface.metadataJson.projectName,'Frisson Partner Scope');
   assert.equal(projectSurface.metadataJson.documentCount,1);
+  assert.equal(projectSurface.metadataJson.whatValDidReceipt.summary,result.sourceProcessingRecord.whatValDidReceipt.summary);
+  assert.match(result.readyForYouItem.whatValDid,/Stored the source receipt/);
+  assert.equal(result.readyForYouItem.metadataJson.whatValDidReceipt.summary,result.sourceProcessingRecord.whatValDidReceipt.summary);
   assert.equal(projectSurface.metadataJson.assignedProjectManager.name,result.projectSuggestion.proposedValueJson.assignedProjectManager.name);
   assert.equal(store.relationshipProfiles.length,0);
 });
@@ -157,4 +166,6 @@ test('non-relationship document senders do not create project suggestions or Lev
   assert.equal(store.readyForYouItems.length,0);
   assert.equal(store.sourceProcessingRecords[0].status,'no_action');
   assert.match(store.sourceProcessingRecords[0].noActionReceiptJson.reason,/not an admitted relationship/);
+  assert.match(store.sourceProcessingRecords[0].whatValDidReceipt.summary,/source-only/);
+  assert.equal(result.whatValDidReceipt.summary,store.sourceProcessingRecords[0].whatValDidReceipt.summary);
 });

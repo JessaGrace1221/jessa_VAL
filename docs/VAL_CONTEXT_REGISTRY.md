@@ -274,6 +274,7 @@ Dedicated understanding prompt suite:
 | Project movement source proof | `{{projects.current.movement.current.one_line_source_proof}}` | new/derived | object | source receipt linker | Brief clickable proof for movement, never a long explanation. |
 | Project movement follow-up action | `{{projects.current.movement.current.follow_up_action}}` | new/derived | object | Project Movement Observer | Primary action VAL believes is needed, often `Follow up`. |
 | Project movement receipt | `{{projects.current.movement.current.receipt}}` | new/derived | object | source processing spine | One-line receipt after VAL logs or acts on movement. |
+| Source-processing action receipt | `{{source_processing.current.what_val_did_receipt}}` | new/derived | object | source processing spine | Plain-language receipt for what VAL did from an email, document, transcript, calendar event, or no-action source-only decision. |
 | Project risks | `{{projects.current.risks}}` | existing/derived | array | relationship profiles/evidence | Escalation. |
 | Project opportunities | `{{projects.current.opportunities}}` | existing/derived | array | relationship profiles/evidence/CRM | Opportunity detection. |
 | Project open loops | `{{projects.current.open_loops}}` | existing/derived | array | tasks/evidence | Task prioritization. |
