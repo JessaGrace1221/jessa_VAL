@@ -386,7 +386,7 @@ function createValDocumentsService({
     if(hasPg()&&typeof dbQuery==='function'){
       const sql = `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
            from email_messages
-          where tenant_id=$1 and has_attachments=true
+          where tenant_id=$1
           order by coalesce(received_at,sent_at,created_at) desc
           limit 200`;
       const mapRow = row => ({
@@ -406,7 +406,7 @@ function createValDocumentsService({
       const result=await dbQuery(
         `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
            from email_messages
-          where tenant_id=$1 and user_id=$2 and has_attachments=true
+          where tenant_id=$1 and user_id=$2
           order by coalesce(received_at,sent_at,created_at) desc
           limit 200`,
         [tenantId(),userId()]

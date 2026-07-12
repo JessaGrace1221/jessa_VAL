@@ -170,7 +170,7 @@ test('document index reads durable email message attachments from Postgres raw_j
         sender_json: {name: 'Aric Soyring', email: 'aric@example.com'},
         subject: 'MOU for Frisson Consulting / Forever Freedom',
         body_preview: 'Everything appears to be accurate in this document attached.',
-        has_attachments: true,
+        has_attachments: false,
         web_link: 'https://mail.google.com/mail/u/0/#inbox/thread_mou',
         received_at: '2026-07-12T15:14:14.000Z',
         raw_json: {
