@@ -346,6 +346,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /returnTarget:'project'/);
   assert.match(hearthJs, /function restoreProjectWindow/);
   assert.match(hearthJs, /workspaceReturnTarget === 'project'/);
+  assert.match(hearthJs, /if\(hearth\.dataset\.distance === 'judgment' && !event\.target\.closest\('\.desk-workspace'\)\)\{\s*closeWorkspace\(\);\s*return;\s*\}/);
   assert.match(hearthCss, /\.drawer-tray\.project-open \.project-detail/);
   assert.match(hearthCss, /\.project-create-form/);
   assert.match(hearthCss, /\.project-file-upload/);
@@ -533,14 +534,17 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /const timelineDrawerLink/);
   assert.match(hearthJs, /function hydrateTimelineStatus/);
   assert.match(hearthJs, /function loadTimelineTranscripts/);
-  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=250/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=60/);
   assert.match(hearthJs, /function openTimelineTranscript/);
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
   assert.match(hearthJs, /function timelineNativeActionItems/);
+  assert.match(hearthJs, /function timelineMeetingOverviewDraft/);
+  assert.match(hearthJs, /function renderTimelineMeetingOverviewDraft/);
   assert.match(hearthJs, /function timelineKrispSections/);
   assert.match(hearthJs, /rawTranscript/);
   assert.match(hearthJs, /Key Points\|Meeting Overview\|Summary\|Overview/);
+  assert.match(hearthJs, /keyPoints/);
   assert.match(hearthJs, /function timelineKrispStructuredActionItems/);
   assert.match(hearthJs, /sourcePayloadMetadata\?\.data\?\.sections/);
   assert.match(hearthJs, /Action Items\?/);
@@ -548,7 +552,11 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /krispSections\.actionItems\.length/);
   assert.match(hearthJs, /krispStructured\.length/);
   assert.match(hearthJs, /if\(native\.length\) return native/);
-  assert.match(hearthJs, /VAL Action Items/);
+  assert.match(hearthJs, /Draft ready/);
+  assert.match(hearthJs, /It uses only the source Action Items and Key Points/);
+  assert.match(hearthJs, /document\.querySelector\('\.transcript-detail-panel'\)\?\.scrollIntoView/);
+  assert.match(hearthJs, /drawerTray\.scrollTop = 0/);
+  assert.doesNotMatch(hearthJs, /VAL Action Items/);
   assert.match(hearthJs, /Action Items/);
   assert.match(hearthJs, /Co-Work on This Transcript/);
   assert.match(hearthJs, /data-transcript-open/);
@@ -560,6 +568,8 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /\/api\/val\/transcripts\/reprocess/);
   assert.match(hearthCss, /\.timeline-transcript-row/);
   assert.match(hearthCss, /\.timeline-transcript-detail/);
+  assert.match(hearthCss, /\.timeline-transcript-summary-strip/);
+  assert.match(hearthCss, /\.timeline-meeting-overview-ready/);
   assert.match(hearthCss, /\.timeline-transcript-chat-input/);
   assert.doesNotMatch(hearthHtml, /data-timeline-action="cowork_timeline"/);
   assert.match(hearthJs, /mode === 'timeline'/);

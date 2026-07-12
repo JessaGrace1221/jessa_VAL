@@ -78,7 +78,10 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(js, /krispSections\.actionItems\.length/);
   assert.match(js, /krispStructured\.length/);
   assert.match(js, /if\(native\.length\) return native/);
-  assert.match(js, /VAL Action Items/);
+  assert.match(js, /function timelineMeetingOverviewDraft/);
+  assert.match(js, /Draft ready/);
+  assert.match(js, /It uses only the source Action Items and Key Points/);
+  assert.doesNotMatch(js, /VAL Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
     assert.doesNotMatch(html, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
