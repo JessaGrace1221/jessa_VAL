@@ -1477,7 +1477,7 @@ button,a{font:inherit}
   z-index:1800;
   inset:50% auto auto 50%;
   bottom:auto;
-  width:min(520px,calc(100vw - 36px));
+  width:min(1180px,calc(100vw - 44px));
   transform:translate(-50%,-50%) scale(.985);
 }
 .hearth-shell .desk-workspace.home-cowork-mode[aria-hidden="false"]{
@@ -1488,8 +1488,10 @@ button,a{font:inherit}
 }
 .desk-workspace.home-cowork-mode .workspace-panel{
   display:grid;
+  grid-template-rows:minmax(0,1fr) auto;
+  gap:18px;
   min-height:min(760px,calc(100vh - 54px));
-  padding:44px clamp(24px,5vw,54px) 36px;
+  padding:44px clamp(20px,4vw,42px) 28px;
   border-color:rgba(79,48,38,.1);
   border-radius:18px;
   background:rgba(255,255,252,.72);
@@ -1527,32 +1529,69 @@ button,a{font:inherit}
 .desk-workspace.home-cowork-mode .scraper-preview-list{
   align-self:start;
   display:grid;
-  justify-items:center;
+  justify-items:stretch;
+  width:100%;
+  min-height:0;
   padding:0;
   margin:0;
   background:transparent;
   box-shadow:none;
 }
-.home-cowork-preview{
+.home-cowork-workspace{
   display:grid;
-  justify-items:center;
-  gap:22px;
-  text-align:center;
+  grid-template-columns:minmax(210px,.32fr) minmax(0,1fr);
+  gap:18px;
+  width:100%;
+  min-height:0;
+}
+.home-cowork-sidebar,
+.home-cowork-main{
+  min-width:0;
+  border:1px solid rgba(91,105,79,.14);
+  border-radius:12px;
+  background:rgba(255,255,252,.58);
+}
+.home-cowork-sidebar{
+  display:grid;
+  align-content:start;
+  gap:14px;
+  padding:16px;
+}
+.home-cowork-main{
+  display:grid;
+  grid-template-rows:auto minmax(320px,1fr);
+  overflow:hidden;
+}
+.home-cowork-preview{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  min-width:0;
+  padding:16px 18px 12px;
+  border-bottom:1px solid rgba(91,105,79,.12);
+  text-align:left;
 }
 .home-cowork-preview p{
   margin:0;
   color:rgba(20,12,10,.96);
-  font:500 clamp(1.45rem,4vw,2.2rem)/1 var(--serif);
+  font:500 1.26rem/1 var(--serif);
+}
+.home-cowork-preview small{
+  display:block;
+  margin-top:4px;
+  color:rgba(45,27,22,.58);
+  font:.72rem/1.3 var(--body);
 }
 .home-cowork-mark{
-  width:96px;
-  height:96px;
-  filter:drop-shadow(0 18px 14px rgba(34,19,15,.18));
+  flex:0 0 auto;
+  width:52px;
+  height:52px;
+  filter:drop-shadow(0 12px 12px rgba(34,19,15,.14));
 }
 .home-cowork-mark .val-presence-core{
-  width:64px;
-  height:64px;
-  font-size:.88rem;
+  width:34px;
+  height:34px;
+  font-size:.58rem;
 }
 .home-cowork-mark::before,
 .home-cowork-mark::after,
@@ -1560,21 +1599,82 @@ button,a{font:inherit}
   inset:4px;
 }
 .home-cowork-mark::after{
-  inset:18px;
+  inset:12px;
 }
 .home-cowork-context{
   display:grid;
-  gap:7px;
-  min-height:52px;
+  gap:8px;
   color:rgba(20,12,10,.92);
 }
-.home-cowork-context strong{
-  font:700 clamp(1.08rem,3vw,1.32rem)/1.18 var(--body);
+.home-cowork-context>span,
+.home-cowork-history>span{
+  color:rgba(82,98,74,.74);
+  font-size:.62rem;
+  font-weight:850;
+  letter-spacing:.1em;
+  text-transform:uppercase;
 }
-.home-cowork-context span{
-  max-width:36ch;
+.home-cowork-context strong{
+  font:760 .96rem/1.18 var(--body);
+}
+.home-cowork-context p,
+.home-cowork-history small{
   color:rgba(45,27,22,.62);
-  font:.92rem/1.35 var(--body);
+  font:.78rem/1.42 var(--body);
+}
+.home-cowork-history{
+  display:grid;
+  gap:9px;
+  padding-top:13px;
+  border-top:1px solid rgba(91,105,79,.12);
+}
+.home-cowork-history button{
+  justify-self:start;
+  min-height:32px;
+  border:1px solid rgba(77,95,69,.2);
+  border-radius:999px;
+  background:rgba(231,235,213,.42);
+  color:rgba(54,70,49,.94);
+  padding:0 12px;
+  font-size:.7rem;
+  font-weight:850;
+}
+.home-cowork-thread{
+  display:grid;
+  align-content:start;
+  gap:12px;
+  min-height:320px;
+  max-height:min(500px,calc(100vh - 270px));
+  overflow:auto;
+  padding:18px;
+}
+.home-cowork-message{
+  display:grid;
+  gap:6px;
+  max-width:min(680px,92%);
+  padding:12px 13px;
+  border:1px solid rgba(91,105,79,.12);
+  border-radius:12px;
+  background:rgba(255,255,252,.82);
+  box-shadow:0 10px 24px rgba(34,19,15,.06);
+}
+.home-cowork-message.user{
+  justify-self:end;
+  border-color:rgba(77,95,69,.2);
+  background:rgba(232,241,220,.58);
+}
+.home-cowork-message span{
+  color:rgba(82,98,74,.76);
+  font-size:.62rem;
+  font-weight:850;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.home-cowork-message p{
+  margin:0;
+  white-space:pre-wrap;
+  color:rgba(38,38,35,.84);
+  font:.88rem/1.5 var(--body);
 }
 .desk-workspace.home-cowork-mode .workspace-input-panel{
   align-self:end;
@@ -1587,9 +1687,9 @@ button,a{font:inherit}
 .home-cowork-chatbar{
   display:grid;
   grid-template-columns:54px 1px minmax(0,1fr) auto auto auto auto;
-  align-items:center;
+  align-items:end;
   gap:9px;
-  min-height:68px;
+  min-height:82px;
   border:1px solid rgba(77,95,69,.36);
   border-radius:18px;
   background:
@@ -1609,18 +1709,21 @@ button,a{font:inherit}
 }
 .home-cowork-divider{
   width:1px;
-  height:38px;
+  height:52px;
   border-radius:999px;
   background:linear-gradient(180deg,transparent,rgba(77,95,69,.72),transparent);
 }
-.home-cowork-chatbar input{
+.home-cowork-chatbar input,
+.home-cowork-chatbar textarea{
   min-width:0;
-  height:44px;
+  min-height:58px;
+  max-height:150px;
+  resize:vertical;
   border:0;
   outline:0;
   background:transparent;
   color:rgba(20,12,10,.92);
-  font:.96rem/1.2 var(--body);
+  font:.96rem/1.35 var(--body);
 }
 .home-cowork-chatbar button{
   min-height:34px;
@@ -1654,6 +1757,20 @@ button,a{font:inherit}
     min-height:calc(100vh - 36px);
     border-radius:16px;
     padding:38px 18px 24px;
+  }
+  .home-cowork-workspace{
+    grid-template-columns:1fr;
+  }
+  .home-cowork-sidebar{
+    display:none;
+  }
+  .home-cowork-main{
+    grid-template-rows:auto minmax(260px,1fr);
+  }
+  .home-cowork-thread{
+    max-height:calc(100vh - 310px);
+    min-height:260px;
+    padding:14px;
   }
   .home-cowork-chatbar{
     grid-template-columns:46px 2px minmax(0,1fr);
@@ -4825,6 +4942,8 @@ button.drawer-link{
   grid-template-columns:1fr;
 }
 .project-manager-hero,
+.project-onboarding-panel,
+.project-round-table-overview article,
 .project-manager-operating-system article,
 .project-manager-sop-grid article,
 .project-manager-judgment article,
@@ -5040,6 +5159,66 @@ button.drawer-link{
   color:rgba(52,66,47,.76);
   font-size:.7rem;
   line-height:1.3;
+}
+.project-onboarding-panel{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:14px;
+  align-items:center;
+  padding:15px;
+  border-color:rgba(73,87,63,.2);
+}
+.project-onboarding-panel div{
+  display:grid;
+  gap:6px;
+}
+.project-onboarding-panel span,
+.project-round-table-overview span{
+  color:rgba(64,86,61,.74);
+  font:800 .58rem var(--mono);
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.project-onboarding-panel strong{
+  color:rgba(34,19,15,.92);
+  font:760 1rem/1.2 var(--body);
+}
+.project-onboarding-panel p,
+.project-round-table-overview p{
+  margin:0;
+  color:rgba(45,27,22,.66);
+  font-size:.76rem;
+  line-height:1.4;
+}
+.project-onboarding-panel button{
+  min-height:36px;
+  border:1px solid rgba(64,86,61,.22);
+  border-radius:999px;
+  background:rgba(73,87,63,.9);
+  color:rgba(255,255,252,.96);
+  padding:0 14px;
+  font:850 .72rem/1 var(--body);
+  white-space:nowrap;
+}
+.project-onboarding-panel button:hover,
+.project-onboarding-panel button:focus-visible{
+  background:rgba(54,70,49,.96);
+  outline:none;
+}
+.project-round-table-overview{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.project-round-table-overview article{
+  display:grid;
+  gap:7px;
+  min-height:128px;
+  padding:13px;
+}
+.project-round-table-overview strong{
+  color:rgba(34,19,15,.9);
+  font:.9rem/1.18 var(--body);
 }
 .project-manager-judgment{
   display:grid;
@@ -7080,7 +7259,9 @@ button.drawer-link{
   color:var(--frost-open-ink);
 }
 .home-cowork-chatbar input,
-.workspace-panel .home-cowork-chatbar input{
+.home-cowork-chatbar textarea,
+.workspace-panel .home-cowork-chatbar input,
+.workspace-panel .home-cowork-chatbar textarea{
   border:0;
   background:transparent !important;
 }
@@ -7164,7 +7345,7 @@ button.drawer-link{
   .drawer-tray.relationship-open{position:absolute;inset:12px;max-height:none;padding:18px;overflow:auto}
   .drawer-cowork-orb{right:18px;bottom:86px;width:58px;height:58px}
   .drawer-cowork-orb img{width:50px;height:50px}
-      .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.stewardship-network-grid,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.project-manager-operating-system,.project-manager-judgment,.project-manager-grid,.project-manager-sop-grid,.project-manager-columns,.project-manager-story,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
+      .drawer-grid,.source-list,.lead-sourcing-board,.relationship-three-card-row,.stewardship-network-grid,.relationship-judgment-grid,.relationship-protection-grid,.relationship-collaboration-grid,.relationship-mutual-value,.relationship-story-grid,.relationship-right-rail,.relationship-pyramid,.relationship-receipts,.relationship-project-grid,.relationship-document-grid,.project-pyramid,.project-source-grid,.project-graph-grid,.project-review-grid,.project-prepared-grid,.project-document-grid,.project-onboarding-panel,.project-round-table-overview,.project-manager-operating-system,.project-manager-judgment,.project-manager-grid,.project-manager-sop-grid,.project-manager-columns,.project-manager-story,.timeline-status-grid,.timeline-principles,.correspondence-status-panel,.correspondence-workbench,.commitment-summary-grid,.commitment-workbench,.document-status-panel,.document-workbench,.document-search-grid,.val-status-panel,.val-routing-panel,.val-workbench,.val-route-list,.val-action-grid{grid-template-columns:1fr}
       .lead-sourcing-column{border-right:0;border-bottom:1px solid rgba(29,29,31,.12)}
       .correspondence-rulebar,.correspondence-rule-create{grid-template-columns:1fr}
       .correspondence-queue,.correspondence-thread,.correspondence-brief,.correspondence-intelligence{min-height:auto;border-right:0;border-bottom:1px solid rgba(34,19,15,.18)}

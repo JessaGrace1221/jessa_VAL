@@ -174,6 +174,13 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function projectIsDrawerAdmitted/);
   assert.match(hearthJs, /function projectManagerPacket/);
   assert.match(hearthJs, /function renderProjectManagerProfile/);
+  assert.match(hearthJs, /PROJECT_ONBOARDING_FIRST_QUESTION/);
+  assert.match(hearthJs, /What should this project be called, and what outcome should it create\?/);
+  assert.match(hearthJs, /function projectNeedsOnboarding/);
+  assert.match(hearthJs, /function renderProjectOnboardingPanel/);
+  assert.match(hearthJs, /function renderProjectRoundTableOverview/);
+  assert.match(hearthJs, /needsProjectOnboarding:true/);
+  assert.match(hearthJs, /hearth_project_document_assignment/);
   assert.match(hearthJs, /PROJECT_MANAGER_HEADER_COLORS/);
   assert.match(hearthJs, /function projectManagerAssignment/);
   assert.match(hearthJs, /assigned_project_manager/);
@@ -377,6 +384,9 @@ test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /No CRM update, message, task, calendar change, or external action happened/);
   assert.match(server, /function projectCreatePayload/);
   assert.match(server, /function projectUpdatePayload/);
+  assert.match(server, /needsProjectOnboarding/);
+  assert.match(server, /projectOnboarding/);
+  assert.match(server, /hearth_project_document_assignment/);
   assert.match(server, /async function updateProjectProfileLocal/);
   assert.match(server, /async function saveProjectSourceFiles/);
   assert.match(server, /source:'hearth_project_source_upload'/);
@@ -1091,6 +1101,13 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /\/api\/val\/chat/);
   assert.match(hearthJs, /function renderHomeCoworkPreview/);
   assert.match(hearthJs, /home-cowork-chatbar/);
+  assert.match(hearthJs, /home-cowork-workspace/);
+  assert.match(hearthJs, /home-cowork-sidebar/);
+  assert.match(hearthJs, /home-cowork-thread/);
+  assert.match(hearthJs, /data-home-cowork-response/);
+  assert.match(hearthJs, /<textarea data-workspace-input="cowork"/);
+  assert.match(hearthJs, /function appendHomeCoworkMessage/);
+  assert.match(hearthJs, /keepHomeCoworkOpen/);
   assert.match(hearthJs, /What shall we accomplish together\?/);
   assert.match(hearthJs, /activeCoworkHeldContext = ''/);
   assert.match(hearthJs, /function orientHomeCoworkFromInput/);
@@ -1127,9 +1144,12 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /observer-board-pulse/);
   assert.match(hearthCss, /\.observer-board-mode \.workspace-panel/);
   assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode/);
+  assert.match(hearthCss, /\.home-cowork-workspace/);
+  assert.match(hearthCss, /\.home-cowork-thread/);
   assert.match(hearthCss, /\.home-cowork-mark/);
   assert.match(hearthCss, /\.home-cowork-context/);
   assert.match(hearthCss, /\.home-cowork-chatbar/);
+  assert.match(hearthCss, /\.home-cowork-chatbar textarea/);
   assert.match(hearthJs, /const linkedinVisibilityItems/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
@@ -1276,8 +1296,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-edit-fix-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-edit-fix-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-onboarding-cowork-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-onboarding-cowork-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

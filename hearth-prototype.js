@@ -1004,6 +1004,7 @@ const PROJECT_MANAGER_HEADER_COLORS = [
   {name:'Basil',hex:'#2d6332',family:'green'},
   {name:'Pistachio',hex:'#bad8c7',family:'green'}
 ];
+const PROJECT_ONBOARDING_FIRST_QUESTION = 'What should this project be called, and what outcome should it create?';
 
 let relationshipIndexSearch = '';
 let relationshipStateFilter = 'all';
@@ -3183,8 +3184,25 @@ const projectSopLibrary = {
 function projectSopPacket(project = {}){
   const details = normalizedProjectSourceDetails(project);
   const selected = project.sopId || details.sopId || project.sop_id || '';
-  const inferred = !selected && /frisson|partner|onboarding/i.test([project.name, project.summary, project.reality, details.rawContext].join(' ')) ? 'frisson_partner_onboarding' : selected;
+  const needsOnboarding = projectNeedsOnboarding(project);
+  const inferred = !selected && !needsOnboarding && /frisson|partner|onboarding/i.test([project.name, project.summary, project.reality, details.rawContext].join(' ')) ? 'frisson_partner_onboarding' : selected;
   const sop = projectSopLibrary[inferred] || null;
+  if(needsOnboarding && !sop){
+    return {
+      sop_id:'needs_project_onboarding',
+      sop_name:'Needs project onboarding',
+      current_phase:'Project onboarding',
+      when_to_use:'Answer the onboarding question before VAL selects an operating system.',
+      default_phases:[],
+      default_workstreams:[],
+      standard_milestones:[],
+      approval_points:['Before external action'],
+      monitoring_rules:[],
+      relationship_nurture_rules:[],
+      risk_patterns:['Project shell has evidence but no defined outcome yet'],
+      known_deviations:['Created from document evidence and waiting for executive shaping']
+    };
+  }
   if(!sop){
     return {
       sop_id:'no_sop_selected',
@@ -3233,6 +3251,24 @@ function projectMetadataObject(value = {}){
     }
   }
   return raw && typeof raw === 'object' ? raw : {};
+}
+
+function projectNeedsOnboarding(project = {}){
+  const metadata = projectMetadataObject(project);
+  const details = normalizedProjectSourceDetails(project);
+  const onboarding = metadata.projectOnboarding || metadata.project_onboarding || {};
+  const createdFrom = project.createdFrom || metadata.createdFrom || metadata.created_from || '';
+  const sourceText = [project.sourceReceipts, project.signal, details.rawContext].filter(Boolean).join(' ');
+  if(['answered_first_question','in_progress','complete'].includes(String(onboarding.status || '').toLowerCase())) return false;
+  return Boolean(
+    project.needsProjectOnboarding ||
+    metadata.needsProjectOnboarding ||
+    metadata.needs_project_onboarding ||
+    onboarding.status === 'needs_interview' ||
+    onboarding.status === 'needs_onboarding' ||
+    createdFrom === 'hearth_project_document_assignment' ||
+    /Project Managers document assignment/i.test(sourceText)
+  );
 }
 
 function projectPersonName(value = ''){
@@ -3499,6 +3535,7 @@ function projectManagerPacket(project = {}){
   const admission = projectAdmissionPacket(project);
   const details = normalizedProjectSourceDetails(project);
   const sop = projectSopPacket(project);
+  const needsOnboarding = projectNeedsOnboarding(project);
   const relationships = projectResolvedRelationships(project, details);
   const assignedProjectManager = projectManagerAssignment(project);
   const ownerAssignment = projectOwnerAssignment(project, relationships);
@@ -3506,28 +3543,33 @@ function projectManagerPacket(project = {}){
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks : [];
   const prepared = Array.isArray(project.preparedWork) ? project.preparedWork : [];
   const reviewUpdates = Array.isArray(project.reviewUpdates) ? project.reviewUpdates : [];
-  const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, 'No active blocker has been proven yet.');
+  const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, needsOnboarding ? 'No project risk has been defined yet.' : 'No active blocker has been proven yet.');
   const owner = projectCleanText(ownerAssignment.name, 'VAL is still matching the responsible owner.');
-  const nextAction = projectCleanText(project.nextMove || project.recommendedAction, 'Decide the next narrow move.');
-  const whyNow = projectCleanText(project.whyNow || project.nextMoveEvidence || project.decisionEvidence || project.signal, 'This project has enough evidence to deserve a clean next move.');
+  const nextAction = projectCleanText(project.nextMove || project.recommendedAction, needsOnboarding ? 'Answer the project onboarding question.' : 'Decide the next narrow move.');
+  const whyNow = projectCleanText(project.whyNow || project.nextMoveEvidence || project.decisionEvidence || project.signal, needsOnboarding ? 'VAL has the project shell and document evidence, but needs the executive outcome before it can manage the work.' : 'This project has enough evidence to deserve a clean next move.');
+  const purposeFallback = needsOnboarding ? 'Project details are blank until onboarding is complete.' : 'Keep this body of work moving without scattering the user across sources.';
+  const desiredOutcomeFallback = needsOnboarding ? '' : nextAction;
+  const currentStateFallback = needsOnboarding ? 'Needs onboarding' : 'Active project';
+  const importanceFallback = needsOnboarding ? 'Needs onboarding before VAL can judge importance.' : 'This work has enough consequence to coordinate.';
+  const seasonFallback = needsOnboarding ? 'Project onboarding' : 'Active coordination';
   return {
     project_admission_packet: admission,
     project_identity_packet: {
       project_id: admission.source_id,
       canonical_name: project.name || 'Project',
       aliases: project.aliases || [],
-      purpose: projectCleanText(project.purpose || project.summary || project.reality, 'Keep this body of work moving without scattering the user across sources.'),
-      desired_outcome: projectCleanText(project.desiredOutcome || project.outcome || project.nextMove, nextAction),
-      current_state: projectCleanText(project.status, 'Active project'),
-      strategic_importance: projectCleanText(project.strategicImportance || project.importance || project.signal, 'This work has enough consequence to coordinate.'),
-      project_season: projectCleanText(project.projectSeason || project.season || project.momentum, 'Active coordination'),
+      purpose: projectCleanText(project.purpose || (needsOnboarding ? '' : (project.summary || project.reality)), purposeFallback),
+      desired_outcome: projectCleanText(project.desiredOutcome || project.outcome || (needsOnboarding ? '' : project.nextMove), desiredOutcomeFallback),
+      current_state: projectCleanText(project.status, currentStateFallback),
+      strategic_importance: projectCleanText(project.strategicImportance || project.importance || project.signal, importanceFallback),
+      project_season: projectCleanText(project.projectSeason || project.season || project.momentum, seasonFallback),
       assigned_project_manager: assignedProjectManager,
       source_receipts: admission.source_receipts
     },
     project_manager_assignment_packet: assignedProjectManager,
     project_owner_packet: ownerAssignment,
     project_movement_packets: [{
-      what_changed: projectCleanText(project.signal || project.momentum, 'Project evidence is active enough for review.'),
+      what_changed: projectCleanText(project.signal || project.momentum, needsOnboarding ? 'A project shell was created from document evidence.' : 'Project evidence is active enough for review.'),
       source_type: admission.source_type,
       source_id: admission.source_id,
       timestamp: project.updatedAt || project.lastInteraction || '',
@@ -3535,15 +3577,15 @@ function projectManagerPacket(project = {}){
       source_receipt: admission.source_receipts
     }],
     project_manager_judgment_packet: {
-      current_reality: projectCleanText(project.reality || project.summary, project.status || 'Project is active.'),
-      why_it_matters: projectCleanText(project.whyItMatters || project.decisionEvidence || project.signal, 'This project can affect relationships, commitments, prepared work, or executive attention.'),
-      what_val_now_knows: projectCleanText(project.whatValNowKnows || project.momentumEvidence, 'VAL has enough connected evidence to keep this project coordinated.'),
-      what_is_blocked: projectCleanText(project.blocker || project.blockedBy || (reviewUpdates.length ? 'Some project source learning still needs review.' : ''), 'No proven blocker is active.'),
+      current_reality: projectCleanText(project.reality || project.summary, needsOnboarding ? 'Project shell exists; outcome is not defined yet.' : project.status || 'Project is active.'),
+      why_it_matters: projectCleanText(project.whyItMatters || project.decisionEvidence || project.signal, needsOnboarding ? 'VAL should not infer the project plan before the executive names the outcome.' : 'This project can affect relationships, commitments, prepared work, or executive attention.'),
+      what_val_now_knows: projectCleanText(project.whatValNowKnows || project.momentumEvidence, needsOnboarding ? 'VAL knows there is document evidence for a possible project.' : 'VAL has enough connected evidence to keep this project coordinated.'),
+      what_is_blocked: projectCleanText(project.blocker || project.blockedBy || (reviewUpdates.length ? 'Some project source learning still needs review.' : ''), needsOnboarding ? 'The onboarding answer is missing.' : 'No proven blocker is active.'),
       what_is_at_risk: risk,
       recommended_next_step: nextAction,
       next_step_owner: owner,
       next_step_due_at: project.nextStepDueAt || project.deadline || project.dueAt || '',
-      user_decision_needed: projectCleanText(project.userDecisionNeeded || project.decision, 'Confirm the next narrow move.'),
+      user_decision_needed: projectCleanText(project.userDecisionNeeded || project.decision, needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : 'Confirm the next narrow move.'),
       confidence: project.confidence || admission.confidence,
       evidence_summary: projectCleanText(project.sourceReceipts || admission.source_receipts, 'Project evidence is held privately.')
     },
@@ -3565,11 +3607,16 @@ function projectManagerPacket(project = {}){
     project_interview_packet: {
       project_id: admission.source_id,
       project_manager_id: 'pm_' + (admission.source_id || String(project.name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')),
-      current_question: 'What outcome should this project create, who owns it, and what should VAL monitor?',
+      current_question: needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : 'What outcome should this project create, who owns it, and what should VAL monitor?',
       question_purpose: 'Complete the Project Manager Packet without making the user inspect raw context.',
       target_packet_field: 'project_identity_packet.desired_outcome',
-      missing_fields: [!project.desiredOutcome && !project.outcome ? 'desired_outcome' : '', !owner || /still matching/i.test(owner) ? 'owner' : '', !relationships.length ? 'people_involved' : ''].filter(Boolean),
-      ready_to_build_project_manager_packet: Boolean(project.name && (project.summary || project.reality) && relationships.length)
+      missing_fields: [
+        needsOnboarding ? 'onboarding_answer' : '',
+        !project.desiredOutcome && !project.outcome ? 'desired_outcome' : '',
+        !owner || /still matching/i.test(owner) ? 'owner' : '',
+        !relationships.length ? 'people_involved' : ''
+      ].filter(Boolean),
+      ready_to_build_project_manager_packet: !needsOnboarding && Boolean(project.name && (project.summary || project.reality) && relationships.length)
     },
     project_sop_packet: sop,
     source_receipts: admission.source_receipts,
@@ -3674,6 +3721,40 @@ function projectManagerList(items = [], emptyText = 'Nothing active here yet.'){
 
 function projectManagerDetailCard(field, label, html){
   return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(field) + '" aria-label="Co-Work on ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span>' + html + projectCoworkChip() + '</article>';
+}
+
+function renderProjectOnboardingPanel(project = activeProjectProfile, interview = {}){
+  return [
+    '<section class="project-onboarding-panel" aria-label="Project onboarding">',
+      '<div>',
+        '<span>Project onboarding</span>',
+        '<strong>' + escapeHtml(interview.current_question || PROJECT_ONBOARDING_FIRST_QUESTION) + '</strong>',
+        '<p>VAL has the project shell and evidence. The plan stays blank until this answer gives the project its shape.</p>',
+      '</div>',
+      '<button type="button" data-project-cowork-field="project_interview">Start onboarding chat</button>',
+    '</section>'
+  ].join('');
+}
+
+function renderProjectRoundTableOverview(packet = {}, needsOnboarding = false){
+  const identity = packet.project_identity_packet || {};
+  const judgment = packet.project_manager_judgment_packet || {};
+  const next = packet.project_next_action_packet || {};
+  const admission = packet.project_admission_packet || {};
+  const items = [
+    {field:'what_this_is', label:'Identity', title:identity.current_state || 'Project', body:identity.purpose || 'Project identity is waiting for detail.'},
+    {field:'working_narrative', label:'Judgment', title:needsOnboarding ? 'Waiting for onboarding' : (judgment.current_reality || 'Current reality'), body:judgment.what_val_now_knows || judgment.why_it_matters || 'VAL is still gathering context.'},
+    {field:'next_move', label:'Next', title:next.next_action || 'Name the next move', body:next.why_now || 'VAL needs a useful next step.'},
+    {field:'documents_sources', label:'Evidence', title:admission.has_document ? 'Document evidence attached' : 'Evidence needed', body:identity.source_receipts || packet.source_receipts || 'No source receipt attached yet.'}
+  ];
+  return '<section class="project-round-table-overview" aria-label="Project Manager overview">' + items.map((item) => [
+    '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(item.field) + '">',
+      '<span>' + escapeHtml(item.label) + '</span>',
+      '<strong>' + escapeHtml(item.title) + '</strong>',
+      '<p>' + escapeHtml(item.body) + '</p>',
+      projectCoworkChip(),
+    '</article>'
+  ].join('')).join('') + '</section>';
 }
 
 function renderProjectRelationshipPicker(){
@@ -3836,6 +3917,7 @@ function renderProjectManagerProfile(project = {}){
   const next = packet.project_next_action_packet;
   const sop = packet.project_sop_packet;
   const interview = packet.project_interview_packet;
+  const needsOnboarding = projectNeedsOnboarding(project);
   const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
@@ -3843,11 +3925,13 @@ function renderProjectManagerProfile(project = {}){
   const documents = projectListFromValue(project.documents || details.documents);
   const prepared = packet.project_prepared_work_packets.map((item) => item.title || item.what_val_prepared || item.summary || 'Prepared work waiting for review');
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks.map(projectGraphLinkText) : [];
-  const projectSummary = projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
-  const statusLabel = /^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state;
-  const seasonLabel = relationships.length ? 'Relationship attached' : 'Ready to shape';
-  const nextMove = projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
-  const whyNext = projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
+  const projectSummary = needsOnboarding
+    ? projectCleanText(project.desiredOutcome || project.outcome, 'Project details are blank until onboarding is complete.')
+    : projectCleanText(project.summary || project.reality || identity.purpose, 'This project is ready to be shaped.');
+  const statusLabel = needsOnboarding ? 'Needs onboarding' : (/^intake$/i.test(identity.current_state) ? 'New project' : identity.current_state);
+  const seasonLabel = needsOnboarding ? 'Blank until shaped' : (relationships.length ? 'Relationship attached' : 'Ready to shape');
+  const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
+  const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
   const riskTitle = projectHasSpecificSignal(project.blocker || project.blockedBy || project.risk || project.riskSummary, project) ? judgment.what_is_blocked : '';
   const riskBody = projectHasSpecificSignal(project.risk || project.riskSummary, project) ? judgment.what_is_at_risk : '';
   const detailCards = [
@@ -3879,6 +3963,8 @@ function renderProjectManagerProfile(project = {}){
         renderProjectPinControl(project),
       '</div>',
     '</section>',
+    needsOnboarding ? renderProjectOnboardingPanel(project, interview) : '',
+    renderProjectRoundTableOverview(packet, needsOnboarding),
     '<section class="project-manager-operating-system" aria-label="Project operating system">',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
         '<span>Operating System</span>',
@@ -3901,7 +3987,9 @@ function renderProjectManagerProfile(project = {}){
     '</section>',
     '<section class="project-manager-judgment" aria-label="Project Manager judgment">',
       projectManagerCard('What this is', identity.canonical_name, projectSummary),
-      projectManagerCard('Why it matters', relationships.length ? 'Relationship-connected work' : 'Needs shape before action', relationships.length ? 'This project is now connected to ' + relationships.join(', ') + ', so future notes, meetings, and drafts can stay organized around the right people.' : 'VAL has the project shell, but needs the outcome, owner, and first move before it can manage the work usefully.'),
+      needsOnboarding
+        ? projectManagerCard('Why it matters', 'Needs executive outcome', 'Blank until onboarding answers define the stakes.')
+        : projectManagerCard('Why it matters', relationships.length ? 'Relationship-connected work' : 'Needs shape before action', relationships.length ? 'This project is now connected to ' + relationships.join(', ') + ', so future notes, meetings, and drafts can stay organized around the right people.' : 'VAL has the project shell, but needs the outcome, owner, and first move before it can manage the work usefully.'),
       projectManagerCard('Next move', nextMove, whyNext, next.due_at ? 'Due: ' + next.due_at : ''),
     '</section>',
     '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
@@ -3913,7 +4001,7 @@ function renderProjectManagerProfile(project = {}){
     detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
       '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(project.livingNarrative || project.reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(relationships.length ? 'Name the outcome, the owner, and the first concrete move so VAL can manage this without scattering the context.' : 'Attach the right people first, then name the first concrete outcome.') + '</p>' + projectCoworkChip() + '</div>',
+      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : (relationships.length ? 'Name the outcome, the owner, and the first concrete move so VAL can manage this without scattering the context.' : 'Attach the right people first, then name the first concrete outcome.')) + '</p>' + projectCoworkChip() + '</div>',
     '</section>'
   ].join('');
 }
@@ -4011,9 +4099,9 @@ function projectCoworkSpec(field = ''){
     },
     project_interview: {
       title: 'Interview the project manager',
-      question: 'What should this project manager know before it can manage this project confidently?',
-      detail: 'Answer the missing project-manager questions: outcome, owner, people, workstreams, risks, and what to monitor.',
-      placeholder: 'Outcome: ... Owner: ... People: ... Workstreams: ... Risks: ... Monitor: ...'
+      question: projectNeedsOnboarding(activeProjectProfile) ? PROJECT_ONBOARDING_FIRST_QUESTION : 'What should this project manager know before it can manage this project confidently?',
+      detail: projectNeedsOnboarding(activeProjectProfile) ? 'Start with the project name and the outcome. VAL will keep the rest of the manager packet blank until the project is shaped.' : 'Answer the missing project-manager questions: outcome, owner, people, workstreams, risks, and what to monitor.',
+      placeholder: projectNeedsOnboarding(activeProjectProfile) ? 'Project name: ... Outcome: ...' : 'Outcome: ... Owner: ... People: ... Workstreams: ... Risks: ... Monitor: ...'
     },
     workstreams: {
       title: 'Define workstreams',
@@ -4152,6 +4240,21 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
   } else if(field === 'project_interview'){
     activeProjectProfile.projectInterviewNotes = rewritten;
     activeProjectProfile.whatValNowKnows = rewritten;
+    activeProjectProfile.desiredOutcome = activeProjectProfile.desiredOutcome || rewritten;
+    activeProjectProfile.summary = activeProjectProfile.summary || rewritten;
+    activeProjectProfile.reality = activeProjectProfile.reality || rewritten;
+    activeProjectProfile.needsProjectOnboarding = false;
+    activeProjectProfile.metadataJson = {
+      ...projectMetadataObject(activeProjectProfile),
+      needsProjectOnboarding:false,
+      projectOnboarding:{
+        status:'answered_first_question',
+        firstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
+        firstAnswer:rewritten,
+        answeredAt:new Date().toISOString()
+      },
+      noExternalAction:true
+    };
   } else if(field === 'workstreams'){
     activeProjectProfile.workstreams = projectListFromValue(rewritten);
   } else if(field === 'milestones'){
@@ -4166,6 +4269,45 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
   return rewritten;
 }
 
+async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
+  if(!canUseApi || !activeProjectProfile || !rewritten) return null;
+  const details = normalizedProjectSourceDetails(activeProjectProfile);
+  const payload = {
+    projectId:activeProjectProfile.projectId || activeProjectProfile.id || activeProjectProfile.profileKey || activeProjectProfile.name || '',
+    projectProfileId:activeProjectProfile.id || '',
+    profileKey:activeProjectProfile.profileKey || '',
+    name:activeProjectProfile.name || 'Project',
+    summary:activeProjectProfile.summary || activeProjectProfile.reality || '',
+    documents:projectCleanText(activeProjectProfile.documents || details.documents),
+    relationships:projectCleanText(details.relationships || projectResolvedRelationships(activeProjectProfile).join(', ')),
+    rawContext:[
+      details.rawContext,
+      'Project Co-Work update (' + projectCoworkScopeLabel(field) + '): ' + rewritten
+    ].filter(Boolean).join('\n'),
+    status:activeProjectProfile.status || '',
+    needsProjectOnboarding:String(activeProjectProfile.needsProjectOnboarding === true),
+    projectOnboardingStatus:projectMetadataObject(activeProjectProfile).projectOnboarding?.status || '',
+    projectOnboardingFirstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
+    projectOnboardingFirstAnswer:projectMetadataObject(activeProjectProfile).projectOnboarding?.firstAnswer || '',
+    noExternalAction:true
+  };
+  try{
+    const result = await postJson('/api/projects/update', payload);
+    if(result?.project){
+      const incoming = result.dossier ? projectProfileFromDossier(result.dossier, activeProjectProfile) : projectProfileFromIndexItem(result.project);
+      applyProjectEditLocally(activeProjectProfile, payload, incoming);
+    }
+    projectIndexSourceLabel = 'Project section saved locally. No external action happened.';
+    updateProjectIndexSourceLabel();
+    renderProjectRolodex();
+    return result;
+  }catch(error){
+    projectIndexSourceLabel = 'Project section updated in this view, but local save failed: ' + error.message;
+    updateProjectIndexSourceLabel();
+    return null;
+  }
+}
+
 function projectFollowupQuestion(field = ''){
   const questions = {
     what_this_is:'What outcome should this project create when it is working?',
@@ -4176,17 +4318,16 @@ function projectFollowupQuestion(field = ''){
     documents_sources:'Should this source change the project plan or just stay attached?',
     risk_blocker:'What would make this risk smaller this week?',
     working_narrative:'What changed most recently that should shape this story?',
-    what_val_needs_next:'What should VAL ask you next if it gets stuck?'
+    what_val_needs_next:'What should VAL ask you next if it gets stuck?',
+    project_interview:'Who owns this project, and what should VAL monitor next?'
   };
   return questions[field] || 'What else would make this more useful?';
 }
 
 function renderProjectCoworkUpdatedResponse(rewritten = '', field = ''){
-  const response = scraperPreviewList.querySelector('[data-home-cowork-response]');
-  if(!response) return;
-  response.innerHTML = [
-    '<p><strong>Updated.</strong><br>' + escapeHtml(rewritten) + '<br><br>' + escapeHtml(projectFollowupQuestion(field)) + '</p>'
-  ].join('');
+  if(!rewritten) return;
+  appendHomeCoworkMessage('user', rewritten);
+  appendHomeCoworkMessage('val', 'Updated this section: ' + rewritten + '\n\n' + projectFollowupQuestion(field));
 }
 
 function setProjectOwnerStatus(project = activeProjectProfile, message = ''){
@@ -5215,7 +5356,7 @@ function ensureLocalProjectIndexSeeded(){
 
 async function createProjectFromDocumentAssignment(item = {}){
   const name = inferProjectNameFromDocument(item);
-  const summary = [
+  const evidenceSummary = [
     'Created from document evidence: ' + (item.title || 'Document') + '.',
     item.summary || '',
     item.relationship ? 'Relationship: ' + item.relationship + '.' : ''
@@ -5223,12 +5364,15 @@ async function createProjectFromDocumentAssignment(item = {}){
   if(canUseApi){
     const payload = new FormData();
     payload.append('name', name);
-    payload.append('summary', summary);
+    payload.append('summary', '');
     payload.append('documents', [item.title, item.summary, item.referenceUse].filter(Boolean).join('\n'));
     payload.append('relationships', item.relationship || '');
     payload.append('rawContext', 'Created from Project Managers document assignment. No external action happened.');
+    payload.append('needsProjectOnboarding', 'true');
+    payload.append('createdFrom', 'hearth_project_document_assignment');
+    payload.append('onboardingQuestion', PROJECT_ONBOARDING_FIRST_QUESTION);
     const result = await postFormData('/api/projects/create', payload);
-    const project = projectProfileFromIndexItem(result.project || result.dossier?.card || {name, summary});
+    const project = projectProfileFromIndexItem(result.project || result.dossier?.card || {name, summary:''});
     if(project.id){
       project.documents = [documentProjectRecordFromItem(item, project)];
       projectIndexProfiles[project.id] = result.dossier ? projectProfileFromDossier(result.dossier, project) : project;
@@ -5245,17 +5389,27 @@ async function createProjectFromDocumentAssignment(item = {}){
     id,
     name,
     status:'intake',
-    summary,
-    reality:summary,
+    summary:'',
+    reality:'',
     signal:'A document needs a Project Manager decision.',
     sourceReceipts:'Document evidence · Project Managers assignment',
     sourceDetails:{
       documents:item.title || 'Document',
       relationships:item.relationship || '',
-      rawContext:item.summary || ''
+      rawContext:'Created from Project Managers document assignment. ' + evidenceSummary
     },
     relationships:item.relationship ? [item.relationship] : [],
     explicitUserProject:true,
+    needsProjectOnboarding:true,
+    metadataJson:{
+      createdFrom:'hearth_project_document_assignment',
+      needsProjectOnboarding:true,
+      projectOnboarding:{
+        status:'needs_interview',
+        currentQuestion:PROJECT_ONBOARDING_FIRST_QUESTION
+      },
+      noExternalAction:true
+    },
     documents:[documentProjectRecordFromItem(item, {name})]
   });
   projectIndexProfiles[project.id] = project;
@@ -13516,11 +13670,21 @@ function openMeetingPrepCoworkSession(){
 async function runCowork(mode){
   const input = workspaceInputValue('cowork');
   const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
+  const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
   const heldContext = activeCoworkHeldContext || '';
   const heldSystemPrompt = heldContext
     ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext
     : '';
+  if(keepHomeCoworkOpen && input){
+    appendHomeCoworkMessage('user', input);
+  }
   if(mockScrapers || !canUseApi){
+    if(keepHomeCoworkOpen){
+      appendHomeCoworkMessage('val', mode === 'draft' ? 'A draft can begin here. Start with one plain paragraph, then refine from there.' : 'Name the decision, list the tradeoffs, and choose the next reversible step.');
+      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      if(textarea) textarea.value = '';
+      return;
+    }
     setWorkspaceContent({
       lens: 'Co-Work with VAL',
       title: mode === 'draft' ? 'A draft can begin here.' : 'Here is the first useful shape.',
@@ -13548,6 +13712,9 @@ async function runCowork(mode){
     });
     return;
   }
+  if(keepHomeCoworkOpen){
+    appendHomeCoworkMessage('val', 'VAL is thinking with you...');
+  }else{
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: 'VAL is thinking with you.',
@@ -13561,6 +13728,7 @@ async function runCowork(mode){
     actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
     label: 'Co-Work with VAL loading'
   });
+  }
   try{
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
@@ -13579,6 +13747,15 @@ async function runCowork(mode){
       }
     });
     const content = result.message?.content || 'VAL prepared a response.';
+    if(keepHomeCoworkOpen){
+      appendHomeCoworkMessage('val', content);
+      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      if(textarea){
+        textarea.value = '';
+        textarea.placeholder = 'Add the next thought...';
+      }
+      return;
+    }
     setWorkspaceContent({
       lens: 'Co-Work with VAL',
       title: 'VAL prepared the next useful shape.',
@@ -13604,6 +13781,10 @@ async function runCowork(mode){
       value: input
     });
   }catch(error){
+    if(keepHomeCoworkOpen){
+      appendHomeCoworkMessage('val', 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.');
+      return;
+    }
     setWorkspaceContent({
       lens: 'Co-Work with VAL',
       title: 'Co-Work needs attention.',
@@ -16895,16 +17076,34 @@ function renderHomeCoworkPreview(options = {}){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<div class="home-cowork-preview" aria-label="VAL workspace">',
-      '<p>VAL</p>',
-      '<span class="val-presence-mark home-cowork-mark" aria-hidden="true">',
-        '<span class="val-presence-orbit"></span>',
-        '<span class="val-presence-core">VAL</span>',
-      '</span>',
-      '<div class="home-cowork-context" data-home-cowork-context>',
-        '<strong>' + escapeHtml(heading) + '</strong>',
-        detail ? '<span>' + escapeHtml(detail) + '</span>' : '',
-      '</div>',
+    '<div class="home-cowork-workspace" aria-label="VAL workspace">',
+      '<aside class="home-cowork-sidebar">',
+        '<div class="home-cowork-context" data-home-cowork-context>',
+          '<span>Context</span>',
+          '<strong>' + escapeHtml(heading) + '</strong>',
+          detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
+        '</div>',
+        '<div class="home-cowork-history">',
+          '<span>Previous conversations</span>',
+          '<button type="button" aria-pressed="true">Current thread</button>',
+          '<small>No earlier project Co-Work thread is loaded in this view.</small>',
+        '</div>',
+      '</aside>',
+      '<section class="home-cowork-main">',
+        '<div class="home-cowork-preview" aria-label="VAL">',
+          '<span class="val-presence-mark home-cowork-mark" aria-hidden="true">',
+            '<span class="val-presence-orbit"></span>',
+            '<span class="val-presence-core">VAL</span>',
+          '</span>',
+          '<div>',
+            '<p>VAL</p>',
+            '<small>Scoped conversation. No external action happens from here.</small>',
+          '</div>',
+        '</div>',
+        '<div class="home-cowork-thread" data-home-cowork-response>',
+          '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(heading) + '</p></article>',
+        '</div>',
+      '</section>',
     '</div>'
   ].join('');
   workspaceInputPanel.hidden = false;
@@ -16912,7 +17111,7 @@ function renderHomeCoworkPreview(options = {}){
     '<form class="home-cowork-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
       '<span class="home-cowork-divider" aria-hidden="true"></span>',
-      '<input data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" autocomplete="on" autocorrect="on" spellcheck="true">',
+      '<textarea data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" placeholder="' + escapeHtml(placeholder) + '" rows="3" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
       '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
@@ -16921,6 +17120,27 @@ function renderHomeCoworkPreview(options = {}){
     '</form>'
   ].join('');
   enableValAutocorrect(workspaceInputPanel);
+}
+
+function homeCoworkResponseNode(){
+  return scraperPreviewList?.querySelector?.('[data-home-cowork-response]') || null;
+}
+
+function renderHomeCoworkMessage(role = 'val', text = ''){
+  const label = role === 'user' ? 'You' : 'VAL';
+  return '<article class="home-cowork-message ' + escapeHtml(role) + '"><span>' + escapeHtml(label) + '</span><p>' + escapeHtml(text || '') + '</p></article>';
+}
+
+function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
+  const response = homeCoworkResponseNode();
+  if(!response) return null;
+  if(options.replace){
+    response.innerHTML = renderHomeCoworkMessage(role, text);
+  }else{
+    response.insertAdjacentHTML('beforeend', renderHomeCoworkMessage(role, text));
+  }
+  response.scrollTop = response.scrollHeight;
+  return response;
 }
 
 function openObserverBoard(){
@@ -16977,8 +17197,9 @@ function orientHomeCoworkFromInput(){
   if(activeCoworkContextLocked) return;
   activeCoworkHeldContext = '';
   context.innerHTML = [
+    '<span>Context</span>',
     '<strong>VAL is finding the right context.</strong>',
-    '<span>' + escapeHtml(compactSentence(input, 'Ready to work together.')) + '</span>'
+    '<p>' + escapeHtml(compactSentence(input, 'Ready to work together.')) + '</p>'
   ].join('');
 }
 
@@ -18092,13 +18313,15 @@ observerBoardButton?.addEventListener('click', openObserverBoard);
 coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(coworkNotebook));
 teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
-workspaceInputPanel.addEventListener('submit', (event) => {
+workspaceInputPanel.addEventListener('submit', async (event) => {
   if(!event.target.matches('[data-home-cowork-form]')) return;
   event.preventDefault();
   if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode !== 'project_cowork'){
     const input = workspaceInputValue('cowork');
+    if(!projectCleanText(input)) return;
     const rewritten = applyProjectFieldUpdate(activeProjectCoworkTarget.field, input);
     renderProjectCoworkUpdatedResponse(rewritten, activeProjectCoworkTarget.field);
+    await persistProjectCoworkFieldUpdate(activeProjectCoworkTarget.field, rewritten);
     const textarea = event.target.querySelector('[data-workspace-input="cowork"]');
     if(textarea){
       textarea.value = '';

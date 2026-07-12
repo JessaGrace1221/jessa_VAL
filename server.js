@@ -16704,13 +16704,20 @@ function projectProfileMatchesIdentifier(row={},identifier=''){
   ].filter(Boolean).some(value=>identifierVariants.has(String(value).trim().toLowerCase()));
 }
 function projectUpdatePayload(body={}){
+  const hasNeedsProjectOnboarding=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')||Object.prototype.hasOwnProperty.call(body,'needs_project_onboarding');
+  const needsProjectOnboardingValue=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')?body.needsProjectOnboarding:body.needs_project_onboarding;
   return {
     name:String(body.name||body.projectName||body.displayName||'').replace(/\s+/g,' ').trim(),
     summary:String(body.summary||body.description||body.currentReality||'').trim(),
     documents:String(body.documents||body.documentNotes||body.documentsAndContracts||'').trim(),
     relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
     rawContext:String(body.rawContext||body.notes||'').trim(),
-    status:String(body.status||body.relationshipStatus||'').trim()
+    status:String(body.status||body.relationshipStatus||'').trim(),
+    hasNeedsProjectOnboarding,
+    needsProjectOnboarding:String(needsProjectOnboardingValue||'').toLowerCase()==='true',
+    projectOnboardingStatus:String(body.projectOnboardingStatus||body.project_onboarding_status||'').trim(),
+    projectOnboardingFirstQuestion:String(body.projectOnboardingFirstQuestion||body.project_onboarding_first_question||'').trim(),
+    projectOnboardingFirstAnswer:String(body.projectOnboardingFirstAnswer||body.project_onboarding_first_answer||'').trim()
   };
 }
 async function updateProjectProfileLocal(projectId='',patch={}){
@@ -16727,6 +16734,13 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const displayName=patch.name||row.displayName||row.display_name||row.name||metadata.projectName||'Project';
     const summary=Object.prototype.hasOwnProperty.call(patch,'summary')?patch.summary:(row.summary||'');
     const relationshipStatus=patch.status||row.relationshipStatus||row.relationship_status||'intake';
+    const projectOnboarding=patch.projectOnboardingStatus ? {
+      ...(metadata.projectOnboarding||{}),
+      status:patch.projectOnboardingStatus,
+      firstQuestion:patch.projectOnboardingFirstQuestion||metadata.projectOnboarding?.firstQuestion||'',
+      firstAnswer:patch.projectOnboardingFirstAnswer||metadata.projectOnboarding?.firstAnswer||'',
+      updatedAt:now
+    } : metadata.projectOnboarding;
     return {
       ...row,
       displayName,
@@ -16736,6 +16750,8 @@ async function updateProjectProfileLocal(projectId='',patch={}){
         ...metadata,
         intake,
         projectName:displayName,
+        ...(patch.hasNeedsProjectOnboarding?{needsProjectOnboarding:patch.needsProjectOnboarding}:{}),
+        ...(projectOnboarding?{projectOnboarding}:{}),
         updatedFrom:'hearth_project_edit',
         noExternalAction:true
       },
@@ -17429,10 +17445,15 @@ async function projectPreparedWorkForDossier(item={}){
     createdAt:task.createdAt||''
   }));
 }
+const PROJECT_DOCUMENT_ASSIGNMENT_SOURCE='hearth_project_document_assignment';
+
 function projectCreatePayload(body={}, files=[]){
   const name=String(body.name||body.projectName||'').replace(/\s+/g,' ').trim();
   const summary=String(body.summary||body.description||body.currentReality||'').trim();
   const projectId=String(body.projectId||stableKey(name)).replace(/[^a-z0-9:_-]/gi,'-').toLowerCase();
+  const createdFrom=String(body.createdFrom||body.created_from||'hearth_projects_drawer').trim();
+  const needsProjectOnboarding=String(body.needsProjectOnboarding||body.needs_project_onboarding||'').toLowerCase()==='true'||createdFrom===PROJECT_DOCUMENT_ASSIGNMENT_SOURCE;
+  const onboardingQuestion=String(body.onboardingQuestion||body.onboarding_question||'').trim();
   const intake={
     sopId:String(body.sopId||body.sop_id||'').trim(),
     websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
@@ -17445,7 +17466,7 @@ function projectCreatePayload(body={}, files=[]){
   if(projectFiles.length&&!sourceTypes.includes('documents'))sourceTypes.push('documents');
   if(projectFiles.length&&!sourceTypes.includes('documentFiles'))sourceTypes.push('documentFiles');
   intake.documentFiles=projectFiles.map(file=>({fileName:file.originalname||'project-source-file',mimeType:file.mimetype||'',size:file.size||0}));
-  return {name,summary,projectId,intake,sourceTypes,projectFiles};
+  return {name,summary,projectId,intake,sourceTypes,projectFiles,needsProjectOnboarding,createdFrom,onboardingQuestion};
 }
 async function saveProjectSourceFiles({files=[],payload={},profileKey=''}={}){
   const savedFiles=[];
@@ -25349,7 +25370,7 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
       profileKey,
       projectId:payload.projectId,
       displayName:payload.name,
-      summary:payload.summary||'New project created from Hearth intake.',
+      summary:payload.needsProjectOnboarding?payload.summary:(payload.summary||'New project created from Hearth intake.'),
       relationshipStatus:'intake',
       confidence:0.55,
       lastObservedAt:new Date().toISOString(),
@@ -25359,7 +25380,9 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
         sopId:payload.intake.sopId||'',
         uploadedFiles,
         sourceTypes:payload.sourceTypes,
-        createdFrom:'hearth_projects_drawer',
+        createdFrom:payload.createdFrom||'hearth_projects_drawer',
+        needsProjectOnboarding:payload.needsProjectOnboarding,
+        ...(payload.needsProjectOnboarding?{projectOnboarding:{status:'needs_interview',currentQuestion:payload.onboardingQuestion||'What should this project be called, and what outcome should it create?'}}:{}),
         noExternalAction:true
       }
     });
