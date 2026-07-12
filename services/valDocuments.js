@@ -226,7 +226,7 @@ function emailAttachmentDocuments(messages=[]){
       source:'Email attachment',
       sourceType:'email_attachment',
       relationship:firstText(message.fromName,message.from?.name,message.senderJson?.name,message.sender_json?.name,message.fromEmail,message.from?.email,message.senderJson?.email,message.sender_json?.email),
-      sourceUrl:attachment.url||attachment.webUrl||'',
+      sourceUrl:attachment.url||attachment.webUrl||message.webLink||message.web_link||'',
       body:firstText(attachment.text,attachment.summary,message.subject),
       createdAt:message.receivedAt||message.createdAt||message.created_at,
       updatedAt:message.updatedAt||message.updated_at,
@@ -370,21 +370,20 @@ function createValDocumentsService({
   async function loadSourceProcessingRecords(){
     if(hasPg()&&typeof dbQuery==='function'){
       const result=await dbQuery('select * from source_processing_records where tenant_id=$1 and user_id=$2 order by created_at desc limit 200',[tenantId(),userId()]).catch(()=>({rows:[]}));
-      return result.rows||[];
+      if((result.rows||[]).length)return result.rows||[];
+      const tenantResult=await dbQuery('select * from source_processing_records where tenant_id=$1 order by created_at desc limit 200',[tenantId()]).catch(()=>({rows:[]}));
+      return tenantResult.rows||[];
     }
     return store().sourceProcessingRecords.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
   }
   async function loadEmailMessages(){
     if(hasPg()&&typeof dbQuery==='function'){
-      const result=await dbQuery(
-        `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
+      const sql = `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
            from email_messages
-          where tenant_id=$1 and user_id=$2 and has_attachments=true
+          where tenant_id=$1 and has_attachments=true
           order by coalesce(received_at,sent_at,created_at) desc
-          limit 200`,
-        [tenantId(),userId()]
-      ).catch(()=>({rows:[]}));
-      return (result.rows||[]).map(row=>({
+          limit 200`;
+      const mapRow = row => ({
         id:row.id,
         provider:row.provider,
         messageId:row.message_id,
@@ -397,7 +396,18 @@ function createValDocumentsService({
         receivedAt:row.received_at?.toISOString?.()||row.received_at||'',
         sentAt:row.sent_at?.toISOString?.()||row.sent_at||'',
         rawJson:jsonValue(row.raw_json,{})
-      }));
+      });
+      const result=await dbQuery(
+        `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
+           from email_messages
+          where tenant_id=$1 and user_id=$2 and has_attachments=true
+          order by coalesce(received_at,sent_at,created_at) desc
+          limit 200`,
+        [tenantId(),userId()]
+      ).catch(()=>({rows:[]}));
+      if((result.rows||[]).length)return (result.rows||[]).map(mapRow);
+      const tenantResult=await dbQuery(sql,[tenantId()]).catch(()=>({rows:[]}));
+      return (tenantResult.rows||[]).map(mapRow);
     }
     return store().emailMessages.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
   }

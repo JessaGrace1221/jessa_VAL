@@ -144,6 +144,7 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
 });
 
 test('document index reads durable email message attachments from Postgres raw_json', async () => {
+  let emailMessageQueries = 0;
   const service = createValDocumentsService({
     hasPg: () => true,
     tenantId: () => 'tenant_1',
@@ -153,8 +154,14 @@ test('document index reads durable email message attachments from Postgres raw_j
     listMemoryItems: async () => [],
     listProjectProfiles: async () => [],
     dbQuery: async (sql, params) => {
+      if(/source_processing_records/.test(sql)) return {rows: []};
       assert.match(sql, /from email_messages/);
-      assert.deepEqual(params, ['tenant_1', 'user_1']);
+      emailMessageQueries += 1;
+      if(emailMessageQueries === 1){
+        assert.deepEqual(params, ['tenant_1', 'user_1']);
+        return {rows: []};
+      }
+      assert.deepEqual(params, ['tenant_1']);
       return {rows: [{
         id: 'em_mou',
         provider: 'gmail',
@@ -184,4 +191,5 @@ test('document index reads durable email message attachments from Postgres raw_j
   assert.equal(result.documents[0].title, 'MOU ForeverFreedom Frisson.pdf');
   assert.equal(result.documents[0].relationship, 'Aric Soyring');
   assert.equal(result.documents[0].sourceType, 'email_attachment');
+  assert.equal(emailMessageQueries, 2);
 });
