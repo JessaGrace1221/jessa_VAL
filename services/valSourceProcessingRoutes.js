@@ -8,9 +8,13 @@ function registerValSourceProcessingRoutes(app,deps={}){
   const service=deps.service||createValSourceProcessingService(deps);
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
+  const allowRelationshipDocumentEmailPost=typeof deps.allowRelationshipDocumentEmailPost==='function'?deps.allowRelationshipDocumentEmailPost:()=>true;
 
   app.post('/api/val/source-processing/relationship-document-email',async(req,res)=>{
     try{
+      if(!allowRelationshipDocumentEmailPost(req)){
+        return res.status(401).json({ok:false,error:'Authentication required',no_external_action:true});
+      }
       await waitForDb();
       const result=await service.processRelationshipDocumentEmail(req.body||{});
       await auditLog({req,action:'source_processing_relationship_document_email',resourceType:'source_processing_record',resourceId:result.sourceProcessingRecord?.id||'',metadata:{reviewUpdateId:result.projectSuggestion?.id||'',readyForYouItemId:result.readyForYouItem?.id||'',noExternalAction:true},success:true}).catch(()=>{});

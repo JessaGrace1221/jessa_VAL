@@ -24003,6 +24003,7 @@ const valSourceProcessing = registerValSourceProcessingRoutes(app,{
   reviewUpdatesService:valReviewUpdates,
   readyForYouService:valReadyForYou,
   listProjectProfiles,
+  allowRelationshipDocumentEmailPost:()=>!requestContext.getStore()?.publicHearthTest,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

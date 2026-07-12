@@ -43,6 +43,9 @@ test('source processing routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/source-processing\/records/);
   assert.match(routes,/\/api\/val\/source-processing\/surface-registrations/);
   assert.match(routes,/listSurfaceRegistrations/);
+  assert.match(routes,/allowRelationshipDocumentEmailPost/);
+  assert.match(routes,/Authentication required/);
+  assert.match(server,/allowRelationshipDocumentEmailPost:\(\)=>!requestContext\.getStore\(\)\?\.publicHearthTest/);
 });
 
 test('live email document intake routes admitted relationship attachments through source processing',()=>{
