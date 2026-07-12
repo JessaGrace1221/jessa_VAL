@@ -1,10 +1,10 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-11 end-of-day handoff
+Updated: 2026-07-12 live promotion
 
 ## 2026-07-12 Progress Note
 
-The first source-processing / Project Managers slice is now implemented locally on `codex/stewardship-person-packets`.
+The first source-processing / Project Managers slice is now live on `codex/stewardship-person-packets`.
 
 Implemented:
 
@@ -22,6 +22,8 @@ Implemented:
 - Assigned color-named Project Managers now appear in the Project Manager page header as a subtle accent and assignee cue, and the assignment is included in the project manager packet.
 - Owner reassignment now lives in the People involved card: the executive can choose an existing relationship or create a new local relationship owner; VAL persists the single owner in project metadata and records a no-external-action relationship/project link.
 - Live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggestion path.
+- Backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available.
+- The one no-action source-processing smoke-test record created during deployment validation was deleted from production.
 
 Verified locally:
 
@@ -31,11 +33,20 @@ node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProces
 git diff --check
 ```
 
-Remaining local validation / handoff work:
+Verified live:
 
-- Restart the local server after the latest `server.js` edits and smoke-check served assets/routes.
+- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
+- Production root returns `200`.
+- `/api/config/status` returns `VAL Proxy OK`.
+- `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
+- `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with `surfaceRegistrations: []`.
+- Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, and source-processing surface registration fetch.
+- Live POST `/api/val/source-processing/relationship-document-email` without real auth returns `Authentication required`.
+
+Remaining validation / next work:
+
 - Run browser-visible/authenticated validation if a connected email session is available.
-- Decide whether to deploy this local slice or continue into broader source types.
+- Continue into broader source types or the next approved platform slice.
 
 ## Start Here
 
@@ -58,15 +69,15 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: 79e199a
-Railway deployment: 060f540b-4b95-4505-8db8-f484e27c40bb
+Live baseline commit: a731181
+Railway deployment: 7b561aab-dace-4179-b74d-f2afd4fe38ad
 Working branch: codex/stewardship-person-packets
-Latest pushed branch commit: 980d245
+Latest pushed branch commit: a731181
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `980d245`, pull the branch before continuing.
+If the branch is not at or after `a731181`, pull the branch before continuing.
 
 ## First Morning Question
 

@@ -1,12 +1,12 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-11 end-of-day handoff
+Last updated: 2026-07-12 live promotion
 
-## 2026-07-12 Local Continuation
+## 2026-07-12 Live Continuation
 
-The first system-wide source-processing / Project Managers implementation slice has started locally on `codex/stewardship-person-packets`.
+The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`.
 
-New local implementation:
+New implementation:
 
 - `services/valSourceProcessingSchema.js`
 - `services/valSourceProcessing.js`
@@ -31,6 +31,8 @@ Behavior implemented:
 - assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
 - owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggested-project review path
+- backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
+- the one no-action source-processing smoke-test record created during deployment validation was deleted from production
 
 Verified:
 
@@ -40,10 +42,18 @@ node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProces
 git diff --check
 ```
 
-Still not production truth:
+Live verification completed:
+
+- production root returns `200`
+- production `/api/config/status` returns `VAL Proxy OK`
+- production `/api/val/source-processing/records` returns `200` with an empty records array after cleanup
+- production `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with an empty array
+- production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, and the source-processing surface registration fetch
+- unauthenticated production POST to `/api/val/source-processing/relationship-document-email` returns `Authentication required`
+
+Still future work:
 
 - browser-visible/authenticated validation against real connected email data is still needed
-- deployment decision and production verification are still needed
 - broader source types beyond relationship-sent email documents are still future work
 
 ## Absolute Baseline
@@ -54,9 +64,9 @@ Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Branch: `codex/stewardship-person-packets`
-- Baseline commit: `79e199a`
-- Baseline commit message: `Add Stewardship relationship evidence freshness map`
-- Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
+- Baseline commit: `a731181`
+- Baseline commit message: `Guard source processing public test writes`
+- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -73,21 +83,24 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest pushed commit: 980d245
-Latest pushed commit message: Document Co-Work V1 workspace spec
+Latest pushed commit: a731181
+Latest pushed commit message: Guard source processing public test writes
 ```
 
 Important distinction:
 
 ```text
 Production remains the behavioral truth.
-The branch contains today's approved documentation stack and one focused Co-Work bug fix.
-Do not assume branch changes are deployed to Railway unless deployment is explicitly checked or approved.
+The branch contains today's approved documentation stack, Co-Work bug fix, and live Project Managers/source-processing slice.
+Branch changes through a731181 are deployed to Railway production deployment 7b561aab-dace-4179-b74d-f2afd4fe38ad.
 ```
 
 The day’s important commits, in newest-first order:
 
 ```text
+a731181 Guard source processing public test writes
+59d62dd Add Project Managers source processing slice
+0f27230 Update end-of-day handoff docs
 980d245 Document Co-Work V1 workspace spec
 6bbe31f Fix Hearth Co-Work submit response
 1acd722 Add Project Manager V1 build spec
@@ -496,7 +509,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `79e199a` or a descendant of it unless the user explicitly resets the baseline again.
+Start from `a731181` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 

@@ -1,14 +1,14 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-11 end-of-day handoff
+Updated: 2026-07-12 live promotion
 
-## 2026-07-12 Local Implementation State
+## 2026-07-12 Production Implementation State
 
-Local branch `codex/stewardship-person-packets` now includes the first source-processing / Project Managers slice.
+Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`.
 
-This is not yet recorded here as deployed production truth.
+This is now deployed production truth.
 
-Implemented locally:
+Implemented live:
 
 - shared source-processing service, schema, and routes for `source_processing_records`, `prepared_artifact_records`, and `surface_registrations`
 - relationship-sent document intake endpoint
@@ -23,11 +23,12 @@ Implemented locally:
 - assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
 - owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into the source-processing intake, using Gmail/Outlook attachment metadata and the same Project Managers yes/no review path
+- backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
+- the one no-action source-processing smoke-test record created during deployment validation was deleted from production
 
-Still remaining before this local work becomes production truth:
+Remaining after this live promotion:
 
 - browser-visible/authenticated validation against real connected email data
-- deployment decision and production verification
 - broader source types beyond relationship-sent email documents
 
 ## Current Working State
@@ -39,14 +40,14 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
+- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `79e199a`
-- Live baseline commit message: `Add Stewardship relationship evidence freshness map`
+- Live baseline commit: `a731181`
+- Live baseline commit message: `Guard source processing public test writes`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
-The July 10 recovery baseline is now historical context. The current live Railway deployment above is the operative truth.
+The July 10 recovery baseline and July 11 handoff baseline are now historical context. The current live Railway deployment above is the operative truth.
 
 ## End-Of-Day Branch State
 
@@ -56,15 +57,18 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest pushed commit: 980d245
-Latest pushed commit message: Document Co-Work V1 workspace spec
+Latest pushed commit: a731181
+Latest pushed commit message: Guard source processing public test writes
 ```
 
-These branch changes are safe handoff material, but do not assume they are deployed to Railway unless deployment is explicitly checked or the user approves deployment.
+These branch changes are deployed to Railway production as deployment `7b561aab-dace-4179-b74d-f2afd4fe38ad`.
 
 Today’s pushed commits to preserve:
 
 ```text
+a731181 Guard source processing public test writes
+59d62dd Add Project Managers source processing slice
+0f27230 Update end-of-day handoff docs
 980d245 Document Co-Work V1 workspace spec
 6bbe31f Fix Hearth Co-Work submit response
 1acd722 Add Project Manager V1 build spec

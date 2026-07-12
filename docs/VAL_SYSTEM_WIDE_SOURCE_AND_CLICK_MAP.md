@@ -14,7 +14,7 @@ Status: documentation baseline for the next architecture pass.
 - assigned color-named Project Managers now appear in the Project Manager page header and in the project manager packet
 - owner reassignment now updates project metadata and records no-external-action relationship/project link receipts
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing with Gmail/Outlook attachment metadata
-- remaining work is authenticated validation, production deployment/verification, and broader source types
+- remaining work is authenticated validation and broader source types
 
 ## Current Baseline
 
@@ -23,10 +23,10 @@ The current production deployment is the baseline for this map.
 - Production URL: `https://jessaval-production.up.railway.app`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
-- Railway deployment: `060f540b-4b95-4505-8db8-f484e27c40bb`
+- Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
 - Branch: `codex/stewardship-person-packets`
-- Commit: `79e199a`
-- Commit message: `Add Stewardship relationship evidence freshness map`
+- Commit: `a731181`
+- Commit message: `Guard source processing public test writes`
 
 This supersedes the July 10 recovery baseline for future work. July 10 remains useful historical recovery context, but the current live Railway deployment is now the operative truth.
 

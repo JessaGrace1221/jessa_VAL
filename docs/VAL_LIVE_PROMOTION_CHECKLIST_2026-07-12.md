@@ -9,10 +9,14 @@ This is a deployment-readiness checklist, not a new product spec. `docs/CODEX_HA
 - Production URL: `https://jessaval-production.up.railway.app`
 - Live root check: `200`
 - Live `/api/config/status`: `status = VAL Proxy OK`
-- Live `hearth-prototype.js`: does not yet contain Project Managers/source-processing markers from the local slice.
-- Live `/api/val/source-processing/records`: `404`, confirming source-processing routes are not deployed.
+- Live Railway deployment: `7b561aab-dace-4179-b74d-f2afd4fe38ad`
+- Live branch commit: `a731181`
+- Live `hearth-prototype.js`: contains Project Managers/source-processing markers from the promoted slice.
+- Live `/api/val/source-processing/records`: `200`, with `records: []` after cleanup.
+- Live `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5`: `200`, with `surfaceRegistrations: []`.
+- Live unauthenticated POST `/api/val/source-processing/relationship-document-email`: `Authentication required`.
 
-Conclusion: the handoff slice is implemented locally but not live.
+Conclusion: the handoff slice is now live. The source-processing read surface exists, and backend-only source-processing mutation is blocked in public Hearth test mode.
 
 ## Cohesion Rule
 
@@ -34,6 +38,16 @@ Deploy the Project Managers slice as one unit. Do not split the source-processin
 | Assigned color-named Project Manager appears in header and packet | Implemented | Hearth JS tests | Project Manager page header shows subtle color assignee |
 | Owner reassignment supports existing or new relationship owner | Implemented | Hearth JS tests and protected route smoke | Owner metadata persists; link receipt is local only |
 | Live email intelligence/backfill route admitted relationship document attachments into source-processing | Implemented | `server.js`, `test/valSourceProcessing.test.js`, `test/intelligenceBackfill.test.js` | Authenticated connected email validation or controlled source-processing request proves path |
+
+## Live Promotion Result
+
+- Committed and pushed `59d62dd Add Project Managers source processing slice`.
+- Deployed Railway deployment `2e617aba-f1d0-4c41-8735-67dbba77ae21`.
+- Production verification exposed that public Hearth test mode allowed backend-only source-processing POST.
+- Committed and pushed `a731181 Guard source processing public test writes`.
+- Deployed Railway deployment `7b561aab-dace-4179-b74d-f2afd4fe38ad`.
+- Verified live source-processing POST now returns `Authentication required`.
+- Deleted the one no-action source-processing smoke-test record created during validation.
 
 ## Verification Already Run Locally
 

@@ -40,7 +40,7 @@ The first screen must be dynamic. It should not always start with identity, snap
 
 ## 2026-07-12 Implementation Status
 
-The first source-backed Project Managers suggestion slice is implemented locally:
+The first source-backed Project Managers suggestion slice is live in production:
 
 - admitted relationship + documents can create a suggested-project review update
 - Project Managers shows pending suggestions at the top, subtly, above the project index
@@ -56,10 +56,9 @@ The first source-backed Project Managers suggestion slice is implemented locally
 - owner reassignment is available from the People involved card: choose an existing relationship or create a new local relationship owner, persist the owner in project metadata, and record a no-external-action relationship/project link
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same suggested-project review path
 
-Still required before production truth:
+Still required after production promotion:
 
 - browser-visible/authenticated validation against real connected email data
-- deployment decision and production verification
 - broader source types beyond relationship-sent email documents
 
 ## Current Sequencing Decision
