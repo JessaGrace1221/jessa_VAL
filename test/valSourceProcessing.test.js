@@ -54,6 +54,13 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/function sourceProcessingDocumentsFromEmail/);
   assert.match(server,/function processEmailDocumentSourceProcessing/);
   assert.match(server,/sourceProcessingAttachmentLooksLikeDocument/);
+  assert.match(server,/function sourceProcessingDriveDocumentsFromEmail/);
+  assert.match(server,/function sourceProcessingDriveSharerFromEmail/);
+  assert.match(server,/sourceProcessingDriveDocumentsFromEmail\(email\)/);
+  assert.match(server,/sourceProcessingGoogleDriveDocumentType/);
+  assert.match(server,/google_drive_share/);
+  assert.match(server,/google_drive_share_notice/);
+  assert.match(server,/google_drive_sharer_not_admitted_relationship/);
   assert.match(server,/sender_not_admitted_relationship/);
   const emailPayload=server.slice(
     server.indexOf('async function emailIntelligencePayload'),
@@ -102,6 +109,31 @@ test('relationship-sent documents create Project Managers and Leverage review su
   assert.equal(result.readyForYouItem.metadataJson.whatValDidReceipt.summary,result.sourceProcessingRecord.whatValDidReceipt.summary);
   assert.equal(projectSurface.metadataJson.assignedProjectManager.name,result.projectSuggestion.proposedValueJson.assignedProjectManager.name);
   assert.equal(store.relationshipProfiles.length,0);
+});
+
+test('Google Drive shares count as relationship document evidence',async()=>{
+  const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const {sourceProcessing}=servicesFor(store);
+  const result=await sourceProcessing.processRelationshipDocumentEmail({
+    relationship:{admitted:true,id:'rel_jordan',name:'Jordan',email:'jordan@example.com'},
+    source:{sourceType:'gmail_email',sourceId:'email_drive_share',subject:'Jordan shared "Launch Scope" with you',receivedAt:'2026-07-12T11:00:00Z'},
+    documents:[{
+      id:'drive_doc_launch_scope',
+      title:'Launch Scope',
+      type:'google_doc',
+      sourceType:'google_drive_share',
+      sourceUrl:'https://docs.google.com/document/d/drive_doc_launch_scope/edit',
+      summary:'Google Drive document shared by Jordan.'
+    }],
+    projectName:'Launch Scope'
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.projectSuggestion.updateType,'create_project_from_relationship_documents');
+  assert.equal(result.projectSuggestion.proposedValueJson.documents[0].sourceType,'google_drive_share');
+  assert.equal(result.projectSuggestion.proposedValueJson.documentPlacement.includes('documents_drawer'),true);
+  assert.equal(result.sourceProcessingRecord.sourceReceiptJson.documentCount,1);
+  assert.match(result.whatValDidReceipt.summary,/routed 1 document to Documents/);
 });
 
 test('Project Managers surface registrations list only pending visible suggestions',async()=>{

@@ -9618,6 +9618,80 @@ function sourceProcessingAttachmentLooksLikeDocument(attachment={}){
     || /\b(pdf|msword|wordprocessingml|presentationml|spreadsheetml|powerpoint|excel|csv|plain|rtf)\b/i.test(type)
     || /\b(proposal|agreement|contract|scope|deck|brief|sow|statement.of.work|worksheet|plan)\b/i.test(filename);
 }
+function sourceProcessingEmailText(email={}){
+  return [email.subject,email.snippet,email.bodyPreview,email.bodyText,email.text,email.html]
+    .filter(Boolean)
+    .join('\n')
+    .replace(/&amp;/g,'&')
+    .replace(/&quot;/g,'"')
+    .replace(/&#39;/g,"'");
+}
+function sourceProcessingCleanUrl(value=''){
+  return String(value||'').trim().replace(/[)\].,;!?]+$/,'');
+}
+function sourceProcessingGoogleDriveFileId(url=''){
+  const text=String(url||'');
+  const match=text.match(/\/(?:d|file\/d|folders)\/([a-zA-Z0-9_-]+)/)
+    || text.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match?match[1]:'';
+}
+function sourceProcessingGoogleDriveDocumentType(url=''){
+  const text=String(url||'').toLowerCase();
+  if(/docs\.google\.com\/document\//.test(text))return 'google_doc';
+  if(/docs\.google\.com\/spreadsheets?\//.test(text))return 'google_sheet';
+  if(/docs\.google\.com\/presentation\//.test(text))return 'google_slide';
+  if(/docs\.google\.com\/forms?\//.test(text))return 'google_form';
+  if(/docs\.google\.com\/drawings?\//.test(text))return 'google_drawing';
+  if(/drive\.google\.com\/drive\/folders\//.test(text))return 'google_drive_folder';
+  return 'google_drive_file';
+}
+function sourceProcessingDriveDocumentTitle(email={},url='',index=0){
+  const subject=String(email.subject||'').replace(/^(re|fw|fwd):\s*/i,'').trim();
+  const quoted=subject.match(/["“]([^"”]{3,160})["”]/);
+  if(quoted)return quoted[1].trim();
+  const shared=subject.match(/shared\s+(?:a|an|the)?\s*(?:document|doc|file|folder|spreadsheet|presentation|deck|sheet)?\s*:?\s*(.+)$/i);
+  if(shared&&shared[1]&&!/with you$/i.test(shared[1].trim()))return shared[1].trim().slice(0,160);
+  const kind=sourceProcessingGoogleDriveDocumentType(url).replace(/_/g,' ');
+  const sender=email.from?.name||email.from?.email||'relationship sender';
+  return `${kind.replace(/\b\w/g,c=>c.toUpperCase())} from ${sender}${index?` ${index+1}`:''}`;
+}
+function sourceProcessingDriveDocumentsFromEmail(email={}){
+  const text=sourceProcessingEmailText(email);
+  const structured=[
+    ...(Array.isArray(email.links)?email.links:[]),
+    ...(Array.isArray(email.urls)?email.urls:[]),
+    ...(Array.isArray(email.driveLinks)?email.driveLinks:[]),
+    ...(Array.isArray(email.drive_links)?email.drive_links:[])
+  ].map(item=>typeof item==='string'?item:(item?.url||item?.webUrl||item?.webViewLink||item?.link||'')).filter(Boolean);
+  const rawLinks=[
+    ...structured,
+    ...(text.match(/https?:\/\/(?:docs|drive)\.google\.com\/[^\s<>"')]+/ig)||[])
+  ].map(sourceProcessingCleanUrl).filter(Boolean);
+  const seen=new Set();
+  return rawLinks
+    .filter(url=>/https?:\/\/(?:docs|drive)\.google\.com\//i.test(url))
+    .filter(url=>{
+      const key=sourceProcessingGoogleDriveFileId(url)||url.toLowerCase();
+      if(seen.has(key))return false;
+      seen.add(key);return true;
+    })
+    .map((url,index)=>{
+      const fileId=sourceProcessingGoogleDriveFileId(url);
+      const type=sourceProcessingGoogleDriveDocumentType(url);
+      const title=sourceProcessingDriveDocumentTitle(email,url,index);
+      return {
+        id:fileId||crypto.createHash('sha1').update(url).digest('hex').slice(0,16),
+        title,
+        filename:title,
+        type,
+        mimeType:type,
+        sourceType:'google_drive_share',
+        sourceId:[email.messageId||email.id||email.threadId||'email','google_drive',fileId||index].join(':'),
+        sourceUrl:url,
+        summary:`Google Drive document shared in "${email.subject||'email'}".`
+      };
+    });
+}
 function sourceProcessingDocumentsFromEmail(email={}){
   const attachments=[
     ...(Array.isArray(email.attachments)?email.attachments:[]),
@@ -9625,7 +9699,7 @@ function sourceProcessingDocumentsFromEmail(email={}){
     ...(Array.isArray(email.attachments_json)?email.attachments_json:[])
   ];
   const seen=new Set();
-  return attachments
+  const attachmentDocuments=attachments
     .filter(sourceProcessingAttachmentLooksLikeDocument)
     .filter(attachment=>{
       const key=[attachment.id,attachment.attachmentId,attachment.filename,attachment.name].filter(Boolean).join(':');
@@ -9646,6 +9720,13 @@ function sourceProcessingDocumentsFromEmail(email={}){
         summary:`Document attachment on "${email.subject||'email'}" from ${email.from?.name||email.from?.email||'relationship sender'}.`
       };
     });
+  const driveDocuments=sourceProcessingDriveDocumentsFromEmail(email)
+    .filter(doc=>{
+      const key=[doc.sourceUrl,doc.sourceId,doc.id].filter(Boolean).join(':').toLowerCase();
+      if(!key||seen.has(key))return false;
+      seen.add(key);return true;
+    });
+  return attachmentDocuments.concat(driveDocuments);
 }
 function sourceProcessingEmailSourceType(email={}){
   if(email.provider==='outlook')return 'outlook_email';
@@ -9664,13 +9745,55 @@ function relationshipProfileMatchesEmail(profile={},email=''){
     packet.person?.email_addresses?.[0]
   ].some(value=>normalizeContextEmail(value)===normalized);
 }
+function relationshipProfileMatchesName(profile={},name=''){
+  const needle=String(name||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase();
+  if(!needle)return false;
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return [
+    profile.displayName,
+    profile.display_name,
+    profile.name,
+    metadata.name,
+    metadata.targetMetadata?.name,
+    packet.person?.name
+  ].some(value=>String(value||'').replace(/[^a-z0-9]+/gi,' ').trim().toLowerCase()===needle);
+}
+function sourceProcessingEmailIsGoogleDriveNotice(email={}){
+  const from=normalizeContextEmail(email.from?.email||'');
+  const local=from.split('@')[0]||'';
+  const domain=from.split('@')[1]||'';
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].filter(Boolean).join(' ');
+  return /^(drive-shares|workspace-noreply|docs-noreply)$/i.test(local)
+    || (/google\.com$/i.test(domain)&&/\b(shared|invited|google drive|google docs|google sheets|google slides|drive\.google\.com|docs\.google\.com)\b/i.test(text));
+}
+function sourceProcessingDriveSharerFromEmail(email={}){
+  if(!sourceProcessingEmailIsGoogleDriveNotice(email))return null;
+  const text=sourceProcessingEmailText(email);
+  const emails=(text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[])
+    .map(normalizeContextEmail)
+    .filter(address=>address&&!/(@google\.com$|^drive-shares|^workspace-noreply|^docs-noreply|^no.?reply|^donotreply)/i.test(address));
+  const emailAddress=emails[0]||'';
+  const subject=String(email.subject||'');
+  let name='';
+  const namedEmail=text.match(/([A-Z][A-Za-z.' -]{1,80})\s*\(([^)]+@[^\s)]+)\)\s+(?:shared|has shared|invited)/);
+  if(namedEmail&&normalizeContextEmail(namedEmail[2])===emailAddress)name=namedEmail[1].trim();
+  if(!name){
+    const subjectName=subject.match(/^(.{2,90}?)\s+(?:shared|has shared|invited you|added you)/i);
+    if(subjectName&&!/^(google|drive|docs|workspace)$/i.test(subjectName[1].trim()))name=subjectName[1].trim().replace(/^"|"$/g,'');
+  }
+  return emailAddress||name?{name,email:emailAddress,source:'google_drive_share_notice'}:null;
+}
 async function sourceProcessingRelationshipFromEmail(email={},profiles=[]){
-  const senderEmail=normalizeContextEmail(email.from?.email||'');
+  const driveSharer=sourceProcessingDriveSharerFromEmail(email);
+  const candidateEmail=normalizeContextEmail(driveSharer?.email||email.from?.email||'');
+  const profile=(profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesEmail(item,candidateEmail))
+    || (driveSharer?.name ? (profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesName(item,driveSharer.name)) : null);
+  const senderEmail=normalizeContextEmail(driveSharer?.email||relationshipProfilePrimaryEmail(profile)||email.from?.email||'');
   const alias=knownRelationshipEmailAlias(senderEmail);
-  const profile=(profiles||[]).find(item=>item.profileType==='person'&&relationshipProfileMatchesEmail(item,senderEmail));
   const admission=profile?await stewardshipRelationshipAdmissionForProfile(profile).catch(()=>stewardshipRelationshipAdmission(profile)):null;
   const admitted=!!alias||admission?.admitted===true;
-  const displayName=alias?.name||profile?.displayName||email.from?.name||senderEmail||'Relationship';
+  const displayName=alias?.name||profile?.displayName||driveSharer?.name||email.from?.name||senderEmail||'Relationship';
   return {
     id:profile?.id||profile?.personId||profile?.profileKey||senderEmail,
     profileKey:profile?.profileKey||'',
@@ -9680,7 +9803,7 @@ async function sourceProcessingRelationshipFromEmail(email={},profiles=[]){
     relationshipStatus:alias?.relationshipStatus||profile?.relationshipStatus||'',
     admitted,
     admissionStatus:admitted?'admitted':'not_admitted',
-    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':'sender_not_admitted_relationship',email:senderEmail,alias:alias||null}
+    relationshipAdmission:admission||{admitted,admission_status:admitted?'admitted':'not_admitted',reason:alias?'known_email_alias':(driveSharer?'google_drive_sharer_not_admitted_relationship':'sender_not_admitted_relationship'),email:senderEmail,alias:alias||null,driveSharer:driveSharer||null}
   };
 }
 async function processEmailDocumentSourceProcessing(emails=[],{origin='email_intelligence'}={}){
