@@ -5489,6 +5489,46 @@ function localStoredDocuments(){
   }
 }
 
+function persistLocalDocumentItems(items = []){
+  if(!items.length) return;
+  try{
+    const existing = localStoredDocuments();
+    const byId = new Map(existing.concat(items).map((item) => [item.id, item]));
+    localStorage.setItem('val_docs_v1', JSON.stringify(Array.from(byId.values()).slice(0, 160)));
+  }catch(error){}
+}
+
+function documentItemsFromGmailScan(result = {}){
+  const emails = Array.isArray(result.emails) ? result.emails : [];
+  const rows = [];
+  emails.forEach((email, emailIndex) => {
+    const attachments = correspondenceAttachmentsFromSource(email);
+    attachments.forEach((attachment, attachmentIndex) => {
+      const title = attachment.filename || attachment.name || 'Email attachment';
+      if(!title) return;
+      rows.push({
+        id: 'gmail-scan:' + (email.messageId || email.threadId || emailIndex) + ':' + (attachment.id || attachment.attachmentId || title || attachmentIndex),
+        title,
+        type: attachment.mimeType || attachment.contentType || 'email_attachment',
+        status: 'needs_review',
+        relationship: email.from?.name || email.from?.email || '',
+        project: '',
+        source: 'Gmail attachment',
+        summary: 'Attachment from "' + (email.subject || 'email') + '".',
+        referenceUse: 'Use this email attachment as source evidence for relationship and project judgment after context is linked.',
+        needs: 'Link the relationship/project context before relying on this attachment for decisions.',
+        body: email.bodyPreview || email.snippet || email.subject || '',
+        recipientEmail: '',
+        sourceUrl: email.webLink || '',
+        origin: 'gmail_scan_attachment',
+        raw: {emailSubject: email.subject || '', messageId: email.messageId || '', threadId: email.threadId || '', attachment},
+        noExternalAction: true
+      });
+    });
+  });
+  return rows;
+}
+
 function normalizeReadyDocumentItem(item = {}){
   const metadata = item.metadataJson || item.metadata || {};
   const readiness = item.readinessJson || {};
@@ -5802,6 +5842,14 @@ async function scanDocumentIntakeFromGmail(){
   try{
     const result = await postJson('/api/email/gmail/refresh', {days:30, limit:75}, {timeoutMs:45000, timeoutMessage:'Gmail document scan is taking longer than expected.'});
     await hydrateDocumentDrawer();
+    const scannedDocuments = documentItemsFromGmailScan(result);
+    if(scannedDocuments.length){
+      const byId = new Map(scannedDocuments.concat(currentDocumentItems).map((item) => [item.id, item]));
+      currentDocumentItems = Array.from(byId.values());
+      persistLocalDocumentItems(scannedDocuments);
+      renderDocumentFilters();
+      renderDocumentBrief(currentDocumentItems[0] || activeDocumentItem);
+    }
     if(documentStatus) documentStatus.textContent = documentIntakeStatusLine(result);
   }catch(error){
     if(documentStatus) documentStatus.textContent = 'Gmail document scan failed: ' + error.message;

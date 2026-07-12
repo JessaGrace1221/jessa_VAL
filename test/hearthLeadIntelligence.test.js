@@ -804,6 +804,9 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /function scanDocumentIntakeFromGmail/);
   assert.match(hearthJs, /\/api\/email\/gmail\/refresh/);
   assert.match(hearthJs, /function documentIntakeStatusLine/);
+  assert.match(hearthJs, /function documentItemsFromGmailScan/);
+  assert.match(hearthJs, /persistLocalDocumentItems\(scannedDocuments\)/);
+  assert.match(hearthJs, /gmail_scan_attachment/);
   assert.match(hearthJs, /documentCandidates/);
   assert.match(hearthJs, /providers\.documentAttachmentCount/);
   assert.match(hearthJs, /action:'document:scan_gmail'/);
