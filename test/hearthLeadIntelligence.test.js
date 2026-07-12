@@ -177,6 +177,11 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /PROJECT_ONBOARDING_FIRST_QUESTION/);
   assert.match(hearthJs, /What should this project be called, and what outcome should it create\?/);
   assert.match(hearthJs, /function projectNeedsOnboarding/);
+  assert.match(hearthJs, /function projectInterviewStage/);
+  assert.match(hearthJs, /function projectInterviewNextQuestion/);
+  assert.match(hearthJs, /owner_monitoring_answered/);
+  assert.match(hearthJs, /function inferProjectInterviewOwner/);
+  assert.match(hearthJs, /function inferProjectMonitoringRules/);
   assert.match(hearthJs, /function renderProjectOnboardingPanel/);
   assert.match(hearthJs, /function renderProjectRoundTableOverview/);
   assert.match(hearthJs, /needsProjectOnboarding:true/);
@@ -386,8 +391,11 @@ test('Project Managers drawer has a live project index source contract', () => {
   assert.match(server, /No CRM update, message, task, calendar change, or external action happened/);
   assert.match(server, /function projectCreatePayload/);
   assert.match(server, /function projectUpdatePayload/);
+  assert.match(server, /function projectUpdateListValue/);
   assert.match(server, /needsProjectOnboarding/);
   assert.match(server, /projectOnboarding/);
+  assert.match(server, /projectOnboardingOwnerMonitoringAnswer/);
+  assert.match(server, /monitoringRules:projectUpdateListValue/);
   assert.match(server, /hearth_project_document_assignment/);
   assert.match(server, /async function updateProjectProfileLocal/);
   assert.match(server, /async function saveProjectSourceFiles/);
@@ -1298,8 +1306,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-onboarding-repair-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-onboarding-repair-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-interview-stages-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-interview-stages-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

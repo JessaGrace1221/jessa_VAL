@@ -3267,7 +3267,7 @@ function projectNeedsOnboarding(project = {}){
   const onboarding = metadata.projectOnboarding || metadata.project_onboarding || {};
   const createdFrom = project.createdFrom || metadata.createdFrom || metadata.created_from || '';
   const sourceText = [project.sourceReceipts, project.signal, details.rawContext].filter(Boolean).join(' ');
-  if(['answered_first_question','in_progress','complete'].includes(String(onboarding.status || '').toLowerCase())) return false;
+  if(['answered_first_question','owner_monitoring_answered','lanes_answered','in_progress','complete'].includes(String(onboarding.status || '').toLowerCase())) return false;
   return Boolean(
     project.needsProjectOnboarding ||
     metadata.needsProjectOnboarding ||
@@ -3277,6 +3277,30 @@ function projectNeedsOnboarding(project = {}){
     createdFrom === 'hearth_project_document_assignment' ||
     /Project Managers document assignment/i.test(sourceText)
   );
+}
+
+function projectOnboardingData(project = {}){
+  const metadata = projectMetadataObject(project);
+  const onboarding = metadata.projectOnboarding || metadata.project_onboarding || {};
+  return onboarding && typeof onboarding === 'object' ? onboarding : {};
+}
+
+function projectInterviewStage(project = {}){
+  const onboarding = projectOnboardingData(project);
+  const status = String(onboarding.status || '').toLowerCase();
+  if(status === 'lanes_answered') return 'prepared_work';
+  if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'lanes';
+  if(status === 'answered_first_question' || onboarding.firstAnswer) return 'owner_monitoring';
+  if(projectNeedsOnboarding(project)) return 'first_question';
+  return 'owner_monitoring';
+}
+
+function projectInterviewNextQuestion(project = activeProjectProfile){
+  const stage = projectInterviewStage(project || {});
+  if(stage === 'first_question') return PROJECT_ONBOARDING_FIRST_QUESTION;
+  if(stage === 'owner_monitoring') return 'Who owns this project, and what should VAL monitor next?';
+  if(stage === 'lanes') return 'What are the main lanes of work or milestones VAL should track for this project?';
+  return 'What should VAL prepare, organize, or ask about next for this project?';
 }
 
 function projectPersonName(value = ''){
@@ -4040,6 +4064,8 @@ function renderProjectManagerEmptyState(){
 
 function projectCoworkSpec(field = ''){
   const projectName = activeProjectProfile?.name || 'this project';
+  const interviewQuestion = projectInterviewNextQuestion(activeProjectProfile);
+  const interviewStage = projectInterviewStage(activeProjectProfile || {});
   const specs = {
     project_overview: {
       title: 'Co-Work on this project',
@@ -4115,9 +4141,17 @@ function projectCoworkSpec(field = ''){
     },
     project_interview: {
       title: 'Interview the project manager',
-      question: projectNeedsOnboarding(activeProjectProfile) ? PROJECT_ONBOARDING_FIRST_QUESTION : 'What should this project manager know before it can manage this project confidently?',
-      detail: projectNeedsOnboarding(activeProjectProfile) ? 'Start with the project name and the outcome. VAL will keep the rest of the manager packet blank until the project is shaped.' : 'Answer the missing project-manager questions: outcome, owner, people, workstreams, risks, and what to monitor.',
-      placeholder: projectNeedsOnboarding(activeProjectProfile) ? 'Project name: ... Outcome: ...' : 'Outcome: ... Owner: ... People: ... Workstreams: ... Risks: ... Monitor: ...'
+      question: interviewQuestion,
+      detail: interviewStage === 'first_question'
+        ? 'Start with the project name and the outcome. VAL will keep the rest of the manager packet blank until the project is shaped.'
+        : (interviewStage === 'owner_monitoring'
+          ? 'Name the owner, the immediate next step, and the signals VAL should watch.'
+          : 'Add the next missing project-manager layer without repeating what VAL already knows.'),
+      placeholder: interviewStage === 'first_question'
+        ? 'Project name: ... Outcome: ...'
+        : (interviewStage === 'owner_monitoring'
+          ? 'Owner: ... Next step: ... VAL should monitor...'
+          : 'Workstreams or milestones: ...')
     },
     workstreams: {
       title: 'Define workstreams',
@@ -4208,6 +4242,51 @@ function projectManagerRewrite(text = '', field = ''){
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
+function inferProjectInterviewOwner(text = ''){
+  const clean = projectCleanText(text);
+  if(/\b(i own|i am the owner|i'm the owner|owned by me|my project)\b/i.test(clean)){
+    return {
+      type:'executive',
+      id:'jessa',
+      name:'Jessa',
+      detail:'Executive owner',
+      source:'project_interview',
+      reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+    };
+  }
+  const ownerMatch = clean.match(/\bowner(?:\s+is|:)?\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})/);
+  if(ownerMatch?.[1]){
+    return {
+      type:'relationship',
+      id:ownerMatch[1],
+      name:ownerMatch[1],
+      source:'project_interview',
+      reassignmentOptions:['choose_existing_relationship','create_new_relationship']
+    };
+  }
+  return null;
+}
+
+function inferProjectInterviewNextMove(text = ''){
+  const clean = projectCleanText(text);
+  const match = clean.match(/\bnext (?:step|move)\s+(?:is|should be)\s+(?:to\s+)?([^.!?]+)/i);
+  const move = projectCleanText(match?.[1] || '');
+  if(!move) return '';
+  return move.charAt(0).toUpperCase() + move.slice(1) + '.';
+}
+
+function inferProjectMonitoringRules(text = ''){
+  const clean = projectCleanText(text);
+  const rules = [];
+  if(/\bcrm\b/i.test(clean)) rules.push('CRM setup');
+  if(/\bpayment|processing\b/i.test(clean)) rules.push('Payment processing');
+  if(/\bpipeline/i.test(clean)) rules.push('Pipeline setup');
+  if(/\bcontact forms?\b/i.test(clean)) rules.push('Contact forms');
+  if(/\bcontribute your voice\b/i.test(clean)) rules.push('Contribute Your Voice process');
+  if(/\bwebsite|developer/i.test(clean)) rules.push('Website implementation handoff');
+  return rules.length ? Array.from(new Set(rules)) : [projectCompactText(clean, 160)].filter(Boolean);
+}
+
 function appendProjectRelationshipNames(names = []){
   if(!activeProjectProfile) return;
   const existing = projectResolvedRelationships(activeProjectProfile).map((name) => projectCleanText(name));
@@ -4254,23 +4333,73 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
   } else if(field === 'project_phase'){
     activeProjectProfile.projectPhase = rewritten;
   } else if(field === 'project_interview'){
-    activeProjectProfile.projectInterviewNotes = rewritten;
+    const stage = projectInterviewStage(activeProjectProfile);
+    const metadata = projectMetadataObject(activeProjectProfile);
+    const onboarding = projectOnboardingData(activeProjectProfile);
+    activeProjectProfile.projectInterviewNotes = [activeProjectProfile.projectInterviewNotes, rewritten].filter(Boolean).join('\n');
     activeProjectProfile.whatValNowKnows = rewritten;
-    activeProjectProfile.desiredOutcome = activeProjectProfile.desiredOutcome || rewritten;
-    activeProjectProfile.summary = activeProjectProfile.summary || rewritten;
-    activeProjectProfile.reality = activeProjectProfile.reality || rewritten;
-    activeProjectProfile.needsProjectOnboarding = false;
     activeProjectProfile.metadataJson = {
-      ...projectMetadataObject(activeProjectProfile),
+      ...metadata,
       needsProjectOnboarding:false,
       projectOnboarding:{
-        status:'answered_first_question',
+        ...onboarding,
         firstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
-        firstAnswer:rewritten,
-        answeredAt:new Date().toISOString()
+        updatedAt:new Date().toISOString()
       },
       noExternalAction:true
     };
+    if(stage === 'first_question'){
+      activeProjectProfile.desiredOutcome = activeProjectProfile.desiredOutcome || rewritten;
+      activeProjectProfile.summary = activeProjectProfile.summary || rewritten;
+      activeProjectProfile.reality = activeProjectProfile.reality || rewritten;
+      activeProjectProfile.needsProjectOnboarding = false;
+      activeProjectProfile.metadataJson.projectOnboarding = {
+        ...activeProjectProfile.metadataJson.projectOnboarding,
+        status:'answered_first_question',
+        firstAnswer:onboarding.firstAnswer || rewritten,
+        answeredAt:onboarding.answeredAt || new Date().toISOString()
+      };
+    }else if(stage === 'owner_monitoring'){
+      const owner = inferProjectInterviewOwner(rewritten);
+      const nextMove = inferProjectInterviewNextMove(rewritten);
+      const monitoringRules = inferProjectMonitoringRules(rewritten);
+      activeProjectProfile.ownerMonitoringNotes = rewritten;
+      if(owner){
+        activeProjectProfile.owner = owner;
+        activeProjectProfile.nextStepOwner = owner.name;
+      }
+      if(nextMove){
+        activeProjectProfile.nextMove = nextMove;
+        activeProjectProfile.nextMoveEvidence = rewritten;
+      }
+      activeProjectProfile.monitoringRules = monitoringRules;
+      activeProjectProfile.metadataJson = {
+        ...activeProjectProfile.metadataJson,
+        owner:owner || activeProjectProfile.owner || metadata.owner || null,
+        nextMove:activeProjectProfile.nextMove || metadata.nextMove || '',
+        nextStepOwner:activeProjectProfile.nextStepOwner || metadata.nextStepOwner || '',
+        ownerMonitoringNotes:rewritten,
+        monitoringRules,
+        projectOnboarding:{
+          ...activeProjectProfile.metadataJson.projectOnboarding,
+          status:'owner_monitoring_answered',
+          ownerMonitoringAnswer:rewritten,
+          ownerMonitoringAnsweredAt:new Date().toISOString()
+        }
+      };
+    }else if(stage === 'lanes'){
+      activeProjectProfile.workstreams = projectListFromValue(rewritten);
+      activeProjectProfile.metadataJson = {
+        ...activeProjectProfile.metadataJson,
+        workstreams:activeProjectProfile.workstreams,
+        projectOnboarding:{
+          ...activeProjectProfile.metadataJson.projectOnboarding,
+          status:'lanes_answered',
+          lanesAnswer:rewritten,
+          lanesAnsweredAt:new Date().toISOString()
+        }
+      };
+    }
   } else if(field === 'workstreams'){
     activeProjectProfile.workstreams = projectListFromValue(rewritten);
   } else if(field === 'milestones'){
@@ -4301,10 +4430,19 @@ async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
       'Project Co-Work update (' + projectCoworkScopeLabel(field) + '): ' + rewritten
     ].filter(Boolean).join('\n'),
     status:activeProjectProfile.status || '',
+    desiredOutcome:activeProjectProfile.desiredOutcome || activeProjectProfile.outcome || '',
+    nextMove:activeProjectProfile.nextMove || '',
+    nextStepOwner:projectPersonName(activeProjectProfile.nextStepOwner || activeProjectProfile.owner || ''),
+    projectInterviewNotes:activeProjectProfile.projectInterviewNotes || '',
+    whatValNowKnows:activeProjectProfile.whatValNowKnows || '',
+    ownerMonitoringNotes:activeProjectProfile.ownerMonitoringNotes || '',
+    monitoringRules:Array.isArray(activeProjectProfile.monitoringRules) ? activeProjectProfile.monitoringRules.join('\n') : (activeProjectProfile.monitoringRules || ''),
+    workstreams:Array.isArray(activeProjectProfile.workstreams) ? activeProjectProfile.workstreams.join('\n') : (activeProjectProfile.workstreams || ''),
     needsProjectOnboarding:String(activeProjectProfile.needsProjectOnboarding === true),
     projectOnboardingStatus:projectMetadataObject(activeProjectProfile).projectOnboarding?.status || '',
     projectOnboardingFirstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
     projectOnboardingFirstAnswer:projectMetadataObject(activeProjectProfile).projectOnboarding?.firstAnswer || '',
+    projectOnboardingOwnerMonitoringAnswer:projectMetadataObject(activeProjectProfile).projectOnboarding?.ownerMonitoringAnswer || '',
     noExternalAction:true
   };
   try{
@@ -4325,6 +4463,7 @@ async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
 }
 
 function projectFollowupQuestion(field = ''){
+  if(field === 'project_interview') return projectInterviewNextQuestion(activeProjectProfile);
   const questions = {
     what_this_is:'What outcome should this project create when it is working?',
     why_it_matters:'Who benefits most if this succeeds?',
@@ -4334,16 +4473,33 @@ function projectFollowupQuestion(field = ''){
     documents_sources:'Should this source change the project plan or just stay attached?',
     risk_blocker:'What would make this risk smaller this week?',
     working_narrative:'What changed most recently that should shape this story?',
-    what_val_needs_next:'What should VAL ask you next if it gets stuck?',
-    project_interview:'Who owns this project, and what should VAL monitor next?'
+    what_val_needs_next:'What should VAL ask you next if it gets stuck?'
   };
   return questions[field] || 'What else would make this more useful?';
+}
+
+function projectCoworkSavedMessage(rewritten = '', field = ''){
+  const nextQuestion = projectFollowupQuestion(field);
+  if(field !== 'project_interview'){
+    return 'Updated this section: ' + rewritten + '\n\n' + nextQuestion;
+  }
+  const status = String(projectOnboardingData(activeProjectProfile).status || '').toLowerCase();
+  if(status === 'answered_first_question'){
+    return 'Saved the project name and outcome. I will keep that as the starting shape for this Project Manager.\n\n' + nextQuestion;
+  }
+  if(status === 'owner_monitoring_answered'){
+    return 'Saved the owner, next step, and monitoring context. I updated this Project Manager so it knows what to watch next.\n\n' + nextQuestion;
+  }
+  if(status === 'lanes_answered'){
+    return 'Saved the work lanes for this Project Manager.\n\n' + nextQuestion;
+  }
+  return 'Saved that into the project interview.\n\n' + nextQuestion;
 }
 
 function renderProjectCoworkUpdatedResponse(rewritten = '', field = ''){
   if(!rewritten) return;
   appendHomeCoworkMessage('user', rewritten);
-  appendHomeCoworkMessage('val', 'Updated this section: ' + rewritten + '\n\n' + projectFollowupQuestion(field));
+  appendHomeCoworkMessage('val', projectCoworkSavedMessage(rewritten, field));
 }
 
 function setProjectOwnerStatus(project = activeProjectProfile, message = ''){

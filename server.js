@@ -16703,6 +16703,10 @@ function projectProfileMatchesIdentifier(row={},identifier=''){
     metadata.intake?.projectName
   ].filter(Boolean).some(value=>identifierVariants.has(String(value).trim().toLowerCase()));
 }
+function projectUpdateListValue(value){
+  if(Array.isArray(value))return value.map(item=>String(item||'').trim()).filter(Boolean);
+  return String(value||'').split(/\n|,|;/).map(item=>item.trim()).filter(Boolean);
+}
 function projectUpdatePayload(body={}){
   const hasNeedsProjectOnboarding=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')||Object.prototype.hasOwnProperty.call(body,'needs_project_onboarding');
   const needsProjectOnboardingValue=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')?body.needsProjectOnboarding:body.needs_project_onboarding;
@@ -16713,11 +16717,20 @@ function projectUpdatePayload(body={}){
     relationships:String(body.relationships||body.people||body.stakeholders||'').trim(),
     rawContext:String(body.rawContext||body.notes||'').trim(),
     status:String(body.status||body.relationshipStatus||'').trim(),
+    desiredOutcome:String(body.desiredOutcome||body.desired_outcome||body.outcome||'').trim(),
+    nextMove:String(body.nextMove||body.next_move||body.recommendedAction||'').trim(),
+    nextStepOwner:String(body.nextStepOwner||body.next_step_owner||body.ownerName||body.owner_name||'').trim(),
+    projectInterviewNotes:String(body.projectInterviewNotes||body.project_interview_notes||'').trim(),
+    whatValNowKnows:String(body.whatValNowKnows||body.what_val_now_knows||'').trim(),
+    ownerMonitoringNotes:String(body.ownerMonitoringNotes||body.owner_monitoring_notes||'').trim(),
+    monitoringRules:projectUpdateListValue(body.monitoringRules||body.monitoring_rules),
+    workstreams:projectUpdateListValue(body.workstreams||body.work_streams),
     hasNeedsProjectOnboarding,
     needsProjectOnboarding:String(needsProjectOnboardingValue||'').toLowerCase()==='true',
     projectOnboardingStatus:String(body.projectOnboardingStatus||body.project_onboarding_status||'').trim(),
     projectOnboardingFirstQuestion:String(body.projectOnboardingFirstQuestion||body.project_onboarding_first_question||'').trim(),
-    projectOnboardingFirstAnswer:String(body.projectOnboardingFirstAnswer||body.project_onboarding_first_answer||'').trim()
+    projectOnboardingFirstAnswer:String(body.projectOnboardingFirstAnswer||body.project_onboarding_first_answer||'').trim(),
+    projectOnboardingOwnerMonitoringAnswer:String(body.projectOnboardingOwnerMonitoringAnswer||body.project_onboarding_owner_monitoring_answer||'').trim()
   };
 }
 async function updateProjectProfileLocal(projectId='',patch={}){
@@ -16739,15 +16752,29 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       status:patch.projectOnboardingStatus,
       firstQuestion:patch.projectOnboardingFirstQuestion||metadata.projectOnboarding?.firstQuestion||'',
       firstAnswer:patch.projectOnboardingFirstAnswer||metadata.projectOnboarding?.firstAnswer||'',
+      ownerMonitoringAnswer:patch.projectOnboardingOwnerMonitoringAnswer||metadata.projectOnboarding?.ownerMonitoringAnswer||'',
       updatedAt:now
     } : metadata.projectOnboarding;
+    const previousOwner=metadata.owner&&typeof metadata.owner==='object'?metadata.owner:{};
+    const nextMetadata={
+      ...metadata,
+      ...(patch.desiredOutcome?{desiredOutcome:patch.desiredOutcome}:{}),
+      ...(patch.nextMove?{nextMove:patch.nextMove}:{}),
+      ...(patch.nextStepOwner?{nextStepOwner:patch.nextStepOwner}:{}),
+      ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
+      ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
+      ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
+      ...(patch.monitoringRules.length?{monitoringRules:patch.monitoringRules}:{}),
+      ...(patch.workstreams.length?{workstreams:patch.workstreams}:{}),
+      ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
+    };
     return {
       ...row,
       displayName,
       summary,
       relationshipStatus,
       metadataJson:{
-        ...metadata,
+        ...nextMetadata,
         intake,
         projectName:displayName,
         ...(patch.hasNeedsProjectOnboarding?{needsProjectOnboarding:patch.needsProjectOnboarding}:{}),
@@ -17329,7 +17356,7 @@ function projectIndexItemFromProfile(profile={}){
   const status=profile.relationshipStatus||metadata.status||profile.status||'Observed';
   const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
-  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
+  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||metadata.nextMove||profile.summary||'Review the project file.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
     files:uploadedFiles,
@@ -17365,6 +17392,14 @@ function projectIndexItemFromProfile(profile={}){
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
     owner:metadata.owner||null,
     assignedProjectManager:metadata.assignedProjectManager||null,
+    desiredOutcome:metadata.desiredOutcome||metadata.outcome||'',
+    outcome:metadata.outcome||metadata.desiredOutcome||'',
+    nextStepOwner:metadata.nextStepOwner||metadata.owner?.name||'',
+    projectInterviewNotes:metadata.projectInterviewNotes||'',
+    whatValNowKnows:metadata.whatValNowKnows||'',
+    ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
+    monitoringRules:Array.isArray(metadata.monitoringRules)?metadata.monitoringRules:[],
+    workstreams:Array.isArray(metadata.workstreams)?metadata.workstreams:[],
     metadataJson:metadata,
     sourceDetails,
     sopId:metadata.sopId||intake.sopId||'',
