@@ -3077,6 +3077,32 @@ button.drawer-link{
   border-radius:7px;
   background:rgba(255,249,239,.46);
 }
+.document-library-controls{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  min-width:0;
+}
+.document-library-controls button{
+  min-height:28px;
+  padding:0 10px;
+  border:1px solid rgba(64,86,61,.18);
+  border-radius:999px;
+  background:rgba(244,248,238,.72);
+  color:rgba(48,62,43,.9);
+  font:800 .68rem var(--body);
+  white-space:nowrap;
+}
+.document-library-controls button:hover,
+.document-library-controls button:focus-visible{
+  border-color:rgba(64,86,61,.34);
+  background:rgba(232,241,220,.88);
+}
+.document-library-controls button:disabled{
+  cursor:wait;
+  opacity:.62;
+}
 .document-search-grid{
   display:grid;
   grid-template-columns:minmax(0,1.2fr) minmax(0,.9fr) minmax(0,.9fr);

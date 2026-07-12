@@ -114,6 +114,7 @@ const documentCount = document.querySelector('[data-document-count]');
 const documentSearchInput = document.querySelector('[data-document-search]');
 const documentRelationshipFilter = document.querySelector('[data-document-relationship-filter]');
 const documentProjectFilter = document.querySelector('[data-document-project-filter]');
+const documentIntakeScan = document.querySelector('[data-document-intake-scan]');
 const documentPreview = document.querySelector('[data-document-preview]');
 const documentStatus = document.querySelector('[data-document-status]');
 let currentTimelineReviewItems = [];
@@ -5584,6 +5585,22 @@ function setDocumentField(field, value){
   if(node) node.textContent = value || '';
 }
 
+function documentIntakeStatusLine(result = {}){
+  const intake = result.sourceProcessing?.projectManagers || {};
+  const providers = result.providers?.gmail || {};
+  const eligible = Number(intake.eligible || result.summary?.projectManagerDocumentEmails || 0);
+  const records = Array.isArray(intake.records) ? intake.records.length : 0;
+  const suggestions = Number(intake.suggestions || result.summary?.projectManagerSuggestions || 0);
+  const skipped = Number(intake.skipped || 0);
+  const errors = Array.isArray(intake.errors) ? intake.errors.filter(Boolean) : [];
+  if(errors.length) return 'Gmail document scan finished with source-processing errors: ' + errors.slice(0, 2).join('; ');
+  if(eligible || records || suggestions || skipped){
+    return 'Gmail document scan: ' + eligible + ' document email' + (eligible === 1 ? '' : 's') + ', ' + records + ' saved source record' + (records === 1 ? '' : 's') + ', ' + suggestions + ' Project Managers suggestion' + (suggestions === 1 ? '' : 's') + ', ' + skipped + ' source-only.';
+  }
+  if(providers.error) return 'Gmail scan ran, but Gmail reported: ' + providers.error;
+  return 'Gmail scan ran. No document emails entered source-processing in this window.';
+}
+
 function documentSuggestedActions(item = activeDocumentItem){
   if(!item) return [];
   const actions = ['cowork_document', 'present'];
@@ -5742,6 +5759,32 @@ async function hydrateDocumentDrawer(){
     renderDocumentBrief(activeDocumentItem);
   }catch(error){
     if(documentStatus) documentStatus.textContent = 'Document services unavailable; showing local document previews only.';
+  }
+}
+
+async function scanDocumentIntakeFromGmail(){
+  if(!canUseApi){
+    if(documentStatus) documentStatus.textContent = 'The live VAL server is needed to scan Gmail documents.';
+    return;
+  }
+  if(documentIntakeScan){
+    documentIntakeScan.disabled = true;
+    documentIntakeScan.setAttribute('aria-busy', 'true');
+  }
+  const previousStatus = documentStatus?.textContent || '';
+  if(documentStatus) documentStatus.textContent = 'Scanning Gmail for document evidence. No email, document, CRM record, Google Doc, Drive file, or external system is changed.';
+  try{
+    const result = await postJson('/api/email/gmail/refresh', {days:30, limit:75}, {timeoutMs:45000, timeoutMessage:'Gmail document scan is taking longer than expected.'});
+    await hydrateDocumentDrawer();
+    if(documentStatus) documentStatus.textContent = documentIntakeStatusLine(result);
+  }catch(error){
+    if(documentStatus) documentStatus.textContent = 'Gmail document scan failed: ' + error.message;
+  }finally{
+    if(documentIntakeScan){
+      documentIntakeScan.disabled = false;
+      documentIntakeScan.setAttribute('aria-busy', 'false');
+    }
+    if(documentStatus && !documentStatus.textContent) documentStatus.textContent = previousStatus;
   }
 }
 
@@ -16790,6 +16833,13 @@ documentProjectFilter?.addEventListener('change', async () => {
   const preflight = await ensureHearthClickPacket({node:documentProjectFilter, packetName:'document_packet', action:'document:project_filter', allowBlockedForInspection:true, source:{...documentSource(activeDocumentItem, 'document:project_filter'), sourceType:'document_filter', sourceLabel:'Document project filter'}});
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   renderDocumentBrief(filteredDocumentItems()[0] || null);
+});
+
+documentIntakeScan?.addEventListener('click', async () => {
+  const preflight = await ensureHearthClickPacket({node:documentIntakeScan, packetName:'document_packet', action:'document:scan_gmail', allowBlockedForInspection:true, source:{...documentSource(activeDocumentItem, 'document:scan_gmail'), sourceType:'document_intake_scan', sourceLabel:'Gmail document scan'}});
+  if(!preflight.ok) return;
+  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  await scanDocumentIntakeFromGmail();
 });
 
 document.querySelectorAll('[data-document-action]').forEach((button) => {

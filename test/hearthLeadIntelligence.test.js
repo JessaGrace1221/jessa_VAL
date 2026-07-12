@@ -773,6 +773,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthHtml, /data-document-search/);
   assert.match(hearthHtml, /data-document-relationship-filter/);
   assert.match(hearthHtml, /data-document-project-filter/);
+  assert.match(hearthHtml, /data-document-intake-scan/);
   assert.match(hearthHtml, /data-document-list/);
   assert.match(hearthHtml, /data-document-preview/);
   assert.doesNotMatch(hearthHtml, /data-document-action="cowork_document"/);
@@ -794,6 +795,10 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /function documentItemsFromReady/);
   assert.match(hearthJs, /function normalizeCanonicalDocumentItem/);
   assert.match(hearthJs, /\/api\/val\/documents\?limit=120/);
+  assert.match(hearthJs, /function scanDocumentIntakeFromGmail/);
+  assert.match(hearthJs, /\/api\/email\/gmail\/refresh/);
+  assert.match(hearthJs, /function documentIntakeStatusLine/);
+  assert.match(hearthJs, /action:'document:scan_gmail'/);
   assert.match(hearthJs, /\/api\/val\/ready-for-you\/build/);
   assert.match(hearthJs, /function filteredDocumentItems/);
   assert.match(hearthJs, /function scrollDocumentActionsIntoView/);
@@ -825,6 +830,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /restoreDocumentWindow/);
   assert.match(hearthCss, /\.drawer-tray\.document-open \.document-detail/);
   assert.match(hearthCss, /\.document-status-panel/);
+  assert.match(hearthCss, /\.document-library-controls/);
   assert.match(hearthCss, /\.document-workbench/);
   assert.match(hearthCss, /\.document-search-grid/);
   assert.match(hearthCss, /\.document-list/);
