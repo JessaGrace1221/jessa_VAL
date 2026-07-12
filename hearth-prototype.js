@@ -16903,11 +16903,13 @@ closeValDetail?.addEventListener('click', () => {
 documentList?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-document-item]');
   if(!button) return;
+  event.preventDefault();
+  event.stopPropagation();
   const selected = currentDocumentItems.find((item) => item.id === button.dataset.documentItem);
-  const preflight = await ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:select', allowBlockedForInspection:true, source:documentSource(selected, 'document:select')});
-  if(!preflight.ok) return;
-  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   renderDocumentBrief(selected);
+  void ensureHearthClickPacket({node:button, packetName:'document_packet', action:'document:select', allowBlockedForInspection:true, source:documentSource(selected, 'document:select')}).then((preflight) => {
+    renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  });
 });
 
 documentSearchInput?.addEventListener('input', async () => {

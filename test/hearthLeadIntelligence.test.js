@@ -820,6 +820,8 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /if\(hasBody && hasRecipient && !isPreviewOnly\) push\('send'\)/);
   assert.match(hearthJs, /button\.hidden = !allowed/);
   assert.match(hearthJs, /button\.classList\.toggle\('active', isActive\)/);
+  assert.match(hearthJs, /event\.preventDefault\(\);\n\s+event\.stopPropagation\(\);\n\s+const selected = currentDocumentItems\.find/);
+  assert.match(hearthJs, /renderDocumentBrief\(selected\);\n\s+void ensureHearthClickPacket/);
   assert.match(hearthJs, /item\.relationship/);
   assert.match(hearthJs, /item\.project/);
   assert.match(hearthJs, /function openDocumentWorkspace/);
