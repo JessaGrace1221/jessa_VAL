@@ -1089,6 +1089,18 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /No external action was taken/);
 });
 
+test('Hearth Co-Work opens immediately and above active drawers', () => {
+  const homeCowork = hearthJs.match(/async function openCoworkSessionWithPacket[\s\S]*?\n}\n\nasync function openTeachValSessionWithPacket/)[0];
+  const projectCowork = hearthJs.match(/async function openProjectScopedCowork[\s\S]*?\n}\n\nfunction openProjectFieldCowork/)[0];
+  assert.ok(homeCowork.indexOf('openCoworkSession();') < homeCowork.indexOf('ensureHearthClickPacket'));
+  assert.ok(projectCowork.indexOf('openContextualCoworkSession') < projectCowork.indexOf('ensureHearthClickPacket'));
+  assert.match(homeCowork, /allowBlockedForInspection:true/);
+  assert.match(projectCowork, /allowBlockedForInspection:true/);
+  assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode\{\n  position:fixed;\n  z-index:1800;/);
+  assert.match(hearthCss, /\.hearth-shell \.desk-workspace\.home-cowork-mode\[aria-hidden="false"\]\{\n  z-index:1800;/);
+  assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:1300/);
+});
+
 test('Hearth Home presence hydrates from executive briefing intelligence', () => {
   assert.match(hearthJs, /function hydrateHomePresence/);
   assert.match(hearthJs, /\/api\/executive-briefing/);
@@ -1210,8 +1222,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=home-witness-evidence-20260710/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=stewardship-intro-v1-20260711/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=cowork-open-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=cowork-open-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

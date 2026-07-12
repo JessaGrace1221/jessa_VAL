@@ -4017,9 +4017,6 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
       scopedCoworkPacket:scopedPacket
     }
   };
-  const preflight = await ensureHearthClickPacket({node, packetName:'project_packet', action, allowBlockedForInspection:true, source});
-  if(!preflight.ok) return;
-  renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   activeProjectCoworkTarget = {
     field,
     mode: options.mode || (field === 'project_overview' ? 'project_cowork' : 'field_update'),
@@ -4041,6 +4038,9 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
     publicDetail:'Scoped to Project Managers: ' + projectCoworkScopeLabel(field) + '.',
     lockContext:true
   });
+  void ensureHearthClickPacket({node, packetName:'project_packet', action, allowBlockedForInspection:true, source}).then((preflight) => {
+    if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {});
 }
 
 function openProjectFieldCowork(field = '', node = null){
@@ -15290,9 +15290,10 @@ async function openCalendarPanelWithPacket(node = calendarTab){
 }
 
 async function openCoworkSessionWithPacket(node = coworkNotebook){
-  const preflight = await ensureHearthClickPacket({node, packetName:'cowork_packet', action:'cowork:open'});
-  if(!preflight.ok) return;
   openCoworkSession();
+  void ensureHearthClickPacket({node, packetName:'cowork_packet', action:'cowork:open', allowBlockedForInspection:true}).then((preflight) => {
+    if(preflight.ok) renderHearthPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {});
 }
 
 async function openTeachValSessionWithPacket(node = teachPen){

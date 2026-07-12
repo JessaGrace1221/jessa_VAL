@@ -1474,14 +1474,14 @@ button,a{font:inherit}
 }
 .desk-workspace.home-cowork-mode{
   position:fixed;
-  z-index:1200;
+  z-index:1800;
   inset:50% auto auto 50%;
   bottom:auto;
   width:min(520px,calc(100vw - 36px));
   transform:translate(-50%,-50%) scale(.985);
 }
 .hearth-shell .desk-workspace.home-cowork-mode[aria-hidden="false"]{
-  z-index:1200;
+  z-index:1800;
 }
 .hearth-shell[data-distance="judgment"] .desk-workspace.home-cowork-mode{
   transform:translate(-50%,-50%) scale(1);
