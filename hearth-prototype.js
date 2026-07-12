@@ -1005,6 +1005,64 @@ const PROJECT_MANAGER_HEADER_COLORS = [
   {name:'Pistachio',hex:'#bad8c7',family:'green'}
 ];
 const PROJECT_ONBOARDING_FIRST_QUESTION = 'What should this project be called, and what outcome should it create?';
+const PROJECT_INTERVIEW_STAGE_CONTRACTS = {
+  first_question: {
+    question: PROJECT_ONBOARDING_FIRST_QUESTION,
+    detail: 'Feeds Identity, What this is, and Working narrative.',
+    placeholder: 'Project name: ... Outcome: ...',
+    missingField: 'identity_and_outcome',
+    targetPacketField: 'project_identity_packet.canonical_name + project_identity_packet.desired_outcome',
+    pageBoxes: ['Identity', 'What this is', 'Working narrative']
+  },
+  owner_monitoring: {
+    question: 'Who owns this project, what is the next move, and what should VAL monitor?',
+    detail: 'Feeds People involved, Next move, and Monitoring after launch.',
+    placeholder: 'Owner: ... Next move: ... VAL should monitor...',
+    missingField: 'owner_next_move_monitoring',
+    targetPacketField: 'project_owner_packet + project_next_action_packet.next_action + project_sop_packet.monitoring_rules',
+    pageBoxes: ['People involved', 'Next move', 'Monitoring after launch']
+  },
+  workstreams: {
+    question: 'What are the main workstreams VAL should track for this project?',
+    detail: 'Feeds Workstreams.',
+    placeholder: 'Workstreams: CRM setup, payment processing, contact forms...',
+    missingField: 'workstreams',
+    targetPacketField: 'project_sop_packet.default_workstreams',
+    pageBoxes: ['Workstreams']
+  },
+  milestones: {
+    question: 'What milestones prove this project is moving?',
+    detail: 'Feeds Milestones and Current phase.',
+    placeholder: 'Milestones: CRM configured, payment flow tested, contact forms live...',
+    missingField: 'milestones',
+    targetPacketField: 'project_sop_packet.standard_milestones + project_sop_packet.current_phase',
+    pageBoxes: ['Milestones', 'Current phase']
+  },
+  relationship_nurture: {
+    question: 'How should VAL help protect and grow the relationships connected to this project?',
+    detail: 'Feeds Relationship nurture.',
+    placeholder: 'Cadence: ... Protect trust by... Avoid...',
+    missingField: 'relationship_nurture',
+    targetPacketField: 'project_sop_packet.relationship_nurture_rules',
+    pageBoxes: ['Relationship nurture']
+  },
+  prepared_work: {
+    question: 'What should VAL prepare, organize, or ask about next for this project?',
+    detail: 'Feeds Prepared work and What VAL needs next.',
+    placeholder: 'VAL should prepare... Ask me for... Use these documents...',
+    missingField: 'prepared_work',
+    targetPacketField: 'project_prepared_work_packets + project_interview_packet.current_question',
+    pageBoxes: ['Prepared work', 'What VAL needs next']
+  },
+  complete: {
+    question: 'What should VAL refine next on this Project Manager page?',
+    detail: 'Feeds the specific card you choose.',
+    placeholder: 'Refine the next move, workstreams, milestones, risks, documents, or relationship nurture...',
+    missingField: '',
+    targetPacketField: 'project_manager_packet',
+    pageBoxes: ['Project Manager page']
+  }
+};
 
 let relationshipIndexSearch = '';
 let relationshipStateFilter = 'all';
@@ -3193,7 +3251,8 @@ function projectSopPacket(project = {}){
   const details = normalizedProjectSourceDetails(project);
   const selected = project.sopId || details.sopId || project.sop_id || '';
   const needsOnboarding = projectNeedsOnboarding(project);
-  const inferred = !selected && !needsOnboarding && /frisson|partner|onboarding/i.test([project.name, project.summary, project.reality, details.rawContext].join(' ')) ? 'frisson_partner_onboarding' : selected;
+  const hasInterviewPacket = Boolean(projectOnboardingData(project).firstAnswer || projectOnboardingData(project).ownerMonitoringAnswer || project.projectInterviewNotes || project.ownerMonitoringNotes);
+  const inferred = !selected && !needsOnboarding && !hasInterviewPacket && /frisson|partner|onboarding/i.test([project.name, project.summary, project.reality, details.rawContext].join(' ')) ? 'frisson_partner_onboarding' : selected;
   const sop = projectSopLibrary[inferred] || null;
   if(needsOnboarding && !sop){
     return {
@@ -3218,11 +3277,11 @@ function projectSopPacket(project = {}){
       current_phase:'Project interview',
       when_to_use:'VAL should interview the user and determine whether an existing SOP fits.',
       default_phases:['Interview','Shape','Plan','Execute','Monitor'],
-      default_workstreams:['Outcome','People','Next move'],
-      standard_milestones:['Project manager packet complete'],
+      default_workstreams:Array.isArray(project.workstreams) && project.workstreams.length ? project.workstreams : ['Outcome','People','Next move'],
+      standard_milestones:Array.isArray(project.milestones) && project.milestones.length ? project.milestones : ['Project manager packet complete'],
       approval_points:['Before external action'],
-      monitoring_rules:['Ask what VAL should watch after launch'],
-      relationship_nurture_rules:['Ask which relationships this project should protect'],
+      monitoring_rules:Array.isArray(project.monitoringRules) && project.monitoringRules.length ? project.monitoringRules : ['Ask what VAL should watch after launch'],
+      relationship_nurture_rules:Array.isArray(project.relationshipNurtureRules) && project.relationshipNurtureRules.length ? project.relationshipNurtureRules : ['Ask which relationships this project should protect'],
       risk_patterns:['Project stays too vague to manage'],
       known_deviations:['SOP fit still needs user confirmation']
     };
@@ -3267,7 +3326,7 @@ function projectNeedsOnboarding(project = {}){
   const onboarding = metadata.projectOnboarding || metadata.project_onboarding || {};
   const createdFrom = project.createdFrom || metadata.createdFrom || metadata.created_from || '';
   const sourceText = [project.sourceReceipts, project.signal, details.rawContext].filter(Boolean).join(' ');
-  if(['answered_first_question','owner_monitoring_answered','lanes_answered','in_progress','complete'].includes(String(onboarding.status || '').toLowerCase())) return false;
+  if(['answered_first_question','owner_monitoring_answered','workstreams_answered','lanes_answered','milestones_answered','relationship_nurture_answered','prepared_work_answered','in_progress','complete'].includes(String(onboarding.status || '').toLowerCase())) return false;
   return Boolean(
     project.needsProjectOnboarding ||
     metadata.needsProjectOnboarding ||
@@ -3288,20 +3347,23 @@ function projectOnboardingData(project = {}){
 function projectInterviewStage(project = {}){
   const onboarding = projectOnboardingData(project);
   const status = String(onboarding.status || '').toLowerCase();
-  if(status === 'lanes_answered') return 'prepared_work';
-  if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'lanes';
-  if(status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer)) return 'lanes';
+  if(status === 'prepared_work_answered' || onboarding.preparedWorkAnswer) return 'complete';
+  if(status === 'relationship_nurture_answered' || onboarding.relationshipNurtureAnswer || (Array.isArray(project.relationshipNurtureRules) && project.relationshipNurtureRules.length)) return 'prepared_work';
+  if(status === 'milestones_answered' || onboarding.milestonesAnswer || (Array.isArray(project.milestones) && project.milestones.length)) return 'relationship_nurture';
+  if(status === 'workstreams_answered' || status === 'lanes_answered' || onboarding.workstreamsAnswer || onboarding.lanesAnswer || (Array.isArray(project.workstreams) && project.workstreams.length)) return 'milestones';
+  if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'workstreams';
+  if(status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer)) return 'workstreams';
   if(status === 'answered_first_question' || onboarding.firstAnswer) return 'owner_monitoring';
   if(projectNeedsOnboarding(project)) return 'first_question';
   return 'owner_monitoring';
 }
 
+function projectInterviewStageContract(stage = 'first_question'){
+  return PROJECT_INTERVIEW_STAGE_CONTRACTS[stage] || PROJECT_INTERVIEW_STAGE_CONTRACTS.complete;
+}
+
 function projectInterviewNextQuestion(project = activeProjectProfile){
-  const stage = projectInterviewStage(project || {});
-  if(stage === 'first_question') return PROJECT_ONBOARDING_FIRST_QUESTION;
-  if(stage === 'owner_monitoring') return 'Who owns this project, and what should VAL monitor next?';
-  if(stage === 'lanes') return 'What are the main lanes of work or milestones VAL should track for this project?';
-  return 'What should VAL prepare, organize, or ask about next for this project?';
+  return projectInterviewStageContract(projectInterviewStage(project || {})).question;
 }
 
 function projectPersonName(value = ''){
@@ -3584,6 +3646,8 @@ function projectManagerPacket(project = {}){
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks : [];
   const prepared = Array.isArray(project.preparedWork) ? project.preparedWork : [];
   const reviewUpdates = Array.isArray(project.reviewUpdates) ? project.reviewUpdates : [];
+  const interviewStage = projectInterviewStage(project);
+  const interviewContract = projectInterviewStageContract(interviewStage);
   const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, needsOnboarding ? 'No project risk has been defined yet.' : 'No active blocker has been proven yet.');
   const owner = projectCleanText(ownerAssignment.name, 'VAL is still matching the responsible owner.');
   const nextAction = projectCleanText(project.nextMove || project.recommendedAction, needsOnboarding ? 'Answer the project onboarding question.' : 'Decide the next narrow move.');
@@ -3648,16 +3712,12 @@ function projectManagerPacket(project = {}){
     project_interview_packet: {
       project_id: admission.source_id,
       project_manager_id: 'pm_' + (admission.source_id || String(project.name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')),
-      current_question: needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : 'What outcome should this project create, who owns it, and what should VAL monitor?',
-      question_purpose: 'Complete the Project Manager Packet without making the user inspect raw context.',
-      target_packet_field: 'project_identity_packet.desired_outcome',
-      missing_fields: [
-        needsOnboarding ? 'onboarding_answer' : '',
-        !project.desiredOutcome && !project.outcome ? 'desired_outcome' : '',
-        !owner || /still matching/i.test(owner) ? 'owner' : '',
-        !relationships.length ? 'people_involved' : ''
-      ].filter(Boolean),
-      ready_to_build_project_manager_packet: !needsOnboarding && Boolean(project.name && (project.summary || project.reality) && relationships.length)
+      current_question: interviewContract.question,
+      question_purpose: 'Complete the named Project Manager page boxes without making the user inspect raw context.',
+      target_packet_field: interviewContract.targetPacketField,
+      target_page_boxes: interviewContract.pageBoxes,
+      missing_fields: interviewContract.missingField ? [interviewContract.missingField] : [],
+      ready_to_build_project_manager_packet: interviewStage === 'complete' || Boolean(project.name && (project.summary || project.reality) && relationships.length && (Array.isArray(project.workstreams) && project.workstreams.length))
     },
     project_sop_packet: sop,
     source_receipts: admission.source_receipts,
@@ -4042,7 +4102,7 @@ function renderProjectManagerProfile(project = {}){
     detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
     '<section class="project-manager-story" aria-label="Project story">',
       '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(project.livingNarrative || project.reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : (relationships.length ? 'Name the outcome, the owner, and the first concrete move so VAL can manage this without scattering the context.' : 'Attach the right people first, then name the first concrete outcome.')) + '</p>' + projectCoworkChip() + '</div>',
+      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p>' + projectCoworkChip() + '</div>',
     '</section>'
   ].join('');
 }
@@ -4065,8 +4125,8 @@ function renderProjectManagerEmptyState(){
 
 function projectCoworkSpec(field = ''){
   const projectName = activeProjectProfile?.name || 'this project';
-  const interviewQuestion = projectInterviewNextQuestion(activeProjectProfile);
   const interviewStage = projectInterviewStage(activeProjectProfile || {});
+  const interviewContract = projectInterviewStageContract(interviewStage);
   const specs = {
     project_overview: {
       title: 'Co-Work on this project',
@@ -4142,17 +4202,9 @@ function projectCoworkSpec(field = ''){
     },
     project_interview: {
       title: 'Interview the project manager',
-      question: interviewQuestion,
-      detail: interviewStage === 'first_question'
-        ? 'Start with the project name and the outcome. VAL will keep the rest of the manager packet blank until the project is shaped.'
-        : (interviewStage === 'owner_monitoring'
-          ? 'Name the owner, the immediate next step, and the signals VAL should watch.'
-          : 'Add the next missing project-manager layer without repeating what VAL already knows.'),
-      placeholder: interviewStage === 'first_question'
-        ? 'Project name: ... Outcome: ...'
-        : (interviewStage === 'owner_monitoring'
-          ? 'Owner: ... Next step: ... VAL should monitor...'
-          : 'Workstreams or milestones: ...')
+      question: interviewContract.question,
+      detail: interviewContract.detail,
+      placeholder: interviewContract.placeholder
     },
     workstreams: {
       title: 'Define workstreams',
@@ -4295,7 +4347,17 @@ function projectInterviewLooksLikeOwnerMonitoringAnswer(text = ''){
 function normalizeProjectInterviewCarryover(project = {}){
   const onboarding = projectOnboardingData(project);
   const status = String(onboarding.status || '').toLowerCase();
-  const answer = projectCleanText(onboarding.ownerMonitoringAnswer || (status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer) ? onboarding.firstAnswer : ''));
+  const ownerMonitoringCandidate = [
+    onboarding.ownerMonitoringAnswer,
+    project.ownerMonitoringNotes,
+    projectMetadataObject(project).ownerMonitoringNotes,
+    project.whatValNowKnows,
+    projectMetadataObject(project).whatValNowKnows,
+    project.reality,
+    project.summary,
+    status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer) ? onboarding.firstAnswer : ''
+  ].find((value) => projectInterviewLooksLikeOwnerMonitoringAnswer(value));
+  const answer = projectCleanText(ownerMonitoringCandidate);
   if(!answer) return project;
   const metadata = projectMetadataObject(project);
   const owner = project.owner || metadata.owner || inferProjectInterviewOwner(answer);
@@ -4425,16 +4487,56 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
           ownerMonitoringAnsweredAt:new Date().toISOString()
         }
       };
-    }else if(stage === 'lanes'){
+    }else if(stage === 'workstreams'){
       activeProjectProfile.workstreams = projectListFromValue(rewritten);
       activeProjectProfile.metadataJson = {
         ...activeProjectProfile.metadataJson,
         workstreams:activeProjectProfile.workstreams,
         projectOnboarding:{
           ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'lanes_answered',
-          lanesAnswer:rewritten,
-          lanesAnsweredAt:new Date().toISOString()
+          status:'workstreams_answered',
+          workstreamsAnswer:rewritten,
+          workstreamsAnsweredAt:new Date().toISOString()
+        }
+      };
+    }else if(stage === 'milestones'){
+      activeProjectProfile.milestones = projectListFromValue(rewritten);
+      activeProjectProfile.projectPhase = activeProjectProfile.projectPhase || 'Milestones defined';
+      activeProjectProfile.metadataJson = {
+        ...activeProjectProfile.metadataJson,
+        milestones:activeProjectProfile.milestones,
+        projectPhase:activeProjectProfile.projectPhase,
+        projectOnboarding:{
+          ...activeProjectProfile.metadataJson.projectOnboarding,
+          status:'milestones_answered',
+          milestonesAnswer:rewritten,
+          milestonesAnsweredAt:new Date().toISOString()
+        }
+      };
+    }else if(stage === 'relationship_nurture'){
+      activeProjectProfile.relationshipNurtureRules = projectListFromValue(rewritten);
+      activeProjectProfile.metadataJson = {
+        ...activeProjectProfile.metadataJson,
+        relationshipNurtureRules:activeProjectProfile.relationshipNurtureRules,
+        projectOnboarding:{
+          ...activeProjectProfile.metadataJson.projectOnboarding,
+          status:'relationship_nurture_answered',
+          relationshipNurtureAnswer:rewritten,
+          relationshipNurtureAnsweredAt:new Date().toISOString()
+        }
+      };
+    }else if(stage === 'prepared_work'){
+      activeProjectProfile.preparedWork = (Array.isArray(activeProjectProfile.preparedWork) ? activeProjectProfile.preparedWork : []).concat({title:rewritten, summary:rewritten});
+      activeProjectProfile.nextMove = activeProjectProfile.nextMove || rewritten;
+      activeProjectProfile.metadataJson = {
+        ...activeProjectProfile.metadataJson,
+        preparedWork:activeProjectProfile.preparedWork,
+        nextMove:activeProjectProfile.nextMove,
+        projectOnboarding:{
+          ...activeProjectProfile.metadataJson.projectOnboarding,
+          status:'prepared_work_answered',
+          preparedWorkAnswer:rewritten,
+          preparedWorkAnsweredAt:new Date().toISOString()
         }
       };
     }
@@ -4471,11 +4573,15 @@ async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
     desiredOutcome:activeProjectProfile.desiredOutcome || activeProjectProfile.outcome || '',
     nextMove:activeProjectProfile.nextMove || '',
     nextStepOwner:projectPersonName(activeProjectProfile.nextStepOwner || activeProjectProfile.owner || ''),
+    projectPhase:activeProjectProfile.projectPhase || '',
     projectInterviewNotes:activeProjectProfile.projectInterviewNotes || '',
     whatValNowKnows:activeProjectProfile.whatValNowKnows || '',
     ownerMonitoringNotes:activeProjectProfile.ownerMonitoringNotes || '',
     monitoringRules:Array.isArray(activeProjectProfile.monitoringRules) ? activeProjectProfile.monitoringRules.join('\n') : (activeProjectProfile.monitoringRules || ''),
     workstreams:Array.isArray(activeProjectProfile.workstreams) ? activeProjectProfile.workstreams.join('\n') : (activeProjectProfile.workstreams || ''),
+    milestones:Array.isArray(activeProjectProfile.milestones) ? activeProjectProfile.milestones.join('\n') : (activeProjectProfile.milestones || ''),
+    relationshipNurtureRules:Array.isArray(activeProjectProfile.relationshipNurtureRules) ? activeProjectProfile.relationshipNurtureRules.join('\n') : (activeProjectProfile.relationshipNurtureRules || ''),
+    preparedWork:Array.isArray(activeProjectProfile.preparedWork) ? activeProjectProfile.preparedWork.map((item) => item.title || item.summary || item).join('\n') : (activeProjectProfile.preparedWork || ''),
     needsProjectOnboarding:String(activeProjectProfile.needsProjectOnboarding === true),
     projectOnboardingStatus:projectMetadataObject(activeProjectProfile).projectOnboarding?.status || '',
     projectOnboardingFirstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
@@ -4528,8 +4634,17 @@ function projectCoworkSavedMessage(rewritten = '', field = ''){
   if(status === 'owner_monitoring_answered'){
     return 'Saved the owner, next step, and monitoring context. I updated this Project Manager so it knows what to watch next.\n\n' + nextQuestion;
   }
-  if(status === 'lanes_answered'){
-    return 'Saved the work lanes for this Project Manager.\n\n' + nextQuestion;
+  if(status === 'workstreams_answered' || status === 'lanes_answered'){
+    return 'Saved the workstreams for this Project Manager.\n\n' + nextQuestion;
+  }
+  if(status === 'milestones_answered'){
+    return 'Saved the milestones for this Project Manager.\n\n' + nextQuestion;
+  }
+  if(status === 'relationship_nurture_answered'){
+    return 'Saved the relationship nurture rules for this Project Manager.\n\n' + nextQuestion;
+  }
+  if(status === 'prepared_work_answered'){
+    return 'Saved the prepared-work direction for this Project Manager.\n\n' + nextQuestion;
   }
   return 'Saved that into the project interview.\n\n' + nextQuestion;
 }
