@@ -142,3 +142,46 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
   const reference = await service.referenceFor({project: 'Atlas'});
   assert.match(reference.referenceRule, /must use linked documents/);
 });
+
+test('document index reads durable email message attachments from Postgres raw_json', async () => {
+  const service = createValDocumentsService({
+    hasPg: () => true,
+    tenantId: () => 'tenant_1',
+    userId: () => 'user_1',
+    listDrafts: async () => [],
+    listTranscriptRuns: async () => [],
+    listMemoryItems: async () => [],
+    listProjectProfiles: async () => [],
+    dbQuery: async (sql, params) => {
+      assert.match(sql, /from email_messages/);
+      assert.deepEqual(params, ['tenant_1', 'user_1']);
+      return {rows: [{
+        id: 'em_mou',
+        provider: 'gmail',
+        message_id: 'gmail_mou_1',
+        thread_id: 'thread_mou',
+        sender_json: {name: 'Aric Soyring', email: 'aric@example.com'},
+        subject: 'MOU for Frisson Consulting / Forever Freedom',
+        body_preview: 'Everything appears to be accurate in this document attached.',
+        has_attachments: true,
+        web_link: 'https://mail.google.com/mail/u/0/#inbox/thread_mou',
+        received_at: '2026-07-12T15:14:14.000Z',
+        raw_json: {
+          attachments: [{
+            id: 'att_mou',
+            filename: 'MOU ForeverFreedom Frisson.pdf',
+            mimeType: 'application/pdf',
+            size: 67000
+          }]
+        }
+      }]};
+    }
+  });
+
+  const result = await service.list({q: 'MOU', limit: 20});
+  assert.equal(result.ok, true);
+  assert.equal(result.count, 1);
+  assert.equal(result.documents[0].title, 'MOU ForeverFreedom Frisson.pdf');
+  assert.equal(result.documents[0].relationship, 'Aric Soyring');
+  assert.equal(result.documents[0].sourceType, 'email_attachment');
+});

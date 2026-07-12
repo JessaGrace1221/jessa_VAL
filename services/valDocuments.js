@@ -203,8 +203,21 @@ function projectProfileDocuments(projectProfiles=[]){
 function emailAttachmentDocuments(messages=[]){
   return safeArray(messages).flatMap(message=>{
     const payload=jsonValue(message.payloadJson||message.payload_json||message.payload,{});
-    const attachments=safeArray(message.attachments||message.attachmentsJson||message.attachments_json||payload.attachments);
-    return attachments.map((attachment,index)=>documentRecord({
+    const raw=jsonValue(message.rawJson||message.raw_json||message.raw,{});
+    const rawPayload=jsonValue(raw.payloadJson||raw.payload_json||raw.payload,{});
+    const attachments=safeArray(message.attachments)
+      .concat(safeArray(message.attachmentsJson||message.attachments_json))
+      .concat(safeArray(payload.attachments))
+      .concat(safeArray(raw.attachments))
+      .concat(safeArray(raw.attachmentsJson||raw.attachments_json))
+      .concat(safeArray(rawPayload.attachments));
+    const seen=new Set();
+    return attachments.filter(attachment=>{
+      const key=firstText(attachment.id,attachment.attachmentId,attachment.filename,attachment.name,attachment.title);
+      if(!key||seen.has(key))return false;
+      seen.add(key);
+      return true;
+    }).map((attachment,index)=>documentRecord({
       id:`email-attachment:${message.messageId||message.message_id||message.id}:${attachment.id||attachment.filename||index}`,
       sourceId:message.messageId||message.message_id||message.id,
       title:attachment.filename||attachment.name||'Email attachment',
@@ -212,7 +225,7 @@ function emailAttachmentDocuments(messages=[]){
       status:'needs_review',
       source:'Email attachment',
       sourceType:'email_attachment',
-      relationship:firstText(message.fromName,message.from?.name,message.fromEmail,message.from?.email),
+      relationship:firstText(message.fromName,message.from?.name,message.senderJson?.name,message.sender_json?.name,message.fromEmail,message.from?.email,message.senderJson?.email,message.sender_json?.email),
       sourceUrl:attachment.url||attachment.webUrl||'',
       body:firstText(attachment.text,attachment.summary,message.subject),
       createdAt:message.receivedAt||message.createdAt||message.created_at,
@@ -361,9 +374,36 @@ function createValDocumentsService({
     }
     return store().sourceProcessingRecords.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
   }
+  async function loadEmailMessages(){
+    if(hasPg()&&typeof dbQuery==='function'){
+      const result=await dbQuery(
+        `select id, provider, message_id, thread_id, sender_json, subject, body_preview, snippet, has_attachments, web_link, received_at, sent_at, raw_json, created_at, updated_at
+           from email_messages
+          where tenant_id=$1 and user_id=$2 and has_attachments=true
+          order by coalesce(received_at,sent_at,created_at) desc
+          limit 200`,
+        [tenantId(),userId()]
+      ).catch(()=>({rows:[]}));
+      return (result.rows||[]).map(row=>({
+        id:row.id,
+        provider:row.provider,
+        messageId:row.message_id,
+        threadId:row.thread_id,
+        senderJson:jsonValue(row.sender_json,{}),
+        subject:row.subject||'',
+        bodyPreview:row.body_preview||row.snippet||'',
+        hasAttachments:!!row.has_attachments,
+        webLink:row.web_link||'',
+        receivedAt:row.received_at?.toISOString?.()||row.received_at||'',
+        sentAt:row.sent_at?.toISOString?.()||row.sent_at||'',
+        rawJson:jsonValue(row.raw_json,{})
+      }));
+    }
+    return store().emailMessages.filter(r=>(!r.tenantId||r.tenantId===tenantId())&&(!r.userId||r.userId===userId()));
+  }
   async function list({q='',relationship='',project='',limit=120,includeGoogle=false}={}){
     const unknowns=[];
-    const [drafts,runs,memory,projects,sourceProcessingRecords] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords()]);
+    const [drafts,runs,memory,projects,sourceProcessingRecords,emailMessages] = await Promise.all([loadDrafts(),loadRuns(),loadMemory(),loadProjects(),loadSourceProcessingRecords(),loadEmailMessages()]);
     let google=[];
     if(includeGoogle&&typeof searchGoogleDocs==='function'&&(q||relationship||project)){
       try{google=await searchGoogleDocs(q||relationship||project,8);}catch(e){unknowns.push({source:'google_docs',reason:e.message});}
@@ -375,7 +415,7 @@ function createValDocumentsService({
         .concat(preparedArtifactDocuments(runs))
         .concat(memoryDocuments(memory))
         .concat(projectProfileDocuments(projects))
-        .concat(emailAttachmentDocuments(store().emailMessages))
+        .concat(emailAttachmentDocuments(emailMessages))
         .concat(sourceProcessingRecordDocuments(sourceProcessingRecords))
         .concat(googleDocDocuments(google))
     );

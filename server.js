@@ -8105,10 +8105,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
     }
     const recentQuery=`in:inbox newer_than:${activeDays}d`;
     const unreadQuery=`in:inbox is:unread newer_than:${activeDays}d`;
-    const [recentGmail,unreadGmail,sentGmail,outlook]=await Promise.all([
+    const documentQuery=`in:anywhere has:attachment newer_than:${activeDays}d`;
+    const [recentGmail,unreadGmail,sentGmail,documentGmail,outlook]=await Promise.all([
       fetchGmailMessages({query:recentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:recentQuery})),
       fetchGmailMessages({query:unreadQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:unreadQuery})),
       fetchGmailMessages({query:`in:sent newer_than:${activeDays}d`,maxResults:Math.max(limit,50),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth/i.test(e.message),error:e.message,provider:'gmail'})),
+      fetchGmailMessages({query:documentQuery,maxResults:Math.max(limit,75),includeBody:true}).catch(e=>({emails:[],needsAuth:/google auth|token|permission|scope|401/i.test(e.message),error:e.message,provider:'gmail',query:documentQuery})),
       fetchUnifiedOutlookEmails(limit).catch(e=>({emails:[],needsAuth:true,error:e.message,provider:'outlook'}))
     ]);
     const gmailMap=new Map();
@@ -8126,6 +8128,12 @@ async function emailIntelligencePayload(req,{force=false}={}){
       if(draft)email.preparedDraft=draft;
       return draft;
     }));
+    const durableEmailMap=new Map();
+    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+      const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
+      if(key&&!durableEmailMap.has(key))durableEmailMap.set(key,email);
+    });
+    const durableEmailResults=await Promise.all(Array.from(durableEmailMap.values()).map(email=>valConversationIdentity?.upsertEmailMessage?.(email).catch(error=>({saved:false,error:error.message})))).catch(()=>[]);
     const evidenceResults=await saveEmailEvidenceBatch(emails);
     const relationshipIntake=evidenceResults.reduce((acc,result)=>{
       const intake=result?.relationshipIntake||{};
@@ -8135,14 +8143,19 @@ async function emailIntelligencePayload(req,{force=false}={}){
       return acc;
     },{relationshipProfiles:0,personPackets:0,personPacketIds:[]});
     relationshipIntake.personPacketIds=[...new Set(relationshipIntake.personPacketIds)].slice(0,80);
-    const projectManagerIntake=await processEmailDocumentSourceProcessing(emails,{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,errors:[error.message],noExternalAction:true}));
+    const sourceProcessingEmailMap=new Map();
+    [...emails,...(documentGmail.emails||[])].forEach(email=>{
+      const key=[email.provider||'email',email.messageId||email.id||email.threadId||''].join(':');
+      if(key&&!sourceProcessingEmailMap.has(key))sourceProcessingEmailMap.set(key,email);
+    });
+    const projectManagerIntake=await processEmailDocumentSourceProcessing(Array.from(sourceProcessingEmailMap.values()),{origin:'email_intelligence'}).catch(error=>({ok:false,origin:'email_intelligence',processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[error.message],noExternalAction:true}));
     await Promise.all(emails.slice(0,20).map(email=>logEmailAction(req.valUser.id,{provider:email.provider,messageId:email.messageId,threadId:email.threadId,actionType:'classified',actionStatus:'suggested',actedBy:'val',ruleId:email.matchedRuleId,details:{classification:email.classification,confidence:email.confidence,reason:email.reason}}).catch(()=>{})));
     const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
     const draftsPrepared=preparedDraftResults.filter(Boolean).length;
     const waitingOnResponse=emails.filter(e=>e.classification==='waiting_on_response').length;
     const forwardingSuggestions=emails.filter(e=>e.classification==='forward_to_team').length;
     const ignoredLowPriority=emails.filter(e=>['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)).length;
-    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error].filter(Boolean);
+    const gmailErrors=[recentGmail.error,unreadGmail.error,sentGmail.error,documentGmail.error].filter(Boolean);
     if(gmailErrors.length)gmailSyncStatus.lastError=gmailErrors.join('; ');
     else{gmailSyncStatus.lastSuccessfulSyncAt=new Date().toISOString();gmailSyncStatus.lastFetchedCount=(recentGmail.emails||[]).length+(unreadGmail.emails||[]).length;gmailSyncStatus.lastAnalyzedCount=emails.length;gmailSyncStatus.lastQuery=recentQuery;}
     return {
@@ -8154,7 +8167,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
       waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),
       draftSuggestions:emails.filter(e=>e.preparedDraft||e.classification==='needs_reply'||e.classification==='appointment_recap_needed'),
       relationshipContext:emails.filter(e=>!['ignored','low_priority','solicitation','spam_like','calendar_notice'].includes(e.classification)&&(e.classification==='relationship_context'||/\b(intro|introduction|proposal|meeting|follow up|partnership|client|referral)\b/i.test([e.subject,e.bodyPreview,e.snippet].join(' ')))).slice(0,20),
-      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
+      providers:{gmail:{status:(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth)?'reconnect_required':'connected',needsAuth:!!(recentGmail.needsAuth||unreadGmail.needsAuth||sentGmail.needsAuth||documentGmail.needsAuth),missingScopes:(gmailStatus.missingScopes||[]).concat(composeStatus.missingScopes||[]),hasComposeScope:composeStatus.connected,error:gmailErrors.join('; '),recentInboxCount:(recentGmail.emails||[]).length,unreadCount:(unreadGmail.emails||[]).length,sentCount:(sentGmail.emails||[]).length,documentAttachmentCount:(documentGmail.emails||[]).length,durableEmailMessages:durableEmailResults.filter(result=>result?.saved).length,fetchedCount:gmailSyncStatus.lastFetchedCount,analyzedCount:emails.length,evidenceCaptured:evidenceResults.filter(Boolean).length,relationshipProfilesTouched:relationshipIntake.relationshipProfiles,personPacketsTouched:relationshipIntake.personPackets,projectManagerSuggestions:projectManagerIntake.suggestions||0,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastQuery:recentQuery,documentQuery,forceRefresh:!!force},outlook:{needsAuth:!!outlook.needsAuth,error:outlook.error||'',status:outlook.needsAuth?'not_connected':'connected'}},
       errors:[...gmailErrors,outlook.error,composeStatus.connected?'':'Gmail compose scope missing. Drafts will be saved internally until Google is reconnected.'].filter(Boolean),
       emails,
       relationshipIntake,
@@ -9842,7 +9855,8 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
     .filter(email=>!emailWasSentByOwner(email))
     .map(email=>({email,documents:sourceProcessingDocumentsFromEmail(email)}))
     .filter(item=>item.documents.length>0);
-  if(!candidates.length)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,errors:[],noExternalAction:true};
+  const documentCandidates=candidates.reduce((sum,item)=>sum+item.documents.length,0);
+  if(!candidates.length)return {ok:true,origin,processed:0,eligible:0,suggestions:0,skipped:0,documentCandidates:0,errors:[],noExternalAction:true};
   const profiles=await listRelationshipProfiles({limit:260}).catch(()=>[]);
   const results=await mapWithConcurrency(candidates,3,async({email,documents})=>{
     const relationship=await sourceProcessingRelationshipFromEmail(email,profiles);
@@ -9881,6 +9895,7 @@ async function processEmailDocumentSourceProcessing(emails=[],{origin='email_int
     origin,
     processed:results.filter(result=>!result.skipped&&!result.error).length,
     eligible:candidates.length,
+    documentCandidates,
     suggestions:results.filter(result=>result.projectSuggestionId).length,
     existingProjects:results.filter(result=>result.existingProjectId).length,
     skipped:results.filter(result=>result.skipped).length,

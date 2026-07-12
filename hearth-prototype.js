@@ -5613,14 +5613,16 @@ function documentIntakeStatusLine(result = {}){
   const intake = result.sourceProcessing?.projectManagers || {};
   const providers = result.providers?.gmail || {};
   const eligible = Number(intake.eligible || result.summary?.projectManagerDocumentEmails || 0);
+  const documentCandidates = Number(intake.documentCandidates || 0);
   const records = Array.isArray(intake.records) ? intake.records.length : 0;
   const suggestions = Number(intake.suggestions || result.summary?.projectManagerSuggestions || 0);
   const skipped = Number(intake.skipped || 0);
   const errors = Array.isArray(intake.errors) ? intake.errors.filter(Boolean) : [];
   if(errors.length) return 'Gmail document scan finished with source-processing errors: ' + errors.slice(0, 2).join('; ');
   if(eligible || records || suggestions || skipped){
-    return 'Gmail document scan: ' + eligible + ' document email' + (eligible === 1 ? '' : 's') + ', ' + records + ' saved source record' + (records === 1 ? '' : 's') + ', ' + suggestions + ' Project Managers suggestion' + (suggestions === 1 ? '' : 's') + ', ' + skipped + ' source-only.';
+    return 'Gmail document scan: ' + eligible + ' document email' + (eligible === 1 ? '' : 's') + ', ' + documentCandidates + ' document attachment' + (documentCandidates === 1 ? '' : 's') + ', ' + records + ' saved source record' + (records === 1 ? '' : 's') + ', ' + suggestions + ' Project Managers suggestion' + (suggestions === 1 ? '' : 's') + ', ' + skipped + ' source-only.';
   }
+  if(providers.documentAttachmentCount) return 'Gmail scan saw ' + providers.documentAttachmentCount + ' attachment email' + (providers.documentAttachmentCount === 1 ? '' : 's') + ', but no document attachment entered source-processing.';
   if(providers.error) return 'Gmail scan ran, but Gmail reported: ' + providers.error;
   return 'Gmail scan ran. No document emails entered source-processing in this window.';
 }
