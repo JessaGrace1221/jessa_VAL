@@ -1,10 +1,10 @@
 # Codex Handoff: July 10 Live Truth Baseline
 
-Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, and MOU validation fixes
+Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, and source-only document preservation
 
 ## 2026-07-12 Live Continuation
 
-The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix, the shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, and the Aric/Frisson MOU validation fixes.
+The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix, the shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, the Aric/Frisson MOU validation fixes, and source-only document preservation for unmatched document senders.
 
 New implementation:
 
@@ -34,6 +34,7 @@ Behavior implemented:
 - `relationship-document-email` treats Google Drive/Docs links and Google Drive share notifications as document evidence, and can use a parsed Drive sharer instead of Google's no-reply sender when matching admitted relationships
 - `relationship-document-email` can admit senders through existing project owner metadata, so a project owner like Aric attached to Frisson can produce document/project processing even before Executive Inbox has a separate relationship match
 - the Documents drawer reads `source_processing_records` directly, so source-processed email attachments and Drive documents appear as reference-library rows before project approval
+- live document intake now persists source-only source-processing records for unmatched document senders instead of returning before record creation; these records can appear in Documents while still creating no Project Managers suggestion
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` explaining what VAL did from the email/document, and the same receipt travels to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from that shared receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -57,6 +58,7 @@ Live verification completed:
 - production root returns `200`
 - production `/api/config/status` returns `VAL Proxy OK`
 - production `/api/val/source-processing/records` returns `200` with an empty records array after cleanup
+- production `/api/val/documents?q=MOU&limit=3` returns `200` unauthenticated with an empty public-test result, expected until the authenticated Gmail flow reprocesses the Aric email
 - production `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with an empty array
 - production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, the source-processing surface registration fetch, `projectSuggestionReceiptLine`, and `whatValDidReceipt`
 - production `hearth-prototype.css` includes `.project-suggestion-receipt`
@@ -66,7 +68,8 @@ Live verification completed:
 
 Still future work:
 
-- browser-visible/authenticated re-run against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible receipt line, is still needed
+- browser-visible/authenticated re-run against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line, is still needed
+- if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
 - broader source types beyond relationship-sent email documents are still future work
 
 ## Absolute Baseline
@@ -77,9 +80,9 @@ Use this as the recovery baseline for all future work:
 
 - Production URL: `https://jessaval-production.up.railway.app`
 - Branch: `codex/stewardship-person-packets`
-- Baseline commit: `be66920`
-- Baseline commit message: `Recognize project owners in document email intake`
-- Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
+- Baseline commit: `13c8943`
+- Baseline commit message: `Preserve document evidence for unmatched senders`
+- Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
 - Railway environment: `production`
@@ -96,21 +99,22 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: be66920
-Latest live code promotion message: Recognize project owners in document email intake
+Latest live code promotion commit: 13c8943
+Latest live code promotion message: Preserve document evidence for unmatched senders
 ```
 
 Important distinction:
 
 ```text
 Production remains the behavioral truth.
-The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, and the Aric MOU validation fixes.
-Product-code branch changes through be66920 are deployed to Railway production deployment 53b59259-820a-4188-b463-9dfcbf4edbd7.
+The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, and source-only document preservation for unmatched senders.
+Product-code branch changes through 13c8943 are deployed to Railway production deployment 3b79543b-0717-4c78-8d1b-6b1fccea3ff6.
 ```
 
 Key pushed commits, in newest-first order:
 
 ```text
+13c8943 Preserve document evidence for unmatched senders
 be66920 Recognize project owners in document email intake
 8c058b2 Show source-processing documents in Documents drawer
 46fa1c6 Record Drive document evidence promotion
@@ -532,7 +536,7 @@ Result:
 
 ## Before Any Future Deployment
 
-Start from `be66920` or a descendant of it unless the user explicitly resets the baseline again.
+Start from `13c8943` or a descendant of it unless the user explicitly resets the baseline again.
 
 Before deploying, confirm:
 

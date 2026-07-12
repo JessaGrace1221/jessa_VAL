@@ -1,10 +1,10 @@
 # Current State: Jessa VAL Live Truth Baseline
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, and MOU validation fixes
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, and source-only document preservation
 
 ## 2026-07-12 Production Implementation State
 
-Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, the focused Co-Work open-timing and drawer-layering hotfix, the first shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, and the MOU validation fixes from the Aric/Frisson test.
+Production now includes the first source-processing / Project Managers slice from branch `codex/stewardship-person-packets`, the focused Co-Work open-timing and drawer-layering hotfix, the first shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, the MOU validation fixes from the Aric/Frisson test, and source-only document preservation for unmatched document senders.
 
 This is now deployed production truth.
 
@@ -26,6 +26,7 @@ Implemented live:
 - `relationship-document-email` now treats Google Drive/Docs links and Google Drive share-notification evidence as documents, while preserving the admitted-relationship gate
 - document intake can recognize an existing project owner, such as Aric attached to Frisson, as the admitted relationship even when Executive Inbox has not built a separate relationship match yet
 - Documents now reads source-processing document evidence directly, so relationship email attachments such as an MOU can appear in the Documents drawer before the suggested project is approved
+- live document intake now saves source-only document evidence before relationship admission becomes a hard gate; unmatched senders still do not create Project Managers suggestions, but their documents no longer silently disappear from Documents
 - source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` describing what VAL did from the email/document, and that same receipt is attached to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
 - Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from the shared source-processing receipt
 - backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
@@ -34,7 +35,8 @@ Implemented live:
 
 Remaining after this live promotion:
 
-- browser-visible/authenticated re-run against the Aric MOU Gmail attachment and any real Drive share/link case, including the Documents drawer row and visible `VAL handled:` receipt line
+- browser-visible/authenticated re-run against the Aric MOU Gmail attachment and any real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line
+- if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
 - broader source types beyond relationship-sent email documents
 
 ## Current Working State
@@ -46,10 +48,10 @@ Do not use older local state, queued changes, abandoned worktrees, or waiting de
 Live baseline:
 
 - Production URL: `https://jessaval-production.up.railway.app`
-- Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
+- Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
 - Branch: `codex/stewardship-person-packets`
-- Live baseline commit: `be66920`
-- Live baseline commit message: `Recognize project owners in document email intake`
+- Live baseline commit: `13c8943`
+- Live baseline commit message: `Preserve document evidence for unmatched senders`
 
 Anything not deployed in this commit is discarded unless the user explicitly approves bringing it forward.
 
@@ -57,21 +59,22 @@ The July 10 recovery baseline and July 11 handoff baseline are now historical co
 
 ## End-Of-Day Branch State
 
-The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, the shared source-processing receipt slice, Drive-share document evidence hardening, and the Aric MOU validation fixes.
+The current local/GitHub branch also contains the approved documentation stack created on 2026-07-11, the focused Co-Work bug fix, the Project Managers/source-processing slice, the shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, and source-only document preservation for unmatched senders.
 
 Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest live code promotion commit: be66920
-Latest live code promotion message: Recognize project owners in document email intake
+Latest live code promotion commit: 13c8943
+Latest live code promotion message: Preserve document evidence for unmatched senders
 ```
 
-These product-code branch changes are deployed to Railway production as deployment `53b59259-820a-4188-b463-9dfcbf4edbd7`.
+These product-code branch changes are deployed to Railway production as deployment `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`.
 
 Today’s pushed commits to preserve:
 
 ```text
+13c8943 Preserve document evidence for unmatched senders
 be66920 Recognize project owners in document email intake
 8c058b2 Show source-processing documents in Documents drawer
 46fa1c6 Record Drive document evidence promotion

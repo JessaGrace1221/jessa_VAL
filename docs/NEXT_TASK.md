@@ -1,6 +1,6 @@
 # Next Task: Morning Restart
 
-Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, and MOU validation fixes
+Updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, and source-only document preservation
 
 ## 2026-07-12 Progress Note
 
@@ -30,7 +30,8 @@ Aric MOU validation fixes:
 
 - Documents now reads source-processing records directly, so the MOU attachment can appear in the Documents drawer as source evidence.
 - Document email intake now recognizes existing project owners, so Aric attached to Frisson can count as the admitted relationship for source-processing even when Executive Inbox has not separately matched him.
-- The live app is now deployment `53b59259-820a-4188-b463-9dfcbf4edbd7` from commit `be66920 Recognize project owners in document email intake`.
+- Document email intake now saves source-only evidence for unmatched document senders instead of skipping before source-processing can create a record; this keeps Documents from silently losing real attachments while Project Managers remains stricter.
+- The live app is now deployment `3b79543b-0717-4c78-8d1b-6b1fccea3ff6` from commit `13c8943 Preserve document evidence for unmatched senders`.
 
 Implemented:
 
@@ -51,6 +52,7 @@ Implemented:
 - Google Drive/Docs links and Drive share notifications now count as document evidence for the same relationship-document source-processing path.
 - Existing project owners can qualify the sender for relationship-document intake when the person is attached through a project owner packet.
 - Documents drawer rows now include source-processing document evidence.
+- Unmatched document senders are persisted as source-only source-processing records and do not create Project Managers suggestions.
 - Shared "What VAL did" receipts now follow relationship-document source processing into source records, prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations.
 - Backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available.
 - The one no-action source-processing smoke-test record created during deployment validation was deleted from production.
@@ -70,10 +72,11 @@ git diff --check
 
 Verified live:
 
-- Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
+- Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
 - Production root returns `200`.
 - `/api/config/status` returns `VAL Proxy OK`.
 - `/api/val/source-processing/records` returns `200` with `records: []` after cleanup.
+- `/api/val/documents?q=MOU&limit=3` returns `200` unauthenticated with an empty public-test result, expected until the authenticated Gmail flow reprocesses the Aric email.
 - `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with `surfaceRegistrations: []`.
 - Live `hearth-prototype.js` contains `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, source-processing surface registration fetch, `projectSuggestionReceiptLine`, `whatValDidReceipt`, and `VAL handled:`.
 - Live `hearth-prototype.css` contains `.project-suggestion-receipt`.
@@ -108,15 +111,15 @@ Then verify the working branch is based on the current live baseline:
 
 ```text
 Production URL: https://jessaval-production.up.railway.app
-Live baseline commit: be66920
-Railway deployment: 53b59259-820a-4188-b463-9dfcbf4edbd7
+Live baseline commit: 13c8943
+Railway deployment: 3b79543b-0717-4c78-8d1b-6b1fccea3ff6
 Working branch: codex/stewardship-person-packets
-Latest live code promotion commit: be66920
+Latest live code promotion commit: 13c8943
 ```
 
 If production does not match the current live baseline, stop before changing code.
 
-If the branch is not at or after `be66920`, pull the branch before continuing.
+If the branch is not at or after `13c8943`, pull the branch before continuing.
 
 ## Current Next Step
 
@@ -126,7 +129,7 @@ Do not ask the old Co-Work V1 first question. The user approved the current sequ
 2. Continue the source-processing spine.
 3. The first source-processing receipt target, "What VAL did from this email/document," is implemented and live.
 4. Google Drive shared docs/links now count as document evidence in the same relationship-document path.
-5. Aric/Frisson MOU fixes are live: project-owner matching and Documents-from-source-processing.
+5. Aric/Frisson MOU fixes are live: project-owner matching, Documents-from-source-processing, and source-only preservation for unmatched document senders.
 6. Next: re-run browser-visible/authenticated validation against the Aric MOU email.
 7. Then broaden the source-processing spine to the next source type, likely transcripts/calendar events, while preserving the same no-action/action receipt pattern.
 

@@ -16,6 +16,7 @@ Status: documentation baseline for the next architecture pass.
 - live email intelligence and intelligence backfill now route admitted relationship document attachments into source-processing with Gmail/Outlook attachment metadata
 - Google Drive/Docs links and Google Drive share notifications now count as document evidence for admitted-relationship source-processing
 - source-processing document evidence now feeds the Documents drawer, and existing project owner metadata can admit document-email senders
+- unmatched document senders now persist source-only evidence for Documents instead of being skipped before source-processing records are created
 - remaining work is authenticated validation and broader source types
 
 ## Current Baseline
@@ -25,10 +26,10 @@ The current production deployment is the baseline for this map.
 - Production URL: `https://jessaval-production.up.railway.app`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
-- Railway deployment: `53b59259-820a-4188-b463-9dfcbf4edbd7`
+- Railway deployment: `3b79543b-0717-4c78-8d1b-6b1fccea3ff6`
 - Branch: `codex/stewardship-person-packets`
-- Commit: `be66920`
-- Commit message: `Recognize project owners in document email intake`
+- Commit: `13c8943`
+- Commit message: `Preserve document evidence for unmatched senders`
 
 This supersedes the July 10 recovery baseline for future work. July 10 remains useful historical recovery context, but the current live Railway deployment is now the operative truth.
 
