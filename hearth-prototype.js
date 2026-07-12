@@ -3068,8 +3068,16 @@ function updateProjectFileReceipt(){
 }
 
 function normalizedProjectSourceDetails(project = {}){
-  const looksLikeDetails = project.files || project.websiteSource || project.website || project.documents || project.documentNotes || project.relationships || project.people || project.rawContext || project.notes;
-  const details = looksLikeDetails ? project : (project.sourceDetails || project.sources || {});
+  const nestedDetails = project.sourceDetails || project.sources || {};
+  const details = {
+    ...nestedDetails,
+    files: Array.isArray(project.files) ? project.files : nestedDetails.files,
+    sopId: project.sopId || nestedDetails.sopId,
+    websiteSource: project.websiteSource || project.website || nestedDetails.websiteSource || nestedDetails.website,
+    documents: typeof project.documents === 'string' ? project.documents : (project.documentNotes || nestedDetails.documents || nestedDetails.documentNotes),
+    relationships: typeof project.relationships === 'string' ? project.relationships : (project.people || nestedDetails.relationships || nestedDetails.people),
+    rawContext: project.rawContext || project.notes || nestedDetails.rawContext || nestedDetails.notes
+  };
   return {
     files: Array.isArray(details.files) ? details.files : [],
     sopId: details.sopId || project.sopId || '',
@@ -3301,6 +3309,12 @@ function projectManagerHeaderColorByName(name = ''){
   return PROJECT_MANAGER_HEADER_COLORS.find((color) => color.name.toLowerCase() === clean) || null;
 }
 
+function projectManagerHeaderColorByHex(hex = ''){
+  const clean = String(hex || '').trim().toLowerCase();
+  if(!/^#[0-9a-f]{3,6}$/i.test(clean)) return null;
+  return PROJECT_MANAGER_HEADER_COLORS.find((color) => color.hex.toLowerCase() === clean) || null;
+}
+
 function projectManagerHeaderColorFor(value = ''){
   const key = String(value || 'project').toLowerCase().replace(/[^a-z0-9:_-]+/g, '_').slice(0, 180);
   const total = [...key].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
@@ -3356,13 +3370,15 @@ function projectManagerAssignment(project = {}){
   const stableValue = project.id || project.projectId || project.profileKey || project.name || metadata.projectId || metadata.projectName || 'project';
   const fallback = projectManagerHeaderColorFor(stableValue);
   const named = projectManagerHeaderColorByName(manager.name);
-  const name = projectCleanText(manager.name || named?.name || fallback.name, fallback.name);
-  const hex = /^#[0-9a-f]{3,6}$/i.test(manager.hex || '') ? manager.hex : (named?.hex || fallback.hex);
+  const hexNamed = projectManagerHeaderColorByHex(manager.hex);
+  const accepted = named || hexNamed || fallback;
+  const name = accepted.name || fallback.name;
+  const hex = accepted.hex || fallback.hex;
   return {
     name,
     hex,
-    family: manager.family || named?.family || fallback.family,
-    source: manager.name ? 'assigned_project_manager' : 'deterministic_project_manager'
+    family: accepted.family || fallback.family,
+    source: named || hexNamed ? 'assigned_project_manager' : 'deterministic_project_manager'
   };
 }
 
@@ -3950,7 +3966,7 @@ function renderProjectManagerProfile(project = {}){
       '<div>',
         '<div class="project-manager-identity-line">',
           '<p class="project-manager-eyebrow">Project Manager</p>',
-          '<span class="project-manager-assignee"><i aria-hidden="true"></i>Assigned to ' + escapeHtml(assignedProjectManager.name) + '</span>',
+          '<span class="project-manager-assignee"><i aria-hidden="true"></i>Project manager: ' + escapeHtml(assignedProjectManager.name) + '</span>',
         '</div>',
         '<h4>' + escapeHtml(identity.canonical_name) + '</h4>',
         '<p>' + escapeHtml(projectSummary) + '</p>',
@@ -5439,7 +5455,7 @@ async function decideProjectDocumentAssignment(documentId = '', action = '', nod
       updateProjectIndexSourceLabel();
       if(node) node.textContent = 'Creating project...';
       const project = await createProjectFromDocumentAssignment(item);
-      projectIndexSourceLabel = 'Project created from document and assigned to ' + projectManagerAssignment(project).name + '. No external action happened.';
+      projectIndexSourceLabel = 'Project created from document with Project Manager ' + projectManagerAssignment(project).name + '. No external action happened.';
     }else if(action === 'not_project'){
       persistDocumentProjectAssignment(item, {decision:'not_project', relationshipName:item.relationship || ''});
       projectIndexSourceLabel = 'Document marked as reference only, not a project.';

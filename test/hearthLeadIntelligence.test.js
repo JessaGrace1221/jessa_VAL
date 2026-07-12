@@ -183,6 +183,8 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /hearth_project_document_assignment/);
   assert.match(hearthJs, /PROJECT_MANAGER_HEADER_COLORS/);
   assert.match(hearthJs, /function projectManagerAssignment/);
+  assert.match(hearthJs, /function projectManagerHeaderColorByHex/);
+  assert.match(hearthJs, /const nestedDetails = project\.sourceDetails/);
   assert.match(hearthJs, /assigned_project_manager/);
   assert.match(hearthJs, /project_manager_assignment_packet/);
   assert.match(hearthJs, /project_owner_packet/);
@@ -197,7 +199,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /assignAsOwner:true/);
   assert.match(hearthJs, /data-project-manager-family/);
   assert.match(hearthJs, /project-manager-assignee/);
-  assert.match(hearthJs, /Assigned to /);
+  assert.match(hearthJs, /Project manager: /);
   assert.match(hearthJs, /function openProjectFieldCowork/);
   assert.match(hearthJs, /function openProjectScopedCowork/);
   assert.match(hearthJs, /function projectScopedCoworkPacket/);
