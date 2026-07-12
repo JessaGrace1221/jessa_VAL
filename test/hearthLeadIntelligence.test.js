@@ -684,6 +684,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /correspondenceDraftBody\?\.addEventListener\('input'/);
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
   assert.match(hearthJs, /function renderCorrespondenceThread/);
+  assert.match(hearthJs, /function correspondenceAttachmentsFromSource/);
+  assert.match(hearthJs, /correspondence-thread-attachments/);
+  assert.match(hearthJs, /correspondenceCompactText\(body,3600\)/);
   assert.match(hearthJs, /function saveCorrespondenceForwardRule/);
   assert.match(hearthJs, /function renderCorrespondenceRulesPanel/);
   assert.match(hearthJs, /function setCorrespondenceRulesPanel/);
@@ -714,6 +717,9 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.correspondence-workbench/);
   assert.match(hearthCss, /\.correspondence-rulebar/);
   assert.match(hearthCss, /\.correspondence-thread/);
+  assert.match(hearthCss, /\.correspondence-thread-body\{[\s\S]{0,180}align-content:start/);
+  assert.match(hearthCss, /\.correspondence-thread-message\{[\s\S]{0,180}align-content:start/);
+  assert.match(hearthCss, /\.correspondence-thread-attachments/);
   assert.match(hearthCss, /\.correspondence-intelligence/);
   assert.match(hearthCss, /\.correspondence-list/);
   assert.match(hearthCss, /\.correspondence-brief/);

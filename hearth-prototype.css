@@ -3454,12 +3454,17 @@ button.drawer-link{
 .correspondence-thread-body{
   display:grid;
   gap:12px;
+  align-content:start;
+  align-items:start;
+  grid-auto-rows:max-content;
   min-height:0;
   overflow:auto;
 }
 .correspondence-thread-message{
   display:grid;
   gap:6px;
+  align-content:start;
+  align-items:start;
   padding-bottom:12px;
   border-bottom:1px solid rgba(91,105,79,.12);
 }
@@ -3471,6 +3476,30 @@ button.drawer-link{
   color:rgba(29,29,31,.82);
   font-size:.8rem;
   line-height:1.48;
+  overflow-wrap:anywhere;
+}
+.correspondence-thread-attachments{
+  display:grid;
+  gap:7px;
+  align-content:start;
+  padding:10px;
+  border:1px solid rgba(91,105,79,.14);
+  border-radius:6px;
+  background:rgba(244,248,238,.64);
+}
+.correspondence-thread-attachments div{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.correspondence-thread-attachments p{
+  margin:0;
+  padding:6px 8px;
+  border:1px solid rgba(91,105,79,.16);
+  border-radius:999px;
+  background:rgba(255,255,252,.82);
+  color:rgba(29,29,31,.78);
+  font:700 .68rem/1.25 var(--body);
   overflow-wrap:anywhere;
 }
 .correspondence-discuss{

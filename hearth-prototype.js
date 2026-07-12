@@ -5270,13 +5270,34 @@ function correspondenceThreadMessagesFromSource(source = {}, fallback = {}){
     return messages.slice(0, 8).map((message) => ({
       from: message.from?.name || message.fromName || message.from_name || message.senderName || message.sender_name || message.sender || message.author || message.from?.email || 'Email',
       date: message.date || message.receivedAt || message.received_at || message.createdAt || message.created_at || '',
-      body: correspondenceCompactText(message.bodyText || message.body_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 900)
+      body: correspondenceCompactText(message.bodyText || message.body_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 3600)
     })).filter((message) => message.body);
   }
   const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
   const body = latest.body || latest.bodyText || latest.body_text || latest.snippet || source.bodyPreview || fallback.summary || fallback.draftBody || '';
   const from = latest.from?.name || latest.from_name || latest.senderName || source.classification?.from?.name || fallback.senderName || fallback.recipientEmail || 'Thread';
-  return body ? [{from,date:latest.date || latest.receivedAt || fallback.createdAt || '',body:correspondenceCompactText(body,900)}] : [];
+  return body ? [{from,date:latest.date || latest.receivedAt || fallback.createdAt || '',body:correspondenceCompactText(body,3600)}] : [];
+}
+
+function correspondenceAttachmentsFromSource(source = {}){
+  const rows = []
+    .concat(Array.isArray(source.attachments) ? source.attachments : [])
+    .concat(Array.isArray(source.attachmentsJson) ? source.attachmentsJson : [])
+    .concat(Array.isArray(source.attachments_json) ? source.attachments_json : []);
+  const seen = new Set();
+  return rows.map((attachment) => {
+    if(typeof attachment === 'string') return {name:attachment, type:'email_attachment'};
+    return {
+      name: attachment.filename || attachment.fileName || attachment.name || attachment.title || 'Attachment',
+      type: attachment.mimeType || attachment.contentType || attachment.type || 'email_attachment',
+      size: attachment.size || attachment.fileSize || 0
+    };
+  }).filter((attachment) => {
+    const key = [attachment.name, attachment.type, attachment.size].join(':').toLowerCase();
+    if(!attachment.name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function correspondenceContextLines(source = {}, keys = []){
@@ -5331,6 +5352,7 @@ function normalizeCorrespondenceDraft(draft = {}){
     needs: readiness.status === 'needs_context' ? 'Provide missing context: ' + (readiness.missing_context || writer.missing_context || []).join(', ') : 'Review whether this represents your voice, intent, and relationship.',
     draftBody: draft.body || writer.body || '',
     threadMessages: correspondenceThreadMessagesFromSource(source, draft),
+    attachments: correspondenceAttachmentsFromSource(source),
     relationships: correspondenceContextLines(source, ['relationshipName','relationship','relationshipTemperature','executiveMeaning']),
     projects: correspondenceContextLines(source, ['projectName','project','projectId']),
     ruleSuggestions: correspondenceRuleHints(source, readiness, writer),
@@ -5370,6 +5392,7 @@ function normalizeCorrespondenceReadyItem(item = {}){
     needs: item.whatOnlyUserCanDo || item.whatUserNeedsToDo || 'Review, edit, approve, reject, or provide missing context.',
     draftBody: draft.body || item.whatValPrepared || '',
     threadMessages: correspondenceThreadMessagesFromSource(metadata, item),
+    attachments: correspondenceAttachmentsFromSource(metadata),
     relationships: correspondenceContextLines(metadata, ['contactName','relationshipName','relationshipTemperature','executiveMeaning']),
     projects: correspondenceContextLines(metadata, ['projectName','project','projectId']),
     ruleSuggestions: correspondenceRuleHints(metadata, readiness, draft),
@@ -5406,7 +5429,8 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     prepared: draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.',
     needs: draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.',
     draftBody: draft.body || '',
-    threadMessages: body ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,900)}] : [],
+    threadMessages: body ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,3600)}] : [],
+    attachments: correspondenceAttachmentsFromSource(email),
     relationships: correspondenceContextLines(email, ['matchedContact','relationshipName','relationshipTemperature']),
     projects: correspondenceContextLines(email, ['projectName','project']),
     ruleSuggestions: correspondenceRuleHints(email, {}, draft),
@@ -5990,6 +6014,23 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
     empty.append(span, p);
     correspondenceThreadBody.appendChild(empty);
     return;
+  }
+  const attachments = Array.isArray(item.attachments) ? item.attachments : correspondenceAttachmentsFromSource(item.raw || {});
+  if(attachments.length){
+    const attachmentBlock = document.createElement('article');
+    attachmentBlock.className = 'correspondence-thread-attachments';
+    const span = document.createElement('span');
+    span.textContent = 'Attachments';
+    const wrap = document.createElement('div');
+    attachments.slice(0, 6).forEach((attachment) => {
+      const chip = document.createElement('p');
+      const size = Number(attachment.size || 0);
+      const sizeLabel = size ? ' · ' + Math.round(size / 1024) + ' KB' : '';
+      chip.textContent = [attachment.name, attachment.type].filter(Boolean).join(' · ') + sizeLabel;
+      wrap.appendChild(chip);
+    });
+    attachmentBlock.append(span, wrap);
+    correspondenceThreadBody.appendChild(attachmentBlock);
   }
   if(!messages.length){
     const empty = document.createElement('article');
