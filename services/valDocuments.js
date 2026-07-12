@@ -2,6 +2,7 @@ function safeArray(value){return Array.isArray(value)?value:[];}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function compactText(value='',limit=600){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180)||'document';}
+const {documentLooksLikeCalendarInvite}=require('./valDocumentEvidenceFilters');
 
 const DOCUMENT_KIND_RE=/document|proposal|agreement|sow|scope|copy|html_page|report|brief|spec|documentation|contract|file|attachment|google_doc|knowledge_document|manuscript|chapter/i;
 
@@ -126,6 +127,7 @@ function preparedArtifactDocuments(runs=[]){
 function memoryDocuments(memoryItems=[]){
   return safeArray(memoryItems).filter(item=>{
     const meta=jsonValue(item.metadata||item.metadataJson||item.metadata_json,{});
+    if(documentLooksLikeCalendarInvite({...item,...meta}))return false;
     return DOCUMENT_KIND_RE.test([item.kind,item.type,item.title,item.summary,meta.source,meta.docType,meta.uploadedVia,meta.fileName].join(' '));
   }).map(item=>{
     const meta=jsonValue(item.metadata||item.metadataJson||item.metadata_json,{});
@@ -159,6 +161,7 @@ function projectProfileDocuments(projectProfiles=[]){
     const intake=meta.intake||{};
     const rows=[];
     for(const file of safeArray(meta.uploadedFiles)){
+      if(documentLooksLikeCalendarInvite(file))continue;
       rows.push(documentRecord({
         id:`project-file:${projectId}:${file.id||file.fileName}`,
         sourceId:file.id||file.fileName,
@@ -213,6 +216,7 @@ function emailAttachmentDocuments(messages=[]){
       .concat(safeArray(rawPayload.attachments));
     const seen=new Set();
     return attachments.filter(attachment=>{
+      if(documentLooksLikeCalendarInvite(attachment))return false;
       const key=firstText(attachment.id,attachment.attachmentId,attachment.filename,attachment.name,attachment.title);
       if(!key||seen.has(key))return false;
       seen.add(key);
@@ -272,6 +276,7 @@ function sourceProcessingRecordDocuments(records=[]){
       .concat(safeArray(metadata.documents));
     const seen=new Set();
     return documents.filter(doc=>{
+      if(documentLooksLikeCalendarInvite(doc))return false;
       const key=firstText(doc.sourceId,doc.source_id,doc.id,doc.title,doc.filename,doc.name);
       if(!key||seen.has(key))return false;
       seen.add(key);return true;
@@ -308,6 +313,7 @@ function dedupeDocuments(rows=[]){
   const byId=new Map();
   for(const row of rows){
     if(!row||!row.id)continue;
+    if(documentLooksLikeCalendarInvite(row))continue;
     if(!byId.has(row.id))byId.set(row.id,row);
   }
   return [...byId.values()].sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||a.title.localeCompare(b.title));
@@ -455,4 +461,4 @@ function createValDocumentsService({
   return {list,get,referenceFor,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments};
 }
 
-module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments,documentMatches,summaryFor};
+module.exports={createValDocumentsService,documentRecord,draftDocuments,preparedArtifactDocuments,memoryDocuments,projectProfileDocuments,emailAttachmentDocuments,sourceProcessingRecordDocuments,documentMatches,summaryFor,documentLooksLikeCalendarInvite};

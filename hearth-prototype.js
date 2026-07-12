@@ -4716,8 +4716,54 @@ function documentWithProjectAssignment(item = {}){
   return assigned;
 }
 
+function documentCalendarInviteValues(value = {}){
+  const raw = value && typeof value === 'object' ? value : {};
+  return [
+    raw,
+    raw.raw,
+    raw.attachment,
+    raw.document,
+    raw.raw?.attachment,
+    raw.raw?.document
+  ].filter((item) => item && typeof item === 'object');
+}
+
+function documentLooksLikeCalendarInvite(value = {}){
+  const values = documentCalendarInviteValues(value);
+  const filenames = values.map((item) => [
+    item.filename,
+    item.fileName,
+    item.name,
+    item.title,
+    item.originalFilename,
+    item.originalName,
+    item.id,
+    item.attachmentId
+  ].filter(Boolean).join(' ')).join(' ');
+  const mimeTypes = values.map((item) => [
+    item.mimeType,
+    item.contentType,
+    item.mediaType
+  ].filter(Boolean).join(' ')).join(' ');
+  const typeText = values.map((item) => [
+    item.type,
+    item.kind,
+    item.sourceType,
+    item.source,
+    item.origin
+  ].filter(Boolean).join(' ')).join(' ');
+  if(/(?:^|[\\/])[^\\/]*\.ics(?:$|[?#\s])/i.test(filenames + ' ')) return true;
+  if(/\b(?:invite|invitation|calendar|event)\.ics\b/i.test(filenames)) return true;
+  if(mimeTypes.split(/\s+/).some((type) => /^(text\/calendar|text\/x-vcalendar|application\/(?:ics|calendar|x-ical)|application\/vnd\.ms-outlook)(?:\s*;.*)?$/i.test(type))) return true;
+  return /\b(calendar_invite|icalendar|vcalendar)\b/i.test(typeText);
+}
+
+function documentItemsWithoutCalendarInvites(items = []){
+  return items.filter((item) => !documentLooksLikeCalendarInvite(item));
+}
+
 function documentItemsWithProjectAssignments(items = []){
-  return items.map(documentWithProjectAssignment);
+  return documentItemsWithoutCalendarInvites(items).map(documentWithProjectAssignment);
 }
 
 function persistDocumentProjectAssignment(item = {}, assignment = {}){
@@ -4765,6 +4811,7 @@ function documentProjectEvidenceLine(item = {}){
 
 function documentNeedsProjectAssignment(item = {}){
   if(!item?.id || !String(item.title || '').trim()) return false;
+  if(documentLooksLikeCalendarInvite(item)) return false;
   const assignment = documentProjectAssignmentFor(item.id);
   if(assignment?.decision === 'not_project') return false;
   if(String(item.project || assignment?.projectName || '').trim()) return false;
@@ -5836,7 +5883,9 @@ function localStoredDocuments(){
     const raw = localStorage.getItem('val_docs_v1');
     const docs = raw ? JSON.parse(raw) : [];
     if(!Array.isArray(docs)) return [];
-    return docs.map((doc) => ({
+    const filteredDocs = documentItemsWithoutCalendarInvites(docs);
+    if(filteredDocs.length !== docs.length) localStorage.setItem('val_docs_v1', JSON.stringify(filteredDocs));
+    return filteredDocs.map((doc) => ({
       id: doc.id || 'local-doc-' + Math.random().toString(36).slice(2),
       title: doc.title || 'VAL Document',
       type: doc.type || 'document',
@@ -5860,10 +5909,11 @@ function localStoredDocuments(){
 }
 
 function persistLocalDocumentItems(items = []){
-  if(!items.length) return;
+  const incoming = documentItemsWithoutCalendarInvites(items);
+  if(!incoming.length) return;
   try{
     const existing = localStoredDocuments();
-    const byId = new Map(existing.concat(items).map((item) => [item.id, item]));
+    const byId = new Map(existing.concat(incoming).map((item) => [item.id, item]));
     localStorage.setItem('val_docs_v1', JSON.stringify(Array.from(byId.values()).slice(0, 160)));
   }catch(error){}
 }
@@ -5874,6 +5924,7 @@ function documentItemsFromGmailScan(result = {}){
   emails.forEach((email, emailIndex) => {
     const attachments = correspondenceAttachmentsFromSource(email);
     attachments.forEach((attachment, attachmentIndex) => {
+      if(documentLooksLikeCalendarInvite(attachment)) return;
       const title = attachment.filename || attachment.name || 'Email attachment';
       if(!title) return;
       rows.push({

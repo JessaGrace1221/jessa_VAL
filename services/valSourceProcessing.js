@@ -1,5 +1,6 @@
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value='',limit=700){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+const {documentLooksLikeCalendarInvite}=require('./valDocumentEvidenceFilters');
 function stableKey(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180)||'source';
 }
@@ -65,8 +66,10 @@ function documentsFromInput(input={}){
     .concat(safeArray(source.attachments))
     .concat(safeArray(source.attachmentsJson||source.attachments_json))
     .concat(safeArray(payload.attachments))
+    .filter(doc=>!documentLooksLikeCalendarInvite(doc))
     .map(normalizeDocument)
-    .filter(doc=>doc.title||doc.sourceId);
+    .filter(doc=>doc.title||doc.sourceId)
+    .filter(doc=>!documentLooksLikeCalendarInvite(doc));
 }
 function projectNameFromInput(input={},relationship={},documents=[]){
   const source=input.source||input.email||{};

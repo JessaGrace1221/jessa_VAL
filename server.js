@@ -34,6 +34,7 @@ const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes'
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
+const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
 const {buildRelationshipDossier,relationshipDossierPromptContext} = require('./services/valRelationshipDossier');
 const {relationshipIntroCandidates,relationshipStewardshipReviewSurface,relationshipIntroDraft,personPacketFromContact,relationshipAdmissionDecision} = require('./services/valRelationshipActionIntelligence');
@@ -9623,6 +9624,7 @@ async function saveEmailEvidenceBatch(emails=[]){
   return Promise.all((emails||[]).map(email=>saveEmailEvidence(email))).catch(()=>[]);
 }
 function sourceProcessingAttachmentLooksLikeDocument(attachment={}){
+  if(documentLooksLikeCalendarInvite(attachment))return false;
   const filename=String(attachment.filename||attachment.fileName||attachment.name||attachment.title||'').trim();
   const type=String(attachment.mimeType||attachment.contentType||attachment.type||'').toLowerCase();
   if(!filename)return false;

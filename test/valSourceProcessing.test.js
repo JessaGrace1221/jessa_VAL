@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const {VAL_SOURCE_PROCESSING_SQL}=require('../services/valSourceProcessingSchema');
-const {createValSourceProcessingService}=require('../services/valSourceProcessing');
+const {createValSourceProcessingService,documentsFromInput}=require('../services/valSourceProcessing');
 const {createValReviewUpdatesService}=require('../services/valReviewUpdates');
 const {createValReadyForYouService}=require('../services/valReadyForYou');
 
@@ -54,6 +54,7 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/function sourceProcessingDocumentsFromEmail/);
   assert.match(server,/function processEmailDocumentSourceProcessing/);
   assert.match(server,/sourceProcessingAttachmentLooksLikeDocument/);
+  assert.match(server,/documentLooksLikeCalendarInvite\(attachment\)/);
   assert.match(server,/function sourceProcessingDriveDocumentsFromEmail/);
   assert.match(server,/function sourceProcessingDriveSharerFromEmail/);
   assert.match(server,/function sourceProcessingProjectOwnerFromProfile/);
@@ -83,6 +84,30 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/documentCandidates=candidates\.reduce/);
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|result\.what_val_did_receipt/);
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|null/);
+});
+
+test('calendar invite attachments do not count as Project Managers document evidence',async()=>{
+  const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const {sourceProcessing}=servicesFor(store);
+  const source={
+    sourceType:'email_message',
+    sourceId:'email_calendar_invite',
+    subject:'Invitation: Partner sync',
+    attachments:[{id:'att_invite',filename:'invite.ics',mimeType:'text/calendar'}]
+  };
+
+  assert.deepEqual(documentsFromInput({source}),[]);
+  const result=await sourceProcessing.processRelationshipDocumentEmail({
+    relationship:{admitted:true,id:'rel_anthony',name:'Anthony',email:'anthony@example.com'},
+    source
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.projectSuggestion,null);
+  assert.equal(result.readyForYouItem,null);
+  assert.equal(store.valReviewUpdates.length,0);
+  assert.equal(store.sourceProcessingRecords[0].sourceReceiptJson.documentCount,0);
+  assert.match(store.sourceProcessingRecords[0].noActionReceiptJson.reason,/No document evidence/);
 });
 
 test('relationship-sent documents create Project Managers and Leverage review surfaces',async()=>{

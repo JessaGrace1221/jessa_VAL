@@ -9,7 +9,8 @@ const routes = fs.readFileSync(path.join(root, 'services/valDocumentsRoutes.js')
 
 const {
   createValDocumentsService,
-  documentMatches
+  documentMatches,
+  documentLooksLikeCalendarInvite
 } = require('../services/valDocuments');
 
 test('documents routes expose canonical document index and reference APIs', () => {
@@ -62,7 +63,7 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
       messageId: 'msg_1',
       from: {name: 'Greg', email: 'greg@example.com'},
       subject: 'Contract attachment',
-      payload: {attachments: [{filename: 'contract.pdf', mimeType: 'application/pdf'}]},
+      payload: {attachments: [{filename: 'contract.pdf', mimeType: 'application/pdf'}, {filename: 'invite.ics', mimeType: 'text/calendar'}]},
       receivedAt: '2026-07-05T11:00:00Z'
     }],
     sourceProcessingRecords: [{
@@ -90,6 +91,13 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
           sourceType: 'gmail_attachment',
           sourceId: 'msg_atlas_mou:doc_mou',
           summary: 'MOU attached to the relationship email.'
+        }, {
+          id: 'doc_calendar_invite',
+          title: 'invite.ics',
+          type: 'text/calendar',
+          sourceType: 'gmail_attachment',
+          sourceId: 'msg_atlas_mou:doc_calendar_invite',
+          summary: 'Calendar invite attached to the relationship email.'
         }]
       }],
       metadataJson: {source: 'relationship_document_email'},
@@ -132,6 +140,7 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
   assert.ok(all.documents.some(doc => doc.sourceType === 'hearth_project_source_upload'));
   assert.ok(all.documents.some(doc => doc.sourceType === 'hearth_project_intake'));
   assert.ok(all.documents.some(doc => doc.sourceType === 'gmail_attachment' && doc.title === 'Atlas MOU.pdf'));
+  assert.equal(all.documents.some(doc => /invite\.ics/i.test(doc.title)), false);
   assert.ok(all.documents.some(doc => doc.sourceType === 'google_docs'));
   assert.equal(all.summary.projects, 1);
 
@@ -179,6 +188,11 @@ test('document index reads durable email message attachments from Postgres raw_j
             filename: 'MOU ForeverFreedom Frisson.pdf',
             mimeType: 'application/pdf',
             size: 67000
+          }, {
+            id: 'att_invite',
+            filename: 'invite.ics',
+            mimeType: 'text/calendar',
+            size: 2000
           }]
         }
       }]};
@@ -193,4 +207,59 @@ test('document index reads durable email message attachments from Postgres raw_j
   assert.equal(result.documents[0].relationship, 'Aric Soyring');
   assert.equal(result.documents[0].sourceType, 'email_attachment');
   assert.equal(emailMessageQueries, 2);
+});
+
+test('calendar invites are never normalized as documents', async () => {
+  assert.equal(documentLooksLikeCalendarInvite({filename: 'invite.ics'}), true);
+  assert.equal(documentLooksLikeCalendarInvite({name: 'hold.ics', mimeType: 'application/ics'}), true);
+  assert.equal(documentLooksLikeCalendarInvite({filename: 'scope.pdf', mimeType: 'application/pdf'}), false);
+
+  const service = createValDocumentsService({
+    getStore: () => ({
+      drafts: [],
+      transcriptIntelligenceRuns: [],
+      memoryItems: [{
+        id: 'memory_invite',
+        tenantId: 'tenant_1',
+        userId: 'user_1',
+        kind: 'knowledge_document',
+        summary: 'Calendar invite',
+        metadata: {fileName: 'client invite.ics', docType: 'text/calendar'}
+      }],
+      relationshipProfiles: [{
+        id: 'profile_project',
+        tenantId: 'tenant_1',
+        userId: 'user_1',
+        profileType: 'project',
+        displayName: 'Client Work',
+        metadata: {uploadedFiles: [{id: 'project_invite', fileName: 'invite.ics', mimeType: 'text/calendar'}]}
+      }],
+      emailMessages: [{
+        id: 'email_invite',
+        tenantId: 'tenant_1',
+        userId: 'user_1',
+        messageId: 'msg_invite',
+        subject: 'Calendar attachment',
+        payload: {attachments: [{filename: 'invite.ics', mimeType: 'text/calendar'}]}
+      }],
+      sourceProcessingRecords: [{
+        id: 'source_invite',
+        tenantId: 'tenant_1',
+        userId: 'user_1',
+        sourceType: 'gmail_email',
+        sourceId: 'msg_invite',
+        sourceTitle: 'Calendar attachment',
+        status: 'processed',
+        sourceReceiptJson: {relationship: {name: 'Client'}, documentCount: 1},
+        witnessObservationsJson: [{documents: [{id: 'source_doc_invite', title: 'invite.ics', type: 'text/calendar'}]}],
+        metadataJson: {}
+      }]
+    }),
+    tenantId: () => 'tenant_1',
+    userId: () => 'user_1'
+  });
+
+  const result = await service.list({q: 'invite', limit: 20});
+  assert.equal(result.ok, true);
+  assert.equal(result.count, 0);
 });

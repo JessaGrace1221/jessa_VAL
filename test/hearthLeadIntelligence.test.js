@@ -812,6 +812,11 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /const localDocumentItems/);
   assert.match(hearthJs, /function localStoredDocuments/);
   assert.match(hearthJs, /val_docs_v1/);
+  assert.match(hearthJs, /function documentLooksLikeCalendarInvite/);
+  assert.match(hearthJs, /\.ics/);
+  assert.match(hearthJs, /text\\\/calendar/);
+  assert.match(hearthJs, /function documentItemsWithoutCalendarInvites/);
+  assert.match(hearthJs, /documentItemsWithoutCalendarInvites\(items\)\.map\(documentWithProjectAssignment\)/);
   assert.match(hearthJs, /function documentItemsFromReady/);
   assert.match(hearthJs, /function normalizeCanonicalDocumentItem/);
   assert.match(hearthJs, /\/api\/val\/documents\?limit=120/);
@@ -819,6 +824,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /\/api\/email\/gmail\/refresh/);
   assert.match(hearthJs, /function documentIntakeStatusLine/);
   assert.match(hearthJs, /function documentItemsFromGmailScan/);
+  assert.match(hearthJs, /documentLooksLikeCalendarInvite\(attachment\)/);
   assert.match(hearthJs, /persistLocalDocumentItems\(scannedDocuments\)/);
   assert.match(hearthJs, /gmail_scan_attachment/);
   assert.match(hearthJs, /documentCandidates/);
@@ -1260,8 +1266,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-doc-assign-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-doc-assign-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-doc-filter-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-doc-filter-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
