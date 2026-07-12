@@ -1330,8 +1330,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=project-witnessing-import-contract-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=project-witnessing-import-contract-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-overview-return-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=transcript-overview-return-20260712/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
