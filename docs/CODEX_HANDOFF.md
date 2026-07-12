@@ -83,8 +83,8 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest pushed commit: a731181
-Latest pushed commit message: Guard source processing public test writes
+Latest live code promotion commit: a731181
+Latest live code promotion message: Guard source processing public test writes
 ```
 
 Important distinction:

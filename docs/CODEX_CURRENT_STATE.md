@@ -57,8 +57,8 @@ Current handoff branch:
 
 ```text
 Branch: codex/stewardship-person-packets
-Latest pushed commit: a731181
-Latest pushed commit message: Guard source processing public test writes
+Latest live code promotion commit: a731181
+Latest live code promotion message: Guard source processing public test writes
 ```
 
 These branch changes are deployed to Railway production as deployment `7b561aab-dace-4179-b74d-f2afd4fe38ad`.

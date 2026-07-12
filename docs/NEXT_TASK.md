@@ -72,7 +72,7 @@ Production URL: https://jessaval-production.up.railway.app
 Live baseline commit: a731181
 Railway deployment: 7b561aab-dace-4179-b74d-f2afd4fe38ad
 Working branch: codex/stewardship-person-packets
-Latest pushed branch commit: a731181
+Latest live code promotion commit: a731181
 ```
 
 If production does not match the current live baseline, stop before changing code.
