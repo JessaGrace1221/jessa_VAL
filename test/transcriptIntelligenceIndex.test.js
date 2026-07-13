@@ -248,13 +248,13 @@ test('fallback summaries are not counted as hard processing failures',()=>{
   assert.match(server,/failedProcessing:transcripts\.filter\(isHardTranscriptProcessingFailure\)\.length/);
 });
 
-test('transcript detail defaults to summary, transcript, and transcript-specific co-work',()=>{
+test('transcript detail uses a typed transcript Working Brief instead of freeform transcript chat',()=>{
   for(const label of ['Summary','Transcript','Co-Work on This Transcript','Processing details']){
     assert.ok(ui.includes(label),`missing ${label}`);
   }
-  assert.match(ui,/api\/val\/transcripts\/'\+encodeURIComponent\(t\.id\)\+'\/chat/);
-  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
-  assert.match(server,/Do not say you need an email, document, Gmail, Drive, or external source/);
+  assert.match(server,/async function loadTranscriptForCowork/);
+  assert.match(server,/async function prepareCoworkTranscriptMeetingOverview/);
+  assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/function cleanTranscriptForUi/);
   assert.match(server,/function cleanTranscriptSummaryForUi/);
   assert.match(server,/function cleanTranscriptTitleForUi/);

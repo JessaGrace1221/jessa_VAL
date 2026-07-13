@@ -164,7 +164,9 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.doesNotMatch(ui,/tasks extracted ·/);
   assert.doesNotMatch(ui,/summary '\+safe\(t\.summaryStatus/);
   assert.match(ui,/Select a transcript/);
-  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
+  assert.match(server,/async function loadTranscriptForCowork/);
+  assert.match(server,/async function prepareCoworkTranscriptMeetingOverview/);
+  assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
   assert.match(server,/action===\'prepare_overview\'/);

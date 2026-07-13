@@ -4292,6 +4292,8 @@ function projectProfileForCoworkNode(node = null){
 
 function coworkEntryPlaceholder(question = {}){
   const target = String(question.targetField || '');
+  if(target === 'transcript_working_brief.prepared_artifact_kind') return 'Prepare the meeting overview';
+  if(target === 'prepared_artifact.email_draft') return 'Review the prepared meeting overview.';
   if(target === 'project_identity_packet.desired_outcome') return 'Outcome: this project should create...';
   if(target === 'project_next_action_packet.next_action') return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
   if(target.includes('project_next_action_packet.')) return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
@@ -4367,15 +4369,56 @@ function renderCoworkNextMoveItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkTranscriptOverviewItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const artifact = payload.preparedArtifact || {};
+  const receipt = artifact.body || payload.sourceReceipt?.body || '';
+  if(!receipt) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Draft ready in Leverage' : (ready ? 'Ready for review' : 'Preparing exact source receipt');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading">',
+        '<span>Prepared email draft</span>',
+        '<strong>' + escapeHtml(workItem.title || 'Meeting overview') + '</strong>',
+        '<small>' + escapeHtml(status) + '</small>',
+      '</div>',
+      '<div class="cowork-workstream-list"><article>',
+        '<strong>Exact Krisp receipt</strong>',
+        '<pre class="timeline-source-email-preview">' + escapeHtml(receipt) + '</pre>',
+        '<div class="cowork-workstream-fields">',
+          coworkWorkstreamField('Invitees', Array.isArray(payload.invitees) ? payload.invitees.map((person) => person.name || person.email || '').filter(Boolean).join(', ') : ''),
+          coworkWorkstreamField('Approval', 'Internal draft only. Nothing sends.'),
+        '</div>',
+      '</article></div>',
+      ready ? '<button type="button" data-cowork-apply-transcript-overview="' + escapeHtml(workItem.id || '') + '">Create internal email draft</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
+  const isTranscript = entrypointId === 'transcript.working_brief';
   const sectionLabel = entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
-  const fallbackObjective = entrypointId === 'project.next_move'
+  const fallbackObjective = isTranscript
+    ? 'Prepare one reviewable result from the selected transcript.'
+    : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
   const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
   if(!context) return;
+  if(isTranscript){
+    const receipt = brief.sourceReceipt || {};
+    context.innerHTML = [
+      '<span>Transcripts</span>',
+      '<strong>' + escapeHtml(brief.transcriptTitle || 'Selected transcript') + '</strong>',
+      '<p>' + escapeHtml(brief.objective || fallbackObjective) + '</p>',
+      '<small>Exact Krisp receipt: ' + escapeHtml((receipt.actionItems || []).length) + ' Action Items and ' + escapeHtml((receipt.keyPoints || []).length) + ' Key Points.</small>'
+    ].join('');
+    return;
+  }
   context.innerHTML = [
     '<span>Project Managers</span>',
     '<strong>' + escapeHtml(brief.projectName || activeProjectProfile?.name || 'Project') + ' ' + escapeHtml(sectionLabel) + '</strong>',
@@ -4394,7 +4437,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       sessionId:session.id,
       workItemId:workItem.id || activeCoworkEntry?.workItemId || '',
       status:workItem.status || session.status || '',
-      projectId:session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || ''
+      projectId:session.scope?.entityType === 'project_section' ? (session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || '') : '',
+      transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : ''
     };
   }
   updateCoworkEntryContext(result);
@@ -4405,15 +4449,22 @@ function renderCoworkEntryResult(result = {}, options = {}){
   if(response && workItem.id){
     const item = workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
-      : renderCoworkWorkstreamsItem(workItem);
+      : workItem.type === 'transcript_meeting_overview'
+        ? renderCoworkTranscriptOverviewItem(workItem)
+        : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = workItem.status === 'applied' || session.status === 'completed';
   if(textarea){
-    const completeLabel = session.entrypointId === 'project.next_move' ? 'Next move applied.' : 'Workstreams applied.';
-    textarea.placeholder = isComplete ? completeLabel + ' Return to Project Managers when you are ready.' : coworkEntryPlaceholder(result.question || {});
+    const completeLabel = session.entrypointId === 'transcript.working_brief'
+      ? 'Meeting overview draft created.'
+      : session.entrypointId === 'project.next_move'
+        ? 'Next move applied.'
+        : 'Workstreams applied.';
+    const returnSurface = session.entrypointId === 'transcript.working_brief' ? ' Transcripts' : ' Project Managers';
+    textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : coworkEntryPlaceholder(result.question || {});
     textarea.disabled = isComplete;
   }
   if(submit) submit.disabled = isComplete;
@@ -4496,6 +4547,38 @@ async function openProjectNextMoveCowork(node = null){
   }
 }
 
+async function openTranscriptWorkingBriefCowork(transcriptId = ''){
+  const transcript = currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId || '') ? currentTimelineTranscript : null;
+  if(!transcript || !transcriptId) return;
+  activeCoworkEntry = {entrypointId:'transcript.working_brief',sessionId:'',workItemId:'',transcriptId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'timeline',
+    title:'Transcript Working Brief',
+    meaning:'Holding the exact Krisp Action Items and Key Points for ' + timelineTranscriptTitle(transcript) + '.',
+    context:[
+      'Transcript: ' + timelineTranscriptTitle(transcript),
+      'Exact Krisp receipt is loaded on the server.',
+      'No source text will be rewritten.'
+    ],
+    recommendation:'VAL will prepare a reviewable internal result from this selected meeting only.',
+    placeholder:'Preparing the selected transcript Working Brief...',
+    heading:'Preparing work from ' + timelineTranscriptTitle(transcript),
+    detail:'This conversation is scoped to one transcript and its exact Krisp receipt.',
+    publicDetail:'Scoped to Transcripts: selected meeting receipt.',
+    lockContext:true
+  });
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'transcript.working_brief',
+      scope:{entityType:'transcript',entityId:transcriptId,sectionId:'working_brief'}
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Transcript Working Brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open the selected Transcript Working Brief. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
 async function submitActiveCoworkEntry(){
   const entry = activeCoworkEntry;
   if(!entry?.sessionId) return false;
@@ -4508,7 +4591,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -4555,6 +4638,19 @@ async function applyActiveCoworkNextMove(workItemId = '', button = null){
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not apply this next move. Nothing was changed. ' + error.message);
+    if(button) button.disabled = false;
+  }
+}
+
+async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not create this internal meeting draft yet.'});
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not create this internal meeting draft. Nothing was sent. ' + error.message);
     if(button) button.disabled = false;
   }
 }
@@ -10557,6 +10653,26 @@ function renderTimelineActionIndex(){
   resetTimelineTranscriptDetailScroll();
 }
 
+function timelineFullTranscriptText(transcript = {}){
+  const payload = transcript.sourcePayloadMetadata || transcript.metadata?.sourcePayloadMetadata || transcript.metadata || {};
+  const candidates = [
+    transcript.transcriptText,
+    transcript.rawTranscript,
+    transcript.rawText,
+    transcript.raw_transcript,
+    payload.transcript,
+    payload.rawTranscript,
+    payload.rawText,
+    payload.raw_text,
+    payload.transcriptText,
+    payload.transcript_text,
+    payload.data?.transcript,
+    payload.data?.rawTranscript,
+    payload.data?.rawText
+  ];
+  return candidates.find((value) => typeof value === 'string' && value.trim()) || '';
+}
+
 function renderTimelineTranscriptDetail(transcript = {}){
   if(!timelineReviewCards || !timelineReviewCount) return;
   if(transcriptEmpty) transcriptEmpty.hidden = true;
@@ -10564,7 +10680,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
   currentTimelineTranscript = transcript;
   const tasks = timelineTranscriptTasks(transcript);
   const rawTitle = transcript.title || transcript.meetingTitle || '';
-  const sourceText = transcript.transcriptText || transcript.rawTranscript || transcript.rawText || '';
+  const sourceText = timelineFullTranscriptText(transcript);
   const overviewDraft = timelineMeetingOverviewDraft(transcript, tasks);
   timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
   timelineReviewCards.innerHTML = [
@@ -10575,9 +10691,9 @@ function renderTimelineTranscriptDetail(transcript = {}){
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
     renderTimelineMeetingOverviewDraft(transcript, tasks, overviewDraft),
-    '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><div class="timeline-transcript-chat" data-transcript-chat-log><p>Ask who said what, what changed, what should become a proposal, or what VAL can prepare from this meeting.</p></div><div class="timeline-transcript-chat-input"><input data-transcript-chat-input placeholder="Ask VAL about this transcript"><button type="button" data-transcript-chat="' + escapeHtml(transcript.id || '') + '">Ask</button></div></section>',
+    '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><p>VAL will use this selected meeting\'s exact Krisp receipt to prepare a reviewable internal result.</p><button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Open Transcript Working Brief</button></section>',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
-    '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'No transcript text is available.') + '</div>',
+    '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'The full transcript source text was not supplied with this record.') + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
     '</article>'
   ].join('');
@@ -10629,24 +10745,6 @@ async function loadTimelineTranscripts({openFirst = true} = {}){
     if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript archive unavailable';
     if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Unable to load transcripts</span><p>' + escapeHtml(error.message || 'Transcript archive unavailable.') + '</p></article>';
     renderTimelineTranscriptEmpty();
-  }
-}
-
-async function timelineTranscriptAsk(transcriptId){
-  const input = document.querySelector('[data-transcript-chat-input]');
-  const log = document.querySelector('[data-transcript-chat-log]');
-  const question = input?.value?.trim();
-  if(!transcriptId || !question || !log) return;
-  input.value = '';
-  log.insertAdjacentHTML('beforeend', '<p class="user">' + escapeHtml(question) + '</p><p data-transcript-chat-pending>Working from this transcript...</p>');
-  try{
-    const data = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/chat', {question});
-    document.querySelector('[data-transcript-chat-pending]')?.remove();
-    const message = data.message?.content || data.message || 'No response was returned.';
-    log.insertAdjacentHTML('beforeend', '<p>' + escapeHtml(message) + '</p>');
-  }catch(error){
-    document.querySelector('[data-transcript-chat-pending]')?.remove();
-    log.insertAdjacentHTML('beforeend', '<p>Unable to answer from this transcript: ' + escapeHtml(error.message || 'Request failed.') + '</p>');
   }
 }
 
@@ -18710,11 +18808,11 @@ drawerTray.addEventListener('click', async (event) => {
     await openTimelineTranscript(transcriptOpen.dataset.transcriptOpen);
     return;
   }
-  const transcriptChat = event.target.closest('[data-transcript-chat]');
-  if(transcriptChat){
+  const transcriptCowork = event.target.closest('[data-transcript-cowork]');
+  if(transcriptCowork){
     event.preventDefault();
     event.stopPropagation();
-    await timelineTranscriptAsk(transcriptChat.dataset.transcriptChat);
+    await openTranscriptWorkingBriefCowork(transcriptCowork.dataset.transcriptCowork);
     return;
   }
   const transcriptAction = event.target.closest('[data-transcript-action]');
@@ -19137,14 +19235,6 @@ document.addEventListener('click', (event) => {
   }
 });
 
-drawerTray.addEventListener('keydown', async (event) => {
-  if(event.key !== 'Enter') return;
-  const transcriptInput = event.target.closest('[data-transcript-chat-input]');
-  if(!transcriptInput || !currentTimelineTranscript?.id) return;
-  event.preventDefault();
-  await timelineTranscriptAsk(currentTimelineTranscript.id);
-});
-
 closeSourceDetail.addEventListener('click', () => {
   drawerTray.classList.remove('source-open');
   sourceDrawerLink.setAttribute('aria-expanded', 'false');
@@ -19185,11 +19275,13 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
 scraperPreviewList?.addEventListener('click', async (event) => {
   const workstreamsApply = event.target.closest('[data-cowork-apply-workstreams]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
-  if(!workstreamsApply && !nextMoveApply) return;
+  const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
+  if(!workstreamsApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
+  if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
 workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;

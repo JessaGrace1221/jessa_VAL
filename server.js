@@ -24040,33 +24040,6 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
-app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
-  try{
-    const id=decodeURIComponent(req.params.transcriptId),question=String(req.body.question||req.body.message||'').trim();
-    if(!question)return res.status(400).json({ok:false,error:'Ask a question about this transcript.'});
-    const data=await transcriptIndexData(id);
-    let transcript=null;
-    if(data.transcripts[0])transcript=transcriptDetailFromIndex(data,data.transcripts[0]);
-    else{
-      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-      if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
-    }
-    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const summary=transcript.summary?.executiveSummary||transcript.summaryPreview||'';
-    const system=[
-      VAL_SYSTEM_PROMPT,
-      'You are answering about one selected transcript only.',
-      'Use the supplied transcript and summary as the source of truth.',
-      'Do not say you need an email, document, Gmail, Drive, or external source.',
-      'If the transcript does not contain the answer, say that plainly and explain what is visible.',
-      'Keep the answer simple, clean, and directly useful.'
-    ].join('\n\n');
-    const user=`Transcript title: ${transcript.title}\nSummary: ${summary}\n\nTranscript:\n${String(transcript.transcriptText||'').slice(0,26000)}\n\nQuestion: ${question}`;
-    const answer=await callValModel({system,user,maxTokens:900,temperature:0.25}).catch(e=>`I could not complete transcript chat right now: ${e.message}`);
-    await auditLog({req,action:'transcript_chat_asked',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title,question:question.slice(0,240)},success:true}).catch(()=>{});
-    res.json({ok:true,message:{role:'assistant',content:answer},transcript:{id:transcript.id,title:transcript.title}});
-  }catch(e){res.status(500).json({ok:false,error:e.message});}
-});
 app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req,res)=>{
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
@@ -24730,6 +24703,29 @@ async function loadProjectForCowork(projectId=''){
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return found ? projectIndexItemFromProfile(found) : null;
 }
+async function loadTranscriptForCowork(transcriptId=''){
+  const id=String(transcriptId || '').trim();
+  if(!id) return null;
+  const data=await transcriptIndexData(id);
+  let transcript=data.transcripts[0] ? transcriptDetailFromIndex(data,data.transcripts[0]) : null;
+  if(!transcript){
+    const record=(await transcriptArchiveRecords(3650,1000)).find((item)=>String(item.id)===id);
+    if(record){
+      transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
+      transcript.sourceReceipt=transcriptSourceReceipt(transcript);
+    }
+  }
+  if(!transcript) return null;
+  transcript.sourceReceipt=transcript.sourceReceipt || transcriptSourceReceipt(transcript);
+  transcript.calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  transcript.drafts=(await listDrafts()).filter((draft)=>String(draft.sourceContext?.transcriptId || '')===id);
+  return transcript;
+}
+async function prepareCoworkTranscriptMeetingOverview({transcriptId}={}){
+  const transcript=await loadTranscriptForCowork(transcriptId);
+  if(!transcript) throw new Error('VAL could not load the selected transcript. It did not substitute another meeting.');
+  return prepareTranscriptMeetingOverviewDraft(transcript,transcript.sourceReceipt?.actionItems || []);
+}
 async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutcome='',workstreams=[],sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24782,6 +24778,8 @@ const valCowork = registerValCoworkRoutes(app,{
   loadProject:loadProjectForCowork,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
+  loadTranscript:loadTranscriptForCowork,
+  prepareTranscriptMeetingOverview:prepareCoworkTranscriptMeetingOverview,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

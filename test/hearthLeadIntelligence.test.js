@@ -569,11 +569,14 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /Action Items/);
   assert.match(hearthJs, /Co-Work on This Transcript/);
   assert.match(hearthJs, /data-transcript-open/);
-  assert.match(hearthJs, /data-transcript-chat/);
+  assert.match(hearthJs, /data-transcript-cowork/);
+  assert.match(hearthJs, /function openTranscriptWorkingBriefCowork/);
+  assert.match(hearthJs, /entrypointId:'transcript\.working_brief'/);
   assert.match(hearthJs, /data-transcript-action/);
   assert.match(hearthJs, /data-transcript-task-create/);
   assert.match(hearthJs, /data-transcript-action-index/);
-  assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/chat/);
+  assert.doesNotMatch(hearthJs, /data-transcript-chat/);
+  assert.doesNotMatch(hearthJs, /timelineTranscriptAsk/);
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/actions/);
   assert.match(hearthJs, /prepare_overview/);
   assert.doesNotMatch(hearthJs, /data-transcript-reprocess/);
@@ -581,7 +584,8 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthCss, /\.timeline-transcript-detail/);
   assert.match(hearthCss, /\.timeline-transcript-summary-strip/);
   assert.match(hearthCss, /\.timeline-meeting-overview-ready/);
-  assert.match(hearthCss, /\.timeline-transcript-chat-input/);
+  assert.match(hearthCss, /\.timeline-transcript-cowork>button/);
+  assert.doesNotMatch(hearthCss, /\.timeline-transcript-chat-input/);
   assert.doesNotMatch(hearthHtml, /data-timeline-action="cowork_timeline"/);
   assert.match(hearthJs, /mode === 'timeline'/);
   assert.match(hearthJs, /function openTimelineCoworkSession/);

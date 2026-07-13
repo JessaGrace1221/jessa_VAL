@@ -24,10 +24,31 @@ function project(){
   };
 }
 
-function serviceFor({loadedProject=project()}={}){
+function transcript(){
+  return {
+    id:'transcript_forever_freedom',
+    transcriptId:'transcript_forever_freedom',
+    title:'Forever Freedom follow-up',
+    transcriptText:'Raw transcript text from the selected meeting.',
+    attendees:[{name:'Aric Soyring',email:'aric@example.com'},{name:'Anthony',email:'anthony@example.com'}],
+    sourceReceipt:{
+      body:'Action Items\nAnthony to send the website link to Jessa and Aric.\n\nKey Points\nPurpose of the call: follow up on Forever Freedom.',
+      sections:[
+        {kind:'action_items',heading:'Action Items',raw:'Action Items\nAnthony to send the website link to Jessa and Aric.',lines:['Anthony to send the website link to Jessa and Aric.']},
+        {kind:'key_points',heading:'Key Points',raw:'Key Points\nPurpose of the call: follow up on Forever Freedom.',lines:['Purpose of the call: follow up on Forever Freedom.']}
+      ],
+      actionItems:['Anthony to send the website link to Jessa and Aric.'],
+      keyPoints:['Purpose of the call: follow up on Forever Freedom.'],
+      ready:true
+    }
+  };
+}
+
+function serviceFor({loadedProject=project(),loadedTranscript=transcript()}={}){
   let store={};
   const applied=[];
   const appliedNextMoves=[];
+  const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -43,9 +64,14 @@ function serviceFor({loadedProject=project()}={}){
     applyProjectNextMove:async payload=>{
       appliedNextMoves.push(payload);
       return {...loadedProject,nextMove:payload.nextMove,nextStepOwner:payload.accountableOwner,nextStepDueAt:payload.timingOrTrigger,nextMoveEvidence:payload.basis};
+    },
+    loadTranscript:async id=>id===loadedTranscript?.id ? loadedTranscript : null,
+    prepareTranscriptMeetingOverview:async payload=>{
+      preparedTranscriptOverviews.push(payload);
+      return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedNextMoves,get store(){return store;}};
+  return {service,applied,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -59,7 +85,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.workstreams','project.next_move']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -175,6 +201,41 @@ test('next move interview is scoped, field-targeted, review-gated, and applied w
   assert.equal(appliedNextMoves[0].timingOrTrigger,'Before the Friday review');
 });
 
+test('Transcript Working Brief remains scoped to the selected Krisp receipt and produces an exact internal draft',async()=>{
+  const {service,preparedTranscriptOverviews}=serviceFor();
+  const opened=await service.openEntry({
+    entrypointId:'transcript.working_brief',
+    scope:{entityType:'transcript',entityId:'transcript_forever_freedom',sectionId:'working_brief'}
+  });
+  assert.equal(opened.session.scope.entityId,'transcript_forever_freedom');
+  assert.equal(opened.session.workingBrief.transcriptTitle,'Forever Freedom follow-up');
+  assert.equal(opened.question.targetField,'transcript_working_brief.prepared_artifact_kind');
+  assert.equal(opened.session.workingBrief.sourceReceipt.actionItems[0],'Anthony to send the website link to Jessa and Aric.');
+  assert.equal(opened.session.workingBrief.sourceReceipt.keyPoints[0],'Purpose of the call: follow up on Forever Freedom.');
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/must be reviewed/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'Prepare the meeting overview'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.type,'transcript_meeting_overview');
+  assert.equal(ready.workItem.payload.preparedArtifact.body,opened.session.workingBrief.sourceReceipt.body);
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'prepare_transcript_meeting_overview');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(preparedTranscriptOverviews.length,1);
+  assert.equal(preparedTranscriptOverviews[0].transcriptId,'transcript_forever_freedom');
+  assert.equal(applied.draft.body,opened.session.workingBrief.sourceReceipt.body);
+});
+
+test('a missing transcript is rejected instead of substituting another meeting',async()=>{
+  const {service}=serviceFor({loadedTranscript:null});
+  await assert.rejects(
+    service.openEntry({entrypointId:'transcript.working_brief',scope:{entityId:'transcript_missing'}}),
+    /did not substitute another meeting/i
+  );
+});
+
 test('Project Managers canonical entries bypass generic Co-Work and use registered routes',()=>{
   assert.match(hearth,/function projectCoworkWorkstreamSuggestions/);
   assert.match(hearth,/function projectProfileForCoworkNode/);
@@ -195,4 +256,17 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
   assert.match(hearth,/const selectedProject = selectedProjectId && projectIndexItems\(\)\.find/);
+});
+
+test('Transcript canonical Co-Work bypasses the legacy freeform chat route',()=>{
+  assert.match(hearth,/async function openTranscriptWorkingBriefCowork/);
+  assert.match(hearth,/entrypointId:'transcript\.working_brief'/);
+  assert.match(hearth,/data-transcript-cowork/);
+  assert.match(hearth,/data-cowork-apply-transcript-overview/);
+  assert.match(hearth,/returnTarget:'timeline'/);
+  assert.match(hearth,/function timelineFullTranscriptText/);
+  assert.doesNotMatch(hearth,/data-transcript-chat/);
+  assert.doesNotMatch(hearth,/timelineTranscriptAsk/);
+  assert.match(server,/async function loadTranscriptForCowork/);
+  assert.match(server,/async function prepareCoworkTranscriptMeetingOverview/);
 });

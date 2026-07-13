@@ -233,7 +233,7 @@ Key routes:
 - `GET /api/val/transcripts/review`
 - `GET /api/val/transcripts/intake-status`
 - `POST /api/val/transcripts`
-- `POST /api/val/transcripts/:transcriptId/chat`
+- `POST /api/val/cowork/entries/open` with `entrypointId: transcript.working_brief`
 - `POST /api/val/transcripts/:transcriptId/actions`
 - `POST /api/val/transcripts/tasks/:taskId/approve`
 - `POST /api/val/transcripts/participants/:participantId/approve`

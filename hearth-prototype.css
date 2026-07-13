@@ -4210,7 +4210,7 @@ button.drawer-link{
   gap:7px;
 }
 .timeline-transcript-actions button,
-.timeline-transcript-chat-input button{
+.timeline-transcript-cowork>button{
   min-height:34px;
   padding:0 12px;
   border:1px solid rgba(92,113,82,.2);
@@ -4221,7 +4221,7 @@ button.drawer-link{
   cursor:pointer;
 }
 .timeline-transcript-actions button:first-child,
-.timeline-transcript-chat-input button{
+.timeline-transcript-cowork>button{
   background:rgba(76,98,67,.94);
   color:#fff;
 }
@@ -4441,38 +4441,6 @@ button.timeline-overview-receipt:focus-visible{
   .timeline-source-lines>div{
     display:grid;
   }
-}
-.timeline-transcript-chat{
-  display:grid;
-  gap:7px;
-  max-height:260px;
-  overflow:auto;
-}
-.timeline-transcript-chat p{
-  margin:0;
-  padding:9px 10px;
-  border-radius:7px;
-  background:rgba(246,249,241,.68);
-}
-.timeline-transcript-chat p.user{
-  margin-left:18px;
-  background:rgba(76,98,67,.12);
-  color:rgba(29,29,31,.84);
-}
-.timeline-transcript-chat-input{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  gap:8px;
-}
-.timeline-transcript-chat-input input{
-  min-width:0;
-  min-height:36px;
-  padding:0 12px;
-  border:1px solid rgba(92,113,82,.16);
-  border-radius:999px;
-  background:rgba(255,255,255,.86);
-  color:rgba(29,29,31,.88);
-  font:720 .78rem/1 var(--body);
 }
 .timeline-transcript-receipt{
   min-height:18px;

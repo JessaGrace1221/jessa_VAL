@@ -273,6 +273,105 @@ function nextMoveQuestion(state={},brief={}){
   };
 }
 
+function exactTranscriptLines(value=[]){
+  return safeArray(value).map((item)=>String(item == null ? '' : item).trim()).filter(Boolean);
+}
+function transcriptInvitees(transcript={}){
+  const buckets=[
+    transcript.attendees,
+    transcript.invitees,
+    transcript.calendarEvent?.attendees,
+    transcript.calendar_event?.attendees,
+    transcript.event?.attendees,
+    transcript.metadata?.attendees,
+    transcript.sourcePayloadMetadata?.attendees
+  ];
+  const seen=new Set();
+  return buckets.flatMap((bucket)=>safeArray(bucket)).map((person)=>{
+    if(typeof person === 'string') return {name:person,email:''};
+    return {
+      name:compactText(person?.name || person?.displayName || person?.emailAddress?.name || '',180),
+      email:compactText(person?.email || person?.address || person?.emailAddress?.address || '',220)
+    };
+  }).filter((person)=>person.name || person.email).filter((person)=>{
+    const key=(person.email || person.name).toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildTranscriptWorkingBrief(transcript={},input={}){
+  const receipt=transcript.sourceReceipt && typeof transcript.sourceReceipt === 'object' ? transcript.sourceReceipt : {};
+  const actionItems=exactTranscriptLines(receipt.actionItems);
+  const keyPoints=exactTranscriptLines(receipt.keyPoints);
+  const sections=safeArray(receipt.sections).map((section)=>({
+    kind:compactText(section?.kind || '',80),
+    heading:compactText(section?.heading || '',180),
+    raw:multilineText(section?.raw || '',24000),
+    lines:exactTranscriptLines(section?.lines)
+  }));
+  const entityId=compactText(transcript.id || transcript.transcriptId || input.scope?.entityId || '',220);
+  const title=compactText(transcript.title || transcript.meetingTitle || 'Transcript',240);
+  const body=multilineText(receipt.body || '',50000);
+  const calendarEvent=transcript.calendarEvent || transcript.calendar_event || transcript.event || {};
+  const invitees=transcriptInvitees(transcript);
+  const participants=uniqueNames(safeArray(transcript.participants).map((person)=>person?.matchedContactName || person?.speakerNameRaw || person?.name || person?.email || person));
+  const relatedProjects=uniqueNames([
+    transcript.projectName,
+    transcript.relatedProject,
+    transcript.metadata?.projectName,
+    transcript.sourcePayloadMetadata?.projectName
+  ]);
+  const relatedRelationships=uniqueNames([
+    transcript.contactName,
+    transcript.metadata?.contactName,
+    transcript.sourcePayloadMetadata?.contactName,
+    ...participants
+  ]);
+  const references=[
+    sourceRef({sourceType:'transcript_source_receipt',sourceId:entityId,quoteOrSummary:body || actionItems.concat(keyPoints).join(' ')}),
+    calendarEvent?.id && sourceRef({sourceType:'calendar_event',sourceId:calendarEvent.id,quoteOrSummary:calendarEvent.title || title}),
+    invitees.length && sourceRef({sourceType:'calendar_invitees',sourceId:entityId,quoteOrSummary:invitees.map((person)=>person.name || person.email).join(', ')})
+  ].filter(Boolean);
+  return {
+    id:stableKey(`working_brief_transcript_${entityId || title}`),
+    entrypointId:'transcript.working_brief',
+    entityType:'transcript',
+    entityId,
+    sectionId:'working_brief',
+    transcriptTitle:title,
+    sourceReceipt:{body,sections,actionItems,keyPoints,ready:Boolean(body && sections.length)},
+    calendarEvent:{id:compactText(calendarEvent?.id || transcript.calendarEventId || '',220),title:compactText(calendarEvent?.title || '',240)},
+    invitees,
+    linkedPeople:participants,
+    relatedProjects,
+    relatedRelationships,
+    existingDrafts:safeArray(transcript.drafts).map((draft)=>({id:compactText(draft?.id || '',220),type:compactText(draft?.draftType || '',100),status:compactText(draft?.status || '',100)})),
+    sourceRefs:references,
+    objective:'Prepare one reviewable, source-preserving result from the selected transcript.',
+    completionCondition:'The result is tied to the exact Krisp receipt, uses the selected meeting context, and has an explicit review or apply route.',
+    approvalBoundary:'Applying the first Transcript Working Brief result creates only an internal meeting-overview draft. It does not send email, create provider drafts, alter Krisp text, create a task, update CRM, or modify a calendar event.'
+  };
+}
+function transcriptWorkingBriefQuestion(state={},brief={}){
+  if(state.stage === 'ready_to_apply'){
+    return {
+      targetField:'prepared_artifact.email_draft',
+      question:'Review the exact meeting overview, then apply it to Leverage as an internal draft.',
+      detail:'Applying creates an internal draft for review only. Nothing sends and the Krisp source receipt stays unchanged.'
+    };
+  }
+  const receipt=brief.sourceReceipt || {};
+  return {
+    targetField:'transcript_working_brief.prepared_artifact_kind',
+    question:`Krisp's exact receipt for ${brief.transcriptTitle || 'this transcript'} is loaded unchanged (${exactTranscriptLines(receipt.actionItems).length} Action Items and ${exactTranscriptLines(receipt.keyPoints).length} Key Points). Should I prepare that attendee meeting overview for review?`,
+    detail:'Reply "yes" or "prepare" to create the source-preserving internal email draft. Nothing sends from this conversation.'
+  };
+}
+function confirmsTranscriptMeetingOverview(answer=''){
+  return /^(?:yes|yep|yeah|prepare|prepare (?:the )?(?:meeting )?overview|create (?:the )?(?:meeting )?overview|go ahead)\b/i.test(String(answer || '').trim());
+}
+
 const COWORK_ENTRYPOINTS=Object.freeze({
   'project.workstreams':{
     id:'project.workstreams',
@@ -291,6 +390,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['project_packet','project_next_action_packet','project_owner_packet','project_identity_packet'],
     objective:'Commit to the selected project\'s next narrow move.',
     completionCondition:'The move has an action, owner, timing or trigger, and source or decision basis.'
+  },
+  'transcript.working_brief':{
+    id:'transcript.working_brief',
+    surface:'transcripts',
+    scopeType:'transcript',
+    sectionId:'working_brief',
+    requiredPackets:['transcript_working_brief','transcript_source_receipt','calendar_event_packet'],
+    objective:'Prepare reviewable work from one selected transcript without altering its Krisp receipt.',
+    completionCondition:'The prepared result cites the selected source receipt and has an explicit review or apply route.'
   }
 });
 
@@ -304,7 +412,9 @@ function createValCoworkService({
   userId=()=>'default',
   loadProject=async()=>null,
   applyProjectWorkstreams=async()=>null,
-  applyProjectNextMove=async()=>null
+  applyProjectNextMove=async()=>null,
+  loadTranscript=async()=>null,
+  prepareTranscriptMeetingOverview=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -391,7 +501,8 @@ function createValCoworkService({
         state:{
           stage:state.stage || '',
           draftWorkstreams:safeArray(state.draftWorkstreams),
-          draftNextMove:state.draftNextMove || null
+          draftNextMove:state.draftNextMove || null,
+          draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
       },
       workItem:workItem ? {
@@ -499,11 +610,66 @@ function createValCoworkService({
     await saveWorkItem(workItem);
     return publicResult(session,workItem,message,question);
   }
+  async function openTranscriptWorkingBriefEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['transcript.working_brief'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.transcriptId || '',220);
+    if(!entityId) throw new Error('Transcripts needs the selected transcript before VAL can prepare its Working Brief.');
+    const transcript=await loadTranscript(entityId);
+    if(!transcript) throw new Error('VAL could not load the selected transcript. It did not substitute another meeting.');
+    const brief=buildTranscriptWorkingBrief(transcript,input);
+    if(!brief.entityId) throw new Error('The selected transcript has no durable identifier yet.');
+    if(!brief.sourceReceipt.ready) throw new Error('This transcript has no exact Krisp Action Items and Key Points receipt yet. VAL will not invent one.');
+    const state={stage:'choose_artifact',draftTranscriptArtifact:null,answers:[]};
+    const question=transcriptWorkingBriefQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_meeting_overview',title:`Meeting overview for ${brief.transcriptTitle}`,status:'needs_input',
+      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondTranscriptWorkingBrief(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    if(!confirmsTranscriptMeetingOverview(answer)){
+      const question={
+        targetField:'transcript_working_brief.prepared_artifact_kind',
+        question:'This selected Transcript Working Brief currently prepares one source-preserving result: the attendee meeting overview. Reply "prepare" when you want that exact receipt placed in Leverage for review.',
+        detail:'VAL will not turn a freeform transcript conversation into an untracked update. Other transcript outputs will receive their own typed packet routes.'
+      };
+      session.stateJson=state;
+      session.questionPlanJson=[...(session.questionPlanJson || []),question];
+      session.updatedAt=new Date().toISOString();
+      await saveSession(session);
+      return publicResult(session,workItem,question.question,question);
+    }
+    const receipt=brief.sourceReceipt || {};
+    state.stage='ready_to_apply';
+    state.draftTranscriptArtifact={kind:'email_draft',source:'exact_krisp_receipt',body:receipt.body || '',actionItems:exactTranscriptLines(receipt.actionItems),keyPoints:exactTranscriptLines(receipt.keyPoints),invitees:safeArray(brief.invitees)};
+    session.status='needs_review';
+    workItem.status='needs_review';
+    workItem.payloadJson={...workItem.payloadJson,preparedArtifact:state.draftTranscriptArtifact};
+    const question=transcriptWorkingBriefQuestion(state,brief);
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),question];
+    session.updatedAt=new Date().toISOString();
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return publicResult(session,workItem,'VAL prepared the exact Krisp meeting overview for review. Apply it when this is true.',question);
+  }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
+    if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -550,12 +716,13 @@ function createValCoworkService({
   }
   async function respond(sessionId,input={}){
     const answer=multilineText(input.answer || input.message || '',5000);
-    if(!answer) throw new Error('VAL needs an answer before it can continue this workstream interview.');
+    if(!answer) throw new Error('VAL needs an answer before it can continue this scoped conversation.');
     const session=await getSession(sessionId);
     if(!session) throw new Error('This Co-Work session no longer exists.');
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
+    if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -621,6 +788,32 @@ function createValCoworkService({
   async function applyWorkItem(workItemId){
     const workItem=await getWorkItem(workItemId);
     if(!workItem) throw new Error('Prepared work item not found.');
+    if(workItem.workType === 'transcript_meeting_overview'){
+      if(workItem.status !== 'needs_review') throw new Error('The meeting overview must be reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const expectedBody=multilineText(payload.preparedArtifact?.body || payload.sourceReceipt?.body || '',50000);
+      if(!expectedBody) throw new Error('The exact Krisp meeting overview is missing and cannot be prepared.');
+      const prepared=await prepareTranscriptMeetingOverview({transcriptId:payload.transcriptId || session.scopeId});
+      const actualBody=multilineText(prepared?.draft?.body || '',50000);
+      if(actualBody !== expectedBody) throw new Error('VAL stopped the draft because it would not preserve the exact Krisp receipt.');
+      const now=new Date().toISOString();
+      workItem.status='applied';
+      workItem.updatedAt=now;
+      session.status='completed';
+      session.updatedAt=now;
+      session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now,draftId:prepared.draft?.id || ''};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'prepare_transcript_meeting_overview',status:'completed',
+        summary:`Prepared the exact meeting overview for ${payload.transcriptTitle || 'the selected transcript'} in Leverage. Nothing was sent.`,
+        payloadJson:{transcriptId:payload.transcriptId || session.scopeId,draftId:prepared.draft?.id || '',recipientCount:Number(prepared.recipientCount || 0),sourceReceipt:payload.sourceReceipt || {},noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),draft:prepared.draft || null,recipientCount:Number(prepared.recipientCount || 0)};
+    }
     if(workItem.workType === 'project_next_move'){
       if(workItem.status !== 'needs_review') throw new Error('The next move must be complete and reviewed before it can be applied.');
       const session=await getSession(workItem.sessionId);
@@ -710,6 +903,7 @@ function createValCoworkService({
 
 module.exports={
   COWORK_ENTRYPOINTS,
+  buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,
