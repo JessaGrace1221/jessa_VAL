@@ -16819,6 +16819,20 @@ async function updateProjectProfileLocal(projectId='',patch={}){
           role:String(person?.role||'').trim()
         })).filter((person)=>person.relationshipId&&person.name&&person.role)
       : null;
+    const projectDocuments=Array.isArray(patch.projectDocuments)
+      ? patch.projectDocuments.map((document)=>({
+          id:String(document?.id||document?.documentId||document?.sourceId||'').trim(),
+          title:String(document?.title||document?.name||document?.fileName||'').trim(),
+          type:String(document?.type||document?.kind||'document').trim(),
+          sourceType:String(document?.sourceType||document?.source_type||document?.source||'document').trim(),
+          sourceId:String(document?.sourceId||document?.source_id||document?.id||'').trim(),
+          sourceUrl:String(document?.sourceUrl||document?.url||'').trim(),
+          relationship:String(document?.relationship||document?.relationshipName||'').trim(),
+          summary:String(document?.summary||document?.bodyPreview||'').trim(),
+          intendedUse:String(document?.intendedUse||document?.referenceUse||'').trim(),
+          sourceRefs:Array.isArray(document?.sourceRefs)?document.sourceRefs:[]
+        })).filter((document)=>document.id&&document.title&&document.intendedUse)
+      : null;
     if(Object.prototype.hasOwnProperty.call(patch,'documents'))intake.documents=patch.documents;
     if(patch.relationships)intake.relationships=patch.relationships;
     if(patch.rawContext)intake.rawContext=patch.rawContext;
@@ -16851,6 +16865,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
+      ...(projectDocuments?{projectDocuments}:{}),
       ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
     };
     return {
@@ -17490,6 +17505,7 @@ function projectIndexItemFromProfile(profile={}){
     milestones:Array.isArray(metadata.milestones)?metadata.milestones:[],
     relationshipNurtureRules:Array.isArray(metadata.relationshipNurtureRules)?metadata.relationshipNurtureRules:[],
     projectPeople:Array.isArray(metadata.projectPeople)?metadata.projectPeople:[],
+    projectDocuments:Array.isArray(metadata.projectDocuments)?metadata.projectDocuments:[],
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
     metadataJson:metadata,
     sourceDetails,
@@ -24716,6 +24732,10 @@ async function loadProjectForCowork(projectId=''){
 async function loadRelationshipsForCowork({limit=100}={}){
   return (await listRelationshipProfiles({limit})).filter((profile)=>profile.profileType==='person');
 }
+async function loadDocumentsForCowork({limit=120}={}){
+  const result=await valDocuments.list({limit});
+  return Array.isArray(result?.documents) ? result.documents : [];
+}
 async function applyCoworkProjectIdentity({projectId,projectName='',purpose='',desiredOutcome='',owner='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24784,6 +24804,27 @@ async function applyCoworkProjectPeople({projectId,projectName='',people=[],owne
       noExternalAction:true
     });
   }
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
+async function applyCoworkProjectDocuments({projectId,projectName='',documents=[],sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const linkedDocuments=Array.isArray(documents) ? documents.filter((document)=>document?.id&&document?.title&&document?.intendedUse) : [];
+  if(!linkedDocuments.length) return null;
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    documents:linkedDocuments.map((document)=>document.title).join('; '),
+    projectDocuments:linkedDocuments,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work documents applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers document review.'}`
+    ].filter(Boolean).join('\n')
+  });
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
@@ -24861,8 +24902,10 @@ const valCowork = registerValCoworkRoutes(app,{
   userId:currentUserId,
   loadProject:loadProjectForCowork,
   loadRelationships:loadRelationshipsForCowork,
+  loadDocuments:loadDocumentsForCowork,
   applyProjectIdentity:applyCoworkProjectIdentity,
   applyProjectPeople:applyCoworkProjectPeople,
+  applyProjectDocuments:applyCoworkProjectDocuments,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

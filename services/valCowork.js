@@ -489,6 +489,120 @@ function projectPeopleQuestion(state={},brief={}){
   return {targetField:'project_relationships_packet + project_owner_packet',question:'Review the linked people and owner, then apply them to this Project Manager.',detail:'Applying creates internal relationship links only. Nothing external happens.'};
 }
 
+function sourceDocumentCandidate(document={}){
+  const refs=safeArray(document.sourceRefs || document.source_refs).map(sourceRef);
+  const id=compactText(document.id || document.documentId || document.sourceId || '',220);
+  const title=compactText(document.title || document.name || document.fileName || 'Untitled document',240);
+  const sourceType=compactText(document.sourceType || document.source_type || document.source || 'document',120);
+  const sourceId=compactText(document.sourceId || document.source_id || id,220);
+  return {
+    id,title,sourceType,sourceId,
+    type:compactText(document.type || document.kind || 'document',120),
+    relationship:compactText(document.relationship || document.relationshipName || '',180),
+    sourceUrl:compactText(document.sourceUrl || document.url || '',900),
+    summary:compactText(document.summary || document.bodyPreview || title,500),
+    intendedUse:compactText(document.intendedUse || document.referenceUse || '',500),
+    sourceRefs:refs.length ? refs : [sourceRef({sourceType,sourceId,quoteOrSummary:title})]
+  };
+}
+function projectDocumentCandidateMatch(value='',candidates=[]){
+  const needle=compactText(value,300).toLowerCase();
+  return safeArray(candidates).find((candidate)=>[candidate.id,candidate.title,candidate.sourceId].filter(Boolean).some((item)=>String(item).toLowerCase()===needle)) || null;
+}
+function sourceRefsForDocuments(documents=[]){
+  const seen=new Set();
+  return safeArray(documents).flatMap((document)=>document?.source_type || document?.sourceType ? [document] : safeArray(document?.sourceRefs)).map(sourceRef).filter((ref)=>{
+    const key=[ref.source_type,ref.source_id,ref.quote_or_summary].join('|').toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildProjectDocumentsBrief(project={},documents=[],input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const stored=safeArray(project.projectDocuments || metadata.projectDocuments).map(sourceDocumentCandidate).filter((document)=>document.id);
+  const candidates=safeArray(documents).map(sourceDocumentCandidate).filter((document)=>document.id);
+  for(const document of stored){
+    if(!candidates.some((candidate)=>candidate.id===document.id)) candidates.unshift(document);
+  }
+  const existingDocuments=stored.map((document)=>({
+    ...document,
+    intendedUse:compactText(document.intendedUse || document.referenceUse || '',500),
+    known:true
+  }));
+  return {
+    id:stableKey(`working_brief_project_documents_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.documents',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'documents',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    existingDocuments,
+    documentCandidates:candidates.slice(0,80),
+    sourceRefs:projectIdentityReferences(project,input),
+    objective:'Link existing document receipts to the selected project and name how each one should inform project judgment.',
+    completionCondition:'Every linked document is an existing VAL receipt and has a specific intended project use.',
+    approvalBoundary:'Applying links existing document receipts to this internal Project Managers packet only. It does not upload, edit, send, share, move, delete, or alter a source document.'
+  };
+}
+function parseProjectDocuments(answer='',brief={},current={}){
+  const source=multilineText(answer,5000);
+  const existing=safeArray(Array.isArray(current) ? current : current.documents);
+  const labeled=/(?:^|[;\n])\s*(?:documents?|sources?)\s*:/i.test(source);
+  const documentMatch=source.match(/(?:^|\n)\s*(?:documents?|sources?)\s*:\s*([\s\S]+)/i);
+  const acceptsCurrent=/^(?:yes|yep|yeah|use current documents|keep current documents|use those documents)\b/i.test(source);
+  const documentText=multilineText(documentMatch?.[1] || '',5000) || (!labeled && !acceptsCurrent ? source : '');
+  const items=documentText.split(/\n|;/).map((item)=>item.replace(/^[-*]\s*/,'').trim()).filter(Boolean);
+  const documents=[];
+  const unresolved=[];
+  for(const item of items){
+    const [rawName,...useParts]=item.split('|');
+    const documentName=compactText(rawName,300);
+    const intendedUse=compactText(useParts.join('|'),500);
+    const candidate=projectDocumentCandidateMatch(documentName,brief.documentCandidates);
+    if(!candidate){
+      if(documentName) unresolved.push(documentName);
+      continue;
+    }
+    if(!documents.some((document)=>document.id===candidate.id)) documents.push({...candidate,intendedUse,known:true});
+  }
+  if((!items.length || acceptsCurrent) && existing.length) documents.push(...existing);
+  for(const document of documents){
+    const prior=existing.find((item)=>item.id===document.id);
+    if(prior?.intendedUse && !document.intendedUse) document.intendedUse=prior.intendedUse;
+  }
+  return {documents,unresolved:uniqueNames(unresolved)};
+}
+function missingProjectDocumentFields(proposal={}){
+  const missing=[];
+  if(!safeArray(proposal.documents).length) missing.push('documents');
+  if(safeArray(proposal.documents).some((document)=>!compactText(document.intendedUse))) missing.push('intended use');
+  return missing;
+}
+function projectDocumentsQuestion(state={},brief={}){
+  const proposal=state.draftDocuments || {documents:[],unresolved:[]};
+  if(state.stage === 'documents'){
+    const choices=safeArray(brief.documentCandidates).slice(0,12).map((document)=>document.title).join('; ');
+    return {
+      targetField:'document_receipt[].{document_title,intended_project_use}',
+      question:`Which existing document receipts should inform ${brief.projectName || 'this project'}, and how should each be used?`,
+      detail:choices
+        ? `Use one line per document: Exact document title | intended project use. Available receipts: ${choices}`
+        : 'There are no existing document receipts available yet. Add or connect the document in Documents, then reopen this Project Managers brief.'
+    };
+  }
+  if(state.stage === 'unresolved') return {
+    targetField:'document_receipt[].document_title',
+    question:`I cannot link ${proposal.unresolved.join(', ')} because VAL does not have that document receipt.`,
+    detail:'Add or connect the document in Documents, then reopen this brief. VAL will not invent a document or treat a filename as evidence.'
+  };
+  if(state.stage === 'intended_use'){
+    const missing=safeArray(proposal.documents).filter((document)=>!compactText(document.intendedUse)).map((document)=>document.title).join('; ');
+    return {targetField:'document_receipt[].intended_project_use',question:`How should ${missing} inform this project?`,detail:'Use: Exact document title | intended project use. This records the evidence purpose without changing the document.'};
+  }
+  return {targetField:'document_receipt + project_source_references',question:'Review the linked document receipts and their intended uses, then apply them to this Project Manager.',detail:'Applying links existing evidence internally. Nothing external happens.'};
+}
+
 function exactTranscriptLines(value=[]){
   return safeArray(value).map((item)=>String(item == null ? '' : item).trim()).filter(Boolean);
 }
@@ -604,6 +718,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Connect the selected project to its people and owner.',
     completionCondition:'Each linked person has a role and one is the explicit project owner.'
   },
+  'project.documents':{
+    id:'project.documents',surface:'project_managers',scopeType:'project_section',sectionId:'documents',
+    requiredPackets:['project_packet','document_receipt','project_source_references'],
+    objective:'Link existing document receipts to the selected project and name their intended use.',
+    completionCondition:'Each linked document is an existing VAL receipt with a specific project use.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -643,8 +763,10 @@ function createValCoworkService({
   userId=()=>'default',
   loadProject=async()=>null,
   loadRelationships=async()=>[],
+  loadDocuments=async()=>[],
   applyProjectIdentity=async()=>null,
   applyProjectPeople=async()=>null,
+  applyProjectDocuments=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -737,6 +859,7 @@ function createValCoworkService({
           draftWorkstreams:safeArray(state.draftWorkstreams),
           draftIdentity:state.draftIdentity || null,
           draftPeople:state.draftPeople || null,
+          draftDocuments:state.draftDocuments || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -853,6 +976,42 @@ function createValCoworkService({
       workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,people:proposal.people,ownerId:proposal.ownerId,ownerName:proposal.ownerName,completionCondition:brief.completionCondition};
       question=projectPeopleQuestion(state,brief);message='VAL prepared the linked people and project owner for review. Apply when this is true.';
     }else{question=projectPeopleQuestion(state,brief);message=question.question;session.status='needs_input';workItem.status='needs_input';}
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
+  async function openProjectDocumentsEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.documents'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can link documents.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const documents=await loadDocuments({limit:120});
+    const brief=buildProjectDocumentsBrief(project,documents,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'documents',draftDocuments:{documents:brief.existingDocuments,unresolved:[]},answers:[]};
+    const question=projectDocumentsQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_documents',title:`Documents for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,documents:state.draftDocuments.documents,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectDocuments(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    const proposal=parseProjectDocuments(answer,brief,state.draftDocuments || {});
+    state.draftDocuments=proposal;
+    const missing=missingProjectDocumentFields(proposal);
+    if(proposal.unresolved.length) state.stage='unresolved';
+    else if(missing.includes('intended use')) state.stage='intended_use';
+    let question,message='';
+    if(!proposal.unresolved.length && !missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,documents:proposal.documents,completionCondition:brief.completionCondition};
+      workItem.sourceRefsJson=sourceRefsForDocuments([...safeArray(brief.sourceRefs),...proposal.documents]);
+      question=projectDocumentsQuestion(state,brief);message='VAL prepared the linked document receipts and intended uses for review. Apply when this is true.';
+    }else{question=projectDocumentsQuestion(state,brief);message=question.question;session.status='needs_input';workItem.status='needs_input';}
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
@@ -1006,6 +1165,7 @@ function createValCoworkService({
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
     if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
+    if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -1061,6 +1221,7 @@ function createValCoworkService({
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
+    if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1245,6 +1406,19 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_people',status:'completed',summary:`Applied ${proposal.people.length} linked people and the owner to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',people:proposal.people,ownerId:proposal.ownerId,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_documents'){
+      if(workItem.status !== 'needs_review') throw new Error('The project documents must be complete and reviewed before they can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const proposal={documents:safeArray(payload.documents)};
+      if(missingProjectDocumentFields(proposal).length) throw new Error('The project document proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectDocuments({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || session.workingBriefJson?.projectName || 'Project',documents:proposal.documents,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the documents to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_documents',status:'completed',summary:`Applied ${proposal.documents.length} linked document receipt${proposal.documents.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',documents:proposal.documents,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -1292,12 +1466,14 @@ module.exports={
   COWORK_ENTRYPOINTS,
   buildProjectIdentityBrief,
   buildProjectPeopleBrief,
+  buildProjectDocumentsBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,
   missingProjectIdentityFields,
   missingProjectPeopleFields,
+  missingProjectDocumentFields,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

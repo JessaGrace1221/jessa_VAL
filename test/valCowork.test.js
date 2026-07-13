@@ -51,11 +51,19 @@ function relationships(){
   ];
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedRelationships=relationships()}={}){
+function documents(){
+  return [
+    {id:'doc_mou',title:'Forever Freedom MOU',type:'application/pdf',sourceType:'email_attachment',sourceId:'email_mou',summary:'Signed partnership memorandum.',sourceRefs:[{source_type:'email_attachment',source_id:'email_mou',quote_or_summary:'Forever Freedom MOU',confidence:0.94}]},
+    {id:'doc_scope',title:'Forever Freedom launch scope',type:'google_doc',sourceType:'google_docs',sourceId:'drive_scope',summary:'Proposed launch scope.',sourceRefs:[{source_type:'google_docs',source_id:'drive_scope',quote_or_summary:'Forever Freedom launch scope',confidence:0.9}]}
+  ];
+}
+
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedRelationships=relationships(),loadedDocuments=documents()}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
   const appliedPeople=[];
+  const appliedDocuments=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -67,6 +75,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`,
     loadProject:async id=>id===loadedProject?.projectId ? loadedProject : null,
     loadRelationships:async()=>loadedRelationships,
+    loadDocuments:async()=>loadedDocuments,
     applyProjectIdentity:async payload=>{
       appliedIdentities.push(payload);
       return {...loadedProject,name:payload.projectName,desiredOutcome:payload.desiredOutcome,nextStepOwner:payload.owner,summary:payload.purpose};
@@ -74,6 +83,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     applyProjectPeople:async payload=>{
       appliedPeople.push(payload);
       return {...loadedProject,relationships:payload.people.map((person)=>person.name),nextStepOwner:payload.ownerName};
+    },
+    applyProjectDocuments:async payload=>{
+      appliedDocuments.push(payload);
+      return {...loadedProject,projectDocuments:payload.documents};
     },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
@@ -89,7 +102,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -103,7 +116,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -158,6 +171,24 @@ test('project people links only existing relationships, records their roles, and
   assert.equal(applied.receipt.payloadJson.noExternalAction,true);
   assert.equal(appliedPeople[0].people[1].role,'Partner lead');
   assert.equal(appliedPeople[0].ownerId,'rel_jessa');
+});
+
+test('project documents links only existing receipts, records their intended use, and applies internally',async()=>{
+  const {service,appliedDocuments}=serviceFor();
+  const opened=await service.openEntry({entrypointId:'project.documents',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'documents'}});
+  assert.equal(opened.question.targetField,'document_receipt[].{document_title,intended_project_use}');
+  assert.match(opened.question.question,/which existing document receipts/i);
+  const ready=await service.respond(opened.session.id,{answer:[
+    'Documents: Forever Freedom MOU | Defines the signed partnership terms and decision boundaries.',
+    'Forever Freedom launch scope | Defines the launch work that this project must coordinate.'
+  ].join('\n')});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.documents.length,2);
+  assert.equal(ready.workItem.payload.documents[0].intendedUse,'Defines the signed partnership terms and decision boundaries.');
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.receipt.action,'apply_project_documents');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedDocuments[0].documents[1].sourceType,'google_docs');
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -317,6 +348,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/entrypointId:'project\.workstreams'/);
   assert.match(hearth,/entrypointId:'project\.identity'/);
   assert.match(hearth,/entrypointId:'project\.people'/);
+  assert.match(hearth,/entrypointId:'project\.documents'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
@@ -324,6 +356,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'workstreams'\) return openProjectWorkstreamsCowork/);
   assert.match(hearth,/if\(field === 'what_this_is' \|\| field === 'project_interview'\) return openProjectIdentityCowork/);
   assert.match(hearth,/if\(field === 'people_involved'\) return openProjectPeopleCowork/);
+  assert.match(hearth,/if\(field === 'documents_sources'\) return openProjectDocumentsCowork/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
@@ -331,6 +364,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/data-cowork-apply-workstreams/);
   assert.match(hearth,/data-cowork-apply-project-identity/);
   assert.match(hearth,/data-cowork-apply-project-people/);
+  assert.match(hearth,/data-cowork-apply-project-documents/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
@@ -358,7 +392,11 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/applyProjectIdentity:applyCoworkProjectIdentity/);
   assert.match(server,/async function applyCoworkProjectPeople/);
   assert.match(server,/applyProjectPeople:applyCoworkProjectPeople/);
+  assert.match(server,/async function applyCoworkProjectDocuments/);
+  assert.match(server,/applyProjectDocuments:applyCoworkProjectDocuments/);
   assert.match(server,/projectPeople:linkedPeople\.map/);
   assert.match(server,/projectPeople:Array\.isArray\(metadata\.projectPeople\)\?metadata\.projectPeople:\[\]/);
+  assert.match(server,/projectDocuments:linkedDocuments/);
+  assert.match(server,/projectDocuments:Array\.isArray\(metadata\.projectDocuments\)\?metadata\.projectDocuments:\[\]/);
   assert.match(hearth,/foundation_applied/);
 });

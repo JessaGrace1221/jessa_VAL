@@ -180,6 +180,31 @@ function projectProfileDocuments(projectProfiles=[]){
         raw:file
       }));
     }
+    for(const document of safeArray(meta.projectDocuments)){
+      if(documentLooksLikeCalendarInvite(document))continue;
+      rows.push(documentRecord({
+        ...document,
+        id:document.id||`project-document:${projectId}:${document.title||document.sourceId||'source'}`,
+        sourceId:document.sourceId||document.id,
+        title:document.title||'Project document receipt',
+        type:document.type||'project_document_receipt',
+        status:'reference',
+        source:document.source||document.sourceType||'Project Managers document link',
+        sourceType:document.sourceType||'project_document_receipt',
+        project:projectName,
+        projectLinks:[{id:projectId,name:projectName}],
+        relationship:document.relationship||'',
+        sourceUrl:document.sourceUrl||'',
+        body:document.summary||document.title||'',
+        summary:document.summary||document.title||'',
+        createdAt:profile.createdAt||profile.created_at,
+        updatedAt:profile.updatedAt||profile.updated_at,
+        referenceUse:document.intendedUse||'Use as linked project evidence.',
+        needs:'The source remains unchanged; review before creating a derivative or taking external action.',
+        sourceRefs:safeArray(document.sourceRefs),
+        raw:document
+      }));
+    }
     if(intake.documents){
       rows.push(documentRecord({
         id:`project-doc-notes:${projectId}`,
@@ -314,7 +339,22 @@ function dedupeDocuments(rows=[]){
   for(const row of rows){
     if(!row||!row.id)continue;
     if(documentLooksLikeCalendarInvite(row))continue;
-    if(!byId.has(row.id))byId.set(row.id,row);
+    const existing=byId.get(row.id);
+    if(!existing){
+      byId.set(row.id,row);
+      continue;
+    }
+    const relationshipLinks=[...safeArray(existing.relationshipLinks),...safeArray(row.relationshipLinks)];
+    const projectLinks=[...safeArray(existing.projectLinks),...safeArray(row.projectLinks)];
+    byId.set(row.id,{
+      ...existing,
+      relationship:row.relationship||existing.relationship,
+      project:row.project||existing.project,
+      relationshipLinks:relationshipLinks.filter((link,index,links)=>links.findIndex((candidate)=>String(candidate.id||candidate.name||candidate.email||'')===String(link.id||link.name||link.email||''))===index),
+      projectLinks:projectLinks.filter((link,index,links)=>links.findIndex((candidate)=>String(candidate.id||candidate.name||'')===String(link.id||link.name||''))===index),
+      referenceUse:row.project ? (row.referenceUse||existing.referenceUse) : existing.referenceUse,
+      sourceRefs:[...safeArray(existing.sourceRefs),...safeArray(row.sourceRefs)]
+    });
   }
   return [...byId.values()].sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||a.title.localeCompare(b.title));
 }

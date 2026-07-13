@@ -126,6 +126,15 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
       displayName: 'Atlas',
       metadata: {
         uploadedFiles: [{id: 'file_1', fileName: 'atlas-scope.docx', docType: 'contract', source: 'hearth_project_source_upload', chars: 1400}],
+        projectDocuments: [{
+          id: 'draft:draft_1',
+          title: 'Proposal for Greg',
+          type: 'proposal_draft',
+          sourceType: 'val_draft',
+          sourceId: 'draft_1',
+          intendedUse: 'Use as the reviewed project proposal for Atlas.',
+          sourceRefs: [{source_type: 'val_draft', source_id: 'draft_1', quote_or_summary: 'Proposal for Greg', confidence: 0.9}]
+        }],
         intake: {documents: 'Contract and implementation notes were supplied.'}
       }
     }],
@@ -143,6 +152,10 @@ test('document index normalizes drafts, prepared artifacts, project uploads, mem
   assert.equal(all.documents.some(doc => /invite\.ics/i.test(doc.title)), false);
   assert.ok(all.documents.some(doc => doc.sourceType === 'google_docs'));
   assert.equal(all.summary.projects, 1);
+  const linkedDrafts = all.documents.filter(doc => doc.id === 'draft:draft_1');
+  assert.equal(linkedDrafts.length, 1);
+  assert.equal(linkedDrafts[0].project, 'Atlas');
+  assert.equal(linkedDrafts[0].referenceUse, 'Use as the reviewed project proposal for Atlas.');
 
   const relationship = await service.list({relationship: 'Greg'});
   assert.ok(relationship.documents.every(doc => documentMatches(doc, {relationship: 'Greg'})));

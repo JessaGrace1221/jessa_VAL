@@ -3519,6 +3519,30 @@ function projectRelationshipPacketItems(project = {}, relationships = []){
   });
 }
 
+function projectDocumentReceiptItems(project = {}, documents = []){
+  const metadata = projectMetadataObject(project);
+  const stored = Array.isArray(project.projectDocuments)
+    ? project.projectDocuments
+    : (Array.isArray(metadata.projectDocuments) ? metadata.projectDocuments : []);
+  const sourceDocuments = stored.length ? stored : (Array.isArray(project.documents) ? project.documents : documents);
+  return sourceDocuments.map((document) => {
+    if(typeof document === 'string') return {
+      document_id:document,
+      document_title:document,
+      source_type:'project_document_notes',
+      intended_project_use:'Use as linked project evidence.',
+      source_refs:[]
+    };
+    return {
+      document_id:document.id || document.documentId || document.sourceId || document.title || '',
+      document_title:document.title || document.name || document.fileName || 'Document receipt',
+      source_type:document.sourceType || document.source || 'document',
+      intended_project_use:document.intendedUse || document.referenceUse || 'Use as linked project evidence.',
+      source_refs:Array.isArray(document.sourceRefs) ? document.sourceRefs : []
+    };
+  }).filter((document) => document.document_id && document.document_title);
+}
+
 function projectRelationshipOptionFromProfile(profile = {}){
   const query = profile.query || {};
   const name = profile.name || profile.displayName || profile.identity || query.name || profile.email || '';
@@ -3662,6 +3686,7 @@ function projectManagerPacket(project = {}){
   const graph = Array.isArray(project.graphLinks) ? project.graphLinks : [];
   const prepared = Array.isArray(project.preparedWork) ? project.preparedWork : [];
   const reviewUpdates = Array.isArray(project.reviewUpdates) ? project.reviewUpdates : [];
+  const documentReceipts = projectDocumentReceiptItems(project, docs);
   const interviewStage = projectInterviewStage(project);
   const interviewContract = projectInterviewStageContract(interviewStage);
   const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, needsOnboarding ? 'No project risk has been defined yet.' : 'No active blocker has been proven yet.');
@@ -3711,6 +3736,7 @@ function projectManagerPacket(project = {}){
       evidence_summary: projectCleanText(project.sourceReceipts || admission.source_receipts, 'Project evidence is held privately.')
     },
     project_relationships_packet: projectRelationshipPacketItems(project, relationships),
+    project_document_receipts: documentReceipts,
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
     project_risk_packet: {risk_summary:risk, mitigation_next_step:nextAction, owner},
     project_prepared_work_packets: prepared,
@@ -3754,7 +3780,7 @@ function projectCoworkAffectedObject(field = '', project = {}, packet = {}){
     next_move: 'project_next_action_packet',
     people_involved: 'project_relationships_packet',
     prepared_work: 'project_prepared_work_packets',
-    documents_sources: 'project_identity_packet.source_receipts',
+    documents_sources: 'project_document_receipts',
     risk_blocker: 'project_risk_packet',
     working_narrative: 'project_manager_judgment_packet.current_reality',
     what_val_needs_next: 'project_interview_packet',
@@ -4071,7 +4097,7 @@ function renderProjectManagerProfile(project = {}){
   const detailCards = [
     projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
     prepared.length ? projectManagerDetailCard('prepared_work', 'Prepared work', '<ul>' + projectManagerList(prepared) + '</ul>') : '',
-    documents.concat(graph).length ? projectManagerDetailCard('documents_sources', 'Documents / sources', '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>') : '',
+    projectManagerDetailCard('documents_sources', 'Documents / sources', documents.concat(graph).length ? '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>' : '<p>No document evidence is linked yet. Link an existing receipt from Documents.</p>'),
     riskTitle || riskBody ? projectManagerDetailCard('risk_blocker', 'Risk / blocker', '<strong>' + escapeHtml(riskTitle || 'Possible blocker') + '</strong><p>' + escapeHtml(riskBody || 'Review before moving forward.') + '</p>') : ''
   ].filter(Boolean);
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
@@ -4310,6 +4336,7 @@ function coworkEntryPlaceholder(question = {}){
   if(target === 'prepared_artifact.email_draft') return 'Review the prepared meeting overview.';
   if(target.includes('project_identity_packet.')) return 'Project name: ...; Serves: ...; Desired outcome: ...';
   if(target.includes('project_relationships_packet')) return 'People: Name - role; Name - role';
+  if(target.includes('document_receipt')) return 'Exact document title | intended project use';
   if(target === 'project_owner_packet.owner') return 'Project owner: ...';
   if(target === 'project_identity_packet.desired_outcome') return 'Outcome: this project should create...';
   if(target === 'project_next_action_packet.next_action') return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
@@ -4432,6 +4459,24 @@ function renderCoworkPeopleItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkDocumentItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const documents = Array.isArray(payload.documents) ? payload.documents : [];
+  if(!documents.length) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing document links');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared document links</span><strong>' + escapeHtml(workItem.title || 'Project documents') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list">',
+        documents.map((document) => '<article><strong>' + escapeHtml(document.title || 'Document receipt') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Use', document.intendedUse) + coworkWorkstreamField('Source', document.sourceType || document.source || '') + '</div></article>').join(''),
+      '</div>',
+      ready ? '<button type="button" data-cowork-apply-project-documents="' + escapeHtml(workItem.id || '') + '">Apply document links</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkTranscriptOverviewItem(workItem = {}){
   const payload = workItem.payload || {};
   const artifact = payload.preparedArtifact || {};
@@ -4464,9 +4509,11 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
+    : entrypointId === 'project.documents'
+    ? 'Link existing evidence and name how it should inform this selected project.'
     : entrypointId === 'project.people'
     ? 'Connect the correct relationships and owner to this selected project.'
     : entrypointId === 'project.identity'
@@ -4514,7 +4561,9 @@ function renderCoworkEntryResult(result = {}, options = {}){
   const message = result.question?.question || result.message || '';
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
   if(response && workItem.id){
-    const item = workItem.type === 'project_people'
+    const item = workItem.type === 'project_documents'
+      ? renderCoworkDocumentItem(workItem)
+      : workItem.type === 'project_people'
       ? renderCoworkPeopleItem(workItem)
       : workItem.type === 'project_identity'
       ? renderCoworkIdentityItem(workItem)
@@ -4531,6 +4580,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
   if(textarea){
     const completeLabel = session.entrypointId === 'transcript.working_brief'
       ? 'Meeting overview draft created.'
+      : session.entrypointId === 'project.documents'
+        ? 'Project document links applied.'
       : session.entrypointId === 'project.people'
         ? 'Project people applied.'
       : session.entrypointId === 'project.identity'
@@ -4641,6 +4692,25 @@ async function openProjectPeopleCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this People Involved interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectDocumentsCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('documents_sources', project);
+  const action = 'project:cowork:documents_sources';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'documents_sources',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Link project documents',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.documents',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Link project documents',meaning:'Preparing the Documents / Sources brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will link existing document receipts and record their project use without changing the source.',placeholder:'Preparing the selected Project Managers document brief...',heading:'Linking documents to ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Documents / sources.',publicDetail:'Scoped to Project Managers: Documents / sources.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.documents',scope:{entityType:'project_section',entityId:projectId,sectionId:'documents'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Documents / Sources brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Documents / Sources interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -4723,7 +4793,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -4805,6 +4875,17 @@ async function applyActiveCoworkProjectPeople(workItemId = '', button = null){
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply these people. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectDocuments(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply these document links yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);void hydrateProjectDocuments(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply these document links. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -4822,6 +4903,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(!activeProjectProfile) return;
   if(field === 'what_this_is' || field === 'project_interview') return openProjectIdentityCowork(node,field);
   if(field === 'people_involved') return openProjectPeopleCowork(node);
+  if(field === 'documents_sources') return openProjectDocumentsCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -19441,14 +19523,16 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const workstreamsApply = event.target.closest('[data-cowork-apply-workstreams]');
   const projectIdentityApply = event.target.closest('[data-cowork-apply-project-identity]');
   const projectPeopleApply = event.target.closest('[data-cowork-apply-project-people]');
+  const projectDocumentsApply = event.target.closest('[data-cowork-apply-project-documents]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
   if(projectIdentityApply) await applyActiveCoworkProjectIdentity(projectIdentityApply.dataset.coworkApplyProjectIdentity, projectIdentityApply);
   if(projectPeopleApply) await applyActiveCoworkProjectPeople(projectPeopleApply.dataset.coworkApplyProjectPeople, projectPeopleApply);
+  if(projectDocumentsApply) await applyActiveCoworkProjectDocuments(projectDocumentsApply.dataset.coworkApplyProjectDocuments, projectDocumentsApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
