@@ -105,7 +105,7 @@ const timelineStatusPanel = document.querySelector('[data-timeline-status-panel]
 const timelineStatusCount = document.querySelector('[data-timeline-status-count]') || transcriptCount;
 const timelineEventList = document.querySelector('[data-timeline-event-list]') || transcriptList;
 const timelineEventCount = document.querySelector('[data-timeline-event-count]') || transcriptCount;
-const timelineReviewCards = document.querySelector('[data-timeline-review-cards]') || transcriptDetail;
+const timelineReviewCards = transcriptDetail || document.querySelector('[data-timeline-review-cards]');
 const timelineReviewCount = document.querySelector('[data-timeline-review-count]') || document.querySelector('[data-transcript-field="title"]');
 const documentDrawerLink = document.querySelector('.document-drawer-link');
 const closeDocumentDetail = document.querySelector('.close-document-detail');
@@ -10077,7 +10077,7 @@ function renderTimelineTranscriptMetricStrip(transcript = {}, tasks = [], overvi
     '<div class="timeline-transcript-summary-strip" aria-label="Transcript readiness">',
     '<span><strong>' + escapeHtml(taskCount) + '</strong> action item' + (taskCount === 1 ? '' : 's') + '</span>',
     '<span><strong>' + escapeHtml(keyPointCount) + '</strong> key point' + (keyPointCount === 1 ? '' : 's') + '</span>',
-    '<span><strong>' + escapeHtml(draft.ready ? 'Ready' : 'Needs review') + '</strong> overview draft</span>',
+    '<span><strong>' + escapeHtml(draft.ready ? 'Ready' : 'Needs review') + '</strong> overview</span>',
     '<span><strong>' + escapeHtml(inviteeCount || 'Review') + '</strong> calendar invitee' + (inviteeCount === 1 ? '' : 's') + '</span>',
     '</div>'
   ].join('');
@@ -10085,15 +10085,19 @@ function renderTimelineTranscriptMetricStrip(transcript = {}, tasks = [], overvi
 
 function renderTimelineMeetingOverviewDraft(transcript = {}, tasks = [], overviewDraft = null){
   const draft = overviewDraft || timelineMeetingOverviewDraft(transcript, tasks);
+  const hasInviteeEmail = draft.invitees.some((person) => /@/.test(String(person.key || person.label || '')));
   const inviteeCopy = draft.invitees.length
-    ? 'Ready to review and send to ' + draft.invitees.length + ' calendar invitee' + (draft.invitees.length === 1 ? '' : 's') + '.'
-    : 'Ready to review once VAL confirms the calendar invitees for this meeting.';
+    ? 'Ready to send to ' + draft.invitees.length + ' calendar invitee' + (draft.invitees.length === 1 ? '' : 's') + '.'
+    : 'Ready once VAL confirms the calendar invitees for this meeting.';
   const renderItems = (items, empty) => items.length
     ? '<ul>' + items.slice(0, 16).map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul>'
     : '<p>' + escapeHtml(empty) + '</p>';
+  const receipt = draft.ready && hasInviteeEmail
+    ? '<button type="button" class="timeline-overview-receipt timeline-overview-send" data-transcript-action="send_overview" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><span>Meeting Overview</span><strong>Ready - send to invitees</strong></button>'
+    : '<div class="timeline-overview-receipt"><span>Meeting Overview</span><strong>' + escapeHtml(draft.ready ? 'Ready' : 'Needs source notes') + '</strong></div>';
   return [
     '<section class="timeline-transcript-section timeline-meeting-overview-ready">',
-    '<div class="timeline-overview-receipt"><span>Meeting Overview</span><strong>' + escapeHtml(draft.ready ? 'Draft ready' : 'Needs source notes') + '</strong></div>',
+    receipt,
     '<p>' + escapeHtml(inviteeCopy + ' It uses only the source Action Items and Key Points.') + '</p>',
     '<div class="timeline-meeting-overview-draft">',
     '<h5>Action Items</h5>',
@@ -10206,7 +10210,6 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '<div class="timeline-transcript-titlebar">',
     '<div><span>' + escapeHtml(timelineTranscriptMeta(transcript)) + '</span><h4>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</h4>' + (rawTitle && rawTitle !== timelineTranscriptTitle(transcript) ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
     '<div class="timeline-transcript-actions">',
-    '<button type="button" data-transcript-action="draft_followup" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Draft overview</button>',
     '<button type="button" data-transcript-action="create_task" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Create task</button>',
     '<button type="button" data-transcript-reprocess="' + escapeHtml(transcript.id || '') + '">Reprocess</button>',
     '</div>',
@@ -10225,18 +10228,25 @@ function renderTimelineTranscriptDetail(transcript = {}){
   ].join('');
 }
 
+function resetTimelineTranscriptDetailScroll(){
+  document.querySelector('.transcript-detail-panel')?.scrollTo?.({top:0, left:0});
+  timelineReviewCards?.scrollTo?.({top:0, left:0});
+  transcriptDetail?.scrollTo?.({top:0, left:0});
+}
+
 async function openTimelineTranscript(transcriptId){
   if(!transcriptId) return;
   renderTimelineTranscriptList(transcriptId);
-  if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is loading transcript intelligence, action items, source text, and Co-Work context.</p></article>';
-  document.querySelector('.transcript-detail-panel')?.scrollIntoView({block:'start', inline:'nearest'});
+  const cached = currentTimelineTranscriptItems.find((item) => String(item.id || '') === String(transcriptId));
+  if(cached) renderTimelineTranscriptDetail({...cached, transcriptPreviewHydrating:true});
+  else if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is loading transcript intelligence, action items, source text, and Co-Work context.</p></article>';
+  resetTimelineTranscriptDetailScroll();
   try{
     const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId));
     if(!data?.transcript) throw new Error('Transcript detail was empty.');
     renderTimelineTranscriptDetail(data.transcript);
     window.requestAnimationFrame(() => {
-      document.querySelector('.transcript-detail-panel')?.scrollIntoView({block:'start', inline:'nearest'});
-      if(drawerTray) drawerTray.scrollTop = 0;
+      resetTimelineTranscriptDetailScroll();
     });
   }catch(error){
     if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Could not open transcript</span><p>' + escapeHtml(error.message || 'Transcript detail unavailable.') + '</p></article>';
@@ -10249,7 +10259,7 @@ async function loadTimelineTranscripts({openFirst = true} = {}){
   renderTimelineTranscriptEmpty();
   if(!canUseApi) return;
   try{
-    const data = await getJson('/api/val/transcripts?days=3650&limit=60');
+    const data = await getJson('/api/val/transcripts?days=3650&limit=30');
     currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
@@ -10281,13 +10291,15 @@ async function timelineTranscriptAsk(transcriptId){
 
 async function timelineTranscriptAction(transcriptId, action){
   const status = document.querySelector('[data-transcript-action-status]');
-  if(status) status.textContent = 'VAL is preparing this from the selected transcript...';
+  if(status) status.textContent = action === 'send_overview'
+    ? 'VAL is sending the meeting overview to the calendar invitees...'
+    : 'VAL is preparing this from the selected transcript...';
   try{
     const data = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/actions', {action});
-    if(status) status.textContent = action === 'draft_followup'
-      ? 'Draft saved for approval: ' + (data.draft?.subject || 'follow-up draft')
+    if(status) status.textContent = action === 'send_overview'
+      ? (data.sent?.packet?.providerResponseSummary || data.sent?.provider_result?.providerResponseSummary || 'Meeting overview sent to calendar invitees.')
       : 'Task created or staged: ' + (data.task?.title || 'transcript task');
-    await openTimelineTranscript(transcriptId);
+    if(action !== 'send_overview') await openTimelineTranscript(transcriptId);
   }catch(error){
     if(status) status.textContent = 'Action stayed blocked: ' + (error.message || 'Request failed.');
   }

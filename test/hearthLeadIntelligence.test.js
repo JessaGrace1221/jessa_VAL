@@ -534,7 +534,7 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /const timelineDrawerLink/);
   assert.match(hearthJs, /function hydrateTimelineStatus/);
   assert.match(hearthJs, /function loadTimelineTranscripts/);
-  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=60/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=30/);
   assert.match(hearthJs, /function openTimelineTranscript/);
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
@@ -552,10 +552,13 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /krispSections\.actionItems\.length/);
   assert.match(hearthJs, /krispStructured\.length/);
   assert.match(hearthJs, /if\(native\.length\) return native/);
-  assert.match(hearthJs, /Draft ready/);
+  assert.match(hearthJs, /Ready - send to invitees/);
   assert.match(hearthJs, /It uses only the source Action Items and Key Points/);
-  assert.match(hearthJs, /document\.querySelector\('\.transcript-detail-panel'\)\?\.scrollIntoView/);
-  assert.match(hearthJs, /drawerTray\.scrollTop = 0/);
+  assert.match(hearthJs, /function resetTimelineTranscriptDetailScroll/);
+  const openTimelineTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
+  assert.ok(openTimelineTranscriptBody);
+  assert.doesNotMatch(openTimelineTranscriptBody, /scrollIntoView/);
+  assert.doesNotMatch(openTimelineTranscriptBody, /drawerTray\.scrollTop = 0/);
   assert.doesNotMatch(hearthJs, /VAL Action Items/);
   assert.match(hearthJs, /Action Items/);
   assert.match(hearthJs, /Co-Work on This Transcript/);
@@ -1330,8 +1333,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-overview-return-20260712/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=transcript-overview-return-20260712/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ready-send-20260713/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=transcript-ready-send-20260713/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

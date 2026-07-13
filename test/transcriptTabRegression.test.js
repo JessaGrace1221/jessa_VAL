@@ -7,6 +7,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
+const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -166,7 +167,11 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
+  assert.match(server,/action===\'send_overview\'/);
   assert.match(server,/action===\'draft_followup\'/);
+  assert.match(server,/sendTranscriptMeetingOverview/);
+  assert.match(hearthJs,/Ready - send to invitees/);
+  assert.doesNotMatch(hearthJs,/Draft overview/);
 });
 
 test('transcript cards and errors have readable responsive styling',()=>{

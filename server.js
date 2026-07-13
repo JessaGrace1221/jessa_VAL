@@ -33,6 +33,8 @@ const {ensureValProjectPinsTables} = require('./services/valProjectPinsSchema');
 const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes');
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
+const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
+const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
@@ -18702,6 +18704,154 @@ function transcriptKrispNativeMetadata(metadata={}){
   const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test(String(metadata.provider||metadata.source||metadata.importedVia||'')));
   return {krispNative,nativeSummary,nativeActionItems};
 }
+function transcriptOverviewItemText(item){
+  if(typeof item==='string')return item;
+  if(!item||typeof item!=='object')return '';
+  return item.taskTitle||item.title||item.text||item.summary||item.point||item.action||item.name||item.taskDescription||'';
+}
+function transcriptOverviewLineItems(value){
+  if(Array.isArray(value)){
+    return value.map(transcriptOverviewItemText)
+      .map(item=>String(item||'').replace(/^[-*]\s*/,'').replace(/^\[[ x]\]\s*/i,'').replace(/^\d+[.)]\s*/,'').trim())
+      .filter(Boolean)
+      .filter(item=>!/^(Action Items?|Key Points|Meeting Overview|Summary|Overview)\s*:?\s*$/i.test(item));
+  }
+  const text=String(value||'').trim();
+  if(!text)return [];
+  if((text.startsWith('[')||text.startsWith('{'))&&text.length<50000){
+    try{
+      const parsed=JSON.parse(text);
+      const values=Array.isArray(parsed)?parsed:Object.values(parsed||{});
+      const parsedItems=transcriptOverviewLineItems(values);
+      if(parsedItems.length)return parsedItems;
+    }catch(_){}
+  }
+  return text.split(/\n+|(?=\s*[-*]\s+)|(?=\s*\[[ x]\]\s+)/i)
+    .map(item=>item.replace(/^[-*]\s*/,'').replace(/^\[[ x]\]\s*/i,'').replace(/^\d+[.)]\s*/,'').trim())
+    .filter(Boolean)
+    .filter(item=>!/^(Action Items?|Key Points|Meeting Overview|Summary|Overview)\s*:?\s*$/i.test(item));
+}
+function transcriptKrispSourceSectionsForOverview(transcript={}){
+  return transcript.sourcePayloadMetadata?.data?.sections
+    || transcript.sourcePayloadMetadata?.sections
+    || transcript.metadata?.data?.sections
+    || transcript.metadata?.sections
+    || {};
+}
+function transcriptOverviewSections(transcript={},tasks=[]){
+  const sourceSections=transcriptKrispSourceSectionsForOverview(transcript);
+  const summaryObject=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.summaryPreview||''};
+  const summaryText=String(transcript.nativeSummary||transcript.transcriptText||transcript.rawTranscript||transcript.rawText||transcript.sourcePayloadMetadata?.data?.raw_content||summaryObject.executiveSummary||summaryObject.clientSummary||'').trim();
+  const actionMatch=summaryText.match(/(?:^|\n)\s*#{0,3}\s*Action Items?\s*:?\s*([\s\S]*?)(?=(?:\n\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\b)|$)/i)
+    || summaryText.match(/Action Items?\s*:?\s*([\s\S]*?)(?:\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
+  const overviewMatch=summaryText.match(/(?:^|\n)\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\s*:?\s*([\s\S]*)$/i)
+    || summaryText.match(/\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
+  const structuredActions=transcriptOverviewLineItems(sourceSections.action_items||sourceSections.actionItems||sourceSections.actions);
+  const structuredKeyPoints=transcriptOverviewLineItems(sourceSections.key_points||sourceSections.keyPoints||sourceSections.points||sourceSections.summary_points);
+  const actionItems=structuredActions.length
+    ? structuredActions
+    : (actionMatch?transcriptOverviewLineItems(actionMatch[1]):transcriptOverviewLineItems(transcript.nativeActionItems&&transcript.nativeActionItems.length?transcript.nativeActionItems:(transcript.actionItems&&transcript.actionItems.length?transcript.actionItems:tasks)));
+  const keyPoints=structuredKeyPoints.length
+    ? structuredKeyPoints
+    : transcriptOverviewLineItems(overviewMatch?overviewMatch[1]:(summaryObject.keyPoints||summaryObject.keyDiscussionPoints||summaryObject.keyDecisions||summaryObject.executiveSummary||''));
+  return {actionItems,keyPoints,ready:Boolean(actionItems.length||keyPoints.length)};
+}
+function transcriptOverviewInvitees(transcript={},calendarEvent={}){
+  const buckets=[
+    calendarEvent.attendees,
+    transcript.attendees,
+    transcript.invitees,
+    transcript.calendarEvent?.attendees,
+    transcript.calendar_event?.attendees,
+    transcript.event?.attendees,
+    transcript.meetingContextJson?.attendees,
+    transcript.calendarEventJson?.attendees,
+    transcript.metadata?.attendees,
+    transcript.metadata?.calendarEvent?.attendees,
+    transcript.metadata?.calendar_event?.attendees,
+    transcript.metadata?.meetingMatch?.attendees,
+    transcript.sourcePayloadMetadata?.attendees,
+    transcript.sourcePayloadMetadata?.data?.attendees,
+    transcript.sourcePayloadMetadata?.calendarEvent?.attendees,
+    transcript.sourcePayloadMetadata?.calendar_event?.attendees,
+    transcript.sourcePayloadMetadata?.meetingMatch?.attendees
+  ];
+  const seen=new Set();
+  return buckets.flatMap(bucket=>Array.isArray(bucket)?bucket:[])
+    .map(person=>{
+      if(typeof person==='string'){
+        const match=person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        return match?{name:person.replace(/<.*?>/g,'').replace(match[0],'').trim(),email:normalizeEmailAddress(match[0])}:null;
+      }
+      if(!person||typeof person!=='object')return null;
+      const email=normalizeEmailAddress(person.email||person.address||person.mail||person.contactEmail||person.matchedEmail||person.emailAddress?.address||'');
+      const name=String(person.name||person.displayName||person.contactName||person.matchedContactName||person.emailAddress?.name||'').trim();
+      return email?{name,email}:null;
+    })
+    .filter(Boolean)
+    .filter(person=>{
+      if(!validEmail(person.email)||OWNER_EMAILS.has(person.email)||seen.has(person.email))return false;
+      seen.add(person.email);
+      return true;
+    });
+}
+async function transcriptCalendarEventForOverview(transcript={}){
+  const nested=[transcript.calendarEvent,transcript.calendar_event,transcript.event,transcript.metadata?.calendarEvent,transcript.metadata?.calendar_event,transcript.metadata?.meetingMatch,transcript.sourcePayloadMetadata?.calendarEvent,transcript.sourcePayloadMetadata?.calendar_event,transcript.sourcePayloadMetadata?.meetingMatch].find(event=>event&&typeof event==='object'&&Array.isArray(event.attendees));
+  if(nested)return nested;
+  const id=String(transcript.calendarEventId||transcript.calendar_event_id||transcript.meetingId||transcript.meeting_id||transcript.metadata?.calendarEventId||transcript.metadata?.calendar_event_id||transcript.sourcePayloadMetadata?.calendarEventId||transcript.sourcePayloadMetadata?.calendar_event_id||'').trim();
+  if(!id)return {};
+  await valDbReady;
+  if(pgPool){
+    const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
+    const row=r.rows[0];
+    return row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+  }
+  return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+}
+function transcriptOverviewEmailBody(transcript={},overview={}){
+  const actionItems=overview.actionItems||[];
+  const keyPoints=overview.keyPoints||[];
+  const list=(items)=>items.length?items.map(item=>`- ${item}`).join('\n'):'- None captured.';
+  return [
+    `Meeting Overview: ${transcript.title||transcript.meetingTitle||'Meeting'}`,
+    '',
+    'Action Items',
+    list(actionItems),
+    '',
+    'Key Points',
+    list(keyPoints)
+  ].join('\n');
+}
+async function sendTranscriptMeetingOverview(req,transcript={},tasks=[]){
+  const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  const overview=transcriptOverviewSections(transcript,tasks);
+  const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
+  if(!overview.ready)throw Object.assign(new Error('The meeting overview is not ready because this transcript has no source Action Items or Key Points yet.'),{statusCode:400});
+  if(!recipients.length)throw Object.assign(new Error('No calendar invitee email addresses are attached to this transcript yet.'),{statusCode:409});
+  const body=transcriptOverviewEmailBody(transcript,overview);
+  const subject=`Meeting overview: ${transcript.title||transcript.meetingTitle||'Meeting'}`;
+  const packet=await valExternalActions.createEmailSendPacket({
+    to:recipients.map(r=>r.email).join(', '),
+    subject,
+    body,
+    provider:'gmail',
+    finalApprovalSurface:'transcripts_drawer_meeting_overview',
+    approvalNote:'Final send approved from Transcripts drawer meeting overview.',
+    sourceContext:{source:'transcript_meeting_overview',transcriptId:transcript.id||transcript.transcriptId||'',transcriptTitle:transcript.title||transcript.meetingTitle||'',calendarEventId:calendarEvent.id||transcript.calendarEventId||transcript.meetingId||''},
+    sourceRefs:[{source_type:'transcript',source_id:transcript.id||transcript.transcriptId||'',quote_or_summary:subject,confidence:0.95}]
+  });
+  const approved=await valExternalActions.approve(packet.id,{note:'Final send approved from Transcripts drawer meeting overview.'});
+  const receiptService=createValExecutionReceiptService({dbQuery,hasPg:()=>!!pgPool,getStore:valStore,saveStore:saveValStore,uuid,tenantId,userId:currentUserId,valDbReady:()=>valDbReady,auditLog,logger:console});
+  const executor=createValExternalActionExecutor({packetService:valExternalActions,receiptService,adapters:{send_email:executeEmailSendPacket},executedBy:()=>currentUserId()});
+  const sent=await executor.execute(approved.id,{finalConfirmation:true,executedBy:currentUserId()});
+  await auditLog({req,action:sent.executed?'transcript_meeting_overview_sent':'transcript_meeting_overview_send_blocked',resourceType:'transcript',resourceId:transcript.id||transcript.transcriptId||'',metadata:{packetId:approved.id,recipientCount:recipients.length,status:sent.packet?.status||'',error:sent.error||'',riskErrors:sent.risk_check?.errors||[]},success:!!sent.executed}).catch(()=>{});
+  if(!sent.ok){
+    const reason=sent.error||sent.risk_check?.errors?.join(', ')||'Meeting overview send was blocked.';
+    throw Object.assign(new Error(reason),{statusCode:409,sent});
+  }
+  await logTranscriptAction(transcript.id||transcript.transcriptId,'meeting_overview_sent',sent.packet?.id||approved.id,'completed').catch(()=>{});
+  return {recipientCount:recipients.length,subject,packet:sent.packet,provider_result:sent.provider_result};
+}
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
 }
@@ -23755,14 +23905,28 @@ app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)
 });
 app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
-    const id=decodeURIComponent(req.params.transcriptId),record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-    if(!record)return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=transcriptUiRecord(record,{includeText:true}),action=String(req.body.action||'');
+    const id=decodeURIComponent(req.params.transcriptId),action=String(req.body.action||'');
+    const data=await transcriptIndexData(id);
+    const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+    const archiveUi=record?cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})):null;
+    let transcript=null;
+    if(data.transcripts[0]){
+      transcript=cleanTranscriptForUi({
+        ...transcriptDetailFromIndex(data,data.transcripts[0]),
+        ...(archiveUi?{nativeSummary:archiveUi.nativeSummary,nativeActionItems:archiveUi.nativeActionItems,krispNative:archiveUi.krispNative,sourceTruthLabel:archiveUi.sourceTruthLabel,actionItems:archiveUi.actionItems,summary:archiveUi.summary,summaryPreview:archiveUi.summaryPreview,sourcePayloadMetadata:archiveUi.sourcePayloadMetadata,metadata:archiveUi.metadata,transcriptText:archiveUi.transcriptText}:{} )
+      });
+    }else if(archiveUi)transcript=archiveUi;
+    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(action==='create_task'){
       const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
       const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
       const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
+    }
+    if(action==='send_overview'){
+      const existingTasks=(transcript.tasks||[]).length?transcript.tasks:transcript.actionItems||[];
+      const sent=await sendTranscriptMeetingOverview(req,transcript,existingTasks);
+      return res.json({ok:true,sent});
     }
     if(action==='draft_followup'){
       const summary=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.preview||''};
@@ -23772,7 +23936,7 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
     }
     if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
     res.status(400).json({ok:false,error:'Unsupported transcript action'});
-  }catch(e){console.error('[transcripts] action failed',e);res.status(500).json({ok:false,error:e.message});}
+  }catch(e){console.error('[transcripts] action failed',e);res.status(e.statusCode||500).json({ok:false,error:e.message,sent:e.sent});}
 });
 async function processExistingTranscriptRecord(record){
   const rawText=String(record.rawTranscript||record.raw_text||record.rawText||record.transcriptText||'').trim();

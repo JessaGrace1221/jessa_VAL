@@ -3870,6 +3870,8 @@ button.drawer-link{
 .transcript-index,
 .transcript-detail-panel{
   min-height:520px;
+  align-self:start;
+  overflow:auto;
   border:1px solid var(--frost-open-line);
   border-radius:8px;
   background:var(--frost-open-card);
@@ -3980,6 +3982,7 @@ button.drawer-link{
 .transcript-detail-content{
   display:grid;
   gap:12px;
+  align-content:start;
 }
 .transcript-section,
 .transcript-relationship-alert{
@@ -4302,6 +4305,25 @@ button.drawer-link{
   align-items:center;
   justify-content:space-between;
   gap:10px;
+}
+button.timeline-overview-receipt{
+  width:100%;
+  min-height:42px;
+  padding:0;
+  border:0;
+  background:transparent;
+  text-align:left;
+  cursor:pointer;
+}
+button.timeline-overview-receipt:hover strong,
+button.timeline-overview-receipt:focus-visible strong{
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
+button.timeline-overview-receipt:focus-visible{
+  outline:2px solid rgba(76,98,67,.35);
+  outline-offset:4px;
+  border-radius:5px;
 }
 .timeline-overview-receipt span{
   color:rgba(84,102,76,.78);
