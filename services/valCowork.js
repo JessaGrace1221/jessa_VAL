@@ -383,6 +383,112 @@ function projectIdentityQuestion(state={},brief={}){
   };
 }
 
+function projectPeopleList(value=[]){
+  const raw=Array.isArray(value) ? value : String(value || '').split(/\n|,|;/);
+  return raw.map((item)=>typeof item === 'string' ? item : (item?.name || item?.displayName || '')).map((item)=>compactText(item,180)).filter(Boolean);
+}
+function relationshipCandidate(profile={}){
+  return {
+    id:compactText(profile.id || profile.relationshipId || profile.profileKey || profile.personId || profile.contactId || profile.email || '',220),
+    name:compactText(profile.displayName || profile.name || profile.relationshipName || '',180),
+    email:compactText(profile.email || profile.metadata?.email || '',220),
+    detail:compactText(profile.company || profile.role || profile.relationshipStatus || profile.summary || '',240)
+  };
+}
+function projectPeopleCandidateMatch(value='',candidates=[]){
+  const needle=compactText(value,220).toLowerCase();
+  return safeArray(candidates).find((candidate)=>[candidate.id,candidate.name,candidate.email].filter(Boolean).some((item)=>String(item).toLowerCase() === needle)) || null;
+}
+function buildProjectPeopleBrief(project={},candidates=[],input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const sourceDetails=project.sourceDetails || metadata.sourceDetails || {};
+  const existingNames=uniqueNames([project.relationships,sourceDetails.relationships,metadata.intake?.relationships].filter(Boolean));
+  const knownCandidates=safeArray(candidates).map(relationshipCandidate).filter((candidate)=>candidate.id && candidate.name);
+  const existingPeople=existingNames.map((name)=>{
+    const candidate=projectPeopleCandidateMatch(name,knownCandidates);
+    return {relationshipId:candidate?.id || '',name:candidate?.name || name,email:candidate?.email || '',role:'',known:Boolean(candidate)};
+  });
+  const references=projectIdentityReferences(project,input);
+  return {
+    id:stableKey(`working_brief_project_people_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.people',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'people',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    existingPeople,
+    currentOwner:projectIdentityOwner(project),
+    relationshipCandidates:knownCandidates.slice(0,40),
+    sourceRefs:references,
+    objective:'Connect the correct existing relationships to the selected project and make one project owner explicit.',
+    completionCondition:'Every retained person has an existing relationship, a role in the project, and one of those people is the explicit owner.',
+    approvalBoundary:'Applying links only the selected existing relationships to this internal project and records one owner. It does not create a relationship, update CRM, send a message, create a task, schedule anything, or alter source evidence.'
+  };
+}
+function parseProjectPeople(answer='',brief={},current={}){
+  const source=multilineText(answer,5000);
+  const existingPeople=safeArray(Array.isArray(current) ? current : current.people);
+  const existingOwnerId=compactText(Array.isArray(current) ? '' : current.ownerId || '',220);
+  const labeled=/(?:^|[;\n])\s*(?:people|relationships|people involved|owner|project owner)\s*:/i.test(source);
+  const peopleMatch=source.match(/(?:^|\n)\s*(?:people involved|relationships|people)\s*:\s*([\s\S]*?)(?=(?:\n|;)\s*(?:project owner|owner)\s*:|$)/i);
+  const peopleText=compactText(peopleMatch?.[1] || '',5000) || (!labeled ? source : '');
+  const owner=answerField(source,'project owner|owner');
+  const items=peopleText.split(/\n|;/).map((item)=>item.trim()).filter(Boolean).flatMap((item)=>item.split(/,(?![^()]*\))/).map((part)=>part.trim())).filter(Boolean);
+  const draft=[];
+  const unresolved=[];
+  for(const item of items){
+    const match=item.match(/^(.+?)(?:\s+[-\u2013]\s+|\s*:\s*)(.+)$/);
+    const candidateName=compactText(match?.[1] || item,180);
+    const role=compactText(match?.[2] || '',240);
+    const candidate=projectPeopleCandidateMatch(candidateName,brief.relationshipCandidates);
+    if(!candidate){
+      if(candidateName) unresolved.push(candidateName);
+      continue;
+    }
+    if(!draft.some((person)=>person.relationshipId === candidate.id)) draft.push({relationshipId:candidate.id,name:candidate.name,email:candidate.email,role,known:true});
+  }
+  if(!items.length && existingPeople.length) draft.push(...existingPeople);
+  for(const person of draft){
+    const existing=existingPeople.find((item)=>item.relationshipId===person.relationshipId);
+    if(existing?.role && !person.role) person.role=existing.role;
+  }
+  const ownerCandidate=projectPeopleCandidateMatch(owner,brief.relationshipCandidates) || draft.find((person)=>person.relationshipId===existingOwnerId) || draft.find((person)=>person.name.toLowerCase()===String(owner || brief.currentOwner || '').toLowerCase()) || null;
+  return {people:draft,ownerId:ownerCandidate?.relationshipId || ownerCandidate?.id || '',ownerName:ownerCandidate?.name || compactText(owner || '',180),unresolved:uniqueNames(unresolved)};
+}
+function missingProjectPeopleFields(proposal={}){
+  const missing=[];
+  if(!safeArray(proposal.people).length) missing.push('relationships');
+  if(safeArray(proposal.people).some((person)=>!compactText(person.role))) missing.push('roles');
+  if(!compactText(proposal.ownerId) || !safeArray(proposal.people).some((person)=>person.relationshipId===proposal.ownerId)) missing.push('project owner');
+  return missing;
+}
+function projectPeopleQuestion(state={},brief={}){
+  const proposal=state.draftPeople || {people:[],ownerId:'',unresolved:[]};
+  if(state.stage === 'people'){
+    const choices=safeArray(brief.relationshipCandidates).slice(0,12).map((person)=>person.name).join(', ');
+    return {
+      targetField:'project_relationships_packet[].{relationship_name,role_in_project}',
+      question:`Which existing relationships belong on ${brief.projectName || 'this project'}, and what is each person's role?`,
+      detail:`Use: People: Name - role; Name - role. Available relationships: ${choices || 'none loaded yet'}. Creating a new relationship stays in People involved, then reopen this brief.`
+    };
+  }
+  if(state.stage === 'unresolved'){
+    return {
+      targetField:'project_relationships_packet[].relationship_name',
+      question:`I cannot link ${proposal.unresolved.join(', ')} because those relationships are not in VAL yet.`,
+      detail:'Create the relationship from People involved, then reopen this brief. VAL will not silently invent or duplicate a relationship.'
+    };
+  }
+  if(state.stage === 'roles'){
+    const missing=safeArray(proposal.people).filter((person)=>!compactText(person.role)).map((person)=>person.name).join(', ');
+    return {targetField:'project_relationships_packet[].role_in_project',question:`What is each missing role for ${missing}?`,detail:'Use: Name - role. This writes only the selected project relationship roles.'};
+  }
+  if(state.stage === 'owner'){
+    return {targetField:'project_owner_packet.owner',question:`Which one of these linked people owns ${brief.projectName || 'this project'}?`,detail:'Use: Owner: Name. One owner is recorded; changing it later remains explicit in People involved.'};
+  }
+  return {targetField:'project_relationships_packet + project_owner_packet',question:'Review the linked people and owner, then apply them to this Project Manager.',detail:'Applying creates internal relationship links only. Nothing external happens.'};
+}
+
 function exactTranscriptLines(value=[]){
   return safeArray(value).map((item)=>String(item == null ? '' : item).trim()).filter(Boolean);
 }
@@ -492,6 +598,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Establish the selected project foundation.',
     completionCondition:'Name, purpose, desired outcome, and one project owner are explicit and ready for internal review.'
   },
+  'project.people':{
+    id:'project.people',surface:'project_managers',scopeType:'project_section',sectionId:'people',
+    requiredPackets:['project_packet','project_relationships_packet','project_owner_packet'],
+    objective:'Connect the selected project to its people and owner.',
+    completionCondition:'Each linked person has a role and one is the explicit project owner.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -530,7 +642,9 @@ function createValCoworkService({
   tenantId=()=>'default',
   userId=()=>'default',
   loadProject=async()=>null,
+  loadRelationships=async()=>[],
   applyProjectIdentity=async()=>null,
+  applyProjectPeople=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -622,6 +736,7 @@ function createValCoworkService({
           stage:state.stage || '',
           draftWorkstreams:safeArray(state.draftWorkstreams),
           draftIdentity:state.draftIdentity || null,
+          draftPeople:state.draftPeople || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -704,6 +819,42 @@ function createValCoworkService({
       payloadJson:{projectId:brief.entityId,projectName:brief.projectName,identity:state.draftIdentity,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
+  }
+  async function openProjectPeopleEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.people'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can link people.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const candidates=await loadRelationships({limit:100});
+    const brief=buildProjectPeopleBrief(project,candidates,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'people',draftPeople:{people:brief.existingPeople.filter((person)=>person.known),ownerId:'',ownerName:brief.currentOwner,unresolved:[]},answers:[]};
+    const question=projectPeopleQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_people',title:`People for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,people:state.draftPeople.people,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectPeople(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    const proposal=parseProjectPeople(answer,brief,state.draftPeople || {});
+    state.draftPeople=proposal;
+    const missing=missingProjectPeopleFields(proposal);
+    if(proposal.unresolved.length) state.stage='unresolved';
+    else if(missing.includes('roles')) state.stage='roles';
+    else if(missing.includes('project owner')) state.stage='owner';
+    let question,message='';
+    if(!proposal.unresolved.length && !missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,people:proposal.people,ownerId:proposal.ownerId,ownerName:proposal.ownerName,completionCondition:brief.completionCondition};
+      question=projectPeopleQuestion(state,brief);message='VAL prepared the linked people and project owner for review. Apply when this is true.';
+    }else{question=projectPeopleQuestion(state,brief);message=question.question;session.status='needs_input';workItem.status='needs_input';}
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
   async function respondProjectIdentity(session,workItem,answer){
     const brief=session.workingBriefJson || {};
@@ -854,6 +1005,7 @@ function createValCoworkService({
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
+    if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -908,6 +1060,7 @@ function createValCoworkService({
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
+    if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1079,6 +1232,19 @@ function createValCoworkService({
       await saveWorkItem(workItem);
       return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_people'){
+      if(workItem.status !== 'needs_review') throw new Error('The project people must be complete and reviewed before they can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const proposal={people:safeArray(payload.people),ownerId:compactText(payload.ownerId || '',220),ownerName:compactText(payload.ownerName || '',180)};
+      if(missingProjectPeopleFields(proposal).length) throw new Error('The project people proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectPeople({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || session.workingBriefJson?.projectName || 'Project',...proposal,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the people to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_people',status:'completed',summary:`Applied ${proposal.people.length} linked people and the owner to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',people:proposal.people,ownerId:proposal.ownerId,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -1125,11 +1291,13 @@ function createValCoworkService({
 module.exports={
   COWORK_ENTRYPOINTS,
   buildProjectIdentityBrief,
+  buildProjectPeopleBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,
   missingProjectIdentityFields,
+  missingProjectPeopleFields,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

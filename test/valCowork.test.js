@@ -44,10 +44,18 @@ function transcript(){
   };
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript()}={}){
+function relationships(){
+  return [
+    {id:'rel_jessa',displayName:'Jessa',email:'jessa@example.com',relationshipStatus:'active'},
+    {id:'rel_aric',displayName:'Aric',email:'aric@example.com',relationshipStatus:'active'}
+  ];
+}
+
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedRelationships=relationships()}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
+  const appliedPeople=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -58,9 +66,14 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript()}={}){
     userId:()=>'user',
     uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`,
     loadProject:async id=>id===loadedProject?.projectId ? loadedProject : null,
+    loadRelationships:async()=>loadedRelationships,
     applyProjectIdentity:async payload=>{
       appliedIdentities.push(payload);
       return {...loadedProject,name:payload.projectName,desiredOutcome:payload.desiredOutcome,nextStepOwner:payload.owner,summary:payload.purpose};
+    },
+    applyProjectPeople:async payload=>{
+      appliedPeople.push(payload);
+      return {...loadedProject,relationships:payload.people.map((person)=>person.name),nextStepOwner:payload.ownerName};
     },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
@@ -76,7 +89,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript()}={}){
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -90,7 +103,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -127,6 +140,24 @@ test('project foundation onboarding is scoped, field-targeted, review-gated, and
   assert.equal(appliedIdentities.length,1);
   assert.equal(appliedIdentities[0].projectId,'project_forever_freedom');
   assert.equal(appliedIdentities[0].owner,'Jessa');
+});
+
+test('project people links only existing relationships, records their roles, and makes one owner explicit',async()=>{
+  const {service,appliedPeople}=serviceFor();
+  const opened=await service.openEntry({entrypointId:'project.people',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'people'}});
+  assert.equal(opened.question.targetField,'project_relationships_packet[].{relationship_name,role_in_project}');
+  assert.match(opened.question.question,/which existing relationships/i);
+  const owner=await service.respond(opened.session.id,{answer:'People: Jessa - Executive owner; Aric - Partner lead'});
+  assert.equal(owner.question.targetField,'project_owner_packet.owner');
+  const ready=await service.respond(opened.session.id,{answer:'Owner: Jessa'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.people.length,2);
+  assert.equal(ready.workItem.payload.ownerId,'rel_jessa');
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.receipt.action,'apply_project_people');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedPeople[0].people[1].role,'Partner lead');
+  assert.equal(appliedPeople[0].ownerId,'rel_jessa');
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -285,16 +316,21 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/const project = projectProfileForCoworkNode\(node\)/);
   assert.match(hearth,/entrypointId:'project\.workstreams'/);
   assert.match(hearth,/entrypointId:'project\.identity'/);
+  assert.match(hearth,/entrypointId:'project\.people'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
   assert.match(hearth,/\/api\/val\/cowork\/work-items\/.*\/apply/);
   assert.match(hearth,/if\(field === 'workstreams'\) return openProjectWorkstreamsCowork/);
   assert.match(hearth,/if\(field === 'what_this_is' \|\| field === 'project_interview'\) return openProjectIdentityCowork/);
+  assert.match(hearth,/if\(field === 'people_involved'\) return openProjectPeopleCowork/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
+  assert.match(hearth,/function projectRelationshipPacketItems/);
+  assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
   assert.match(hearth,/if\(await submitActiveCoworkEntry\(\)\) return;/);
   assert.match(hearth,/data-cowork-apply-workstreams/);
   assert.match(hearth,/data-cowork-apply-project-identity/);
+  assert.match(hearth,/data-cowork-apply-project-people/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
@@ -320,5 +356,9 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/projectOnboardingStatus:'foundation_applied'/);
   assert.match(server,/needsProjectOnboarding:false/);
   assert.match(server,/applyProjectIdentity:applyCoworkProjectIdentity/);
+  assert.match(server,/async function applyCoworkProjectPeople/);
+  assert.match(server,/applyProjectPeople:applyCoworkProjectPeople/);
+  assert.match(server,/projectPeople:linkedPeople\.map/);
+  assert.match(server,/projectPeople:Array\.isArray\(metadata\.projectPeople\)\?metadata\.projectPeople:\[\]/);
   assert.match(hearth,/foundation_applied/);
 });

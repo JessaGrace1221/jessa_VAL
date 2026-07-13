@@ -16811,6 +16811,14 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const milestones=Array.isArray(patch.milestones)?patch.milestones:[];
     const relationshipNurtureRules=Array.isArray(patch.relationshipNurtureRules)?patch.relationshipNurtureRules:[];
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
+    const projectPeople=Array.isArray(patch.projectPeople)
+      ? patch.projectPeople.map((person)=>({
+          relationshipId:String(person?.relationshipId||person?.relationship_id||person?.id||'').trim(),
+          name:String(person?.name||person?.displayName||'').trim(),
+          email:String(person?.email||'').trim(),
+          role:String(person?.role||'').trim()
+        })).filter((person)=>person.relationshipId&&person.name&&person.role)
+      : null;
     if(Object.prototype.hasOwnProperty.call(patch,'documents'))intake.documents=patch.documents;
     if(patch.relationships)intake.relationships=patch.relationships;
     if(patch.rawContext)intake.rawContext=patch.rawContext;
@@ -16842,6 +16850,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(milestones.length?{milestones}:{}),
       ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
+      ...(projectPeople?{projectPeople}:{}),
       ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
     };
     return {
@@ -17480,6 +17489,7 @@ function projectIndexItemFromProfile(profile={}){
     workstreams:Array.isArray(metadata.workstreams)?metadata.workstreams:[],
     milestones:Array.isArray(metadata.milestones)?metadata.milestones:[],
     relationshipNurtureRules:Array.isArray(metadata.relationshipNurtureRules)?metadata.relationshipNurtureRules:[],
+    projectPeople:Array.isArray(metadata.projectPeople)?metadata.projectPeople:[],
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
     metadataJson:metadata,
     sourceDetails,
@@ -24703,6 +24713,9 @@ async function loadProjectForCowork(projectId=''){
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return found ? projectIndexItemFromProfile(found) : null;
 }
+async function loadRelationshipsForCowork({limit=100}={}){
+  return (await listRelationshipProfiles({limit})).filter((profile)=>profile.profileType==='person');
+}
 async function applyCoworkProjectIdentity({projectId,projectName='',purpose='',desiredOutcome='',owner='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24732,6 +24745,45 @@ async function applyCoworkProjectIdentity({projectId,projectName='',purpose='',d
     projectOnboardingFirstAnswer:firstAnswer,
     projectOnboardingOwnerMonitoringAnswer:`Owner: ${owner}`
   });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
+async function applyCoworkProjectPeople({projectId,projectName='',people=[],ownerId='',ownerName='',sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const linkedPeople=Array.isArray(people) ? people.filter((person)=>person?.relationshipId && person?.name && person?.role) : [];
+  if(!linkedPeople.length || !linkedPeople.some((person)=>String(person.relationshipId)===String(ownerId))) return null;
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    relationships:linkedPeople.map((person)=>person.name).join(', '),
+    projectPeople:linkedPeople.map((person)=>({
+      relationshipId:person.relationshipId,
+      name:person.name,
+      email:person.email || '',
+      role:person.role
+    })),
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work people applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers people review.'}`
+    ].filter(Boolean).join('\n')
+  });
+  for(const person of linkedPeople){
+    await saveRelationshipProjectLink({
+      projectId,
+      projectName:current.name,
+      relationshipId:person.relationshipId,
+      relationshipName:person.name,
+      email:person.email || '',
+      relationshipRole:person.role,
+      summary:`${person.name} is linked to ${current.name} as ${person.role}.`,
+      assignAsOwner:String(person.relationshipId)===String(ownerId),
+      noExternalAction:true
+    });
+  }
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
@@ -24808,7 +24860,9 @@ const valCowork = registerValCoworkRoutes(app,{
   tenantId,
   userId:currentUserId,
   loadProject:loadProjectForCowork,
+  loadRelationships:loadRelationshipsForCowork,
   applyProjectIdentity:applyCoworkProjectIdentity,
+  applyProjectPeople:applyCoworkProjectPeople,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
