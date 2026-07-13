@@ -31,6 +31,8 @@ const {ensureValSourceProcessingTables} = require('./services/valSourceProcessin
 const {registerValSourceProcessingRoutes} = require('./services/valSourceProcessingRoutes');
 const {ensureValProjectPinsTables} = require('./services/valProjectPinsSchema');
 const {registerValProjectPinsRoutes} = require('./services/valProjectPinsRoutes');
+const {ensureValCoworkTables} = require('./services/valCoworkSchema');
+const {registerValCoworkRoutes} = require('./services/valCoworkRoutes');
 const {ensureValExternalActionTables} = require('./services/valExternalActionsSchema');
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
@@ -6682,6 +6684,7 @@ async function initValDb(){
   await ensureValReviewUpdatesTables({dbQuery,logger:console});
   await ensureValSourceProcessingTables({dbQuery,logger:console});
   await ensureValProjectPinsTables({dbQuery,logger:console});
+  await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
@@ -16742,6 +16745,27 @@ function projectUpdateListValue(value){
   if(Array.isArray(value))return value.map(item=>String(item||'').trim()).filter(Boolean);
   return String(value||'').split(/\n|,|;/).map(item=>item.trim()).filter(Boolean);
 }
+function projectUpdateWorkstreamsValue(value){
+  if(!Array.isArray(value)) return projectUpdateListValue(value);
+  return value.map((item)=>{
+    if(!item || typeof item !== 'object') return String(item || '').trim();
+    const name=String(item.name || item.title || item.label || '').replace(/\s+/g,' ').trim();
+    if(!name) return null;
+    return {
+      id:String(item.id || stableKey(`workstream_${name}`)).slice(0,220),
+      name,
+      purpose:String(item.purpose || item.outcome || '').replace(/\s+/g,' ').trim().slice(0,500),
+      accountableOwner:String(item.accountableOwner || item.owner || '').replace(/\s+/g,' ').trim().slice(0,180),
+      currentState:String(item.currentState || item.status || 'planned').replace(/\s+/g,' ').trim().slice(0,160),
+      firstConcreteMove:String(item.firstConcreteMove || item.firstMove || item.nextMove || '').replace(/\s+/g,' ').trim().slice(0,500),
+      milestone:String(item.milestone || item.proofOfProgress || '').replace(/\s+/g,' ').trim().slice(0,500),
+      dependencies:String(item.dependencies || item.blocker || '').replace(/\s+/g,' ').trim().slice(0,500),
+      monitoringSignal:String(item.monitoringSignal || item.monitor || '').replace(/\s+/g,' ').trim().slice(0,500),
+      linkedPeople:Array.isArray(item.linkedPeople || item.people) ? (item.linkedPeople || item.people).map(value=>String(value || '').trim()).filter(Boolean).slice(0,24) : [],
+      sourceRefs:Array.isArray(item.sourceRefs) ? item.sourceRefs.slice(0,12) : []
+    };
+  }).filter(Boolean);
+}
 function projectUpdatePayload(body={}){
   const hasNeedsProjectOnboarding=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')||Object.prototype.hasOwnProperty.call(body,'needs_project_onboarding');
   const needsProjectOnboardingValue=Object.prototype.hasOwnProperty.call(body,'needsProjectOnboarding')?body.needsProjectOnboarding:body.needs_project_onboarding;
@@ -16760,7 +16784,7 @@ function projectUpdatePayload(body={}){
     whatValNowKnows:String(body.whatValNowKnows||body.what_val_now_knows||'').trim(),
     ownerMonitoringNotes:String(body.ownerMonitoringNotes||body.owner_monitoring_notes||'').trim(),
     monitoringRules:projectUpdateListValue(body.monitoringRules||body.monitoring_rules),
-    workstreams:projectUpdateListValue(body.workstreams||body.work_streams),
+    workstreams:projectUpdateWorkstreamsValue(body.workstreams||body.work_streams),
     milestones:projectUpdateListValue(body.milestones),
     relationshipNurtureRules:projectUpdateListValue(body.relationshipNurtureRules||body.relationship_nurture_rules),
     preparedWork:projectUpdateListValue(body.preparedWork||body.prepared_work),
@@ -16780,6 +16804,11 @@ async function updateProjectProfileLocal(projectId='',patch={}){
   const applyPatch=(row={})=>{
     const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
     const intake={...(metadata.intake||{})};
+    const monitoringRules=Array.isArray(patch.monitoringRules)?patch.monitoringRules:[];
+    const workstreams=Array.isArray(patch.workstreams)?patch.workstreams:[];
+    const milestones=Array.isArray(patch.milestones)?patch.milestones:[];
+    const relationshipNurtureRules=Array.isArray(patch.relationshipNurtureRules)?patch.relationshipNurtureRules:[];
+    const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     if(Object.prototype.hasOwnProperty.call(patch,'documents'))intake.documents=patch.documents;
     if(patch.relationships)intake.relationships=patch.relationships;
     if(patch.rawContext)intake.rawContext=patch.rawContext;
@@ -16804,11 +16833,11 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
       ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
-      ...(patch.monitoringRules.length?{monitoringRules:patch.monitoringRules}:{}),
-      ...(patch.workstreams.length?{workstreams:patch.workstreams}:{}),
-      ...(patch.milestones.length?{milestones:patch.milestones}:{}),
-      ...(patch.relationshipNurtureRules.length?{relationshipNurtureRules:patch.relationshipNurtureRules}:{}),
-      ...(patch.preparedWork.length?{preparedWork:patch.preparedWork.map(item=>({title:item,summary:item}))}:{}),
+      ...(monitoringRules.length?{monitoringRules}:{}),
+      ...(workstreams.length?{workstreams}:{}),
+      ...(milestones.length?{milestones}:{}),
+      ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
+      ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(patch.nextStepOwner?{owner:{...previousOwner,type:(previousOwner.type||'executive'),id:(previousOwner.id||patch.nextStepOwner),name:patch.nextStepOwner,source:'project_interview',reassignmentOptions:['choose_existing_relationship','create_new_relationship']}}:{})
     };
     return {
@@ -24687,6 +24716,45 @@ const valProjectPins = registerValProjectPinsRoutes(app,{
   uuid,
   tenantId,
   userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+async function loadProjectForCowork(projectId=''){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return found ? projectIndexItemFromProfile(found) : null;
+}
+async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutcome='',workstreams=[],sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    desiredOutcome,
+    workstreams,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work workstreams applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers workstreams review.'}`
+    ].filter(Boolean).join('\n'),
+    projectOnboardingStatus:'workstreams_applied'
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
+const valCowork = registerValCoworkRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  loadProject:loadProjectForCowork,
+  applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

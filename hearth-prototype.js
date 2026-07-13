@@ -202,6 +202,7 @@ let activeClarityWorkspace = null;
 let activeRelationshipProfile = null;
 let activeProjectProfile = null;
 let activeProjectCoworkTarget = null;
+let activeCoworkEntry = null;
 let activeIntroDraftCandidate = null;
 let activeRelationshipTemperatureReviewUpdate = null;
 let activeProjectSourceReviewUpdate = null;
@@ -3821,6 +3822,22 @@ function projectManagerList(items = [], emptyText = 'Nothing active here yet.'){
   return clean.slice(0, 5).map((item) => '<li>' + escapeHtml(item) + '</li>').join('');
 }
 
+function projectManagerWorkstreamList(items = [], emptyText = 'VAL needs the workstreams for this project.'){
+  const workstreams = Array.isArray(items) ? items.filter(Boolean) : [];
+  if(!workstreams.length) return '<li>' + escapeHtml(emptyText) + '</li>';
+  return workstreams.slice(0, 6).map((item) => {
+    if(typeof item === 'string') return '<li>' + escapeHtml(projectCleanText(item)) + '</li>';
+    const name = projectCleanText(item.name || item.title || item.label || 'Workstream');
+    const detail = [
+      item.accountableOwner ? 'Owner: ' + item.accountableOwner : '',
+      item.firstConcreteMove ? 'First move: ' + item.firstConcreteMove : '',
+      item.milestone ? 'Milestone: ' + item.milestone : '',
+      item.monitoringSignal ? 'Monitor: ' + item.monitoringSignal : ''
+    ].filter(Boolean).join(' | ');
+    return '<li><strong>' + escapeHtml(name) + '</strong>' + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '') + '</li>';
+  }).join('');
+}
+
 function projectManagerDetailCard(field, label, html){
   return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(field) + '" aria-label="Co-Work on ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span>' + html + projectCoworkChip() + '</article>';
 }
@@ -4013,6 +4030,7 @@ function projectHasSpecificSignal(value, project = {}){
 
 function renderProjectManagerProfile(project = {}){
   if(!projectManagerProfile) return;
+  projectManagerProfile.dataset.projectProfileId = project.id || project.projectId || project.profileKey || '';
   const packet = projectManagerPacket(project);
   const identity = packet.project_identity_packet;
   const judgment = packet.project_manager_judgment_packet;
@@ -4095,7 +4113,7 @@ function renderProjectManagerProfile(project = {}){
       projectManagerCard('Next move', nextMove, whyNext, next.due_at ? 'Due: ' + next.due_at : ''),
     '</section>',
     '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
-      projectManagerDetailCard('workstreams', 'Workstreams', '<ul>' + projectManagerList(sop.default_workstreams, 'VAL needs the workstreams for this project.') + '</ul>'),
+      projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
       projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
       projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerList(sop.monitoring_rules, 'VAL needs to know what to monitor after launch.') + '</ul>'),
       projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerList(sop.relationship_nurture_rules, 'VAL needs to know how to protect the partnership.') + '</ul>'),
@@ -4119,6 +4137,23 @@ function renderProjectManagerEmptyState(){
         '<p class="project-manager-eyebrow">Project Managers</p>',
         '<h4>No active projects yet.</h4>',
         '<p>Once there is a project ready to manage, it will appear here.</p>',
+      '</div>',
+    '</section>'
+  ].join('');
+}
+
+function renderProjectManagerLoadingState(){
+  activeProjectProfile = null;
+  if(projectTitle) projectTitle.textContent = 'Project Managers';
+  if(projectSubtitle) projectSubtitle.textContent = 'Loading the live project index.';
+  if(!projectManagerProfile) return;
+  projectManagerProfile.dataset.projectProfileId = '';
+  projectManagerProfile.innerHTML = [
+    '<section class="project-manager-hero project-manager-empty">',
+      '<div>',
+        '<p class="project-manager-eyebrow">Project Managers</p>',
+        '<h4>Loading project managers...</h4>',
+        '<p>VAL is loading the current project index before opening a project brief.</p>',
       '</div>',
     '</section>'
   ].join('');
@@ -4239,8 +4274,197 @@ function projectCoworkSpec(field = ''){
   };
 }
 
+function projectCoworkWorkstreamSuggestions(project = activeProjectProfile){
+  return Array.isArray(project?.workstreams) ? project.workstreams : [];
+}
+
+function projectProfileForCoworkNode(node = null){
+  const projectId = node?.closest?.('[data-project-manager-profile]')?.dataset?.projectProfileId || '';
+  if(!projectId) return activeProjectProfile || null;
+  const candidates = [
+    projectIndexProfiles[projectId],
+    projectProfiles[projectId],
+    activeProjectProfile
+  ].filter(Boolean);
+  const match = candidates.find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(projectId)));
+  return match ? normalizeProjectInterviewCarryover(match) : null;
+}
+
+function coworkEntryPlaceholder(question = {}){
+  const target = String(question.targetField || '');
+  if(target === 'project_identity_packet.desired_outcome') return 'Outcome: this project should create...';
+  if(target === 'project_workstreams[].name') return 'Workstream one\nWorkstream two\nWorkstream three';
+  if(target.includes('project_workstreams[].')) return 'Workstream name - purpose: ...; owner: ...; first move: ...; milestone: ...; monitor: ...';
+  return 'Answer the question above.';
+}
+
+function coworkWorkstreamField(label, value = ''){
+  if(!value) return '';
+  return '<div><span>' + escapeHtml(label) + '</span><p>' + escapeHtml(value) + '</p></div>';
+}
+
+function renderCoworkWorkstreamsItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const workstreams = Array.isArray(payload.workstreams) ? payload.workstreams : [];
+  if(!workstreams.length) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Building workstreams');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading">',
+        '<span>Prepared work</span>',
+        '<strong>' + escapeHtml(workItem.title || 'Project workstreams') + '</strong>',
+        '<small>' + escapeHtml(status) + '</small>',
+      '</div>',
+      '<div class="cowork-workstream-list">',
+        workstreams.map((workstream) => [
+          '<article>',
+            '<strong>' + escapeHtml(workstream.name || 'Workstream') + '</strong>',
+            '<div class="cowork-workstream-fields">',
+              coworkWorkstreamField('Purpose', workstream.purpose),
+              coworkWorkstreamField('Owner', workstream.accountableOwner || workstream.owner),
+              coworkWorkstreamField('First move', workstream.firstConcreteMove || workstream.firstMove),
+              coworkWorkstreamField('Milestone', workstream.milestone),
+              coworkWorkstreamField('Monitor', workstream.monitoringSignal || workstream.monitor),
+              coworkWorkstreamField('Dependencies', workstream.dependencies),
+            '</div>',
+          '</article>'
+        ].join('')),
+      '</div>',
+      ready ? '<button type="button" data-cowork-apply-workstreams="' + escapeHtml(workItem.id || '') + '">Apply workstreams</button>' : '',
+    '</section>'
+  ].join('');
+}
+
+function updateCoworkEntryContext(result = {}){
+  const brief = result.session?.workingBrief || {};
+  const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
+  if(!context) return;
+  context.innerHTML = [
+    '<span>Project Managers</span>',
+    '<strong>' + escapeHtml(brief.projectName || activeProjectProfile?.name || 'Project') + ' workstreams</strong>',
+    '<p>' + escapeHtml(brief.objective || 'Build a complete set of workstreams for this project.') + '</p>',
+    brief.completionCondition ? '<small>Complete when: ' + escapeHtml(brief.completionCondition) + '</small>' : ''
+  ].join('');
+}
+
+function renderCoworkEntryResult(result = {}, options = {}){
+  const session = result.session || {};
+  const workItem = result.workItem || {};
+  if(session.id){
+    activeCoworkEntry = {
+      ...(activeCoworkEntry || {}),
+      entrypointId:session.entrypointId || 'project.workstreams',
+      sessionId:session.id,
+      workItemId:workItem.id || activeCoworkEntry?.workItemId || '',
+      status:workItem.status || session.status || '',
+      projectId:session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || ''
+    };
+  }
+  updateCoworkEntryContext(result);
+  const response = homeCoworkResponseNode();
+  response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
+  const message = result.question?.question || result.message || '';
+  if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
+  if(response && workItem.id){
+    const item = renderCoworkWorkstreamsItem(workItem);
+    if(item) response.insertAdjacentHTML('beforeend', item);
+  }
+  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  const isComplete = workItem.status === 'applied' || session.status === 'completed';
+  if(textarea){
+    textarea.placeholder = isComplete ? 'Workstreams applied. Return to Project Managers when you are ready.' : coworkEntryPlaceholder(result.question || {});
+    textarea.disabled = isComplete;
+  }
+  if(submit) submit.disabled = isComplete;
+}
+
+async function openProjectWorkstreamsCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('workstreams', project);
+  const action = 'project:cowork:workstreams';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'workstreams',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Build project workstreams',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.workstreams',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'project',
+    title:'Build project workstreams',
+    meaning:'Preparing the workstreams brief for ' + (project.name || 'this project') + '.',
+    context:projectScopedCoworkContextLines(scopedPacket),
+    recommendation:'VAL will ask only for the fields needed to create complete, manageable workstreams.',
+    placeholder:'Preparing the selected Project Managers section...',
+    heading:'Preparing workstreams for ' + (project.name || 'this project'),
+    detail:'This interview fills the Project Managers workstreams packet.',
+    publicDetail:'Scoped to Project Managers: Workstreams.',
+    lockContext:true
+  });
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {
+    if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'project.workstreams',
+      scope:{entityType:'project_section',entityId:projectId,sectionId:'workstreams'},
+      suggestedWorkstreams:projectCoworkWorkstreamSuggestions(project)
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Workstreams brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open the Workstreams interview. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
+async function submitActiveCoworkEntry(){
+  const entry = activeCoworkEntry;
+  if(!entry?.sessionId) return false;
+  if(entry.status === 'applied') return true;
+  const input = workspaceInputValue('cowork');
+  if(!projectCleanText(input)) return true;
+  appendHomeCoworkMessage('user',input);
+  const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+  const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+  if(textarea) textarea.value = '';
+  if(submit) submit.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this Workstreams step yet.'});
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not save that answer. Nothing was changed. ' + error.message);
+  }finally{
+    if(submit && activeCoworkEntry?.status !== 'applied') submit.disabled = false;
+  }
+  return true;
+}
+
+async function applyActiveCoworkWorkstreams(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply these workstreams yet.'});
+    if(result.project){
+      const refreshed = projectProfileFromIndexItem(result.project);
+      projectIndexProfiles[refreshed.id] = refreshed;
+      activeProjectProfile = refreshed;
+      renderProjectRolodex();
+      renderProjectManagerProfile(refreshed);
+    }
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not apply these workstreams. Nothing was changed. ' + error.message);
+    if(button) button.disabled = false;
+  }
+}
+
 async function openProjectScopedCowork(field = 'project_overview', node = null, options = {}){
   if(!activeProjectProfile) return;
+  if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   const project = activeProjectProfile;
   const spec = projectCoworkSpec(field);
   const scopedPacket = projectScopedCoworkPacket(field, project);
@@ -6041,7 +6265,9 @@ async function hydrateProjectIndex(){
         updateProjectIndexSourceLabel();
         renderProjectRolodex();
         renderProjectSuggestions();
-        const firstProject = projectIndexItems()[0];
+        const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
+        const selectedProject = selectedProjectId && projectIndexItems().find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
+        const firstProject = selectedProject || projectIndexItems()[0];
         if(firstProject) renderProjectProfile(firstProject.id);
         else renderProjectManagerEmptyState();
       }
@@ -6301,6 +6527,11 @@ async function createProjectFromDrawer(event){
 function openProjectIndex(){
   hydrateRelationshipIndex();
   hydrateProjectSuggestions();
+  if(canUseApi && !projectIndexLoaded){
+    renderProjectManagerLoadingState();
+    hydrateProjectIndex();
+    return;
+  }
   renderProjectRolodex();
   const firstProject = projectIndexItems()[0];
   if(firstProject) renderProjectProfile(activeProjectProfile?.id || firstProject.id);
@@ -8954,7 +9185,7 @@ function updateWorkspaceReturnButton(){
     return;
   }
   if(workspaceReturnTarget === 'project'){
-    const label = 'Back to ' + (activeProjectProfile?.name || 'project');
+    const label = 'Back to ' + (activeProjectCoworkTarget?.projectName || activeProjectProfile?.name || 'project');
     returnButton.textContent = label;
     returnButton.setAttribute('aria-label', label + ' project brief');
     return;
@@ -14403,7 +14634,7 @@ function restoreRelationshipWindow(){
   updateCloseAllDrawersButton();
 }
 
-function restoreProjectWindow(){
+function restoreProjectWindow(projectId = ''){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
@@ -14426,7 +14657,16 @@ function restoreProjectWindow(){
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  openProjectIndex();
+  const selectedProjectId = projectId || activeProjectCoworkTarget?.projectId || activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
+  if(selectedProjectId){
+    hydrateRelationshipIndex();
+    hydrateProjectSuggestions();
+    renderProjectRolodex();
+    renderProjectProfile(selectedProjectId);
+    hydrateProjectIndex();
+  }else{
+    openProjectIndex();
+  }
   updateCloseAllDrawersButton();
 }
 
@@ -17786,23 +18026,27 @@ async function handlePrimaryAction(button){
 }
 
 function closeWorkspace(){
+  const projectReturnId = workspaceReturnTarget === 'project'
+    ? (activeProjectCoworkTarget?.projectId || activeCoworkEntry?.projectId || '')
+    : '';
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
-  activeProjectCoworkTarget = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.add('desk-settling');
   hearth.classList.remove('calendar-prep-open');
   deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
   deskWorkspace.setAttribute('aria-hidden', 'true');
   if(workspaceReturnTarget === 'relationship') restoreRelationshipWindow();
-  if(workspaceReturnTarget === 'project') restoreProjectWindow();
+  if(workspaceReturnTarget === 'project') restoreProjectWindow(projectReturnId);
   if(workspaceReturnTarget === 'timeline') restoreTimelineWindow();
   if(workspaceReturnTarget === 'correspondence') restoreCorrespondenceWindow();
   if(workspaceReturnTarget === 'commitment') restoreCommitmentWindow();
   if(workspaceReturnTarget === 'document') restoreDocumentWindow();
   if(workspaceReturnTarget === 'source') restoreLeadIntelligenceWindow();
   if(workspaceReturnTarget === 'val') restoreValWindow();
+  activeProjectCoworkTarget = null;
+  activeCoworkEntry = null;
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
   updateDrawerCoworkIcon();
@@ -17818,6 +18062,7 @@ function hideWorkspaceForDrawerNavigation(){
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
   activeProjectCoworkTarget = null;
+  activeCoworkEntry = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.remove('calendar-prep-open');
   deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
@@ -18823,6 +19068,7 @@ linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceW
 workspaceInputPanel.addEventListener('submit', async (event) => {
   if(!event.target.matches('[data-home-cowork-form]')) return;
   event.preventDefault();
+  if(await submitActiveCoworkEntry()) return;
   if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode !== 'project_cowork'){
     const input = workspaceInputValue('cowork');
     if(!projectCleanText(input)) return;
@@ -18837,6 +19083,13 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
     return;
   }
   runCowork('think');
+});
+scraperPreviewList?.addEventListener('click', async (event) => {
+  const apply = event.target.closest('[data-cowork-apply-workstreams]');
+  if(!apply) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await applyActiveCoworkWorkstreams(apply.dataset.coworkApplyWorkstreams, apply);
 });
 workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;

@@ -1,10 +1,16 @@
 # VAL Co-Work With VAL V1 Build Spec
 
-Status: Draft for user approval before implementation.
+Status: Approved architecture contract. The implementation starts from the canonical entry-point registry, not from a generic chat launcher.
 
 Purpose: define the executive-grade Co-Work with VAL experience.
 
 Co-Work is not a small widget, chat bubble, or tucked-away input. It is the user's working room with VAL.
+
+Companion contract:
+
+- [VAL_COWORK_ENTRYPOINT_REGISTRY.md](./VAL_COWORK_ENTRYPOINT_REGISTRY.md): the required context, question sequence, completion condition, write target, and approval boundary for every active Co-Work entry point.
+
+No new `Co-Work` or `Co-Work with VAL` button may be added until it has a registry entry. No registered button may fall through to unscoped generic chat.
 
 ## Product Promise
 

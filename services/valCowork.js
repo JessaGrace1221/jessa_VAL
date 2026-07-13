@@ -1,0 +1,481 @@
+function safeArray(value){return Array.isArray(value) ? value : [];}
+function compactText(value='',limit=900){return String(value || '').replace(/\s+/g,' ').trim().slice(0,limit);}
+function multilineText(value='',limit=5000){return String(value || '').replace(/\r\n?/g,'\n').trim().slice(0,limit);}
+function stableKey(value=''){
+  return String(value || '').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180) || 'cowork';
+}
+function jsonValue(value,fallback){
+  if(value == null) return fallback;
+  if(typeof value === 'string'){
+    try{return JSON.parse(value);}catch(_){return fallback;}
+  }
+  return value;
+}
+function toSnake(key){return key.replace(/[A-Z]/g,(match)=>'_'+match.toLowerCase());}
+function rowToCamel(row={}){
+  const result={};
+  for(const [key,value] of Object.entries(row || {})){
+    const camel=key.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase());
+    result[camel]=value instanceof Date ? value.toISOString() : value;
+  }
+  for(const key of ['workingBriefJson','questionPlanJson','stateJson','payloadJson','sourceRefsJson']){
+    if(Object.hasOwn(result,key)) result[key]=jsonValue(result[key],key === 'questionPlanJson' || key === 'sourceRefsJson' ? [] : {});
+  }
+  return result;
+}
+function sourceRef(input={}){
+  return {
+    source_type:compactText(input.source_type || input.sourceType || 'project_packet',100),
+    source_id:compactText(input.source_id || input.sourceId || input.id || '',220),
+    quote_or_summary:compactText(input.quote_or_summary || input.quoteOrSummary || input.summary || '',900),
+    confidence:Math.max(0,Math.min(1,Number(input.confidence) || 0.8))
+  };
+}
+function simpleWorkstreamName(value=''){
+  return compactText(value,160).replace(/^[-*\d.\s]+/,'').replace(/\s*[\-:]+\s*(owner|first move|milestone|dependency|monitor)\s*:.*/i,'').trim();
+}
+function uniqueNames(values=[]){
+  const seen=new Set();
+  return values.map((value)=>typeof value === 'string' ? value : (value?.name || value?.title || value?.label || ''))
+    .map(simpleWorkstreamName)
+    .filter(Boolean)
+    .filter((name)=>{
+      const key=name.toLowerCase();
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+function parseWorkstreamNames(answer=''){
+  const text=String(answer || '').trim();
+  if(!text) return [];
+  return uniqueNames(text.split(/\n|,|;/).map((line)=>line.replace(/^\s*(?:workstreams?|lanes?)\s*:\s*/i,'')));
+}
+function answerAcceptsProposal(answer=''){
+  return /^(yes|yep|yeah|use (?:those|them|the suggestions)|looks right|that works|go ahead)\b/i.test(String(answer || '').trim());
+}
+function workstreamTemplate(name='',brief={}){
+  return {
+    id:stableKey(`workstream_${name}`),
+    name:compactText(name,160),
+    purpose:'',
+    accountableOwner:'',
+    currentState:'planned',
+    firstConcreteMove:'',
+    milestone:'',
+    dependencies:'',
+    monitoringSignal:'',
+    linkedPeople:safeArray(brief.linkedPeople).map((item)=>compactText(item,140)).filter(Boolean),
+    sourceRefs:safeArray(brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeWorkstream(value={},brief={}){
+  const raw=typeof value === 'string' ? {name:value} : (value || {});
+  const template=workstreamTemplate(raw.name || raw.title || raw.label || '',brief);
+  return {
+    ...template,
+    ...raw,
+    id:compactText(raw.id || template.id,220),
+    name:compactText(raw.name || raw.title || raw.label || template.name,160),
+    purpose:compactText(raw.purpose || raw.outcome || '',500),
+    accountableOwner:compactText(raw.accountableOwner || raw.owner || '',180),
+    currentState:compactText(raw.currentState || raw.status || template.currentState,160),
+    firstConcreteMove:compactText(raw.firstConcreteMove || raw.firstMove || raw.nextMove || '',500),
+    milestone:compactText(raw.milestone || raw.proofOfProgress || '',500),
+    dependencies:compactText(raw.dependencies || raw.blocker || '',500),
+    monitoringSignal:compactText(raw.monitoringSignal || raw.monitor || '',500),
+    linkedPeople:uniqueNames(raw.linkedPeople || raw.people || template.linkedPeople),
+    sourceRefs:safeArray(raw.sourceRefs || template.sourceRefs).map(sourceRef)
+  };
+}
+function missingWorkstreamFields(workstream={}){
+  const labels=[];
+  if(!compactText(workstream.purpose)) labels.push('purpose');
+  if(!compactText(workstream.accountableOwner)) labels.push('owner');
+  if(!compactText(workstream.firstConcreteMove)) labels.push('first move');
+  if(!compactText(workstream.milestone)) labels.push('milestone');
+  if(!compactText(workstream.monitoringSignal)) labels.push('monitoring signal');
+  return labels;
+}
+function parseLabeledWorkstreamDetails(answer='',workstreams=[]){
+  const byName=new Map(safeArray(workstreams).map((item)=>[String(item.name || '').toLowerCase(),{...item}]));
+  const lines=String(answer || '').split(/\n+/).map((line)=>line.trim()).filter(Boolean);
+  for(const line of lines){
+    const [rawName,...detailParts]=line.split(/\s+[\-\u2013\u2014]\s+/);
+    const candidateName=simpleWorkstreamName(rawName);
+    const target=byName.get(candidateName.toLowerCase()) || (byName.size === 1 ? [...byName.values()][0] : null);
+    if(!target) continue;
+    const detail=detailParts.join(' ') || line;
+    const capture=(labels)=>{
+      const match=detail.match(new RegExp(`(?:^|[;|])\\s*(?:${labels})\\s*:\\s*([^;|]+)`, 'i'));
+      return compactText(match?.[1] || '',500);
+    };
+    target.purpose=capture('purpose|outcome') || target.purpose;
+    target.accountableOwner=capture('owner|accountable owner') || target.accountableOwner;
+    target.firstConcreteMove=capture('first move|next move|first concrete move') || target.firstConcreteMove;
+    target.milestone=capture('milestone|proof') || target.milestone;
+    target.dependencies=capture('dependency|dependencies|blocker') || target.dependencies;
+    target.monitoringSignal=capture('monitoring signal|monitoring|monitor|signal') || target.monitoringSignal;
+    byName.set(String(target.name || '').toLowerCase(),target);
+  }
+  return [...byName.values()];
+}
+function entryQuestion(state={},brief={}){
+  const stage=state.stage || 'project_outcome';
+  const proposed=uniqueNames(state.proposedWorkstreams || []);
+  if(stage === 'project_outcome'){
+    return {
+      targetField:'project_identity_packet.desired_outcome',
+      question:`Before I build workstreams for ${brief.projectName || 'this project'}, what outcome should the project create?`,
+      detail:'The answer fills Project Managers > What this is and lets VAL judge which workstreams are actually necessary.'
+    };
+  }
+  if(stage === 'confirm_lanes'){
+    const names=proposed.length ? proposed.join(', ') : 'no lanes yet';
+    return {
+      targetField:'project_workstreams[].name',
+      question:proposed.length
+        ? `I can start with these workstreams: ${names}. Should I use them as written, or what should I add, merge, remove, or rename?`
+        : `What are the 2 to 6 major lanes of work needed to achieve "${brief.desiredOutcome}"?`,
+      detail:'This answer creates the named workstreams. It does not create tasks.'
+    };
+  }
+  if(stage === 'workstream_details'){
+    const incomplete=safeArray(state.draftWorkstreams).filter((item)=>missingWorkstreamFields(item).length);
+    if(!incomplete.length){
+      return {targetField:'project_workstreams',question:'The workstreams are ready for review.',detail:'Review the prepared set, then apply it to Project Managers.'};
+    }
+    const examples=incomplete.map((item)=>`${item.name} - ${missingWorkstreamFields(item).join(': ...; ')}: ...`).join('\n');
+    return {
+      targetField:'project_workstreams[].{purpose,accountable_owner,first_concrete_move,milestone,monitoring_signal}',
+      question:`Fill only the missing details below.\n\n${examples}`,
+      detail:'Use labels exactly as shown. VAL will ask again only for fields that remain blank. Dependencies are optional; write "dependency: none" when there is no known dependency.'
+    };
+  }
+  return {targetField:'project_workstreams',question:'Review the prepared workstreams, then apply them when they are true.',detail:'No external action happens from this step.'};
+}
+function buildProjectWorkstreamsBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const sourceDetails=project.sourceDetails || metadata.sourceDetails || {};
+  const linkedPeople=uniqueNames([metadata.owner?.name,project.nextStepOwner,sourceDetails.relationships,metadata.intake?.relationships,project.relationships].filter(Boolean));
+  const references=[
+    sourceRef({sourceType:'project_packet',sourceId:project.projectId || project.id || input.scope?.entityId || '',quoteOrSummary:project.sourceReceipts || project.reality || project.summary || 'Project packet'}),
+    sourceDetails.documents && sourceRef({sourceType:'document',sourceId:project.projectId || project.id || '',quoteOrSummary:`Project documents: ${sourceDetails.documents}`}),
+    sourceDetails.rawContext && sourceRef({sourceType:'project_context',sourceId:project.projectId || project.id || '',quoteOrSummary:sourceDetails.rawContext})
+  ].filter(Boolean);
+  const providedSuggestions=uniqueNames(input.suggestedWorkstreams || input.suggested_workstreams || []);
+  const existing=uniqueNames(project.workstreams || metadata.workstreams || []);
+  return {
+    id:stableKey(`working_brief_project_workstreams_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.workstreams',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'workstreams',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    desiredOutcome:compactText(project.desiredOutcome || project.outcome || metadata.desiredOutcome || metadata.outcome || '',500),
+    currentPhase:compactText(project.projectPhase || metadata.projectPhase || project.status || '',180),
+    currentReality:compactText(project.reality || project.summary || '',900),
+    linkedPeople,
+    sourceRefs:references,
+    existingWorkstreams:safeArray(project.workstreams || metadata.workstreams).map((item)=>normalizeWorkstream(item,{})),
+    suggestedWorkstreams:providedSuggestions.length ? providedSuggestions : existing,
+    objective:'Build a complete, manageable set of project workstreams from the selected Project Managers section.',
+    completionCondition:'Every retained workstream has a purpose, accountable owner, first concrete move, milestone, monitoring signal, linked people, and source references.',
+    approvalBoundary:'Applying the workstreams changes only the internal Project Managers packet. It does not create tasks, update CRM, send a message, schedule anything, or alter a source document.'
+  };
+}
+
+const COWORK_ENTRYPOINTS=Object.freeze({
+  'project.workstreams':{
+    id:'project.workstreams',
+    surface:'project_managers',
+    scopeType:'project_section',
+    sectionId:'workstreams',
+    requiredPackets:['project_packet','project_sop_packet','project_relationships_packet','project_identity_packet'],
+    objective:'Build complete project workstreams.',
+    completionCondition:'Each workstream is complete enough for executive review and explicit internal application.'
+  }
+});
+
+function createValCoworkService({
+  dbQuery,
+  hasPg=()=>false,
+  getStore=()=>({}),
+  saveStore=()=>{},
+  uuid=(prefix)=>`${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`,
+  tenantId=()=>'default',
+  userId=()=>'default',
+  loadProject=async()=>null,
+  applyProjectWorkstreams=async()=>null
+}={}){
+  function scope(){return {tenantId:tenantId(),userId:userId()};}
+  function store(){
+    const value=getStore() || {};
+    if(!Array.isArray(value.coworkSessions)) value.coworkSessions=[];
+    if(!Array.isArray(value.coworkWorkItems)) value.coworkWorkItems=[];
+    if(!Array.isArray(value.coworkActionReceipts)) value.coworkActionReceipts=[];
+    return value;
+  }
+  async function pgUpsert(table,row,columns){
+    const names=columns.map(toSnake);
+    const values=columns.map((key)=>row[key]);
+    const params=columns.map((_,index)=>`$${index+1}`).join(',');
+    const updates=names.filter((name)=>!['id','created_at'].includes(name)).map((name)=>`${name}=excluded.${name}`).join(',');
+    const result=await dbQuery(`insert into ${table} (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
+    return rowToCamel(result.rows?.[0] || row);
+  }
+  async function saveSession(row){
+    const columns=['id','tenantId','userId','entrypointId','scopeType','scopeId','scopeSectionId','status','workingBriefJson','questionPlanJson','stateJson','createdAt','updatedAt'];
+    if(hasPg()) return pgUpsert('val_cowork_sessions',row,columns);
+    const value=store();
+    const index=value.coworkSessions.findIndex((item)=>item.id===row.id && item.tenantId===row.tenantId && item.userId===row.userId);
+    if(index >= 0) value.coworkSessions[index]={...value.coworkSessions[index],...row,createdAt:value.coworkSessions[index].createdAt || row.createdAt,updatedAt:new Date().toISOString()};
+    else value.coworkSessions.unshift(row);
+    saveStore(value);
+    return index >= 0 ? value.coworkSessions[index] : row;
+  }
+  async function saveWorkItem(row){
+    const columns=['id','tenantId','userId','sessionId','workType','title','status','payloadJson','sourceRefsJson','createdAt','updatedAt'];
+    if(hasPg()) return pgUpsert('val_cowork_work_items',row,columns);
+    const value=store();
+    const index=value.coworkWorkItems.findIndex((item)=>item.id===row.id && item.tenantId===row.tenantId && item.userId===row.userId);
+    if(index >= 0) value.coworkWorkItems[index]={...value.coworkWorkItems[index],...row,createdAt:value.coworkWorkItems[index].createdAt || row.createdAt,updatedAt:new Date().toISOString()};
+    else value.coworkWorkItems.unshift(row);
+    saveStore(value);
+    return index >= 0 ? value.coworkWorkItems[index] : row;
+  }
+  async function saveReceipt(row){
+    const columns=['id','tenantId','userId','sessionId','workItemId','action','status','summary','payloadJson','createdAt'];
+    if(hasPg()) return pgUpsert('val_cowork_action_receipts',row,columns);
+    const value=store();
+    const index=value.coworkActionReceipts.findIndex((item)=>item.id===row.id && item.tenantId===row.tenantId && item.userId===row.userId);
+    if(index >= 0) value.coworkActionReceipts[index]={...value.coworkActionReceipts[index],...row};
+    else value.coworkActionReceipts.unshift(row);
+    saveStore(value);
+    return index >= 0 ? value.coworkActionReceipts[index] : row;
+  }
+  async function getSession(id){
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery('select * from val_cowork_sessions where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[id,sc.tenantId,sc.userId]);
+      return result.rows?.[0] ? rowToCamel(result.rows[0]) : null;
+    }
+    return store().coworkSessions.find((item)=>item.id===id && item.tenantId===sc.tenantId && item.userId===sc.userId) || null;
+  }
+  async function getWorkItem(id){
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery('select * from val_cowork_work_items where id=$1 and tenant_id=$2 and user_id=$3 limit 1',[id,sc.tenantId,sc.userId]);
+      return result.rows?.[0] ? rowToCamel(result.rows[0]) : null;
+    }
+    return store().coworkWorkItems.find((item)=>item.id===id && item.tenantId===sc.tenantId && item.userId===sc.userId) || null;
+  }
+  async function findSessionWorkItem(sessionId){
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery('select * from val_cowork_work_items where session_id=$1 and tenant_id=$2 and user_id=$3 order by updated_at desc limit 1',[sessionId,sc.tenantId,sc.userId]);
+      return result.rows?.[0] ? rowToCamel(result.rows[0]) : null;
+    }
+    return store().coworkWorkItems.filter((item)=>item.sessionId===sessionId && item.tenantId===sc.tenantId && item.userId===sc.userId).sort((a,b)=>String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
+  }
+  function publicResult(session,workItem,message='',question=null,receipt=null){
+    const state=session.stateJson || {};
+    const brief=session.workingBriefJson || {};
+    return {
+      ok:true,
+      entrypoint:COWORK_ENTRYPOINTS[session.entrypointId] || null,
+      session:{
+        id:session.id,
+        entrypointId:session.entrypointId,
+        scope:{entityType:session.scopeType,entityId:session.scopeId,sectionId:session.scopeSectionId},
+        status:session.status,
+        workingBrief:brief,
+        state:{stage:state.stage || '',draftWorkstreams:safeArray(state.draftWorkstreams)}
+      },
+      workItem:workItem ? {
+        id:workItem.id,
+        type:workItem.workType,
+        title:workItem.title,
+        status:workItem.status,
+        payload:workItem.payloadJson || {},
+        sourceRefs:workItem.sourceRefsJson || []
+      } : null,
+      message,
+      question,
+      receipt,
+      no_external_action:true
+    };
+  }
+  async function openEntry(input={}){
+    const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
+    const entry=COWORK_ENTRYPOINTS[entrypointId];
+    if(!entry) throw new Error('This Co-Work entry point is not registered.');
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectWorkstreamsBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const initialWorkstreams=safeArray(brief.existingWorkstreams).map((item)=>normalizeWorkstream(item,brief));
+    const proposed=uniqueNames(brief.suggestedWorkstreams || initialWorkstreams);
+    const stage=brief.desiredOutcome ? 'confirm_lanes' : 'project_outcome';
+    const state={stage,draftWorkstreams:initialWorkstreams,proposedWorkstreams:proposed,answers:[]};
+    const question=entryQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      entrypointId,
+      scopeType:entry.scopeType,
+      scopeId:brief.entityId,
+      scopeSectionId:entry.sectionId,
+      status:'needs_input',
+      workingBriefJson:brief,
+      questionPlanJson:[question],
+      stateJson:state,
+      createdAt:now,
+      updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      sessionId:session.id,
+      workType:'project_workstreams',
+      title:`Workstreams for ${brief.projectName}`,
+      status:'needs_input',
+      payloadJson:{projectId:brief.entityId,projectName:brief.projectName,workstreams:initialWorkstreams,objective:brief.objective,completionCondition:brief.completionCondition},
+      sourceRefsJson:brief.sourceRefs,
+      createdAt:now,
+      updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respond(sessionId,input={}){
+    const answer=multilineText(input.answer || input.message || '',5000);
+    if(!answer) throw new Error('VAL needs an answer before it can continue this workstream interview.');
+    const session=await getSession(sessionId);
+    if(!session) throw new Error('This Co-Work session no longer exists.');
+    if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use the Workstreams interview.');
+    const workItem=await findSessionWorkItem(session.id);
+    if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    if(state.stage === 'project_outcome'){
+      brief.desiredOutcome=answer;
+      state.stage='confirm_lanes';
+      if(!safeArray(state.proposedWorkstreams).length) state.proposedWorkstreams=uniqueNames(brief.existingWorkstreams || []);
+    }else if(state.stage === 'confirm_lanes'){
+      const names=answerAcceptsProposal(answer) ? uniqueNames(state.proposedWorkstreams || []) : parseWorkstreamNames(answer);
+      if(!names.length){
+        const question={
+          targetField:'project_workstreams[].name',
+          question:'I need the names of the major workstreams before I can build them. List the lanes separated by lines, commas, or semicolons.',
+          detail:'Each answer will become a named workstream in Project Managers.'
+        };
+        session.questionPlanJson=[...(session.questionPlanJson || []),question];
+        session.stateJson=state;
+        session.updatedAt=new Date().toISOString();
+        await saveSession(session);
+        return publicResult(session,workItem,question.question,question);
+      }
+      state.draftWorkstreams=names.map((name)=>{
+        const existing=safeArray(state.draftWorkstreams).find((item)=>String(item.name || '').toLowerCase()===name.toLowerCase());
+        return normalizeWorkstream(existing || workstreamTemplate(name,brief),brief);
+      });
+      state.stage='workstream_details';
+    }else if(state.stage === 'workstream_details'){
+      state.draftWorkstreams=parseLabeledWorkstreamDetails(answer,state.draftWorkstreams).map((item)=>normalizeWorkstream(item,brief));
+    }
+    const incomplete=safeArray(state.draftWorkstreams).filter((item)=>missingWorkstreamFields(item).length);
+    let message='';
+    let question;
+    if(state.stage === 'workstream_details' && !incomplete.length){
+      state.stage='ready_to_apply';
+      session.status='needs_review';
+      workItem.status='needs_review';
+      workItem.payloadJson={
+        ...workItem.payloadJson,
+        projectId:brief.entityId,
+        projectName:brief.projectName,
+        desiredOutcome:brief.desiredOutcome,
+        workstreams:state.draftWorkstreams,
+        completionCondition:brief.completionCondition
+      };
+      message=`VAL prepared ${state.draftWorkstreams.length} workstream${state.draftWorkstreams.length === 1 ? '' : 's'} for review. Apply them when this is true.`;
+      question={targetField:'project_workstreams',question:'Review the prepared workstreams, then apply them to this Project Manager.',detail:'Applying changes only the internal Project Managers packet.'};
+    }else{
+      question=entryQuestion(state,brief);
+      message=question.question;
+      session.status='needs_input';
+      workItem.status='needs_input';
+    }
+    session.workingBriefJson=brief;
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),question];
+    session.updatedAt=new Date().toISOString();
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return publicResult(session,workItem,message,question);
+  }
+  async function applyWorkItem(workItemId){
+    const workItem=await getWorkItem(workItemId);
+    if(!workItem) throw new Error('Prepared work item not found.');
+    if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
+    if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
+    const session=await getSession(workItem.sessionId);
+    if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+    const payload=workItem.payloadJson || {};
+    const workstreams=safeArray(payload.workstreams).map((item)=>normalizeWorkstream(item,session.workingBriefJson || {}));
+    if(!workstreams.length || workstreams.some((item)=>missingWorkstreamFields(item).length)) throw new Error('The workstream proposal is incomplete and cannot be applied yet.');
+    const project=await applyProjectWorkstreams({
+      projectId:payload.projectId || session.scopeId,
+      projectName:payload.projectName || session.workingBriefJson?.projectName || 'Project',
+      desiredOutcome:payload.desiredOutcome || session.workingBriefJson?.desiredOutcome || '',
+      workstreams,
+      sourceRefs:workItem.sourceRefsJson || [],
+      sessionId:session.id,
+      workItemId:workItem.id
+    });
+    if(!project) throw new Error('VAL could not save the workstreams to the selected Project Manager.');
+    const now=new Date().toISOString();
+    workItem.status='applied';
+    workItem.updatedAt=now;
+    session.status='completed';
+    session.updatedAt=now;
+    session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+    const sc=scope();
+    const receipt=await saveReceipt({
+      id:uuid('coworkreceipt'),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      sessionId:session.id,
+      workItemId:workItem.id,
+      action:'apply_project_workstreams',
+      status:'completed',
+      summary:`Applied ${workstreams.length} workstream${workstreams.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,
+      payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',workstreams,noExternalAction:true},
+      createdAt:now
+    });
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+  }
+  return {openEntry,respond,applyWorkItem,getSession,COWORK_ENTRYPOINTS};
+}
+
+module.exports={
+  COWORK_ENTRYPOINTS,
+  buildProjectWorkstreamsBrief,
+  createValCoworkService,
+  entryQuestion,
+  missingWorkstreamFields,
+  normalizeWorkstream,
+  parseLabeledWorkstreamDetails,
+  parseWorkstreamNames
+};

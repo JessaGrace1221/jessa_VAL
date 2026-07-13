@@ -1676,6 +1676,87 @@ button,a{font:inherit}
   color:rgba(38,38,35,.84);
   font:.88rem/1.5 var(--body);
 }
+.cowork-work-item{
+  display:grid;
+  gap:12px;
+  max-width:min(760px,100%);
+  padding:14px;
+  border:1px solid rgba(91,105,79,.2);
+  border-radius:8px;
+  background:rgba(255,255,252,.78);
+  box-shadow:0 10px 24px rgba(34,19,15,.05);
+}
+.cowork-work-item-heading{
+  display:grid;
+  gap:3px;
+}
+.cowork-work-item-heading span,
+.cowork-work-item-heading small,
+.cowork-workstream-fields span{
+  color:rgba(82,98,74,.76);
+  font-size:.62rem;
+  font-weight:850;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.cowork-work-item-heading strong{
+  color:rgba(20,12,10,.94);
+  font:700 1rem/1.2 var(--body);
+}
+.cowork-workstream-list{
+  display:grid;
+  gap:8px;
+}
+.cowork-workstream-list article{
+  display:grid;
+  gap:8px;
+  padding:11px;
+  border:1px solid rgba(91,105,79,.12);
+  border-radius:8px;
+  background:rgba(255,255,255,.56);
+}
+.cowork-workstream-list article>strong{
+  color:rgba(20,12,10,.9);
+  font:750 .88rem/1.25 var(--body);
+}
+.cowork-workstream-fields{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px 12px;
+}
+.cowork-workstream-fields div{
+  display:grid;
+  gap:2px;
+  min-width:0;
+}
+.cowork-workstream-fields p{
+  margin:0;
+  color:rgba(38,38,35,.78);
+  font:.76rem/1.35 var(--body);
+}
+.cowork-work-item button{
+  justify-self:start;
+  min-height:34px;
+  border:1px solid rgba(77,95,69,.32);
+  border-radius:999px;
+  background:rgba(77,95,69,.92);
+  color:rgba(255,252,247,.98);
+  padding:0 13px;
+  font:.68rem/1 var(--body);
+  font-weight:850;
+}
+.cowork-work-item button:disabled{
+  opacity:.58;
+  cursor:wait;
+}
+.project-manager-workstream-list li{
+  display:grid;
+  gap:3px;
+}
+.project-manager-workstream-list li small{
+  color:rgba(45,27,22,.62);
+  font:.7rem/1.35 var(--body);
+}
 .desk-workspace.home-cowork-mode .workspace-input-panel{
   align-self:end;
   margin:0;
@@ -1771,6 +1852,9 @@ button,a{font:inherit}
     max-height:calc(100vh - 310px);
     min-height:260px;
     padding:14px;
+  }
+  .cowork-workstream-fields{
+    grid-template-columns:1fr;
   }
   .home-cowork-chatbar{
     grid-template-columns:46px 2px minmax(0,1fr);
