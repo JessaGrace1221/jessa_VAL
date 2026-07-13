@@ -13346,11 +13346,42 @@ async function renderMeetingRecapTemplate({transcriptId,title,summary,participan
   };
   return {template,subject:renderTemplateString(template.subjectTemplate,vars).trim()||`Recap: ${title||'Meeting'}`,htmlBody:renderTemplateString(template.htmlTemplate,vars),textBody:renderTemplateString(template.textTemplate,vars),vars};
 }
-async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText}){
-  const rendered=await renderMeetingRecapTemplate({transcriptId,title,summary,participants,tasks,sourceQuote:transcriptSupportingQuote(transcriptText,'')});
+async function saveMeetingRecapDraft({transcriptId,title,summary,participants,tasks,transcriptText,sourcePayloadMetadata,metadata,sourceReceipt}){
+  const transcript={id:transcriptId,title,summary,transcriptText,attendees:participants,participants,sourcePayloadMetadata,metadata};
+  const overview=sourceReceipt||transcriptOverviewSections(transcript,tasks);
+  const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  const invitees=transcriptOverviewInvitees(transcript,calendarEvent);
+  const recipients=invitees.map(person=>person.email).filter(Boolean);
   const existing=(await listDrafts()).find(d=>d.draftType==='meeting_recap'&&d.sourceContext?.transcriptId===transcriptId);
-  const recipients=(participants||[]).map(p=>p.matchedEmail||p.email||p.matchedContactName||p.speakerNameRaw||'').filter(Boolean);
-  return saveInternalDraft({id:existing?.id,draftType:'meeting_recap',provider:'internal',subject:rendered.subject,body:rendered.textBody,status:'draft',sourceContext:{...(existing?.sourceContext||{}),source:'transcript_intelligence',transcriptId,transcriptTitle:title,meetingTitle:title,recipients,templateKey:MEETING_RECAP_TEMPLATE_KEY,templateId:rendered.template.id,htmlBody:rendered.htmlBody,plainTextBody:rendered.textBody}});
+  const subject=`Meeting overview: ${title||'Meeting'}`;
+  const body=transcriptOverviewEmailBody(transcript,overview);
+  return saveInternalDraft({
+    id:existing?.id,
+    draftType:'meeting_recap',
+    provider:'internal',
+    subject,
+    body,
+    status:overview.ready?'ready_for_review':'needs_context',
+    sourceContext:{
+      ...(existing?.sourceContext||{}),
+      source:'transcript_meeting_overview',
+      transcriptId,
+      transcriptTitle:title,
+      meetingTitle:title,
+      calendarEventId:calendarEvent.id||'',
+      recipients,
+      recipientEmail:recipients.join(', '),
+      invitees,
+      overview,
+      sourceReceipt:overview,
+      preparedArtifactKind:'email_draft',
+      preparedArtifact:{kind:'email_draft',subject,body},
+      canValAct:'approval_required',
+      executionPath:'create_provider_draft_then_human_send',
+      noExternalAction:true,
+      plainTextBody:body
+    }
+  });
 }
 app.get('/api/val/templates/:templateKey',async(req,res)=>{
   try{const template=await getActiveTemplate(req.params.templateKey);if(!template)return res.status(404).json({ok:false,error:'Template not found'});res.json({ok:true,template});}
@@ -18673,7 +18704,14 @@ async function transcriptIndexData(transcriptId=''){
     const transcripts=(await dbQuery(`select * from transcripts where user_id=$1${where} order by created_at desc`,args)).rows.map(transcriptPgRow).filter(isUsableTranscriptIndexRow);
     const ids=transcripts.map(row=>row.transcriptId);if(!ids.length)return {transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]};
     const fetch=async table=>(await dbQuery(`select * from ${table} where transcript_id=any($1::text[]) order by created_at asc`,[ids])).rows.map(transcriptPgRow);
-    return {transcripts,participants:await fetch('transcript_participants'),summaries:await fetch('transcript_summaries'),tasks:await fetch('transcript_tasks'),contactUpdates:await fetch('transcript_contact_updates'),actionLog:await fetch('transcript_action_log')};
+    const [participants,summaries,tasks,contactUpdates,actionLog]=await Promise.all([
+      fetch('transcript_participants'),
+      fetch('transcript_summaries'),
+      fetch('transcript_tasks'),
+      fetch('transcript_contact_updates'),
+      fetch('transcript_action_log')
+    ]);
+    return {transcripts,participants,summaries,tasks,contactUpdates,actionLog};
   }
   const store=valStore(),get=key=>transcriptFileArray(store,key).filter(row=>!transcriptId||row.transcriptId===transcriptId);
   return {transcripts:get('transcriptIndex').filter(isUsableTranscriptIndexRow),participants:get('transcriptParticipants'),summaries:get('transcriptSummaries'),tasks:get('transcriptTasks'),contactUpdates:get('transcriptContactUpdates'),actionLog:get('transcriptActionLog')};
@@ -18696,13 +18734,131 @@ function transcriptDetailFromIndex(data,transcript){
   const participants=data.participants.filter(row=>row.transcriptId===id),tasks=data.tasks.filter(row=>row.transcriptId===id),contactUpdates=data.contactUpdates.filter(row=>row.transcriptId===id),actionLog=data.actionLog.filter(row=>row.transcriptId===id),summary=data.summaries.find(row=>row.transcriptId===id)||null;
   const reviewCount=participants.filter(row=>row.needsReview).length+tasks.filter(row=>row.needsApproval).length+contactUpdates.filter(row=>!row.approved).length;
   const title=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:transcript.calendarEventTitle},transcript.rawTranscript);
-  return cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+  const detail=cleanTranscriptForUi({...transcript,id,title,meetingTitle:title,createdAt:transcript.meetingDatetime||transcript.createdAt,transcriptText:transcript.rawTranscript,summary,participants,tasks,contactUpdates,actionLog,taskCount:tasks.length,reviewCount});
+  return {...detail,sourceReceipt:transcriptSourceReceipt(detail)};
 }
 function transcriptKrispNativeMetadata(metadata={}){
   const nativeSummary=String(metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'').trim();
   const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:(Array.isArray(metadata.krisp_action_items)?metadata.krisp_action_items:[]);
   const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test(String(metadata.provider||metadata.source||metadata.importedVia||'')));
   return {krispNative,nativeSummary,nativeActionItems};
+}
+function transcriptSourceItemText(item){
+  if(typeof item==='string')return item;
+  if(!item||typeof item!=='object')return '';
+  return item.text||item.title||item.taskTitle||item.action||item.summary||item.point||item.name||item.description||'';
+}
+function transcriptSourceLines(value){
+  if(Array.isArray(value))return value.map(transcriptSourceItemText).filter(item=>String(item||'').trim());
+  if(typeof value!=='string')return [];
+  const lines=value.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  if(lines.length>1)return lines;
+  const checklist=value.match(/(?:^|\s)((?:[-*]\s*)?\[[ x]\]\s+.*?)(?=(?:\s+(?:[-*]\s*)?\[[ x]\]\s+)|$)/gi)||[];
+  return checklist.length?checklist.map(item=>item.trim()):lines;
+}
+function transcriptSourceSectionText(text='',names=[]){
+  const source=String(text||'');
+  if(!source.trim())return null;
+  const supported=['Action Items?','Key Points','Meeting Overview'];
+  const labels=[...new Set([...supported,...names])].join('|');
+  const wanted=new RegExp(`^(?:${names.join('|')})$`,'i');
+  const sections=[];
+  const seen=new Set();
+  const addMatches=pattern=>{
+    for(const match of source.matchAll(pattern)){
+      const headingStart=match.index+match[0].indexOf(String(match[1]||''));
+      if(seen.has(headingStart))continue;
+      seen.add(headingStart);
+      sections.push({
+        heading:String(match[1]||'').trim(),
+        start:headingStart,
+        contentStart:match.index+match[0].length
+      });
+    }
+  };
+  // Krisp normally uses line headings. The inline fallback covers legacy reports
+  // that arrived as one line with checkbox markers between the source sections.
+  addMatches(new RegExp(`(?:^|\\n)[\\t ]*(?:#{1,3}\\s*)?(${labels})\\s*:?[\\t ]*`,'gim'));
+  addMatches(new RegExp(`\\b(${labels})\\s*:?[\\t ]*(?=(?:\\[[ x]\\]|[-*]\\s|\\d+[.)]\\s|[A-Z]))`,'gi'));
+  sections.sort((left,right)=>left.start-right.start);
+  const index=sections.findIndex(section=>wanted.test(section.heading));
+  if(index<0)return null;
+  const section=sections[index];
+  const next=sections[index+1];
+  const end=next?next.start:source.length;
+  const raw=source.slice(section.start,end).trim();
+  const content=source.slice(section.contentStart,end).trim();
+  return {heading:section.heading,raw,lines:transcriptSourceLines(content)};
+}
+function transcriptSourceReceipt(transcript={}){
+  const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
+  const rawDocument=metadata.rawKrispDocument&&typeof metadata.rawKrispDocument==='object'?metadata.rawKrispDocument:{};
+  const sourceSections=metadata.krispSourceSections||metadata.sourceSections||metadata.data?.sections||metadata.sections||{};
+  const actionSource=sourceSections.actionItems||sourceSections.action_items||sourceSections.actions||metadata.krispActionItems||metadata.krisp_action_items||rawDocument.actionItems||rawDocument.action_items||rawDocument.tasks||[];
+  const keyPointSource=sourceSections.keyPoints||sourceSections.key_points||sourceSections.points||sourceSections.summary_points||rawDocument.keyPoints||rawDocument.key_points||'';
+  const sourceText=[
+    metadata.krispMeetingOverview,
+    metadata.meetingOverview,
+    metadata.krispSummary,
+    metadata.summaryFromKrisp,
+    metadata.krisp_summary,
+    metadata.data?.meetingOverview,
+    metadata.data?.summary,
+    transcript.nativeSummary,
+    rawDocument.meetingOverview,
+    rawDocument.summary,
+    rawDocument.notes,
+    transcript.transcriptText,
+    transcript.rawTranscript,
+    transcript.rawText
+  ].find(value=>typeof value==='string'&&value.trim())||'';
+  const actionSection=transcriptSourceSectionText(sourceText,['Action Items?']);
+  const keyPointsSection=transcriptSourceSectionText(sourceText,['Key Points','Meeting Overview']);
+  const actionItems=actionSection?.lines?.length?actionSection.lines:transcriptSourceLines(actionSource);
+  const keyPoints=keyPointsSection?.lines?.length?keyPointsSection.lines:transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'');
+  const sections=[];
+  if(actionSection)sections.push({kind:'action_items',...actionSection});
+  else if(actionItems.length)sections.push({kind:'action_items',heading:'Action Items',raw:['Action Items',...actionItems].join('\n'),lines:actionItems});
+  if(keyPointsSection)sections.push({kind:'key_points',...keyPointsSection});
+  else if(keyPoints.length)sections.push({kind:'key_points',heading:'Key Points',raw:['Key Points',...keyPoints].join('\n'),lines:keyPoints});
+  const firstHeading=sourceText.search(/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i);
+  const body=firstHeading>=0?sourceText.slice(firstHeading).trim():sections.map(section=>section.raw).join('\n\n').trim();
+  return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
+}
+function transcriptDrawerRecordTime(record={}){
+  const value=record.createdAt||record.meetingDatetime||record.receivedAt||'';
+  const parsed=Date.parse(value);
+  return Number.isFinite(parsed)?parsed:0;
+}
+function transcriptDrawerRecordSignature(record={}){
+  const source=String(record.source||record.metadata?.source||'unknown').trim().toLowerCase();
+  const title=String(record.title||record.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  return source+'|'+title;
+}
+function transcriptSourceReceiptQuality(record={}){
+  const receipt=record.sourceReceipt||transcriptSourceReceipt(record);
+  const actionCount=Array.isArray(receipt.actionItems)?receipt.actionItems.length:0;
+  const keyPointCount=Array.isArray(receipt.keyPoints)?receipt.keyPoints.length:0;
+  return (keyPointCount?10000:0)
+    +(actionCount?2000:0)
+    +Math.min(actionCount,50)*20
+    +Math.min(String(receipt.body||'').length,3000)/100
+    -Math.max(0,actionCount-50)*50;
+}
+function dedupeTranscriptDrawerRecords(records=[]){
+  const groups=[];
+  for(const record of records||[]){
+    const signature=transcriptDrawerRecordSignature(record);
+    const observedAt=transcriptDrawerRecordTime(record);
+    const group=groups.find(candidate=>candidate.signature===signature&&observedAt&&candidate.observedAt&&Math.abs(candidate.observedAt-observedAt)<=5*60*1000);
+    if(!group){
+      groups.push({signature,observedAt,sortTime:observedAt,record});
+      continue;
+    }
+    group.sortTime=Math.max(group.sortTime,observedAt);
+    if(transcriptSourceReceiptQuality(record)>transcriptSourceReceiptQuality(group.record))group.record=record;
+  }
+  return groups.sort((left,right)=>right.sortTime-left.sortTime).map(group=>group.record);
 }
 function transcriptOverviewItemText(item){
   if(typeof item==='string')return item;
@@ -18739,22 +18895,7 @@ function transcriptKrispSourceSectionsForOverview(transcript={}){
     || {};
 }
 function transcriptOverviewSections(transcript={},tasks=[]){
-  const sourceSections=transcriptKrispSourceSectionsForOverview(transcript);
-  const summaryObject=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.summaryPreview||''};
-  const summaryText=String(transcript.nativeSummary||transcript.transcriptText||transcript.rawTranscript||transcript.rawText||transcript.sourcePayloadMetadata?.data?.raw_content||summaryObject.executiveSummary||summaryObject.clientSummary||'').trim();
-  const actionMatch=summaryText.match(/(?:^|\n)\s*#{0,3}\s*Action Items?\s*:?\s*([\s\S]*?)(?=(?:\n\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\b)|$)/i)
-    || summaryText.match(/Action Items?\s*:?\s*([\s\S]*?)(?:\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
-  const overviewMatch=summaryText.match(/(?:^|\n)\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\s*:?\s*([\s\S]*)$/i)
-    || summaryText.match(/\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
-  const structuredActions=transcriptOverviewLineItems(sourceSections.action_items||sourceSections.actionItems||sourceSections.actions);
-  const structuredKeyPoints=transcriptOverviewLineItems(sourceSections.key_points||sourceSections.keyPoints||sourceSections.points||sourceSections.summary_points);
-  const actionItems=structuredActions.length
-    ? structuredActions
-    : (actionMatch?transcriptOverviewLineItems(actionMatch[1]):transcriptOverviewLineItems(transcript.nativeActionItems&&transcript.nativeActionItems.length?transcript.nativeActionItems:(transcript.actionItems&&transcript.actionItems.length?transcript.actionItems:tasks)));
-  const keyPoints=structuredKeyPoints.length
-    ? structuredKeyPoints
-    : transcriptOverviewLineItems(overviewMatch?overviewMatch[1]:(summaryObject.keyPoints||summaryObject.keyDiscussionPoints||summaryObject.keyDecisions||summaryObject.executiveSummary||''));
-  return {actionItems,keyPoints,ready:Boolean(actionItems.length||keyPoints.length)};
+  return transcriptSourceReceipt(transcript);
 }
 function transcriptOverviewInvitees(transcript={},calendarEvent={}){
   const buckets=[
@@ -18809,48 +18950,26 @@ async function transcriptCalendarEventForOverview(transcript={}){
   return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
 }
 function transcriptOverviewEmailBody(transcript={},overview={}){
-  const actionItems=overview.actionItems||[];
-  const keyPoints=overview.keyPoints||[];
-  const list=(items)=>items.length?items.map(item=>`- ${item}`).join('\n'):'- None captured.';
-  return [
-    `Meeting Overview: ${transcript.title||transcript.meetingTitle||'Meeting'}`,
-    '',
-    'Action Items',
-    list(actionItems),
-    '',
-    'Key Points',
-    list(keyPoints)
-  ].join('\n');
+  return String(overview.body||transcriptSourceReceipt(transcript).body||'').trim();
 }
-async function sendTranscriptMeetingOverview(req,transcript={},tasks=[]){
+async function prepareTranscriptMeetingOverviewDraft(transcript={},tasks=[]){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
   const overview=transcriptOverviewSections(transcript,tasks);
   const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
   if(!overview.ready)throw Object.assign(new Error('The meeting overview is not ready because this transcript has no source Action Items or Key Points yet.'),{statusCode:400});
-  if(!recipients.length)throw Object.assign(new Error('No calendar invitee email addresses are attached to this transcript yet.'),{statusCode:409});
-  const body=transcriptOverviewEmailBody(transcript,overview);
-  const subject=`Meeting overview: ${transcript.title||transcript.meetingTitle||'Meeting'}`;
-  const packet=await valExternalActions.createEmailSendPacket({
-    to:recipients.map(r=>r.email).join(', '),
-    subject,
-    body,
-    provider:'gmail',
-    finalApprovalSurface:'transcripts_drawer_meeting_overview',
-    approvalNote:'Final send approved from Transcripts drawer meeting overview.',
-    sourceContext:{source:'transcript_meeting_overview',transcriptId:transcript.id||transcript.transcriptId||'',transcriptTitle:transcript.title||transcript.meetingTitle||'',calendarEventId:calendarEvent.id||transcript.calendarEventId||transcript.meetingId||''},
-    sourceRefs:[{source_type:'transcript',source_id:transcript.id||transcript.transcriptId||'',quote_or_summary:subject,confidence:0.95}]
+  const draft=await saveMeetingRecapDraft({
+    transcriptId:transcript.id||transcript.transcriptId||'',
+    title:transcript.title||transcript.meetingTitle||'Meeting',
+    summary:transcript.summary||{},
+    participants:[...(Array.isArray(transcript.participants)?transcript.participants:[]),...(Array.isArray(transcript.attendees)?transcript.attendees:[])],
+    tasks,
+    transcriptText:transcript.transcriptText||transcript.rawTranscript||transcript.rawText||'',
+    sourcePayloadMetadata:transcript.sourcePayloadMetadata,
+    metadata:transcript.metadata,
+    sourceReceipt:overview
   });
-  const approved=await valExternalActions.approve(packet.id,{note:'Final send approved from Transcripts drawer meeting overview.'});
-  const receiptService=createValExecutionReceiptService({dbQuery,hasPg:()=>!!pgPool,getStore:valStore,saveStore:saveValStore,uuid,tenantId,userId:currentUserId,valDbReady:()=>valDbReady,auditLog,logger:console});
-  const executor=createValExternalActionExecutor({packetService:valExternalActions,receiptService,adapters:{send_email:executeEmailSendPacket},executedBy:()=>currentUserId()});
-  const sent=await executor.execute(approved.id,{finalConfirmation:true,executedBy:currentUserId()});
-  await auditLog({req,action:sent.executed?'transcript_meeting_overview_sent':'transcript_meeting_overview_send_blocked',resourceType:'transcript',resourceId:transcript.id||transcript.transcriptId||'',metadata:{packetId:approved.id,recipientCount:recipients.length,status:sent.packet?.status||'',error:sent.error||'',riskErrors:sent.risk_check?.errors||[]},success:!!sent.executed}).catch(()=>{});
-  if(!sent.ok){
-    const reason=sent.error||sent.risk_check?.errors?.join(', ')||'Meeting overview send was blocked.';
-    throw Object.assign(new Error(reason),{statusCode:409,sent});
-  }
-  await logTranscriptAction(transcript.id||transcript.transcriptId,'meeting_overview_sent',sent.packet?.id||approved.id,'completed').catch(()=>{});
-  return {recipientCount:recipients.length,subject,packet:sent.packet,provider_result:sent.provider_result};
+  await logTranscriptAction(transcript.id||transcript.transcriptId,'meeting_overview_draft_ready',draft.id||'','completed').catch(()=>{});
+  return {draft,recipientCount:recipients.length,overview,noExternalAction:true};
 }
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
@@ -23546,7 +23665,7 @@ async function processTranscriptPayload(payload){
     const participant=participants.find(p=>(item.contactId&&p.matchedContactId===item.contactId)||looseNameScore(item.contactName,p.matchedContactName||p.speakerNameRaw)>=0.8);
     await saveStagedContactUpdate({updateId:uuid('tr_update'),transcriptId:sourceId,contactId:participant?.matchedContactId||item.contactId||'',fieldToUpdate:item.fieldToUpdate||item.field||'notes',oldValue:String(item.oldValue||''),newValue:String(item.newValue||''),reason:item.reason||'',sourceQuote:transcriptSupportingQuote(transcript,item.sourceQuote),confidence:Math.max(0,Math.min(1,Number(item.confidence)||0)),approved:false,createdAt:new Date().toISOString()});
   }
-  const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
+  const recapDraft=await saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript,sourcePayloadMetadata:payload.metadata||payload,metadata:payload.metadata||payload}).catch(async e=>{await logTranscriptAction(sourceId,'failed_action','meeting_recap_draft','failed',e.message).catch(()=>{});return null;});
   if(recapDraft){createdDrafts.push(recapDraft);await saveEvidenceLink({sourceType:'transcript',sourceId:sourceId,sourceLabel:title,targetType:'draft',targetId:recapDraft.id||'',relationship:'created_recap_draft',summary:recapDraft.subject||`Meeting recap: ${title}`,confidence:1,metadata:{draftType:'meeting_recap'}}).catch(()=>{});await logTranscriptAction(sourceId,'email_draft_created',recapDraft.id||'','completed');}
   for(const draft of (Array.isArray(parsed.followupDrafts)?parsed.followupDrafts:[]).slice(0,8)){
     const body=draft.body||draft.message||'';
@@ -23584,6 +23703,75 @@ function transcriptUiRecord(record,{includeText=false}={}){
     keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,nativeActionItems:native.nativeActionItems,nativeSummary:native.nativeSummary,krispNative:native.krispNative,sourceTruthLabel:native.krispNative?'Krisp':'VAL',
     openActionCount:openActions.length,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
     people,sourcePayloadMetadata:metadata,metadata,...(includeText?{transcriptText:rawText}:{})
+  };
+}
+function transcriptIndexContextMetadata(metadata={}){
+  const payload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
+  const event=metadata.calendarEvent||metadata.calendar_event||payload.calendarEvent||payload.calendar_event||metadata.meetingMatch||payload.meetingMatch||{};
+  const sections=metadata.sections||payload.sections||metadata.data?.sections||payload.data?.sections||{};
+  const attendees=metadata.attendees||payload.attendees||metadata.data?.attendees||payload.data?.attendees||event.attendees||[];
+  return {
+    source:metadata.source||payload.source||'',
+    provider:metadata.provider||payload.provider||'',
+    platform:metadata.platform||payload.platform||'',
+    attendees,
+    calendarEventId:metadata.calendarEventId||metadata.calendar_event_id||payload.calendarEventId||payload.calendar_event_id||event.id||'',
+    calendarEvent:event&&typeof event==='object'?{id:event.id||'',title:event.title||'',attendees:event.attendees||attendees}:undefined,
+    sections,
+    data:{sections,attendees}
+  };
+}
+function transcriptIndexUiRecord(record){
+  const detail=record?.detail&&typeof record.detail==='object'?record.detail:{};
+  const transcript=cleanTranscriptForUi({
+    ...transcriptUiRecord(record),
+    ...detail,
+    id:detail.id||detail.transcriptId||record?.id||record?.transcriptId||'',
+    transcriptId:detail.transcriptId||record?.transcriptId||record?.id||'',
+    source:detail.source||record?.metadata?.source||record?.type||'webhook',
+    createdAt:detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
+    receivedAt:detail.receivedAt||detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
+    title:detail.title||detail.meetingTitle||record?.title||'',
+    meetingTitle:detail.meetingTitle||detail.title||record?.title||'',
+    summary:detail.summary||detail.summaryPreview||record?.metadata?.summary||record?.metadata?.analysis?.summary||'',
+    actionItems:detail.actionItems||detail.nativeActionItems||[],
+    tasks:detail.tasks||[],
+    nativeActionItems:detail.nativeActionItems||[],
+    nativeSummary:detail.nativeSummary||'',
+    krispNative:detail.krispNative||false,
+    processingStatus:detail.processingStatus||record?.metadata?.processingStatus||'',
+    summaryStatus:detail.summaryStatus||record?.metadata?.summaryStatus||''
+  });
+  const metadata=transcriptIndexContextMetadata(transcript.sourcePayloadMetadata||transcript.metadata||{});
+  const sourceReceipt=transcriptSourceReceipt(transcript);
+  const sourceActions=(sourceReceipt.actionItems.length?sourceReceipt.actionItems:(Array.isArray(transcript.actionItems)?transcript.actionItems:[]))
+    .slice(0,30)
+    .map(item=>{
+      if(typeof item==='string')return item.slice(0,900);
+      if(!item||typeof item!=='object')return null;
+      return {
+        taskTitle:String(item.taskTitle||item.title||item.text||item.action||item.summary||item.name||'').slice(0,600),
+        assignedToName:String(item.assignedToName||item.assignee||item.owner||item.person||'').slice(0,220)
+      };
+    })
+    .filter(item=>typeof item==='string'||item?.taskTitle);
+  const summaryText=String(transcript.nativeSummary||transcript.summaryPreview||transcript.summary?.executiveSummary||transcript.summary||'').slice(0,420);
+  return {
+    id:transcript.id||transcript.transcriptId||'',
+    transcriptId:transcript.transcriptId||transcript.id||'',
+    source:transcript.source||metadata.source||'webhook',
+    title:transcript.title||transcript.meetingTitle||'Transcript',
+    meetingTitle:transcript.meetingTitle||transcript.title||'Transcript',
+    createdAt:transcript.createdAt||'',
+    receivedAt:transcript.receivedAt||transcript.createdAt||'',
+    processingStatus:transcript.processingStatus||'',
+    summaryStatus:transcript.summaryStatus||'',
+    reviewStatus:transcript.reviewStatus||transcript.status||'',
+    summary:{executiveSummary:summaryText},
+    actionItems:sourceActions,
+    taskCount:sourceActions.length,
+    openActionCount:sourceActions.length,
+    reviewCount:Number(transcript.reviewCount||0)
   };
 }
 function transcriptNestedObject(root,...keys){
@@ -23708,16 +23896,14 @@ function normalizedTranscriptWebhookPayload(body={}){
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
-    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
     const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
     const data=await transcriptIndexData();
-    const archive=await transcriptArchiveRecords(days,limit);
-    const transcripts=mergeTranscriptMigrationRecords(archive,data).slice(0,limit).map(record=>{
-      if(record.detail){const detail=cleanTranscriptForUi({...record.detail});delete detail.transcriptText;return detail;}
-      return cleanTranscriptForUi(transcriptUiRecord(record));
-    });
+    const indexedRecords=transcriptMigrationRecordsFromIndex(data);
+    const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(days,limit);
+    const transcripts=dedupeTranscriptDrawerRecords(records.map(transcriptIndexUiRecord)).slice(0,limit);
     res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(isHardTranscriptProcessingFailure).length}});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -23810,16 +23996,14 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
-    await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
+    void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){
-      const archiveRecord=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-      const archiveUi=archiveRecord?cleanTranscriptForUi(transcriptUiRecord(archiveRecord,{includeText:true})):null;
-      const transcript=await attachCanonicalTranscriptDetail({...transcriptDetailFromIndex(data,data.transcripts[0]),...(archiveUi?{nativeSummary:archiveUi.nativeSummary,nativeActionItems:archiveUi.nativeActionItems,krispNative:archiveUi.krispNative,sourceTruthLabel:archiveUi.sourceTruthLabel,actionItems:archiveUi.actionItems,summary:archiveUi.summary,summaryPreview:archiveUi.summaryPreview,sourcePayloadMetadata:archiveUi.sourcePayloadMetadata,metadata:archiveUi.metadata}:{} )});
+      const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);
       transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=await attachCanonicalTranscriptDetail(cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})));transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
+    const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/:transcriptId/chat',async(req,res)=>{
@@ -23907,32 +24091,26 @@ app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
   try{
     const id=decodeURIComponent(req.params.transcriptId),action=String(req.body.action||'');
     const data=await transcriptIndexData(id);
-    const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-    const archiveUi=record?cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true})):null;
-    let transcript=null;
-    if(data.transcripts[0]){
-      transcript=cleanTranscriptForUi({
-        ...transcriptDetailFromIndex(data,data.transcripts[0]),
-        ...(archiveUi?{nativeSummary:archiveUi.nativeSummary,nativeActionItems:archiveUi.nativeActionItems,krispNative:archiveUi.krispNative,sourceTruthLabel:archiveUi.sourceTruthLabel,actionItems:archiveUi.actionItems,summary:archiveUi.summary,summaryPreview:archiveUi.summaryPreview,sourcePayloadMetadata:archiveUi.sourcePayloadMetadata,metadata:archiveUi.metadata,transcriptText:archiveUi.transcriptText}:{} )
-      });
-    }else if(archiveUi)transcript=archiveUi;
+    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
+    if(!transcript){
+      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+      if(record){
+        transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
+        transcript.sourceReceipt=transcriptSourceReceipt(transcript);
+      }
+    }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
     if(action==='create_task'){
-      const first=(transcript.actionItems||[]).find(item=>typeof item==='string'||(!item.completed&&!['done','completed'].includes(String(item.status||'').toLowerCase())));
-      const title=req.body.title||(typeof first==='string'?first:first?.title||first?.text)||`Follow up on ${transcript.title}`;
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:transcript.contactName||'',taskTitle:contextualTaskTitle(transcript.title,title),taskDescription:`User-created from transcript: ${transcript.title}`,dueDate:req.body.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:transcriptSupportingQuote(transcript.transcriptText,req.body.sourceQuote),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
+      const candidates=(transcript.sourceReceipt?.actionItems||[]).map(item=>({title:item,description:'',assignedToName:'',dueDate:'',sourceQuote:item})).filter(item=>item.title);
+      const requestedTitle=String(req.body.title||'').trim();
+      const selected=requestedTitle?candidates.find(item=>String(item.title).trim().toLowerCase()===requestedTitle.toLowerCase()):candidates[0];
+      if(!selected)throw Object.assign(new Error(requestedTitle?'That action item is no longer present in this transcript.':'This transcript has no source action item to turn into a task.'),{statusCode:400});
+      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:req.body.assignedToName||selected.assignedToName||transcript.contactName||'',taskTitle:selected.title,taskDescription:req.body.description||selected.description||'',dueDate:req.body.dueDate||selected.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:String(req.body.sourceQuote||selected.sourceQuote||selected.title).trim(),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
       await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
     }
-    if(action==='send_overview'){
-      const existingTasks=(transcript.tasks||[]).length?transcript.tasks:transcript.actionItems||[];
-      const sent=await sendTranscriptMeetingOverview(req,transcript,existingTasks);
-      return res.json({ok:true,sent});
-    }
-    if(action==='draft_followup'){
-      const summary=transcript.summary&&typeof transcript.summary==='object'?transcript.summary:{executiveSummary:transcript.summary||transcript.preview||''};
-      const existingTasks=(transcript.tasks||[]).length?transcript.tasks:transcript.actionItems||[];
-      const draft=await saveMeetingRecapDraft({transcriptId:transcript.id,title:transcript.title,summary,participants:transcript.participants||[],tasks:existingTasks,transcriptText:transcript.transcriptText||''});
-      await logTranscriptAction(transcript.id,'email_draft_created',draft.id||'','completed');return res.json({ok:true,draft});
+    if(action==='prepare_overview'){
+      const prepared=await prepareTranscriptMeetingOverviewDraft(transcript,transcript.sourceReceipt?.actionItems||[]);
+      return res.json({ok:true,...prepared});
     }
     if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
     res.status(400).json({ok:false,error:'Unsupported transcript action'});

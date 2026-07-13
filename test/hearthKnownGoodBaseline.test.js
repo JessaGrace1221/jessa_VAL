@@ -68,6 +68,7 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(html, /Co-Work on This Transcript/);
   assert.match(html, /View full transcript/);
   assert.match(js, /function timelineNativeActionItems/);
+  assert.match(js, /function timelineSourceReceipt/);
   assert.match(js, /function timelineKrispSections/);
   assert.match(js, /rawTranscript/);
   assert.match(js, /Key Points\|Meeting Overview\|Summary\|Overview/);
@@ -79,8 +80,11 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(js, /krispStructured\.length/);
   assert.match(js, /if\(native\.length\) return native/);
   assert.match(js, /function timelineMeetingOverviewDraft/);
-  assert.match(js, /Ready - send to invitees/);
-  assert.match(js, /It uses only the source Action Items and Key Points/);
+  assert.match(js, /Prepare email draft/);
+  assert.match(js, /Open email draft/);
+  assert.match(js, /function renderTimelineTranscriptSourceSections/);
+  assert.match(js, /VAL is opening the source receipt/);
+  assert.doesNotMatch(js, /renderTimelineTranscriptDetail\(\{\.\.\.cached/);
   assert.doesNotMatch(js, /VAL Action Items/);
   for(const forbidden of ['Transcript Review Workflow', 'Ready to Extract', 'Proposed Notes', 'Proposed Tasks', 'Useful Note', 'Useful Task']){
     assert.doesNotMatch(html, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));

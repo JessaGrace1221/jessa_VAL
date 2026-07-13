@@ -8,6 +8,16 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
+function transcriptSourceHelpersForTest(){
+  const start=server.indexOf('function transcriptSourceItemText');
+  const end=server.indexOf('function transcriptOverviewItemText',start);
+  assert.ok(start>=0&&end>start,'source receipt helpers must be available');
+  return Function(server.slice(start,end)+'; return {transcriptSourceReceipt,dedupeTranscriptDrawerRecords};')();
+}
+function sourceReceiptForTest(transcript={}){
+  return transcriptSourceHelpersForTest().transcriptSourceReceipt(transcript);
+}
+
 test('creates transcript intelligence staging and evidence tables',()=>{
   for(const table of ['transcripts','transcript_participants','transcript_summaries','transcript_tasks','transcript_contact_updates','transcript_action_log','evidence_items','evidence_observations','val_evidence_links']){
     assert.match(server,new RegExp(`create table if not exists ${table} \\(`));
@@ -90,7 +100,7 @@ test('canonical transcript pipeline preserves conversations, identities, and dec
   const processStart=server.indexOf('async function processTranscriptPayload(payload)');
   const observations=server.indexOf('saveTranscriptEvidenceObservations({sourceId,title,transcript,parsed,participants,summary})',processStart);
   const canonical=server.indexOf('saveTranscriptCanonicalPipeline({sourceId,title,transcript,payload,parsed,participants,summary,observations})',processStart);
-  const drafts=server.indexOf('saveMeetingRecapDraft({transcriptId:sourceId,title,summary,participants,tasks:stagedTasks,transcriptText:transcript})',processStart);
+  const drafts=server.indexOf('const recapDraft=await saveMeetingRecapDraft(',processStart);
   assert.ok(observations>processStart&&canonical>observations,'canonical pipeline should run after evidence observations');
   assert.ok(drafts>canonical,'draft creation should happen after canonical conversation and decision capture');
 });
@@ -252,15 +262,67 @@ test('transcript detail defaults to summary, transcript, and transcript-specific
   assert.match(server,/req\.query\.transcriptId/);
 });
 
-test('stores meeting recap templates and renders transcript recap drafts from them',()=>{
+test('stores meeting recap templates and creates source-grounded transcript overview drafts',()=>{
   assert.match(server,/create table if not exists val_templates \(/);
   assert.match(server,/DEFAULT_MEETING_RECAP_TEMPLATE/);
   assert.match(server,/app\.get\('\/api\/val\/templates\/:templateKey'/);
   assert.match(server,/app\.put\('\/api\/val\/templates\/:templateKey'/);
   assert.match(server,/saveMeetingRecapDraft/);
-  assert.match(server,/renderMeetingRecapTemplate/);
   assert.match(server,/draftType:'meeting_recap'/);
-  assert.match(server,/htmlBody:rendered\.htmlBody/);
+  assert.match(server,/function transcriptOverviewEmailBody/);
+  assert.match(server,/function transcriptSourceReceipt/);
+  assert.match(server,/return String\(overview\.body\|\|transcriptSourceReceipt\(transcript\)\.body\|\|''\)\.trim\(\)/);
+  assert.match(server,/source:'transcript_meeting_overview'/);
+  assert.match(server,/executionPath:'create_provider_draft_then_human_send'/);
+});
+
+test('preserves every Krisp action item and key point word for word in the source receipt',()=>{
+  const exactKrispText=[
+    'Action Items',
+    'Anthony to send the website link to Jessa and Aric.',
+    'Speaker 2 to set up the CRM for the Forever Freedom project.',
+    '',
+    'Key Points',
+    'Purpose of the call: follow up on the Forever Freedom project.',
+    'CRM ownership was discussed; Anthony indicated he had held off assigning it.'
+  ].join('\n');
+  const receipt=sourceReceiptForTest({rawTranscript:exactKrispText});
+  assert.equal(receipt.body,exactKrispText);
+  assert.deepEqual(receipt.actionItems,[
+    'Anthony to send the website link to Jessa and Aric.',
+    'Speaker 2 to set up the CRM for the Forever Freedom project.'
+  ]);
+  assert.deepEqual(receipt.keyPoints,[
+    'Purpose of the call: follow up on the Forever Freedom project.',
+    'CRM ownership was discussed; Anthony indicated he had held off assigning it.'
+  ]);
+});
+
+test('shows one trustworthy Krisp receipt when the same meeting is ingested twice',()=>{
+  const {dedupeTranscriptDrawerRecords}=transcriptSourceHelpersForTest();
+  const rows=dedupeTranscriptDrawerRecords([
+    {
+      id:'full-transcript-copy',
+      source:'krisp',
+      title:'Monday Touch Point w/Jessa · Jul 13, 2026',
+      createdAt:'2026-07-13T15:35:16.000Z',
+      sourceReceipt:{body:'Action Items\\n'+Array(470).fill('Speaker line from the full transcript.').join('\\n'),actionItems:Array(470).fill('Speaker line from the full transcript.'),keyPoints:[]}
+    },
+    {
+      id:'krisp-receipt',
+      source:'krisp',
+      title:'Monday Touch Point w/Jessa · Jul 13, 2026',
+      createdAt:'2026-07-13T15:34:49.000Z',
+      sourceReceipt:{body:'Action Items\\n- [ ] Send the follow-up.\\n\\nKey Points\\n- The follow-up is ready.',actionItems:['- [ ] Send the follow-up.'],keyPoints:['- The follow-up is ready.']}
+    }
+  ]);
+  assert.deepEqual(rows.map(row=>row.id),['krisp-receipt']);
+});
+
+test('creates transcript tasks from the exact Krisp action line',()=>{
+  assert.match(server,/taskTitle:selected\.title/);
+  assert.match(server,/taskDescription:req\.body\.description\|\|selected\.description\|\|''/);
+  assert.match(server,/sourceQuote:String\(req\.body\.sourceQuote\|\|selected\.sourceQuote\|\|selected\.title\)\.trim\(\)/);
 });
 
 test('exposes drafts and settings templates navigation',()=>{

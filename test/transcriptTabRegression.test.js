@@ -167,11 +167,33 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/action===\'create_task\'/);
-  assert.match(server,/action===\'send_overview\'/);
-  assert.match(server,/action===\'draft_followup\'/);
-  assert.match(server,/sendTranscriptMeetingOverview/);
-  assert.match(hearthJs,/Ready - send to invitees/);
-  assert.doesNotMatch(hearthJs,/Draft overview/);
+  assert.match(server,/action===\'prepare_overview\'/);
+  assert.match(server,/prepareTranscriptMeetingOverviewDraft/);
+  assert.match(server,/noExternalAction:true/);
+  assert.match(hearthJs,/Prepare email draft/);
+  assert.match(hearthJs,/Open email draft/);
+  assert.match(hearthJs,/function timelineSourceReceipt/);
+  assert.match(hearthJs,/function renderTimelineTranscriptSourceSections/);
+  assert.match(hearthJs,/function renderTimelineActionIndex/);
+  assert.match(hearthJs,/data-transcript-task-create/);
+  assert.doesNotMatch(hearthJs,/data-transcript-reprocess/);
+  assert.doesNotMatch(hearthJs,/Ready - send to invitees/);
+});
+
+test('Hearth transcript index stays lightweight while the detail route retains the source transcript',()=>{
+  assert.match(server,/function transcriptIndexUiRecord/);
+  assert.match(server,/const sourceActions=/);
+  assert.match(server,/summaryText=.*slice\(0,420\)/);
+  assert.match(server,/\.map\(transcriptIndexUiRecord\)/);
+  assert.match(server,/const \[participants,summaries,tasks,contactUpdates,actionLog\]=await Promise\.all/);
+  assert.match(server,/const indexedRecords=transcriptMigrationRecordsFromIndex\(data\)/);
+  assert.match(server,/const records=indexedRecords\.length\?indexedRecords:await transcriptArchiveRecords/);
+  assert.match(server,/sourceReceipt:transcriptSourceReceipt\(detail\)/);
+  assert.match(server,/const transcript=transcriptDetailFromIndex\(data,data\.transcripts\[0\]\)/);
+  assert.match(hearthJs,/drawerTray\?\.scrollTo\?\.\(\{top:0, left:0\}\)/);
+  assert.match(hearthJs,/let timelineTranscriptOpenRequest = 0/);
+  assert.doesNotMatch(hearthJs,/renderTimelineTranscriptDetail\(\{\.\.\.cached/);
+  assert.doesNotMatch(hearthJs,/timelineCompactText\(sourceText/);
 });
 
 test('transcript cards and errors have readable responsive styling',()=>{
