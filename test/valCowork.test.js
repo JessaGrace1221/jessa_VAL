@@ -64,6 +64,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedIdentities=[];
   const appliedPeople=[];
   const appliedDocuments=[];
+  const appliedMilestones=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -88,6 +89,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       appliedDocuments.push(payload);
       return {...loadedProject,projectDocuments:payload.documents};
     },
+    applyProjectMilestones:async payload=>{
+      appliedMilestones.push(payload);
+      return {...loadedProject,milestones:payload.milestones};
+    },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
       return {...loadedProject,workstreams:payload.workstreams};
@@ -102,7 +107,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -116,7 +121,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -189,6 +194,44 @@ test('project documents links only existing receipts, records their intended use
   assert.equal(applied.receipt.action,'apply_project_documents');
   assert.equal(applied.receipt.payloadJson.noExternalAction,true);
   assert.equal(appliedDocuments[0].documents[1].sourceType,'google_docs');
+});
+
+test('milestones require existing workstreams, map each question to the Milestones packet, and apply internally',async()=>{
+  const loadedProject={
+    ...project(),
+    workstreams:[
+      {id:'crm_payments',name:'CRM and payments'},
+      {id:'partner_activation',name:'Partner activation'}
+    ]
+  };
+  const {service,appliedMilestones}=serviceFor({loadedProject});
+  const opened=await service.openEntry({entrypointId:'project.milestones',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'milestones'}});
+  assert.equal(opened.session.scope.entityId,'project_forever_freedom');
+  assert.equal(opened.question.targetField,'project_milestone_packet[].{workstream_name,checkpoint,completion_signal,timing_or_trigger}');
+  assert.match(opened.question.detail,/Project Managers > Milestones/i);
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+
+  const ready=await service.respond(opened.session.id,{answer:[
+    'CRM and payments | Pipeline configured | A test submission creates the correct CRM record and payment handoff | Before partner launch',
+    'Partner activation | First sponsor commitment | Signed sponsor confirmation is attached to the project | Before launch approval'
+  ].join('\n')});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.milestones.length,2);
+  assert.equal(ready.workItem.payload.milestones[0].workstreamName,'CRM and payments');
+  assert.equal(ready.workItem.payload.milestones[0].completionSignal,'A test submission creates the correct CRM record and payment handoff');
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.receipt.action,'apply_project_milestones');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedMilestones[0].milestones[1].timingOrTrigger,'Before launch approval');
+});
+
+test('Milestones does not invent workstreams when the selected project has none',async()=>{
+  const {service}=serviceFor();
+  const opened=await service.openEntry({entrypointId:'project.milestones',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'milestones'}});
+  assert.equal(opened.question.targetField,'project_sop_packet.default_workstreams');
+  assert.match(opened.question.question,/need its named workstreams first/i);
+  await assert.rejects(service.respond(opened.session.id,{answer:'Launch approved'}),/need the selected project workstreams first/i);
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -349,6 +392,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/entrypointId:'project\.identity'/);
   assert.match(hearth,/entrypointId:'project\.people'/);
   assert.match(hearth,/entrypointId:'project\.documents'/);
+  assert.match(hearth,/entrypointId:'project\.milestones'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
@@ -357,6 +401,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'what_this_is' \|\| field === 'project_interview'\) return openProjectIdentityCowork/);
   assert.match(hearth,/if\(field === 'people_involved'\) return openProjectPeopleCowork/);
   assert.match(hearth,/if\(field === 'documents_sources'\) return openProjectDocumentsCowork/);
+  assert.match(hearth,/if\(field === 'milestones'\) return openProjectMilestonesCowork/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
@@ -365,6 +410,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/data-cowork-apply-project-identity/);
   assert.match(hearth,/data-cowork-apply-project-people/);
   assert.match(hearth,/data-cowork-apply-project-documents/);
+  assert.match(hearth,/data-cowork-apply-project-milestones/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
@@ -394,9 +440,12 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/applyProjectPeople:applyCoworkProjectPeople/);
   assert.match(server,/async function applyCoworkProjectDocuments/);
   assert.match(server,/applyProjectDocuments:applyCoworkProjectDocuments/);
+  assert.match(server,/async function applyCoworkProjectMilestones/);
+  assert.match(server,/applyProjectMilestones:applyCoworkProjectMilestones/);
   assert.match(server,/projectPeople:linkedPeople\.map/);
   assert.match(server,/projectPeople:Array\.isArray\(metadata\.projectPeople\)\?metadata\.projectPeople:\[\]/);
   assert.match(server,/projectDocuments:linkedDocuments/);
   assert.match(server,/projectDocuments:Array\.isArray\(metadata\.projectDocuments\)\?metadata\.projectDocuments:\[\]/);
+  assert.match(server,/milestones:Array\.isArray\(metadata\.milestones\)\?metadata\.milestones:\[\]/);
   assert.match(hearth,/foundation_applied/);
 });

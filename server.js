@@ -24871,6 +24871,31 @@ async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutco
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectMilestones({projectId,projectName='',milestones=[],sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const knownWorkstreams=new Set((Array.isArray(current.workstreams) ? current.workstreams : []).map((workstream)=>String(workstream?.name || workstream || '').trim().toLowerCase()).filter(Boolean));
+  const preparedMilestones=Array.isArray(milestones) ? milestones.filter((milestone)=>{
+    const workstreamName=String(milestone?.workstreamName || milestone?.workstream || '').trim().toLowerCase();
+    return workstreamName&&knownWorkstreams.has(workstreamName)&&milestone?.checkpoint&&milestone?.completionSignal&&milestone?.timingOrTrigger;
+  }) : [];
+  if(!preparedMilestones.length) return null;
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    milestones:preparedMilestones,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work milestones applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers milestone review.'}`
+    ].filter(Boolean).join('\n'),
+    projectOnboardingStatus:'milestones_applied'
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24906,6 +24931,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectIdentity:applyCoworkProjectIdentity,
   applyProjectPeople:applyCoworkProjectPeople,
   applyProjectDocuments:applyCoworkProjectDocuments,
+  applyProjectMilestones:applyCoworkProjectMilestones,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

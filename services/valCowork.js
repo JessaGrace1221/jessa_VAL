@@ -185,6 +185,153 @@ function buildProjectWorkstreamsBrief(project={},input={}){
   };
 }
 
+function milestoneWorkstreamCandidate(value='',workstreams=[]){
+  const needle=compactText(value,180).toLowerCase();
+  if(!needle) return null;
+  return safeArray(workstreams).find((workstream)=>{
+    const name=compactText(workstream?.name || workstream?.title || workstream?.label || workstream,180).toLowerCase();
+    return name === needle;
+  }) || null;
+}
+function milestoneTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {checkpoint:value} : (value || {});
+  const workstreamName=compactText(raw.workstreamName || raw.workstream || raw.workstream_name || raw.lane || '',180);
+  const matched=milestoneWorkstreamCandidate(workstreamName,brief.existingWorkstreams);
+  const checkpoint=compactText(raw.checkpoint || raw.title || raw.name || raw.milestone || raw.proofOfProgress || '',500);
+  return {
+    id:compactText(raw.id || stableKey(`project_milestone_${matched?.id || workstreamName}_${checkpoint}`),220),
+    workstreamId:compactText(raw.workstreamId || raw.workstream_id || matched?.id || '',220),
+    workstreamName:matched?.name || workstreamName,
+    checkpoint,
+    completionSignal:compactText(raw.completionSignal || raw.completion_signal || raw.evidence || raw.proof || raw.doneWhen || '',500),
+    timingOrTrigger:compactText(raw.timingOrTrigger || raw.timing_or_trigger || raw.timing || raw.trigger || raw.when || '',300),
+    sourceRefs:safeArray(raw.sourceRefs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectMilestone(value={},brief={}){
+  return milestoneTemplate(value,brief);
+}
+function missingProjectMilestoneFields(milestone={},brief={}){
+  const missing=[];
+  const known=milestoneWorkstreamCandidate(milestone.workstreamName || milestone.workstreamId,brief.existingWorkstreams);
+  if(!known) missing.push('existing workstream');
+  if(!compactText(milestone.checkpoint)) missing.push('checkpoint');
+  if(!compactText(milestone.completionSignal)) missing.push('completion signal');
+  if(!compactText(milestone.timingOrTrigger)) missing.push('timing or trigger');
+  return missing;
+}
+function milestoneValueFromLine(line='',labels=''){
+  const match=String(line || '').match(new RegExp(`(?:^|[;|])\\s*(?:${labels})\\s*:\\s*([^;|]+)`, 'i'));
+  return compactText(match?.[1] || '',500);
+}
+function projectMilestoneLine(value={},brief={}){
+  const milestone=normalizeProjectMilestone(value,brief);
+  return [
+    milestone.workstreamName || 'Workstream',
+    'checkpoint: ' + (milestone.checkpoint || '...'),
+    'completion signal: ' + (milestone.completionSignal || '...'),
+    'timing or trigger: ' + (milestone.timingOrTrigger || '...')
+  ].join(' | ');
+}
+function parseProjectMilestoneLine(line='',brief={}){
+  const source=String(line || '').trim();
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  const known=safeArray(brief.existingWorkstreams);
+  const labeledWorkstream=milestoneValueFromLine(source,'workstream|lane');
+  let workstreamName=labeledWorkstream;
+  let checkpoint=milestoneValueFromLine(source,'checkpoint|milestone|proof point');
+  let completionSignal=milestoneValueFromLine(source,'completion signal|evidence|proof|done when');
+  let timingOrTrigger=milestoneValueFromLine(source,'timing or trigger|timing|trigger|when');
+  if(parts.length >= 4){
+    workstreamName=workstreamName || parts[0].replace(/^\s*(?:workstream|lane)\s*:\s*/i,'');
+    checkpoint=checkpoint || parts[1].replace(/^\s*(?:checkpoint|milestone|proof point)\s*:\s*/i,'');
+    completionSignal=completionSignal || parts[2].replace(/^\s*(?:completion signal|evidence|proof|done when)\s*:\s*/i,'');
+    timingOrTrigger=timingOrTrigger || parts[3].replace(/^\s*(?:timing or trigger|timing|trigger|when)\s*:\s*/i,'');
+  }else if(!workstreamName){
+    const matched=known.find((workstream)=>source.toLowerCase().startsWith(String(workstream.name || '').toLowerCase() + ' - '));
+    if(matched){
+      workstreamName=matched.name;
+      const details=source.slice(String(matched.name).length + 3);
+      checkpoint=checkpoint || milestoneValueFromLine(details,'checkpoint|milestone|proof point');
+      completionSignal=completionSignal || milestoneValueFromLine(details,'completion signal|evidence|proof|done when');
+      timingOrTrigger=timingOrTrigger || milestoneValueFromLine(details,'timing or trigger|timing|trigger|when');
+    }
+  }
+  return milestoneTemplate({workstreamName,checkpoint,completionSignal,timingOrTrigger},brief);
+}
+function parseProjectMilestones(answer='',brief={},current=[]){
+  const source=multilineText(answer,5000);
+  const lines=source.split(/\n+/).map((line)=>line.replace(/^\s*(?:milestones?|checkpoints?)\s*:\s*/i,'').trim()).filter(Boolean);
+  if(!lines.length) return safeArray(current).map((item)=>normalizeProjectMilestone(item,brief));
+  const next=safeArray(current).map((item)=>normalizeProjectMilestone(item,brief));
+  for(const line of lines){
+    const candidate=parseProjectMilestoneLine(line,brief);
+    const key=[candidate.workstreamName,candidate.checkpoint].map((value)=>String(value || '').toLowerCase()).join('|');
+    const index=next.findIndex((item)=>[item.workstreamName,item.checkpoint].map((value)=>String(value || '').toLowerCase()).join('|')===key);
+    if(index >= 0) next[index]={...next[index],...candidate,id:next[index].id || candidate.id};
+    else if(next.length === 1 && missingProjectMilestoneFields(next[0],brief).length) next[0]={...next[0],...candidate,id:next[0].id || candidate.id};
+    else next.push(candidate);
+  }
+  const seen=new Set();
+  return next.filter((item)=>{
+    const key=[item.workstreamName,item.checkpoint,item.completionSignal,item.timingOrTrigger].join('|').toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildProjectMilestonesBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const workstreams=safeArray(project.workstreams || metadata.workstreams).map((item)=>normalizeWorkstream(item,{}));
+  const references=projectIdentityReferences(project,input);
+  const existingMilestones=safeArray(project.milestones || metadata.milestones).map((item)=>normalizeProjectMilestone(item,{existingWorkstreams:workstreams,sourceRefs:references}));
+  return {
+    id:stableKey(`working_brief_project_milestones_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.milestones',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'milestones',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    existingWorkstreams:workstreams,
+    existingMilestones,
+    sourceRefs:references,
+    objective:'Define evidence-based checkpoints for the selected project without inventing work outside its existing workstreams.',
+    completionCondition:'Every milestone is attached to an existing workstream and names a checkpoint, concrete completion signal, and timing or trigger.',
+    approvalBoundary:'Applying milestones changes only the internal Project Managers packet. It does not create tasks, update CRM, send a message, schedule anything, or alter a source document.'
+  };
+}
+function projectMilestonesQuestion(state={},brief={}){
+  const workstreamNames=safeArray(brief.existingWorkstreams).map((item)=>item.name).filter(Boolean);
+  const milestones=safeArray(state.draftMilestones);
+  if(!workstreamNames.length){
+    return {
+      targetField:'project_sop_packet.default_workstreams',
+      question:`Milestones for ${brief.projectName || 'this project'} need its named workstreams first.`,
+      detail:'Open Project Managers > Workstreams, complete that reviewed packet, then reopen Milestones. VAL will not invent lanes just to make a milestone list.'
+    };
+  }
+  if(state.stage === 'milestones'){
+    return {
+      targetField:'project_milestone_packet[].{workstream_name,checkpoint,completion_signal,timing_or_trigger}',
+      question:`What checkpoints prove ${brief.projectName || 'this project'} is moving? Add one line per checkpoint using an existing workstream: Workstream | checkpoint | completion signal | timing or trigger.`,
+      detail:`This fills Project Managers > Milestones. Existing workstreams: ${workstreamNames.join(', ')}. A completion signal is the concrete evidence that the checkpoint is true; no task or calendar event is created.`
+    };
+  }
+  if(state.stage === 'milestone_details'){
+    const incomplete=milestones.filter((milestone)=>missingProjectMilestoneFields(milestone,brief).length);
+    return {
+      targetField:'project_milestone_packet[].{workstream_name,checkpoint,completion_signal,timing_or_trigger}',
+      question:`Fill only the missing details below.\n\n${incomplete.map((milestone)=>projectMilestoneLine(milestone,brief)).join('\n')}`,
+      detail:`Use the same one-line format. Workstream must be one of: ${workstreamNames.join(', ')}.`
+    };
+  }
+  return {
+    targetField:'project_milestone_packet',
+    question:'Review the prepared milestones, then apply them to this Project Manager.',
+    detail:'Applying changes only the selected internal Milestones packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -724,6 +871,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Link existing document receipts to the selected project and name their intended use.',
     completionCondition:'Each linked document is an existing VAL receipt with a specific project use.'
   },
+  'project.milestones':{
+    id:'project.milestones',surface:'project_managers',scopeType:'project_section',sectionId:'milestones',
+    requiredPackets:['project_packet','project_sop_packet','project_milestone_packet','project_workstreams'],
+    objective:'Define evidence-based checkpoints for the selected project.',
+    completionCondition:'Each milestone is tied to an existing workstream and has a completion signal plus timing or trigger.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -767,6 +920,7 @@ function createValCoworkService({
   applyProjectIdentity=async()=>null,
   applyProjectPeople=async()=>null,
   applyProjectDocuments=async()=>null,
+  applyProjectMilestones=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -860,6 +1014,7 @@ function createValCoworkService({
           draftIdentity:state.draftIdentity || null,
           draftPeople:state.draftPeople || null,
           draftDocuments:state.draftDocuments || null,
+          draftMilestones:safeArray(state.draftMilestones),
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -1015,6 +1170,42 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectMilestonesEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.milestones'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can define milestones.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectMilestonesBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:brief.existingWorkstreams.length ? 'milestones' : 'needs_workstreams',draftMilestones:brief.existingMilestones,answers:[]};
+    const question=projectMilestonesQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_milestones',title:`Milestones for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,milestones:state.draftMilestones,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectMilestones(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    if(!safeArray(brief.existingWorkstreams).length) throw new Error('Milestones need the selected project workstreams first. Nothing was changed.');
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftMilestones=parseProjectMilestones(answer,brief,state.draftMilestones || []);
+    const milestones=safeArray(state.draftMilestones);
+    const incomplete=milestones.filter((milestone)=>missingProjectMilestoneFields(milestone,brief).length);
+    let question,message='';
+    if(milestones.length && !incomplete.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,milestones,completionCondition:brief.completionCondition};
+      question=projectMilestonesQuestion(state,brief);message=`VAL prepared ${milestones.length} milestone${milestones.length === 1 ? '' : 's'} for review. Apply them when this is true.`;
+    }else{
+      state.stage='milestone_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectMilestonesQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function respondProjectIdentity(session,workItem,answer){
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -1166,6 +1357,7 @@ function createValCoworkService({
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
     if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
     if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
+    if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -1222,6 +1414,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
     if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
+    if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1419,6 +1612,20 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_documents',status:'completed',summary:`Applied ${proposal.documents.length} linked document receipt${proposal.documents.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',documents:proposal.documents,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_milestones'){
+      if(workItem.status !== 'needs_review') throw new Error('Milestones must be complete and reviewed before they can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const milestones=safeArray(payload.milestones).map((milestone)=>normalizeProjectMilestone(milestone,brief));
+      if(!milestones.length || milestones.some((milestone)=>missingProjectMilestoneFields(milestone,brief).length)) throw new Error('The milestone proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectMilestones({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',milestones,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the milestones to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_milestones',status:'completed',summary:`Applied ${milestones.length} milestone${milestones.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',milestones,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -1467,6 +1674,7 @@ module.exports={
   buildProjectIdentityBrief,
   buildProjectPeopleBrief,
   buildProjectDocumentsBrief,
+  buildProjectMilestonesBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
@@ -1474,6 +1682,8 @@ module.exports={
   missingProjectIdentityFields,
   missingProjectPeopleFields,
   missingProjectDocumentFields,
+  missingProjectMilestoneFields,
+  projectMilestonesQuestion,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

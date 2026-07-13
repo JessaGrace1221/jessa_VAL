@@ -3737,6 +3737,7 @@ function projectManagerPacket(project = {}){
     },
     project_relationships_packet: projectRelationshipPacketItems(project, relationships),
     project_document_receipts: documentReceipts,
+    project_milestone_packet: projectMilestonePacketItems(project.milestones),
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
     project_risk_packet: {risk_summary:risk, mitigation_next_step:nextAction, owner},
     project_prepared_work_packets: prepared,
@@ -3788,7 +3789,7 @@ function projectCoworkAffectedObject(field = '', project = {}, packet = {}){
     project_phase: 'project_sop_packet.current_phase',
     project_interview: 'project_interview_packet',
     workstreams: 'project_sop_packet.default_workstreams',
-    milestones: 'project_sop_packet.standard_milestones',
+    milestones: 'project_milestone_packet',
     monitoring_rules: 'project_sop_packet.monitoring_rules',
     relationship_nurture: 'project_sop_packet.relationship_nurture_rules'
   };
@@ -3875,6 +3876,34 @@ function projectManagerWorkstreamList(items = [], emptyText = 'VAL needs the wor
       item.monitoringSignal ? 'Monitor: ' + item.monitoringSignal : ''
     ].filter(Boolean).join(' | ');
     return '<li><strong>' + escapeHtml(name) + '</strong>' + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '') + '</li>';
+  }).join('');
+}
+
+function projectMilestonePacketItems(items = []){
+  return (Array.isArray(items) ? items : []).filter(Boolean).map((item) => {
+    if(typeof item === 'string') return {workstream_name:'',checkpoint:projectCleanText(item),completion_signal:'',timing_or_trigger:''};
+    return {
+      workstream_id:projectCleanText(item.workstreamId || item.workstream_id),
+      workstream_name:projectCleanText(item.workstreamName || item.workstream || item.lane),
+      checkpoint:projectCleanText(item.checkpoint || item.title || item.name || item.milestone || item.proofOfProgress),
+      completion_signal:projectCleanText(item.completionSignal || item.completion_signal || item.evidence || item.proof || item.doneWhen),
+      timing_or_trigger:projectCleanText(item.timingOrTrigger || item.timing_or_trigger || item.timing || item.trigger || item.when),
+      source_refs:Array.isArray(item.sourceRefs) ? item.sourceRefs : []
+    };
+  });
+}
+
+function projectManagerMilestoneList(items = [], emptyText = 'VAL needs the milestones for this project.'){
+  const milestones = projectMilestonePacketItems(items);
+  if(!milestones.length) return '<li>' + escapeHtml(emptyText) + '</li>';
+  return milestones.slice(0, 6).map((milestone) => {
+    const title = milestone.checkpoint || 'Milestone';
+    const detail = [
+      milestone.workstream_name ? 'Workstream: ' + milestone.workstream_name : '',
+      milestone.completion_signal ? 'Evidence: ' + milestone.completion_signal : '',
+      milestone.timing_or_trigger ? 'When: ' + milestone.timing_or_trigger : ''
+    ].filter(Boolean).join(' | ');
+    return '<li><strong>' + escapeHtml(title) + '</strong>' + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '') + '</li>';
   }).join('');
 }
 
@@ -4154,7 +4183,7 @@ function renderProjectManagerProfile(project = {}){
     '</section>',
     '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
       projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
-      projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
+      projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerMilestoneList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
       projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerList(sop.monitoring_rules, 'VAL needs to know what to monitor after launch.') + '</ul>'),
       projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerList(sop.relationship_nurture_rules, 'VAL needs to know how to protect the partnership.') + '</ul>'),
     '</section>',
@@ -4341,6 +4370,7 @@ function coworkEntryPlaceholder(question = {}){
   if(target === 'project_identity_packet.desired_outcome') return 'Outcome: this project should create...';
   if(target === 'project_next_action_packet.next_action') return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
   if(target.includes('project_next_action_packet.')) return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
+  if(target.includes('project_milestone_packet')) return 'Workstream | checkpoint | completion signal | timing or trigger';
   if(target === 'project_workstreams[].name') return 'Workstream one\nWorkstream two\nWorkstream three';
   if(target.includes('project_workstreams[].')) return 'Workstream name - purpose: ...; owner: ...; first move: ...; milestone: ...; monitor: ...';
   return 'Answer the question above.';
@@ -4381,6 +4411,24 @@ function renderCoworkWorkstreamsItem(workItem = {}){
         ].join('')),
       '</div>',
       ready ? '<button type="button" data-cowork-apply-workstreams="' + escapeHtml(workItem.id || '') + '">Apply workstreams</button>' : '',
+    '</section>'
+  ].join('');
+}
+
+function renderCoworkMilestonesItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const milestones = Array.isArray(payload.milestones) ? payload.milestones : [];
+  if(!milestones.length) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing milestones');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared milestones</span><strong>' + escapeHtml(workItem.title || 'Project milestones') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list">',
+        milestones.map((milestone) => '<article><strong>' + escapeHtml(milestone.checkpoint || 'Milestone') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Workstream', milestone.workstreamName || milestone.workstream) + coworkWorkstreamField('Completion signal', milestone.completionSignal || milestone.evidence) + coworkWorkstreamField('Timing', milestone.timingOrTrigger || milestone.timing || milestone.trigger) + '</div></article>').join(''),
+      '</div>',
+      ready ? '<button type="button" data-cowork-apply-project-milestones="' + escapeHtml(workItem.id || '') + '">Apply milestones</button>' : '',
     '</section>'
   ].join('');
 }
@@ -4509,7 +4557,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4518,6 +4566,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Connect the correct relationships and owner to this selected project.'
     : entrypointId === 'project.identity'
     ? 'Establish the selected project foundation.'
+    : entrypointId === 'project.milestones'
+    ? 'Define evidence-based milestones for this project.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4567,6 +4617,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkPeopleItem(workItem)
       : workItem.type === 'project_identity'
       ? renderCoworkIdentityItem(workItem)
+      : workItem.type === 'project_milestones'
+      ? renderCoworkMilestonesItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -4586,6 +4638,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Project people applied.'
       : session.entrypointId === 'project.identity'
         ? 'Project foundation applied.'
+      : session.entrypointId === 'project.milestones'
+        ? 'Milestones applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -4711,6 +4765,25 @@ async function openProjectDocumentsCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Documents / Sources interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectMilestonesCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('milestones', project);
+  const action = 'project:cowork:milestones';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'milestones',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Define evidence-based milestones',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.milestones',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Define evidence-based milestones',meaning:'Preparing the Milestones brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will attach each checkpoint to an existing workstream and name its concrete proof of completion.',placeholder:'Preparing the selected Project Managers milestone brief...',heading:'Defining milestones for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Milestones.',publicDetail:'Scoped to Project Managers: Milestones.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.milestones',scope:{entityType:'project_section',entityId:projectId,sectionId:'milestones'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Milestones brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Milestones interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -4793,7 +4866,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -4886,6 +4959,17 @@ async function applyActiveCoworkProjectDocuments(workItemId = '', button = null)
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply these document links. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectMilestones(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply these milestones yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply these milestones. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -4904,6 +4988,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'what_this_is' || field === 'project_interview') return openProjectIdentityCowork(node,field);
   if(field === 'people_involved') return openProjectPeopleCowork(node);
   if(field === 'documents_sources') return openProjectDocumentsCowork(node);
+  if(field === 'milestones') return openProjectMilestonesCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -19524,15 +19609,17 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectIdentityApply = event.target.closest('[data-cowork-apply-project-identity]');
   const projectPeopleApply = event.target.closest('[data-cowork-apply-project-people]');
   const projectDocumentsApply = event.target.closest('[data-cowork-apply-project-documents]');
+  const projectMilestonesApply = event.target.closest('[data-cowork-apply-project-milestones]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
   if(projectIdentityApply) await applyActiveCoworkProjectIdentity(projectIdentityApply.dataset.coworkApplyProjectIdentity, projectIdentityApply);
   if(projectPeopleApply) await applyActiveCoworkProjectPeople(projectPeopleApply.dataset.coworkApplyProjectPeople, projectPeopleApply);
   if(projectDocumentsApply) await applyActiveCoworkProjectDocuments(projectDocumentsApply.dataset.coworkApplyProjectDocuments, projectDocumentsApply);
+  if(projectMilestonesApply) await applyActiveCoworkProjectMilestones(projectMilestonesApply.dataset.coworkApplyProjectMilestones, projectMilestonesApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
