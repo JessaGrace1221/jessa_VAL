@@ -16779,6 +16779,8 @@ function projectUpdatePayload(body={}){
     desiredOutcome:String(body.desiredOutcome||body.desired_outcome||body.outcome||'').trim(),
     nextMove:String(body.nextMove||body.next_move||body.recommendedAction||'').trim(),
     nextStepOwner:String(body.nextStepOwner||body.next_step_owner||body.ownerName||body.owner_name||'').trim(),
+    nextStepDueAt:String(body.nextStepDueAt||body.next_step_due_at||body.nextMoveTiming||body.next_move_timing||'').trim(),
+    nextMoveBasis:String(body.nextMoveBasis||body.next_move_basis||body.nextMoveEvidence||body.next_move_evidence||'').trim(),
     projectPhase:String(body.projectPhase||body.project_phase||'').trim(),
     projectInterviewNotes:String(body.projectInterviewNotes||body.project_interview_notes||'').trim(),
     whatValNowKnows:String(body.whatValNowKnows||body.what_val_now_knows||'').trim(),
@@ -16829,6 +16831,8 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.desiredOutcome?{desiredOutcome:patch.desiredOutcome}:{}),
       ...(patch.nextMove?{nextMove:patch.nextMove}:{}),
       ...(patch.nextStepOwner?{nextStepOwner:patch.nextStepOwner}:{}),
+      ...(patch.nextStepDueAt?{nextStepDueAt:patch.nextStepDueAt}:{}),
+      ...(patch.nextMoveBasis?{nextMoveBasis:patch.nextMoveBasis}:{}),
       ...(patch.projectPhase?{projectPhase:patch.projectPhase}:{}),
       ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
       ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
@@ -17428,7 +17432,7 @@ function projectIndexItemFromProfile(profile={}){
   const status=profile.relationshipStatus||metadata.status||profile.status||'Observed';
   const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
-  const nextMove=openLoops[0]||risks[0]||opportunities[0]||signals[0]||metadata.nextMove||profile.summary||'Review the project file.';
+  const nextMove=metadata.nextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
     files:uploadedFiles,
@@ -17452,7 +17456,7 @@ function projectIndexItemFromProfile(profile={}){
     decision,
     decisionEvidence:dashboardShortText(risks[0]||openLoops[0]||'No urgent project risk is currently singled out by VAL.', 'Review project context before adding work.',220),
     nextMove:dashboardShortText(nextMove,'Review project file.',120),
-    nextMoveEvidence:dashboardShortText(openLoops[0]||risks[0]||opportunities[0]||profile.summary,'Use the project dossier before creating new work.',220),
+    nextMoveEvidence:dashboardShortText(metadata.nextMoveBasis||openLoops[0]||risks[0]||opportunities[0]||profile.summary,'Use the project dossier before creating new work.',220),
     sourceReceipts:'Canonical project index · '+[
       uploadedFileCount?uploadedFileCount+' uploaded project files':null,
       profile.observationCount?profile.observationCount+' observations':'observations pending',
@@ -17467,6 +17471,7 @@ function projectIndexItemFromProfile(profile={}){
     desiredOutcome:metadata.desiredOutcome||metadata.outcome||'',
     outcome:metadata.outcome||metadata.desiredOutcome||'',
     nextStepOwner:metadata.nextStepOwner||metadata.owner?.name||'',
+    nextStepDueAt:metadata.nextStepDueAt||'',
     projectPhase:metadata.projectPhase||'',
     projectInterviewNotes:metadata.projectInterviewNotes||'',
     whatValNowKnows:metadata.whatValNowKnows||'',
@@ -24745,6 +24750,27 @@ async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutco
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    nextMove,
+    nextStepOwner:accountableOwner,
+    nextStepDueAt:timingOrTrigger,
+    nextMoveBasis:basis,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work next move applied from session ${sessionId || 'unknown'}: ${sourceSummary || basis || 'Project Managers next-move review.'}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -24755,6 +24781,7 @@ const valCowork = registerValCoworkRoutes(app,{
   userId:currentUserId,
   loadProject:loadProjectForCowork,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
+  applyProjectNextMove:applyCoworkProjectNextMove,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

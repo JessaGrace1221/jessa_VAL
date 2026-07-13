@@ -228,7 +228,7 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First canonical slice complete | `project.workstreams` now has a server-owned Working Brief, field-targeted questions, structured prepared work, explicit internal Apply, an action receipt, and return to the selected project. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | First two canonical slices complete | `project.workstreams` and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | Partial | Transcript data, inline transcript chat, review controls, and a drawer-wide Co-Work route. | One selected Transcript Working Brief and exact prepared-work routing. |
 | Executive Inbox | Partial | Selected thread/source summary reaches a scoped chat launcher. | Typed email-thread brief, completion contract, and artifact/action routing. |
 | Relationships | Partial | Relationship and selected-card summaries reach a scoped chat launcher. | Field-level objectives, target writes, and completion/apply contracts. |

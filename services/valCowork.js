@@ -185,6 +185,94 @@ function buildProjectWorkstreamsBrief(project={},input={}){
   };
 }
 
+function answerField(answer='', labels=''){
+  const source=String(answer || '');
+  const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
+  return compactText(match?.[1] || '',500);
+}
+function nextMoveProposalFromAnswer(answer='', current={}){
+  const source=multilineText(answer,5000);
+  const hasLabels=/(?:^|[;\n])\s*(?:next move|action|move|owner|accountable owner|timing|when|due|trigger|basis|why now|reason)\s*:/i.test(source);
+  const action=answerField(source,'next move|action|move') || (!hasLabels ? compactText(source,500) : '');
+  return {
+    nextMove:action || compactText(current.nextMove || '',500),
+    accountableOwner:answerField(source,'accountable owner|owner') || compactText(current.accountableOwner || '',180),
+    timingOrTrigger:answerField(source,'timing|when|due|trigger') || compactText(current.timingOrTrigger || '',300),
+    basis:answerField(source,'why now|basis|reason') || compactText(current.basis || '',700)
+  };
+}
+function missingNextMoveFields(proposal={}){
+  const missing=[];
+  if(!compactText(proposal.nextMove)) missing.push('next move');
+  if(!compactText(proposal.accountableOwner)) missing.push('owner');
+  if(!compactText(proposal.timingOrTrigger)) missing.push('timing or trigger');
+  if(!compactText(proposal.basis)) missing.push('basis');
+  return missing;
+}
+function buildProjectNextMoveBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const sourceDetails=project.sourceDetails || metadata.sourceDetails || {};
+  const linkedPeople=uniqueNames([metadata.owner?.name,project.nextStepOwner,sourceDetails.relationships,metadata.intake?.relationships,project.relationships].filter(Boolean));
+  const references=[
+    sourceRef({sourceType:'project_packet',sourceId:project.projectId || project.id || input.scope?.entityId || '',quoteOrSummary:project.sourceReceipts || project.nextMoveEvidence || project.reality || project.summary || 'Project packet'}),
+    sourceDetails.documents && sourceRef({sourceType:'document',sourceId:project.projectId || project.id || '',quoteOrSummary:`Project documents: ${sourceDetails.documents}`}),
+    sourceDetails.rawContext && sourceRef({sourceType:'project_context',sourceId:project.projectId || project.id || '',quoteOrSummary:sourceDetails.rawContext})
+  ].filter(Boolean);
+  const sourceBasis=compactText(project.nextMoveEvidence || references[0]?.quote_or_summary || '',700);
+  return {
+    id:stableKey(`working_brief_project_next_move_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.next_move',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'next_move',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    desiredOutcome:compactText(project.desiredOutcome || project.outcome || metadata.desiredOutcome || metadata.outcome || '',500),
+    currentReality:compactText(project.reality || project.summary || '',900),
+    linkedPeople,
+    sourceRefs:references,
+    currentProposal:{
+      nextMove:compactText(project.nextMove || metadata.nextMove || '',500),
+      accountableOwner:compactText(project.nextStepOwner || metadata.nextStepOwner || metadata.owner?.name || '',180),
+      timingOrTrigger:compactText(project.nextStepDueAt || project.deadline || project.dueAt || metadata.nextStepDueAt || '',300),
+      basis:sourceBasis
+    },
+    objective:'Commit to the smallest concrete move that advances this selected project without scattering its context.',
+    completionCondition:'The next move has one concrete action, one accountable owner, a timing or trigger, and a source or decision basis.',
+    approvalBoundary:'Applying the next move changes only the internal Project Managers packet. It does not create a task, send a message, update CRM, schedule anything, or alter a source document.'
+  };
+}
+function nextMoveQuestion(state={},brief={}){
+  const stage=state.stage || 'next_move';
+  const current=state.draftNextMove || brief.currentProposal || {};
+  if(stage === 'next_move'){
+    if(compactText(current.nextMove)){
+      return {
+        targetField:'project_next_action_packet.next_action',
+        question:`The current proposed move for ${brief.projectName || 'this project'} is "${current.nextMove}". Should that remain the next narrow move, or what should replace it?`,
+        detail:'This answer fills Project Managers > Next move. It does not create a task or send anything.'
+      };
+    }
+    return {
+      targetField:'project_next_action_packet.next_action',
+      question:`What is the one smallest concrete move that should advance ${brief.projectName || 'this project'} now?`,
+      detail:'Name one action only. VAL will then ask only for the owner, timing or trigger, and basis that are still missing.'
+    };
+  }
+  if(stage === 'next_move_details'){
+    const missing=missingNextMoveFields(current);
+    return {
+      targetField:'project_next_action_packet.{next_action,owner,due_at,why_now}',
+      question:`Fill only the missing details for this next move: ${missing.join(', ')}.`,
+      detail:'Use: Next move: ...; Owner: ...; Timing: ...; Basis: ... . The basis can name a source receipt or an executive decision.'
+    };
+  }
+  return {
+    targetField:'project_next_action_packet',
+    question:'Review the prepared next move, then apply it to this Project Manager.',
+    detail:'Applying changes only the internal Project Managers packet.'
+  };
+}
+
 const COWORK_ENTRYPOINTS=Object.freeze({
   'project.workstreams':{
     id:'project.workstreams',
@@ -194,6 +282,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['project_packet','project_sop_packet','project_relationships_packet','project_identity_packet'],
     objective:'Build complete project workstreams.',
     completionCondition:'Each workstream is complete enough for executive review and explicit internal application.'
+  },
+  'project.next_move':{
+    id:'project.next_move',
+    surface:'project_managers',
+    scopeType:'project_section',
+    sectionId:'next_move',
+    requiredPackets:['project_packet','project_next_action_packet','project_owner_packet','project_identity_packet'],
+    objective:'Commit to the selected project\'s next narrow move.',
+    completionCondition:'The move has an action, owner, timing or trigger, and source or decision basis.'
   }
 });
 
@@ -206,7 +303,8 @@ function createValCoworkService({
   tenantId=()=>'default',
   userId=()=>'default',
   loadProject=async()=>null,
-  applyProjectWorkstreams=async()=>null
+  applyProjectWorkstreams=async()=>null,
+  applyProjectNextMove=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -290,7 +388,11 @@ function createValCoworkService({
         scope:{entityType:session.scopeType,entityId:session.scopeId,sectionId:session.scopeSectionId},
         status:session.status,
         workingBrief:brief,
-        state:{stage:state.stage || '',draftWorkstreams:safeArray(state.draftWorkstreams)}
+        state:{
+          stage:state.stage || '',
+          draftWorkstreams:safeArray(state.draftWorkstreams),
+          draftNextMove:state.draftNextMove || null
+        }
       },
       workItem:workItem ? {
         id:workItem.id,
@@ -306,10 +408,102 @@ function createValCoworkService({
       no_external_action:true
     };
   }
+  async function openProjectNextMoveEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.next_move'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can decide the next move.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectNextMoveBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'next_move',draftNextMove:{...brief.currentProposal},answers:[]};
+    const question=nextMoveQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      entrypointId:entry.id,
+      scopeType:entry.scopeType,
+      scopeId:brief.entityId,
+      scopeSectionId:entry.sectionId,
+      status:'needs_input',
+      workingBriefJson:brief,
+      questionPlanJson:[question],
+      stateJson:state,
+      createdAt:now,
+      updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),
+      tenantId:sc.tenantId,
+      userId:sc.userId,
+      sessionId:session.id,
+      workType:'project_next_move',
+      title:`Next move for ${brief.projectName}`,
+      status:'needs_input',
+      payloadJson:{projectId:brief.entityId,projectName:brief.projectName,objective:brief.objective,completionCondition:brief.completionCondition},
+      sourceRefsJson:brief.sourceRefs,
+      createdAt:now,
+      updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectNextMove(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    const current=state.draftNextMove || brief.currentProposal || {};
+    if(state.stage === 'next_move'){
+      const acceptsCurrent=answerAcceptsProposal(answer) && compactText(current.nextMove);
+      state.draftNextMove=acceptsCurrent ? {...current} : nextMoveProposalFromAnswer(answer,current);
+      if(answerAcceptsProposal(answer) && !compactText(current.nextMove)) state.draftNextMove.nextMove='';
+      state.stage='next_move_details';
+    }else if(state.stage === 'next_move_details'){
+      state.draftNextMove=nextMoveProposalFromAnswer(answer,current);
+    }
+    const proposal=state.draftNextMove || {};
+    const missing=missingNextMoveFields(proposal);
+    let message='';
+    let question;
+    if(state.stage === 'next_move_details' && !missing.length){
+      state.stage='ready_to_apply';
+      session.status='needs_review';
+      workItem.status='needs_review';
+      workItem.payloadJson={
+        ...workItem.payloadJson,
+        projectId:brief.entityId,
+        projectName:brief.projectName,
+        nextMove:proposal.nextMove,
+        accountableOwner:proposal.accountableOwner,
+        timingOrTrigger:proposal.timingOrTrigger,
+        basis:proposal.basis,
+        completionCondition:brief.completionCondition
+      };
+      message='VAL prepared the next narrow move for review. Apply it when this is true.';
+      question=nextMoveQuestion({stage:'ready_to_apply',draftNextMove:proposal},brief);
+    }else{
+      question=nextMoveQuestion(state,brief);
+      message=question.question;
+      session.status='needs_input';
+      workItem.status='needs_input';
+    }
+    session.workingBriefJson=brief;
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),question];
+    session.updatedAt=new Date().toISOString();
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return publicResult(session,workItem,message,question);
+  }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
+    if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -359,9 +553,10 @@ function createValCoworkService({
     if(!answer) throw new Error('VAL needs an answer before it can continue this workstream interview.');
     const session=await getSession(sessionId);
     if(!session) throw new Error('This Co-Work session no longer exists.');
-    if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use the Workstreams interview.');
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
+    if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
     state.answers.push({text:answer,at:new Date().toISOString()});
@@ -426,6 +621,50 @@ function createValCoworkService({
   async function applyWorkItem(workItemId){
     const workItem=await getWorkItem(workItemId);
     if(!workItem) throw new Error('Prepared work item not found.');
+    if(workItem.workType === 'project_next_move'){
+      if(workItem.status !== 'needs_review') throw new Error('The next move must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const proposal={
+        nextMove:compactText(payload.nextMove || '',500),
+        accountableOwner:compactText(payload.accountableOwner || '',180),
+        timingOrTrigger:compactText(payload.timingOrTrigger || '',300),
+        basis:compactText(payload.basis || '',700)
+      };
+      if(missingNextMoveFields(proposal).length) throw new Error('The next move proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectNextMove({
+        projectId:payload.projectId || session.scopeId,
+        projectName:payload.projectName || session.workingBriefJson?.projectName || 'Project',
+        ...proposal,
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!project) throw new Error('VAL could not save the next move to the selected Project Manager.');
+      const now=new Date().toISOString();
+      workItem.status='applied';
+      workItem.updatedAt=now;
+      session.status='completed';
+      session.updatedAt=now;
+      session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),
+        tenantId:sc.tenantId,
+        userId:sc.userId,
+        sessionId:session.id,
+        workItemId:workItem.id,
+        action:'apply_project_next_move',
+        status:'completed',
+        summary:`Applied the next move to ${payload.projectName || 'the selected Project Manager'}.`,
+        payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',...proposal,noExternalAction:true},
+        createdAt:now
+      });
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);

@@ -4293,6 +4293,8 @@ function projectProfileForCoworkNode(node = null){
 function coworkEntryPlaceholder(question = {}){
   const target = String(question.targetField || '');
   if(target === 'project_identity_packet.desired_outcome') return 'Outcome: this project should create...';
+  if(target === 'project_next_action_packet.next_action') return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
+  if(target.includes('project_next_action_packet.')) return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
   if(target === 'project_workstreams[].name') return 'Workstream one\nWorkstream two\nWorkstream three';
   if(target.includes('project_workstreams[].')) return 'Workstream name - purpose: ...; owner: ...; first move: ...; milestone: ...; monitor: ...';
   return 'Answer the question above.';
@@ -4337,14 +4339,47 @@ function renderCoworkWorkstreamsItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkNextMoveItem(workItem = {}){
+  const payload = workItem.payload || {};
+  if(!payload.nextMove) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing next move');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading">',
+        '<span>Prepared decision</span>',
+        '<strong>' + escapeHtml(workItem.title || 'Project next move') + '</strong>',
+        '<small>' + escapeHtml(status) + '</small>',
+      '</div>',
+      '<div class="cowork-workstream-list">',
+        '<article>',
+          '<strong>' + escapeHtml(payload.nextMove) + '</strong>',
+          '<div class="cowork-workstream-fields">',
+            coworkWorkstreamField('Owner', payload.accountableOwner),
+            coworkWorkstreamField('Timing', payload.timingOrTrigger),
+            coworkWorkstreamField('Basis', payload.basis),
+          '</div>',
+        '</article>',
+      '</div>',
+      ready ? '<button type="button" data-cowork-apply-next-move="' + escapeHtml(workItem.id || '') + '">Apply next move</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
+  const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
+  const sectionLabel = entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const fallbackObjective = entrypointId === 'project.next_move'
+    ? 'Commit to the next narrow move for this project.'
+    : 'Build a complete set of workstreams for this project.';
   const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
   if(!context) return;
   context.innerHTML = [
     '<span>Project Managers</span>',
-    '<strong>' + escapeHtml(brief.projectName || activeProjectProfile?.name || 'Project') + ' workstreams</strong>',
-    '<p>' + escapeHtml(brief.objective || 'Build a complete set of workstreams for this project.') + '</p>',
+    '<strong>' + escapeHtml(brief.projectName || activeProjectProfile?.name || 'Project') + ' ' + escapeHtml(sectionLabel) + '</strong>',
+    '<p>' + escapeHtml(brief.objective || fallbackObjective) + '</p>',
     brief.completionCondition ? '<small>Complete when: ' + escapeHtml(brief.completionCondition) + '</small>' : ''
   ].join('');
 }
@@ -4355,7 +4390,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
   if(session.id){
     activeCoworkEntry = {
       ...(activeCoworkEntry || {}),
-      entrypointId:session.entrypointId || 'project.workstreams',
+      entrypointId:session.entrypointId || activeCoworkEntry?.entrypointId || '',
       sessionId:session.id,
       workItemId:workItem.id || activeCoworkEntry?.workItemId || '',
       status:workItem.status || session.status || '',
@@ -4368,14 +4403,17 @@ function renderCoworkEntryResult(result = {}, options = {}){
   const message = result.question?.question || result.message || '';
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
   if(response && workItem.id){
-    const item = renderCoworkWorkstreamsItem(workItem);
+    const item = workItem.type === 'project_next_move'
+      ? renderCoworkNextMoveItem(workItem)
+      : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = workItem.status === 'applied' || session.status === 'completed';
   if(textarea){
-    textarea.placeholder = isComplete ? 'Workstreams applied. Return to Project Managers when you are ready.' : coworkEntryPlaceholder(result.question || {});
+    const completeLabel = session.entrypointId === 'project.next_move' ? 'Next move applied.' : 'Workstreams applied.';
+    textarea.placeholder = isComplete ? completeLabel + ' Return to Project Managers when you are ready.' : coworkEntryPlaceholder(result.question || {});
     textarea.disabled = isComplete;
   }
   if(submit) submit.disabled = isComplete;
@@ -4420,6 +4458,44 @@ async function openProjectWorkstreamsCowork(node = null){
   }
 }
 
+async function openProjectNextMoveCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('next_move', project);
+  const action = 'project:cowork:next_move';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'next_move',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Decide the next narrow move',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.next_move',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'project',
+    title:'Decide the next narrow move',
+    meaning:'Preparing the next-move brief for ' + (project.name || 'this project') + '.',
+    context:projectScopedCoworkContextLines(scopedPacket),
+    recommendation:'VAL will ask only for the action, owner, timing or trigger, and basis needed to make this move real.',
+    placeholder:'Preparing the selected Project Managers section...',
+    heading:'Deciding the next move for ' + (project.name || 'this project'),
+    detail:'This interview fills the Project Managers next-move packet.',
+    publicDetail:'Scoped to Project Managers: Next move.',
+    lockContext:true
+  });
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {
+    if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'project.next_move',
+      scope:{entityType:'project_section',entityId:projectId,sectionId:'next_move'}
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this next-move brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open the next-move interview. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
 async function submitActiveCoworkEntry(){
   const entry = activeCoworkEntry;
   if(!entry?.sessionId) return false;
@@ -4432,7 +4508,8 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this Workstreams step yet.'});
+    const label = entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not save that answer. Nothing was changed. ' + error.message);
@@ -4462,9 +4539,30 @@ async function applyActiveCoworkWorkstreams(workItemId = '', button = null){
   }
 }
 
+async function applyActiveCoworkNextMove(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this next move yet.'});
+    if(result.project){
+      const refreshed = projectProfileFromIndexItem(result.project);
+      projectIndexProfiles[refreshed.id] = refreshed;
+      activeProjectProfile = refreshed;
+      renderProjectRolodex();
+      renderProjectManagerProfile(refreshed);
+    }
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not apply this next move. Nothing was changed. ' + error.message);
+    if(button) button.disabled = false;
+  }
+}
+
 async function openProjectScopedCowork(field = 'project_overview', node = null, options = {}){
   if(!activeProjectProfile) return;
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
+  if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
   const spec = projectCoworkSpec(field);
   const scopedPacket = projectScopedCoworkPacket(field, project);
@@ -19085,11 +19183,13 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   runCowork('think');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
-  const apply = event.target.closest('[data-cowork-apply-workstreams]');
-  if(!apply) return;
+  const workstreamsApply = event.target.closest('[data-cowork-apply-workstreams]');
+  const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
+  if(!workstreamsApply && !nextMoveApply) return;
   event.preventDefault();
   event.stopPropagation();
-  await applyActiveCoworkWorkstreams(apply.dataset.coworkApplyWorkstreams, apply);
+  if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
+  if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
 });
 workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;

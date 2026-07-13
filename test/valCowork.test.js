@@ -27,6 +27,7 @@ function project(){
 function serviceFor({loadedProject=project()}={}){
   let store={};
   const applied=[];
+  const appliedNextMoves=[];
   const service=createValCoworkService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -38,9 +39,13 @@ function serviceFor({loadedProject=project()}={}){
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
       return {...loadedProject,workstreams:payload.workstreams};
+    },
+    applyProjectNextMove:async payload=>{
+      appliedNextMoves.push(payload);
+      return {...loadedProject,nextMove:payload.nextMove,nextStepOwner:payload.accountableOwner,nextStepDueAt:payload.timingOrTrigger,nextMoveEvidence:payload.basis};
     }
   });
-  return {service,applied,get store(){return store;}};
+  return {service,applied,appliedNextMoves,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -54,7 +59,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.workstreams']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.workstreams','project.next_move']);
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -144,19 +149,48 @@ test('workstream details accept the exact monitoring signal label used in the in
   assert.equal(ready.workItem.payload.workstreams[0].monitoringSignal,'partner response cadence');
 });
 
-test('Project Managers Workstreams bypasses generic Co-Work and uses the registered entry route',()=>{
+test('next move interview is scoped, field-targeted, review-gated, and applied with a receipt',async()=>{
+  const {service,appliedNextMoves}=serviceFor();
+  const opened=await service.openEntry({
+    entrypointId:'project.next_move',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'next_move'}
+  });
+  assert.equal(opened.session.scope.entityId,'project_forever_freedom');
+  assert.equal(opened.question.targetField,'project_next_action_packet.next_action');
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'Next move: Send the partner launch decision memo; Owner: Jessa; Timing: Before the Friday review; Basis: The MOU and partnership decision require one clear owner and decision point.'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.nextMove,'Send the partner launch decision memo');
+  assert.equal(ready.workItem.payload.accountableOwner,'Jessa');
+  assert.equal(ready.workItem.payload.timingOrTrigger,'Before the Friday review');
+  assert.match(ready.workItem.payload.basis,/MOU/i);
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'apply_project_next_move');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedNextMoves.length,1);
+  assert.equal(appliedNextMoves[0].nextMove,'Send the partner launch decision memo');
+  assert.equal(appliedNextMoves[0].timingOrTrigger,'Before the Friday review');
+});
+
+test('Project Managers canonical entries bypass generic Co-Work and use registered routes',()=>{
   assert.match(hearth,/function projectCoworkWorkstreamSuggestions/);
   assert.match(hearth,/function projectProfileForCoworkNode/);
   assert.match(hearth,/projectManagerProfile\.dataset\.projectProfileId/);
   assert.match(hearth,/async function openProjectWorkstreamsCowork/);
   assert.match(hearth,/const project = projectProfileForCoworkNode\(node\)/);
   assert.match(hearth,/entrypointId:'project\.workstreams'/);
+  assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
   assert.match(hearth,/\/api\/val\/cowork\/work-items\/.*\/apply/);
   assert.match(hearth,/if\(field === 'workstreams'\) return openProjectWorkstreamsCowork/);
+  assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/if\(await submitActiveCoworkEntry\(\)\) return;/);
   assert.match(hearth,/data-cowork-apply-workstreams/);
+  assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
