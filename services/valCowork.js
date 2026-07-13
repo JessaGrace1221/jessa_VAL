@@ -273,6 +273,116 @@ function nextMoveQuestion(state={},brief={}){
   };
 }
 
+function projectIdentityReferences(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const sourceDetails=project.sourceDetails || metadata.sourceDetails || {};
+  const projectId=project.projectId || project.id || input.scope?.entityId || '';
+  return [
+    project.sourceReceipts && sourceRef({sourceType:'project_packet',sourceId:projectId,quoteOrSummary:project.sourceReceipts}),
+    sourceDetails.documents && sourceRef({sourceType:'document',sourceId:projectId,quoteOrSummary:`Project documents: ${sourceDetails.documents}`}),
+    sourceDetails.rawContext && sourceRef({sourceType:'project_context',sourceId:projectId,quoteOrSummary:sourceDetails.rawContext})
+  ].filter(Boolean);
+}
+function projectIdentityOwner(project={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const owner=metadata.owner && typeof metadata.owner === 'object' ? metadata.owner : {};
+  return compactText(project.nextStepOwner || owner.name || owner.displayName || '',180);
+}
+function buildProjectIdentityBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const projectId=String(project.projectId || project.id || input.scope?.entityId || '');
+  const currentIdentity={
+    canonicalName:compactText(project.name || project.displayName || metadata.projectName || '',180),
+    purpose:compactText(project.purpose || metadata.purpose || metadata.projectPurpose || '',700),
+    desiredOutcome:compactText(project.desiredOutcome || project.outcome || metadata.desiredOutcome || metadata.outcome || '',700),
+    owner:projectIdentityOwner(project)
+  };
+  return {
+    id:stableKey(`working_brief_project_identity_${projectId || currentIdentity.canonicalName}`),
+    entrypointId:'project.identity',
+    entityType:'project_section',
+    entityId:projectId,
+    sectionId:'identity',
+    projectName:currentIdentity.canonicalName || 'Project',
+    currentIdentity,
+    sourceRefs:references,
+    linkedPeople:uniqueNames([currentIdentity.owner,project.sourceDetails?.relationships,metadata.intake?.relationships,project.relationships].filter(Boolean)),
+    objective:'Establish the selected project\'s canonical identity before VAL proposes operational work.',
+    completionCondition:'The canonical name, who or what the project serves, desired outcome, and one project owner are explicit. Existing source references are preserved without copying details from another project.',
+    approvalBoundary:'Applying the project foundation changes only the internal Project Managers packet. It does not create workstreams or tasks, link a relationship, update CRM, send a message, schedule anything, or alter a source document.'
+  };
+}
+function missingProjectIdentityFields(identity={}){
+  const missing=[];
+  if(!compactText(identity.canonicalName)) missing.push('project name');
+  if(!compactText(identity.purpose)) missing.push('who or what it serves');
+  if(!compactText(identity.desiredOutcome)) missing.push('desired outcome');
+  if(!compactText(identity.owner)) missing.push('project owner');
+  return missing;
+}
+function identityAnswerHasLabels(answer=''){
+  return /(?:^|[;\n])\s*(?:project name|name|called|who or what it serves|serves|beneficiary|audience|purpose|desired outcome|outcome|project owner|owner)\s*:/i.test(String(answer || ''));
+}
+function identityAnswerValue(answer='',labels=''){
+  return answerField(answer,labels);
+}
+function projectIdentityFromAnswer(answer='',current={},stage='identity'){
+  const source=multilineText(answer,5000);
+  const next={
+    canonicalName:compactText(current.canonicalName || '',180),
+    purpose:compactText(current.purpose || '',700),
+    desiredOutcome:compactText(current.desiredOutcome || '',700),
+    owner:compactText(current.owner || '',180)
+  };
+  const hasLabels=identityAnswerHasLabels(source);
+  const canonicalName=identityAnswerValue(source,'project name|name|called');
+  const purpose=identityAnswerValue(source,'who or what it serves|serves|beneficiary|audience|purpose|what this is');
+  const desiredOutcome=identityAnswerValue(source,'desired outcome|outcome');
+  const owner=identityAnswerValue(source,'project owner|owner|accountable owner');
+  if(canonicalName) next.canonicalName=canonicalName;
+  if(purpose) next.purpose=purpose;
+  if(desiredOutcome) next.desiredOutcome=desiredOutcome;
+  if(owner) next.owner=owner;
+  if(!hasLabels){
+    const identityMissing=['canonicalName','purpose','desiredOutcome'].filter((field)=>!compactText(next[field]));
+    if(stage === 'owner') next.owner=compactText(source,180) || next.owner;
+    else if(identityMissing.length === 1) next[identityMissing[0]]=compactText(source,700) || next[identityMissing[0]];
+  }
+  return next;
+}
+function projectIdentityQuestion(state={},brief={}){
+  const identity=state.draftIdentity || brief.currentIdentity || {};
+  const stage=state.stage || 'identity';
+  if(stage === 'identity'){
+    return {
+      targetField:'project_identity_packet.{canonical_name,purpose,desired_outcome}',
+      question:`For ${brief.projectName || 'this project'}, confirm or correct its name, then name who or what it serves and the outcome it should create.`,
+      detail:'Use: Project name: ...; Serves: ...; Desired outcome: ... . This fills Project Managers > Identity, What this is, and the foundation for Working narrative.'
+    };
+  }
+  if(stage === 'identity_details'){
+    const missing=missingProjectIdentityFields(identity).filter((field)=>field !== 'project owner');
+    return {
+      targetField:'project_identity_packet.{canonical_name,purpose,desired_outcome}',
+      question:`I still need ${missing.join(', ')} for this selected project.`,
+      detail:'Use only the missing labels: Project name: ...; Serves: ...; Desired outcome: ... .'
+    };
+  }
+  if(stage === 'owner'){
+    return {
+      targetField:'project_owner_packet.owner',
+      question:`Who is the one project owner for ${identity.canonicalName || brief.projectName || 'this project'}?`,
+      detail:'Name one accountable person or relationship. This fills Project Managers > People involved and does not create or change a relationship; reassignment remains explicit there.'
+    };
+  }
+  return {
+    targetField:'project_identity_packet + project_owner_packet',
+    question:'Review the prepared project foundation, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal project packet. The source references remain unchanged.'
+  };
+}
+
 function exactTranscriptLines(value=[]){
   return safeArray(value).map((item)=>String(item == null ? '' : item).trim()).filter(Boolean);
 }
@@ -373,6 +483,15 @@ function confirmsTranscriptMeetingOverview(answer=''){
 }
 
 const COWORK_ENTRYPOINTS=Object.freeze({
+  'project.identity':{
+    id:'project.identity',
+    surface:'project_managers',
+    scopeType:'project_section',
+    sectionId:'identity',
+    requiredPackets:['project_packet','project_identity_packet','project_owner_packet'],
+    objective:'Establish the selected project foundation.',
+    completionCondition:'Name, purpose, desired outcome, and one project owner are explicit and ready for internal review.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -411,6 +530,7 @@ function createValCoworkService({
   tenantId=()=>'default',
   userId=()=>'default',
   loadProject=async()=>null,
+  applyProjectIdentity=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -501,6 +621,7 @@ function createValCoworkService({
         state:{
           stage:state.stage || '',
           draftWorkstreams:safeArray(state.draftWorkstreams),
+          draftIdentity:state.draftIdentity || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -561,6 +682,70 @@ function createValCoworkService({
       updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
+  }
+  async function openProjectIdentityEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.identity'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can establish its foundation.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectIdentityBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'identity',draftIdentity:{...brief.currentIdentity},answers:[]};
+    const question=projectIdentityQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_identity',title:`Project foundation for ${brief.projectName}`,status:'needs_input',
+      payloadJson:{projectId:brief.entityId,projectName:brief.projectName,identity:state.draftIdentity,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectIdentity(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    const current=state.draftIdentity || brief.currentIdentity || {};
+    if(state.stage === 'identity' || state.stage === 'identity_details'){
+      state.draftIdentity=projectIdentityFromAnswer(answer,current,state.stage);
+      const missingIdentity=missingProjectIdentityFields(state.draftIdentity).filter((field)=>field !== 'project owner');
+      state.stage=missingIdentity.length ? 'identity_details' : 'owner';
+    }else if(state.stage === 'owner'){
+      state.draftIdentity=projectIdentityFromAnswer(answer,current,'owner');
+    }
+    const missing=missingProjectIdentityFields(state.draftIdentity);
+    let message='';
+    let question;
+    if(!missing.length){
+      state.stage='ready_to_apply';
+      session.status='needs_review';
+      workItem.status='needs_review';
+      workItem.payloadJson={
+        ...workItem.payloadJson,
+        projectId:brief.entityId,
+        projectName:state.draftIdentity.canonicalName,
+        identity:state.draftIdentity,
+        completionCondition:brief.completionCondition
+      };
+      message='VAL prepared the selected project foundation for review. Apply it when it is true.';
+      question=projectIdentityQuestion(state,brief);
+    }else{
+      question=projectIdentityQuestion(state,brief);
+      message=question.question;
+      session.status='needs_input';
+      workItem.status='needs_input';
+    }
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),question];
+    session.updatedAt=new Date().toISOString();
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return publicResult(session,workItem,message,question);
   }
   async function respondProjectNextMove(session,workItem,answer){
     const brief=session.workingBriefJson || {};
@@ -668,6 +853,7 @@ function createValCoworkService({
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
+    if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -721,6 +907,7 @@ function createValCoworkService({
     if(!session) throw new Error('This Co-Work session no longer exists.');
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -858,6 +1045,40 @@ function createValCoworkService({
       await saveWorkItem(workItem);
       return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_identity'){
+      if(workItem.status !== 'needs_review') throw new Error('The project foundation must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const identity=projectIdentityFromAnswer('',payload.identity || {},'ready_to_apply');
+      if(missingProjectIdentityFields(identity).length) throw new Error('The project foundation is incomplete and cannot be applied yet.');
+      const project=await applyProjectIdentity({
+        projectId:payload.projectId || session.scopeId,
+        projectName:identity.canonicalName,
+        purpose:identity.purpose,
+        desiredOutcome:identity.desiredOutcome,
+        owner:identity.owner,
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!project) throw new Error('VAL could not save the foundation to the selected Project Manager.');
+      const now=new Date().toISOString();
+      workItem.status='applied';
+      workItem.updatedAt=now;
+      session.status='completed';
+      session.updatedAt=now;
+      session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_identity',status:'completed',
+        summary:`Applied the project foundation to ${identity.canonicalName}.`,
+        payloadJson:{projectId:payload.projectId || session.scopeId,projectName:identity.canonicalName,identity,noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -903,10 +1124,12 @@ function createValCoworkService({
 
 module.exports={
   COWORK_ENTRYPOINTS,
+  buildProjectIdentityBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,
+  missingProjectIdentityFields,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

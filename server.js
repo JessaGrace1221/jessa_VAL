@@ -24703,6 +24703,38 @@ async function loadProjectForCowork(projectId=''){
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return found ? projectIndexItemFromProfile(found) : null;
 }
+async function applyCoworkProjectIdentity({projectId,projectName='',purpose='',desiredOutcome='',owner='',sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  const firstAnswer=[
+    `Project name: ${projectName}`,
+    `Serves: ${purpose}`,
+    `Desired outcome: ${desiredOutcome}`
+  ].join('\n');
+  await updateProjectProfileLocal(projectId,{
+    name:projectName,
+    summary:purpose,
+    desiredOutcome,
+    nextStepOwner:owner,
+    whatValNowKnows:`${purpose} Desired outcome: ${desiredOutcome}`,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work project foundation applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'No source receipt was linked yet.'}`
+    ].filter(Boolean).join('\n'),
+    hasNeedsProjectOnboarding:true,
+    needsProjectOnboarding:false,
+    projectOnboardingStatus:'foundation_applied',
+    projectOnboardingFirstQuestion:'What should this project be called, who or what does it serve, and what outcome should it create?',
+    projectOnboardingFirstAnswer:firstAnswer,
+    projectOnboardingOwnerMonitoringAnswer:`Owner: ${owner}`
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function loadTranscriptForCowork(transcriptId=''){
   const id=String(transcriptId || '').trim();
   if(!id) return null;
@@ -24776,6 +24808,7 @@ const valCowork = registerValCoworkRoutes(app,{
   tenantId,
   userId:currentUserId,
   loadProject:loadProjectForCowork,
+  applyProjectIdentity:applyCoworkProjectIdentity,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
