@@ -66,6 +66,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedDocuments=[];
   const appliedMilestones=[];
   const appliedMonitoring=[];
+  const appliedRelationshipNurture=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -98,6 +99,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       appliedMonitoring.push(payload);
       return {...loadedProject,monitoringRules:payload.monitoringRules};
     },
+    applyProjectRelationshipNurture:async payload=>{
+      appliedRelationshipNurture.push(payload);
+      return {...loadedProject,relationshipNurtureRules:payload.relationshipNurtureRules};
+    },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
       return {...loadedProject,workstreams:payload.workstreams};
@@ -112,7 +117,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -126,7 +131,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -263,6 +268,38 @@ test('Monitoring is scoped, field-targeted, review-gated, and applies only inter
   assert.equal(applied.receipt.payloadJson.noExternalAction,true);
   assert.equal(appliedMonitoring.length,1);
   assert.equal(appliedMonitoring[0].monitoringRules[0].cadence,'Daily while launch work is active');
+});
+
+test('Relationship nurture uses only existing project links and applies an internal trust-protection packet',async()=>{
+  const loadedProject={
+    ...project(),
+    projectPeople:[{relationshipId:'rel_aric',name:'Aric',email:'aric@example.com',role:'Partner lead'}]
+  };
+  const {service,appliedRelationshipNurture}=serviceFor({loadedProject});
+  const opened=await service.openEntry({entrypointId:'project.relationship_nurture',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'relationship_nurture'}});
+  assert.equal(opened.question.targetField,'project_relationship_nurture_packet[].{relationship_name,cadence,useful_touch,trust_risk,review_trigger}');
+  assert.match(opened.question.detail,/Existing linked relationships: Aric/i);
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'Aric | Monthly during onboarding | Send a concise activation update with one useful decision or win | Overloading Aric with broad asks before the partnership path is clear | An unanswered planned check-in or material change to the partner launch'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.relationshipNurtureRules[0].relationshipId,'rel_aric');
+  assert.equal(ready.workItem.payload.relationshipNurtureRules[0].usefulTouch,'Send a concise activation update with one useful decision or win');
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'apply_project_relationship_nurture');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedRelationshipNurture.length,1);
+  assert.equal(appliedRelationshipNurture[0].relationshipNurtureRules[0].reviewTrigger,'An unanswered planned check-in or material change to the partner launch');
+});
+
+test('Relationship nurture refuses to invent a project relationship',async()=>{
+  const {service}=serviceFor();
+  const opened=await service.openEntry({entrypointId:'project.relationship_nurture',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'relationship_nurture'}});
+  assert.equal(opened.question.targetField,'project_relationships_packet');
+  assert.match(opened.question.question,/needs an existing project-linked relationship first/i);
+  await assert.rejects(service.respond(opened.session.id,{answer:'Aric | Monthly | Useful update | Trust risk | Missed check-in'}),/needs an existing project-linked relationship first/i);
 });
 
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
@@ -425,6 +462,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/entrypointId:'project\.documents'/);
   assert.match(hearth,/entrypointId:'project\.milestones'/);
   assert.match(hearth,/entrypointId:'project\.monitoring'/);
+  assert.match(hearth,/entrypointId:'project\.relationship_nurture'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
@@ -435,6 +473,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'documents_sources'\) return openProjectDocumentsCowork/);
   assert.match(hearth,/if\(field === 'milestones'\) return openProjectMilestonesCowork/);
   assert.match(hearth,/if\(field === 'monitoring_rules'\) return openProjectMonitoringCowork/);
+  assert.match(hearth,/if\(field === 'relationship_nurture'\) return openProjectRelationshipNurtureCowork/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
@@ -445,8 +484,10 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/data-cowork-apply-project-documents/);
   assert.match(hearth,/data-cowork-apply-project-milestones/);
   assert.match(hearth,/data-cowork-apply-project-monitoring/);
+  assert.match(hearth,/data-cowork-apply-project-relationship-nurture/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/function projectManagerMonitoringRuleList/);
+  assert.match(hearth,/function projectManagerRelationshipNurtureList/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
@@ -479,11 +520,14 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/applyProjectMilestones:applyCoworkProjectMilestones/);
   assert.match(server,/async function applyCoworkProjectMonitoring/);
   assert.match(server,/applyProjectMonitoring:applyCoworkProjectMonitoring/);
+  assert.match(server,/async function applyCoworkProjectRelationshipNurture/);
+  assert.match(server,/applyProjectRelationshipNurture:applyCoworkProjectRelationshipNurture/);
   assert.match(server,/projectPeople:linkedPeople\.map/);
   assert.match(server,/projectPeople:Array\.isArray\(metadata\.projectPeople\)\?metadata\.projectPeople:\[\]/);
   assert.match(server,/projectDocuments:linkedDocuments/);
   assert.match(server,/projectDocuments:Array\.isArray\(metadata\.projectDocuments\)\?metadata\.projectDocuments:\[\]/);
   assert.match(server,/milestones:Array\.isArray\(metadata\.milestones\)\?metadata\.milestones:\[\]/);
   assert.match(server,/monitoringRules:Array\.isArray\(metadata\.monitoringRules\)\?metadata\.monitoringRules:\[\]/);
+  assert.match(server,/relationshipNurtureRules:Array\.isArray\(metadata\.relationshipNurtureRules\)\?metadata\.relationshipNurtureRules:\[\]/);
   assert.match(hearth,/foundation_applied/);
 });

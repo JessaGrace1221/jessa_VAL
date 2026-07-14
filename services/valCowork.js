@@ -449,6 +449,143 @@ function projectMonitoringQuestion(state={},brief={}){
   };
 }
 
+function nurtureRelationshipCandidate(value='',candidates=[]){
+  const needle=compactText(value,220).toLowerCase();
+  if(!needle) return null;
+  return safeArray(candidates).find((candidate)=>[candidate.id,candidate.name,candidate.email].filter(Boolean).some((item)=>String(item).toLowerCase() === needle)) || null;
+}
+function relationshipNurtureRuleTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {relationshipName:value} : (value || {});
+  const candidate=nurtureRelationshipCandidate(raw.relationshipId || raw.relationship_id || raw.relationshipName || raw.relationship_name || raw.name || raw.relationship || '',brief.linkedRelationships);
+  const relationshipName=compactText(candidate?.name || raw.relationshipName || raw.relationship_name || raw.name || raw.relationship || '',180);
+  return {
+    id:compactText(raw.id || stableKey(`project_relationship_nurture_${candidate?.id || relationshipName}`),220),
+    relationshipId:compactText(candidate?.id || raw.relationshipId || raw.relationship_id || '',220),
+    relationshipName,
+    cadence:compactText(raw.cadence || raw.reviewCadence || raw.review_cadence || '',180),
+    usefulTouch:compactText(raw.usefulTouch || raw.useful_touch || raw.valueToBring || raw.value_to_bring || raw.touch || '',500),
+    trustRisk:compactText(raw.trustRisk || raw.trust_risk || raw.risk || raw.sensitivity || '',500),
+    reviewTrigger:compactText(raw.reviewTrigger || raw.review_trigger || raw.trigger || raw.whenToReview || '',500),
+    sourceRefs:safeArray(raw.sourceRefs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeRelationshipNurtureRule(value={},brief={}){
+  return relationshipNurtureRuleTemplate(value,brief);
+}
+function missingRelationshipNurtureFields(rule={},brief={}){
+  const missing=[];
+  if(!nurtureRelationshipCandidate(rule.relationshipId || rule.relationshipName,brief.linkedRelationships)) missing.push('existing project relationship');
+  if(!compactText(rule.cadence)) missing.push('cadence');
+  if(!compactText(rule.usefulTouch)) missing.push('useful touch');
+  if(!compactText(rule.trustRisk)) missing.push('trust risk');
+  if(!compactText(rule.reviewTrigger)) missing.push('review trigger');
+  return missing;
+}
+function relationshipNurtureLine(value={},brief={}){
+  const rule=normalizeRelationshipNurtureRule(value,brief);
+  return [
+    rule.relationshipName || 'Relationship',
+    'cadence: ' + (rule.cadence || '...'),
+    'useful touch: ' + (rule.usefulTouch || '...'),
+    'trust risk: ' + (rule.trustRisk || '...'),
+    'review trigger: ' + (rule.reviewTrigger || '...')
+  ].join(' | ');
+}
+function parseRelationshipNurtureLine(line='',brief={}){
+  const source=String(line || '').trim();
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let relationshipName=monitoringValueFromLine(source,'relationship|person|name');
+  let cadence=monitoringValueFromLine(source,'cadence|review cadence|review');
+  let usefulTouch=monitoringValueFromLine(source,'useful touch|value to bring|value|touch');
+  let trustRisk=monitoringValueFromLine(source,'trust risk|risk|sensitivity');
+  let reviewTrigger=monitoringValueFromLine(source,'review trigger|trigger|when to review|review when');
+  if(parts.length >= 5){
+    relationshipName=relationshipName || parts[0].replace(/^\s*(?:relationship|person|name)\s*:\s*/i,'');
+    cadence=cadence || parts[1].replace(/^\s*(?:cadence|review cadence|review)\s*:\s*/i,'');
+    usefulTouch=usefulTouch || parts[2].replace(/^\s*(?:useful touch|value to bring|value|touch)\s*:\s*/i,'');
+    trustRisk=trustRisk || parts[3].replace(/^\s*(?:trust risk|risk|sensitivity)\s*:\s*/i,'');
+    reviewTrigger=reviewTrigger || parts[4].replace(/^\s*(?:review trigger|trigger|when to review|review when)\s*:\s*/i,'');
+  }
+  return normalizeRelationshipNurtureRule({relationshipName,cadence,usefulTouch,trustRisk,reviewTrigger},brief);
+}
+function parseRelationshipNurtureRules(answer='',brief={},current=[]){
+  const lines=multilineText(answer,5000).split(/\n+/).map((line)=>line.replace(/^\s*(?:relationship nurture|nurture rules?)\s*:\s*/i,'').trim()).filter(Boolean);
+  if(!lines.length) return safeArray(current).map((item)=>normalizeRelationshipNurtureRule(item,brief));
+  const next=safeArray(current).map((item)=>normalizeRelationshipNurtureRule(item,brief));
+  for(const line of lines){
+    const candidate=parseRelationshipNurtureLine(line,brief);
+    const key=String(candidate.relationshipId || candidate.relationshipName || '').toLowerCase();
+    const index=next.findIndex((item)=>String(item.relationshipId || item.relationshipName || '').toLowerCase()===key);
+    if(index >= 0) next[index]={...next[index],...candidate,id:next[index].id || candidate.id};
+    else if(next.length === 1 && missingRelationshipNurtureFields(next[0],brief).length) next[0]={...next[0],...candidate,id:next[0].id || candidate.id};
+    else next.push(candidate);
+  }
+  const seen=new Set();
+  return next.filter((item)=>{
+    const key=[item.relationshipId,item.relationshipName,item.cadence,item.usefulTouch,item.trustRisk,item.reviewTrigger].join('|').toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildProjectRelationshipNurtureBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const recorded=safeArray(project.projectPeople || metadata.projectPeople);
+  const linkedRelationships=recorded.map((person)=>relationshipCandidate({
+    id:person.relationshipId || person.relationship_id || person.id,
+    displayName:person.name || person.displayName,
+    email:person.email,
+    role:person.role
+  })).filter((candidate)=>candidate.id && candidate.name);
+  const references=projectIdentityReferences(project,input);
+  const existingRules=safeArray(project.relationshipNurtureRules || metadata.relationshipNurtureRules).map((item)=>normalizeRelationshipNurtureRule(item,{linkedRelationships,sourceRefs:references}));
+  return {
+    id:stableKey(`working_brief_project_relationship_nurture_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.relationship_nurture',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'relationship_nurture',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    linkedRelationships,
+    existingRules,
+    sourceRefs:references,
+    objective:'Protect the selected project relationships with clear, useful nurture rules instead of generic follow-up.',
+    completionCondition:'Each rule is attached to an existing project relationship and names a cadence, useful touch, trust risk, and review trigger.',
+    approvalBoundary:'Applying nurture rules changes only the internal Project Managers packet. It does not draft or send outreach, create a task, update CRM, schedule anything, or alter source evidence.'
+  };
+}
+function projectRelationshipNurtureQuestion(state={},brief={}){
+  const rules=safeArray(state.draftRelationshipNurtureRules);
+  const relationships=safeArray(brief.linkedRelationships).map((item)=>item.name).join(', ');
+  if(!safeArray(brief.linkedRelationships).length){
+    return {
+      targetField:'project_relationships_packet',
+      question:`Relationship nurture for ${brief.projectName || 'this project'} needs an existing project-linked relationship first.`,
+      detail:'Open Project Managers > People involved, link the relationship and role, apply that internal packet, then reopen Relationship nurture. VAL will not invent or attach a relationship from a generic name.'
+    };
+  }
+  if(state.stage === 'relationship_nurture'){
+    return {
+      targetField:'project_relationship_nurture_packet[].{relationship_name,cadence,useful_touch,trust_risk,review_trigger}',
+      question:`How should VAL protect the relationships that make ${brief.projectName || 'this project'} viable? Add one line per existing project relationship: Relationship | cadence | useful touch | trust risk | review trigger.`,
+      detail:`This fills Project Managers > Relationship nurture. Existing linked relationships: ${relationships}. A useful touch gives value; this does not draft or send outreach.`
+    };
+  }
+  if(state.stage === 'relationship_nurture_details'){
+    const incomplete=rules.filter((rule)=>missingRelationshipNurtureFields(rule,brief).length);
+    return {
+      targetField:'project_relationship_nurture_packet[].{relationship_name,cadence,useful_touch,trust_risk,review_trigger}',
+      question:`Fill only the missing details below.\n\n${incomplete.map((rule)=>relationshipNurtureLine(rule,brief)).join('\n')}`,
+      detail:'Use the same one-line format. Keep a useful touch distinct from the trust risk it is meant to protect.'
+    };
+  }
+  return {
+    targetField:'project_relationship_nurture_packet',
+    question:'Review the prepared relationship nurture rules, then apply them to this Project Manager.',
+    detail:'Applying changes only the selected internal relationship-nurture packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1000,6 +1137,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Define project-specific monitoring rules.',
     completionCondition:'Each monitoring rule has a watch item, cadence, escalation trigger, and executive surface action.'
   },
+  'project.relationship_nurture':{
+    id:'project.relationship_nurture',surface:'project_managers',scopeType:'project_section',sectionId:'relationship_nurture',
+    requiredPackets:['project_packet','project_relationships_packet','project_relationship_nurture_packet'],
+    objective:'Protect the relationships that make the selected project viable.',
+    completionCondition:'Each rule has an existing project relationship, cadence, useful touch, trust risk, and review trigger.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1045,6 +1188,7 @@ function createValCoworkService({
   applyProjectDocuments=async()=>null,
   applyProjectMilestones=async()=>null,
   applyProjectMonitoring=async()=>null,
+  applyProjectRelationshipNurture=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -1140,6 +1284,7 @@ function createValCoworkService({
           draftDocuments:state.draftDocuments || null,
           draftMilestones:safeArray(state.draftMilestones),
           draftMonitoringRules:safeArray(state.draftMonitoringRules),
+          draftRelationshipNurtureRules:safeArray(state.draftRelationshipNurtureRules),
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -1366,6 +1511,42 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectRelationshipNurtureEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.relationship_nurture'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can define relationship nurture rules.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectRelationshipNurtureBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:brief.linkedRelationships.length ? 'relationship_nurture' : 'needs_people',draftRelationshipNurtureRules:brief.existingRules,answers:[]};
+    const question=projectRelationshipNurtureQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_relationship_nurture',title:`Relationship nurture for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,relationshipNurtureRules:state.draftRelationshipNurtureRules,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectRelationshipNurture(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    if(!safeArray(brief.linkedRelationships).length) throw new Error('Relationship nurture needs an existing project-linked relationship first. Nothing was changed.');
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftRelationshipNurtureRules=parseRelationshipNurtureRules(answer,brief,state.draftRelationshipNurtureRules || []);
+    const rules=safeArray(state.draftRelationshipNurtureRules);
+    const incomplete=rules.filter((rule)=>missingRelationshipNurtureFields(rule,brief).length);
+    let question,message='';
+    if(rules.length && !incomplete.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,relationshipNurtureRules:rules,completionCondition:brief.completionCondition};
+      question=projectRelationshipNurtureQuestion(state,brief);message=`VAL prepared ${rules.length} relationship nurture rule${rules.length === 1 ? '' : 's'} for review. Apply them when this is true.`;
+    }else{
+      state.stage='relationship_nurture_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectRelationshipNurtureQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function respondProjectIdentity(session,workItem,answer){
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -1519,6 +1700,7 @@ function createValCoworkService({
     if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
     if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
     if(entrypointId === 'project.monitoring') return openProjectMonitoringEntry(input);
+    if(entrypointId === 'project.relationship_nurture') return openProjectRelationshipNurtureEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -1577,6 +1759,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
     if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
     if(session.entrypointId === 'project.monitoring') return respondProjectMonitoring(session,workItem,answer);
+    if(session.entrypointId === 'project.relationship_nurture') return respondProjectRelationshipNurture(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1802,6 +1985,20 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_monitoring',status:'completed',summary:`Applied ${monitoringRules.length} monitoring rule${monitoringRules.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',monitoringRules,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_relationship_nurture'){
+      if(workItem.status !== 'needs_review') throw new Error('Relationship nurture rules must be complete and reviewed before they can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const relationshipNurtureRules=safeArray(payload.relationshipNurtureRules).map((rule)=>normalizeRelationshipNurtureRule(rule,brief));
+      if(!relationshipNurtureRules.length || relationshipNurtureRules.some((rule)=>missingRelationshipNurtureFields(rule,brief).length)) throw new Error('The relationship nurture proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectRelationshipNurture({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',relationshipNurtureRules,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the relationship nurture rules to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_relationship_nurture',status:'completed',summary:`Applied ${relationshipNurtureRules.length} relationship nurture rule${relationshipNurtureRules.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',relationshipNurtureRules,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -1852,6 +2049,7 @@ module.exports={
   buildProjectDocumentsBrief,
   buildProjectMilestonesBrief,
   buildProjectMonitoringBrief,
+  buildProjectRelationshipNurtureBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
@@ -1863,6 +2061,8 @@ module.exports={
   projectMilestonesQuestion,
   missingMonitoringRuleFields,
   projectMonitoringQuestion,
+  missingRelationshipNurtureFields,
+  projectRelationshipNurtureQuestion,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

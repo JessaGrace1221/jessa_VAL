@@ -127,7 +127,7 @@ The following registry is the required replacement.
 | `project.workstreams` | `Needs workstreams` / `Workstreams` | Build the complete, manageable lanes of work required to deliver the project outcome. | See the Workstreams contract below. | Structured `project_workstreams`; workstreams card and Project Manager Round Table. |
 | `project.milestones` | `Milestones` | Define evidence-based checkpoints. | Each milestone is attached to an existing workstream and names its completion signal plus timing or trigger. | `project_milestone_packet`; milestones card. |
 | `project.monitoring` | `Monitoring after launch` | Define what VAL watches after launch. | Each rule has a watch item, cadence, escalation trigger, and executive surface action. | `project_monitoring_packet`; monitoring card. |
-| `project.relationship_nurture` | `Relationship nurture` | Protect the relationships that make the project viable. | Cadence, trust risks, useful touches, and review triggers are explicit. | `project_sop_packet.relationship_nurture_rules`; nurture card. |
+| `project.relationship_nurture` | `Relationship nurture` | Protect the relationships that make the project viable. | Each rule is attached to an existing project relationship and has a cadence, useful touch, trust risk, and review trigger. | `project_relationship_nurture_packet`; nurture card. |
 
 ### Workstreams Contract
 
@@ -173,6 +173,12 @@ If workstreams do not exist, VAL directs the executive back to the exact Workstr
 `project.monitoring` defines the selected project's quiet-watch rules. Each rule names the specific item VAL watches, the cadence, the observable escalation trigger, and exactly what VAL should surface to the executive.
 
 Existing workstream monitoring signals are brought into the Working Brief as context only. VAL does not silently convert them into rules, create an alert, make a task, send a message, update a CRM, change a calendar, or alter any source document. The executive reviews the prepared rules before they are applied to the selected internal Project Managers packet.
+
+### Relationship Nurture Contract
+
+`project.relationship_nurture` protects the relationships that make the selected project viable. It only accepts a relationship already linked through the selected project's People packet; a name from unrelated project evidence is not enough.
+
+Each prepared rule names the project relationship, cadence, useful touch, trust risk, and review trigger. A useful touch describes value to bring, not a generic follow-up. Applying the packet does not draft or send outreach, create a task, update CRM, change a calendar, or alter source evidence.
 
 ## Transcripts And Meeting Prep
 
@@ -242,7 +248,7 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First seven canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, `Milestones`, and `Monitoring after launch` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | First eight canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | First canonical slice complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. The legacy freeform transcript chat route has been removed. | Typed packet outputs for transcript-derived project, relationship, commitment, and task work still need their own scoped entries. |
 | Executive Inbox | Partial | Selected thread/source summary reaches a scoped chat launcher. | Typed email-thread brief, completion contract, and artifact/action routing. |
 | Relationships | Partial | Relationship and selected-card summaries reach a scoped chat launcher. | Field-level objectives, target writes, and completion/apply contracts. |

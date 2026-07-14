@@ -24916,6 +24916,37 @@ async function applyCoworkProjectMonitoring({projectId,projectName='',monitoring
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectRelationshipNurture({projectId,projectName='',relationshipNurtureRules=[],sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const linkedPeople=Array.isArray(current.projectPeople) ? current.projectPeople : [];
+  const peopleById=new Map(linkedPeople.map((person)=>[String(person.relationshipId || '').trim(),person]).filter(([id])=>id));
+  const preparedRules=Array.isArray(relationshipNurtureRules) ? relationshipNurtureRules.map((rule)=>{
+    const person=peopleById.get(String(rule?.relationshipId || rule?.relationship_id || '').trim());
+    if(!person||!rule?.cadence||!rule?.usefulTouch||!rule?.trustRisk||!rule?.reviewTrigger) return null;
+    return {
+      ...rule,
+      relationshipId:String(person.relationshipId),
+      relationshipName:String(person.name),
+      sourceRefs:Array.isArray(rule.sourceRefs)?rule.sourceRefs:[]
+    };
+  }).filter(Boolean) : [];
+  if(!preparedRules.length || preparedRules.length !== relationshipNurtureRules.length) return null;
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    relationshipNurtureRules:preparedRules,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work relationship nurture applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers relationship nurture review.'}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24953,6 +24984,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectDocuments:applyCoworkProjectDocuments,
   applyProjectMilestones:applyCoworkProjectMilestones,
   applyProjectMonitoring:applyCoworkProjectMonitoring,
+  applyProjectRelationshipNurture:applyCoworkProjectRelationshipNurture,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
