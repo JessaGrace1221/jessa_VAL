@@ -173,6 +173,7 @@ const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS = Math.min(Math.max(Number(process.e
 const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_RESPONSE_TIMEOUT_MS)||16000,8000),60000);
 const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
 const VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS)||7000,3000),20000);
+const VAL_WITNESSING_TURN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_TIMEOUT_MS)||40000,15000),55000);
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -4144,6 +4145,72 @@ async function witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImp
   }
   throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
 }
+async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]}){
+  const priorChain=priorPartnershipAnswers(priorImports);
+  const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
+  const nextCard=nextPartnershipProtocolCard(card);
+  const provisionalGraph={
+    observations:[],
+    hypotheses:[],
+    curiosity:{},
+    next_question_recommendation:{question:nextCard?.visibleQuestion||'',why:'',evidence_refs:['current_answer']}
+  };
+  const evidenceChain=priorChain.concat([
+    partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph:provisionalGraph})
+  ]);
+  const currentState=partnershipCurrentState(evidenceChain,nextCard);
+  const system=[
+    VAL_WITNESSING_MASTER_CONSTITUTION,
+    '',
+    'You are VAL in one calm Witnessing Session turn. Produce the internal evidence signal and the visible human response together.',
+    'Use only the current answer and prior evidence chain. Do not invent, diagnose, flatter, or turn this into therapy.',
+    'Keep the internal graph compact. Every array may have at most one item. Use empty arrays when there is no source-grounded signal.',
+    'For each graph claim, include evidence_refs:["current_answer"] and confidence_source:"single_answer" unless a prior chain supports repetition.',
+    'The visible witness must be two or three short, specific lines, followed only by a confirmation question. It must not summarize the entire answer.',
+    'Do not mention graph, memory, database, prompts, onboarding, fields, extraction, or schema in visible text.',
+    'The next_question is the next visible question. Make it one short, personal question that reduces uncertainty without repeating what the person already said.',
+    'Return strict JSON only with this exact shape:',
+    '{"living_executive_graph":{"facts":[],"preferences":[],"observations":[],"hypotheses":[],"curiosity":{"surprises":[],"repeated_words_or_ideas":[],"chosen_beginning":"","notable_omission":"","genuine_wonder":"","relational_focus":""},"principles":[],"protected":[],"executive_vocabulary":[],"relationship_graph_updates":[],"contradictions":[],"stewardship_implications":[],"next_question_recommendation":{"question":"","why":"","evidence_refs":["current_answer"]}},"witness":{"lines":[""],"confirmation_options":["Yes, exactly","Mostly","Let me clarify"],"follow_up_lines":[],"carried_questions":[],"next_question":""}}'
+  ].join('\n');
+  const user=JSON.stringify({
+    card:{
+      id:card.id,
+      title:card.title,
+      question_goal:card.questionGoal,
+      next_question_goal:nextCard?.questionGoal||'',
+      static_next_question:nextCard?.visibleQuestion||''
+    },
+    current_answer:rawResponse,
+    prior_evidence_chain:compactPartnershipEvidenceChain(priorChain),
+    prior_context:compactPartnershipPriorContext(priorImports),
+    current_state:currentState,
+    required_protocol:'living_executive_graph_v1'
+  });
+  let raw;
+  try{
+    raw=await callValModel({
+      system,
+      user,
+      maxTokens:1200,
+      temperature:0.35,
+      json:true,
+      timeoutMs:VAL_WITNESSING_TURN_TIMEOUT_MS
+    });
+  }catch(error){
+    console.warn('[Witnessing turn] model call failed for card',card.id,':',error.message);
+    throw new Error('VAL is taking longer than expected. Your answer is still here. Please try again.');
+  }
+  try{
+    const parsed=parseModelJson(raw);
+    const graph=normalizePartnershipProtocolGraph(parsed.living_executive_graph,card,rawResponse);
+    const witness=normalizePartnershipWitnessResponse(parsed.witness,graph,priorImports);
+    if(!witness.next_question) witness.next_question=graph.next_question_recommendation?.question||nextCard?.visibleQuestion||'';
+    return {graph,witness};
+  }catch(error){
+    console.warn('[Witnessing turn] unusable model response for card',card.id,':',error.message);
+    throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
+  }
+}
 function partnershipGraphItems(category,graph){
   const buckets=['facts','preferences','observations','hypotheses','principles','protected','executive_vocabulary','stewardship_implications'];
   return buckets.flatMap(bucket=>(graph[bucket]||[]).map(item=>({
@@ -7476,12 +7543,7 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
     const nextCard=nextPartnershipProtocolCard(card);
-    const graph=await observePartnershipProtocolAnswer({card,rawResponse,priorImports});
-    const [witness,contextualNextQuestion]=await Promise.all([
-      witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports}),
-      composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse,graph,priorImports})
-    ]);
-    if(contextualNextQuestion) witness.next_question=contextualNextQuestion;
+    const {graph,witness}=await generatePartnershipProtocolTurn({card,rawResponse,priorImports});
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
     const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph});
