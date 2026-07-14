@@ -1067,6 +1067,138 @@ function projectNeedsNextQuestion(state={},brief={}){
   };
 }
 
+const PROJECT_OPERATING_SYSTEMS=Object.freeze({
+  frisson_partner_onboarding:{id:'frisson_partner_onboarding',name:'Frisson Partner Onboarding',whenToUse:'Use when a new Frisson partner needs dashboard setup, automations, connections, launch metrics, and long-term partnership nurture.'},
+  client_dashboard_buildout:{id:'client_dashboard_buildout',name:'Client Dashboard Buildout',whenToUse:'Use when a client needs a dashboard, data sources, metrics, and handoff workflow built.'},
+  relationship_nurture_partnership:{id:'relationship_nurture_partnership',name:'Long-Term Partnership Nurture',whenToUse:'Use when the main work is protecting and expanding a strategic relationship over time.'},
+  new_sop:{id:'new_sop',name:'Create New SOP',whenToUse:'Use when this project should teach VAL a reusable operating pattern.'}
+});
+function projectOperatingSystemId(value=''){
+  const normalized=compactText(value,180).toLowerCase();
+  if(!normalized) return '';
+  const match=Object.values(PROJECT_OPERATING_SYSTEMS).find((option)=>{
+    const id=option.id.toLowerCase();
+    return normalized===id || normalized===option.name.toLowerCase() || normalized===id.replace(/_/g,' ') || normalized===`${option.name.toLowerCase()} (${id})`;
+  });
+  return match?.id || '';
+}
+function projectOperatingSystemTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {sopId:value} : (value || {});
+  const sopId=projectOperatingSystemId(raw.sopId || raw.sop_id || raw.operatingSystem || raw.operating_system || raw.sop || raw.name);
+  const option=PROJECT_OPERATING_SYSTEMS[sopId] || null;
+  return {
+    id:compactText(raw.id || stableKey(`project_operating_system_${brief.entityId || brief.projectName || 'project'}`),220),
+    sopId,
+    sopName:option?.name || '',
+    fitReason:compactText(raw.fitReason || raw.fit_reason || raw.reason || raw.whyItFits || raw.why_it_fits || '',700),
+    knownDeviations:compactText(raw.knownDeviations || raw.known_deviations || raw.deviations || '',700),
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectOperatingSystem(value={},brief={}){
+  return projectOperatingSystemTemplate(value,brief);
+}
+function missingProjectOperatingSystemFields(value={},brief={}){
+  const operatingSystem=normalizeProjectOperatingSystem(value,brief);
+  const missing=[];
+  if(!operatingSystem.sopId) missing.push('operating system from the available choices');
+  if(!compactText(operatingSystem.fitReason)) missing.push('fit reasoning');
+  if(!compactText(operatingSystem.knownDeviations)) missing.push('material deviations or No material deviations');
+  if(!compactText(operatingSystem.basis)) missing.push('basis');
+  if(!compactText(operatingSystem.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectOperatingSystemLine(value={},brief={}){
+  const operatingSystem=normalizeProjectOperatingSystem(value,brief);
+  return [
+    operatingSystem.sopName || 'Operating system: choose one available option',
+    'fit reasoning: ' + (operatingSystem.fitReason || '...'),
+    'deviations: ' + (operatingSystem.knownDeviations || '...'),
+    'basis: ' + (operatingSystem.basis || '...'),
+    'confidence: ' + (operatingSystem.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectOperatingSystem(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectOperatingSystem(current,brief);
+  const previous=normalizeProjectOperatingSystem(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let sopId=projectOperatingSystemId(monitoringValueFromLine(source,'operating system|operating_system|sop|sop id|pattern'));
+  let fitReason=monitoringValueFromLine(source,'fit reasoning|fit reason|why it fits|reason');
+  let knownDeviations=monitoringValueFromLine(source,'deviations|known deviations|material deviations');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 5){
+    sopId=sopId || projectOperatingSystemId(parts[0].replace(/^\s*(?:operating system|operating_system|sop|sop id|pattern)\s*:\s*/i,''));
+    fitReason=fitReason || parts[1].replace(/^\s*(?:fit reasoning|fit reason|why it fits|reason)\s*:\s*/i,'');
+    knownDeviations=knownDeviations || parts[2].replace(/^\s*(?:deviations|known deviations|material deviations)\s*:\s*/i,'');
+    basis=basis || parts[3].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[4].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectOperatingSystem({
+    ...previous,
+    sopId:sopId || previous.sopId,
+    fitReason:fitReason || previous.fitReason,
+    knownDeviations:knownDeviations || previous.knownDeviations,
+    basis:basis || previous.basis,
+    confidence:confidence || previous.confidence,
+    sourceRefs:brief.sourceRefs
+  },brief);
+}
+function buildProjectOperatingSystemBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const existingRaw=project.projectOperatingSystem || metadata.projectOperatingSystem || {
+    sopId:project.sopId || metadata.sopId || metadata.intake?.sopId || '',
+    fitReason:project.sopFitReason || metadata.sopFitReason || '',
+    knownDeviations:project.sopDeviations || metadata.sopDeviations || '',
+    basis:project.sopBasis || metadata.sopBasis || '',
+    confidence:project.sopConfidence || metadata.sopConfidence || ''
+  };
+  const currentOperatingSystem=normalizeProjectOperatingSystem(existingRaw,{sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_operating_system_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.sop',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'sop_fit',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentOperatingSystem,
+    availableOperatingSystems:Object.values(PROJECT_OPERATING_SYSTEMS),
+    sourceRefs:references,
+    objective:'Select the real operating pattern that should run this selected project and make any material deviations explicit.',
+    completionCondition:'One current VAL operating system, its fit reasoning, material deviations or No material deviations, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this selection changes only the selected internal Project Managers SOP packet. It does not create a task, alter workstreams or phase, message anyone, update CRM, change a calendar, or alter source evidence.'
+  };
+}
+function projectOperatingSystemQuestion(state={},brief={}){
+  const operatingSystem=normalizeProjectOperatingSystem(state.draftProjectOperatingSystem || brief.currentOperatingSystem || {},brief);
+  const available=safeArray(brief.availableOperatingSystems).map((option)=>`${option.name} (${option.id})`).join('; ');
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'operating_system'){
+    return {
+      targetField:'project_sop_packet.{sop_id,sop_name,fit_reason,known_deviations,basis,confidence} + Operating System',
+      question:`Which current VAL operating system should run ${brief.projectName || 'this project'}? Choose one available pattern: ${available}. Add one line: operating system | fit reasoning | material deviations (or No material deviations) | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > Operating System only. ${brief.currentOperatingSystem?.sopName ? 'Current selection: ' + brief.currentOperatingSystem.sopName + '. ' : ''}${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not create a plan, task, workstream, phase change, or external action here.`
+    };
+  }
+  if(state.stage === 'operating_system_details'){
+    const missing=missingProjectOperatingSystemFields(operatingSystem,brief);
+    return {
+      targetField:'project_sop_packet.{sop_id,sop_name,fit_reason,known_deviations,basis,confidence} + Operating System',
+      question:`Fill only these missing operating-system details: ${missing.join(', ')}.\n\n${projectOperatingSystemLine(operatingSystem,brief)}`,
+      detail:'Choose only one listed VAL operating system. Record “No material deviations” when that is true.'
+    };
+  }
+  return {
+    targetField:'project_sop_packet.sop_id',
+    question:'Review the prepared operating-system selection, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal SOP packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1648,6 +1780,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Identify one precise missing fact, decision, source, or person before VAL takes another project-management step.',
     completionCondition:'One typed gap has a missing item, why it is needed, a resolving question or internal acquisition route, exact target packet, basis, and confidence.'
   },
+  'project.sop':{
+    id:'project.sop',surface:'project_managers',scopeType:'project_section',sectionId:'sop_fit',
+    requiredPackets:['project_packet','project_sop_packet','project_identity_packet'],
+    objective:'Select the real operating pattern that should run the selected project and make material deviations explicit.',
+    completionCondition:'One current VAL operating system, its fit reasoning, material deviations or No material deviations, basis, and confidence are ready for internal review.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1698,6 +1836,7 @@ function createValCoworkService({
   applyProjectRisk=async()=>null,
   applyProjectNarrative=async()=>null,
   applyProjectNeedsNext=async()=>null,
+  applyProjectOperatingSystem=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -2163,6 +2302,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectOperatingSystemEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.sop'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can select an operating system.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectOperatingSystemBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'operating_system',draftProjectOperatingSystem:brief.currentOperatingSystem,answers:[]};
+    const question=projectOperatingSystemQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_operating_system',title:`Operating system for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectOperatingSystem:state.draftProjectOperatingSystem,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectOperatingSystem(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectOperatingSystem=parseProjectOperatingSystem(answer,brief,state.draftProjectOperatingSystem || brief.currentOperatingSystem || {});
+    const operatingSystem=normalizeProjectOperatingSystem(state.draftProjectOperatingSystem,brief);
+    const missing=missingProjectOperatingSystemFields(operatingSystem,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectOperatingSystem:operatingSystem,completionCondition:brief.completionCondition};
+      question=projectOperatingSystemQuestion(state,brief);message='VAL prepared the operating-system selection for review. Apply it when this is true.';
+    }else{
+      state.stage='operating_system_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectOperatingSystemQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -2356,6 +2530,7 @@ function createValCoworkService({
     if(entrypointId === 'project.risk') return openProjectRiskEntry(input);
     if(entrypointId === 'project.narrative') return openProjectNarrativeEntry(input);
     if(entrypointId === 'project.needs_next') return openProjectNeedsNextEntry(input);
+    if(entrypointId === 'project.sop') return openProjectOperatingSystemEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -2419,6 +2594,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.risk') return respondProjectRisk(session,workItem,answer);
     if(session.entrypointId === 'project.narrative') return respondProjectNarrative(session,workItem,answer);
     if(session.entrypointId === 'project.needs_next') return respondProjectNeedsNext(session,workItem,answer);
+    if(session.entrypointId === 'project.sop') return respondProjectOperatingSystem(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -2698,6 +2874,20 @@ function createValCoworkService({
       if(!project) throw new Error('VAL could not save the narrative to the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_narrative',status:'completed',summary:`Applied the current-state narrative to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectNarrative,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_operating_system'){
+      if(workItem.status !== 'needs_review') throw new Error('The operating-system selection must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectOperatingSystem=normalizeProjectOperatingSystem(payload.projectOperatingSystem || {},brief);
+      if(missingProjectOperatingSystemFields(projectOperatingSystem,brief).length) throw new Error('The operating-system selection is incomplete and cannot be applied yet.');
+      const project=await applyProjectOperatingSystem({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectOperatingSystem,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the operating-system selection to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_operating_system',status:'completed',summary:`Applied ${projectOperatingSystem.sopName} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectOperatingSystem,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_needs_next'){

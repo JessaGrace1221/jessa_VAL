@@ -16814,6 +16814,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const projectRisk=patch.projectRisk&&typeof patch.projectRisk==='object'&&!Array.isArray(patch.projectRisk)?patch.projectRisk:null;
     const projectNarrative=patch.projectNarrative&&typeof patch.projectNarrative==='object'&&!Array.isArray(patch.projectNarrative)?patch.projectNarrative:null;
     const projectNeedsNext=patch.projectNeedsNext&&typeof patch.projectNeedsNext==='object'&&!Array.isArray(patch.projectNeedsNext)?patch.projectNeedsNext:null;
+    const projectOperatingSystem=patch.projectOperatingSystem&&typeof patch.projectOperatingSystem==='object'&&!Array.isArray(patch.projectOperatingSystem)?patch.projectOperatingSystem:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16873,6 +16874,12 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.needsNextQuestion?{needsNextQuestion:patch.needsNextQuestion}:{}),
       ...(patch.needsNextBasis?{needsNextBasis:patch.needsNextBasis}:{}),
       ...(patch.needsNextConfidence?{needsNextConfidence:patch.needsNextConfidence}:{}),
+      ...(patch.sopId?{sopId:patch.sopId}:{}),
+      ...(patch.sopName?{sopName:patch.sopName}:{}),
+      ...(patch.sopFitReason?{sopFitReason:patch.sopFitReason}:{}),
+      ...(patch.sopDeviations?{sopDeviations:patch.sopDeviations}:{}),
+      ...(patch.sopBasis?{sopBasis:patch.sopBasis}:{}),
+      ...(patch.sopConfidence?{sopConfidence:patch.sopConfidence}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
       ...(patch.whyItMatters?{whyItMatters:patch.whyItMatters}:{}),
       ...(patch.strategicImportance?{strategicImportance:patch.strategicImportance}:{}),
@@ -16887,6 +16894,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectRisk?{projectRisk}:{}),
       ...(projectNarrative?{projectNarrative}:{}),
       ...(projectNeedsNext?{projectNeedsNext}:{}),
+      ...(projectOperatingSystem?{projectOperatingSystem}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17483,6 +17491,7 @@ function projectIndexItemFromProfile(profile={}){
   const nextMove=metadata.nextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
   const projectNarrative=metadata.projectNarrative&&typeof metadata.projectNarrative==='object'&&!Array.isArray(metadata.projectNarrative)?metadata.projectNarrative:null;
   const projectNeedsNext=metadata.projectNeedsNext&&typeof metadata.projectNeedsNext==='object'&&!Array.isArray(metadata.projectNeedsNext)?metadata.projectNeedsNext:null;
+  const projectOperatingSystem=metadata.projectOperatingSystem&&typeof metadata.projectOperatingSystem==='object'&&!Array.isArray(metadata.projectOperatingSystem)?metadata.projectOperatingSystem:null;
   const currentReality=metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||profile.summary||'Canonical project profile from VAL relationship/project index.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
@@ -17540,6 +17549,13 @@ function projectIndexItemFromProfile(profile={}){
     needsNextBasis:metadata.needsNextBasis||projectNeedsNext?.basis||'',
     needsNextConfidence:metadata.needsNextConfidence||projectNeedsNext?.confidence||'',
     projectNeedsNext,
+    sopId:metadata.sopId||intake.sopId||projectOperatingSystem?.sopId||projectOperatingSystem?.sop_id||'',
+    sopName:metadata.sopName||projectOperatingSystem?.sopName||projectOperatingSystem?.sop_name||'',
+    sopFitReason:metadata.sopFitReason||projectOperatingSystem?.fitReason||projectOperatingSystem?.fit_reason||'',
+    sopDeviations:Array.isArray(metadata.sopDeviations)?metadata.sopDeviations:(metadata.sopDeviations?[metadata.sopDeviations]:(projectOperatingSystem?.knownDeviations||projectOperatingSystem?.known_deviations?[projectOperatingSystem?.knownDeviations||projectOperatingSystem?.known_deviations]:[])),
+    sopBasis:metadata.sopBasis||projectOperatingSystem?.basis||'',
+    sopConfidence:metadata.sopConfidence||projectOperatingSystem?.confidence||'',
+    projectOperatingSystem,
     ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
     whyItMatters:metadata.whyItMatters||metadata.projectImportance?.whyItMatters||'',
     strategicImportance:metadata.strategicImportance||metadata.projectImportance?.strategicImportance||'',
@@ -17557,8 +17573,6 @@ function projectIndexItemFromProfile(profile={}){
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
     metadataJson:metadata,
     sourceDetails,
-    sopId:metadata.sopId||intake.sopId||'',
-    sopName:metadata.sopName||'',
     href:'./dashboard.html?view=projects&projectId='+encodeURIComponent(id)
   };
 }
@@ -25183,6 +25197,54 @@ async function applyCoworkProjectNeedsNext({projectId,projectName='',projectNeed
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectOperatingSystem({projectId,projectName='',projectOperatingSystem={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const raw=projectOperatingSystem&&typeof projectOperatingSystem==='object'&&!Array.isArray(projectOperatingSystem)?projectOperatingSystem:{};
+  const sopId=String(raw.sopId||raw.sop_id||raw.operatingSystem||raw.operating_system||raw.sop||'').trim().toLowerCase();
+  const options={
+    frisson_partner_onboarding:{id:'frisson_partner_onboarding',name:'Frisson Partner Onboarding'},
+    client_dashboard_buildout:{id:'client_dashboard_buildout',name:'Client Dashboard Buildout'},
+    relationship_nurture_partnership:{id:'relationship_nurture_partnership',name:'Long-Term Partnership Nurture'},
+    new_sop:{id:'new_sop',name:'Create New SOP'}
+  };
+  const option=options[sopId];
+  const fitReason=String(raw.fitReason||raw.fit_reason||raw.reason||raw.whyItFits||raw.why_it_fits||'').trim();
+  const knownDeviations=String(raw.knownDeviations||raw.known_deviations||raw.deviations||'').trim();
+  const basis=String(raw.basis||raw.evidenceBasis||raw.evidence_basis||raw.evidence||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!option||!fitReason||!knownDeviations||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const preparedOperatingSystem={
+    id:String(raw.id||stableKey(`project_operating_system_${projectId}`)).trim(),
+    sopId:option.id,
+    sopName:option.name,
+    fitReason,
+    knownDeviations,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    sopId:preparedOperatingSystem.sopId,
+    sopName:preparedOperatingSystem.sopName,
+    sopFitReason:preparedOperatingSystem.fitReason,
+    sopDeviations:[preparedOperatingSystem.knownDeviations],
+    sopBasis:preparedOperatingSystem.basis,
+    sopConfidence:preparedOperatingSystem.confidence,
+    projectOperatingSystem:preparedOperatingSystem,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work operating system applied from session ${sessionId||'unknown'}: ${sourceSummary||preparedOperatingSystem.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25225,6 +25287,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectRisk:applyCoworkProjectRisk,
   applyProjectNarrative:applyCoworkProjectNarrative,
   applyProjectNeedsNext:applyCoworkProjectNeedsNext,
+  applyProjectOperatingSystem:applyCoworkProjectOperatingSystem,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

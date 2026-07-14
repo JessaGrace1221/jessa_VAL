@@ -3249,9 +3249,34 @@ const projectSopLibrary = {
   }
 };
 
+function projectOperatingSystemPacketItem(value = {}, fallback = {}){
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const sopId = projectCleanText(raw.sopId || raw.sop_id || raw.operatingSystem || raw.operating_system || raw.sop || fallback.sop_id).toLowerCase();
+  const sop = projectSopLibrary[sopId] || null;
+  const rawDeviations = raw.knownDeviations || raw.known_deviations || raw.deviations || fallback.sop_deviations || [];
+  const knownDeviations = Array.isArray(rawDeviations) ? rawDeviations.map((item) => projectCleanText(item)).filter(Boolean) : [projectCleanText(rawDeviations)].filter(Boolean);
+  return {
+    sop_id:sop?.id || '',
+    sop_name:sop?.name || '',
+    fit_reason:projectCleanText(raw.fitReason || raw.fit_reason || raw.reason || raw.whyItFits || raw.why_it_fits || fallback.fit_reason),
+    known_deviations:knownDeviations,
+    basis:projectCleanText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || fallback.basis),
+    confidence:projectCleanText(raw.confidence || fallback.confidence),
+    source_receipts:Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : [])
+  };
+}
+
 function projectSopPacket(project = {}){
   const details = normalizedProjectSourceDetails(project);
-  const selected = project.sopId || details.sopId || project.sop_id || '';
+  const metadata = project.metadataJson || project.metadata || {};
+  const operatingSystem = projectOperatingSystemPacketItem(project.projectOperatingSystem || metadata.projectOperatingSystem, {
+    sop_id:project.sopId || details.sopId || project.sop_id || '',
+    fit_reason:project.sopFitReason || metadata.sopFitReason || '',
+    sop_deviations:project.sopDeviations || metadata.sopDeviations || [],
+    basis:project.sopBasis || metadata.sopBasis || '',
+    confidence:project.sopConfidence || metadata.sopConfidence || ''
+  });
+  const selected = operatingSystem.sop_id || project.sopId || details.sopId || project.sop_id || '';
   const needsOnboarding = projectNeedsOnboarding(project);
   const hasInterviewPacket = Boolean(projectOnboardingData(project).firstAnswer || projectOnboardingData(project).ownerMonitoringAnswer || project.projectInterviewNotes || project.ownerMonitoringNotes);
   const inferred = !selected && !needsOnboarding && !hasInterviewPacket && /frisson|partner|onboarding/i.test([project.name, project.summary, project.reality, details.rawContext].join(' ')) ? 'frisson_partner_onboarding' : selected;
@@ -3269,7 +3294,11 @@ function projectSopPacket(project = {}){
       monitoring_rules:[],
       relationship_nurture_rules:[],
       risk_patterns:['Project shell has evidence but no defined outcome yet'],
-      known_deviations:['Created from document evidence and waiting for executive shaping']
+      known_deviations:['Created from document evidence and waiting for executive shaping'],
+      fit_reason:operatingSystem.fit_reason,
+      basis:operatingSystem.basis,
+      confidence:operatingSystem.confidence,
+      source_receipts:operatingSystem.source_receipts
     };
   }
   if(!sop){
@@ -3285,7 +3314,11 @@ function projectSopPacket(project = {}){
       monitoring_rules:Array.isArray(project.monitoringRules) && project.monitoringRules.length ? project.monitoringRules : ['Ask what VAL should watch after launch'],
       relationship_nurture_rules:Array.isArray(project.relationshipNurtureRules) && project.relationshipNurtureRules.length ? project.relationshipNurtureRules : ['Ask which relationships this project should protect'],
       risk_patterns:['Project stays too vague to manage'],
-      known_deviations:['SOP fit still needs user confirmation']
+      known_deviations:['SOP fit still needs user confirmation'],
+      fit_reason:operatingSystem.fit_reason,
+      basis:operatingSystem.basis,
+      confidence:operatingSystem.confidence,
+      source_receipts:operatingSystem.source_receipts
     };
   }
   return {
@@ -3300,7 +3333,11 @@ function projectSopPacket(project = {}){
     monitoring_rules:Array.isArray(project.monitoringRules) && project.monitoringRules.length ? project.monitoringRules : sop.monitoringRules,
     relationship_nurture_rules:Array.isArray(project.relationshipNurtureRules) && project.relationshipNurtureRules.length ? project.relationshipNurtureRules : sop.relationshipNurtureRules,
     risk_patterns:sop.riskPatterns,
-    known_deviations:project.sopDeviations || []
+    known_deviations:operatingSystem.known_deviations,
+    fit_reason:operatingSystem.fit_reason,
+    basis:operatingSystem.basis,
+    confidence:operatingSystem.confidence,
+    source_receipts:operatingSystem.source_receipts
   };
 }
 
@@ -4335,7 +4372,8 @@ function renderProjectManagerProfile(project = {}){
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
         '<span>Operating System</span>',
         '<strong>' + escapeHtml(sop.sop_name) + '</strong>',
-        '<p>' + escapeHtml(sop.when_to_use) + '</p>',
+        '<p>' + escapeHtml(sop.fit_reason || sop.when_to_use) + '</p>',
+        sop.known_deviations?.length ? '<small>Deviations: ' + escapeHtml(sop.known_deviations.join(' | ')) + '</small>' : '',
         projectCoworkChip(),
       '</article>',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
@@ -4695,6 +4733,22 @@ function renderCoworkProjectNeedsNextItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectOperatingSystemItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const operatingSystem = payload.projectOperatingSystem || {};
+  if(!operatingSystem || typeof operatingSystem !== 'object') return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing one operating pattern');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared operating-system selection</span><strong>' + escapeHtml(workItem.title || 'Operating System') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(operatingSystem.sopName || operatingSystem.sop_name || 'Operating system') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Fit reasoning', operatingSystem.fitReason || operatingSystem.fit_reason) + coworkWorkstreamField('Material deviations', operatingSystem.knownDeviations || operatingSystem.known_deviations) + coworkWorkstreamField('Basis', operatingSystem.basis || operatingSystem.evidenceBasis || operatingSystem.evidence_basis) + coworkWorkstreamField('Confidence', operatingSystem.confidence) + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-project-operating-system="' + escapeHtml(workItem.id || '') + '">Apply operating system</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkProjectRiskItem(workItem = {}){
   const payload = workItem.payload || {};
   const risk = payload.projectRisk || {};
@@ -4839,7 +4893,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4862,6 +4916,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Make the project\'s current reality, learning, blocked condition, basis, and confidence explicit.'
     : entrypointId === 'project.needs_next'
     ? 'Identify one precise missing fact, decision, source, or person before taking another project-management step.'
+    : entrypointId === 'project.sop'
+    ? 'Select the real operating pattern that should run this project and make material deviations explicit.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4925,6 +4981,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkProjectNarrativeItem(workItem)
       : workItem.type === 'project_needs_next'
       ? renderCoworkProjectNeedsNextItem(workItem)
+      : workItem.type === 'project_operating_system'
+      ? renderCoworkProjectOperatingSystemItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -4958,6 +5016,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Current-state narrative applied.'
       : session.entrypointId === 'project.needs_next'
         ? 'What VAL needs next applied.'
+      : session.entrypointId === 'project.sop'
+        ? 'Operating system applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -5216,6 +5276,25 @@ async function openProjectNeedsNextCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this needs-next interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectOperatingSystemCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('sop_fit', project);
+  const action = 'project:cowork:sop_fit';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'sop_fit',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Select the operating system',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.sop',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Select the operating system',meaning:'Preparing the Operating System brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will select only a real current operating pattern, record why it fits and any material deviations, then prepare that internal SOP packet for your review. It will not create work, advance phase, or take any external action.',placeholder:'Preparing the selected Project Managers operating-system brief...',heading:'Selecting the operating system for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Operating System.',publicDetail:'Scoped to Project Managers: Operating System.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.sop',scope:{entityType:'project_section',entityId:projectId,sectionId:'sop_fit'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this operating-system brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Operating System interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -5299,7 +5378,8 @@ async function submitActiveCoworkEntry(){
   if(submit) submit.disabled = true;
   try{
     const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
-    const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
+    const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : label;
+    const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not save that answer. Nothing was changed. ' + error.message);
@@ -5468,6 +5548,17 @@ async function applyActiveCoworkProjectNeedsNext(workItemId = '', button = null)
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply what it needs next. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectOperatingSystem(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this operating-system selection yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply this operating-system selection. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -5493,6 +5584,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'risk_blocker') return openProjectRiskCowork(node);
   if(field === 'working_narrative') return openProjectNarrativeCowork(node);
   if(field === 'what_val_needs_next') return openProjectNeedsNextCowork(node);
+  if(field === 'sop_fit') return openProjectOperatingSystemCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -20120,9 +20212,10 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectRiskApply = event.target.closest('[data-cowork-apply-project-risk]');
   const projectNarrativeApply = event.target.closest('[data-cowork-apply-project-narrative]');
   const projectNeedsNextApply = event.target.closest('[data-cowork-apply-project-needs-next]');
+  const projectOperatingSystemApply = event.target.closest('[data-cowork-apply-project-operating-system]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -20136,6 +20229,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectRiskApply) await applyActiveCoworkProjectRisk(projectRiskApply.dataset.coworkApplyProjectRisk, projectRiskApply);
   if(projectNarrativeApply) await applyActiveCoworkProjectNarrative(projectNarrativeApply.dataset.coworkApplyProjectNarrative, projectNarrativeApply);
   if(projectNeedsNextApply) await applyActiveCoworkProjectNeedsNext(projectNeedsNextApply.dataset.coworkApplyProjectNeedsNext, projectNeedsNextApply);
+  if(projectOperatingSystemApply) await applyActiveCoworkProjectOperatingSystem(projectOperatingSystemApply.dataset.coworkApplyProjectOperatingSystem, projectOperatingSystemApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
