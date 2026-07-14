@@ -25079,6 +25079,72 @@ async function createCoworkTranscriptActionItem({transcriptId,actionItemIndex,ac
   const task=await promoteTranscriptTask(staged);
   return {task,alreadyCreated:false,noExternalAction:true};
 }
+async function loadEmailThreadForCowork({messageId='',threadId='',conversationId='',provider=''}={}){
+  const result=await valExecutiveInbox.draftBrief({messageId,threadId,conversationId,provider});
+  const context=result?.context || {};
+  const current=context.current_message || context.currentMessage || {};
+  const selectedMessageId=String(current.messageId || current.id || messageId || '').trim();
+  if(!selectedMessageId) return null;
+  const selectedThreadId=String(context.threadId || current.threadId || threadId || '').trim();
+  const selectedConversationId=String(context.conversationId || current.unifiedConversationId || conversationId || '').trim();
+  const selectedProvider=String(context.provider || current.provider || provider || '').trim();
+  const messages=await valConversationIdentity.messagesForConversation({
+    conversationId:selectedConversationId,
+    provider:selectedProvider,
+    threadId:selectedThreadId,
+    messageId:selectedMessageId
+  });
+  if(!messages.length) return null;
+  const drafts=await listDrafts();
+  const existingDraft=drafts.find((draft)=>{
+    const source=draft.sourceContext || {};
+    if(String(source.source || '') !== 'executive_inbox_review_only') return false;
+    const sameMessage=selectedMessageId && String(source.currentMessageId || source.current_message_id || '')===selectedMessageId;
+    const sameConversation=selectedConversationId && String(source.conversationId || source.conversation_id || '')===selectedConversationId;
+    const sameThread=selectedThreadId && String(source.threadId || source.thread_id || '')===selectedThreadId;
+    return sameMessage || sameConversation || sameThread;
+  }) || null;
+  return {
+    provider:selectedProvider || 'email',
+    messageId:selectedMessageId,
+    threadId:selectedThreadId,
+    conversationId:selectedConversationId,
+    subject:current.subject || messages[messages.length-1]?.subject || '',
+    messages,
+    context,
+    classification:result.classification || {},
+    readiness:result.readiness || {},
+    draftBrief:result.brief || result.draft_brief || {},
+    existingDraft
+  };
+}
+async function prepareCoworkEmailThreadDraft({messageId='',threadId='',conversationId='',provider='',replyIntent='',sessionId='',workItemId=''}={}){
+  const thread=await loadEmailThreadForCowork({messageId,threadId,conversationId,provider});
+  if(!thread) throw new Error('VAL could not load the selected email thread. It did not substitute another conversation.');
+  if(thread.existingDraft) return {draft:thread.existingDraft,alreadyPrepared:true,noExternalAction:true};
+  const intent=String(replyIntent || '').trim();
+  if(!intent) throw new Error('VAL needs the intended reply outcome before it can prepare a private draft.');
+  const baseBrief=thread.draftBrief || {};
+  const brief={
+    ...baseBrief,
+    must_include:[...new Set([...(Array.isArray(baseBrief.must_include) ? baseBrief.must_include : []),`Executive reply outcome: ${intent}`])]
+  };
+  const readiness={
+    ...(thread.readiness || {}),
+    status:'ready_for_review',
+    missing_context:[],
+    missingContext:[],
+    approval_policy:'approval_required'
+  };
+  const prepared=await valExecutiveInbox.generateDraft({
+    context:thread.context,
+    classification:thread.classification || {},
+    readiness,
+    brief
+  });
+  if(!prepared?.draft?.body || prepared.status !== 'ready_for_review') throw new Error('VAL stopped the draft because it did not pass review-only quality checks. Nothing was sent or changed externally.');
+  return {...prepared,noExternalAction:true,sessionId,workItemId};
+}
 async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutcome='',workstreams=[],sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25645,6 +25711,8 @@ const valCowork = registerValCoworkRoutes(app,{
   loadTranscript:loadTranscriptForCowork,
   prepareTranscriptMeetingOverview:prepareCoworkTranscriptMeetingOverview,
   createTranscriptActionItem:createCoworkTranscriptActionItem,
+  loadEmailThread:loadEmailThreadForCowork,
+  prepareEmailThreadDraft:prepareCoworkEmailThreadDraft,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

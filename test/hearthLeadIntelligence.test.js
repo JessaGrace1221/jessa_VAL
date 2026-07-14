@@ -774,6 +774,10 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /correspondenceDraftBody\.value = selected\?\.draftBody/);
   assert.match(hearthJs, /correspondenceDraftBody\?\.addEventListener\('input'/);
   assert.match(hearthJs, /action === 'cowork_correspondence'/);
+  assert.match(hearthJs, /async function openCorrespondenceThreadCowork/);
+  assert.match(hearthJs, /entrypointId:'email\.thread'/);
+  assert.match(hearthJs, /data-cowork-open-email-thread-draft/);
+  assert.match(hearthJs, /if\(action === 'cowork_correspondence'\)\{\s*await openCorrespondenceThreadCowork\(item\);/);
   assert.match(hearthJs, /function renderCorrespondenceThread/);
   assert.match(hearthJs, /function correspondenceAttachmentsFromSource/);
   assert.match(hearthJs, /correspondence-thread-attachments/);

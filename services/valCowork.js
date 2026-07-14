@@ -2186,6 +2186,92 @@ function transcriptActionItemQuestion(brief={}){
     detail:'The task title and source quote remain word for word. Nothing is assigned, sent, scheduled, or changed outside VAL.'
   };
 }
+function emailThreadMessages(thread={}){
+  const context=thread.context || thread.conversationContext || {};
+  return safeArray(thread.messages || context.messages || []).map((message)=>({
+    id:compactText(message?.id || message?.messageId || '',220),
+    messageId:compactText(message?.messageId || message?.id || '',220),
+    direction:compactText(message?.direction || '',80),
+    from:compactText(message?.from?.name || message?.from?.email || message?.senderName || message?.senderEmail || '',180),
+    subject:compactText(message?.subject || '',240),
+    body:multilineText(message?.bodyText || message?.bodyPreview || message?.snippet || '',12000),
+    receivedAt:compactText(message?.receivedAt || message?.sentAt || message?.date || '',120)
+  })).filter((message)=>message.messageId || message.body || message.subject);
+}
+function emailThreadDraft(value={}){
+  const source=value.sourceContext || value.source_context || {};
+  const writer=source.writerOutput || source.writer_output || {};
+  const body=multilineText(value.body || writer.body || '',12000);
+  return body ? {
+    id:compactText(value.id || writer.id || '',220),
+    subject:compactText(value.subject || writer.subject || '',300),
+    body,
+    status:compactText(value.status || '',100)
+  } : null;
+}
+function buildEmailThreadBrief(thread={},input={}){
+  const context=thread.context || thread.conversationContext || {};
+  const current=context.current_message || context.currentMessage || thread.currentMessage || {};
+  const messages=emailThreadMessages(thread);
+  const entityId=compactText(thread.messageId || current.messageId || current.id || input.scope?.messageId || input.scope?.entityId || '',220);
+  const threadId=compactText(thread.threadId || context.threadId || current.threadId || input.scope?.threadId || '',220);
+  const conversationId=compactText(thread.conversationId || context.conversationId || current.unifiedConversationId || input.scope?.conversationId || '',220);
+  const subject=compactText(thread.subject || current.subject || messages[messages.length-1]?.subject || 'Selected email thread',300);
+  const classification=thread.classification || {};
+  const readiness=thread.readiness || {};
+  const draftBrief=thread.draftBrief || thread.draft_brief || {};
+  const currentText=multilineText(current.bodyText || current.bodyPreview || current.snippet || messages[messages.length-1]?.body || '',12000);
+  const sourceRefs=[
+    ...safeArray(classification.source_refs || classification.sourceRefs).map(sourceRef),
+    ...messages.slice(-8).map((message)=>sourceRef({sourceType:'email_message',sourceId:message.messageId || message.id,quoteOrSummary:[message.subject,message.body].filter(Boolean).join(': ')}))
+  ].filter((ref)=>ref.source_id || ref.quote_or_summary);
+  return {
+    id:stableKey(`working_brief_email_thread_${entityId || conversationId || threadId || subject}`),
+    entrypointId:'email.thread',
+    entityType:'email_thread',
+    entityId,
+    sectionId:'reply_draft',
+    provider:compactText(thread.provider || context.provider || current.provider || input.scope?.provider || 'email',80),
+    messageId:entityId,
+    threadId,
+    conversationId,
+    subject,
+    currentMessage:{
+      from:compactText(current.from?.name || current.from?.email || '',180),
+      body:currentText
+    },
+    messages,
+    classification:{
+      executiveMeaning:compactText(classification.executive_meaning || classification.executiveMeaning || '',180),
+      whyNow:compactText(classification.why_now || classification.whyNow || '',700),
+      approvalPolicy:compactText(classification.approval_policy || classification.approvalPolicy || '',120)
+    },
+    readiness:{
+      status:compactText(readiness.status || '',100),
+      missingContext:safeArray(readiness.missing_context || readiness.missingContext).map((item)=>compactText(item,220)).filter(Boolean),
+      representationRisk:compactText(readiness.representation_risk || readiness.representationRisk || '',100)
+    },
+    existingDraft:emailThreadDraft(thread.existingDraft || thread.existing_draft || {}),
+    sourceRefs,
+    objective:'Prepare one review-only reply from the selected Executive Inbox thread.',
+    completionCondition:'The selected durable thread, one executive reply outcome, and one linked private draft are visible for Leverage review.',
+    approvalBoundary:'Preparing this draft creates only an internal VAL review draft. It does not send email, create a provider draft, update CRM, create a task, alter the selected source, or change any external system.'
+  };
+}
+function emailThreadQuestion(state={},brief={}){
+  if(state.stage === 'ready_to_review'){
+    return {
+      targetField:'prepared_artifact.email_draft',
+      question:'Review the private email draft in Leverage before any external approval.',
+      detail:'This route prepared only an internal draft from the selected thread. Nothing has been sent or created in the email provider.'
+    };
+  }
+  return {
+    targetField:'email_judgment_packet.reply_outcome',
+    question:`What outcome should this reply to ${brief.subject || 'this thread'} create?`,
+    detail:'This single direction prepares one private reply draft from the selected readable thread. It does not send, create a provider draft, or change any external system.'
+  };
+}
 const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
   first_question:{
     question:'What should this project be called, and what outcome should it create?',
@@ -2427,6 +2513,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['transcript_source_receipt','commitment_packet'],
     objective:'Turn one selected exact Krisp Action Item into one internal VAL Commitment.',
     completionCondition:'The exact Action Item is visible for review and has an explicit internal Apply route.'
+  },
+  'email.thread':{
+    id:'email.thread',
+    surface:'executive_inbox',
+    scopeType:'email_thread',
+    sectionId:'reply_draft',
+    requiredPackets:['email_packet','email_judgment_packet','prepared_artifact_packet'],
+    objective:'Prepare one review-only response from one selected email thread.',
+    completionCondition:'The selected durable thread, executive reply intent, and reviewable internal draft are all visible and linked.'
   }
 });
 
@@ -2460,7 +2555,9 @@ function createValCoworkService({
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
   prepareTranscriptMeetingOverview=async()=>null,
-  createTranscriptActionItem=async()=>null
+  createTranscriptActionItem=async()=>null,
+  loadEmailThread=async()=>null,
+  prepareEmailThreadDraft=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -2556,7 +2653,8 @@ function createValCoworkService({
           draftProjectImportance:state.draftProjectImportance || null,
           draftProjectRisk:state.draftProjectRisk || null,
           draftNextMove:state.draftNextMove || null,
-          draftTranscriptArtifact:state.draftTranscriptArtifact || null
+          draftTranscriptArtifact:state.draftTranscriptArtifact || null,
+          draftEmailArtifact:state.draftEmailArtifact || null
         }
       },
       workItem:workItem ? {
@@ -3294,6 +3392,71 @@ function createValCoworkService({
     const question=transcriptActionItemQuestion(session.workingBriefJson || {});
     return publicResult(session,workItem,'This exact Action Item is already ready for review. VAL will not add or rewrite wording before it becomes an internal Commitment.',question);
   }
+  async function openEmailThreadEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['email.thread'];
+    const scopeInput=input.scope || {};
+    const messageId=compactText(scopeInput.messageId || scopeInput.message_id || scopeInput.entityId || input.messageId || '',220);
+    const threadId=compactText(scopeInput.threadId || scopeInput.thread_id || input.threadId || '',220);
+    const conversationId=compactText(scopeInput.conversationId || scopeInput.conversation_id || input.conversationId || '',220);
+    if(!messageId && !threadId && !conversationId) throw new Error('Executive Inbox needs the selected email thread before VAL can prepare a reply.');
+    const thread=await loadEmailThread({messageId,threadId,conversationId,provider:compactText(scopeInput.provider || input.provider || '',80)});
+    if(!thread) throw new Error('VAL could not load the selected email thread. It did not substitute another conversation.');
+    const brief=buildEmailThreadBrief(thread,input);
+    if(!brief.entityId || !brief.messages.length) throw new Error('The selected email thread has no durable readable message receipt. VAL will not draft from a summary alone.');
+    const existingDraft=brief.existingDraft;
+    const state={stage:existingDraft ? 'ready_to_review' : 'reply_outcome',draftEmailArtifact:existingDraft,answers:[]};
+    const question=emailThreadQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:existingDraft ? 'needs_review' : 'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'email_thread_draft',title:`Reply for ${brief.subject}`,status:existingDraft ? 'needs_review' : 'needs_input',
+      payloadJson:{messageId:brief.messageId,threadId:brief.threadId,conversationId:brief.conversationId,provider:brief.provider,subject:brief.subject,preparedArtifact:existingDraft,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondEmailThread(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    const prepared=await prepareEmailThreadDraft({
+      messageId:brief.messageId || session.scopeId,
+      threadId:brief.threadId,
+      conversationId:brief.conversationId,
+      provider:brief.provider,
+      replyIntent:answer,
+      sessionId:session.id,
+      workItemId:workItem.id
+    });
+    const artifact=emailThreadDraft(prepared?.draft || prepared?.preparedArtifact || {});
+    if(!artifact) throw new Error('VAL could not prepare a private draft from this selected thread. Nothing was sent or changed externally.');
+    state.stage='ready_to_review';
+    state.draftEmailArtifact=artifact;
+    session.status='needs_review';
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),emailThreadQuestion(state,brief)];
+    session.updatedAt=new Date().toISOString();
+    workItem.status='needs_review';
+    workItem.payloadJson={
+      ...(workItem.payloadJson || {}),
+      messageId:brief.messageId || session.scopeId,
+      threadId:brief.threadId,
+      conversationId:brief.conversationId,
+      provider:brief.provider,
+      subject:artifact.subject || brief.subject,
+      replyIntent:answer,
+      preparedArtifact:artifact,
+      objective:brief.objective,
+      completionCondition:brief.completionCondition
+    };
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    const question=emailThreadQuestion(state,brief);
+    return publicResult(session,workItem,'VAL prepared one private email draft from this selected thread. Review it in Leverage before any external approval.',question);
+  }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
@@ -3316,6 +3479,7 @@ function createValCoworkService({
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     if(entrypointId === 'transcript.action_item') return openTranscriptActionItemEntry(input);
+    if(entrypointId === 'email.thread') return openEmailThreadEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -3385,6 +3549,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
+    if(session.entrypointId === 'email.thread') return respondEmailThread(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -3846,6 +4011,7 @@ module.exports={
   buildProjectRiskBrief,
   buildTranscriptWorkingBrief,
   buildTranscriptActionItemBrief,
+  buildEmailThreadBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,

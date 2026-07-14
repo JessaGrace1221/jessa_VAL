@@ -44,6 +44,28 @@ function transcript(){
   };
 }
 
+function emailThread(){
+  return {
+    provider:'gmail',
+    messageId:'email_mou',
+    threadId:'thread_mou',
+    conversationId:'conversation_mou',
+    subject:'MOU for Forever Freedom',
+    messages:[{
+      id:'email_mou',messageId:'email_mou',threadId:'thread_mou',provider:'gmail',direction:'inbound',
+      from:{name:'Aric Soyring',email:'aric@example.com'},subject:'MOU for Forever Freedom',
+      bodyText:'Please review the attached MOU and let me know what changes you need.',receivedAt:'2026-07-12T15:14:14.000Z'
+    }],
+    context:{
+      provider:'gmail',conversationId:'conversation_mou',threadId:'thread_mou',waiting_on_user:true,
+      current_message:{messageId:'email_mou',threadId:'thread_mou',provider:'gmail',subject:'MOU for Forever Freedom',from:{name:'Aric Soyring',email:'aric@example.com'},bodyText:'Please review the attached MOU and let me know what changes you need.'}
+    },
+    classification:{executive_meaning:'protect_opportunity',why_now:'The MOU needs a clear response.',approval_policy:'approval_required',source_refs:[{source_type:'email_message',source_id:'email_mou',quote_or_summary:'MOU for Forever Freedom',confidence:0.9}]},
+    readiness:{status:'needs_context',missing_context:['commercial_or_legal_specifics'],representation_risk:'high'},
+    draftBrief:{single_purpose:'Move the partnership decision forward.',must_include:[]}
+  };
+}
+
 function relationships(){
   return [
     {id:'rel_jessa',displayName:'Jessa',email:'jessa@example.com',relationshipStatus:'active'},
@@ -58,7 +80,7 @@ function documents(){
   ];
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedRelationships=relationships(),loadedDocuments=documents()}={}){
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents()}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
@@ -79,6 +101,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const createdTranscriptActionItems=[];
+  const preparedEmailThreadDrafts=[];
   const service=createValCoworkService({
     hasPg:()=>false,
     getStore:()=>store,
@@ -165,9 +188,18 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     createTranscriptActionItem:async payload=>{
       createdTranscriptActionItems.push(payload);
       return {task:{id:'task_transcript_action',title:payload.actionItem,sourceQuote:payload.actionItem},alreadyCreated:false};
+    },
+    loadEmailThread:async input=>{
+      const selected=String(input.messageId || input.threadId || input.conversationId || '');
+      const known=[loadedEmailThread?.messageId,loadedEmailThread?.threadId,loadedEmailThread?.conversationId].map(String);
+      return loadedEmailThread && known.includes(selected) ? loadedEmailThread : null;
+    },
+    prepareEmailThreadDraft:async payload=>{
+      preparedEmailThreadDrafts.push(payload);
+      return {draft:{id:'draft_email_mou',subject:'Re: MOU for Forever Freedom',body:'Hi Aric,\n\nI would like to confirm the final MOU changes so we can keep the partnership moving.\n\nBest,\nJessa',status:'ready_for_review'},noExternalAction:true};
     }
   });
-  return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,preparedTranscriptOverviews,createdTranscriptActionItems,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,preparedTranscriptOverviews,createdTranscriptActionItems,preparedEmailThreadDrafts,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -181,7 +213,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread']);
 });
 
 test('Project Interview preserves its protected question, applies only its mapped answer, and resumes at the next stage',async()=>{
@@ -792,6 +824,37 @@ test('a missing transcript is rejected instead of substituting another meeting',
   );
 });
 
+test('Executive Inbox Co-Work stays scoped to the selected durable thread and prepares only a private review draft',async()=>{
+  const {service,preparedEmailThreadDrafts}=serviceFor();
+  const opened=await service.openEntry({
+    entrypointId:'email.thread',
+    scope:{entityType:'email_thread',entityId:'email_mou',sectionId:'reply_draft',provider:'gmail',messageId:'email_mou',threadId:'thread_mou',conversationId:'conversation_mou'}
+  });
+  assert.equal(opened.session.scope.entityId,'email_mou');
+  assert.equal(opened.session.workingBrief.subject,'MOU for Forever Freedom');
+  assert.equal(opened.session.workingBrief.messages[0].body,'Please review the attached MOU and let me know what changes you need.');
+  assert.equal(opened.question.targetField,'email_judgment_packet.reply_outcome');
+  assert.equal(opened.workItem.status,'needs_input');
+
+  const ready=await service.respond(opened.session.id,{answer:'Confirm the final MOU changes and keep the partnership moving.'});
+  assert.equal(ready.workItem.type,'email_thread_draft');
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.preparedArtifact.subject,'Re: MOU for Forever Freedom');
+  assert.equal(ready.workItem.payload.replyIntent,'Confirm the final MOU changes and keep the partnership moving.');
+  assert.equal(preparedEmailThreadDrafts.length,1);
+  assert.equal(preparedEmailThreadDrafts[0].messageId,'email_mou');
+  assert.equal(preparedEmailThreadDrafts[0].threadId,'thread_mou');
+  assert.equal(preparedEmailThreadDrafts[0].conversationId,'conversation_mou');
+});
+
+test('Executive Inbox Co-Work rejects a missing selected thread instead of borrowing inbox context',async()=>{
+  const {service}=serviceFor({loadedEmailThread:null});
+  await assert.rejects(
+    service.openEntry({entrypointId:'email.thread',scope:{entityType:'email_thread',entityId:'email_missing',sectionId:'reply_draft'}}),
+    /did not substitute another conversation/i
+  );
+});
+
 test('Project Managers canonical entries bypass generic Co-Work and use registered routes',()=>{
   assert.match(hearth,/function projectCoworkWorkstreamSuggestions/);
   assert.match(hearth,/function projectProfileForCoworkNode/);
@@ -894,6 +957,18 @@ test('Transcript canonical Co-Work bypasses the legacy freeform chat route',()=>
   assert.match(server,/async function prepareCoworkTranscriptMeetingOverview/);
   assert.match(server,/async function createCoworkTranscriptActionItem/);
   assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
+});
+
+test('Executive Inbox canonical Co-Work opens one selected durable thread and routes private drafts to Leverage',()=>{
+  assert.match(hearth,/async function openCorrespondenceThreadCowork/);
+  assert.match(hearth,/entrypointId:'email\.thread'/);
+  assert.match(hearth,/data-cowork-open-email-thread-draft/);
+  assert.match(hearth,/openLeverageApprovalWorkspace\(\)/);
+  assert.match(hearth,/if\(action === 'cowork_correspondence'\)\{\s*await openCorrespondenceThreadCowork\(item\);/);
+  assert.match(server,/async function loadEmailThreadForCowork/);
+  assert.match(server,/async function prepareCoworkEmailThreadDraft/);
+  assert.match(server,/loadEmailThread:loadEmailThreadForCowork/);
+  assert.match(server,/prepareEmailThreadDraft:prepareCoworkEmailThreadDraft/);
 });
 
 test('project foundation application updates only the selected internal project packet',()=>{

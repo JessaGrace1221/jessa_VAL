@@ -251,9 +251,9 @@ Transcript Working Brief opens the exact attendee overview already ready for rev
 
 | Entry id | Scope | Objective | Completion condition | Writes / result |
 |---|---|---|---|---|
-| `email.thread` | One selected email thread, readable message bodies, attachments, relationship/project matches, and existing draft. | Decide, prepare, or refine the right response to that thread. | A decision, exact requested clarification, or reviewable email artifact is visible and linked to the thread. | Email Judgment Packet, reviewable draft, related project/commitment proposals. |
+| `email.thread` | One selected durable email message/thread, readable messages, existing internal draft, and already-matched supporting context. | Prepare one review-only reply based on one direct executive intention. | The single reply outcome and linked private draft are visible; external sending remains out of this route. | Email Judgment Packet, review-only draft in Leverage, and a source receipt. |
 
-The current `Discuss this thread with VAL` route carries a selected item summary, but it still uses generic chat. It must be replaced with the scoped Working Brief and typed output route above.
+`email.thread` receives the selected `message_id`, `thread_id`, `conversation_id`, and provider at click time. It rejects a missing durable readable thread rather than borrowing a summary or adjacent conversation. With no existing draft, it asks only what outcome the reply should create; the answer maps to `email_judgment_packet.reply_outcome`. VAL then prepares one internal review-only email draft linked to that exact thread. It does not send email, create a provider draft, create a task, update CRM, change a calendar, or alter the source. A real existing internal draft opens directly to Leverage review instead of producing another conversation.
 
 ## Relationships
 

@@ -5029,10 +5029,37 @@ function renderCoworkTranscriptActionItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkEmailThreadItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const artifact = payload.preparedArtifact || {};
+  const body = String(artifact.body || '').trim();
+  if(!body) return '';
+  const ready = workItem.status === 'needs_review';
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading">',
+        '<span>Private email draft</span>',
+        '<strong>' + escapeHtml(artifact.subject || payload.subject || workItem.title || 'Selected thread reply') + '</strong>',
+        '<small>' + (ready ? 'Ready for Leverage review' : 'Preparing reply') + '</small>',
+      '</div>',
+      '<div class="cowork-workstream-list"><article>',
+        '<strong>Draft</strong>',
+        '<pre class="timeline-source-email-preview">' + escapeHtml(body) + '</pre>',
+        '<div class="cowork-workstream-fields">',
+          coworkWorkstreamField('Reply outcome', payload.replyIntent || ''),
+          coworkWorkstreamField('Approval', 'Private VAL draft only. Review in Leverage before any external approval.'),
+        '</div>',
+      '</article></div>',
+      ready ? '<button type="button" data-cowork-open-email-thread-draft="' + escapeHtml(workItem.id || '') + '">Review draft in Leverage</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId.startsWith('transcript.');
+  const isEmailThread = entrypointId === 'email.thread';
   const sectionLabel = entrypointId === 'project.overview' ? 'Round Table focus' : entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.prepared_work' ? 'prepared work' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
@@ -5069,6 +5096,15 @@ function updateCoworkEntryContext(result = {}){
     : 'Build a complete set of workstreams for this project.';
   const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
   if(!context) return;
+  if(isEmailThread){
+    context.innerHTML = [
+      '<span>Executive Inbox</span>',
+      '<strong>' + escapeHtml(brief.subject || 'Selected email thread') + '</strong>',
+      '<p>' + escapeHtml(brief.objective || 'Prepare one review-only reply from this selected thread.') + '</p>',
+      '<small>Selected thread: ' + escapeHtml((brief.messages || []).length) + ' readable message(s). Nothing external happens here.</small>'
+    ].join('');
+    return;
+  }
   if(isTranscript){
     const receipt = brief.sourceReceipt || {};
     context.innerHTML = [
@@ -5100,7 +5136,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       workItemId:workItem.id || activeCoworkEntry?.workItemId || '',
       status:workItem.status || session.status || '',
       projectId:session.scope?.entityType === 'project_section' ? (session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || '') : '',
-      transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : ''
+      transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : '',
+      emailThreadId:session.scope?.entityType === 'email_thread' ? session.scope?.entityId || '' : ''
     };
   }
   updateCoworkEntryContext(result);
@@ -5145,18 +5182,22 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? renderCoworkTranscriptOverviewItem(workItem)
         : workItem.type === 'transcript_action_item'
           ? renderCoworkTranscriptActionItem(workItem)
+        : workItem.type === 'email_thread_draft'
+          ? renderCoworkEmailThreadItem(workItem)
         : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = workItem.status === 'applied' || session.status === 'completed';
-  const isTranscriptReadyForReview = !isComplete && session.entrypointId.startsWith('transcript.') && workItem.status === 'needs_review';
+  const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread') && workItem.status === 'needs_review';
   if(textarea){
     const completeLabel = session.entrypointId === 'transcript.working_brief'
       ? 'Meeting overview draft created.'
       : session.entrypointId === 'transcript.action_item'
         ? 'Transcript Commitment created.'
+      : session.entrypointId === 'email.thread'
+        ? 'Private email draft ready in Leverage.'
       : session.entrypointId === 'project.documents'
         ? 'Project document links applied.'
       : session.entrypointId === 'project.people'
@@ -5190,11 +5231,11 @@ function renderCoworkEntryResult(result = {}, options = {}){
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
-    const returnSurface = session.entrypointId.startsWith('transcript.') ? ' Transcripts' : ' Project Managers';
-    textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : isTranscriptReadyForReview ? 'Review the exact source above, then use Apply.' : coworkEntryPlaceholder(result.question || {});
-    textarea.disabled = isComplete || isTranscriptReadyForReview;
+    const returnSurface = session.entrypointId === 'email.thread' ? ' Executive Inbox' : (session.entrypointId.startsWith('transcript.') ? ' Transcripts' : ' Project Managers');
+    textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : isReadyForReview ? (session.entrypointId === 'email.thread' ? 'Review the private draft in Leverage.' : 'Review the exact source above, then use Apply.') : coworkEntryPlaceholder(result.question || {});
+    textarea.disabled = isComplete || isReadyForReview;
   }
-  if(submit) submit.disabled = isComplete || isTranscriptReadyForReview;
+  if(submit) submit.disabled = isComplete || isReadyForReview;
 }
 
 async function openProjectWorkstreamsCowork(node = null){
@@ -5674,14 +5715,14 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not save that answer. Nothing was changed. ' + error.message);
   }finally{
-    if(submit && activeCoworkEntry?.status !== 'applied') submit.disabled = false;
+    if(submit && activeCoworkEntry?.status !== 'applied' && activeCoworkEntry?.status !== 'needs_review') submit.disabled = false;
   }
   return true;
 }
@@ -7877,6 +7918,7 @@ function normalizeCorrespondenceDraft(draft = {}){
   return {
     id: draft.id || writer.id || source.conversationId || 'draft',
     draftId: draft.id || '',
+    messageId: source.currentMessageId || source.current_message_id || source.messageId || source.conversationContext?.current_message?.messageId || '',
     conversationId: source.conversationId || '',
     threadId: source.threadId || '',
     recipientEmail: source.to || source.recipientEmail || source.recipient || source.forwardTo || source.classification?.from?.email || source.conversationContext?.latest_inbound?.from?.email || '',
@@ -7917,6 +7959,7 @@ function normalizeCorrespondenceReadyItem(item = {}){
     id: item.id || draftId || item.conversationId || 'ready-correspondence',
     readyForYouId: item.id || '',
     draftId,
+    messageId: metadata.currentMessageId || metadata.current_message_id || metadata.messageId || metadata.conversationContext?.current_message?.messageId || item.messageId || '',
     conversationId: metadata.conversationId || item.conversationId || '',
     threadId: metadata.threadId || '',
     recipientEmail: metadata.to || metadata.recipientEmail || metadata.email || draft.to || draft.recipientEmail || '',
@@ -7955,6 +7998,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   return {
     id: 'gmail-scan-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
+    messageId: email.messageId || '',
     conversationId: email.threadId || email.messageId || '',
     threadId: email.threadId || '',
     recipientEmail: sender.email || source.to || '',
@@ -9121,6 +9165,58 @@ function openCorrespondenceReviewWorkspace(item = activeCorrespondenceItem){
   openWorkspaceShell('Executive Inbox review workspace', {returnTarget:'correspondence'});
 }
 
+async function openCorrespondenceThreadCowork(item = activeCorrespondenceItem){
+  if(!item) return;
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to prepare this selected thread. Nothing was changed.';
+    return;
+  }
+  const source = item.raw?.sourceContext || item.raw?.source_context || item.raw?.metadataJson || item.raw?.metadata || {};
+  const messageId = item.messageId || source.currentMessageId || source.current_message_id || source.messageId || source.conversationContext?.current_message?.messageId || '';
+  const threadId = item.threadId || source.threadId || source.conversationContext?.threadId || '';
+  const conversationId = item.conversationId || source.conversationId || source.conversationContext?.conversationId || '';
+  if(!messageId && !threadId && !conversationId){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs the durable selected email thread before it can prepare a reply. Nothing was changed.';
+    return;
+  }
+  activeCoworkEntry = {entrypointId:'email.thread',sessionId:'',workItemId:'',emailThreadId:messageId || threadId || conversationId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'correspondence',
+    title:'Prepare reply with VAL',
+    meaning:'Holding the readable messages and existing context for this selected Executive Inbox thread.',
+    context:[
+      'Thread: ' + (item.title || 'Selected email thread'),
+      item.senderName || item.senderEmail ? 'Sender: ' + (item.senderName || item.senderEmail) : '',
+      item.context ? 'Relationship/project: ' + item.context : '',
+      'No email, provider draft, calendar event, CRM record, or task will be changed from this Co-Work.'
+    ].filter(Boolean),
+    recommendation:'VAL will ask only for the outcome this reply should create, then prepare one private draft for Leverage review.',
+    placeholder:'Preparing the selected Executive Inbox thread...',
+    heading:'Preparing a reply for ' + (item.title || 'this thread'),
+    detail:'This conversation is scoped to one readable Executive Inbox thread.',
+    publicDetail:'Scoped to Executive Inbox: selected thread.',
+    lockContext:true
+  });
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'email.thread',
+      scope:{
+        entityType:'email_thread',
+        entityId:messageId || threadId || conversationId,
+        sectionId:'reply_draft',
+        provider:item.provider || '',
+        messageId,
+        threadId,
+        conversationId
+      }
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this selected Executive Inbox thread yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open this selected Executive Inbox thread. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
 async function handleCorrespondenceAction(action){
   if(action === 'show_rules'){
     toggleCorrespondenceRulesPanel();
@@ -9152,22 +9248,7 @@ async function handleCorrespondenceAction(action){
     return;
   }
   if(action === 'cowork_correspondence'){
-    openContextualCoworkSession({
-      returnTarget: 'correspondence',
-      title: 'Co-Work with VAL about this reply.',
-      meaning: item.whyNow || item.summary || 'This Co-Work space is scoped to the selected Executive Inbox item.',
-      context: [
-        'Prepared item: ' + (item.title || 'Reply draft'),
-        'Relationship/project: ' + (item.context || 'Context is still being resolved.'),
-        'Newest thread: ' + (item.threadMessages?.[0]?.body || item.summary || 'Thread context is still being resolved.'),
-        'VAL prepared: ' + (item.prepared || 'Draft context is available.'),
-        'Needs from user: ' + (item.needs || 'Review before external use.')
-      ],
-      recommendation: 'Use this to tune voice, decide whether to send, add missing context, or reshape the reply before approval.',
-      placeholder: 'What should VAL help you decide or rewrite about this reply?',
-      helper: '',
-      backWorkflow: 'cancel:correspondence'
-    });
+    await openCorrespondenceThreadCowork(item);
     return;
   }
   if(action === 'review'){
@@ -20323,6 +20404,14 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   runCowork('think');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
+  const emailDraftReview = event.target.closest('[data-cowork-open-email-thread-draft]');
+  if(emailDraftReview){
+    event.preventDefault();
+    event.stopPropagation();
+    await hydratePreparedWorkQueue();
+    openLeverageApprovalWorkspace();
+    return;
+  }
   const workstreamsApply = event.target.closest('[data-cowork-apply-workstreams]');
   const projectOnboardingApply = event.target.closest('[data-cowork-apply-project-onboarding]');
   const projectIdentityApply = event.target.closest('[data-cowork-apply-project-identity]');
