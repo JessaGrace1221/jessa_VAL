@@ -3913,7 +3913,7 @@ function projectScopedCoworkPacket(field = 'project_overview', project = activeP
   const packet = projectManagerPacket(item);
   const spec = field === 'project_interview'
     ? {title:'Continue project onboarding'}
-    : (projectCoworkSpec(field) || {});
+    : {title:projectCoworkScopeLabel(field)};
   const affectedObject = projectCoworkAffectedObject(field, item, packet);
   const sourceReceipts = projectCoworkSourceReceiptLines(item, packet);
   return {
@@ -4226,7 +4226,6 @@ function renderProjectRelationshipPicker(){
   return [
     '<div class="project-relationship-picker" aria-label="Choose relationships for this project">',
       options.map((option) => '<button type="button" data-project-relationship-choice="' + escapeHtml(option.name) + '"><strong>' + escapeHtml(option.name) + '</strong>' + (option.detail ? '<span>' + escapeHtml(option.detail) + '</span>' : '') + '</button>').join(''),
-      '<button type="button" class="create" data-project-relationship-create><strong>Create new relationship</strong><span>Add someone not listed here.</span></button>',
     '</div>'
   ].join('');
 }
@@ -4504,95 +4503,6 @@ function renderProjectManagerLoadingState(){
       '</div>',
     '</section>'
   ].join('');
-}
-
-function projectCoworkSpec(field = ''){
-  const projectName = activeProjectProfile?.name || 'this project';
-  const specs = {
-    what_this_is: {
-      title: 'Shape what this project is',
-      question: 'What is ' + projectName + ', who is it for, and what outcome should it create?',
-      detail: 'Include the audience, the promise, and the result this project is meant to produce.',
-      placeholder: 'Example: This project helps... by... so that...'
-    },
-    why_it_matters: {
-      title: 'Clarify why this matters',
-      question: 'What consequence, opportunity, relationship, or business reason makes this project worth attention?',
-      detail: 'Tell VAL what changes if this succeeds, who it affects, and why it matters now.',
-      placeholder: 'This matters because... It affects... The reason now is...'
-    },
-    next_move: {
-      title: 'Define the next move',
-      question: 'What is the next concrete move, who owns it, and when should it happen?',
-      detail: 'Give VAL one action it can manage, not a broad plan.',
-      placeholder: 'Next move: ... Owner: ... Timing: ...'
-    },
-    people_involved: {
-      title: 'Add people to this project',
-      question: 'Who belongs in this project, and what role does each person play?',
-      detail: 'Choose an existing relationship, or type the person, company, role, and what VAL should remember.',
-      placeholder: 'Name: ... Role in this project: ... Important context: ...'
-    },
-    documents_sources: {
-      title: 'Add documents or sources',
-      question: 'What document, link, source, or note belongs to this project?',
-      detail: 'Tell VAL what it is, why it matters, and how it should be used.',
-      placeholder: 'Source: ... Why it matters: ... Use it for...'
-    },
-    risk_blocker: {
-      title: 'Name the risk or blocker',
-      question: 'What could block this project, and what would reduce the risk?',
-      detail: 'Name the blocker, what it threatens, and the smallest protective move.',
-      placeholder: 'Risk: ... It affects... Protective move: ...'
-    },
-    working_narrative: {
-      title: 'Improve the working narrative',
-      question: 'What should the project manager narrative say right now?',
-      detail: 'Give VAL rough notes. It will rewrite them into a clear current-state narrative.',
-      placeholder: 'Rough notes for the project narrative...'
-    },
-    what_val_needs_next: {
-      title: 'Tell VAL what it needs next',
-      question: 'What does VAL need next to manage this project well?',
-      detail: 'Name the missing context, question, decision, source, or person VAL should pursue.',
-      placeholder: 'VAL needs... The question to ask is... The missing source is...'
-    },
-    sop_fit: {
-      title: 'Choose or adjust the SOP',
-      question: 'Which SOP should this project use, and what is different about this project?',
-      detail: 'Name the closest operating pattern and any important deviation VAL should not assume.',
-      placeholder: 'Use the ... SOP. This project is different because...'
-    },
-    workstreams: {
-      title: 'Define workstreams',
-      question: 'What are the main lanes of work this project manager needs to own?',
-      detail: 'List the lanes of work, not every tiny task.',
-      placeholder: 'Workstreams: dashboard, automations, API connections, metrics, partner nurture...'
-    },
-    milestones: {
-      title: 'Define milestones',
-      question: 'What milestones prove this project is moving?',
-      detail: 'Name the concrete checkpoints VAL should track.',
-      placeholder: 'Milestone 1: ... Milestone 2: ... Launch is complete when...'
-    },
-    monitoring_rules: {
-      title: 'Define monitoring rules',
-      question: 'After launch, what should VAL keep watching for this project?',
-      detail: 'Name metrics, signals, relationship changes, automation failures, or timing patterns.',
-      placeholder: 'VAL should monitor... Alert me when... Review monthly for...'
-    },
-    relationship_nurture: {
-      title: 'Define relationship nurture',
-      question: 'How should VAL help protect and grow the relationships connected to this project?',
-      detail: 'Name cadence, useful touches, trust risks, and what kind of outreach feels right.',
-      placeholder: 'For this relationship, VAL should... Avoid... Check in when...'
-    }
-  };
-  return specs[field] || {
-    title: 'Update project context',
-    question: 'What should VAL understand about this one part of ' + projectName + '?',
-    placeholder: 'Tell VAL what should change here.'
-  };
 }
 
 function projectCoworkWorkstreamSuggestions(project = activeProjectProfile){
@@ -6043,57 +5953,11 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'prepared_work') return openProjectPreparedWorkCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
-  const project = activeProjectProfile;
-  const spec = projectCoworkSpec(field);
-  const scopedPacket = projectScopedCoworkPacket(field, project);
-  const action = 'project:cowork:' + field;
-  const baseSource = projectSource(project, action);
-  const source = {
-    ...baseSource,
-    sourceItem:{
-      ...(baseSource.sourceItem || {}),
-      scopedCoworkPacket:scopedPacket
-    }
-  };
-  activeProjectCoworkTarget = {
-    field,
-    mode: options.mode || 'field_update',
-    projectId:project.id || project.projectId || '',
-    title:spec.title,
-    scopedPacket
-  };
-  openContextualCoworkSession({
-    returnTarget:'project',
-    title:spec.title,
-    meaning:spec.question,
-    context:projectScopedCoworkContextLines(scopedPacket),
-    recommendation:'Answer only for this one section. VAL will rewrite it as clear project-manager language and update the card.',
-    placeholder:spec.placeholder,
-    heading:spec.question,
-    detail:spec.detail || 'VAL will rewrite this into clear project-manager language.',
-    publicDetail:'Scoped to Project Managers: ' + projectCoworkScopeLabel(field) + '.',
-    lockContext:true
-  });
-  void ensureHearthClickPacket({node, packetName:'project_packet', action, allowBlockedForInspection:true, source}).then((preflight) => {
-    if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
-  }).catch(() => {});
+  if(projectIndexSourceLabel) projectIndexSourceLabel.textContent = 'This Project Managers section is not available until it has a source-specific workflow.';
 }
 
 function openProjectFieldCowork(field = '', node = null){
-  return openProjectScopedCowork(field, node, {mode:'field_update'});
-}
-
-function projectManagerRewrite(text = '', field = ''){
-  const clean = projectCleanText(text);
-  if(!clean) return '';
-  const sentence = clean.replace(/\s+/g, ' ').replace(/^[\-•\s]+/, '').trim();
-  if(field === 'next_move' && !/^(Define|Decide|Create|Send|Schedule|Review|Prepare|Ask|Choose|Map|Draft|Confirm|Source|Attach|Build)\b/i.test(sentence)){
-    return 'Next move: ' + sentence.charAt(0).toLowerCase() + sentence.slice(1);
-  }
-  if(field === 'risk_blocker' && !/^Risk/i.test(sentence)){
-    return 'Risk: ' + sentence.charAt(0).toLowerCase() + sentence.slice(1);
-  }
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return openProjectScopedCowork(field, node);
 }
 
 function appendProjectRelationshipNames(names = []){
@@ -6105,128 +5969,6 @@ function appendProjectRelationshipNames(names = []){
   });
   activeProjectProfile.relationships = merged;
   activeProjectProfile.sourceDetails = {...(activeProjectProfile.sourceDetails || {}), relationships:merged.join(', ')};
-}
-
-function applyProjectFieldUpdate(field = '', rawText = ''){
-  if(!activeProjectProfile) return '';
-  const rewritten = projectManagerRewrite(rawText, field);
-  if(!rewritten) return '';
-  if(field === 'what_this_is'){
-    activeProjectProfile.summary = rewritten;
-    activeProjectProfile.reality = rewritten;
-  } else if(field === 'why_it_matters'){
-    activeProjectProfile.whyItMatters = rewritten;
-    activeProjectProfile.decisionEvidence = rewritten;
-  } else if(field === 'next_move' || field === 'what_val_needs_next'){
-    activeProjectProfile.nextMove = rewritten;
-    activeProjectProfile.nextMoveEvidence = rewritten;
-  } else if(field === 'people_involved'){
-    appendProjectRelationshipNames(projectListFromValue(rewritten));
-  } else if(field === 'documents_sources'){
-    const current = projectCleanText(activeProjectProfile.documents || activeProjectProfile.sourceDetails?.documents);
-    activeProjectProfile.documents = [current, rewritten].filter(Boolean).join('; ');
-    activeProjectProfile.sourceDetails = {...(activeProjectProfile.sourceDetails || {}), documents:activeProjectProfile.documents};
-  } else if(field === 'risk_blocker'){
-    activeProjectProfile.risk = rewritten;
-    activeProjectProfile.blocker = rewritten;
-  } else if(field === 'working_narrative'){
-    activeProjectProfile.livingNarrative = rewritten;
-    activeProjectProfile.reality = rewritten;
-  } else if(field === 'sop_fit'){
-    const lower = rewritten.toLowerCase();
-    const match = Object.values(projectSopLibrary).find((sop) => lower.includes(sop.name.toLowerCase()) || lower.includes(sop.id.replace(/_/g, ' ')));
-    activeProjectProfile.sopId = match ? match.id : activeProjectProfile.sopId || 'new_sop';
-    activeProjectProfile.sopDeviations = [rewritten];
-  } else if(field === 'workstreams'){
-    activeProjectProfile.workstreams = projectListFromValue(rewritten);
-  } else if(field === 'milestones'){
-    activeProjectProfile.milestones = projectListFromValue(rewritten);
-  } else if(field === 'monitoring_rules'){
-    activeProjectProfile.monitoringRules = projectListFromValue(rewritten);
-  } else if(field === 'relationship_nurture'){
-    activeProjectProfile.relationshipNurtureRules = projectListFromValue(rewritten);
-  }
-  renderProjectManagerProfile(activeProjectProfile);
-  renderProjectRolodex();
-  return rewritten;
-}
-
-async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
-  if(!canUseApi || !activeProjectProfile || !rewritten) return null;
-  const details = normalizedProjectSourceDetails(activeProjectProfile);
-  const payload = {
-    projectId:activeProjectProfile.projectId || activeProjectProfile.id || activeProjectProfile.profileKey || activeProjectProfile.name || '',
-    projectProfileId:activeProjectProfile.id || '',
-    profileKey:activeProjectProfile.profileKey || '',
-    name:activeProjectProfile.name || 'Project',
-    summary:activeProjectProfile.summary || activeProjectProfile.reality || '',
-    documents:projectCleanText(activeProjectProfile.documents || details.documents),
-    relationships:projectCleanText(details.relationships || projectResolvedRelationships(activeProjectProfile).join(', ')),
-    rawContext:[
-      details.rawContext,
-      'Project Co-Work update (' + projectCoworkScopeLabel(field) + '): ' + rewritten
-    ].filter(Boolean).join('\n'),
-    status:activeProjectProfile.status || '',
-    desiredOutcome:activeProjectProfile.desiredOutcome || activeProjectProfile.outcome || '',
-    nextMove:activeProjectProfile.nextMove || '',
-    nextStepOwner:projectPersonName(activeProjectProfile.nextStepOwner || activeProjectProfile.owner || ''),
-    projectPhase:activeProjectProfile.projectPhase || '',
-    projectInterviewNotes:activeProjectProfile.projectInterviewNotes || '',
-    whatValNowKnows:activeProjectProfile.whatValNowKnows || '',
-    ownerMonitoringNotes:activeProjectProfile.ownerMonitoringNotes || '',
-    monitoringRules:Array.isArray(activeProjectProfile.monitoringRules) ? activeProjectProfile.monitoringRules.join('\n') : (activeProjectProfile.monitoringRules || ''),
-    workstreams:Array.isArray(activeProjectProfile.workstreams) ? activeProjectProfile.workstreams.join('\n') : (activeProjectProfile.workstreams || ''),
-    milestones:Array.isArray(activeProjectProfile.milestones) ? activeProjectProfile.milestones.join('\n') : (activeProjectProfile.milestones || ''),
-    relationshipNurtureRules:Array.isArray(activeProjectProfile.relationshipNurtureRules) ? activeProjectProfile.relationshipNurtureRules.join('\n') : (activeProjectProfile.relationshipNurtureRules || ''),
-    preparedWork:Array.isArray(activeProjectProfile.preparedWork) ? activeProjectProfile.preparedWork.map((item) => item.title || item.summary || item).join('\n') : (activeProjectProfile.preparedWork || ''),
-    needsProjectOnboarding:String(activeProjectProfile.needsProjectOnboarding === true),
-    projectOnboardingStatus:projectMetadataObject(activeProjectProfile).projectOnboarding?.status || '',
-    projectOnboardingFirstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
-    projectOnboardingFirstAnswer:projectMetadataObject(activeProjectProfile).projectOnboarding?.firstAnswer || '',
-    projectOnboardingOwnerMonitoringAnswer:projectMetadataObject(activeProjectProfile).projectOnboarding?.ownerMonitoringAnswer || '',
-    noExternalAction:true
-  };
-  try{
-    const result = await postJson('/api/projects/update', payload);
-    if(result?.project){
-      const incoming = result.dossier ? projectProfileFromDossier(result.dossier, activeProjectProfile) : projectProfileFromIndexItem(result.project);
-      applyProjectEditLocally(activeProjectProfile, payload, incoming);
-    }
-    projectIndexSourceLabel = 'Project section saved locally. No external action happened.';
-    updateProjectIndexSourceLabel();
-    renderProjectRolodex();
-    return result;
-  }catch(error){
-    projectIndexSourceLabel = 'Project section updated in this view, but local save failed: ' + error.message;
-    updateProjectIndexSourceLabel();
-    return null;
-  }
-}
-
-function projectFollowupQuestion(field = ''){
-  const questions = {
-    what_this_is:'What outcome should this project create when it is working?',
-    why_it_matters:'Who benefits most if this succeeds?',
-    next_move:'Who owns this next move, and when should it happen?',
-    people_involved:'What role does each person play?',
-    prepared_work:'Should VAL draft, organize, schedule, or simply watch this?',
-    documents_sources:'Should this source change the project plan or just stay attached?',
-    risk_blocker:'What would make this risk smaller this week?',
-    working_narrative:'What changed most recently that should shape this story?',
-    what_val_needs_next:'What should VAL ask you next if it gets stuck?'
-  };
-  return questions[field] || 'What else would make this more useful?';
-}
-
-function projectCoworkSavedMessage(rewritten = '', field = ''){
-  const nextQuestion = projectFollowupQuestion(field);
-  return 'Updated this section: ' + rewritten + '\n\n' + nextQuestion;
-}
-
-function renderProjectCoworkUpdatedResponse(rewritten = '', field = ''){
-  if(!rewritten) return;
-  appendHomeCoworkMessage('user', rewritten);
-  appendHomeCoworkMessage('val', projectCoworkSavedMessage(rewritten, field));
 }
 
 function setProjectOwnerStatus(project = activeProjectProfile, message = ''){
@@ -11382,16 +11124,31 @@ async function openDrawerCoworkFromIcon(event){
     openMeetingPrepCoworkSession();
     return;
   }
+  if(mode === 'relationship'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'relationship_packet';
+    await openRelationshipOverviewCowork(activeRelationshipProfile);
+    return;
+  }
+  if(mode === 'project'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'project_packet';
+    await openProjectOverviewCowork(drawerCoworkIcon);
+    return;
+  }
+  if(mode === 'timeline'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'timeline_packet';
+    await openTimelineCoworkSession();
+    return;
+  }
+  if(mode === 'correspondence'){
+    drawerCoworkIcon.dataset.valVariablePacket = 'email_packet';
+    await openCorrespondenceThreadCowork(activeCorrespondenceItem);
+    return;
+  }
   const packetByMode = {
-    relationship: 'relationship_packet',
-    project: 'project_packet',
-    timeline: 'timeline_packet',
-    correspondence: 'email_packet',
-    val: 'val_packet',
     meeting_prep: 'meeting_prep_packet'
   };
   drawerCoworkIcon.dataset.valVariablePacket = packetByMode[mode] || 'cowork_packet';
-  openContextualCoworkSession(drawerCoworkContext(mode));
+  drawerCoworkIcon.hidden = true;
 }
 
 drawerCoworkIcon?.addEventListener('click', openDrawerCoworkFromIcon);
@@ -12278,24 +12035,9 @@ async function handleTimelineReviewAction(reviewId, action){
 }
 
 function openTimelineCoworkSession(){
-  const proposals = currentTimelineReviewItems || [];
-  const firstProposal = proposals[0] || null;
-  openContextualCoworkSession({
-    returnTarget: 'timeline',
-    title: 'Co-Work with VAL about Transcripts.',
-    meaning: 'This Co-Work space is scoped to calendar, transcripts, proposed notes, proposed tasks, and follow-through.',
-    context: [
-      proposals.length ? proposals.length + ' transcript proposal' + (proposals.length === 1 ? '' : 's') + ' currently loaded.' : 'No transcript proposals are loaded yet.',
-      firstProposal?.title ? 'First proposal: ' + firstProposal.title : '',
-      firstProposal?.eventTitle ? 'Event: ' + firstProposal.eventTitle : '',
-      firstProposal?.project ? 'Project: ' + firstProposal.project : '',
-      firstProposal?.relationships?.length ? 'Relationships: ' + firstProposal.relationships.join(', ') : ''
-    ].filter(Boolean),
-    recommendation: 'Use this to decide what should become notes, tasks, drafts, commitments, or meeting prep before approving anything.',
-    placeholder: 'What should VAL help you understand or prepare from the timeline, transcripts, or tasks?',
-    helper: 'This Co-Work note is tagged to Transcripts. Creating final notes/tasks or linking records still requires review.',
-    backWorkflow: 'cancel:timeline'
-  });
+  const transcriptId = currentTimelineTranscript?.id || '';
+  if(transcriptId) return openTranscriptWorkingBriefCowork(transcriptId);
+  if(timelineStatusPanel) timelineStatusPanel.textContent = 'Select a transcript before opening its Working Brief. VAL will not borrow another meeting or timeline context.';
 }
 
 async function hydrateTimelineStatus(){
@@ -13191,75 +12933,6 @@ function coworkPublicDetail(returnTarget = 'home'){
     workspace: 'VAL is holding this card privately.'
   };
   return labels[returnTarget] || 'VAL is holding the relevant context privately.';
-}
-
-function drawerCoworkContext(mode = ''){
-  if(mode === 'relationship'){
-    const profile = activeRelationshipProfile || relationshipProfiles.aric;
-    return {
-      returnTarget: 'relationship',
-      title: 'Relationship: ' + (profile?.name || 'active relationship'),
-      meaning: 'VAL is holding the active relationship context privately.',
-      context: [
-        'Relationship: ' + (profile?.name || 'Unknown'),
-        'Current reality: ' + (profile?.evidence || ''),
-        'Executive assessment: ' + (profile?.patterns || ''),
-        'Strategic importance: ' + (profile?.meaning || '')
-      ],
-      placeholder: 'What should VAL help you think through about this relationship?'
-    };
-  }
-  if(mode === 'project'){
-    const project = activeProjectProfile || projectProfiles.frisson;
-    return {
-      returnTarget: 'project',
-      title: 'Project: ' + (project?.name || 'active project'),
-      meaning: 'VAL is holding the active project context privately.',
-      context: [
-        'Project: ' + (project?.name || 'Unknown'),
-        'Current reality: ' + (project?.reality || project?.status || ''),
-        'Source receipts: ' + (project?.sourceReceipts || '')
-      ],
-      placeholder: 'What should VAL help you think through about this project?'
-    };
-  }
-  if(mode === 'timeline'){
-    const firstProposal = currentTimelineReviewItems?.[0] || null;
-    return {
-      returnTarget: 'timeline',
-      title: firstProposal?.eventTitle ? 'Transcript: ' + firstProposal.eventTitle : 'Transcripts',
-      meaning: 'VAL is holding calendar, transcript, task, and follow-through context privately.',
-      context: [
-        firstProposal?.title ? 'Proposal: ' + firstProposal.title : '',
-        firstProposal?.eventTitle ? 'Event: ' + firstProposal.eventTitle : '',
-        firstProposal?.project ? 'Project: ' + firstProposal.project : '',
-        firstProposal?.relationships?.length ? 'Relationships: ' + firstProposal.relationships.join(', ') : ''
-      ],
-      placeholder: 'What should VAL help you understand or prepare from the timeline?'
-    };
-  }
-  if(mode === 'correspondence'){
-    const item = activeCorrespondenceItem || {};
-    return {
-      returnTarget: 'correspondence',
-      title: 'Reply: ' + compactSentence(item.title || item.subject || 'selected message', 'selected message'),
-      meaning: item.whyNow || item.summary || 'VAL is holding this Executive Inbox item privately.',
-      context: [
-        'Prepared item: ' + (item.title || item.subject || 'Reply draft'),
-        'Relationship/project: ' + (item.context || ''),
-        'VAL prepared: ' + (item.prepared || ''),
-        'Needs from user: ' + (item.needs || '')
-      ],
-      placeholder: 'What should VAL help you decide or rewrite about this reply?'
-    };
-  }
-  return {
-    returnTarget: 'home',
-    title: 'VAL workspace',
-    meaning: 'VAL is holding the active context privately.',
-    context: [],
-    placeholder: 'What should VAL help you think through here?'
-  };
 }
 
 function portalPhraseForWorkspace(workspace = {}){
@@ -20094,23 +19767,6 @@ drawerTray.addEventListener('click', async (event) => {
     event.stopPropagation();
     return;
   }
-  const projectRelationshipCreate = event.target.closest('[data-project-relationship-create]');
-  if(projectRelationshipCreate){
-    event.preventDefault();
-    event.stopPropagation();
-    activeProjectCoworkTarget = {field:'people_involved', mode:'field_update', projectId:activeProjectProfile?.id || '', title:'Create a relationship for this project'};
-    openContextualCoworkSession({
-      returnTarget:'project',
-      title:'Create a relationship for this project',
-      meaning:'Who should VAL add to this project?',
-      context:['Project: ' + (activeProjectProfile?.name || 'Project')],
-      recommendation:"Give VAL the person's name, company, role in the project, and anything important to remember.",
-      placeholder:'Name, company, role, and what VAL should remember.',
-      publicDetail:'Scoped to Project Managers: People involved.',
-      lockContext:true
-    });
-    return;
-  }
   const projectCoworkScope = event.target.closest('[data-project-cowork-scope]');
   if(projectCoworkScope){
     event.preventDefault();
@@ -20234,19 +19890,6 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   if(!event.target.matches('[data-home-cowork-form]')) return;
   event.preventDefault();
   if(await submitActiveCoworkEntry()) return;
-  if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode === 'field_update'){
-    const input = workspaceInputValue('cowork');
-    if(!projectCleanText(input)) return;
-    const rewritten = applyProjectFieldUpdate(activeProjectCoworkTarget.field, input);
-    renderProjectCoworkUpdatedResponse(rewritten, activeProjectCoworkTarget.field);
-    await persistProjectCoworkFieldUpdate(activeProjectCoworkTarget.field, rewritten);
-    const textarea = event.target.querySelector('[data-workspace-input="cowork"]');
-    if(textarea){
-      textarea.value = '';
-      textarea.placeholder = projectFollowupQuestion(activeProjectCoworkTarget.field);
-    }
-    return;
-  }
   runCowork('think');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {

@@ -105,9 +105,9 @@ For transcripts, the exact Krisp Action Items and Key Points remain an immutable
 
 ## Project Managers
 
-The Project Managers drawer is the most complete current start. Its existing field-level prompts are useful, but the current path is only a partial implementation: it passes a selected field and source summaries into a generic chat route, then uses a simple local rewrite/list parser to update the page. It does not yet use a canonical Working Brief, a completion-oriented question plan, or a reusable apply/receipt action.
+The Project Managers drawer is the most complete current start. Every currently exposed field-level Co-Work control routes to one registered, selected-project entry with a Working Brief, completion-oriented question plan, internal Apply, receipt, and return path. An unknown or unmapped project field refuses to open a generic conversation rather than guessing how to update the project.
 
-The following registry is the required replacement.
+The following registry is the implemented contract for those entry points.
 
 | Entry id | Visible trigger or section | Objective | Completion condition | Packet write / visible result |
 |---|---|---|---|---|
@@ -118,7 +118,7 @@ The following registry is the required replacement.
 | `project.next_move` | `Next move` / `Decide the next narrow move` | Commit to the smallest meaningful move. | One concrete move has an owner, timing or trigger, and source/decision basis. | `project_next_action_packet`; next-move card and Alignment only when an executive loop remains open. |
 | `project.people` | `People involved` | Connect the correct existing relationships and roles, including one project owner. | Each added person has a role; one owner is explicit. | `project_relationships_packet`, `project_owner_packet`, and local project-relationship links; people card. |
 | `project.prepared_work` | `Prepared work` | Decide what VAL should prepare and the source/approval boundary. | A typed PreparedArtifact proposal has a source, audience, and review action. | `project_prepared_work_packets`; Project Managers and Leverage. |
-| `project.documents` | `Documents / sources` | Attach or correctly interpret a source without altering it. | Document receipt is linked to the project and its intended use is known. | `document_receipt` and project source references; documents card and Documents drawer. |
+| `project.documents` | `Documents / sources` | Attach or correctly interpret a source without altering it. | Document receipt is linked to the project and its intended use is known. | `document_receipt` and project source references; project evidence and internal document record. |
 | `project.risk` | `Risk / blocker` | Make a risk concrete and choose its smallest protective move. | Risk, impact, owner, mitigation, and watch condition are known. | `project_risk_packet`; risk/focus module. |
 | `project.narrative` | `Working narrative` | Make the current state understandable to the executive. | A source-backed current-state narrative is prepared and applied. | `project_manager_judgment_packet.current_reality`; narrative card. |
 | `project.needs_next` | `What VAL needs next` | Identify the one missing fact, decision, source, or person preventing safe management. | One next question or acquisition task is explicit. | `project_interview_packet`; Project Interview/Alignment when executive judgment is needed. |
@@ -280,11 +280,7 @@ There is no visible `commitment.follow_through` or `document.interpret` Co-Work 
 
 ## Lead Intelligence
 
-| Entry id | Scope | Objective | Completion condition | Writes / result |
-|---|---|---|---|---|
-| `lead.run` | One protected scraper configuration, preview, selected rows, and connection status. | Improve criteria, inspect a result, or decide what may be approved for import. | A revised configuration, preview decision, or import approval packet is ready. | Lead Intelligence Packet and preview/import receipt. |
-
-Lead Intelligence must continue to use the protected GOALL, Frisson, and Westwood scraper contracts. Co-Work may explain or refine a run; it may not bypass the configured preview and approve/hold flow.
+Lead Intelligence has no Co-Work route. It continues to use the protected GOALL, Frisson, and Westwood scraper contracts: configure or load criteria, run a preview, approve or hold selected results, then import only approved rows. Future work may improve its presentation, but must not add a conversational route or bypass preview and approval.
 
 ## VAL Drawer
 
@@ -306,15 +302,15 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First seventeen canonical slices complete | `project.overview`, `project.identity`, `project.onboarding`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.why_it_matters`, `project.risk`, `project.narrative`, `project.needs_next`, `project.sop`, `project.phase`, `project.prepared_work`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. Top `Co-Work`, `Start onboarding chat`, `Continue onboarding chat`, `Project Interview`, `What this is`, `Why it matters`, `Working narrative`, `What VAL needs next`, `Operating System`, `Current Phase`, `Prepared work`, `People involved`, `Documents / sources`, `Risk / blocker`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | All exposed field actions use canonical entries | `project.overview`, `project.identity`, `project.onboarding`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.why_it_matters`, `project.risk`, `project.narrative`, `project.needs_next`, `project.sop`, `project.phase`, `project.prepared_work`, `project.workstreams`, and `project.next_move` have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. Top `Co-Work`, onboarding, and every exposed Project Managers field now route to one of these entries rather than generic chat. | A new Project Managers section must be given its own registered entry before its Co-Work control is exposed; unmapped sections show an unavailable state. |
 | Transcripts | First two canonical slices complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. `transcript.action_item` turns one selected exact Action Item into one review-gated internal Commitment, with no inferred assignee or changed wording. The legacy freeform chat and direct transcript mutation endpoint have been removed. | Typed packet outputs for transcript-derived project, relationship, and other task work still need their own scoped entries. |
 | Executive Inbox | First canonical slice complete | `email.thread` now receives one durable selected message/thread, loads its readable messages, asks for one reply outcome, and prepares one private draft for Leverage review without changing an external system. | Additional typed email actions still need their own contracts. |
 | Stewardship | First canonical slice complete | `relationship.overview` now receives one selected relationship, readable relationship receipts, one executive direction, and writes only a review-gated internal next stewardship move with an action receipt. | Individual relationship-card contracts still need their own field-targeted entries; they currently use the canonical overview rather than generic chat. |
 | Internal evidence and follow-through | Not a drawer | Commitments and documents remain source-linked internal records used by Executive Inbox, Project Managers, Stewardship, Transcripts, and Leverage. | Source-specific canonical entries cover the executive interaction; no generic document or commitment Co-Work may reappear. |
-| Lead Intelligence | Unmapped Co-Work | Protected scraper flows exist. | Scoped Co-Work entry for a specific run without bypassing approval flow. |
+| Lead Intelligence | No Co-Work | Protected scraper preview, approval, and import flows exist. | Keep the current scraper behavior intact; future work is presentation only and must not add a Co-Work route. |
 | VAL drawer | Structured, not Co-Work | Witnessing and Teach VAL prompt suites are protected. | Explicit handoff only when a context-specific Co-Work task is appropriate. |
 
-This is the source-of-truth assessment: VAL does **not** yet have a complete, implemented context-and-prompt map for every active Co-Work button. It has enough raw contracts to build one safely, and this registry is the gate that makes the rebuild cohesive.
+This is the source-of-truth assessment: the active core drawer routes now have an implemented, source-specific context and prompt map. Home, meeting-prep, and future VAL drawer routes remain outside this core-drawer acceptance gate and must not borrow context from it.
 
 ## Implementation Gate
 

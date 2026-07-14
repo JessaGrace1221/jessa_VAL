@@ -222,7 +222,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /function openProjectFieldCowork/);
   assert.match(hearthJs, /function openProjectScopedCowork/);
   assert.match(hearthJs, /function projectScopedCoworkPacket/);
-  assert.match(hearthJs, /function applyProjectFieldUpdate/);
+  assert.doesNotMatch(hearthJs, /function applyProjectFieldUpdate/);
   assert.match(hearthJs, /function renderProjectRelationshipPicker/);
   assert.match(hearthJs, /function renderProjectPinControl/);
   assert.match(hearthJs, /function renderProjectEditForm/);
@@ -248,19 +248,16 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /source_receipts/);
   assert.match(hearthJs, /lockContext:true/);
   assert.match(hearthJs, /activeCoworkContextLocked/);
-  assert.match(hearthJs, /activeProjectCoworkTarget\.mode === 'field_update'/);
+  assert.doesNotMatch(hearthJs, /activeProjectCoworkTarget\.mode === 'field_update'/);
+  assert.match(hearthJs, /section is not available until it has a source-specific workflow/);
   assert.match(hearthJs, /if\(field === 'prepared_work'\) return openProjectPreparedWorkCowork/);
   assert.match(hearthJs, /project:cowork:/);
   assert.match(hearthJs, /packetName:'project_packet'/);
-  assert.match(hearthJs, /heading:spec\.question/);
-  assert.match(hearthJs, /detail:spec\.detail/);
-  assert.match(hearthJs, /What consequence, opportunity, relationship, or business reason makes this project worth attention/);
-  assert.match(hearthJs, /What is the next concrete move, who owns it, and when should it happen/);
   assert.match(hearthJs, /data-project-cowork-field/);
   assert.match(hearthJs, /data-project-relationship-choice/);
-  assert.match(hearthJs, /data-project-relationship-create/);
+  assert.doesNotMatch(hearthJs, /data-project-relationship-create/);
   assert.match(hearthJs, /activeProjectCoworkTarget/);
-  assert.match(hearthJs, /workspaceReturnTarget === 'project' && activeProjectCoworkTarget\?\.field/);
+  assert.doesNotMatch(hearthJs, /workspaceReturnTarget === 'project' && activeProjectCoworkTarget\?\.field/);
   assert.match(hearthJs, /project_manager_judgment_packet/);
   assert.match(hearthJs, /project_next_action_packet/);
   assert.match(hearthJs, /project_prepared_work_packets/);
@@ -603,7 +600,8 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.doesNotMatch(hearthHtml, /data-timeline-action="cowork_timeline"/);
   assert.match(hearthJs, /mode === 'timeline'/);
   assert.match(hearthJs, /function openTimelineCoworkSession/);
-  assert.match(hearthJs, /returnTarget: 'timeline'/);
+  assert.match(hearthJs, /returnTarget:'timeline'/);
+  assert.match(hearthJs, /return openTranscriptWorkingBriefCowork\(transcriptId\);/);
   assert.match(hearthJs, /restoreTimelineWindow/);
   assert.match(hearthCss, /\.drawer-cowork-orb/);
   assert.match(hearthJs, /const timelineReviewDecisions/);
@@ -1227,10 +1225,12 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
 test('Hearth Co-Work opens immediately and above active drawers', () => {
   const homeCowork = hearthJs.match(/async function openCoworkSessionWithPacket[\s\S]*?\n}\n\nasync function openTeachValSessionWithPacket/)[0];
   const projectCowork = hearthJs.match(/async function openProjectScopedCowork[\s\S]*?\n}\n\nfunction openProjectFieldCowork/)[0];
+  const projectOverviewCowork = hearthJs.match(/async function openProjectOverviewCowork[\s\S]*?\n}\n\nasync function openProjectOnboardingCowork/)[0];
   assert.ok(homeCowork.indexOf('openCoworkSession();') < homeCowork.indexOf('ensureHearthClickPacket'));
-  assert.ok(projectCowork.indexOf('openContextualCoworkSession') < projectCowork.indexOf('ensureHearthClickPacket'));
+  assert.match(projectCowork, /return openProjectOverviewCowork\(node\);/);
+  assert.ok(projectOverviewCowork.indexOf('openContextualCoworkSession') < projectOverviewCowork.indexOf('ensureHearthClickPacket'));
   assert.match(homeCowork, /allowBlockedForInspection:true/);
-  assert.match(projectCowork, /allowBlockedForInspection:true/);
+  assert.match(projectOverviewCowork, /allowBlockedForInspection:true/);
   assert.match(hearthCss, /\.desk-workspace\.home-cowork-mode\{\n  position:fixed;\n  z-index:1800;/);
   assert.match(hearthCss, /\.hearth-shell \.desk-workspace\.home-cowork-mode\[aria-hidden="false"\]\{\n  z-index:1800;/);
   assert.match(hearthCss, /\.retrieval-system\.open\{\n  z-index:1300/);
@@ -1806,7 +1806,7 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
   assert.match(hearthJs, /How can I help with /);
   assert.match(hearthJs, /Approved and ' \+ verb/);
   assert.match(hearthJs, /data-home-room-source/);
-  assert.match(hearthJs, /Co-Work with VAL about/);
+  assert.doesNotMatch(hearthJs, /Co-Work with VAL about/);
   assert.match(hearthJs, /can move now/);
   assert.match(hearthJs, /answered something that matters/);
   assert.match(hearthJs, /deserves your first decision/);

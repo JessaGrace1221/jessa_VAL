@@ -950,7 +950,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'sop_fit'\) return openProjectOperatingSystemCowork/);
   assert.match(hearth,/if\(field === 'project_phase'\) return openProjectPhaseCowork/);
   assert.match(hearth,/if\(field === 'prepared_work'\) return openProjectPreparedWorkCowork/);
-  assert.match(hearth,/activeProjectCoworkTarget\.mode === 'field_update'/);
+  assert.doesNotMatch(hearth,/activeProjectCoworkTarget\.mode === 'field_update'/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
