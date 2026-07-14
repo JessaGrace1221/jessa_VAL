@@ -16810,6 +16810,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const workstreams=Array.isArray(patch.workstreams)?patch.workstreams:[];
     const milestones=Array.isArray(patch.milestones)?patch.milestones:[];
     const relationshipNurtureRules=Array.isArray(patch.relationshipNurtureRules)?patch.relationshipNurtureRules:[];
+    const projectRisk=patch.projectRisk&&typeof patch.projectRisk==='object'&&!Array.isArray(patch.projectRisk)?patch.projectRisk:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16863,6 +16864,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(workstreams.length?{workstreams}:{}),
       ...(milestones.length?{milestones}:{}),
       ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
+      ...(projectRisk?{projectRisk}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17504,6 +17506,7 @@ function projectIndexItemFromProfile(profile={}){
     workstreams:Array.isArray(metadata.workstreams)?metadata.workstreams:[],
     milestones:Array.isArray(metadata.milestones)?metadata.milestones:[],
     relationshipNurtureRules:Array.isArray(metadata.relationshipNurtureRules)?metadata.relationshipNurtureRules:[],
+    projectRisk:metadata.projectRisk&&typeof metadata.projectRisk==='object'&&!Array.isArray(metadata.projectRisk)?metadata.projectRisk:null,
     projectPeople:Array.isArray(metadata.projectPeople)?metadata.projectPeople:[],
     projectDocuments:Array.isArray(metadata.projectDocuments)?metadata.projectDocuments:[],
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
@@ -24947,6 +24950,63 @@ async function applyCoworkProjectRelationshipNurture({projectId,projectName='',r
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectRisk({projectId,projectName='',projectRisk={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const raw=projectRisk&&typeof projectRisk==='object'&&!Array.isArray(projectRisk)?projectRisk:{};
+  const assessment=String(raw.assessment||raw.status||'material_risk').trim().toLowerCase()==='no_material_risk'?'no_material_risk':'material_risk';
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  let preparedRisk;
+  if(assessment==='no_material_risk'){
+    const reviewBasis=String(raw.reviewBasis||raw.review_basis||raw.basis||'').trim();
+    if(!reviewBasis) return null;
+    preparedRisk={
+      id:String(raw.id||stableKey(`project_risk_${projectId}_no_material_risk`)).trim(),
+      assessment,
+      reviewBasis,
+      sourceRefs:refs
+    };
+  }else{
+    const linkedPeople=Array.isArray(current.projectPeople) ? current.projectPeople : [];
+    const peopleById=new Map(linkedPeople.map((person)=>[String(person.relationshipId||'').trim(),person]).filter(([id])=>id));
+    const person=peopleById.get(String(raw.ownerId||raw.owner_id||'').trim());
+    const riskType=String(raw.riskType||raw.risk_type||raw.type||'').trim();
+    const riskSummary=String(raw.riskSummary||raw.risk_summary||raw.risk||'').trim();
+    const impact=String(raw.impact||raw.whyItMatters||raw.why_it_matters||raw.ifIgnored||raw.if_ignored||'').trim();
+    const severity=String(raw.severity||'').trim();
+    const mitigation=String(raw.mitigation||raw.mitigationNextStep||raw.mitigation_next_step||'').trim();
+    const watchCondition=String(raw.watchCondition||raw.watch_condition||raw.trigger||'').trim();
+    const confidence=String(raw.confidence||'').trim();
+    if(!person||!riskType||!riskSummary||!impact||!severity||!mitigation||!watchCondition||!confidence) return null;
+    preparedRisk={
+      id:String(raw.id||stableKey(`project_risk_${projectId}_${riskSummary}`)).trim(),
+      assessment,
+      riskType,
+      riskSummary,
+      impact,
+      severity,
+      ownerId:String(person.relationshipId),
+      ownerName:String(person.name),
+      mitigation,
+      watchCondition,
+      confidence,
+      sourceRefs:refs
+    };
+  }
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    projectRisk:preparedRisk,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work risk assessment applied from session ${sessionId||'unknown'}: ${sourceSummary||'Project Managers risk review.'}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24985,6 +25045,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectMilestones:applyCoworkProjectMilestones,
   applyProjectMonitoring:applyCoworkProjectMonitoring,
   applyProjectRelationshipNurture:applyCoworkProjectRelationshipNurture,
+  applyProjectRisk:applyCoworkProjectRisk,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

@@ -586,6 +586,143 @@ function projectRelationshipNurtureQuestion(state={},brief={}){
   };
 }
 
+function projectRiskOwnerCandidate(value='',candidates=[]){
+  return nurtureRelationshipCandidate(value,candidates);
+}
+function projectRiskTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {riskSummary:value} : (value || {});
+  const assessment=compactText(raw.assessment || raw.status || raw.riskStatus || '',80).toLowerCase() === 'no_material_risk' ? 'no_material_risk' : 'material_risk';
+  const ownerCandidate=projectRiskOwnerCandidate(raw.ownerId || raw.owner_id || raw.ownerName || raw.owner_name || raw.owner || raw.accountableOwner || raw.accountable_owner || '',brief.linkedRelationships);
+  const impact=compactText(raw.impact || raw.whyItMatters || raw.why_it_matters || raw.ifIgnored || raw.if_ignored || '',500);
+  return {
+    id:compactText(raw.id || stableKey(`project_risk_${brief.entityId || brief.projectName || 'project'}_${raw.riskSummary || raw.risk_summary || raw.risk || raw.reviewBasis || raw.review_basis || ''}`),220),
+    assessment,
+    riskType:compactText(raw.riskType || raw.risk_type || raw.type || '',180),
+    riskSummary:compactText(raw.riskSummary || raw.risk_summary || raw.risk || raw.summary || '',500),
+    impact,
+    severity:compactText(raw.severity || '',100),
+    ownerId:compactText(ownerCandidate?.id || raw.ownerId || raw.owner_id || '',220),
+    ownerName:compactText(ownerCandidate?.name || raw.ownerName || raw.owner_name || raw.owner || raw.accountableOwner || raw.accountable_owner || '',180),
+    mitigation:compactText(raw.mitigation || raw.mitigationNextStep || raw.mitigation_next_step || raw.protectiveMove || raw.protective_move || '',500),
+    watchCondition:compactText(raw.watchCondition || raw.watch_condition || raw.trigger || raw.whenToSurface || raw.when_to_surface || '',500),
+    confidence:compactText(raw.confidence || '',120),
+    reviewBasis:compactText(raw.reviewBasis || raw.review_basis || raw.basis || raw.reason || '',500),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectRisk(value={},brief={}){
+  return projectRiskTemplate(value,brief);
+}
+function projectRiskHasMaterialAssessment(risk={}){
+  return risk.assessment !== 'no_material_risk';
+}
+function missingProjectRiskFields(risk={},brief={}){
+  const normalized=normalizeProjectRisk(risk,brief);
+  if(!projectRiskHasMaterialAssessment(normalized)) return compactText(normalized.reviewBasis) ? [] : ['review basis'];
+  const missing=[];
+  if(!compactText(normalized.riskType)) missing.push('risk type');
+  if(!compactText(normalized.riskSummary)) missing.push('risk');
+  if(!compactText(normalized.impact)) missing.push('impact if ignored');
+  if(!compactText(normalized.severity)) missing.push('severity');
+  if(!projectRiskOwnerCandidate(normalized.ownerId || normalized.ownerName,brief.linkedRelationships)) missing.push('existing project relationship accountable for it');
+  if(!compactText(normalized.mitigation)) missing.push('smallest mitigation');
+  if(!compactText(normalized.watchCondition)) missing.push('watch condition');
+  if(!compactText(normalized.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectRiskLine(value={},brief={}){
+  const risk=normalizeProjectRisk(value,brief);
+  if(!projectRiskHasMaterialAssessment(risk)) return 'No material risk | basis: ' + (risk.reviewBasis || '...');
+  return [
+    risk.riskType || 'Risk type',
+    risk.riskSummary || 'Risk',
+    'impact if ignored: ' + (risk.impact || '...'),
+    'severity: ' + (risk.severity || '...'),
+    'accountable person: ' + (risk.ownerName || '...'),
+    'smallest mitigation: ' + (risk.mitigation || '...'),
+    'watch condition: ' + (risk.watchCondition || '...'),
+    'confidence: ' + (risk.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectRisk(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectRisk(current,brief);
+  const noRisk=source.match(/^\s*(?:no\s+(?:current\s+)?material\s+risk|no\s+risk)\s*(?::|\||-)?\s*(.*)$/i);
+  if(noRisk) return normalizeProjectRisk({assessment:'no_material_risk',reviewBasis:noRisk[1] || '',sourceRefs:brief.sourceRefs},brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let riskType=monitoringValueFromLine(source,'risk type|type');
+  let riskSummary=monitoringValueFromLine(source,'risk summary|risk|blocker');
+  let impact=monitoringValueFromLine(source,'impact if ignored|impact|why it matters|if ignored');
+  let severity=monitoringValueFromLine(source,'severity');
+  let ownerName=monitoringValueFromLine(source,'accountable person|accountable owner|owner');
+  let mitigation=monitoringValueFromLine(source,'smallest mitigation|mitigation|protective move');
+  let watchCondition=monitoringValueFromLine(source,'watch condition|watch|surface when|trigger');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 8){
+    riskType=riskType || parts[0].replace(/^\s*(?:risk type|type)\s*:\s*/i,'');
+    riskSummary=riskSummary || parts[1].replace(/^\s*(?:risk summary|risk|blocker)\s*:\s*/i,'');
+    impact=impact || parts[2].replace(/^\s*(?:impact if ignored|impact|why it matters|if ignored)\s*:\s*/i,'');
+    severity=severity || parts[3].replace(/^\s*severity\s*:\s*/i,'');
+    ownerName=ownerName || parts[4].replace(/^\s*(?:accountable person|accountable owner|owner)\s*:\s*/i,'');
+    mitigation=mitigation || parts[5].replace(/^\s*(?:smallest mitigation|mitigation|protective move)\s*:\s*/i,'');
+    watchCondition=watchCondition || parts[6].replace(/^\s*(?:watch condition|watch|surface when|trigger)\s*:\s*/i,'');
+    confidence=confidence || parts[7].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectRisk({assessment:'material_risk',riskType,riskSummary,impact,severity,ownerName,mitigation,watchCondition,confidence,sourceRefs:brief.sourceRefs},brief);
+}
+function buildProjectRiskBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const recorded=safeArray(project.projectPeople || metadata.projectPeople);
+  const linkedRelationships=recorded.map((person)=>relationshipCandidate({
+    id:person.relationshipId || person.relationship_id || person.id,
+    displayName:person.name || person.displayName,
+    email:person.email,
+    role:person.role
+  })).filter((candidate)=>candidate.id && candidate.name);
+  const references=projectIdentityReferences(project,input);
+  const legacyRisk=compactText(project.risk || project.riskSummary || metadata.risk || metadata.riskSummary || '',500);
+  const existingRaw=project.projectRisk || metadata.projectRisk || (legacyRisk ? {assessment:'material_risk',riskSummary:legacyRisk,ownerName:project.nextStepOwner || metadata.owner?.name || '',mitigation:project.nextMove || metadata.nextMove || ''} : {});
+  const existingRisk=normalizeProjectRisk(existingRaw,{linkedRelationships,sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_risk_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.risk',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'risk_blocker',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    linkedRelationships,
+    existingRisk,
+    sourceRefs:references,
+    objective:'Assess one current material project risk precisely, or record that no material risk is currently proven.',
+    completionCondition:'A material risk has its type, impact, severity, accountable existing project relationship, smallest mitigation, watch condition, confidence, and evidence; or a no-material-risk assessment has its review basis.',
+    approvalBoundary:'Applying the risk assessment changes only the internal Project Managers packet. It does not create a task, alert, message, CRM update, calendar change, or alter source evidence.'
+  };
+}
+function projectRiskQuestion(state={},brief={}){
+  const risk=normalizeProjectRisk(state.draftProjectRisk || brief.existingRisk || {},brief);
+  const relationships=safeArray(brief.linkedRelationships).map((item)=>item.name).join(', ');
+  if(state.stage === 'risk'){
+    return {
+      targetField:'project_risk_packet.{risk_type,risk_summary,why_it_matters,if_ignored,severity,owner,mitigation_next_step,watch_condition,confidence}',
+      question:`Is a material risk currently proven for ${brief.projectName || 'this project'}? If yes, add one line: risk type | risk | impact if ignored | severity | accountable person | smallest mitigation | watch condition | confidence. If no, write: No material risk | basis.`,
+      detail:`This fills Project Managers > Risk / blocker. ${relationships ? 'Accountable people must be already linked to this project: ' + relationships + '. ' : 'A material risk needs an accountable person from People involved first. '}VAL will not invent a blocker just to fill the card.`
+    };
+  }
+  if(state.stage === 'risk_details'){
+    const missing=missingProjectRiskFields(risk,brief);
+    return {
+      targetField:'project_risk_packet.{risk_type,risk_summary,why_it_matters,if_ignored,severity,owner,mitigation_next_step,watch_condition,confidence}',
+      question:`Fill only these missing risk details: ${missing.join(', ')}.\n\n${projectRiskLine(risk,brief)}`,
+      detail:'The accountable person must be one of the existing project relationships. Keep the mitigation to the smallest protective move, not a broad plan.'
+    };
+  }
+  return {
+    targetField:'project_risk_packet',
+    question:'Review the prepared project risk assessment, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal risk packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1143,6 +1280,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Protect the relationships that make the selected project viable.',
     completionCondition:'Each rule has an existing project relationship, cadence, useful touch, trust risk, and review trigger.'
   },
+  'project.risk':{
+    id:'project.risk',surface:'project_managers',scopeType:'project_section',sectionId:'risk_blocker',
+    requiredPackets:['project_packet','project_relationships_packet','project_risk_packet'],
+    objective:'Assess one current material project risk precisely, or record that no material risk is currently proven.',
+    completionCondition:'A material risk has its type, impact, severity, accountable existing project relationship, smallest mitigation, watch condition, confidence, and evidence; or a no-material-risk assessment has its review basis.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1189,6 +1332,7 @@ function createValCoworkService({
   applyProjectMilestones=async()=>null,
   applyProjectMonitoring=async()=>null,
   applyProjectRelationshipNurture=async()=>null,
+  applyProjectRisk=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -1285,6 +1429,7 @@ function createValCoworkService({
           draftMilestones:safeArray(state.draftMilestones),
           draftMonitoringRules:safeArray(state.draftMonitoringRules),
           draftRelationshipNurtureRules:safeArray(state.draftRelationshipNurtureRules),
+          draftProjectRisk:state.draftProjectRisk || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -1547,6 +1692,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectRiskEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.risk'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can assess a risk or blocker.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectRiskBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'risk',draftProjectRisk:brief.existingRisk,answers:[]};
+    const question=projectRiskQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_risk',title:`Risk assessment for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectRisk:state.draftProjectRisk,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectRisk(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectRisk=parseProjectRisk(answer,brief,state.draftProjectRisk || brief.existingRisk || {});
+    const risk=normalizeProjectRisk(state.draftProjectRisk,brief);
+    const missing=missingProjectRiskFields(risk,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectRisk:risk,completionCondition:brief.completionCondition};
+      question=projectRiskQuestion(state,brief);message=projectRiskHasMaterialAssessment(risk) ? 'VAL prepared one project risk assessment for review. Apply it when this is true.' : 'VAL prepared a no-material-risk assessment for review. Apply it when this is true.';
+    }else{
+      state.stage='risk_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectRiskQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function respondProjectIdentity(session,workItem,answer){
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -1701,6 +1881,7 @@ function createValCoworkService({
     if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
     if(entrypointId === 'project.monitoring') return openProjectMonitoringEntry(input);
     if(entrypointId === 'project.relationship_nurture') return openProjectRelationshipNurtureEntry(input);
+    if(entrypointId === 'project.risk') return openProjectRiskEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -1760,6 +1941,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
     if(session.entrypointId === 'project.monitoring') return respondProjectMonitoring(session,workItem,answer);
     if(session.entrypointId === 'project.relationship_nurture') return respondProjectRelationshipNurture(session,workItem,answer);
+    if(session.entrypointId === 'project.risk') return respondProjectRisk(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1999,6 +2181,20 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_relationship_nurture',status:'completed',summary:`Applied ${relationshipNurtureRules.length} relationship nurture rule${relationshipNurtureRules.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',relationshipNurtureRules,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_risk'){
+      if(workItem.status !== 'needs_review') throw new Error('The project risk assessment must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectRisk=normalizeProjectRisk(payload.projectRisk || {},brief);
+      if(missingProjectRiskFields(projectRisk,brief).length) throw new Error('The project risk assessment is incomplete and cannot be applied yet.');
+      const project=await applyProjectRisk({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectRisk,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the risk assessment to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const outcome=projectRiskHasMaterialAssessment(projectRisk) ? 'project risk assessment' : 'no-material-risk assessment';const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_risk',status:'completed',summary:`Applied the ${outcome} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectRisk,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -2050,6 +2246,7 @@ module.exports={
   buildProjectMilestonesBrief,
   buildProjectMonitoringBrief,
   buildProjectRelationshipNurtureBrief,
+  buildProjectRiskBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
@@ -2063,6 +2260,8 @@ module.exports={
   projectMonitoringQuestion,
   missingRelationshipNurtureFields,
   projectRelationshipNurtureQuestion,
+  missingProjectRiskFields,
+  projectRiskQuestion,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

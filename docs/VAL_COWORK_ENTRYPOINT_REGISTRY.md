@@ -180,6 +180,14 @@ Existing workstream monitoring signals are brought into the Working Brief as con
 
 Each prepared rule names the project relationship, cadence, useful touch, trust risk, and review trigger. A useful touch describes value to bring, not a generic follow-up. Applying the packet does not draft or send outreach, create a task, update CRM, change a calendar, or alter source evidence.
 
+### Risk / Blocker Contract
+
+`project.risk` assesses one current, material project risk. It is not a generic prompt to list worries, and it must not manufacture a risk from an empty project shell.
+
+When a material risk is present, the prepared packet names its type, concise summary, impact if ignored, severity, accountable existing project relationship, smallest mitigation, watch condition, confidence, and source receipts. The accountable person must already be linked through the selected project's People packet; a name from unrelated evidence is not enough.
+
+When no material risk is proven, VAL can prepare an explicit internal no-risk assessment instead of inventing a blocker. Applying either outcome changes only the selected `project_risk_packet`. It does not create a task, alert, message, CRM update, calendar change, or alter source evidence.
+
 ## Transcripts And Meeting Prep
 
 | Entry id | Scope | Objective | Completion condition | Writes / result |
@@ -248,7 +256,7 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First eight canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | First nine canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.risk`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, `Risk / blocker`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | First canonical slice complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. The legacy freeform transcript chat route has been removed. | Typed packet outputs for transcript-derived project, relationship, commitment, and task work still need their own scoped entries. |
 | Executive Inbox | Partial | Selected thread/source summary reaches a scoped chat launcher. | Typed email-thread brief, completion contract, and artifact/action routing. |
 | Relationships | Partial | Relationship and selected-card summaries reach a scoped chat launcher. | Field-level objectives, target writes, and completion/apply contracts. |

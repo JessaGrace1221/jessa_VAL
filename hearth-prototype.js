@@ -3676,6 +3676,7 @@ function projectIsDrawerAdmitted(project = {}){
 
 function projectManagerPacket(project = {}){
   const admission = projectAdmissionPacket(project);
+  const metadata = project.metadataJson || project.metadata || {};
   const details = normalizedProjectSourceDetails(project);
   const sop = projectSopPacket(project);
   const needsOnboarding = projectNeedsOnboarding(project);
@@ -3689,9 +3690,16 @@ function projectManagerPacket(project = {}){
   const documentReceipts = projectDocumentReceiptItems(project, docs);
   const interviewStage = projectInterviewStage(project);
   const interviewContract = projectInterviewStageContract(interviewStage);
-  const risk = projectCleanText(project.risk || project.riskSummary || project.decisionEvidence, needsOnboarding ? 'No project risk has been defined yet.' : 'No active blocker has been proven yet.');
   const owner = projectCleanText(ownerAssignment.name, 'VAL is still matching the responsible owner.');
   const nextAction = projectCleanText(project.nextMove || project.recommendedAction, needsOnboarding ? 'Answer the project onboarding question.' : 'Decide the next narrow move.');
+  const riskPacket = projectRiskPacketItem(project.projectRisk || metadata.projectRisk, {
+    risk_summary:projectCleanText(project.risk || project.riskSummary || metadata.risk || metadata.riskSummary),
+    mitigation_next_step:nextAction,
+    owner
+  });
+  const risk = riskPacket.assessment === 'no_material_risk'
+    ? 'No material risk is currently recorded.'
+    : projectCleanText(riskPacket.risk_summary, needsOnboarding ? 'No project risk has been defined yet.' : 'No active blocker has been proven yet.');
   const whyNow = projectCleanText(project.whyNow || project.nextMoveEvidence || project.decisionEvidence || project.signal, needsOnboarding ? 'VAL has the project shell and document evidence, but needs the executive outcome before it can manage the work.' : 'This project has enough evidence to deserve a clean next move.');
   const purposeFallback = needsOnboarding ? 'Project details are blank until onboarding is complete.' : 'Keep this body of work moving without scattering the user across sources.';
   const desiredOutcomeFallback = needsOnboarding ? '' : nextAction;
@@ -3741,7 +3749,7 @@ function projectManagerPacket(project = {}){
     project_monitoring_packet: projectMonitoringPacketItems(project.monitoringRules),
     project_relationship_nurture_packet: projectRelationshipNurturePacketItems(project.relationshipNurtureRules),
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
-    project_risk_packet: {risk_summary:risk, mitigation_next_step:nextAction, owner},
+    project_risk_packet: riskPacket,
     project_prepared_work_packets: prepared,
     project_next_action_packet: {
       next_action: nextAction,
@@ -3966,6 +3974,43 @@ function projectManagerRelationshipNurtureList(items = [], emptyText = 'VAL need
   }).join('');
 }
 
+function projectRiskPacketItem(value = {}, fallback = {}){
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const assessment = String(raw.assessment || raw.status || '').trim().toLowerCase() === 'no_material_risk' ? 'no_material_risk' : 'material_risk';
+  const impact = projectCleanText(raw.impact || raw.whyItMatters || raw.why_it_matters || raw.ifIgnored || raw.if_ignored);
+  return {
+    assessment,
+    risk_type:projectCleanText(raw.riskType || raw.risk_type || raw.type),
+    risk_summary:projectCleanText(raw.riskSummary || raw.risk_summary || raw.risk || fallback.risk_summary),
+    why_it_matters:impact,
+    if_ignored:impact,
+    severity:projectCleanText(raw.severity),
+    confidence:projectCleanText(raw.confidence),
+    source_receipts:Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : []),
+    mitigation_next_step:projectCleanText(raw.mitigation || raw.mitigationNextStep || raw.mitigation_next_step || fallback.mitigation_next_step),
+    owner:projectCleanText(raw.ownerName || raw.owner_name || raw.owner || fallback.owner),
+    owner_id:projectCleanText(raw.ownerId || raw.owner_id),
+    watch_condition:projectCleanText(raw.watchCondition || raw.watch_condition || raw.trigger),
+    review_basis:projectCleanText(raw.reviewBasis || raw.review_basis || raw.basis)
+  };
+}
+
+function projectManagerRiskCard(risk = {}){
+  if(risk.assessment === 'no_material_risk'){
+    return '<strong>No material risk recorded</strong><p>' + escapeHtml(risk.review_basis || 'No review basis has been recorded yet.') + '</p>';
+  }
+  if(!risk.risk_summary) return '<strong>Risk not assessed</strong><p>VAL will not invent a blocker. Record one only when a material risk is present.</p>';
+  const detail = [
+    risk.risk_type ? 'Type: ' + risk.risk_type : '',
+    risk.severity ? 'Severity: ' + risk.severity : '',
+    risk.owner ? 'Accountable: ' + risk.owner : '',
+    risk.mitigation_next_step ? 'Mitigation: ' + risk.mitigation_next_step : '',
+    risk.watch_condition ? 'Watch: ' + risk.watch_condition : '',
+    risk.confidence ? 'Confidence: ' + risk.confidence : ''
+  ].filter(Boolean).join(' | ');
+  return '<strong>' + escapeHtml(risk.risk_summary) + '</strong>' + (risk.why_it_matters ? '<p>' + escapeHtml(risk.why_it_matters) + '</p>' : '') + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '');
+}
+
 function projectManagerDetailCard(field, label, html){
   return '<article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="' + escapeHtml(field) + '" aria-label="Co-Work on ' + escapeHtml(label) + '"><span>' + escapeHtml(label) + '</span>' + html + projectCoworkChip() + '</article>';
 }
@@ -4180,13 +4225,11 @@ function renderProjectManagerProfile(project = {}){
   const seasonLabel = needsOnboarding ? 'Blank until shaped' : (relationships.length ? 'Relationship attached' : 'Ready to shape');
   const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
-  const riskTitle = projectHasSpecificSignal(project.blocker || project.blockedBy || project.risk || project.riskSummary, project) ? judgment.what_is_blocked : '';
-  const riskBody = projectHasSpecificSignal(project.risk || project.riskSummary, project) ? judgment.what_is_at_risk : '';
   const detailCards = [
     projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
     prepared.length ? projectManagerDetailCard('prepared_work', 'Prepared work', '<ul>' + projectManagerList(prepared) + '</ul>') : '',
     projectManagerDetailCard('documents_sources', 'Documents / sources', documents.concat(graph).length ? '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>' : '<p>No document evidence is linked yet. Link an existing receipt from Documents.</p>'),
-    riskTitle || riskBody ? projectManagerDetailCard('risk_blocker', 'Risk / blocker', '<strong>' + escapeHtml(riskTitle || 'Possible blocker') + '</strong><p>' + escapeHtml(riskBody || 'Review before moving forward.') + '</p>') : ''
+    projectManagerDetailCard('risk_blocker', 'Risk / blocker', projectManagerRiskCard(packet.project_risk_packet))
   ].filter(Boolean);
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
@@ -4530,6 +4573,26 @@ function renderCoworkRelationshipNurtureItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectRiskItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const risk = payload.projectRisk || {};
+  if(!risk || typeof risk !== 'object') return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const noMaterialRisk = String(risk.assessment || '').toLowerCase() === 'no_material_risk';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing risk assessment');
+  const fields = noMaterialRisk
+    ? coworkWorkstreamField('Review basis', risk.reviewBasis || risk.review_basis)
+    : coworkWorkstreamField('Type', risk.riskType || risk.risk_type) + coworkWorkstreamField('Impact if ignored', risk.impact || risk.ifIgnored || risk.if_ignored) + coworkWorkstreamField('Severity', risk.severity) + coworkWorkstreamField('Accountable', risk.ownerName || risk.owner_name || risk.owner) + coworkWorkstreamField('Smallest mitigation', risk.mitigation || risk.mitigationNextStep || risk.mitigation_next_step) + coworkWorkstreamField('Watch condition', risk.watchCondition || risk.watch_condition) + coworkWorkstreamField('Confidence', risk.confidence);
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared risk assessment</span><strong>' + escapeHtml(workItem.title || 'Project risk') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(noMaterialRisk ? 'No material risk currently proven' : (risk.riskSummary || risk.risk_summary || 'Project risk')) + '</strong><div class="cowork-workstream-fields">' + fields + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-project-risk="' + escapeHtml(workItem.id || '') + '">Apply risk assessment</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkNextMoveItem(workItem = {}){
   const payload = workItem.payload || {};
   if(!payload.nextMove) return '';
@@ -4654,7 +4717,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4669,6 +4732,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Define what VAL watches and when to surface it.'
     : entrypointId === 'project.relationship_nurture'
     ? 'Define how VAL should protect the relationships this project depends on.'
+    : entrypointId === 'project.risk'
+    ? 'Assess one material risk precisely, or record that none is currently proven.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4724,6 +4789,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkMonitoringItem(workItem)
       : workItem.type === 'project_relationship_nurture'
       ? renderCoworkRelationshipNurtureItem(workItem)
+      : workItem.type === 'project_risk'
+      ? renderCoworkProjectRiskItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -4749,6 +4816,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Monitoring rules applied.'
       : session.entrypointId === 'project.relationship_nurture'
         ? 'Relationship nurture rules applied.'
+      : session.entrypointId === 'project.risk'
+        ? 'Project risk assessment applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -4931,6 +5000,25 @@ async function openProjectRelationshipNurtureCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Relationship nurture interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectRiskCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('risk_blocker', project);
+  const action = 'project:cowork:risk_blocker';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'risk_blocker',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Assess risk or blocker',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.risk',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Assess risk or blocker',meaning:'Preparing the Risk / Blocker brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will prepare one material risk assessment with its impact, accountable project relationship, smallest mitigation, and watch condition, or explicitly record that no material risk is currently proven.',placeholder:'Preparing the selected Project Managers risk brief...',heading:'Assessing risk for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Risk / blocker.',publicDetail:'Scoped to Project Managers: Risk / blocker.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.risk',scope:{entityType:'project_section',entityId:projectId,sectionId:'risk_blocker'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Risk / Blocker brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Risk / Blocker interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -5013,7 +5101,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -5139,6 +5227,17 @@ async function applyActiveCoworkProjectRelationshipNurture(workItemId = '', butt
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply these relationship nurture rules. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectRisk(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this risk assessment yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply this risk assessment. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -5160,6 +5259,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'milestones') return openProjectMilestonesCowork(node);
   if(field === 'monitoring_rules') return openProjectMonitoringCowork(node);
   if(field === 'relationship_nurture') return openProjectRelationshipNurtureCowork(node);
+  if(field === 'risk_blocker') return openProjectRiskCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -19783,9 +19883,10 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectMilestonesApply = event.target.closest('[data-cowork-apply-project-milestones]');
   const projectMonitoringApply = event.target.closest('[data-cowork-apply-project-monitoring]');
   const projectRelationshipNurtureApply = event.target.closest('[data-cowork-apply-project-relationship-nurture]');
+  const projectRiskApply = event.target.closest('[data-cowork-apply-project-risk]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectRiskApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -19795,6 +19896,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectMilestonesApply) await applyActiveCoworkProjectMilestones(projectMilestonesApply.dataset.coworkApplyProjectMilestones, projectMilestonesApply);
   if(projectMonitoringApply) await applyActiveCoworkProjectMonitoring(projectMonitoringApply.dataset.coworkApplyProjectMonitoring, projectMonitoringApply);
   if(projectRelationshipNurtureApply) await applyActiveCoworkProjectRelationshipNurture(projectRelationshipNurtureApply.dataset.coworkApplyProjectRelationshipNurture, projectRelationshipNurtureApply);
+  if(projectRiskApply) await applyActiveCoworkProjectRisk(projectRiskApply.dataset.coworkApplyProjectRisk, projectRiskApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
