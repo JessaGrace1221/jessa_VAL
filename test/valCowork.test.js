@@ -72,6 +72,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedNarratives=[];
   const appliedNeedsNext=[];
   const appliedOperatingSystems=[];
+  const appliedPhases=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -128,6 +129,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       appliedOperatingSystems.push(payload);
       return {...loadedProject,projectOperatingSystem:payload.projectOperatingSystem,sopId:payload.projectOperatingSystem.sopId,sopName:payload.projectOperatingSystem.sopName,sopFitReason:payload.projectOperatingSystem.fitReason,sopDeviations:[payload.projectOperatingSystem.knownDeviations]};
     },
+    applyProjectPhase:async payload=>{
+      appliedPhases.push(payload);
+      return {...loadedProject,projectPhase:payload.projectPhase.currentPhase,projectPhaseRecord:payload.projectPhase,projectPhaseEvidence:payload.projectPhase.phaseEvidence,projectPhaseExitCondition:payload.projectPhase.exitCondition,projectPhaseNextTrigger:payload.projectPhase.nextPhaseTrigger};
+    },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
       return {...loadedProject,workstreams:payload.workstreams};
@@ -142,7 +147,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -156,7 +161,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -482,6 +487,44 @@ test('Operating System accepts only current VAL patterns and applies only the se
   assert.equal(appliedOperatingSystems[0].projectOperatingSystem.knownDeviations,'No material deviations');
 });
 
+test('Current Phase requires the applied operating system and accepts only its phase sequence',async()=>{
+  const {service:unconfiguredService}=serviceFor();
+  await assert.rejects(
+    unconfiguredService.openEntry({entrypointId:'project.phase',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_phase'}}),
+    /Select and apply a Project Managers Operating System/i
+  );
+
+  const loadedProject={
+    ...project(),
+    sopId:'client_dashboard_buildout',
+    projectOperatingSystem:{sopId:'client_dashboard_buildout',sopName:'Client Dashboard Buildout',fitReason:'The project needs a dashboard build',knownDeviations:'No material deviations',basis:'Executive judgment',confidence:'High'}
+  };
+  const {service,appliedPhases}=serviceFor({loadedProject});
+  const opened=await service.openEntry({
+    entrypointId:'project.phase',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_phase'}
+  });
+  assert.equal(opened.question.targetField,'project_sop_packet.{current_phase,phase_evidence,phase_exit_condition,next_phase_trigger,phase_basis,phase_confidence} + Current Phase');
+  assert.match(opened.question.question,/Build dashboard/i);
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+
+  const rejected=await service.respond(opened.session.id,{answer:'Launch and validate | The dashboard is in review | Review is complete | Approval is recorded | Executive judgment | High'});
+  assert.equal(rejected.workItem.status,'needs_input');
+  assert.match(rejected.question.question,/current phase from the selected operating-system sequence/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'Build dashboard | The dashboard skeleton is linked to the approved source map | Dashboard is ready for metric validation | The metrics brief and acceptance test are complete | Source receipt: approved source map | High'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.projectPhase.currentPhase,'Build dashboard');
+  assert.equal(ready.workItem.payload.projectPhase.nextPhaseTrigger,'The metrics brief and acceptance test are complete');
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'apply_project_phase');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedPhases.length,1);
+  assert.equal(appliedPhases[0].projectPhase.exitCondition,'Dashboard is ready for metric validation');
+});
+
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
   const {service}=serviceFor();
   const opened=await service.openEntry({
@@ -648,6 +691,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/entrypointId:'project\.narrative'/);
   assert.match(hearth,/entrypointId:'project\.needs_next'/);
   assert.match(hearth,/entrypointId:'project\.sop'/);
+  assert.match(hearth,/entrypointId:'project\.phase'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
@@ -664,6 +708,8 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'working_narrative'\) return openProjectNarrativeCowork/);
   assert.match(hearth,/if\(field === 'what_val_needs_next'\) return openProjectNeedsNextCowork/);
   assert.match(hearth,/if\(field === 'sop_fit'\) return openProjectOperatingSystemCowork/);
+  assert.match(hearth,/if\(field === 'project_phase'\) return openProjectPhaseCowork/);
+  assert.match(hearth,/activeProjectCoworkTarget\.mode === 'field_update'/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
@@ -680,6 +726,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/data-cowork-apply-project-narrative/);
   assert.match(hearth,/data-cowork-apply-project-needs-next/);
   assert.match(hearth,/data-cowork-apply-project-operating-system/);
+  assert.match(hearth,/data-cowork-apply-project-phase/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/function projectManagerMonitoringRuleList/);
   assert.match(hearth,/function projectManagerRelationshipNurtureList/);
@@ -688,6 +735,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/function projectNarrativePacketItem/);
   assert.match(hearth,/function projectNeedsNextPacketItem/);
   assert.match(hearth,/function projectOperatingSystemPacketItem/);
+  assert.match(hearth,/function renderCoworkProjectPhaseItem/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);
@@ -732,6 +780,8 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/applyProjectNeedsNext:applyCoworkProjectNeedsNext/);
   assert.match(server,/async function applyCoworkProjectOperatingSystem/);
   assert.match(server,/applyProjectOperatingSystem:applyCoworkProjectOperatingSystem/);
+  assert.match(server,/async function applyCoworkProjectPhase/);
+  assert.match(server,/applyProjectPhase:applyCoworkProjectPhase/);
   assert.match(server,/projectPeople:linkedPeople\.map/);
   assert.match(server,/projectPeople:Array\.isArray\(metadata\.projectPeople\)\?metadata\.projectPeople:\[\]/);
   assert.match(server,/projectDocuments:linkedDocuments/);
@@ -744,5 +794,6 @@ test('project foundation application updates only the selected internal project 
   assert.match(server,/const projectNarrative=metadata\.projectNarrative/);
   assert.match(server,/const projectNeedsNext=metadata\.projectNeedsNext/);
   assert.match(server,/const projectOperatingSystem=metadata\.projectOperatingSystem/);
+  assert.match(server,/const projectPhaseRecord=metadata\.projectPhaseRecord/);
   assert.match(hearth,/foundation_applied/);
 });

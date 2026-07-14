@@ -1068,10 +1068,10 @@ function projectNeedsNextQuestion(state={},brief={}){
 }
 
 const PROJECT_OPERATING_SYSTEMS=Object.freeze({
-  frisson_partner_onboarding:{id:'frisson_partner_onboarding',name:'Frisson Partner Onboarding',whenToUse:'Use when a new Frisson partner needs dashboard setup, automations, connections, launch metrics, and long-term partnership nurture.'},
-  client_dashboard_buildout:{id:'client_dashboard_buildout',name:'Client Dashboard Buildout',whenToUse:'Use when a client needs a dashboard, data sources, metrics, and handoff workflow built.'},
-  relationship_nurture_partnership:{id:'relationship_nurture_partnership',name:'Long-Term Partnership Nurture',whenToUse:'Use when the main work is protecting and expanding a strategic relationship over time.'},
-  new_sop:{id:'new_sop',name:'Create New SOP',whenToUse:'Use when this project should teach VAL a reusable operating pattern.'}
+  frisson_partner_onboarding:{id:'frisson_partner_onboarding',name:'Frisson Partner Onboarding',whenToUse:'Use when a new Frisson partner needs dashboard setup, automations, connections, launch metrics, and long-term partnership nurture.',phases:['Initiate partner fit','Plan dashboard and automations','Build connections','Launch and validate','Monitor activation','Nurture partnership']},
+  client_dashboard_buildout:{id:'client_dashboard_buildout',name:'Client Dashboard Buildout',whenToUse:'Use when a client needs a dashboard, data sources, metrics, and handoff workflow built.',phases:['Define outcome','Map data sources','Build dashboard','Validate metrics','Handoff and train','Monitor reliability']},
+  relationship_nurture_partnership:{id:'relationship_nurture_partnership',name:'Long-Term Partnership Nurture',whenToUse:'Use when the main work is protecting and expanding a strategic relationship over time.',phases:['Clarify relationship value','Set cadence','Track promises','Prepare useful touches','Monitor drift','Create expansion opportunities']},
+  new_sop:{id:'new_sop',name:'Create New SOP',whenToUse:'Use when this project should teach VAL a reusable operating pattern.',phases:['Interview user','Find repeatable steps','Run project','Capture lessons','Publish SOP draft']}
 });
 function projectOperatingSystemId(value=''){
   const normalized=compactText(value,180).toLowerCase();
@@ -1195,6 +1195,136 @@ function projectOperatingSystemQuestion(state={},brief={}){
   return {
     targetField:'project_sop_packet.sop_id',
     question:'Review the prepared operating-system selection, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal SOP packet. Nothing external happens.'
+  };
+}
+
+function projectPhaseName(value='',phases=[]){
+  const normalized=compactText(value,220).toLowerCase().replace(/\s+/g,' ');
+  if(!normalized) return '';
+  return safeArray(phases).find((phase)=>compactText(phase,220).toLowerCase()===normalized) || '';
+}
+function projectPhaseTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {currentPhase:value} : (value || {});
+  return {
+    id:compactText(raw.id || stableKey(`project_phase_${brief.entityId || brief.projectName || 'project'}`),220),
+    currentPhase:projectPhaseName(raw.currentPhase || raw.current_phase || raw.phase || raw.name,brief.availablePhases),
+    phaseEvidence:compactText(raw.phaseEvidence || raw.phase_evidence || raw.evidence || raw.proof || '',700),
+    exitCondition:compactText(raw.exitCondition || raw.exit_condition || raw.exit || '',700),
+    nextPhaseTrigger:compactText(raw.nextPhaseTrigger || raw.next_phase_trigger || raw.nextTrigger || raw.next_trigger || '',700),
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectPhase(value={},brief={}){
+  return projectPhaseTemplate(value,brief);
+}
+function missingProjectPhaseFields(value={},brief={}){
+  const phase=normalizeProjectPhase(value,brief);
+  const missing=[];
+  if(!phase.currentPhase) missing.push('current phase from the selected operating-system sequence');
+  if(!compactText(phase.phaseEvidence)) missing.push('phase evidence');
+  if(!compactText(phase.exitCondition)) missing.push('phase exit condition');
+  if(!compactText(phase.nextPhaseTrigger)) missing.push('next-phase trigger');
+  if(!compactText(phase.basis)) missing.push('basis');
+  if(!compactText(phase.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectPhaseLine(value={},brief={}){
+  const phase=normalizeProjectPhase(value,brief);
+  return [
+    phase.currentPhase || 'Current phase: choose one available phase',
+    'phase evidence: ' + (phase.phaseEvidence || '...'),
+    'exit condition: ' + (phase.exitCondition || '...'),
+    'next-phase trigger: ' + (phase.nextPhaseTrigger || '...'),
+    'basis: ' + (phase.basis || '...'),
+    'confidence: ' + (phase.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectPhase(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectPhase(current,brief);
+  const previous=normalizeProjectPhase(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let currentPhase=projectPhaseName(monitoringValueFromLine(source,'current phase|phase'),brief.availablePhases);
+  let phaseEvidence=monitoringValueFromLine(source,'phase evidence|evidence|proof');
+  let exitCondition=monitoringValueFromLine(source,'exit condition|phase exit|exit');
+  let nextPhaseTrigger=monitoringValueFromLine(source,'next-phase trigger|next phase trigger|next trigger');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 6){
+    currentPhase=currentPhase || projectPhaseName(parts[0].replace(/^\s*(?:current phase|phase)\s*:\s*/i,''),brief.availablePhases);
+    phaseEvidence=phaseEvidence || parts[1].replace(/^\s*(?:phase evidence|evidence|proof)\s*:\s*/i,'');
+    exitCondition=exitCondition || parts[2].replace(/^\s*(?:exit condition|phase exit|exit)\s*:\s*/i,'');
+    nextPhaseTrigger=nextPhaseTrigger || parts[3].replace(/^\s*(?:next-phase trigger|next phase trigger|next trigger)\s*:\s*/i,'');
+    basis=basis || parts[4].replace(/^\s*(?:basis|evidence basis)\s*:\s*/i,'');
+    confidence=confidence || parts[5].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectPhase({
+    ...previous,
+    currentPhase:currentPhase || previous.currentPhase,
+    phaseEvidence:phaseEvidence || previous.phaseEvidence,
+    exitCondition:exitCondition || previous.exitCondition,
+    nextPhaseTrigger:nextPhaseTrigger || previous.nextPhaseTrigger,
+    basis:basis || previous.basis,
+    confidence:confidence || previous.confidence,
+    sourceRefs:brief.sourceRefs
+  },brief);
+}
+function buildProjectPhaseBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const operatingSystemRaw=project.projectOperatingSystem || metadata.projectOperatingSystem || {sopId:project.sopId || metadata.sopId || metadata.intake?.sopId || ''};
+  const sopId=projectOperatingSystemId(operatingSystemRaw.sopId || operatingSystemRaw.sop_id || project.sopId || metadata.sopId || metadata.intake?.sopId || '');
+  const operatingSystem=PROJECT_OPERATING_SYSTEMS[sopId] || null;
+  const existingRaw=project.projectPhaseRecord || metadata.projectPhaseRecord || {
+    currentPhase:project.projectPhase || metadata.projectPhase || '',
+    phaseEvidence:project.projectPhaseEvidence || metadata.projectPhaseEvidence || '',
+    exitCondition:project.projectPhaseExitCondition || metadata.projectPhaseExitCondition || '',
+    nextPhaseTrigger:project.projectPhaseNextTrigger || metadata.projectPhaseNextTrigger || '',
+    basis:project.projectPhaseBasis || metadata.projectPhaseBasis || '',
+    confidence:project.projectPhaseConfidence || metadata.projectPhaseConfidence || ''
+  };
+  const brief={
+    id:stableKey(`working_brief_project_phase_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.phase',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'project_phase',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    sopId:operatingSystem?.id || '',
+    sopName:operatingSystem?.name || '',
+    availablePhases:operatingSystem?.phases || [],
+    sourceRefs:references,
+    objective:'Record the selected project’s actual place in its already-applied operating-system sequence.',
+    completionCondition:'One allowed current phase, phase evidence, exit condition, next-phase trigger, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this phase changes only the selected internal Project Managers SOP packet. It does not create a task, alter workstreams or milestones, message anyone, update CRM, change a calendar, or alter source evidence.'
+  };
+  return {...brief,currentPhase:normalizeProjectPhase(existingRaw,brief)};
+}
+function projectPhaseQuestion(state={},brief={}){
+  const phase=normalizeProjectPhase(state.draftProjectPhase || brief.currentPhase || {},brief);
+  const available=safeArray(brief.availablePhases).join('; ');
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'phase'){
+    return {
+      targetField:'project_sop_packet.{current_phase,phase_evidence,phase_exit_condition,next_phase_trigger,phase_basis,phase_confidence} + Current Phase',
+      question:`Which phase is ${brief.projectName || 'this project'} actually in within ${brief.sopName}? Choose one allowed phase: ${available}. Add one line: current phase | phase evidence | phase exit condition | next-phase trigger | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > Current Phase only. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not advance the phase, create work, or take an external action here.`
+    };
+  }
+  if(state.stage === 'phase_details'){
+    const missing=missingProjectPhaseFields(phase,brief);
+    return {
+      targetField:'project_sop_packet.{current_phase,phase_evidence,phase_exit_condition,next_phase_trigger,phase_basis,phase_confidence} + Current Phase',
+      question:`Fill only these missing current-phase details: ${missing.join(', ')}.\n\n${projectPhaseLine(phase,brief)}`,
+      detail:'Choose only a phase from the selected operating system. Do not state a future phase as current.'
+    };
+  }
+  return {
+    targetField:'project_sop_packet.current_phase',
+    question:'Review the prepared current-phase record, then apply it to this Project Manager.',
     detail:'Applying changes only the selected internal SOP packet. Nothing external happens.'
   };
 }
@@ -1786,6 +1916,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Select the real operating pattern that should run the selected project and make material deviations explicit.',
     completionCondition:'One current VAL operating system, its fit reasoning, material deviations or No material deviations, basis, and confidence are ready for internal review.'
   },
+  'project.phase':{
+    id:'project.phase',surface:'project_managers',scopeType:'project_section',sectionId:'project_phase',
+    requiredPackets:['project_packet','project_sop_packet'],
+    objective:'Record the selected project’s actual place in its already-applied operating-system sequence.',
+    completionCondition:'One allowed current phase, phase evidence, exit condition, next-phase trigger, basis, and confidence are ready for internal review.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1837,6 +1973,7 @@ function createValCoworkService({
   applyProjectNarrative=async()=>null,
   applyProjectNeedsNext=async()=>null,
   applyProjectOperatingSystem=async()=>null,
+  applyProjectPhase=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -2337,6 +2474,42 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectPhaseEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.phase'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can record a current phase.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectPhaseBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    if(!brief.sopId) throw new Error('Select and apply a Project Managers Operating System before recording Current Phase. VAL will not invent a phase sequence.');
+    const state={stage:'phase',draftProjectPhase:brief.currentPhase,answers:[]};
+    const question=projectPhaseQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_phase',title:`Current phase for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectPhase:state.draftProjectPhase,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectPhase(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectPhase=parseProjectPhase(answer,brief,state.draftProjectPhase || brief.currentPhase || {});
+    const phase=normalizeProjectPhase(state.draftProjectPhase,brief);
+    const missing=missingProjectPhaseFields(phase,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectPhase:phase,completionCondition:brief.completionCondition};
+      question=projectPhaseQuestion(state,brief);message='VAL prepared the current-phase record for review. Apply it when this is true.';
+    }else{
+      state.stage='phase_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectPhaseQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -2531,6 +2704,7 @@ function createValCoworkService({
     if(entrypointId === 'project.narrative') return openProjectNarrativeEntry(input);
     if(entrypointId === 'project.needs_next') return openProjectNeedsNextEntry(input);
     if(entrypointId === 'project.sop') return openProjectOperatingSystemEntry(input);
+    if(entrypointId === 'project.phase') return openProjectPhaseEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -2595,6 +2769,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.narrative') return respondProjectNarrative(session,workItem,answer);
     if(session.entrypointId === 'project.needs_next') return respondProjectNeedsNext(session,workItem,answer);
     if(session.entrypointId === 'project.sop') return respondProjectOperatingSystem(session,workItem,answer);
+    if(session.entrypointId === 'project.phase') return respondProjectPhase(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -2888,6 +3063,20 @@ function createValCoworkService({
       if(!project) throw new Error('VAL could not save the operating-system selection to the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_operating_system',status:'completed',summary:`Applied ${projectOperatingSystem.sopName} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectOperatingSystem,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_phase'){
+      if(workItem.status !== 'needs_review') throw new Error('The current-phase record must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectPhase=normalizeProjectPhase(payload.projectPhase || {},brief);
+      if(missingProjectPhaseFields(projectPhase,brief).length) throw new Error('The current-phase record is incomplete and cannot be applied yet.');
+      const project=await applyProjectPhase({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',sopId:brief.sopId,projectPhase,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the current-phase record to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_phase',status:'completed',summary:`Applied the ${projectPhase.currentPhase} phase to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',sopId:brief.sopId,projectPhase,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_needs_next'){

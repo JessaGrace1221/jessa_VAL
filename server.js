@@ -16815,6 +16815,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const projectNarrative=patch.projectNarrative&&typeof patch.projectNarrative==='object'&&!Array.isArray(patch.projectNarrative)?patch.projectNarrative:null;
     const projectNeedsNext=patch.projectNeedsNext&&typeof patch.projectNeedsNext==='object'&&!Array.isArray(patch.projectNeedsNext)?patch.projectNeedsNext:null;
     const projectOperatingSystem=patch.projectOperatingSystem&&typeof patch.projectOperatingSystem==='object'&&!Array.isArray(patch.projectOperatingSystem)?patch.projectOperatingSystem:null;
+    const projectPhaseRecord=patch.projectPhaseRecord&&typeof patch.projectPhaseRecord==='object'&&!Array.isArray(patch.projectPhaseRecord)?patch.projectPhaseRecord:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16880,6 +16881,11 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.sopDeviations?{sopDeviations:patch.sopDeviations}:{}),
       ...(patch.sopBasis?{sopBasis:patch.sopBasis}:{}),
       ...(patch.sopConfidence?{sopConfidence:patch.sopConfidence}:{}),
+      ...(patch.projectPhaseEvidence?{projectPhaseEvidence:patch.projectPhaseEvidence}:{}),
+      ...(patch.projectPhaseExitCondition?{projectPhaseExitCondition:patch.projectPhaseExitCondition}:{}),
+      ...(patch.projectPhaseNextTrigger?{projectPhaseNextTrigger:patch.projectPhaseNextTrigger}:{}),
+      ...(patch.projectPhaseBasis?{projectPhaseBasis:patch.projectPhaseBasis}:{}),
+      ...(patch.projectPhaseConfidence?{projectPhaseConfidence:patch.projectPhaseConfidence}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
       ...(patch.whyItMatters?{whyItMatters:patch.whyItMatters}:{}),
       ...(patch.strategicImportance?{strategicImportance:patch.strategicImportance}:{}),
@@ -16895,6 +16901,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectNarrative?{projectNarrative}:{}),
       ...(projectNeedsNext?{projectNeedsNext}:{}),
       ...(projectOperatingSystem?{projectOperatingSystem}:{}),
+      ...(projectPhaseRecord?{projectPhaseRecord}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17492,6 +17499,7 @@ function projectIndexItemFromProfile(profile={}){
   const projectNarrative=metadata.projectNarrative&&typeof metadata.projectNarrative==='object'&&!Array.isArray(metadata.projectNarrative)?metadata.projectNarrative:null;
   const projectNeedsNext=metadata.projectNeedsNext&&typeof metadata.projectNeedsNext==='object'&&!Array.isArray(metadata.projectNeedsNext)?metadata.projectNeedsNext:null;
   const projectOperatingSystem=metadata.projectOperatingSystem&&typeof metadata.projectOperatingSystem==='object'&&!Array.isArray(metadata.projectOperatingSystem)?metadata.projectOperatingSystem:null;
+  const projectPhaseRecord=metadata.projectPhaseRecord&&typeof metadata.projectPhaseRecord==='object'&&!Array.isArray(metadata.projectPhaseRecord)?metadata.projectPhaseRecord:null;
   const currentReality=metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||profile.summary||'Canonical project profile from VAL relationship/project index.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
@@ -17533,7 +17541,13 @@ function projectIndexItemFromProfile(profile={}){
     outcome:metadata.outcome||metadata.desiredOutcome||'',
     nextStepOwner:metadata.nextStepOwner||metadata.owner?.name||'',
     nextStepDueAt:metadata.nextStepDueAt||'',
-    projectPhase:metadata.projectPhase||'',
+    projectPhase:metadata.projectPhase||projectPhaseRecord?.currentPhase||projectPhaseRecord?.current_phase||'',
+    projectPhaseEvidence:metadata.projectPhaseEvidence||projectPhaseRecord?.phaseEvidence||projectPhaseRecord?.phase_evidence||'',
+    projectPhaseExitCondition:metadata.projectPhaseExitCondition||projectPhaseRecord?.exitCondition||projectPhaseRecord?.exit_condition||'',
+    projectPhaseNextTrigger:metadata.projectPhaseNextTrigger||projectPhaseRecord?.nextPhaseTrigger||projectPhaseRecord?.next_phase_trigger||'',
+    projectPhaseBasis:metadata.projectPhaseBasis||projectPhaseRecord?.basis||'',
+    projectPhaseConfidence:metadata.projectPhaseConfidence||projectPhaseRecord?.confidence||'',
+    projectPhaseRecord,
     projectInterviewNotes:metadata.projectInterviewNotes||'',
     whatValNowKnows:metadata.whatValNowKnows||projectNarrative?.whatValNowKnows||projectNarrative?.what_val_now_knows||'',
     currentBlocker:metadata.currentBlocker||projectNarrative?.whatIsBlocked||projectNarrative?.what_is_blocked||'',
@@ -25245,6 +25259,58 @@ async function applyCoworkProjectOperatingSystem({projectId,projectName='',proje
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectPhase({projectId,projectName='',sopId='',projectPhase={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const selectedSopId=String(sopId||'').trim().toLowerCase();
+  const currentSopId=String(current.sopId||'').trim().toLowerCase();
+  const operatingSystems={
+    frisson_partner_onboarding:['Initiate partner fit','Plan dashboard and automations','Build connections','Launch and validate','Monitor activation','Nurture partnership'],
+    client_dashboard_buildout:['Define outcome','Map data sources','Build dashboard','Validate metrics','Handoff and train','Monitor reliability'],
+    relationship_nurture_partnership:['Clarify relationship value','Set cadence','Track promises','Prepare useful touches','Monitor drift','Create expansion opportunities'],
+    new_sop:['Interview user','Find repeatable steps','Run project','Capture lessons','Publish SOP draft']
+  };
+  const phases=operatingSystems[selectedSopId];
+  const raw=projectPhase&&typeof projectPhase==='object'&&!Array.isArray(projectPhase)?projectPhase:{};
+  const requestedPhase=String(raw.currentPhase||raw.current_phase||raw.phase||'').trim();
+  const currentPhase=Array.isArray(phases) ? phases.find((phase)=>phase.toLowerCase()===requestedPhase.toLowerCase()) || '' : '';
+  const phaseEvidence=String(raw.phaseEvidence||raw.phase_evidence||raw.evidence||raw.proof||'').trim();
+  const exitCondition=String(raw.exitCondition||raw.exit_condition||raw.exit||'').trim();
+  const nextPhaseTrigger=String(raw.nextPhaseTrigger||raw.next_phase_trigger||raw.nextTrigger||raw.next_trigger||'').trim();
+  const basis=String(raw.basis||raw.evidenceBasis||raw.evidence_basis||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!phases||currentSopId!==selectedSopId||!currentPhase||!phaseEvidence||!exitCondition||!nextPhaseTrigger||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const preparedPhase={
+    id:String(raw.id||stableKey(`project_phase_${projectId}`)).trim(),
+    currentPhase,
+    phaseEvidence,
+    exitCondition,
+    nextPhaseTrigger,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    projectPhase:preparedPhase.currentPhase,
+    projectPhaseEvidence:preparedPhase.phaseEvidence,
+    projectPhaseExitCondition:preparedPhase.exitCondition,
+    projectPhaseNextTrigger:preparedPhase.nextPhaseTrigger,
+    projectPhaseBasis:preparedPhase.basis,
+    projectPhaseConfidence:preparedPhase.confidence,
+    projectPhaseRecord:preparedPhase,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work current phase applied from session ${sessionId||'unknown'}: ${sourceSummary||preparedPhase.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25288,6 +25354,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectNarrative:applyCoworkProjectNarrative,
   applyProjectNeedsNext:applyCoworkProjectNeedsNext,
   applyProjectOperatingSystem:applyCoworkProjectOperatingSystem,
+  applyProjectPhase:applyCoworkProjectPhase,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

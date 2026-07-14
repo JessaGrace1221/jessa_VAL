@@ -3276,6 +3276,7 @@ function projectSopPacket(project = {}){
     basis:project.sopBasis || metadata.sopBasis || '',
     confidence:project.sopConfidence || metadata.sopConfidence || ''
   });
+  const phaseRecord = project.projectPhaseRecord || metadata.projectPhaseRecord || {};
   const selected = operatingSystem.sop_id || project.sopId || details.sopId || project.sop_id || '';
   const needsOnboarding = projectNeedsOnboarding(project);
   const hasInterviewPacket = Boolean(projectOnboardingData(project).firstAnswer || projectOnboardingData(project).ownerMonitoringAnswer || project.projectInterviewNotes || project.ownerMonitoringNotes);
@@ -3298,7 +3299,12 @@ function projectSopPacket(project = {}){
       fit_reason:operatingSystem.fit_reason,
       basis:operatingSystem.basis,
       confidence:operatingSystem.confidence,
-      source_receipts:operatingSystem.source_receipts
+      source_receipts:operatingSystem.source_receipts,
+      phase_evidence:projectCleanText(project.projectPhaseEvidence || metadata.projectPhaseEvidence || phaseRecord.phaseEvidence || phaseRecord.phase_evidence),
+      phase_exit_condition:projectCleanText(project.projectPhaseExitCondition || metadata.projectPhaseExitCondition || phaseRecord.exitCondition || phaseRecord.exit_condition),
+      next_phase_trigger:projectCleanText(project.projectPhaseNextTrigger || metadata.projectPhaseNextTrigger || phaseRecord.nextPhaseTrigger || phaseRecord.next_phase_trigger),
+      phase_basis:projectCleanText(project.projectPhaseBasis || metadata.projectPhaseBasis || phaseRecord.basis),
+      phase_confidence:projectCleanText(project.projectPhaseConfidence || metadata.projectPhaseConfidence || phaseRecord.confidence)
     };
   }
   if(!sop){
@@ -3318,13 +3324,18 @@ function projectSopPacket(project = {}){
       fit_reason:operatingSystem.fit_reason,
       basis:operatingSystem.basis,
       confidence:operatingSystem.confidence,
-      source_receipts:operatingSystem.source_receipts
+      source_receipts:operatingSystem.source_receipts,
+      phase_evidence:projectCleanText(project.projectPhaseEvidence || metadata.projectPhaseEvidence || phaseRecord.phaseEvidence || phaseRecord.phase_evidence),
+      phase_exit_condition:projectCleanText(project.projectPhaseExitCondition || metadata.projectPhaseExitCondition || phaseRecord.exitCondition || phaseRecord.exit_condition),
+      next_phase_trigger:projectCleanText(project.projectPhaseNextTrigger || metadata.projectPhaseNextTrigger || phaseRecord.nextPhaseTrigger || phaseRecord.next_phase_trigger),
+      phase_basis:projectCleanText(project.projectPhaseBasis || metadata.projectPhaseBasis || phaseRecord.basis),
+      phase_confidence:projectCleanText(project.projectPhaseConfidence || metadata.projectPhaseConfidence || phaseRecord.confidence)
     };
   }
   return {
     sop_id:sop.id,
     sop_name:sop.name,
-    current_phase:project.projectPhase || sop.phase,
+    current_phase:project.projectPhase || phaseRecord.currentPhase || phaseRecord.current_phase || sop.phase,
     when_to_use:sop.whenToUse,
     default_phases:sop.defaultPhases,
     default_workstreams:Array.isArray(project.workstreams) && project.workstreams.length ? project.workstreams : sop.workstreams,
@@ -3337,7 +3348,12 @@ function projectSopPacket(project = {}){
     fit_reason:operatingSystem.fit_reason,
     basis:operatingSystem.basis,
     confidence:operatingSystem.confidence,
-    source_receipts:operatingSystem.source_receipts
+    source_receipts:operatingSystem.source_receipts,
+    phase_evidence:projectCleanText(project.projectPhaseEvidence || metadata.projectPhaseEvidence || phaseRecord.phaseEvidence || phaseRecord.phase_evidence),
+    phase_exit_condition:projectCleanText(project.projectPhaseExitCondition || metadata.projectPhaseExitCondition || phaseRecord.exitCondition || phaseRecord.exit_condition),
+    next_phase_trigger:projectCleanText(project.projectPhaseNextTrigger || metadata.projectPhaseNextTrigger || phaseRecord.nextPhaseTrigger || phaseRecord.next_phase_trigger),
+    phase_basis:projectCleanText(project.projectPhaseBasis || metadata.projectPhaseBasis || phaseRecord.basis),
+    phase_confidence:projectCleanText(project.projectPhaseConfidence || metadata.projectPhaseConfidence || phaseRecord.confidence)
   };
 }
 
@@ -4379,7 +4395,8 @@ function renderProjectManagerProfile(project = {}){
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
         '<span>Current Phase</span>',
         '<strong>' + escapeHtml(sop.current_phase) + '</strong>',
-        '<p>' + escapeHtml((sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
+        '<p>' + escapeHtml(sop.phase_evidence || (sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
+        sop.phase_exit_condition || sop.next_phase_trigger ? '<small>' + escapeHtml([sop.phase_exit_condition ? 'Exit: ' + sop.phase_exit_condition : '', sop.next_phase_trigger ? 'Next: ' + sop.next_phase_trigger : ''].filter(Boolean).join(' | ')) + '</small>' : '',
         projectCoworkChip(),
       '</article>',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_interview">',
@@ -4511,12 +4528,6 @@ function projectCoworkSpec(field = ''){
       question: 'Which SOP should this project use, and what is different about this project?',
       detail: 'Name the closest operating pattern and any important deviation VAL should not assume.',
       placeholder: 'Use the ... SOP. This project is different because...'
-    },
-    project_phase: {
-      title: 'Set the project phase',
-      question: 'What phase is this project in right now, and what proves it?',
-      detail: 'Name the phase, what has already happened, and what must happen before the next phase.',
-      placeholder: 'Current phase: ... Already complete: ... Next phase starts when...'
     },
     project_interview: {
       title: 'Interview the project manager',
@@ -4749,6 +4760,22 @@ function renderCoworkProjectOperatingSystemItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectPhaseItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const phase = payload.projectPhase || {};
+  if(!phase || typeof phase !== 'object') return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing one phase record');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared current-phase record</span><strong>' + escapeHtml(workItem.title || 'Current Phase') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(phase.currentPhase || phase.current_phase || 'Current phase') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Phase evidence', phase.phaseEvidence || phase.phase_evidence) + coworkWorkstreamField('Exit condition', phase.exitCondition || phase.exit_condition) + coworkWorkstreamField('Next-phase trigger', phase.nextPhaseTrigger || phase.next_phase_trigger) + coworkWorkstreamField('Basis', phase.basis || phase.evidenceBasis || phase.evidence_basis) + coworkWorkstreamField('Confidence', phase.confidence) + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-project-phase="' + escapeHtml(workItem.id || '') + '">Apply current phase</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkProjectRiskItem(workItem = {}){
   const payload = workItem.payload || {};
   const risk = payload.projectRisk || {};
@@ -4893,7 +4920,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4918,6 +4945,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Identify one precise missing fact, decision, source, or person before taking another project-management step.'
     : entrypointId === 'project.sop'
     ? 'Select the real operating pattern that should run this project and make material deviations explicit.'
+    : entrypointId === 'project.phase'
+    ? 'Record the project’s actual place in the selected operating-system sequence, with evidence and an exit condition.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4983,6 +5012,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkProjectNeedsNextItem(workItem)
       : workItem.type === 'project_operating_system'
       ? renderCoworkProjectOperatingSystemItem(workItem)
+      : workItem.type === 'project_phase'
+      ? renderCoworkProjectPhaseItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -5018,6 +5049,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'What VAL needs next applied.'
       : session.entrypointId === 'project.sop'
         ? 'Operating system applied.'
+      : session.entrypointId === 'project.phase'
+        ? 'Current phase applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -5295,6 +5328,25 @@ async function openProjectOperatingSystemCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Operating System interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectPhaseCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('project_phase', project);
+  const action = 'project:cowork:project_phase';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'project_phase',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Record the current phase',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.phase',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Record the current phase',meaning:'Preparing the Current Phase brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will use only the selected operating system’s phase sequence, record the evidence, exit condition, and next trigger, then prepare that internal SOP packet for your review. It will not advance the project or create work.',placeholder:'Preparing the selected Project Managers current-phase brief...',heading:'Recording the current phase for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Current Phase.',publicDetail:'Scoped to Project Managers: Current Phase.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.phase',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_phase'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this current-phase brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Current Phase interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -5378,7 +5430,7 @@ async function submitActiveCoworkEntry(){
   if(submit) submit.disabled = true;
   try{
     const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
-    const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : label;
+    const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -5559,6 +5611,17 @@ async function applyActiveCoworkProjectOperatingSystem(workItemId = '', button =
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply this operating-system selection. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectPhase(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this current-phase record yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply this current-phase record. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -5585,6 +5648,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'working_narrative') return openProjectNarrativeCowork(node);
   if(field === 'what_val_needs_next') return openProjectNeedsNextCowork(node);
   if(field === 'sop_fit') return openProjectOperatingSystemCowork(node);
+  if(field === 'project_phase') return openProjectPhaseCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -5777,8 +5841,6 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
     const match = Object.values(projectSopLibrary).find((sop) => lower.includes(sop.name.toLowerCase()) || lower.includes(sop.id.replace(/_/g, ' ')));
     activeProjectProfile.sopId = match ? match.id : activeProjectProfile.sopId || 'new_sop';
     activeProjectProfile.sopDeviations = [rewritten];
-  } else if(field === 'project_phase'){
-    activeProjectProfile.projectPhase = rewritten;
   } else if(field === 'project_interview'){
     const stage = projectInterviewStage(activeProjectProfile);
     const metadata = projectMetadataObject(activeProjectProfile);
@@ -20185,7 +20247,7 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   if(!event.target.matches('[data-home-cowork-form]')) return;
   event.preventDefault();
   if(await submitActiveCoworkEntry()) return;
-  if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode !== 'project_cowork'){
+  if(workspaceReturnTarget === 'project' && activeProjectCoworkTarget?.field && activeProjectCoworkTarget.mode === 'field_update'){
     const input = workspaceInputValue('cowork');
     if(!projectCleanText(input)) return;
     const rewritten = applyProjectFieldUpdate(activeProjectCoworkTarget.field, input);
@@ -20213,9 +20275,10 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectNarrativeApply = event.target.closest('[data-cowork-apply-project-narrative]');
   const projectNeedsNextApply = event.target.closest('[data-cowork-apply-project-needs-next]');
   const projectOperatingSystemApply = event.target.closest('[data-cowork-apply-project-operating-system]');
+  const projectPhaseApply = event.target.closest('[data-cowork-apply-project-phase]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -20230,6 +20293,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectNarrativeApply) await applyActiveCoworkProjectNarrative(projectNarrativeApply.dataset.coworkApplyProjectNarrative, projectNarrativeApply);
   if(projectNeedsNextApply) await applyActiveCoworkProjectNeedsNext(projectNeedsNextApply.dataset.coworkApplyProjectNeedsNext, projectNeedsNextApply);
   if(projectOperatingSystemApply) await applyActiveCoworkProjectOperatingSystem(projectOperatingSystemApply.dataset.coworkApplyProjectOperatingSystem, projectOperatingSystemApply);
+  if(projectPhaseApply) await applyActiveCoworkProjectPhase(projectPhaseApply.dataset.coworkApplyProjectPhase, projectPhaseApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });

@@ -244,7 +244,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /source_receipts/);
   assert.match(hearthJs, /lockContext:true/);
   assert.match(hearthJs, /activeCoworkContextLocked/);
-  assert.match(hearthJs, /activeProjectCoworkTarget\.mode !== 'project_cowork'/);
+  assert.match(hearthJs, /activeProjectCoworkTarget\.mode === 'field_update'/);
   assert.match(hearthJs, /project:cowork:/);
   assert.match(hearthJs, /packetName:'project_packet'/);
   assert.match(hearthJs, /heading:spec\.question/);
