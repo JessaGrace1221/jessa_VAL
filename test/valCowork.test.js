@@ -62,6 +62,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   let store={};
   const applied=[];
   const appliedIdentities=[];
+  const appliedOnboarding=[];
   const appliedPeople=[];
   const appliedDocuments=[];
   const appliedMilestones=[];
@@ -90,6 +91,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     applyProjectIdentity:async payload=>{
       appliedIdentities.push(payload);
       return {...loadedProject,name:payload.projectName,desiredOutcome:payload.desiredOutcome,nextStepOwner:payload.owner,summary:payload.purpose};
+    },
+    applyProjectOnboarding:async payload=>{
+      appliedOnboarding.push(payload);
+      return {...loadedProject,metadataJson:{...(loadedProject.metadataJson||{}),projectOnboarding:{status:payload.stage==='prepared_work'?'complete':payload.stage + '_answered'}}};
     },
     applyProjectPeople:async payload=>{
       appliedPeople.push(payload);
@@ -157,7 +162,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -171,7 +176,30 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief']);
+});
+
+test('Project Interview preserves its protected question, applies only its mapped answer, and resumes at the next stage',async()=>{
+  const freshProject={...project(),metadataJson:{projectOnboarding:{status:'needs_interview'}}};
+  const {service,appliedOnboarding}=serviceFor({loadedProject:freshProject});
+  const opened=await service.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
+  assert.equal(opened.question.question,'What should this project be called, and what outcome should it create?');
+  assert.equal(opened.question.targetField,'project_identity_packet.canonical_name + project_identity_packet.desired_outcome');
+  assert.deepEqual(opened.session.workingBrief.currentStageContract.pageBoxes,['Identity','What this is','Working narrative']);
+  const ready=await service.respond(opened.session.id,{answer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.stage,'first_question');
+  assert.equal(ready.workItem.payload.answer,'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.');
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.receipt.action,'apply_project_onboarding_first_question');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedOnboarding.length,1);
+  assert.equal(appliedOnboarding[0].stage,'first_question');
+
+  const resumedProject={...project(),metadataJson:{projectOnboarding:{status:'answered_first_question',firstAnswer:'Project name: Forever Freedom onboarding\nOutcome: A ready partnership launch.'}}};
+  const resumed=await serviceFor({loadedProject:resumedProject}).service.openEntry({entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'project_interview'}});
+  assert.equal(resumed.question.question,'Who owns this project, what is the next move, and what should VAL monitor next?');
+  assert.deepEqual(resumed.session.workingBrief.currentStageContract.pageBoxes,['People involved','Next move','Monitoring after launch']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -744,10 +772,12 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/projectManagerProfile\.dataset\.projectProfileId/);
   assert.match(hearth,/async function openProjectWorkstreamsCowork/);
   assert.match(hearth,/async function openProjectOverviewCowork/);
+  assert.match(hearth,/async function openProjectOnboardingCowork/);
   assert.match(hearth,/const project = projectProfileForCoworkNode\(node\)/);
   assert.match(hearth,/entrypointId:'project\.overview'/);
   assert.match(hearth,/entrypointId:'project\.workstreams'/);
   assert.match(hearth,/entrypointId:'project\.identity'/);
+  assert.match(hearth,/entrypointId:'project\.onboarding'/);
   assert.match(hearth,/entrypointId:'project\.people'/);
   assert.match(hearth,/entrypointId:'project\.documents'/);
   assert.match(hearth,/entrypointId:'project\.milestones'/);
@@ -766,7 +796,8 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/\/api\/val\/cowork\/work-items\/.*\/apply/);
   assert.match(hearth,/if\(field === 'workstreams'\) return openProjectWorkstreamsCowork/);
   assert.match(hearth,/if\(field === 'project_overview'\) return openProjectOverviewCowork/);
-  assert.match(hearth,/if\(field === 'what_this_is' \|\| field === 'project_interview'\) return openProjectIdentityCowork/);
+  assert.match(hearth,/if\(field === 'project_interview'\) return openProjectOnboardingCowork/);
+  assert.match(hearth,/if\(field === 'what_this_is'\) return openProjectIdentityCowork/);
   assert.match(hearth,/if\(field === 'people_involved'\) return openProjectPeopleCowork/);
   assert.match(hearth,/if\(field === 'documents_sources'\) return openProjectDocumentsCowork/);
   assert.match(hearth,/if\(field === 'milestones'\) return openProjectMilestonesCowork/);
@@ -785,6 +816,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/role_in_project:projectCleanText\(matched\?\.role, 'Connected to this work'\)/);
   assert.match(hearth,/if\(await submitActiveCoworkEntry\(\)\) return;/);
   assert.match(hearth,/data-cowork-apply-workstreams/);
+  assert.match(hearth,/data-cowork-apply-project-onboarding/);
   assert.match(hearth,/data-cowork-apply-project-identity/);
   assert.match(hearth,/data-cowork-apply-project-people/);
   assert.match(hearth,/data-cowork-apply-project-documents/);

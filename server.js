@@ -16875,7 +16875,14 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const displayName=patch.name||row.displayName||row.display_name||row.name||metadata.projectName||'Project';
     const summary=Object.prototype.hasOwnProperty.call(patch,'summary')?patch.summary:(row.summary||'');
     const relationshipStatus=patch.status||row.relationshipStatus||row.relationship_status||'intake';
-    const projectOnboarding=patch.projectOnboardingStatus ? {
+    const explicitProjectOnboarding=patch.projectOnboarding&&typeof patch.projectOnboarding==='object'&&!Array.isArray(patch.projectOnboarding)
+      ? patch.projectOnboarding
+      : null;
+    const projectOnboarding=explicitProjectOnboarding ? {
+      ...(metadata.projectOnboarding||{}),
+      ...explicitProjectOnboarding,
+      updatedAt:now
+    } : patch.projectOnboardingStatus ? {
       ...(metadata.projectOnboarding||{}),
       status:patch.projectOnboardingStatus,
       firstQuestion:patch.projectOnboardingFirstQuestion||metadata.projectOnboarding?.firstQuestion||'',
@@ -24847,6 +24854,114 @@ async function loadDocumentsForCowork({limit=120}={}){
   const result=await valDocuments.list({limit});
   return Array.isArray(result?.documents) ? result.documents : [];
 }
+const PROJECT_ONBOARDING_STATUS_BY_STAGE={
+  first_question:'answered_first_question',
+  owner_monitoring:'owner_monitoring_answered',
+  workstreams:'workstreams_answered',
+  milestones:'milestones_answered',
+  relationship_nurture:'relationship_nurture_answered',
+  prepared_work:'complete'
+};
+function coworkOnboardingAnswerField(answer='',labels=''){
+  const source=String(answer||'');
+  const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`,'i'));
+  return String(match?.[1]||'').replace(/\s+/g,' ').trim();
+}
+function coworkOnboardingList(answer='',labels=''){
+  const labeled=labels ? coworkOnboardingAnswerField(answer,labels) : '';
+  const source=labeled||String(answer||'');
+  return source.split(/\n|;|,(?=\s*[A-Z0-9])/).map(item=>item.replace(/^\s*(?:[-*]|\d+[.)])\s*/,'').trim()).filter(Boolean).slice(0,12);
+}
+function coworkOnboardingOwner(answer=''){
+  const explicit=coworkOnboardingAnswerField(answer,'owner|project owner');
+  if(explicit) return explicit;
+  return /\b(i own|i am the owner|i'm the owner|my project)\b/i.test(String(answer||'')) ? 'Jessa' : '';
+}
+async function applyCoworkProjectOnboarding({projectId,projectName='',stage='',answer='',stageContract={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const cleanStage=String(stage||'').trim();
+  const status=PROJECT_ONBOARDING_STATUS_BY_STAGE[cleanStage];
+  const exactAnswer=String(answer||'').replace(/\r\n?/g,'\n').trim();
+  if(!status||!exactAnswer) return null;
+  const existing=current.metadataJson?.projectOnboarding&&typeof current.metadataJson.projectOnboarding==='object'
+    ? current.metadataJson.projectOnboarding
+    : {};
+  const now=new Date().toISOString();
+  const answers={...(existing.answers&&typeof existing.answers==='object'?existing.answers:{}),[cleanStage]:{
+    answer:exactAnswer,
+    targetPacketField:String(stageContract.targetPacketField||''),
+    pageBoxes:Array.isArray(stageContract.pageBoxes)?stageContract.pageBoxes:[],
+    appliedAt:now
+  }};
+  const projectOnboarding={
+    ...existing,
+    status,
+    currentStage:cleanStage,
+    firstQuestion:existing.firstQuestion||'What should this project be called, and what outcome should it create?',
+    answers,
+    updatedAt:now
+  };
+  const patch={
+    name:current.name,
+    projectInterviewNotes:[current.projectInterviewNotes,`[${cleanStage}]\n${exactAnswer}`].filter(Boolean).join('\n\n'),
+    whatValNowKnows:exactAnswer,
+    projectOnboarding,
+    hasNeedsProjectOnboarding:true,
+    needsProjectOnboarding:cleanStage!=='prepared_work',
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work onboarding ${cleanStage} applied from session ${sessionId||'unknown'}.`
+    ].filter(Boolean).join('\n')
+  };
+  if(cleanStage==='first_question'){
+    const name=coworkOnboardingAnswerField(exactAnswer,'project name|name|called');
+    const desiredOutcome=coworkOnboardingAnswerField(exactAnswer,'desired outcome|outcome');
+    projectOnboarding.firstAnswer=exactAnswer;
+    if(name) patch.name=name;
+    if(desiredOutcome){
+      patch.desiredOutcome=desiredOutcome;
+      patch.summary=`Desired outcome: ${desiredOutcome}`;
+    }
+  }
+  if(cleanStage==='owner_monitoring'){
+    const owner=coworkOnboardingOwner(exactAnswer);
+    const nextMove=coworkOnboardingAnswerField(exactAnswer,'next move|next step');
+    const monitor=coworkOnboardingAnswerField(exactAnswer,'monitor|watch');
+    projectOnboarding.ownerMonitoringAnswer=exactAnswer;
+    patch.ownerMonitoringNotes=exactAnswer;
+    if(owner) patch.nextStepOwner=owner;
+    if(nextMove) patch.nextMove=nextMove;
+    if(monitor) patch.monitoringRules=[monitor];
+  }
+  if(cleanStage==='workstreams'){
+    const workstreams=coworkOnboardingList(exactAnswer,'workstreams?|lanes?');
+    projectOnboarding.workstreamsAnswer=exactAnswer;
+    if(workstreams.length) patch.workstreams=workstreams;
+  }
+  if(cleanStage==='milestones'){
+    const milestones=coworkOnboardingList(exactAnswer,'milestones?|checkpoints?');
+    const currentPhase=coworkOnboardingAnswerField(exactAnswer,'current phase|phase');
+    projectOnboarding.milestonesAnswer=exactAnswer;
+    if(milestones.length) patch.milestones=milestones;
+    if(currentPhase) patch.projectPhase=currentPhase;
+  }
+  if(cleanStage==='relationship_nurture'){
+    const rules=coworkOnboardingList(exactAnswer,'relationship nurture|nurture');
+    projectOnboarding.relationshipNurtureAnswer=exactAnswer;
+    if(rules.length) patch.relationshipNurtureRules=rules;
+  }
+  if(cleanStage==='prepared_work'){
+    const preparedWork=coworkOnboardingList(exactAnswer,'prepared work|prepare');
+    projectOnboarding.preparedWorkAnswer=exactAnswer;
+    if(preparedWork.length) patch.preparedWork=preparedWork;
+  }
+  await updateProjectProfileLocal(projectId,patch);
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectIdentity({projectId,projectName='',purpose='',desiredOutcome='',owner='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25509,6 +25624,7 @@ const valCowork = registerValCoworkRoutes(app,{
   loadRelationships:loadRelationshipsForCowork,
   loadDocuments:loadDocumentsForCowork,
   applyProjectIdentity:applyCoworkProjectIdentity,
+  applyProjectOnboarding:applyCoworkProjectOnboarding,
   applyProjectPeople:applyCoworkProjectPeople,
   applyProjectDocuments:applyCoworkProjectDocuments,
   applyProjectMilestones:applyCoworkProjectMilestones,

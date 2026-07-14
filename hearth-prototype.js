@@ -3393,6 +3393,14 @@ function projectNeedsOnboarding(project = {}){
   );
 }
 
+function projectOnboardingIncomplete(project = {}){
+  const onboarding = projectOnboardingData(project);
+  const status = String(onboarding.status || '').toLowerCase();
+  if(status === 'complete' || status === 'prepared_work_answered') return false;
+  if(['needs_interview','needs_onboarding','answered_first_question','foundation_applied','owner_monitoring_answered','workstreams_answered','workstreams_applied','milestones_answered','milestones_applied','relationship_nurture_answered','in_progress'].includes(status)) return true;
+  return projectNeedsOnboarding(project);
+}
+
 function projectOnboardingData(project = {}){
   const metadata = projectMetadataObject(project);
   const onboarding = metadata.projectOnboarding || metadata.project_onboarding || {};
@@ -3407,7 +3415,6 @@ function projectInterviewStage(project = {}){
   if(status === 'milestones_answered' || onboarding.milestonesAnswer || (Array.isArray(project.milestones) && project.milestones.length)) return 'relationship_nurture';
   if(status === 'workstreams_answered' || status === 'lanes_answered' || onboarding.workstreamsAnswer || onboarding.lanesAnswer || (Array.isArray(project.workstreams) && project.workstreams.length)) return 'milestones';
   if(status === 'owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || project.ownerMonitoringNotes) return 'workstreams';
-  if(status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer)) return 'workstreams';
   if(status === 'answered_first_question' || onboarding.firstAnswer) return 'owner_monitoring';
   if(projectNeedsOnboarding(project)) return 'first_question';
   return 'owner_monitoring';
@@ -3906,7 +3913,9 @@ function projectCoworkSourceReceiptLines(project = {}, packet = {}){
 function projectScopedCoworkPacket(field = 'project_overview', project = activeProjectProfile){
   const item = project || activeProjectProfile || projectProfiles.frisson;
   const packet = projectManagerPacket(item);
-  const spec = projectCoworkSpec(field) || {};
+  const spec = field === 'project_interview'
+    ? {title:'Continue project onboarding'}
+    : (projectCoworkSpec(field) || {});
   const affectedObject = projectCoworkAffectedObject(field, item, packet);
   const sourceReceipts = projectCoworkSourceReceiptLines(item, packet);
   return {
@@ -4167,14 +4176,16 @@ function projectManagerDetailCard(field, label, html){
 }
 
 function renderProjectOnboardingPanel(project = activeProjectProfile, interview = {}){
+  const stage = projectInterviewStage(project);
+  const continuing = stage !== 'first_question';
   return [
     '<section class="project-onboarding-panel" aria-label="Project onboarding">',
       '<div>',
         '<span>Project onboarding</span>',
         '<strong>' + escapeHtml(interview.current_question || PROJECT_ONBOARDING_FIRST_QUESTION) + '</strong>',
-        '<p>VAL has the project shell and evidence. The plan stays blank until this answer gives the project its shape.</p>',
+        '<p>' + escapeHtml(continuing ? 'Continue with the next mapped Project Manager section. Earlier answers remain attached to this project.' : 'VAL has the project shell and evidence. The plan stays blank until this answer gives the project its shape.') + '</p>',
       '</div>',
-      '<button type="button" data-project-cowork-field="project_interview">Start onboarding chat</button>',
+      '<button type="button" data-project-cowork-field="project_interview">' + (continuing ? 'Continue onboarding chat' : 'Start onboarding chat') + '</button>',
     '</section>'
   ].join('');
 }
@@ -4376,6 +4387,7 @@ function renderProjectManagerProfile(project = {}){
   const interview = packet.project_interview_packet;
   const overviewFocus = packet.project_overview_focus_packet || {};
   const needsOnboarding = projectNeedsOnboarding(project);
+  const onboardingIncomplete = projectOnboardingIncomplete(project);
   const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
   const relationshipSubtitle = relationships.map((name) => String(name || '').replace(/[.。]+$/g, '').trim()).filter(Boolean).join(', ');
@@ -4420,7 +4432,7 @@ function renderProjectManagerProfile(project = {}){
       '</div>',
     '</section>',
     renderProjectRoundTableFocus(overviewFocus),
-    needsOnboarding ? renderProjectOnboardingPanel(project, interview) : '',
+    onboardingIncomplete ? renderProjectOnboardingPanel(project, interview) : '',
     renderProjectRoundTableOverview(packet, needsOnboarding),
     '<section class="project-manager-operating-system" aria-label="Project operating system">',
       '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
@@ -4498,8 +4510,6 @@ function renderProjectManagerLoadingState(){
 
 function projectCoworkSpec(field = ''){
   const projectName = activeProjectProfile?.name || 'this project';
-  const interviewStage = projectInterviewStage(activeProjectProfile || {});
-  const interviewContract = projectInterviewStageContract(interviewStage);
   const specs = {
     what_this_is: {
       title: 'Shape what this project is',
@@ -4555,12 +4565,6 @@ function projectCoworkSpec(field = ''){
       detail: 'Name the closest operating pattern and any important deviation VAL should not assume.',
       placeholder: 'Use the ... SOP. This project is different because...'
     },
-    project_interview: {
-      title: 'Interview the project manager',
-      question: interviewContract.question,
-      detail: interviewContract.detail,
-      placeholder: interviewContract.placeholder
-    },
     workstreams: {
       title: 'Define workstreams',
       question: 'What are the main lanes of work this project manager needs to own?',
@@ -4606,11 +4610,17 @@ function projectProfileForCoworkNode(node = null){
     activeProjectProfile
   ].filter(Boolean);
   const match = candidates.find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(projectId)));
-  return match ? normalizeProjectInterviewCarryover(match) : null;
+  return match || null;
 }
 
 function coworkEntryPlaceholder(question = {}){
   const target = String(question.targetField || '');
+  if(target === 'project_identity_packet.canonical_name + project_identity_packet.desired_outcome') return 'Project name: ...; Outcome: ...';
+  if(target === 'project_owner_packet + project_next_action_packet + project_monitoring_packet') return 'Owner: ...; Next move: ...; Monitor: ...';
+  if(target === 'project_workstreams') return 'Workstream one\nWorkstream two\nWorkstream three';
+  if(target === 'project_milestone_packet + project_sop_packet.current_phase') return 'Milestone one\nMilestone two\nCurrent phase: ...';
+  if(target === 'project_relationship_nurture_packet') return 'Relationship nurture: ...';
+  if(target === 'project_prepared_work_packets + project_interview_packet.current_question') return 'VAL should prepare, organize, or ask about...';
   if(target === 'transcript_working_brief.prepared_artifact_kind') return 'Prepare the meeting overview';
   if(target === 'prepared_artifact.email_draft') return 'Review the prepared meeting overview.';
   if(target.includes('project_identity_packet.')) return 'Project name: ...; Serves: ...; Desired outcome: ...';
@@ -4882,6 +4892,24 @@ function renderCoworkNextMoveItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectOnboardingItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const contract = payload.stageContract || {};
+  const pageBoxes = Array.isArray(contract.pageBoxes) ? contract.pageBoxes : [];
+  const answer = String(payload.answer || '').trim();
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const complete = String(payload.stage || '') === 'complete';
+  const status = complete ? 'Project onboarding complete' : (applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing the next onboarding answer'));
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Protected project onboarding</span><strong>' + escapeHtml(workItem.title || 'Project onboarding') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      answer ? '<div class="cowork-workstream-list"><article><strong>Answer</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Project Manager boxes', pageBoxes.join(', ')) + coworkWorkstreamField('Response', answer) + coworkWorkstreamField('Approval', 'Internal Project Managers update only.') + '</div></article></div>' : '',
+      ready ? '<button type="button" data-cowork-apply-project-onboarding="' + escapeHtml(workItem.id || '') + '">Apply onboarding answer</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkIdentityItem(workItem = {}){
   const payload = workItem.payload || {};
   const identity = payload.identity || {};
@@ -5056,6 +5084,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkDocumentItem(workItem)
       : workItem.type === 'project_people'
       ? renderCoworkPeopleItem(workItem)
+      : workItem.type === 'project_onboarding_stage'
+      ? renderCoworkProjectOnboardingItem(workItem)
       : workItem.type === 'project_identity'
       ? renderCoworkIdentityItem(workItem)
       : workItem.type === 'project_milestones'
@@ -5099,6 +5129,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Project people applied.'
       : session.entrypointId === 'project.identity'
         ? 'Project foundation applied.'
+      : session.entrypointId === 'project.onboarding'
+        ? 'Project onboarding answer applied.'
       : session.entrypointId === 'project.milestones'
         ? 'Milestones applied.'
       : session.entrypointId === 'project.monitoring'
@@ -5187,6 +5219,43 @@ async function openProjectOverviewCowork(node = null){
     const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.overview',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_overview'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Round Table focus yet.'});
     renderCoworkEntryResult(result,{replaceMessage:true});
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Round Table Focus interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
+async function openProjectOnboardingCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const stage = projectInterviewStage(project);
+  const contract = projectInterviewStageContract(stage);
+  const scopedPacket = projectScopedCoworkPacket('project_interview', project);
+  const action = 'project:cowork:project_interview';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'project_interview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Continue project onboarding',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.onboarding',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'project',
+    title:'Continue project onboarding',
+    meaning:'Preparing the next protected onboarding question for ' + (project.name || 'this project') + '.',
+    context:projectScopedCoworkContextLines(scopedPacket),
+    recommendation:'VAL will ask only the current mapped onboarding question, then prepare that answer for internal review. It will not infer missing details, copy another project, create a task, or take external action.',
+    placeholder:'Preparing the next Project Managers onboarding question...',
+    heading:'Project onboarding for ' + (project.name || 'this project'),
+    detail:'This interview currently feeds ' + contract.pageBoxes.join(', ') + '.',
+    publicDetail:'Scoped to Project Managers: Project Interview.',
+    lockContext:true
+  });
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {
+    if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
+  }).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.onboarding',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_interview'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this project onboarding step yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open this project onboarding step. Nothing was changed. ' + error.message,{replace:true});
+  }
 }
 
 async function openProjectIdentityCowork(node = null, sourceField = 'what_this_is'){
@@ -5537,7 +5606,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
@@ -5598,6 +5667,26 @@ async function applyActiveCoworkProjectOverview(workItemId = '', button = null){
     if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
     renderCoworkEntryResult(result);
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply this Round Table focus. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
+async function applyActiveCoworkProjectOnboarding(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this onboarding answer yet.'});
+    if(result.project){
+      const refreshed = projectProfileFromIndexItem(result.project);
+      projectIndexProfiles[refreshed.id] = refreshed;
+      activeProjectProfile = refreshed;
+      renderProjectRolodex();
+      renderProjectManagerProfile(refreshed);
+    }
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not apply this onboarding answer. Nothing was changed. ' + error.message);
+    if(button) button.disabled = false;
+  }
 }
 
 async function applyActiveCoworkProjectIdentity(workItemId = '', button = null){
@@ -5768,7 +5857,8 @@ async function applyActiveCoworkTranscriptOverview(workItemId = '', button = nul
 async function openProjectScopedCowork(field = 'project_overview', node = null, options = {}){
   if(!activeProjectProfile) return;
   if(field === 'project_overview') return openProjectOverviewCowork(node);
-  if(field === 'what_this_is' || field === 'project_interview') return openProjectIdentityCowork(node,field);
+  if(field === 'project_interview') return openProjectOnboardingCowork(node);
+  if(field === 'what_this_is') return openProjectIdentityCowork(node,field);
   if(field === 'people_involved') return openProjectPeopleCowork(node);
   if(field === 'documents_sources') return openProjectDocumentsCowork(node);
   if(field === 'milestones') return openProjectMilestonesCowork(node);
@@ -5836,98 +5926,6 @@ function projectManagerRewrite(text = '', field = ''){
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
 }
 
-function inferProjectInterviewOwner(text = ''){
-  const clean = projectCleanText(text);
-  if(/\b(i own|i am the owner|i'm the owner|owned by me|my project)\b/i.test(clean)){
-    return {
-      type:'executive',
-      id:'jessa',
-      name:'Jessa',
-      detail:'Executive owner',
-      source:'project_interview',
-      reassignmentOptions:['choose_existing_relationship','create_new_relationship']
-    };
-  }
-  const ownerMatch = clean.match(/\bowner(?:\s+is|:)?\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})/);
-  if(ownerMatch?.[1]){
-    return {
-      type:'relationship',
-      id:ownerMatch[1],
-      name:ownerMatch[1],
-      source:'project_interview',
-      reassignmentOptions:['choose_existing_relationship','create_new_relationship']
-    };
-  }
-  return null;
-}
-
-function inferProjectInterviewNextMove(text = ''){
-  const clean = projectCleanText(text);
-  const match = clean.match(/\bnext (?:step|move)\s+(?:is|should be)\s+(?:to\s+)?([^.!?]+)/i);
-  const move = projectCleanText(match?.[1] || '');
-  if(!move) return '';
-  return move.charAt(0).toUpperCase() + move.slice(1) + '.';
-}
-
-function inferProjectMonitoringRules(text = ''){
-  const clean = projectCleanText(text);
-  const rules = [];
-  if(/\bcrm\b/i.test(clean)) rules.push('CRM setup');
-  if(/\bpayment|processing\b/i.test(clean)) rules.push('Payment processing');
-  if(/\bpipeline/i.test(clean)) rules.push('Pipeline setup');
-  if(/\bcontact forms?\b/i.test(clean)) rules.push('Contact forms');
-  if(/\bcontribute your voice\b/i.test(clean)) rules.push('Contribute Your Voice process');
-  if(/\bwebsite|developer/i.test(clean)) rules.push('Website implementation handoff');
-  return rules.length ? Array.from(new Set(rules)) : [projectCompactText(clean, 160)].filter(Boolean);
-}
-
-function projectInterviewLooksLikeOwnerMonitoringAnswer(text = ''){
-  return /\b(i own|i am the owner|i'm the owner|owner|next step|next move|monitor|crm|payment|pipeline|contact forms?)\b/i.test(projectCleanText(text));
-}
-
-function normalizeProjectInterviewCarryover(project = {}){
-  const onboarding = projectOnboardingData(project);
-  const status = String(onboarding.status || '').toLowerCase();
-  const ownerMonitoringCandidate = [
-    onboarding.ownerMonitoringAnswer,
-    project.ownerMonitoringNotes,
-    projectMetadataObject(project).ownerMonitoringNotes,
-    project.whatValNowKnows,
-    projectMetadataObject(project).whatValNowKnows,
-    project.reality,
-    project.summary,
-    status === 'answered_first_question' && projectInterviewLooksLikeOwnerMonitoringAnswer(onboarding.firstAnswer) ? onboarding.firstAnswer : ''
-  ].find((value) => projectInterviewLooksLikeOwnerMonitoringAnswer(value));
-  const answer = projectCleanText(ownerMonitoringCandidate);
-  if(!answer) return project;
-  const metadata = projectMetadataObject(project);
-  const owner = project.owner || metadata.owner || inferProjectInterviewOwner(answer);
-  const nextMove = project.nextMove || metadata.nextMove || inferProjectInterviewNextMove(answer);
-  const monitoringRules = Array.isArray(project.monitoringRules) && project.monitoringRules.length ? project.monitoringRules : (Array.isArray(metadata.monitoringRules) && metadata.monitoringRules.length ? metadata.monitoringRules : inferProjectMonitoringRules(answer));
-  project.needsProjectOnboarding = false;
-  project.ownerMonitoringNotes = project.ownerMonitoringNotes || metadata.ownerMonitoringNotes || answer;
-  if(owner) project.owner = owner;
-  if(owner?.name) project.nextStepOwner = project.nextStepOwner || metadata.nextStepOwner || owner.name;
-  if(nextMove) project.nextMove = nextMove;
-  project.monitoringRules = monitoringRules;
-  project.metadataJson = {
-    ...metadata,
-    owner:owner || null,
-    nextMove:project.nextMove || '',
-    nextStepOwner:project.nextStepOwner || '',
-    ownerMonitoringNotes:project.ownerMonitoringNotes,
-    monitoringRules,
-    needsProjectOnboarding:false,
-    projectOnboarding:{
-      ...onboarding,
-      status:'owner_monitoring_answered',
-      ownerMonitoringAnswer:answer
-    },
-    noExternalAction:true
-  };
-  return project;
-}
-
 function appendProjectRelationshipNames(names = []){
   if(!activeProjectProfile) return;
   const existing = projectResolvedRelationships(activeProjectProfile).map((name) => projectCleanText(name));
@@ -5969,114 +5967,6 @@ function applyProjectFieldUpdate(field = '', rawText = ''){
     const match = Object.values(projectSopLibrary).find((sop) => lower.includes(sop.name.toLowerCase()) || lower.includes(sop.id.replace(/_/g, ' ')));
     activeProjectProfile.sopId = match ? match.id : activeProjectProfile.sopId || 'new_sop';
     activeProjectProfile.sopDeviations = [rewritten];
-  } else if(field === 'project_interview'){
-    const stage = projectInterviewStage(activeProjectProfile);
-    const metadata = projectMetadataObject(activeProjectProfile);
-    const onboarding = projectOnboardingData(activeProjectProfile);
-    activeProjectProfile.projectInterviewNotes = [activeProjectProfile.projectInterviewNotes, rewritten].filter(Boolean).join('\n');
-    activeProjectProfile.whatValNowKnows = rewritten;
-    activeProjectProfile.metadataJson = {
-      ...metadata,
-      needsProjectOnboarding:false,
-      projectOnboarding:{
-        ...onboarding,
-        firstQuestion:PROJECT_ONBOARDING_FIRST_QUESTION,
-        updatedAt:new Date().toISOString()
-      },
-      noExternalAction:true
-    };
-    if(stage === 'first_question'){
-      activeProjectProfile.desiredOutcome = activeProjectProfile.desiredOutcome || rewritten;
-      activeProjectProfile.summary = activeProjectProfile.summary || rewritten;
-      activeProjectProfile.reality = activeProjectProfile.reality || rewritten;
-      activeProjectProfile.needsProjectOnboarding = false;
-      activeProjectProfile.metadataJson.projectOnboarding = {
-        ...activeProjectProfile.metadataJson.projectOnboarding,
-        status:'answered_first_question',
-        firstAnswer:onboarding.firstAnswer || rewritten,
-        answeredAt:onboarding.answeredAt || new Date().toISOString()
-      };
-    }else if(stage === 'owner_monitoring'){
-      const owner = inferProjectInterviewOwner(rewritten);
-      const nextMove = inferProjectInterviewNextMove(rewritten);
-      const monitoringRules = inferProjectMonitoringRules(rewritten);
-      activeProjectProfile.ownerMonitoringNotes = rewritten;
-      if(owner){
-        activeProjectProfile.owner = owner;
-        activeProjectProfile.nextStepOwner = owner.name;
-      }
-      if(nextMove){
-        activeProjectProfile.nextMove = nextMove;
-        activeProjectProfile.nextMoveEvidence = rewritten;
-      }
-      activeProjectProfile.monitoringRules = monitoringRules;
-      activeProjectProfile.metadataJson = {
-        ...activeProjectProfile.metadataJson,
-        owner:owner || activeProjectProfile.owner || metadata.owner || null,
-        nextMove:activeProjectProfile.nextMove || metadata.nextMove || '',
-        nextStepOwner:activeProjectProfile.nextStepOwner || metadata.nextStepOwner || '',
-        ownerMonitoringNotes:rewritten,
-        monitoringRules,
-        projectOnboarding:{
-          ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'owner_monitoring_answered',
-          ownerMonitoringAnswer:rewritten,
-          ownerMonitoringAnsweredAt:new Date().toISOString()
-        }
-      };
-    }else if(stage === 'workstreams'){
-      activeProjectProfile.workstreams = projectListFromValue(rewritten);
-      activeProjectProfile.metadataJson = {
-        ...activeProjectProfile.metadataJson,
-        workstreams:activeProjectProfile.workstreams,
-        projectOnboarding:{
-          ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'workstreams_answered',
-          workstreamsAnswer:rewritten,
-          workstreamsAnsweredAt:new Date().toISOString()
-        }
-      };
-    }else if(stage === 'milestones'){
-      activeProjectProfile.milestones = projectListFromValue(rewritten);
-      activeProjectProfile.projectPhase = activeProjectProfile.projectPhase || 'Milestones defined';
-      activeProjectProfile.metadataJson = {
-        ...activeProjectProfile.metadataJson,
-        milestones:activeProjectProfile.milestones,
-        projectPhase:activeProjectProfile.projectPhase,
-        projectOnboarding:{
-          ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'milestones_answered',
-          milestonesAnswer:rewritten,
-          milestonesAnsweredAt:new Date().toISOString()
-        }
-      };
-    }else if(stage === 'relationship_nurture'){
-      activeProjectProfile.relationshipNurtureRules = projectListFromValue(rewritten);
-      activeProjectProfile.metadataJson = {
-        ...activeProjectProfile.metadataJson,
-        relationshipNurtureRules:activeProjectProfile.relationshipNurtureRules,
-        projectOnboarding:{
-          ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'relationship_nurture_answered',
-          relationshipNurtureAnswer:rewritten,
-          relationshipNurtureAnsweredAt:new Date().toISOString()
-        }
-      };
-    }else if(stage === 'prepared_work'){
-      activeProjectProfile.preparedWork = (Array.isArray(activeProjectProfile.preparedWork) ? activeProjectProfile.preparedWork : []).concat({title:rewritten, summary:rewritten});
-      activeProjectProfile.nextMove = activeProjectProfile.nextMove || rewritten;
-      activeProjectProfile.metadataJson = {
-        ...activeProjectProfile.metadataJson,
-        preparedWork:activeProjectProfile.preparedWork,
-        nextMove:activeProjectProfile.nextMove,
-        projectOnboarding:{
-          ...activeProjectProfile.metadataJson.projectOnboarding,
-          status:'prepared_work_answered',
-          preparedWorkAnswer:rewritten,
-          preparedWorkAnsweredAt:new Date().toISOString()
-        }
-      };
-    }
   } else if(field === 'workstreams'){
     activeProjectProfile.workstreams = projectListFromValue(rewritten);
   } else if(field === 'milestones'){
@@ -6144,7 +6034,6 @@ async function persistProjectCoworkFieldUpdate(field = '', rewritten = ''){
 }
 
 function projectFollowupQuestion(field = ''){
-  if(field === 'project_interview') return projectInterviewNextQuestion(activeProjectProfile);
   const questions = {
     what_this_is:'What outcome should this project create when it is working?',
     why_it_matters:'Who benefits most if this succeeds?',
@@ -6161,29 +6050,7 @@ function projectFollowupQuestion(field = ''){
 
 function projectCoworkSavedMessage(rewritten = '', field = ''){
   const nextQuestion = projectFollowupQuestion(field);
-  if(field !== 'project_interview'){
-    return 'Updated this section: ' + rewritten + '\n\n' + nextQuestion;
-  }
-  const status = String(projectOnboardingData(activeProjectProfile).status || '').toLowerCase();
-  if(status === 'answered_first_question'){
-    return 'Saved the project name and outcome. I will keep that as the starting shape for this Project Manager.\n\n' + nextQuestion;
-  }
-  if(status === 'owner_monitoring_answered'){
-    return 'Saved the owner, next step, and monitoring context. I updated this Project Manager so it knows what to watch next.\n\n' + nextQuestion;
-  }
-  if(status === 'workstreams_answered' || status === 'lanes_answered'){
-    return 'Saved the workstreams for this Project Manager.\n\n' + nextQuestion;
-  }
-  if(status === 'milestones_answered'){
-    return 'Saved the milestones for this Project Manager.\n\n' + nextQuestion;
-  }
-  if(status === 'relationship_nurture_answered'){
-    return 'Saved the relationship nurture rules for this Project Manager.\n\n' + nextQuestion;
-  }
-  if(status === 'prepared_work_answered'){
-    return 'Saved the prepared-work direction for this Project Manager.\n\n' + nextQuestion;
-  }
-  return 'Saved that into the project interview.\n\n' + nextQuestion;
+  return 'Updated this section: ' + rewritten + '\n\n' + nextQuestion;
 }
 
 function renderProjectCoworkUpdatedResponse(rewritten = '', field = ''){
@@ -7649,7 +7516,7 @@ function renderProjectProfile(projectId = 'frisson'){
     renderProjectManagerEmptyState();
     return;
   }
-  activeProjectProfile = normalizeProjectInterviewCarryover(project);
+  activeProjectProfile = project;
   if(projectTitle) projectTitle.textContent = project.name || 'Projects';
   document.querySelectorAll('[data-project-field]').forEach((node) => {
     const field = node.dataset.projectField;
@@ -20393,6 +20260,7 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
   const workstreamsApply = event.target.closest('[data-cowork-apply-workstreams]');
+  const projectOnboardingApply = event.target.closest('[data-cowork-apply-project-onboarding]');
   const projectIdentityApply = event.target.closest('[data-cowork-apply-project-identity]');
   const projectPeopleApply = event.target.closest('[data-cowork-apply-project-people]');
   const projectDocumentsApply = event.target.closest('[data-cowork-apply-project-documents]');
@@ -20409,10 +20277,11 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectPreparedWorkApply = event.target.closest('[data-cowork-apply-project-prepared-work]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectOnboardingApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
+  if(projectOnboardingApply) await applyActiveCoworkProjectOnboarding(projectOnboardingApply.dataset.coworkApplyProjectOnboarding, projectOnboardingApply);
   if(projectIdentityApply) await applyActiveCoworkProjectIdentity(projectIdentityApply.dataset.coworkApplyProjectIdentity, projectIdentityApply);
   if(projectPeopleApply) await applyActiveCoworkProjectPeople(projectPeopleApply.dataset.coworkApplyProjectPeople, projectPeopleApply);
   if(projectDocumentsApply) await applyActiveCoworkProjectDocuments(projectDocumentsApply.dataset.coworkApplyProjectDocuments, projectDocumentsApply);

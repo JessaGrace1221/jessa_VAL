@@ -189,10 +189,13 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /workstreams_answered/);
   assert.match(hearthJs, /milestones_answered/);
   assert.match(hearthJs, /relationship_nurture_answered/);
-  assert.match(hearthJs, /function inferProjectInterviewOwner/);
-  assert.match(hearthJs, /function inferProjectMonitoringRules/);
-  assert.match(hearthJs, /function projectInterviewLooksLikeOwnerMonitoringAnswer/);
-  assert.match(hearthJs, /function normalizeProjectInterviewCarryover/);
+  assert.match(hearthJs, /async function openProjectOnboardingCowork/);
+  assert.match(hearthJs, /entrypointId:'project\.onboarding'/);
+  assert.match(hearthJs, /data-cowork-apply-project-onboarding/);
+  assert.doesNotMatch(hearthJs, /function inferProjectInterviewOwner/);
+  assert.doesNotMatch(hearthJs, /function inferProjectMonitoringRules/);
+  assert.doesNotMatch(hearthJs, /function projectInterviewLooksLikeOwnerMonitoringAnswer/);
+  assert.doesNotMatch(hearthJs, /function normalizeProjectInterviewCarryover/);
   assert.match(hearthJs, /function renderProjectOnboardingPanel/);
   assert.match(hearthJs, /function renderProjectRoundTableOverview/);
   assert.match(hearthJs, /needsProjectOnboarding:true/);

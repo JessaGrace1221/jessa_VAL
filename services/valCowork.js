@@ -2157,6 +2157,118 @@ function confirmsTranscriptMeetingOverview(answer=''){
   return /^(?:yes|yep|yeah|prepare|prepare (?:the )?(?:meeting )?overview|create (?:the )?(?:meeting )?overview|go ahead)\b/i.test(String(answer || '').trim());
 }
 
+const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
+  first_question:{
+    question:'What should this project be called, and what outcome should it create?',
+    detail:'Feeds Identity, What this is, and Working narrative.',
+    targetPacketField:'project_identity_packet.canonical_name + project_identity_packet.desired_outcome',
+    pageBoxes:['Identity','What this is','Working narrative']
+  },
+  owner_monitoring:{
+    question:'Who owns this project, what is the next move, and what should VAL monitor next?',
+    detail:'Feeds People involved, Next move, and Monitoring after launch.',
+    targetPacketField:'project_owner_packet + project_next_action_packet + project_monitoring_packet',
+    pageBoxes:['People involved','Next move','Monitoring after launch']
+  },
+  workstreams:{
+    question:'What are the main workstreams VAL should track for this project?',
+    detail:'Feeds Workstreams.',
+    targetPacketField:'project_workstreams',
+    pageBoxes:['Workstreams']
+  },
+  milestones:{
+    question:'What milestones prove this project is moving?',
+    detail:'Feeds Milestones and Current phase.',
+    targetPacketField:'project_milestone_packet + project_sop_packet.current_phase',
+    pageBoxes:['Milestones','Current phase']
+  },
+  relationship_nurture:{
+    question:'How should VAL help protect and grow the relationships connected to this project?',
+    detail:'Feeds Relationship nurture.',
+    targetPacketField:'project_relationship_nurture_packet',
+    pageBoxes:['Relationship nurture']
+  },
+  prepared_work:{
+    question:'What should VAL prepare, organize, or ask about next for this project?',
+    detail:'Feeds Prepared work and What VAL needs next.',
+    targetPacketField:'project_prepared_work_packets + project_interview_packet.current_question',
+    pageBoxes:['Prepared work','What VAL needs next']
+  },
+  complete:{
+    question:'What should VAL refine next on this Project Manager page?',
+    detail:'Feeds the specific card you choose.',
+    targetPacketField:'selected_project_manager_packet',
+    pageBoxes:['Project Manager']
+  }
+});
+
+const PROJECT_ONBOARDING_STAGE_ORDER=['first_question','owner_monitoring','workstreams','milestones','relationship_nurture','prepared_work'];
+
+function projectOnboardingData(project={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const onboarding=metadata.projectOnboarding || metadata.project_onboarding || {};
+  return onboarding && typeof onboarding==='object' && !Array.isArray(onboarding) ? onboarding : {};
+}
+function projectOnboardingStage(project={}){
+  const onboarding=projectOnboardingData(project);
+  const status=compactText(onboarding.status || '',100).toLowerCase();
+  if(status==='complete' || status==='prepared_work_answered' || onboarding.preparedWorkAnswer) return 'complete';
+  if(status==='relationship_nurture_answered' || onboarding.relationshipNurtureAnswer || safeArray(project.relationshipNurtureRules).length) return 'prepared_work';
+  if(status==='milestones_answered' || onboarding.milestonesAnswer || safeArray(project.milestones).length) return 'relationship_nurture';
+  if(status==='workstreams_answered' || status==='workstreams_applied' || onboarding.workstreamsAnswer || safeArray(project.workstreams).length) return 'milestones';
+  if(status==='owner_monitoring_answered' || onboarding.ownerMonitoringAnswer || compactText(project.ownerMonitoringNotes || '',700)) return 'workstreams';
+  if(status==='answered_first_question' || status==='foundation_applied' || onboarding.firstAnswer) return 'owner_monitoring';
+  return 'first_question';
+}
+function projectOnboardingStageContract(stage='first_question'){
+  return PROJECT_ONBOARDING_STAGE_CONTRACTS[stage] || PROJECT_ONBOARDING_STAGE_CONTRACTS.complete;
+}
+function projectOnboardingNextStage(stage='first_question'){
+  const index=PROJECT_ONBOARDING_STAGE_ORDER.indexOf(stage);
+  return index>=0 && index<PROJECT_ONBOARDING_STAGE_ORDER.length-1 ? PROJECT_ONBOARDING_STAGE_ORDER[index+1] : 'complete';
+}
+function buildProjectOnboardingBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const stage=projectOnboardingStage(project);
+  const contract=projectOnboardingStageContract(stage);
+  const projectId=String(project.projectId || project.id || input.scope?.entityId || '');
+  const references=projectIdentityReferences(project,input);
+  return {
+    id:stableKey(`working_brief_project_onboarding_${projectId || project.name}`),
+    entrypointId:'project.onboarding',
+    entityType:'project_section',
+    entityId:projectId,
+    sectionId:'project_interview',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentStage:stage,
+    currentStageContract:contract,
+    completedStages:PROJECT_ONBOARDING_STAGE_ORDER.filter((item)=>PROJECT_ONBOARDING_STAGE_ORDER.indexOf(item)<PROJECT_ONBOARDING_STAGE_ORDER.indexOf(stage)),
+    sourceRefs:references,
+    objective:'Complete the selected project manager through its protected onboarding sequence, one mapped section at a time.',
+    completionCondition:stage==='complete' ? 'The protected onboarding sequence is complete. Open a named Project Managers section to refine it.' : `The exact ${contract.pageBoxes.join(', ')} onboarding input is recorded and ready for internal review.`,
+    approvalBoundary:'Applying stores only this stage\'s answer in the selected Project Managers packet and updates only the mapped internal fields. It does not create a task, send a message, update CRM, schedule anything, or alter source evidence.'
+  };
+}
+function projectOnboardingQuestion(state={},brief={}){
+  const stage=state.stage || brief.currentStage || 'first_question';
+  const contract=projectOnboardingStageContract(stage);
+  if(stage==='complete') return {
+    targetField:'project_onboarding_packet',
+    question:contract.question,
+    detail:'The protected onboarding sequence is complete. Open the Project Managers card you want to refine.'
+  };
+  if(state.stage==='ready_to_apply') return {
+    targetField:contract.targetPacketField,
+    question:`Review this answer for ${contract.pageBoxes.join(', ')}, then apply it to this Project Manager.`,
+    detail:'Applying stores the answer exactly as provided. VAL does not infer or create additional project details here.'
+  };
+  return {
+    targetField:contract.targetPacketField,
+    question:contract.question,
+    detail:`${contract.detail} This answer updates only: ${contract.pageBoxes.join(', ')}.`
+  };
+}
+
 const COWORK_ENTRYPOINTS=Object.freeze({
   'project.overview':{
     id:'project.overview',surface:'project_managers',scopeType:'project_section',sectionId:'project_overview',
@@ -2172,6 +2284,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['project_packet','project_identity_packet','project_owner_packet'],
     objective:'Establish the selected project foundation.',
     completionCondition:'Name, purpose, desired outcome, and one project owner are explicit and ready for internal review.'
+  },
+  'project.onboarding':{
+    id:'project.onboarding',surface:'project_managers',scopeType:'project_section',sectionId:'project_interview',
+    requiredPackets:['project_packet','project_interview_packet'],
+    objective:'Advance the selected project through its protected onboarding sequence one mapped section at a time.',
+    completionCondition:'The current protected onboarding answer is visible, mapped to its page boxes, and ready for internal review.'
   },
   'project.people':{
     id:'project.people',surface:'project_managers',scopeType:'project_section',sectionId:'people',
@@ -2286,6 +2404,7 @@ function createValCoworkService({
   loadRelationships=async()=>[],
   loadDocuments=async()=>[],
   applyProjectIdentity=async()=>null,
+  applyProjectOnboarding=async()=>null,
   applyProjectPeople=async()=>null,
   applyProjectDocuments=async()=>null,
   applyProjectMilestones=async()=>null,
@@ -2514,6 +2633,60 @@ function createValCoworkService({
       payloadJson:{projectId:brief.entityId,projectName:brief.projectName,identity:state.draftIdentity,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
+  }
+  async function openProjectOnboardingEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.onboarding'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can continue onboarding.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectOnboardingBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const now=new Date().toISOString();
+    const sc=scope();
+    const complete=brief.currentStage==='complete';
+    const state={stage:brief.currentStage,draftAnswer:'',answers:[]};
+    const question=projectOnboardingQuestion(state,brief);
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,
+      status:complete?'completed':'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_onboarding_stage',title:complete?`Project onboarding complete for ${brief.projectName}`:`Project onboarding: ${brief.currentStageContract.pageBoxes.join(' and ')}`,
+      status:complete?'applied':'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,stage:brief.currentStage,stageContract:brief.currentStageContract,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectOnboarding(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    const stage=state.stage || brief.currentStage || 'first_question';
+    if(stage==='complete') throw new Error('This project onboarding sequence is complete. Open the Project Managers section you want to refine.');
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftAnswer=answer;
+    state.stage='ready_to_apply';
+    session.status='needs_review';
+    workItem.status='needs_review';
+    const contract=projectOnboardingStageContract(stage);
+    workItem.payloadJson={
+      ...workItem.payloadJson,
+      projectId:brief.entityId,
+      projectName:brief.projectName,
+      stage,
+      answer,
+      nextStage:projectOnboardingNextStage(stage),
+      stageContract:contract,
+      completionCondition:brief.completionCondition
+    };
+    const question=projectOnboardingQuestion(state,brief);
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),question];
+    session.updatedAt=new Date().toISOString();
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    return publicResult(session,workItem,`VAL prepared this onboarding answer for ${contract.pageBoxes.join(', ')}. Apply it when this is true.`,question);
   }
   async function openProjectPeopleEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.people'];
@@ -3090,6 +3263,7 @@ function createValCoworkService({
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
     if(entrypointId === 'project.overview') return openProjectOverviewEntry(input);
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
+    if(entrypointId === 'project.onboarding') return openProjectOnboardingEntry(input);
     if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
     if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
     if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
@@ -3157,6 +3331,7 @@ function createValCoworkService({
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
+    if(session.entrypointId === 'project.onboarding') return respondProjectOnboarding(session,workItem,answer);
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
     if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
     if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
@@ -3352,6 +3527,37 @@ function createValCoworkService({
       });
       await saveSession(session);
       await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_onboarding_stage'){
+      if(workItem.status !== 'needs_review') throw new Error('The onboarding answer must be reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this onboarding step is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const stage=compactText(payload.stage || brief.currentStage || '',100);
+      const answer=multilineText(payload.answer || '',5000);
+      if(!PROJECT_ONBOARDING_STAGE_CONTRACTS[stage] || stage==='complete' || !answer) throw new Error('The protected onboarding answer is incomplete and cannot be applied yet.');
+      const project=await applyProjectOnboarding({
+        projectId:payload.projectId || session.scopeId,
+        projectName:payload.projectName || brief.projectName || 'Project',
+        stage,
+        answer,
+        stageContract:payload.stageContract || projectOnboardingStageContract(stage),
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!project) throw new Error('VAL could not save this onboarding stage to the selected Project Manager.');
+      const now=new Date().toISOString();
+      workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:`apply_project_onboarding_${stage}`,status:'completed',
+        summary:`Applied the ${projectOnboardingStageContract(stage).pageBoxes.join(', ')} onboarding input to ${payload.projectName || 'the selected Project Manager'}.`,
+        payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',stage,answer,noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);await saveWorkItem(workItem);
       return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_people'){
@@ -3566,6 +3772,7 @@ function createValCoworkService({
 module.exports={
   COWORK_ENTRYPOINTS,
   buildProjectIdentityBrief,
+  buildProjectOnboardingBrief,
   buildProjectPeopleBrief,
   buildProjectDocumentsBrief,
   buildProjectMilestonesBrief,
@@ -3578,6 +3785,8 @@ module.exports={
   createValCoworkService,
   entryQuestion,
   missingProjectIdentityFields,
+  projectOnboardingStage,
+  projectOnboardingStageContract,
   missingProjectPeopleFields,
   missingProjectDocumentFields,
   missingProjectMilestoneFields,
