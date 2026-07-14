@@ -73,6 +73,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedNeedsNext=[];
   const appliedOperatingSystems=[];
   const appliedPhases=[];
+  const appliedPreparedWork=[];
   const appliedNextMoves=[];
   const preparedTranscriptOverviews=[];
   const service=createValCoworkService({
@@ -133,6 +134,10 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       appliedPhases.push(payload);
       return {...loadedProject,projectPhase:payload.projectPhase.currentPhase,projectPhaseRecord:payload.projectPhase,projectPhaseEvidence:payload.projectPhase.phaseEvidence,projectPhaseExitCondition:payload.projectPhase.exitCondition,projectPhaseNextTrigger:payload.projectPhase.nextPhaseTrigger};
     },
+    applyProjectPreparedWork:async payload=>{
+      appliedPreparedWork.push(payload);
+      return {...loadedProject,projectPreparedWork:[payload.projectPreparedWork]};
+    },
     applyProjectWorkstreams:async payload=>{
       applied.push(payload);
       return {...loadedProject,workstreams:payload.workstreams};
@@ -147,7 +152,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_transcript_overview',body:loadedTranscript.sourceReceipt.body},recipientCount:2};
     }
   });
-  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedPreparedWork,appliedNextMoves,preparedTranscriptOverviews,get store(){return store;}};
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
@@ -161,7 +166,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.workstreams','project.next_move','transcript.working_brief']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.identity','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief']);
 });
 
 test('project foundation onboarding is scoped, field-targeted, review-gated, and never copies another project',async()=>{
@@ -525,6 +530,34 @@ test('Current Phase requires the applied operating system and accepts only its p
   assert.equal(appliedPhases[0].projectPhase.exitCondition,'Dashboard is ready for metric validation');
 });
 
+test('Prepared Work accepts only existing VAL artifact types and applies one internal Ready for You proposal',async()=>{
+  const {service,appliedPreparedWork}=serviceFor();
+  const opened=await service.openEntry({
+    entrypointId:'project.prepared_work',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'prepared_work'}
+  });
+  assert.equal(opened.question.targetField,'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You');
+  assert.match(opened.question.question,/Proposal draft/i);
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/complete and reviewed/i);
+
+  const rejected=await service.respond(opened.session.id,{answer:'Made-up podcast | Forever Freedom sponsor proposal | prospective US sponsors | Forever Freedom MOU | Clarify scope and sponsorship value | Internal review before any external draft or send | Source receipt: Forever Freedom MOU | High'});
+  assert.equal(rejected.workItem.status,'needs_input');
+  assert.match(rejected.question.question,/artifact type/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'Proposal draft | Forever Freedom sponsor proposal | prospective US sponsors | Forever Freedom MOU | Clarify scope and sponsorship value | Internal review before any external draft or send | Source receipt: Forever Freedom MOU | High'});
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.projectPreparedWork.kind,'proposal_draft');
+  assert.equal(ready.workItem.payload.projectPreparedWork.title,'Forever Freedom sponsor proposal');
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'apply_project_prepared_work');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedPreparedWork.length,1);
+  assert.equal(appliedPreparedWork[0].projectPreparedWork.kind,'proposal_draft');
+  assert.equal(appliedPreparedWork[0].projectPreparedWork.audience,'prospective US sponsors');
+});
+
 test('Workstreams interview is scoped to the selected project and asks only mapped questions',async()=>{
   const {service}=serviceFor();
   const opened=await service.openEntry({
@@ -692,6 +725,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/entrypointId:'project\.needs_next'/);
   assert.match(hearth,/entrypointId:'project\.sop'/);
   assert.match(hearth,/entrypointId:'project\.phase'/);
+  assert.match(hearth,/entrypointId:'project\.prepared_work'/);
   assert.match(hearth,/entrypointId:'project\.next_move'/);
   assert.match(hearth,/\/api\/val\/cowork\/entries\/open/);
   assert.match(hearth,/\/api\/val\/cowork\/sessions\/.*\/respond/);
@@ -709,6 +743,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/if\(field === 'what_val_needs_next'\) return openProjectNeedsNextCowork/);
   assert.match(hearth,/if\(field === 'sop_fit'\) return openProjectOperatingSystemCowork/);
   assert.match(hearth,/if\(field === 'project_phase'\) return openProjectPhaseCowork/);
+  assert.match(hearth,/if\(field === 'prepared_work'\) return openProjectPreparedWorkCowork/);
   assert.match(hearth,/activeProjectCoworkTarget\.mode === 'field_update'/);
   assert.match(hearth,/if\(field === 'next_move'\) return openProjectNextMoveCowork/);
   assert.match(hearth,/function projectRelationshipPacketItems/);
@@ -727,6 +762,7 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/data-cowork-apply-project-needs-next/);
   assert.match(hearth,/data-cowork-apply-project-operating-system/);
   assert.match(hearth,/data-cowork-apply-project-phase/);
+  assert.match(hearth,/data-cowork-apply-project-prepared-work/);
   assert.match(hearth,/data-cowork-apply-next-move/);
   assert.match(hearth,/function projectManagerMonitoringRuleList/);
   assert.match(hearth,/function projectManagerRelationshipNurtureList/);
@@ -736,6 +772,9 @@ test('Project Managers canonical entries bypass generic Co-Work and use register
   assert.match(hearth,/function projectNeedsNextPacketItem/);
   assert.match(hearth,/function projectOperatingSystemPacketItem/);
   assert.match(hearth,/function renderCoworkProjectPhaseItem/);
+  assert.match(hearth,/function renderCoworkProjectPreparedWorkItem/);
+  assert.match(server,/async function applyCoworkProjectPreparedWork/);
+  assert.match(server,/applyProjectPreparedWork:applyCoworkProjectPreparedWork/);
   assert.match(hearth,/restoreProjectWindow\(projectReturnId\)/);
   assert.match(hearth,/function renderProjectManagerLoadingState/);
   assert.match(hearth,/if\(canUseApi && !projectIndexLoaded\)/);

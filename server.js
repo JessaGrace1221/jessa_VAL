@@ -16816,6 +16816,21 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const projectNeedsNext=patch.projectNeedsNext&&typeof patch.projectNeedsNext==='object'&&!Array.isArray(patch.projectNeedsNext)?patch.projectNeedsNext:null;
     const projectOperatingSystem=patch.projectOperatingSystem&&typeof patch.projectOperatingSystem==='object'&&!Array.isArray(patch.projectOperatingSystem)?patch.projectOperatingSystem:null;
     const projectPhaseRecord=patch.projectPhaseRecord&&typeof patch.projectPhaseRecord==='object'&&!Array.isArray(patch.projectPhaseRecord)?patch.projectPhaseRecord:null;
+    const projectPreparedWork=Array.isArray(patch.projectPreparedWork)
+      ? patch.projectPreparedWork.map((item)=>({
+          id:String(item?.id||'').trim(),
+          kind:String(item?.kind||'').trim(),
+          kindName:String(item?.kindName||item?.kind_name||'').trim(),
+          title:String(item?.title||'').trim(),
+          audience:String(item?.audience||'').trim(),
+          sourceContext:String(item?.sourceContext||item?.source_context||'').trim(),
+          desiredOutcome:String(item?.desiredOutcome||item?.desired_outcome||'').trim(),
+          reviewBoundary:String(item?.reviewBoundary||item?.review_boundary||'').trim(),
+          basis:String(item?.basis||'').trim(),
+          confidence:String(item?.confidence||'').trim(),
+          sourceRefs:Array.isArray(item?.sourceRefs)?item.sourceRefs:[]
+        })).filter((item)=>item.id&&item.kind&&item.title&&item.audience&&item.sourceContext&&item.desiredOutcome&&item.reviewBoundary&&item.basis&&item.confidence)
+      : null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16902,6 +16917,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectNeedsNext?{projectNeedsNext}:{}),
       ...(projectOperatingSystem?{projectOperatingSystem}:{}),
       ...(projectPhaseRecord?{projectPhaseRecord}:{}),
+      ...(projectPreparedWork?{projectPreparedWork}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17584,6 +17600,7 @@ function projectIndexItemFromProfile(profile={}){
     projectRisk:metadata.projectRisk&&typeof metadata.projectRisk==='object'&&!Array.isArray(metadata.projectRisk)?metadata.projectRisk:null,
     projectPeople:Array.isArray(metadata.projectPeople)?metadata.projectPeople:[],
     projectDocuments:Array.isArray(metadata.projectDocuments)?metadata.projectDocuments:[],
+    projectPreparedWork:Array.isArray(metadata.projectPreparedWork)?metadata.projectPreparedWork:[],
     preparedWork:Array.isArray(metadata.preparedWork)?metadata.preparedWork:[],
     metadataJson:metadata,
     sourceDetails,
@@ -25311,6 +25328,101 @@ async function applyCoworkProjectPhase({projectId,projectName='',sopId='',projec
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectPreparedWork({projectId,projectName='',projectPreparedWork={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const allowedKinds={
+    proposal_draft:'Proposal draft',
+    invoice_draft:'Invoice draft',
+    agreement_draft:'Agreement draft',
+    document_draft:'Document draft',
+    copy_draft:'Copy draft',
+    html_page_draft:'HTML page draft',
+    calendar_invite_draft:'Calendar invite draft',
+    introduction_email_draft:'Introduction email draft',
+    email_draft:'Email draft'
+  };
+  const raw=projectPreparedWork&&typeof projectPreparedWork==='object'&&!Array.isArray(projectPreparedWork)?projectPreparedWork:{};
+  const kind=String(raw.kind||raw.type||'').trim().toLowerCase();
+  const title=String(raw.title||'').trim();
+  const audience=String(raw.audience||'').trim();
+  const sourceContext=String(raw.sourceContext||raw.source_context||'').trim();
+  const desiredOutcome=String(raw.desiredOutcome||raw.desired_outcome||'').trim();
+  const reviewBoundary=String(raw.reviewBoundary||raw.review_boundary||'').trim();
+  const basis=String(raw.basis||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  const confidenceScore=/^high$/i.test(confidence)
+    ? 0.85
+    : /^medium$/i.test(confidence)
+      ? 0.65
+      : /^low$/i.test(confidence)
+        ? 0.4
+        : Math.max(0,Math.min(1,Number(confidence)||0));
+  if(!allowedKinds[kind]||!title||!audience||!sourceContext||!desiredOutcome||!reviewBoundary||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const prepared={
+    id:String(raw.id||stableKey(`project_prepared_work_${projectId}_${kind}_${title}`)).trim(),
+    kind,
+    kindName:allowedKinds[kind],
+    title,
+    audience,
+    sourceContext,
+    desiredOutcome,
+    reviewBoundary,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const existing=Array.isArray(current.projectPreparedWork)?current.projectPreparedWork:[];
+  const projectPreparedWorkRecords=[...existing.filter((item)=>String(item?.id||'')!==prepared.id),prepared];
+  const now=new Date().toISOString();
+  const readyItem={
+    id:stableKey(`ready_project_prepared_work_${projectId}_${prepared.id}`),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    eventRunId:'',
+    category:'prepared_work',
+    type:prepared.kind,
+    itemType:prepared.kind,
+    title:prepared.title,
+    status:'ready_for_review',
+    summary:prepared.desiredOutcome,
+    whyUserIsSeeingThis:`VAL prepared the ${prepared.kindName.toLowerCase()} proposal for ${current.name}. Your review is required before any content is generated or anything external happens.`,
+    whyNow:prepared.sourceContext,
+    readinessJson:{status:'ready_for_review',projectId,projectName:current.name,noExternalAction:true},
+    whatValPrepared:`Prepared the internal ${prepared.kindName.toLowerCase()} proposal only.`,
+    whatUserNeedsToDo:prepared.reviewBoundary,
+    whatValDid:'Recorded the artifact type, source context, desired outcome, and review boundary. No content was generated and no external action was taken.',
+    whatOnlyUserCanDo:'Review whether this is the right artifact to prepare and provide any further direction before content generation or any external action.',
+    estimatedReviewMinutes:2,
+    sourceRefsJson:refs,
+    confidence:confidenceScore,
+    requiresApproval:true,
+    approvalPolicy:'approval_required',
+    representationRisk:/proposal|invoice|agreement|email|calendar/.test(kind)?'high':'medium',
+    actionsJson:[{key:'review_prepared_work',label:'Review prepared work',external_action:false},{key:'approve',label:'Approve',external_action:false},{key:'reject',label:'Reject',external_action:false}],
+    metadataJson:{source:'project_managers_cowork',projectId,projectName:current.name,preparedArtifactKind:prepared.kind,preparedArtifact:{id:prepared.id,kind:prepared.kind,title:prepared.title,audience:prepared.audience,sourceContext:prepared.sourceContext,desiredOutcome:prepared.desiredOutcome,reviewBoundary:prepared.reviewBoundary,externalSend:false,externalPublish:false,externalCalendarWrite:false,reviewRequired:true},canValAct:'approval_required',noExternalAction:true,noExternalSend:true,noExternalPublish:true,noExternalCalendarWrite:true},
+    decisionJson:{},
+    createdAt:now,
+    updatedAt:now,
+    reviewedAt:null,
+    snoozedUntil:null
+  };
+  await valReadyForYou.saveItem(readyItem);
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    projectPreparedWork:projectPreparedWorkRecords,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work prepared-work proposal applied from session ${sessionId||'unknown'}: ${sourceSummary||prepared.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25355,6 +25467,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectNeedsNext:applyCoworkProjectNeedsNext,
   applyProjectOperatingSystem:applyCoworkProjectOperatingSystem,
   applyProjectPhase:applyCoworkProjectPhase,
+  applyProjectPreparedWork:applyCoworkProjectPreparedWork,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

@@ -1329,6 +1329,154 @@ function projectPhaseQuestion(state={},brief={}){
   };
 }
 
+const PROJECT_PREPARED_ARTIFACTS=Object.freeze({
+  proposal_draft:{id:'proposal_draft',name:'Proposal draft'},
+  invoice_draft:{id:'invoice_draft',name:'Invoice draft'},
+  agreement_draft:{id:'agreement_draft',name:'Agreement draft'},
+  document_draft:{id:'document_draft',name:'Document draft'},
+  copy_draft:{id:'copy_draft',name:'Copy draft'},
+  html_page_draft:{id:'html_page_draft',name:'HTML page draft'},
+  calendar_invite_draft:{id:'calendar_invite_draft',name:'Calendar invite draft'},
+  introduction_email_draft:{id:'introduction_email_draft',name:'Introduction email draft'},
+  email_draft:{id:'email_draft',name:'Email draft'}
+});
+function projectPreparedArtifactKind(value=''){
+  const normalized=compactText(value,180).toLowerCase();
+  if(!normalized) return '';
+  const match=Object.values(PROJECT_PREPARED_ARTIFACTS).find((option)=>{
+    const id=option.id.toLowerCase();
+    return normalized===id || normalized===option.name.toLowerCase() || normalized===id.replace(/_/g,' ') || normalized===`${option.name.toLowerCase()} (${id})`;
+  });
+  return match?.id || '';
+}
+function projectPreparedWorkTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {kind:value} : (value || {});
+  const kind=projectPreparedArtifactKind(raw.kind || raw.type || raw.preparedArtifactKind || raw.prepared_artifact_kind || raw.artifactType || raw.artifact_type);
+  const option=PROJECT_PREPARED_ARTIFACTS[kind] || null;
+  return {
+    id:compactText(raw.id || stableKey(`project_prepared_work_${brief.entityId || brief.projectName || 'project'}_${kind || raw.title || ''}`),220),
+    kind,
+    kindName:option?.name || '',
+    title:compactText(raw.title || raw.workingTitle || raw.working_title || raw.name || '',500),
+    audience:compactText(raw.audience || raw.intendedAudience || raw.intended_audience || raw.recipients || '',500),
+    sourceContext:compactText(raw.sourceContext || raw.source_context || raw.sourceReceipt || raw.source_receipt || raw.source || '',700),
+    desiredOutcome:compactText(raw.desiredOutcome || raw.desired_outcome || raw.outcome || raw.purpose || raw.whatItShouldAccomplish || raw.what_it_should_accomplish || '',700),
+    reviewBoundary:compactText(raw.reviewBoundary || raw.review_boundary || raw.approvalBoundary || raw.approval_boundary || raw.review || '',700),
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectPreparedWork(value={},brief={}){
+  return projectPreparedWorkTemplate(value,brief);
+}
+function missingProjectPreparedWorkFields(value={},brief={}){
+  const preparedWork=normalizeProjectPreparedWork(value,brief);
+  const missing=[];
+  if(!preparedWork.kind) missing.push('artifact type from the available choices');
+  if(!compactText(preparedWork.title)) missing.push('working title');
+  if(!compactText(preparedWork.audience)) missing.push('intended audience');
+  if(!compactText(preparedWork.sourceContext)) missing.push('source receipt or project evidence to use');
+  if(!compactText(preparedWork.desiredOutcome)) missing.push('desired outcome');
+  if(!compactText(preparedWork.reviewBoundary)) missing.push('review or approval boundary');
+  if(!compactText(preparedWork.basis)) missing.push('basis');
+  if(!compactText(preparedWork.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectPreparedWorkLine(value={},brief={}){
+  const preparedWork=normalizeProjectPreparedWork(value,brief);
+  return [
+    preparedWork.kindName || 'Artifact type: choose one available type',
+    'working title: ' + (preparedWork.title || '...'),
+    'audience: ' + (preparedWork.audience || '...'),
+    'source context: ' + (preparedWork.sourceContext || '...'),
+    'desired outcome: ' + (preparedWork.desiredOutcome || '...'),
+    'review boundary: ' + (preparedWork.reviewBoundary || '...'),
+    'basis: ' + (preparedWork.basis || '...'),
+    'confidence: ' + (preparedWork.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectPreparedWork(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectPreparedWork(current,brief);
+  const previous=normalizeProjectPreparedWork(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let kind=projectPreparedArtifactKind(monitoringValueFromLine(source,'artifact type|artifact|prepared artifact|type|kind'));
+  let title=monitoringValueFromLine(source,'working title|title');
+  let audience=monitoringValueFromLine(source,'intended audience|audience|recipient');
+  let sourceContext=monitoringValueFromLine(source,'source context|source receipt|source evidence|source');
+  let desiredOutcome=monitoringValueFromLine(source,'desired outcome|outcome|purpose|what it should accomplish');
+  let reviewBoundary=monitoringValueFromLine(source,'review boundary|approval boundary|review');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 8){
+    kind=kind || projectPreparedArtifactKind(parts[0].replace(/^\s*(?:artifact type|artifact|prepared artifact|type|kind)\s*:\s*/i,''));
+    title=title || parts[1].replace(/^\s*(?:working title|title)\s*:\s*/i,'');
+    audience=audience || parts[2].replace(/^\s*(?:intended audience|audience|recipient)\s*:\s*/i,'');
+    sourceContext=sourceContext || parts[3].replace(/^\s*(?:source context|source receipt|source evidence|source)\s*:\s*/i,'');
+    desiredOutcome=desiredOutcome || parts[4].replace(/^\s*(?:desired outcome|outcome|purpose|what it should accomplish)\s*:\s*/i,'');
+    reviewBoundary=reviewBoundary || parts[5].replace(/^\s*(?:review boundary|approval boundary|review)\s*:\s*/i,'');
+    basis=basis || parts[6].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[7].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectPreparedWork({
+    ...previous,
+    kind:kind || previous.kind,
+    title:title || previous.title,
+    audience:audience || previous.audience,
+    sourceContext:sourceContext || previous.sourceContext,
+    desiredOutcome:desiredOutcome || previous.desiredOutcome,
+    reviewBoundary:reviewBoundary || previous.reviewBoundary,
+    basis:basis || previous.basis,
+    confidence:confidence || previous.confidence,
+    sourceRefs:brief.sourceRefs
+  },brief);
+}
+function buildProjectPreparedWorkBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const existing=safeArray(project.projectPreparedWork || metadata.projectPreparedWork || project.preparedWork || metadata.preparedWork).map((item)=>normalizeProjectPreparedWork(item,{sourceRefs:references}));
+  return {
+    id:stableKey(`working_brief_project_prepared_work_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.prepared_work',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'prepared_work',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    availableArtifactTypes:Object.values(PROJECT_PREPARED_ARTIFACTS),
+    existingPreparedWork:existing,
+    sourceRefs:references,
+    objective:'Decide the one reviewable artifact VAL should prepare for the selected project, with the correct evidence and approval boundary.',
+    completionCondition:'One allowed artifact type, working title, audience, source context, desired outcome, review boundary, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this proposal changes only the selected project’s internal Prepared Work packet and creates one internal Ready for You review item. It does not generate content, create a provider draft, send a message, publish a page, create a calendar event, update CRM, alter source evidence, or create a task.'
+  };
+}
+function projectPreparedWorkQuestion(state={},brief={}){
+  const preparedWork=normalizeProjectPreparedWork(state.draftProjectPreparedWork || {},brief);
+  const available=safeArray(brief.availableArtifactTypes).map((option)=>`${option.name} (${option.id})`).join('; ');
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'prepared_work'){
+    return {
+      targetField:'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You',
+      question:`What one reviewable artifact should VAL prepare for ${brief.projectName || 'this project'}? Choose one available type: ${available}. Add one line: artifact type | working title | intended audience | source receipt or project evidence to use | desired outcome | review or approval boundary | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > Prepared work and creates one internal Ready for You item after review. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not generate the content or take an external action here.`
+    };
+  }
+  if(state.stage === 'prepared_work_details'){
+    const missing=missingProjectPreparedWorkFields(preparedWork,brief);
+    return {
+      targetField:'project_prepared_work_packets[].{kind,title,audience,source_context,desired_outcome,review_boundary,basis,confidence} + Ready for You',
+      question:`Fill only these missing Prepared Work details: ${missing.join(', ')}.\n\n${projectPreparedWorkLine(preparedWork,brief)}`,
+      detail:'Choose only an existing VAL artifact type. The review boundary must make clear that no external action is authorized.'
+    };
+  }
+  return {
+    targetField:'project_prepared_work_packets',
+    question:'Review the prepared artifact proposal, then apply it to this Project Manager and Ready for You.',
+    detail:'Applying creates an internal proposal only. Nothing is drafted, sent, published, scheduled, or changed externally.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1922,6 +2070,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Record the selected project’s actual place in its already-applied operating-system sequence.',
     completionCondition:'One allowed current phase, phase evidence, exit condition, next-phase trigger, basis, and confidence are ready for internal review.'
   },
+  'project.prepared_work':{
+    id:'project.prepared_work',surface:'project_managers',scopeType:'project_section',sectionId:'prepared_work',
+    requiredPackets:['project_packet','project_prepared_work_packets','project_document_receipts'],
+    objective:'Choose one reviewable artifact VAL should prepare for the selected project, with the correct source and review boundary.',
+    completionCondition:'One allowed artifact type, title, audience, source context, desired outcome, review boundary, basis, and confidence are ready for internal review.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1974,6 +2128,7 @@ function createValCoworkService({
   applyProjectNeedsNext=async()=>null,
   applyProjectOperatingSystem=async()=>null,
   applyProjectPhase=async()=>null,
+  applyProjectPreparedWork=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -2510,6 +2665,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectPreparedWorkEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.prepared_work'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can prepare work.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectPreparedWorkBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'prepared_work',draftProjectPreparedWork:{},answers:[]};
+    const question=projectPreparedWorkQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_prepared_work',title:`Prepared work for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectPreparedWork:state.draftProjectPreparedWork,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectPreparedWork(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectPreparedWork=parseProjectPreparedWork(answer,brief,state.draftProjectPreparedWork || {});
+    const preparedWork=normalizeProjectPreparedWork(state.draftProjectPreparedWork,brief);
+    const missing=missingProjectPreparedWorkFields(preparedWork,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectPreparedWork:preparedWork,completionCondition:brief.completionCondition};
+      question=projectPreparedWorkQuestion(state,brief);message='VAL prepared the artifact proposal for review. Apply it when this is true.';
+    }else{
+      state.stage='prepared_work_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectPreparedWorkQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -2705,6 +2895,7 @@ function createValCoworkService({
     if(entrypointId === 'project.needs_next') return openProjectNeedsNextEntry(input);
     if(entrypointId === 'project.sop') return openProjectOperatingSystemEntry(input);
     if(entrypointId === 'project.phase') return openProjectPhaseEntry(input);
+    if(entrypointId === 'project.prepared_work') return openProjectPreparedWorkEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -2770,6 +2961,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.needs_next') return respondProjectNeedsNext(session,workItem,answer);
     if(session.entrypointId === 'project.sop') return respondProjectOperatingSystem(session,workItem,answer);
     if(session.entrypointId === 'project.phase') return respondProjectPhase(session,workItem,answer);
+    if(session.entrypointId === 'project.prepared_work') return respondProjectPreparedWork(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -3077,6 +3269,20 @@ function createValCoworkService({
       if(!project) throw new Error('VAL could not save the current-phase record to the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_phase',status:'completed',summary:`Applied the ${projectPhase.currentPhase} phase to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',sopId:brief.sopId,projectPhase,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_prepared_work'){
+      if(workItem.status !== 'needs_review') throw new Error('The prepared-work proposal must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectPreparedWork=normalizeProjectPreparedWork(payload.projectPreparedWork || {},brief);
+      if(missingProjectPreparedWorkFields(projectPreparedWork,brief).length) throw new Error('The prepared-work proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectPreparedWork({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectPreparedWork,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the prepared-work proposal to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_prepared_work',status:'completed',summary:`Applied the ${projectPreparedWork.kindName} proposal to ${payload.projectName || 'the selected Project Manager'} and Ready for You.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectPreparedWork,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_needs_next'){
