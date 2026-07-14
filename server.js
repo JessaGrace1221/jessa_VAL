@@ -24896,6 +24896,26 @@ async function applyCoworkProjectMilestones({projectId,projectName='',milestones
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectMonitoring({projectId,projectName='',monitoringRules=[],sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const preparedRules=Array.isArray(monitoringRules) ? monitoringRules.filter((rule)=>rule?.watchItem&&rule?.cadence&&rule?.escalationTrigger&&rule?.executiveAction) : [];
+  if(!preparedRules.length) return null;
+  const refs=Array.isArray(sourceRefs) ? sourceRefs : [];
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary || ref.quoteOrSummary || ref.summary || '').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    monitoringRules:preparedRules,
+    rawContext:[
+      current.sourceDetails?.rawContext || '',
+      `Co-Work monitoring applied from session ${sessionId || 'unknown'}: ${sourceSummary || 'Project Managers monitoring review.'}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -24932,6 +24952,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectPeople:applyCoworkProjectPeople,
   applyProjectDocuments:applyCoworkProjectDocuments,
   applyProjectMilestones:applyCoworkProjectMilestones,
+  applyProjectMonitoring:applyCoworkProjectMonitoring,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,

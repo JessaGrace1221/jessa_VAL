@@ -126,7 +126,7 @@ The following registry is the required replacement.
 | `project.onboarding` | Future continuation after the project foundation is applied. | Complete the project manager's remaining onboarding picture. | Initial workstreams, milestones, nurture pattern, and prepared-work need are complete or explicitly deferred. | `project_interview_packet` plus the named Project Manager page sections. |
 | `project.workstreams` | `Needs workstreams` / `Workstreams` | Build the complete, manageable lanes of work required to deliver the project outcome. | See the Workstreams contract below. | Structured `project_workstreams`; workstreams card and Project Manager Round Table. |
 | `project.milestones` | `Milestones` | Define evidence-based checkpoints. | Each milestone is attached to an existing workstream and names its completion signal plus timing or trigger. | `project_milestone_packet`; milestones card. |
-| `project.monitoring` | `Monitoring after launch` | Define what VAL watches after launch. | Signals, thresholds/cadence, and escalation rule are explicit. | `project_sop_packet.monitoring_rules`; monitoring card. |
+| `project.monitoring` | `Monitoring after launch` | Define what VAL watches after launch. | Each rule has a watch item, cadence, escalation trigger, and executive surface action. | `project_monitoring_packet`; monitoring card. |
 | `project.relationship_nurture` | `Relationship nurture` | Protect the relationships that make the project viable. | Cadence, trust risks, useful touches, and review triggers are explicit. | `project_sop_packet.relationship_nurture_rules`; nurture card. |
 
 ### Workstreams Contract
@@ -167,6 +167,12 @@ The workstreams conversation is complete only when every retained lane has the r
 Each prepared milestone has an existing workstream, checkpoint, concrete completion signal, timing or trigger, and source receipts.
 
 If workstreams do not exist, VAL directs the executive back to the exact Workstreams section. Once workstreams exist, it asks only for the missing milestone fields, presents the complete set for review, and applies only to the selected internal Project Managers packet. It creates no task, event, CRM update, message, or document mutation.
+
+### Monitoring Contract
+
+`project.monitoring` defines the selected project's quiet-watch rules. Each rule names the specific item VAL watches, the cadence, the observable escalation trigger, and exactly what VAL should surface to the executive.
+
+Existing workstream monitoring signals are brought into the Working Brief as context only. VAL does not silently convert them into rules, create an alert, make a task, send a message, update a CRM, change a calendar, or alter any source document. The executive reviews the prepared rules before they are applied to the selected internal Project Managers packet.
 
 ## Transcripts And Meeting Prep
 
@@ -236,7 +242,7 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First six canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, and `Milestones` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | First seven canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `People involved`, `Documents / sources`, `Milestones`, and `Monitoring after launch` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | First canonical slice complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. The legacy freeform transcript chat route has been removed. | Typed packet outputs for transcript-derived project, relationship, commitment, and task work still need their own scoped entries. |
 | Executive Inbox | Partial | Selected thread/source summary reaches a scoped chat launcher. | Typed email-thread brief, completion contract, and artifact/action routing. |
 | Relationships | Partial | Relationship and selected-card summaries reach a scoped chat launcher. | Field-level objectives, target writes, and completion/apply contracts. |

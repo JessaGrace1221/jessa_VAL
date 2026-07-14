@@ -332,6 +332,123 @@ function projectMilestonesQuestion(state={},brief={}){
   };
 }
 
+function monitoringRuleTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {watchItem:value} : (value || {});
+  const watchItem=compactText(raw.watchItem || raw.watch_item || raw.signal || raw.monitor || raw.name || raw.title || '',500);
+  return {
+    id:compactText(raw.id || stableKey(`project_monitoring_${watchItem}`),220),
+    watchItem,
+    cadence:compactText(raw.cadence || raw.reviewCadence || raw.review_cadence || '',180),
+    escalationTrigger:compactText(raw.escalationTrigger || raw.escalation_trigger || raw.trigger || raw.threshold || raw.alertWhen || '',500),
+    executiveAction:compactText(raw.executiveAction || raw.executive_action || raw.actionWhenEscalated || raw.escalationAction || raw.action || '',500),
+    sourceRefs:safeArray(raw.sourceRefs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeMonitoringRule(value={},brief={}){
+  return monitoringRuleTemplate(value,brief);
+}
+function missingMonitoringRuleFields(rule={}){
+  const missing=[];
+  if(!compactText(rule.watchItem)) missing.push('watch item');
+  if(!compactText(rule.cadence)) missing.push('cadence');
+  if(!compactText(rule.escalationTrigger)) missing.push('escalation trigger');
+  if(!compactText(rule.executiveAction)) missing.push('what VAL should surface');
+  return missing;
+}
+function monitoringValueFromLine(line='',labels=''){
+  return milestoneValueFromLine(line,labels);
+}
+function monitoringRuleLine(value={},brief={}){
+  const rule=normalizeMonitoringRule(value,brief);
+  return [
+    rule.watchItem || 'Watch item',
+    'cadence: ' + (rule.cadence || '...'),
+    'escalate when: ' + (rule.escalationTrigger || '...'),
+    'surface: ' + (rule.executiveAction || '...')
+  ].join(' | ');
+}
+function parseMonitoringRuleLine(line='',brief={}){
+  const source=String(line || '').trim();
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let watchItem=monitoringValueFromLine(source,'watch item|watch|signal|monitor');
+  let cadence=monitoringValueFromLine(source,'cadence|review cadence|review');
+  let escalationTrigger=monitoringValueFromLine(source,'escalate when|escalation trigger|trigger|threshold|alert when');
+  let executiveAction=monitoringValueFromLine(source,'surface|what val should surface|executive action|action when escalated|action');
+  if(parts.length >= 4){
+    watchItem=watchItem || parts[0].replace(/^\s*(?:watch item|watch|signal|monitor)\s*:\s*/i,'');
+    cadence=cadence || parts[1].replace(/^\s*(?:cadence|review cadence|review)\s*:\s*/i,'');
+    escalationTrigger=escalationTrigger || parts[2].replace(/^\s*(?:escalate when|escalation trigger|trigger|threshold|alert when)\s*:\s*/i,'');
+    executiveAction=executiveAction || parts[3].replace(/^\s*(?:surface|what val should surface|executive action|action when escalated|action)\s*:\s*/i,'');
+  }
+  return normalizeMonitoringRule({watchItem,cadence,escalationTrigger,executiveAction},brief);
+}
+function parseMonitoringRules(answer='',brief={},current=[]){
+  const lines=multilineText(answer,5000).split(/\n+/).map((line)=>line.replace(/^\s*(?:monitoring rules?|watch items?)\s*:\s*/i,'').trim()).filter(Boolean);
+  if(!lines.length) return safeArray(current).map((item)=>normalizeMonitoringRule(item,brief));
+  const next=safeArray(current).map((item)=>normalizeMonitoringRule(item,brief));
+  for(const line of lines){
+    const candidate=parseMonitoringRuleLine(line,brief);
+    const key=String(candidate.watchItem || '').toLowerCase();
+    const index=next.findIndex((item)=>String(item.watchItem || '').toLowerCase()===key);
+    if(index >= 0) next[index]={...next[index],...candidate,id:next[index].id || candidate.id};
+    else if(next.length === 1 && missingMonitoringRuleFields(next[0]).length) next[0]={...next[0],...candidate,id:next[0].id || candidate.id};
+    else next.push(candidate);
+  }
+  const seen=new Set();
+  return next.filter((item)=>{
+    const key=[item.watchItem,item.cadence,item.escalationTrigger,item.executiveAction].join('|').toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildProjectMonitoringBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const workstreams=safeArray(project.workstreams || metadata.workstreams).map((item)=>normalizeWorkstream(item,{}));
+  const references=projectIdentityReferences(project,input);
+  const existingRules=safeArray(project.monitoringRules || metadata.monitoringRules).map((item)=>normalizeMonitoringRule(item,{sourceRefs:references}));
+  const workstreamSignals=workstreams.map((item)=>({workstreamName:item.name,signal:item.monitoringSignal})).filter((item)=>item.workstreamName && item.signal);
+  return {
+    id:stableKey(`working_brief_project_monitoring_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.monitoring',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'monitoring_rules',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentPhase:compactText(project.projectPhase || metadata.projectPhase || project.status || '',180),
+    existingRules,
+    workstreamSignals,
+    sourceRefs:references,
+    objective:'Define the project-specific monitoring rules that let VAL watch progress quietly and escalate only when executive attention is useful.',
+    completionCondition:'Every monitoring rule names a watch item, cadence, escalation trigger, and what VAL should surface for the executive.',
+    approvalBoundary:'Applying monitoring rules changes only the internal Project Managers packet. It does not create tasks, alerts, messages, CRM updates, calendar changes, or alter source documents.'
+  };
+}
+function projectMonitoringQuestion(state={},brief={}){
+  const rules=safeArray(state.draftMonitoringRules);
+  const signals=safeArray(brief.workstreamSignals).map((item)=>`${item.workstreamName}: ${item.signal}`).join('; ');
+  if(state.stage === 'monitoring'){
+    return {
+      targetField:'project_monitoring_packet[].{watch_item,cadence,escalation_trigger,executive_action}',
+      question:`What should VAL watch for ${brief.projectName || 'this project'}, how often, and what should make it surface the issue to you? Add one line per rule: watch item | cadence | escalate when | surface.`,
+      detail:`This fills Project Managers > Monitoring after launch. ${signals ? 'Current workstream signals: ' + signals + '. ' : ''}A rule watches quietly until its stated trigger is true; it does not create an alert or task by itself.`
+    };
+  }
+  if(state.stage === 'monitoring_details'){
+    const incomplete=rules.filter((rule)=>missingMonitoringRuleFields(rule).length);
+    return {
+      targetField:'project_monitoring_packet[].{watch_item,cadence,escalation_trigger,executive_action}',
+      question:`Fill only the missing details below.\n\n${incomplete.map((rule)=>monitoringRuleLine(rule,brief)).join('\n')}`,
+      detail:'Use the same one-line format. The escalation trigger should name the observable change, not a generic feeling.'
+    };
+  }
+  return {
+    targetField:'project_monitoring_packet',
+    question:'Review the prepared monitoring rules, then apply them to this Project Manager.',
+    detail:'Applying changes only the selected internal monitoring packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -877,6 +994,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Define evidence-based checkpoints for the selected project.',
     completionCondition:'Each milestone is tied to an existing workstream and has a completion signal plus timing or trigger.'
   },
+  'project.monitoring':{
+    id:'project.monitoring',surface:'project_managers',scopeType:'project_section',sectionId:'monitoring_rules',
+    requiredPackets:['project_packet','project_sop_packet','project_monitoring_packet','project_workstreams'],
+    objective:'Define project-specific monitoring rules.',
+    completionCondition:'Each monitoring rule has a watch item, cadence, escalation trigger, and executive surface action.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -921,6 +1044,7 @@ function createValCoworkService({
   applyProjectPeople=async()=>null,
   applyProjectDocuments=async()=>null,
   applyProjectMilestones=async()=>null,
+  applyProjectMonitoring=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -1015,6 +1139,7 @@ function createValCoworkService({
           draftPeople:state.draftPeople || null,
           draftDocuments:state.draftDocuments || null,
           draftMilestones:safeArray(state.draftMilestones),
+          draftMonitoringRules:safeArray(state.draftMonitoringRules),
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
         }
@@ -1206,6 +1331,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectMonitoringEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.monitoring'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can define monitoring rules.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectMonitoringBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'monitoring',draftMonitoringRules:brief.existingRules,answers:[]};
+    const question=projectMonitoringQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_monitoring',title:`Monitoring for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,monitoringRules:state.draftMonitoringRules,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectMonitoring(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftMonitoringRules=parseMonitoringRules(answer,brief,state.draftMonitoringRules || []);
+    const rules=safeArray(state.draftMonitoringRules);
+    const incomplete=rules.filter((rule)=>missingMonitoringRuleFields(rule).length);
+    let question,message='';
+    if(rules.length && !incomplete.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,monitoringRules:rules,completionCondition:brief.completionCondition};
+      question=projectMonitoringQuestion(state,brief);message=`VAL prepared ${rules.length} monitoring rule${rules.length === 1 ? '' : 's'} for review. Apply them when this is true.`;
+    }else{
+      state.stage='monitoring_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectMonitoringQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function respondProjectIdentity(session,workItem,answer){
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -1358,6 +1518,7 @@ function createValCoworkService({
     if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
     if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
     if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
+    if(entrypointId === 'project.monitoring') return openProjectMonitoringEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -1415,6 +1576,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
     if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
     if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
+    if(session.entrypointId === 'project.monitoring') return respondProjectMonitoring(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -1626,6 +1788,20 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_milestones',status:'completed',summary:`Applied ${milestones.length} milestone${milestones.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',milestones,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_monitoring'){
+      if(workItem.status !== 'needs_review') throw new Error('Monitoring rules must be complete and reviewed before they can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const monitoringRules=safeArray(payload.monitoringRules).map((rule)=>normalizeMonitoringRule(rule,brief));
+      if(!monitoringRules.length || monitoringRules.some((rule)=>missingMonitoringRuleFields(rule).length)) throw new Error('The monitoring rule proposal is incomplete and cannot be applied yet.');
+      const project=await applyProjectMonitoring({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',monitoringRules,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the monitoring rules to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_monitoring',status:'completed',summary:`Applied ${monitoringRules.length} monitoring rule${monitoringRules.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',monitoringRules,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');
     if(workItem.status !== 'needs_review') throw new Error('Workstreams must be complete and reviewed before they can be applied.');
     const session=await getSession(workItem.sessionId);
@@ -1675,6 +1851,7 @@ module.exports={
   buildProjectPeopleBrief,
   buildProjectDocumentsBrief,
   buildProjectMilestonesBrief,
+  buildProjectMonitoringBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
@@ -1684,6 +1861,8 @@ module.exports={
   missingProjectDocumentFields,
   missingProjectMilestoneFields,
   projectMilestonesQuestion,
+  missingMonitoringRuleFields,
+  projectMonitoringQuestion,
   missingWorkstreamFields,
   normalizeWorkstream,
   parseLabeledWorkstreamDetails,

@@ -3738,6 +3738,7 @@ function projectManagerPacket(project = {}){
     project_relationships_packet: projectRelationshipPacketItems(project, relationships),
     project_document_receipts: documentReceipts,
     project_milestone_packet: projectMilestonePacketItems(project.milestones),
+    project_monitoring_packet: projectMonitoringPacketItems(project.monitoringRules),
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
     project_risk_packet: {risk_summary:risk, mitigation_next_step:nextAction, owner},
     project_prepared_work_packets: prepared,
@@ -3790,7 +3791,7 @@ function projectCoworkAffectedObject(field = '', project = {}, packet = {}){
     project_interview: 'project_interview_packet',
     workstreams: 'project_sop_packet.default_workstreams',
     milestones: 'project_milestone_packet',
-    monitoring_rules: 'project_sop_packet.monitoring_rules',
+    monitoring_rules: 'project_monitoring_packet',
     relationship_nurture: 'project_sop_packet.relationship_nurture_rules'
   };
   return {
@@ -3902,6 +3903,33 @@ function projectManagerMilestoneList(items = [], emptyText = 'VAL needs the mile
       milestone.workstream_name ? 'Workstream: ' + milestone.workstream_name : '',
       milestone.completion_signal ? 'Evidence: ' + milestone.completion_signal : '',
       milestone.timing_or_trigger ? 'When: ' + milestone.timing_or_trigger : ''
+    ].filter(Boolean).join(' | ');
+    return '<li><strong>' + escapeHtml(title) + '</strong>' + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '') + '</li>';
+  }).join('');
+}
+
+function projectMonitoringPacketItems(items = []){
+  return (Array.isArray(items) ? items : []).filter(Boolean).map((item) => {
+    if(typeof item === 'string') return {watch_item:projectCleanText(item),cadence:'',escalation_trigger:'',executive_action:'',source_refs:[]};
+    return {
+      watch_item:projectCleanText(item.watchItem || item.watch_item || item.signal || item.monitor || item.name || item.title),
+      cadence:projectCleanText(item.cadence || item.reviewCadence || item.review_cadence),
+      escalation_trigger:projectCleanText(item.escalationTrigger || item.escalation_trigger || item.trigger || item.threshold || item.alertWhen),
+      executive_action:projectCleanText(item.executiveAction || item.executive_action || item.actionWhenEscalated || item.escalationAction || item.action),
+      source_refs:Array.isArray(item.sourceRefs) ? item.sourceRefs : []
+    };
+  });
+}
+
+function projectManagerMonitoringRuleList(items = [], emptyText = 'VAL needs to know what to monitor after launch.'){
+  const rules = projectMonitoringPacketItems(items);
+  if(!rules.length) return '<li>' + escapeHtml(emptyText) + '</li>';
+  return rules.slice(0, 6).map((rule) => {
+    const title = rule.watch_item || 'Monitoring rule';
+    const detail = [
+      rule.cadence ? 'Cadence: ' + rule.cadence : '',
+      rule.escalation_trigger ? 'Escalate when: ' + rule.escalation_trigger : '',
+      rule.executive_action ? 'Surface: ' + rule.executive_action : ''
     ].filter(Boolean).join(' | ');
     return '<li><strong>' + escapeHtml(title) + '</strong>' + (detail ? '<small>' + escapeHtml(detail) + '</small>' : '') + '</li>';
   }).join('');
@@ -4184,7 +4212,7 @@ function renderProjectManagerProfile(project = {}){
     '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
       projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
       projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerMilestoneList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
-      projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerList(sop.monitoring_rules, 'VAL needs to know what to monitor after launch.') + '</ul>'),
+      projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerMonitoringRuleList(packet.project_monitoring_packet) + '</ul>'),
       projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerList(sop.relationship_nurture_rules, 'VAL needs to know how to protect the partnership.') + '</ul>'),
     '</section>',
     detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
@@ -4371,6 +4399,7 @@ function coworkEntryPlaceholder(question = {}){
   if(target === 'project_next_action_packet.next_action') return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
   if(target.includes('project_next_action_packet.')) return 'Next move: ...; Owner: ...; Timing: ...; Basis: ...';
   if(target.includes('project_milestone_packet')) return 'Workstream | checkpoint | completion signal | timing or trigger';
+  if(target.includes('project_monitoring_packet')) return 'Watch item | cadence | escalate when | surface';
   if(target === 'project_workstreams[].name') return 'Workstream one\nWorkstream two\nWorkstream three';
   if(target.includes('project_workstreams[].')) return 'Workstream name - purpose: ...; owner: ...; first move: ...; milestone: ...; monitor: ...';
   return 'Answer the question above.';
@@ -4429,6 +4458,24 @@ function renderCoworkMilestonesItem(workItem = {}){
         milestones.map((milestone) => '<article><strong>' + escapeHtml(milestone.checkpoint || 'Milestone') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Workstream', milestone.workstreamName || milestone.workstream) + coworkWorkstreamField('Completion signal', milestone.completionSignal || milestone.evidence) + coworkWorkstreamField('Timing', milestone.timingOrTrigger || milestone.timing || milestone.trigger) + '</div></article>').join(''),
       '</div>',
       ready ? '<button type="button" data-cowork-apply-project-milestones="' + escapeHtml(workItem.id || '') + '">Apply milestones</button>' : '',
+    '</section>'
+  ].join('');
+}
+
+function renderCoworkMonitoringItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const monitoringRules = Array.isArray(payload.monitoringRules) ? payload.monitoringRules : [];
+  if(!monitoringRules.length) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing monitoring rules');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared monitoring rules</span><strong>' + escapeHtml(workItem.title || 'Project monitoring') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list">',
+        monitoringRules.map((rule) => '<article><strong>' + escapeHtml(rule.watchItem || rule.watch_item || 'Watch item') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Cadence', rule.cadence) + coworkWorkstreamField('Escalate when', rule.escalationTrigger || rule.escalation_trigger) + coworkWorkstreamField('Surface', rule.executiveAction || rule.executive_action) + '</div></article>').join(''),
+      '</div>',
+      ready ? '<button type="button" data-cowork-apply-project-monitoring="' + escapeHtml(workItem.id || '') + '">Apply monitoring rules</button>' : '',
     '</section>'
   ].join('');
 }
@@ -4557,7 +4604,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4568,6 +4615,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Establish the selected project foundation.'
     : entrypointId === 'project.milestones'
     ? 'Define evidence-based milestones for this project.'
+    : entrypointId === 'project.monitoring'
+    ? 'Define what VAL watches and when to surface it.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4619,6 +4668,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkIdentityItem(workItem)
       : workItem.type === 'project_milestones'
       ? renderCoworkMilestonesItem(workItem)
+      : workItem.type === 'project_monitoring'
+      ? renderCoworkMonitoringItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -4640,6 +4691,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Project foundation applied.'
       : session.entrypointId === 'project.milestones'
         ? 'Milestones applied.'
+      : session.entrypointId === 'project.monitoring'
+        ? 'Monitoring rules applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -4784,6 +4837,25 @@ async function openProjectMilestonesCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Milestones interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectMonitoringCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('monitoring_rules', project);
+  const action = 'project:cowork:monitoring_rules';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'monitoring_rules',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Define monitoring rules',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.monitoring',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Define monitoring rules',meaning:'Preparing the Monitoring after launch brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will define only what it watches, the cadence, the escalation trigger, and what it should surface to the executive.',placeholder:'Preparing the selected Project Managers monitoring brief...',heading:'Defining monitoring for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > Monitoring after launch.',publicDetail:'Scoped to Project Managers: Monitoring after launch.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.monitoring',scope:{entityType:'project_section',entityId:projectId,sectionId:'monitoring_rules'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Monitoring brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Monitoring interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -4866,7 +4938,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -4970,6 +5042,17 @@ async function applyActiveCoworkProjectMilestones(workItemId = '', button = null
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply these milestones. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectMonitoring(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply these monitoring rules yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply these monitoring rules. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -4989,6 +5072,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'people_involved') return openProjectPeopleCowork(node);
   if(field === 'documents_sources') return openProjectDocumentsCowork(node);
   if(field === 'milestones') return openProjectMilestonesCowork(node);
+  if(field === 'monitoring_rules') return openProjectMonitoringCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -19610,9 +19694,10 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectPeopleApply = event.target.closest('[data-cowork-apply-project-people]');
   const projectDocumentsApply = event.target.closest('[data-cowork-apply-project-documents]');
   const projectMilestonesApply = event.target.closest('[data-cowork-apply-project-milestones]');
+  const projectMonitoringApply = event.target.closest('[data-cowork-apply-project-monitoring]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -19620,6 +19705,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectPeopleApply) await applyActiveCoworkProjectPeople(projectPeopleApply.dataset.coworkApplyProjectPeople, projectPeopleApply);
   if(projectDocumentsApply) await applyActiveCoworkProjectDocuments(projectDocumentsApply.dataset.coworkApplyProjectDocuments, projectDocumentsApply);
   if(projectMilestonesApply) await applyActiveCoworkProjectMilestones(projectMilestonesApply.dataset.coworkApplyProjectMilestones, projectMilestonesApply);
+  if(projectMonitoringApply) await applyActiveCoworkProjectMonitoring(projectMonitoringApply.dataset.coworkApplyProjectMonitoring, projectMonitoringApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });
