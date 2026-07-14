@@ -2272,6 +2272,82 @@ function emailThreadQuestion(state={},brief={}){
     detail:'This single direction prepares one private reply draft from the selected readable thread. It does not send, create a provider draft, or change any external system.'
   };
 }
+
+function relationshipDisplayName(relationship={}){
+  return compactText(relationship.name || relationship.displayName || relationship.identity || 'Selected relationship',180);
+}
+function relationshipSourceLines(relationship={}){
+  const lines=[];
+  const add=(label,value)=>{
+    const text=compactText(typeof value === 'string' ? value : (value?.content || value?.summary || value?.text || ''),700);
+    if(/^(canonical relationship profile from val relationship index|relationship evidence is pending source review|review the relationship file before acting)\.?$/i.test(text)) return;
+    if(text) lines.push({label,text});
+  };
+  add('Current relationship summary',relationship.summary || relationship.sourceEvidence || relationship.evidence);
+  add('Current signal',relationship.signal);
+  safeArray(relationship.openLoops).slice(0,3).forEach((item)=>add('Open loop',item));
+  safeArray(relationship.risks).slice(0,3).forEach((item)=>add('Risk',item));
+  safeArray(relationship.opportunities).slice(0,3).forEach((item)=>add('Opportunity',item));
+  safeArray(relationship.relationshipSignals).slice(0,3).forEach((item)=>add('Relationship signal',item));
+  const seen=new Set();
+  return lines.filter((line)=>{
+    const key=`${line.label}:${line.text}`.toLowerCase();
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function buildRelationshipOverviewBrief(relationship={},input={}){
+  const scopeInput=input.scope || {};
+  const entityId=compactText(relationship.id || relationship.profileId || relationship.profileKey || scopeInput.entityId || input.relationshipId || '',220);
+  const relationshipName=relationshipDisplayName(relationship);
+  const sourceLines=relationshipSourceLines(relationship);
+  const sourceRefs=sourceLines.map((line,index)=>sourceRef({
+    sourceType:index === 0 ? 'relationship_profile' : 'relationship_packet',
+    sourceId:index === 0 ? entityId : `${entityId}:source:${index}`,
+    quoteOrSummary:`${line.label}: ${line.text}`,
+    confidence:relationship.confidence || 0.8
+  }));
+  return {
+    id:stableKey(`working_brief_relationship_overview_${entityId || relationshipName}`),
+    entrypointId:'relationship.overview',
+    entityType:'relationship',
+    entityId,
+    sectionId:'overview',
+    relationshipName,
+    relationshipStatus:compactText(relationship.relationshipStatus || relationship.trajectory || '',120),
+    currentNextMove:compactText(relationship.nextStewardshipMove || relationship.nextMove || '',600),
+    sourceLines,
+    sourceRefs,
+    objective:'Prepare one source-aware next stewardship move for the selected relationship.',
+    completionCondition:'The selected relationship, executive direction, source receipt, and review-gated internal next move are visible.',
+    approvalBoundary:'Applying updates only the selected internal relationship stewardship packet. It does not send outreach, create a task, change CRM, schedule time, create an introduction, or alter an external system.'
+  };
+}
+function relationshipOverviewFocusFromAnswer(answer='',brief={}){
+  const nextMove=multilineText(answer,1200);
+  return {
+    nextMove,
+    basis:'Executive direction recorded against the selected relationship evidence.',
+    sourceSummary:safeArray(brief.sourceLines).map((line)=>`${line.label}: ${line.text}`).slice(0,4).join(' | '),
+    confidence:'Executive direction',
+    sourceRefs:safeArray(brief.sourceRefs).map(sourceRef)
+  };
+}
+function relationshipOverviewQuestion(state={},brief={}){
+  if(state.stage === 'ready_to_apply'){
+    return {
+      targetField:'relationship_stewardship_packet.next_move',
+      question:`Review the prepared next relationship move for ${brief.relationshipName || 'this relationship'}, then apply it internally.`,
+      detail:'Applying updates only this relationship’s internal stewardship packet. No outreach, task, CRM change, introduction, calendar event, or external action happens here.'
+    };
+  }
+  return {
+    targetField:'relationship_stewardship_packet.next_move',
+    question:`What small relationship outcome should VAL prepare next for ${brief.relationshipName || 'this relationship'}?`,
+    detail:'Feeds Relationships > Next stewardship move. Your answer becomes one review-gated internal focus, grounded in the selected relationship evidence. Nothing external happens here.'
+  };
+}
 const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
   first_question:{
     question:'What should this project be called, and what outcome should it create?',
@@ -2522,6 +2598,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['email_packet','email_judgment_packet','prepared_artifact_packet'],
     objective:'Prepare one review-only response from one selected email thread.',
     completionCondition:'The selected durable thread, executive reply intent, and reviewable internal draft are all visible and linked.'
+  },
+  'relationship.overview':{
+    id:'relationship.overview',
+    surface:'relationships',
+    scopeType:'relationship',
+    sectionId:'overview',
+    requiredPackets:['relationship_packet','relationship_stewardship_packet'],
+    objective:'Prepare one source-aware next stewardship move for one selected relationship.',
+    completionCondition:'The selected relationship, executive direction, supporting source receipt, and review-gated internal next move are visible.'
   }
 });
 
@@ -2557,7 +2642,9 @@ function createValCoworkService({
   prepareTranscriptMeetingOverview=async()=>null,
   createTranscriptActionItem=async()=>null,
   loadEmailThread=async()=>null,
-  prepareEmailThreadDraft=async()=>null
+  prepareEmailThreadDraft=async()=>null,
+  loadRelationship=async()=>null,
+  applyRelationshipOverview=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -2654,7 +2741,8 @@ function createValCoworkService({
           draftProjectRisk:state.draftProjectRisk || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null,
-          draftEmailArtifact:state.draftEmailArtifact || null
+          draftEmailArtifact:state.draftEmailArtifact || null,
+          draftRelationshipOverview:state.draftRelationshipOverview || null
         }
       },
       workItem:workItem ? {
@@ -3457,6 +3545,56 @@ function createValCoworkService({
     const question=emailThreadQuestion(state,brief);
     return publicResult(session,workItem,'VAL prepared one private email draft from this selected thread. Review it in Leverage before any external approval.',question);
   }
+  async function openRelationshipOverviewEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['relationship.overview'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.relationshipId || '',220);
+    if(!entityId) throw new Error('Relationships needs the selected relationship before VAL can prepare its next stewardship move.');
+    const relationship=await loadRelationship(entityId);
+    if(!relationship) throw new Error('VAL could not load the selected relationship. It did not substitute another person or relationship.');
+    const brief=buildRelationshipOverviewBrief(relationship,input);
+    if(!brief.entityId) throw new Error('The selected relationship has no durable identifier yet.');
+    if(!brief.sourceRefs.length) throw new Error('This relationship has no readable source receipt yet. VAL will not invent relationship context.');
+    const state={stage:'next_move',draftRelationshipOverview:null,answers:[]};
+    const question=relationshipOverviewQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'relationship_overview_focus',title:`Next relationship move for ${brief.relationshipName}`,status:'needs_input',
+      payloadJson:{relationshipId:brief.entityId,relationshipName:brief.relationshipName,relationshipOverview:null,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondRelationshipOverview(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    const relationshipOverview=relationshipOverviewFocusFromAnswer(answer,brief);
+    if(!relationshipOverview.nextMove) throw new Error('VAL needs the next relationship outcome before it can prepare this internal stewardship move.');
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.stage='ready_to_apply';
+    state.draftRelationshipOverview=relationshipOverview;
+    session.status='needs_review';
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),relationshipOverviewQuestion(state,brief)];
+    session.updatedAt=new Date().toISOString();
+    workItem.status='needs_review';
+    workItem.payloadJson={
+      ...(workItem.payloadJson || {}),
+      relationshipId:brief.entityId || session.scopeId,
+      relationshipName:brief.relationshipName || '',
+      relationshipOverview,
+      objective:brief.objective,
+      completionCondition:brief.completionCondition
+    };
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    const question=relationshipOverviewQuestion(state,brief);
+    return publicResult(session,workItem,`VAL prepared one internal next relationship move for ${brief.relationshipName || 'this relationship'} to review.`,question);
+  }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
@@ -3480,6 +3618,7 @@ function createValCoworkService({
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     if(entrypointId === 'transcript.action_item') return openTranscriptActionItemEntry(input);
     if(entrypointId === 'email.thread') return openEmailThreadEntry(input);
+    if(entrypointId === 'relationship.overview') return openRelationshipOverviewEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -3550,6 +3689,7 @@ function createValCoworkService({
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
     if(session.entrypointId === 'email.thread') return respondEmailThread(session,workItem,answer);
+    if(session.entrypointId === 'relationship.overview') return respondRelationshipOverview(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -3615,6 +3755,38 @@ function createValCoworkService({
   async function applyWorkItem(workItemId){
     const workItem=await getWorkItem(workItemId);
     if(!workItem) throw new Error('Prepared work item not found.');
+    if(workItem.workType === 'relationship_overview_focus'){
+      if(workItem.status !== 'needs_review') throw new Error('The relationship next move must be reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this relationship move is missing.');
+      const payload=workItem.payloadJson || {};
+      const relationshipOverview=payload.relationshipOverview || {};
+      if(!compactText(relationshipOverview.nextMove,1200)) throw new Error('The relationship next move is incomplete and cannot be applied yet.');
+      const relationship=await applyRelationshipOverview({
+        relationshipId:payload.relationshipId || session.scopeId,
+        relationshipName:payload.relationshipName || session.workingBriefJson?.relationshipName || 'Relationship',
+        relationshipOverview,
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!relationship) throw new Error('VAL could not save the next move to the selected relationship packet.');
+      const now=new Date().toISOString();
+      workItem.status='applied';
+      workItem.updatedAt=now;
+      session.status='completed';
+      session.updatedAt=now;
+      session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_relationship_overview_focus',status:'completed',
+        summary:`Applied the next relationship move to ${payload.relationshipName || 'the selected relationship'}.`,
+        payloadJson:{relationshipId:payload.relationshipId || session.scopeId,relationshipName:payload.relationshipName || '',relationshipOverview,noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),relationship};
+    }
     if(workItem.workType === 'transcript_meeting_overview'){
       if(workItem.status !== 'needs_review') throw new Error('The meeting overview must be reviewed before it can be applied.');
       const session=await getSession(workItem.sessionId);

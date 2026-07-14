@@ -17393,6 +17393,7 @@ function relationshipIndexItemFromProfile(profile={}){
   const temperatureConflict=relationshipIndexTemperatureConflict(temperatureEvidence,state);
   const temperatureContract=relationshipIndexTemperatureContract(state);
   const metadata=profile.metadata||{};
+  const relationshipCoworkFocus=metadata.relationshipCoworkFocus&&typeof metadata.relationshipCoworkFocus==='object' ? metadata.relationshipCoworkFocus : null;
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
@@ -17433,7 +17434,7 @@ function relationshipIndexItemFromProfile(profile={}){
     evidence:profile.summary||relationshipIndexPrimarySignal(profile,state),
     patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||relationshipIndexPrimarySignal(profile,state),profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
     meaning:profile.summary||dashboardShortText(relationshipIndexPrimarySignal(profile,state),'Strategic importance is not confirmed yet. Review the evidence before acting.',220),
-    certainty:profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
+    certainty:relationshipCoworkFocus?.nextMove||profile.nextMove||'Not action-ready yet. Add context or open the relationship file before VAL recommends outreach.',
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
     personPacket:packetItem.packet||metadata.personPacket||null,
@@ -17450,9 +17451,10 @@ function relationshipIndexItemFromProfile(profile={}){
     stewardshipState:executiveUi.state,
     whyThisPersonMatters:executiveUi.whyThisMatters,
     whatIsOpen:executiveUi.whatIsOpen,
-    nextStewardshipMove:executiveUi.nextMove,
+    nextStewardshipMove:relationshipCoworkFocus?.nextMove||executiveUi.nextMove,
     whyNow:executiveUi.whyNow,
     evidencePosture:executiveUi.evidencePosture,
+    relationshipCoworkFocus,
     relationshipAdmission:admission,
     href:'./dashboard.html?view=relationships&targetType=person&targetId='+encodeURIComponent(id)
   };
@@ -24821,6 +24823,27 @@ async function loadProjectForCowork(projectId=''){
 async function loadRelationshipsForCowork({limit=100}={}){
   return (await listRelationshipProfiles({limit})).filter((profile)=>profile.profileType==='person');
 }
+function relationshipProfileMatchesCoworkIdentifier(profile={},identifier=''){
+  const selected=String(identifier || '').trim().toLowerCase();
+  if(!selected) return false;
+  const indexItem=relationshipIndexItemFromProfile(profile);
+  return [
+    profile.id,
+    profile.profileKey,
+    profile.personId,
+    profile.displayName,
+    profile.metadata?.email,
+    indexItem.id,
+    indexItem.query?.targetId,
+    indexItem.query?.contactId,
+    indexItem.query?.email
+  ].map((value)=>String(value || '').trim().toLowerCase()).includes(selected);
+}
+async function loadRelationshipForCowork(relationshipId=''){
+  const profiles=(await listRelationshipProfiles({limit:240})).filter((profile)=>profile.profileType==='person');
+  const found=profiles.find((profile)=>relationshipProfileMatchesCoworkIdentifier(profile,relationshipId));
+  return found ? relationshipIndexItemFromProfile(found) : null;
+}
 async function loadDocumentsForCowork({limit=120}={}){
   const result=await valDocuments.list({limit});
   return Array.isArray(result?.documents) ? result.documents : [];
@@ -25680,6 +25703,31 @@ async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',acc
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkRelationshipOverview({relationshipId,relationshipName='',relationshipOverview={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=(await listRelationshipProfiles({limit:240})).filter((profile)=>profile.profileType==='person');
+  const found=profiles.find((profile)=>relationshipProfileMatchesCoworkIdentifier(profile,relationshipId));
+  if(!found) return null;
+  const nextMove=String(relationshipOverview.nextMove || '').replace(/\s+/g,' ').trim();
+  if(!nextMove) return null;
+  const now=new Date().toISOString();
+  const relationshipCoworkFocus={
+    nextMove,
+    basis:String(relationshipOverview.basis || 'Executive direction recorded against the selected relationship evidence.').trim(),
+    sourceSummary:String(relationshipOverview.sourceSummary || '').trim(),
+    confidence:String(relationshipOverview.confidence || 'Executive direction').trim(),
+    sourceRefs:Array.isArray(sourceRefs) ? sourceRefs : [],
+    appliedAt:now,
+    sessionId,
+    workItemId,
+    noExternalAction:true
+  };
+  const saved=await saveRelationshipProfile({
+    ...found,
+    displayName:found.displayName || relationshipName || 'Relationship',
+    metadataJson:{...(found.metadata || {}),relationshipCoworkFocus}
+  });
+  return saved ? relationshipIndexItemFromProfile(publicRelationshipProfile(saved)) : null;
+}
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -25713,6 +25761,8 @@ const valCowork = registerValCoworkRoutes(app,{
   createTranscriptActionItem:createCoworkTranscriptActionItem,
   loadEmailThread:loadEmailThreadForCowork,
   prepareEmailThreadDraft:prepareCoworkEmailThreadDraft,
+  loadRelationship:loadRelationshipForCowork,
+  applyRelationshipOverview:applyCoworkRelationshipOverview,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
