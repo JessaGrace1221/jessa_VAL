@@ -17521,6 +17521,81 @@ async function handleValAction(action){
   openWorkspaceShell('VAL onboarding workspace', {returnTarget:'val'});
 }
 
+const valWitnessingWorkflowCommands = new Set([
+  'valWitnessing',
+  'valWitnessingResume',
+  'valWitnessingFresh',
+  'valWitnessingBegin',
+  'valWitnessingQuestion',
+  'valWitnessingSave',
+  'valWitnessingSkipTo',
+  'valWitnessingConfirm',
+  'valWitnessingUpload',
+  'valWitnessingPrompt',
+  'valWitnessingRefreshConnections',
+  'valWitnessingCredentialForm',
+  'valWitnessingSourcesContinue'
+]);
+
+async function handleValWitnessingWorkflowAction(command, type, rest = []){
+  if(command === 'valWitnessing'){
+    await openValWitnessingSession(type || 'meeting_val');
+    return;
+  }
+  if(command === 'valWitnessingResume'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return;
+  }
+  if(command === 'valWitnessingFresh'){
+    await openValWitnessingSession('meeting_val', {fresh:true});
+    return;
+  }
+  if(command === 'valWitnessingBegin'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return;
+  }
+  if(command === 'valWitnessingQuestion'){
+    openValWitnessingQuestion(type || 'meeting_val');
+    return;
+  }
+  if(command === 'valWitnessingSave'){
+    await saveValWitnessingCard(type || 'witness_meeting_val');
+    return;
+  }
+  if(command === 'valWitnessingSkipTo'){
+    skipValWitnessingToQuestion(type || 'meeting_val');
+    return;
+  }
+  if(command === 'valWitnessingConfirm'){
+    await confirmValWitnessingCard(rest[0] || 'witness_meeting_val', type || 'yes');
+    return;
+  }
+  if(command === 'valWitnessingUpload'){
+    workspaceInputPanel.querySelector('[data-val-witnessing-file-input="' + (type || 'witness_documents_templates') + '"]')?.click();
+    return;
+  }
+  if(command === 'valWitnessingPrompt'){
+    await copyValWitnessingImportPrompt();
+    return;
+  }
+  if(command === 'valWitnessingRefreshConnections'){
+    await refreshValWitnessingConnections();
+    return;
+  }
+  if(command === 'valWitnessingCredentialForm'){
+    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    if(type === 'close'){
+      if(slot) slot.innerHTML = '';
+      return;
+    }
+    showValWitnessingCredentialForm(type);
+    return;
+  }
+  if(command === 'valWitnessingSourcesContinue'){
+    await continueValWitnessingWithSources(type || 'witness_connect_sources');
+  }
+}
+
 async function handleWorkflowAction(action, node = null){
   const [command,type,...rest] = String(action || '').split(':');
   if(command === 'cancel'){
@@ -17529,6 +17604,10 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'meetingPrepCowork'){
     openMeetingPrepCoworkSession();
+    return;
+  }
+  if(valWitnessingWorkflowCommands.has(command)){
+    await handleValWitnessingWorkflowAction(command, type, rest);
     return;
   }
   if(command === 'project'){
@@ -17731,66 +17810,6 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'valOnboardingSave'){
     await saveValOnboardingContext(type || 'things_to_remember');
-    return;
-  }
-  if(command === 'valWitnessing'){
-    await openValWitnessingSession(type || 'meeting_val');
-    return;
-  }
-  if(command === 'valWitnessingResume'){
-    await openValWitnessingSession('meeting_val', {resume:true});
-    return;
-  }
-  if(command === 'valWitnessingFresh'){
-    await openValWitnessingSession('meeting_val', {fresh:true});
-    return;
-  }
-  if(command === 'valWitnessingBegin'){
-    await openValWitnessingSession('meeting_val', {resume:true});
-    return;
-  }
-  if(command === 'valWitnessingQuestion'){
-    openValWitnessingQuestion(type || 'meeting_val');
-    return;
-  }
-  if(command === 'valWitnessingSave'){
-    await saveValWitnessingCard(type || 'witness_meeting_val');
-    return;
-  }
-  if(command === 'valWitnessingSkipTo'){
-    skipValWitnessingToQuestion(type || 'meeting_val');
-    return;
-  }
-  if(command === 'valWitnessingConfirm'){
-    const confirmation = type || 'yes';
-    const category = rest[0] || 'witness_meeting_val';
-    await confirmValWitnessingCard(category || 'witness_meeting_val', confirmation || 'yes');
-    return;
-  }
-  if(command === 'valWitnessingUpload'){
-    const category = type || 'witness_documents_templates';
-    workspaceInputPanel.querySelector('[data-val-witnessing-file-input="' + category + '"]')?.click();
-    return;
-  }
-  if(command === 'valWitnessingPrompt'){
-    await copyValWitnessingImportPrompt();
-    return;
-  }
-  if(command === 'valWitnessingRefreshConnections'){
-    await refreshValWitnessingConnections();
-    return;
-  }
-  if(command === 'valWitnessingCredentialForm'){
-    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
-    if(type === 'close'){
-      if(slot) slot.innerHTML = '';
-      return;
-    }
-    showValWitnessingCredentialForm(type);
-    return;
-  }
-  if(command === 'valWitnessingSourcesContinue'){
-    await continueValWitnessingWithSources(type || 'witness_connect_sources');
     return;
   }
   if(command === 'valOs'){

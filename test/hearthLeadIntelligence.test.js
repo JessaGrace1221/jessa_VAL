@@ -2110,8 +2110,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /const total = valWitnessingCards\.length/);
   assert.match(hearthJs, /state === 'intro'/);
   assert.match(hearthJs, /valWitnessingQuestion/);
-  assert.match(hearthJs, /const confirmation = type \|\| 'yes'/);
-  assert.match(hearthJs, /const category = rest\[0\] \|\| 'witness_meeting_val'/);
+  assert.match(hearthJs, /confirmValWitnessingCard\(rest\[0\] \|\| 'witness_meeting_val', type \|\| 'yes'\)/);
   assert.match(hearthJs, /Live witnessing needs the VAL API connection/);
   assert.match(hearthJs, /I will not use a canned VAL response here/);
   assert.match(hearthJs, /function valWitnessingLinesForAnswer\(rawResponse = ''\)\{\s*return \[\];\s*\}/);
@@ -2193,6 +2192,25 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthCss, /@keyframes val-line-arrive/);
   assert.match(hearthCss, /@keyframes val-thinking-pause/);
   assert.match(hearthCss, /\.workspace-prompt-shelf/);
+});
+
+test('Witnessing Session questions dispatch before shared workflow packet validation', () => {
+  const workflowStart = hearthJs.indexOf('async function handleWorkflowAction');
+  const witnessingDispatch = hearthJs.indexOf('if(valWitnessingWorkflowCommands.has(command))', workflowStart);
+  const sharedPacketPreflight = hearthJs.indexOf("const workflowPacket = node?.dataset?.valVariablePacket || 'workflow_scoped_packet';", workflowStart);
+  const witnessingDispatcher = hearthJs.slice(
+    hearthJs.indexOf('async function handleValWitnessingWorkflowAction'),
+    workflowStart
+  );
+
+  assert.ok(workflowStart >= 0, 'shared workflow dispatcher must exist');
+  assert.ok(witnessingDispatch > workflowStart, 'Witnessing dispatch must be inside the shared workflow handler');
+  assert.ok(sharedPacketPreflight > witnessingDispatch, 'Witnessing dispatch must happen before generic packet validation');
+  assert.match(hearthJs, /const valWitnessingWorkflowCommands = new Set/);
+  assert.match(witnessingDispatcher, /openValWitnessingQuestion\(type \|\| 'meeting_val'\)/);
+  assert.match(witnessingDispatcher, /saveValWitnessingCard\(type \|\| 'witness_meeting_val'\)/);
+  assert.match(witnessingDispatcher, /continueValWitnessingWithSources\(type \|\| 'witness_connect_sources'\)/);
+  assert.doesNotMatch(witnessingDispatcher, /ensureHearthClickPacket/);
 });
 
 test('Stewardship drawer opens inside the Hearth instead of a CRM link', () => {
