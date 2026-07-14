@@ -3705,6 +3705,15 @@ function projectManagerPacket(project = {}){
     evidence_summary:projectCleanText(project.narrativeBasis || metadata.narrativeBasis),
     confidence:projectCleanText(project.narrativeConfidence || metadata.narrativeConfidence)
   });
+  const needsNextPacket = projectNeedsNextPacketItem(project.projectNeedsNext || metadata.projectNeedsNext, {
+    need_type:projectCleanText(project.needsNextType || metadata.needsNextType),
+    missing_item:projectCleanText(project.needsNextMissingItem || metadata.needsNextMissingItem),
+    question_purpose:projectCleanText(project.needsNextPurpose || metadata.needsNextPurpose),
+    resolution_path:projectCleanText(project.needsNextResolutionPath || metadata.needsNextResolutionPath),
+    current_question:projectCleanText(project.needsNextQuestion || metadata.needsNextQuestion),
+    evidence_summary:projectCleanText(project.needsNextBasis || metadata.needsNextBasis),
+    confidence:projectCleanText(project.needsNextConfidence || metadata.needsNextConfidence)
+  });
   const riskPacket = projectRiskPacketItem(project.projectRisk || metadata.projectRisk, {
     risk_summary:projectCleanText(project.risk || project.riskSummary || metadata.risk || metadata.riskSummary),
     mitigation_next_step:nextAction,
@@ -3752,7 +3761,7 @@ function projectManagerPacket(project = {}){
       recommended_next_step: nextAction,
       next_step_owner: owner,
       next_step_due_at: project.nextStepDueAt || project.deadline || project.dueAt || '',
-      user_decision_needed: projectCleanText(project.userDecisionNeeded || project.decision, needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : 'Confirm the next narrow move.'),
+      user_decision_needed: projectCleanText(needsNextPacket.need_type === 'decision' ? needsNextPacket.current_question : (project.userDecisionNeeded || project.decision), needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : 'Confirm the next narrow move.'),
       confidence: projectCleanText(narrativePacket.confidence || importancePacket.confidence, project.confidence || admission.confidence),
       evidence_summary: projectCleanText(narrativePacket.evidence_summary || importancePacket.evidence_summary || project.sourceReceipts || admission.source_receipts, 'Project evidence is held privately.')
     },
@@ -3763,6 +3772,7 @@ function projectManagerPacket(project = {}){
     project_relationship_nurture_packet: projectRelationshipNurturePacketItems(project.relationshipNurtureRules),
     project_importance_packet: importancePacket,
     project_narrative_packet: narrativePacket,
+    project_needs_next_packet: needsNextPacket,
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
     project_risk_packet: riskPacket,
     project_prepared_work_packets: prepared,
@@ -3780,11 +3790,11 @@ function projectManagerPacket(project = {}){
     project_interview_packet: {
       project_id: admission.source_id,
       project_manager_id: 'pm_' + (admission.source_id || String(project.name || 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')),
-      current_question: interviewContract.question,
-      question_purpose: 'Complete the named Project Manager page boxes without making the user inspect raw context.',
-      target_packet_field: interviewContract.targetPacketField,
-      target_page_boxes: interviewContract.pageBoxes,
-      missing_fields: interviewContract.missingField ? [interviewContract.missingField] : [],
+      current_question: needsNextPacket.current_question || interviewContract.question,
+      question_purpose: needsNextPacket.question_purpose || 'Complete the named Project Manager page boxes without making the user inspect raw context.',
+      target_packet_field: needsNextPacket.target_packet_field || interviewContract.targetPacketField,
+      target_page_boxes: needsNextPacket.target_page_boxes.length ? needsNextPacket.target_page_boxes : interviewContract.pageBoxes,
+      missing_fields: needsNextPacket.missing_item ? [needsNextPacket.missing_item] : (interviewContract.missingField ? [interviewContract.missingField] : []),
       ready_to_build_project_manager_packet: interviewStage === 'complete' || Boolean(project.name && (project.summary || project.reality) && relationships.length && (Array.isArray(project.workstreams) && project.workstreams.length))
     },
     project_sop_packet: sop,
@@ -4029,6 +4039,30 @@ function projectNarrativePacketItem(value = {}, fallback = {}){
     current_reality:projectCleanText(raw.currentReality || raw.current_reality || raw.livingNarrative || raw.living_narrative || raw.reality || fallback.current_reality),
     what_val_now_knows:projectCleanText(raw.whatValNowKnows || raw.what_val_now_knows || raw.currentLearning || raw.current_learning || fallback.what_val_now_knows),
     what_is_blocked:projectCleanText(raw.whatIsBlocked || raw.what_is_blocked || raw.currentBlocker || raw.current_blocker || raw.blocker || raw.blockedBy || raw.blocked_by || fallback.what_is_blocked),
+    evidence_summary:projectCleanText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || fallback.evidence_summary),
+    confidence:projectCleanText(raw.confidence || fallback.confidence),
+    source_receipts:Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : [])
+  };
+}
+
+function projectNeedsNextPacketItem(value = {}, fallback = {}){
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const needType = projectCleanText(raw.needType || raw.need_type || raw.type || raw.missingType || raw.missing_type || fallback.need_type).toLowerCase();
+  const targets = {
+    fact:{target_packet_field:'project_manager_judgment_packet.what_val_now_knows',target_page_boxes:['What VAL needs next','Working narrative']},
+    decision:{target_packet_field:'project_manager_judgment_packet.user_decision_needed',target_page_boxes:['What VAL needs next','Project Manager judgment']},
+    source:{target_packet_field:'project_document_receipts',target_page_boxes:['What VAL needs next','Documents / sources']},
+    person:{target_packet_field:'project_relationships_packet',target_page_boxes:['What VAL needs next','People involved']}
+  };
+  const target = targets[needType] || {target_packet_field:'',target_page_boxes:[]};
+  return {
+    need_type:needType,
+    missing_item:projectCleanText(raw.missingItem || raw.missing_item || raw.gap || raw.need || fallback.missing_item),
+    question_purpose:projectCleanText(raw.whyNeeded || raw.why_needed || raw.why || raw.impact || fallback.question_purpose),
+    resolution_path:projectCleanText(raw.resolutionPath || raw.resolution_path || raw.acquisitionPath || raw.acquisition_path || raw.route || fallback.resolution_path),
+    current_question:projectCleanText(raw.nextQuestion || raw.next_question || raw.question || raw.resolvingMove || raw.resolving_move || fallback.current_question),
+    target_packet_field:target.target_packet_field,
+    target_page_boxes:target.target_page_boxes,
     evidence_summary:projectCleanText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || fallback.evidence_summary),
     confidence:projectCleanText(raw.confidence || fallback.confidence),
     source_receipts:Array.isArray(raw.sourceRefs) ? raw.sourceRefs : (Array.isArray(raw.source_refs) ? raw.source_refs : [])
@@ -4644,6 +4678,23 @@ function renderCoworkProjectNarrativeItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectNeedsNextItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const need = payload.projectNeedsNext || {};
+  if(!need || typeof need !== 'object') return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Project Managers' : (ready ? 'Ready for review' : 'Preparing one precise gap');
+  const type = String(need.needType || need.need_type || 'Need').replace(/_/g, ' ');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared next-needed input</span><strong>' + escapeHtml(workItem.title || 'What VAL needs next') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(need.missingItem || need.missing_item || 'Missing item') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Type', type) + coworkWorkstreamField('Why VAL needs it', need.whyNeeded || need.why_needed) + coworkWorkstreamField('Route', need.resolutionPath || need.resolution_path) + coworkWorkstreamField('Resolving question or move', need.nextQuestion || need.next_question) + coworkWorkstreamField('Target packet', need.targetPacketField || need.target_packet_field) + coworkWorkstreamField('Basis', need.basis || need.evidenceBasis || need.evidence_basis) + coworkWorkstreamField('Confidence', need.confidence) + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-project-needs-next="' + escapeHtml(workItem.id || '') + '">Apply what VAL needs next</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkProjectRiskItem(workItem = {}){
   const payload = workItem.payload || {};
   const risk = payload.projectRisk || {};
@@ -4788,7 +4839,7 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
     : entrypointId === 'project.documents'
@@ -4809,6 +4860,8 @@ function updateCoworkEntryContext(result = {}){
     ? 'Assess one material risk precisely, or record that none is currently proven.'
     : entrypointId === 'project.narrative'
     ? 'Make the project\'s current reality, learning, blocked condition, basis, and confidence explicit.'
+    : entrypointId === 'project.needs_next'
+    ? 'Identify one precise missing fact, decision, source, or person before taking another project-management step.'
     : entrypointId === 'project.next_move'
     ? 'Commit to the next narrow move for this project.'
     : 'Build a complete set of workstreams for this project.';
@@ -4870,6 +4923,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkProjectRiskItem(workItem)
       : workItem.type === 'project_narrative'
       ? renderCoworkProjectNarrativeItem(workItem)
+      : workItem.type === 'project_needs_next'
+      ? renderCoworkProjectNeedsNextItem(workItem)
       : workItem.type === 'project_next_move'
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
@@ -4901,6 +4956,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Project risk assessment applied.'
       : session.entrypointId === 'project.narrative'
         ? 'Current-state narrative applied.'
+      : session.entrypointId === 'project.needs_next'
+        ? 'What VAL needs next applied.'
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
@@ -5140,6 +5197,25 @@ async function openProjectNarrativeCowork(node = null){
   }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Working narrative interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
+async function openProjectNeedsNextCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('what_val_needs_next', project);
+  const action = 'project:cowork:what_val_needs_next';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'what_val_needs_next',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Clarify what VAL needs next',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.needs_next',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Clarify what VAL needs next',meaning:'Preparing the next-needed brief for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will identify one specific fact, decision, source, or person it needs, why, and the exact internal route or question that resolves it. It will not acquire anything from here.',placeholder:'Preparing the selected Project Managers needs-next brief...',heading:'Clarifying what VAL needs next for ' + (project.name || 'this project'),detail:'This interview fills Project Managers > What VAL needs next and its exact target packet.',publicDetail:'Scoped to Project Managers: What VAL needs next.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.needs_next',scope:{entityType:'project_section',entityId:projectId,sectionId:'what_val_needs_next'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this needs-next brief yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this needs-next interview. Nothing was changed. ' + error.message,{replace:true});}
+}
+
 async function openProjectNextMoveCowork(node = null){
   const project = projectProfileForCoworkNode(node);
   if(!project) return;
@@ -5222,7 +5298,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + label + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
@@ -5381,6 +5457,17 @@ async function applyActiveCoworkProjectNarrative(workItemId = '', button = null)
   }catch(error){appendHomeCoworkMessage('val','VAL could not apply this current-state narrative. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
 }
 
+async function applyActiveCoworkProjectNeedsNext(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply what it needs next yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply what it needs next. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkTranscriptOverview(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -5405,6 +5492,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   if(field === 'why_it_matters') return openProjectImportanceCowork(node);
   if(field === 'risk_blocker') return openProjectRiskCowork(node);
   if(field === 'working_narrative') return openProjectNarrativeCowork(node);
+  if(field === 'what_val_needs_next') return openProjectNeedsNextCowork(node);
   if(field === 'workstreams') return openProjectWorkstreamsCowork(node);
   if(field === 'next_move') return openProjectNextMoveCowork(node);
   const project = activeProjectProfile;
@@ -20031,9 +20119,10 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectImportanceApply = event.target.closest('[data-cowork-apply-project-importance]');
   const projectRiskApply = event.target.closest('[data-cowork-apply-project-risk]');
   const projectNarrativeApply = event.target.closest('[data-cowork-apply-project-narrative]');
+  const projectNeedsNextApply = event.target.closest('[data-cowork-apply-project-needs-next]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -20046,6 +20135,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectImportanceApply) await applyActiveCoworkProjectImportance(projectImportanceApply.dataset.coworkApplyProjectImportance, projectImportanceApply);
   if(projectRiskApply) await applyActiveCoworkProjectRisk(projectRiskApply.dataset.coworkApplyProjectRisk, projectRiskApply);
   if(projectNarrativeApply) await applyActiveCoworkProjectNarrative(projectNarrativeApply.dataset.coworkApplyProjectNarrative, projectNarrativeApply);
+  if(projectNeedsNextApply) await applyActiveCoworkProjectNeedsNext(projectNeedsNextApply.dataset.coworkApplyProjectNeedsNext, projectNeedsNextApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
 });

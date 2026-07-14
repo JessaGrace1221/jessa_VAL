@@ -926,6 +926,147 @@ function projectNarrativeQuestion(state={},brief={}){
   };
 }
 
+const PROJECT_NEEDS_NEXT_TARGETS=Object.freeze({
+  fact:{targetPacketField:'project_manager_judgment_packet.what_val_now_knows',targetPageBoxes:['What VAL needs next','Working narrative']},
+  decision:{targetPacketField:'project_manager_judgment_packet.user_decision_needed',targetPageBoxes:['What VAL needs next','Project Manager judgment']},
+  source:{targetPacketField:'project_document_receipts',targetPageBoxes:['What VAL needs next','Documents / sources']},
+  person:{targetPacketField:'project_relationships_packet',targetPageBoxes:['What VAL needs next','People involved']}
+});
+function projectNeedType(value=''){
+  const normalized=compactText(value,80).toLowerCase().replace(/\s+/g,'_');
+  if(['fact','decision','source','person'].includes(normalized)) return normalized;
+  return '';
+}
+function projectNeedsNextTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {nextQuestion:value} : (value || {});
+  const needType=projectNeedType(raw.needType || raw.need_type || raw.type || raw.missingType || raw.missing_type);
+  const target=PROJECT_NEEDS_NEXT_TARGETS[needType] || {targetPacketField:'',targetPageBoxes:[]};
+  return {
+    id:compactText(raw.id || stableKey(`project_needs_next_${brief.entityId || brief.projectName || 'project'}`),220),
+    needType,
+    missingItem:compactText(raw.missingItem || raw.missing_item || raw.gap || raw.need || '',700),
+    whyNeeded:compactText(raw.whyNeeded || raw.why_needed || raw.why || raw.impact || '',700),
+    resolutionPath:compactText(raw.resolutionPath || raw.resolution_path || raw.acquisitionPath || raw.acquisition_path || raw.route || '',500),
+    nextQuestion:compactText(raw.nextQuestion || raw.next_question || raw.question || raw.resolvingMove || raw.resolving_move || '',700),
+    targetPacketField:target.targetPacketField,
+    targetPageBoxes:target.targetPageBoxes,
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectNeedsNext(value={},brief={}){
+  return projectNeedsNextTemplate(value,brief);
+}
+function missingProjectNeedsNextFields(value={},brief={}){
+  const need=normalizeProjectNeedsNext(value,brief);
+  const missing=[];
+  if(!need.needType) missing.push('type: fact, decision, source, or person');
+  if(!compactText(need.missingItem)) missing.push('missing item');
+  if(!compactText(need.whyNeeded)) missing.push('why VAL needs it');
+  if(!compactText(need.resolutionPath)) missing.push('answer or internal acquisition route');
+  if(!compactText(need.nextQuestion)) missing.push('next question or resolving move');
+  if(!compactText(need.basis)) missing.push('basis');
+  if(!compactText(need.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectNeedsNextLine(value={},brief={}){
+  const need=normalizeProjectNeedsNext(value,brief);
+  return [
+    need.needType || 'Type: fact, decision, source, or person',
+    need.missingItem || 'Missing item',
+    'why VAL needs it: ' + (need.whyNeeded || '...'),
+    'route: ' + (need.resolutionPath || '...'),
+    'next question or move: ' + (need.nextQuestion || '...'),
+    'basis: ' + (need.basis || '...'),
+    'confidence: ' + (need.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectNeedsNext(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectNeedsNext(current,brief);
+  const previous=normalizeProjectNeedsNext(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let needType=projectNeedType(monitoringValueFromLine(source,'type|need type|missing type'));
+  let missingItem=monitoringValueFromLine(source,'missing item|gap|missing fact|missing decision|missing source|missing person');
+  let whyNeeded=monitoringValueFromLine(source,'why val needs it|why needed|why|impact');
+  let resolutionPath=monitoringValueFromLine(source,'route|resolution path|acquisition route|answer or route');
+  let nextQuestion=monitoringValueFromLine(source,'next question or move|next question|resolving move|question');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 7){
+    needType=needType || projectNeedType(parts[0].replace(/^\s*(?:type|need type|missing type)\s*:\s*/i,''));
+    missingItem=missingItem || parts[1].replace(/^\s*(?:missing item|gap|missing fact|missing decision|missing source|missing person)\s*:\s*/i,'');
+    whyNeeded=whyNeeded || parts[2].replace(/^\s*(?:why val needs it|why needed|why|impact)\s*:\s*/i,'');
+    resolutionPath=resolutionPath || parts[3].replace(/^\s*(?:route|resolution path|acquisition route|answer or route)\s*:\s*/i,'');
+    nextQuestion=nextQuestion || parts[4].replace(/^\s*(?:next question or move|next question|resolving move|question)\s*:\s*/i,'');
+    basis=basis || parts[5].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[6].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectNeedsNext({
+    ...previous,
+    needType:needType || previous.needType,
+    missingItem:missingItem || previous.missingItem,
+    whyNeeded:whyNeeded || previous.whyNeeded,
+    resolutionPath:resolutionPath || previous.resolutionPath,
+    nextQuestion:nextQuestion || previous.nextQuestion,
+    basis:basis || previous.basis,
+    confidence:confidence || previous.confidence,
+    sourceRefs:brief.sourceRefs
+  },brief);
+}
+function buildProjectNeedsNextBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const existingRaw=project.projectNeedsNext || metadata.projectNeedsNext || {
+    needType:project.needsNextType || metadata.needsNextType || '',
+    missingItem:project.needsNextMissingItem || metadata.needsNextMissingItem || '',
+    whyNeeded:project.needsNextPurpose || metadata.needsNextPurpose || '',
+    resolutionPath:project.needsNextResolutionPath || metadata.needsNextResolutionPath || '',
+    nextQuestion:project.needsNextQuestion || metadata.needsNextQuestion || '',
+    basis:project.needsNextBasis || metadata.needsNextBasis || '',
+    confidence:project.needsNextConfidence || metadata.needsNextConfidence || ''
+  };
+  const currentNeed=normalizeProjectNeedsNext(existingRaw,{sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_needs_next_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.needs_next',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'what_val_needs_next',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentNeed,
+    sourceRefs:references,
+    objective:'Identify one precise missing fact, decision, source, or person before VAL takes another project-management step.',
+    completionCondition:'One typed gap has a concrete missing item, why it is needed, a question or internal acquisition route, exact target packet, basis, confidence, and immutable source references.',
+    approvalBoundary:'Applying this need changes only the internal Project Managers interview packet. It does not reach out, fetch a source, create a task, message anyone, update CRM, change a calendar, or alter source evidence.'
+  };
+}
+function projectNeedsNextQuestion(state={},brief={}){
+  const need=normalizeProjectNeedsNext(state.draftProjectNeedsNext || brief.currentNeed || {},brief);
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'needs_next'){
+    return {
+      targetField:'project_interview_packet.{current_question,question_purpose,target_packet_field,target_page_boxes,missing_fields} + typed target packet',
+      question:`What one thing does VAL need next to manage ${brief.projectName || 'this project'} safely? Add one line: type (fact, decision, source, or person) | missing item | why VAL needs it | answer or internal acquisition route | next question or resolving move | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > What VAL needs next. A fact targets Working narrative, a decision targets Project Manager judgment, a source targets Documents / sources, and a person targets People involved. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}Nothing is acquired or sent from this step.`
+    };
+  }
+  if(state.stage === 'needs_next_details'){
+    const missing=missingProjectNeedsNextFields(need,brief);
+    return {
+      targetField:'project_interview_packet.{current_question,question_purpose,target_packet_field,target_page_boxes,missing_fields} + typed target packet',
+      question:`Fill only these missing need details: ${missing.join(', ')}.\n\n${projectNeedsNextLine(need,brief)}`,
+      detail:'Keep this to one gap. The route is a proposed internal way to resolve it, not an action VAL has already taken.'
+    };
+  }
+  return {
+    targetField:'project_interview_packet.current_question',
+    question:'Review the one next thing VAL needs, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal interview packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1501,6 +1642,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Make the selected project current state understandable to the executive.',
     completionCondition:'Current reality, what VAL now knows, what is blocked or explicitly not blocked, basis, and confidence are ready for internal review.'
   },
+  'project.needs_next':{
+    id:'project.needs_next',surface:'project_managers',scopeType:'project_section',sectionId:'what_val_needs_next',
+    requiredPackets:['project_packet','project_interview_packet','project_manager_judgment_packet','project_document_receipts','project_relationships_packet'],
+    objective:'Identify one precise missing fact, decision, source, or person before VAL takes another project-management step.',
+    completionCondition:'One typed gap has a missing item, why it is needed, a resolving question or internal acquisition route, exact target packet, basis, and confidence.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1550,6 +1697,7 @@ function createValCoworkService({
   applyProjectImportance=async()=>null,
   applyProjectRisk=async()=>null,
   applyProjectNarrative=async()=>null,
+  applyProjectNeedsNext=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -1980,6 +2128,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectNeedsNextEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.needs_next'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can name what VAL needs next.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectNeedsNextBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'needs_next',draftProjectNeedsNext:brief.currentNeed,answers:[]};
+    const question=projectNeedsNextQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_needs_next',title:`What VAL needs next for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectNeedsNext:state.draftProjectNeedsNext,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectNeedsNext(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectNeedsNext=parseProjectNeedsNext(answer,brief,state.draftProjectNeedsNext || brief.currentNeed || {});
+    const need=normalizeProjectNeedsNext(state.draftProjectNeedsNext,brief);
+    const missing=missingProjectNeedsNextFields(need,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectNeedsNext:need,completionCondition:brief.completionCondition};
+      question=projectNeedsNextQuestion(state,brief);message='VAL prepared the one precise thing it needs next for review. Apply it when this is true.';
+    }else{
+      state.stage='needs_next_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectNeedsNextQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -2172,6 +2355,7 @@ function createValCoworkService({
     if(entrypointId === 'project.why_it_matters') return openProjectImportanceEntry(input);
     if(entrypointId === 'project.risk') return openProjectRiskEntry(input);
     if(entrypointId === 'project.narrative') return openProjectNarrativeEntry(input);
+    if(entrypointId === 'project.needs_next') return openProjectNeedsNextEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -2234,6 +2418,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.why_it_matters') return respondProjectImportance(session,workItem,answer);
     if(session.entrypointId === 'project.risk') return respondProjectRisk(session,workItem,answer);
     if(session.entrypointId === 'project.narrative') return respondProjectNarrative(session,workItem,answer);
+    if(session.entrypointId === 'project.needs_next') return respondProjectNeedsNext(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -2513,6 +2698,20 @@ function createValCoworkService({
       if(!project) throw new Error('VAL could not save the narrative to the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_narrative',status:'completed',summary:`Applied the current-state narrative to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectNarrative,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_needs_next'){
+      if(workItem.status !== 'needs_review') throw new Error('What VAL needs next must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectNeedsNext=normalizeProjectNeedsNext(payload.projectNeedsNext || {},brief);
+      if(missingProjectNeedsNextFields(projectNeedsNext,brief).length) throw new Error('The next-needed project input is incomplete and cannot be applied yet.');
+      const project=await applyProjectNeedsNext({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectNeedsNext,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save what it needs next to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_needs_next',status:'completed',summary:`Applied what VAL needs next to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectNeedsNext,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');

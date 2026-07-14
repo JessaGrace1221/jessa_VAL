@@ -16813,6 +16813,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const projectImportance=patch.projectImportance&&typeof patch.projectImportance==='object'&&!Array.isArray(patch.projectImportance)?patch.projectImportance:null;
     const projectRisk=patch.projectRisk&&typeof patch.projectRisk==='object'&&!Array.isArray(patch.projectRisk)?patch.projectRisk:null;
     const projectNarrative=patch.projectNarrative&&typeof patch.projectNarrative==='object'&&!Array.isArray(patch.projectNarrative)?patch.projectNarrative:null;
+    const projectNeedsNext=patch.projectNeedsNext&&typeof patch.projectNeedsNext==='object'&&!Array.isArray(patch.projectNeedsNext)?patch.projectNeedsNext:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16865,6 +16866,13 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.currentBlocker?{currentBlocker:patch.currentBlocker}:{}),
       ...(patch.narrativeBasis?{narrativeBasis:patch.narrativeBasis}:{}),
       ...(patch.narrativeConfidence?{narrativeConfidence:patch.narrativeConfidence}:{}),
+      ...(patch.needsNextType?{needsNextType:patch.needsNextType}:{}),
+      ...(patch.needsNextMissingItem?{needsNextMissingItem:patch.needsNextMissingItem}:{}),
+      ...(patch.needsNextPurpose?{needsNextPurpose:patch.needsNextPurpose}:{}),
+      ...(patch.needsNextResolutionPath?{needsNextResolutionPath:patch.needsNextResolutionPath}:{}),
+      ...(patch.needsNextQuestion?{needsNextQuestion:patch.needsNextQuestion}:{}),
+      ...(patch.needsNextBasis?{needsNextBasis:patch.needsNextBasis}:{}),
+      ...(patch.needsNextConfidence?{needsNextConfidence:patch.needsNextConfidence}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
       ...(patch.whyItMatters?{whyItMatters:patch.whyItMatters}:{}),
       ...(patch.strategicImportance?{strategicImportance:patch.strategicImportance}:{}),
@@ -16878,6 +16886,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectImportance?{projectImportance}:{}),
       ...(projectRisk?{projectRisk}:{}),
       ...(projectNarrative?{projectNarrative}:{}),
+      ...(projectNeedsNext?{projectNeedsNext}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17473,6 +17482,7 @@ function projectIndexItemFromProfile(profile={}){
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
   const nextMove=metadata.nextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
   const projectNarrative=metadata.projectNarrative&&typeof metadata.projectNarrative==='object'&&!Array.isArray(metadata.projectNarrative)?metadata.projectNarrative:null;
+  const projectNeedsNext=metadata.projectNeedsNext&&typeof metadata.projectNeedsNext==='object'&&!Array.isArray(metadata.projectNeedsNext)?metadata.projectNeedsNext:null;
   const currentReality=metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||profile.summary||'Canonical project profile from VAL relationship/project index.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
@@ -17522,6 +17532,14 @@ function projectIndexItemFromProfile(profile={}){
     narrativeBasis:metadata.narrativeBasis||projectNarrative?.basis||'',
     narrativeConfidence:metadata.narrativeConfidence||projectNarrative?.confidence||'',
     projectNarrative,
+    needsNextType:metadata.needsNextType||projectNeedsNext?.needType||projectNeedsNext?.need_type||'',
+    needsNextMissingItem:metadata.needsNextMissingItem||projectNeedsNext?.missingItem||projectNeedsNext?.missing_item||'',
+    needsNextPurpose:metadata.needsNextPurpose||projectNeedsNext?.whyNeeded||projectNeedsNext?.why_needed||'',
+    needsNextResolutionPath:metadata.needsNextResolutionPath||projectNeedsNext?.resolutionPath||projectNeedsNext?.resolution_path||'',
+    needsNextQuestion:metadata.needsNextQuestion||projectNeedsNext?.nextQuestion||projectNeedsNext?.next_question||'',
+    needsNextBasis:metadata.needsNextBasis||projectNeedsNext?.basis||'',
+    needsNextConfidence:metadata.needsNextConfidence||projectNeedsNext?.confidence||'',
+    projectNeedsNext,
     ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
     whyItMatters:metadata.whyItMatters||metadata.projectImportance?.whyItMatters||'',
     strategicImportance:metadata.strategicImportance||metadata.projectImportance?.strategicImportance||'',
@@ -25111,6 +25129,60 @@ async function applyCoworkProjectNarrative({projectId,projectName='',projectNarr
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectNeedsNext({projectId,projectName='',projectNeedsNext={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const raw=projectNeedsNext&&typeof projectNeedsNext==='object'&&!Array.isArray(projectNeedsNext)?projectNeedsNext:{};
+  const needType=String(raw.needType||raw.need_type||raw.type||raw.missingType||raw.missing_type||'').trim().toLowerCase();
+  const targets={
+    fact:{targetPacketField:'project_manager_judgment_packet.what_val_now_knows',targetPageBoxes:['What VAL needs next','Working narrative']},
+    decision:{targetPacketField:'project_manager_judgment_packet.user_decision_needed',targetPageBoxes:['What VAL needs next','Project Manager judgment']},
+    source:{targetPacketField:'project_document_receipts',targetPageBoxes:['What VAL needs next','Documents / sources']},
+    person:{targetPacketField:'project_relationships_packet',targetPageBoxes:['What VAL needs next','People involved']}
+  };
+  const target=targets[needType];
+  const missingItem=String(raw.missingItem||raw.missing_item||raw.gap||raw.need||'').trim();
+  const whyNeeded=String(raw.whyNeeded||raw.why_needed||raw.why||raw.impact||'').trim();
+  const resolutionPath=String(raw.resolutionPath||raw.resolution_path||raw.acquisitionPath||raw.acquisition_path||raw.route||'').trim();
+  const nextQuestion=String(raw.nextQuestion||raw.next_question||raw.question||raw.resolvingMove||raw.resolving_move||'').trim();
+  const basis=String(raw.basis||raw.evidenceBasis||raw.evidence_basis||raw.evidence||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!target||!missingItem||!whyNeeded||!resolutionPath||!nextQuestion||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const preparedNeed={
+    id:String(raw.id||stableKey(`project_needs_next_${projectId}`)).trim(),
+    needType,
+    missingItem,
+    whyNeeded,
+    resolutionPath,
+    nextQuestion,
+    targetPacketField:target.targetPacketField,
+    targetPageBoxes:target.targetPageBoxes,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    needsNextType:preparedNeed.needType,
+    needsNextMissingItem:preparedNeed.missingItem,
+    needsNextPurpose:preparedNeed.whyNeeded,
+    needsNextResolutionPath:preparedNeed.resolutionPath,
+    needsNextQuestion:preparedNeed.nextQuestion,
+    needsNextBasis:preparedNeed.basis,
+    needsNextConfidence:preparedNeed.confidence,
+    projectNeedsNext:preparedNeed,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work next-needed gap applied from session ${sessionId||'unknown'}: ${sourceSummary||preparedNeed.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25152,6 +25224,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectImportance:applyCoworkProjectImportance,
   applyProjectRisk:applyCoworkProjectRisk,
   applyProjectNarrative:applyCoworkProjectNarrative,
+  applyProjectNeedsNext:applyCoworkProjectNeedsNext,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
