@@ -320,9 +320,11 @@ test('shows one trustworthy Krisp receipt when the same meeting is ingested twic
 });
 
 test('creates transcript tasks from the exact Krisp action line',()=>{
-  assert.match(server,/taskTitle:selected\.title/);
-  assert.match(server,/taskDescription:req\.body\.description\|\|selected\.description\|\|''/);
-  assert.match(server,/sourceQuote:String\(req\.body\.sourceQuote\|\|selected\.sourceQuote\|\|selected\.title\)\.trim\(\)/);
+  assert.match(server,/async function createCoworkTranscriptActionItem/);
+  assert.match(server,/taskTitle:exactActionItem/);
+  assert.match(server,/sourceQuote:exactActionItem/);
+  assert.match(server,/preserveSourceTitle:true/);
+  assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
 });
 
 test('exposes drafts and settings templates navigation',()=>{

@@ -166,10 +166,9 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.match(ui,/Select a transcript/);
   assert.match(server,/async function loadTranscriptForCowork/);
   assert.match(server,/async function prepareCoworkTranscriptMeetingOverview/);
+  assert.match(server,/async function createCoworkTranscriptActionItem/);
   assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/chat'/);
-  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
-  assert.match(server,/action===\'create_task\'/);
-  assert.match(server,/action===\'prepare_overview\'/);
+  assert.doesNotMatch(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/actions'/);
   assert.match(server,/prepareTranscriptMeetingOverviewDraft/);
   assert.match(server,/noExternalAction:true/);
   assert.match(hearthJs,/Prepare email draft/);
@@ -178,6 +177,9 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.match(hearthJs,/function renderTimelineTranscriptSourceSections/);
   assert.match(hearthJs,/function renderTimelineActionIndex/);
   assert.match(hearthJs,/data-transcript-task-create/);
+  assert.match(hearthJs,/async function openTranscriptActionItemCowork/);
+  assert.match(hearthJs,/entrypointId:'transcript\.action_item'/);
+  assert.doesNotMatch(hearthJs,/timelineTranscriptAction/);
   assert.doesNotMatch(hearthJs,/data-transcript-reprocess/);
   assert.doesNotMatch(hearthJs,/Ready - send to invitees/);
 });

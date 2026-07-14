@@ -2138,6 +2138,32 @@ function buildTranscriptWorkingBrief(transcript={},input={}){
     approvalBoundary:'Applying the first Transcript Working Brief result creates only an internal meeting-overview draft. It does not send email, create provider drafts, alter Krisp text, create a task, update CRM, or modify a calendar event.'
   };
 }
+function transcriptActionItemIndex(input={}){
+  const raw=input.scope?.actionItemIndex ?? input.scope?.action_item_index ?? input.actionItemIndex ?? input.action_item_index;
+  const index=Number(raw);
+  return Number.isInteger(index) && index >= 0 ? index : -1;
+}
+function buildTranscriptActionItemBrief(transcript={},input={}){
+  const workingBrief=buildTranscriptWorkingBrief(transcript,input);
+  const actionItemIndex=transcriptActionItemIndex(input);
+  const actionItem=workingBrief.sourceReceipt.actionItems[actionItemIndex] || '';
+  if(!actionItem) throw new Error('VAL could not find that exact Action Item in the selected Krisp receipt. Nothing was substituted.');
+  return {
+    ...workingBrief,
+    id:stableKey(`working_brief_transcript_action_item_${workingBrief.entityId}_${actionItemIndex}`),
+    entrypointId:'transcript.action_item',
+    sectionId:'action_item',
+    actionItemIndex,
+    actionItem,
+    sourceRefs:[
+      ...workingBrief.sourceRefs,
+      sourceRef({sourceType:'transcript_action_item',sourceId:`${workingBrief.entityId}:${actionItemIndex}`,quoteOrSummary:actionItem})
+    ],
+    objective:'Create one internal Commitment from the exact selected Krisp Action Item.',
+    completionCondition:'The exact selected Action Item is visible for review and, after Apply, becomes one internal VAL Commitment without changing the source receipt.',
+    approvalBoundary:'Applying creates only one internal VAL Commitment from this exact Action Item. It does not assign it to a person, send a message, create a calendar event, update CRM, or change the Krisp source receipt.'
+  };
+}
 function transcriptWorkingBriefQuestion(state={},brief={}){
   if(state.stage === 'ready_to_apply'){
     return {
@@ -2153,10 +2179,13 @@ function transcriptWorkingBriefQuestion(state={},brief={}){
     detail:'Reply "yes" or "prepare" to create the source-preserving internal email draft. Nothing sends from this conversation.'
   };
 }
-function confirmsTranscriptMeetingOverview(answer=''){
-  return /^(?:yes|yep|yeah|prepare|prepare (?:the )?(?:meeting )?overview|create (?:the )?(?:meeting )?overview|go ahead)\b/i.test(String(answer || '').trim());
+function transcriptActionItemQuestion(brief={}){
+  return {
+    targetField:'commitment.source_receipt.action_item',
+    question:'Review this exact Krisp Action Item, then apply it as one internal Commitment.',
+    detail:'The task title and source quote remain word for word. Nothing is assigned, sent, scheduled, or changed outside VAL.'
+  };
 }
-
 const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
   first_question:{
     question:'What should this project be called, and what outcome should it create?',
@@ -2389,6 +2418,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['transcript_working_brief','transcript_source_receipt','calendar_event_packet'],
     objective:'Prepare reviewable work from one selected transcript without altering its Krisp receipt.',
     completionCondition:'The prepared result cites the selected source receipt and has an explicit review or apply route.'
+  },
+  'transcript.action_item':{
+    id:'transcript.action_item',
+    surface:'transcripts',
+    scopeType:'transcript',
+    sectionId:'action_item',
+    requiredPackets:['transcript_source_receipt','commitment_packet'],
+    objective:'Turn one selected exact Krisp Action Item into one internal VAL Commitment.',
+    completionCondition:'The exact Action Item is visible for review and has an explicit internal Apply route.'
   }
 });
 
@@ -2421,7 +2459,8 @@ function createValCoworkService({
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
-  prepareTranscriptMeetingOverview=async()=>null
+  prepareTranscriptMeetingOverview=async()=>null,
+  createTranscriptActionItem=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -3213,49 +3252,47 @@ function createValCoworkService({
     const brief=buildTranscriptWorkingBrief(transcript,input);
     if(!brief.entityId) throw new Error('The selected transcript has no durable identifier yet.');
     if(!brief.sourceReceipt.ready) throw new Error('This transcript has no exact Krisp Action Items and Key Points receipt yet. VAL will not invent one.');
-    const state={stage:'choose_artifact',draftTranscriptArtifact:null,answers:[]};
+    const state={stage:'ready_to_apply',draftTranscriptArtifact:{kind:'email_draft',source:'exact_krisp_receipt',body:brief.sourceReceipt.body || '',actionItems:exactTranscriptLines(brief.sourceReceipt.actionItems),keyPoints:exactTranscriptLines(brief.sourceReceipt.keyPoints),invitees:safeArray(brief.invitees)},answers:[]};
     const question=transcriptWorkingBriefQuestion(state,brief);
     const now=new Date().toISOString();
     const sc=scope();
     const session=await saveSession({
-      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_review',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
     });
     const workItem=await saveWorkItem({
-      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_meeting_overview',title:`Meeting overview for ${brief.transcriptTitle}`,status:'needs_input',
-      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_meeting_overview',title:`Meeting overview for ${brief.transcriptTitle}`,status:'needs_review',
+      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,sourceReceipt:brief.sourceReceipt,invitees:brief.invitees,preparedArtifact:state.draftTranscriptArtifact,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
   }
   async function respondTranscriptWorkingBrief(session,workItem,answer){
     const brief=session.workingBriefJson || {};
-    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
-    state.answers.push({text:answer,at:new Date().toISOString()});
-    if(!confirmsTranscriptMeetingOverview(answer)){
-      const question={
-        targetField:'transcript_working_brief.prepared_artifact_kind',
-        question:'This selected Transcript Working Brief currently prepares one source-preserving result: the attendee meeting overview. Reply "prepare" when you want that exact receipt placed in Leverage for review.',
-        detail:'VAL will not turn a freeform transcript conversation into an untracked update. Other transcript outputs will receive their own typed packet routes.'
-      };
-      session.stateJson=state;
-      session.questionPlanJson=[...(session.questionPlanJson || []),question];
-      session.updatedAt=new Date().toISOString();
-      await saveSession(session);
-      return publicResult(session,workItem,question.question,question);
-    }
-    const receipt=brief.sourceReceipt || {};
-    state.stage='ready_to_apply';
-    state.draftTranscriptArtifact={kind:'email_draft',source:'exact_krisp_receipt',body:receipt.body || '',actionItems:exactTranscriptLines(receipt.actionItems),keyPoints:exactTranscriptLines(receipt.keyPoints),invitees:safeArray(brief.invitees)};
-    session.status='needs_review';
-    workItem.status='needs_review';
-    workItem.payloadJson={...workItem.payloadJson,preparedArtifact:state.draftTranscriptArtifact};
-    const question=transcriptWorkingBriefQuestion(state,brief);
-    session.stateJson=state;
-    session.questionPlanJson=[...(session.questionPlanJson || []),question];
-    session.updatedAt=new Date().toISOString();
-    workItem.updatedAt=new Date().toISOString();
-    await saveSession(session);
-    await saveWorkItem(workItem);
-    return publicResult(session,workItem,'VAL prepared the exact Krisp meeting overview for review. Apply it when this is true.',question);
+    const question=transcriptWorkingBriefQuestion({stage:'ready_to_apply'},brief);
+    return publicResult(session,workItem,'The exact Krisp meeting overview is already ready for review. Apply it when this is true.',question);
+  }
+  async function openTranscriptActionItemEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['transcript.action_item'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.transcriptId || '',220);
+    if(!entityId) throw new Error('Transcripts needs the selected transcript before VAL can review an Action Item.');
+    const transcript=await loadTranscript(entityId);
+    if(!transcript) throw new Error('VAL could not load the selected transcript. It did not substitute another meeting.');
+    const brief=buildTranscriptActionItemBrief(transcript,input);
+    const question=transcriptActionItemQuestion(brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_review',workingBriefJson:brief,questionPlanJson:[question],stateJson:{stage:'ready_to_apply'},createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'transcript_action_item',title:`Commitment from ${brief.transcriptTitle}`,status:'needs_review',
+      payloadJson:{transcriptId:brief.entityId,transcriptTitle:brief.transcriptTitle,actionItemIndex:brief.actionItemIndex,actionItem:brief.actionItem,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondTranscriptActionItem(session,workItem,answer){
+    const question=transcriptActionItemQuestion(session.workingBriefJson || {});
+    return publicResult(session,workItem,'This exact Action Item is already ready for review. VAL will not add or rewrite wording before it becomes an internal Commitment.',question);
   }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
@@ -3278,6 +3315,7 @@ function createValCoworkService({
     if(entrypointId === 'project.prepared_work') return openProjectPreparedWorkEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
+    if(entrypointId === 'transcript.action_item') return openTranscriptActionItemEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -3346,6 +3384,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.prepared_work') return respondProjectPreparedWork(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
+    if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -3436,6 +3475,31 @@ function createValCoworkService({
       await saveSession(session);
       await saveWorkItem(workItem);
       return {...publicResult(session,workItem,receipt.summary,null,receipt),draft:prepared.draft || null,recipientCount:Number(prepared.recipientCount || 0)};
+    }
+    if(workItem.workType === 'transcript_action_item'){
+      if(workItem.status !== 'needs_review') throw new Error('The Action Item must be reviewed before it can become a Commitment.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this Action Item is missing.');
+      const payload=workItem.payloadJson || {};
+      const task=await createTranscriptActionItem({
+        transcriptId:payload.transcriptId || session.scopeId,
+        actionItemIndex:Number(payload.actionItemIndex),
+        actionItem:multilineText(payload.actionItem || '',5000),
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!task?.task) throw new Error('VAL could not create this internal Commitment from the selected Action Item.');
+      const now=new Date().toISOString();
+      workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now,taskId:task.task.id || ''};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'create_transcript_action_item_task',status:'completed',
+        summary:task.alreadyCreated ? 'That exact Krisp Action Item is already present in Commitments.' : 'Created one internal Commitment from the exact Krisp Action Item.',
+        payloadJson:{transcriptId:payload.transcriptId || session.scopeId,actionItem:payload.actionItem || '',taskId:task.task.id || '',alreadyCreated:Boolean(task.alreadyCreated),noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),task:task.task,alreadyCreated:Boolean(task.alreadyCreated)};
     }
     if(workItem.workType === 'project_next_move'){
       if(workItem.status !== 'needs_review') throw new Error('The next move must be complete and reviewed before it can be applied.');
@@ -3781,6 +3845,7 @@ module.exports={
   buildProjectImportanceBrief,
   buildProjectRiskBrief,
   buildTranscriptWorkingBrief,
+  buildTranscriptActionItemBrief,
   buildProjectWorkstreamsBrief,
   createValCoworkService,
   entryQuestion,

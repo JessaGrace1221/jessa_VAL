@@ -582,8 +582,11 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /data-transcript-action-index/);
   assert.doesNotMatch(hearthJs, /data-transcript-chat/);
   assert.doesNotMatch(hearthJs, /timelineTranscriptAsk/);
-  assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/actions/);
-  assert.match(hearthJs, /prepare_overview/);
+  assert.match(hearthJs, /function openTranscriptActionItemCowork/);
+  assert.match(hearthJs, /entrypointId:'transcript\.action_item'/);
+  assert.match(hearthJs, /data-cowork-apply-transcript-action-item/);
+  assert.doesNotMatch(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)\s*\+\s*'\/actions/);
+  assert.doesNotMatch(hearthJs, /prepare_overview/);
   assert.doesNotMatch(hearthJs, /data-transcript-reprocess/);
   assert.match(hearthCss, /\.timeline-transcript-row/);
   assert.match(hearthCss, /\.timeline-transcript-detail/);

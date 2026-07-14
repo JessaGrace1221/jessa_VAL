@@ -23691,7 +23691,7 @@ async function promoteTranscriptTask(staged){
   const data=await transcriptIndexData(staged.transcriptId).catch(()=>({transcripts:[]}));
   const transcript=data.transcripts?.[0]||{};
   const transcriptTitle=transcriptDisplayTitleFromPayload({...transcript,title:transcript.meetingTitle,meetingTitle:transcript.meetingTitle,calendarEventTitle:staged.calendarEventTitle},transcript.rawTranscript);
-  const mainTask={id:uuid('task'),title:contextualTaskTitle(staged.calendarEventTitle||transcriptTitle,staged.taskTitle),notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,transcriptTitle?`Transcript title: ${transcriptTitle}`:'',`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,transcriptId:staged.transcriptId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
+  const mainTask={id:uuid('task'),title:staged.preserveSourceTitle ? staged.taskTitle : contextualTaskTitle(staged.calendarEventTitle||transcriptTitle,staged.taskTitle),notes:[staged.taskDescription,`Source transcript: ${staged.transcriptId}`,transcriptTitle?`Transcript title: ${transcriptTitle}`:'',`Supporting quote: “${staged.sourceQuote}”`].filter(Boolean).join('\n\n'),contactName:staged.assignedToName||'',dueDate:staged.dueDate||null,priority:staged.priority||'medium',completed:false,source:'transcript',sourceId:staged.transcriptId,transcriptId:staged.transcriptId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,details:[{transcriptId:staged.transcriptId,transcriptTaskId:staged.taskId,transcriptTitle,calendarEventId:transcript.calendarEventId||staged.calendarEventId||'',calendarEventTitle:staged.calendarEventTitle||transcriptTitle,sourceQuote:staged.sourceQuote}],createdAt:new Date().toISOString()};
   await saveTask(mainTask);
   await saveEvidenceLink({sourceType:'transcript',sourceId:staged.transcriptId,sourceLabel:transcriptTitle,targetType:'task',targetId:mainTask.id,relationship:'created_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptTaskId:staged.taskId,assignedToName:staged.assignedToName||'',assignedToContactId:staged.assignedToContactId||'',calendarEventId:mainTask.calendarEventId||'',calendarEventTitle:mainTask.calendarEventTitle||''}}).catch(()=>{});
   await saveEvidenceLink({sourceType:'transcript_task',sourceId:staged.taskId,sourceLabel:staged.taskTitle,targetType:'task',targetId:mainTask.id,relationship:'promoted_to_task',summary:mainTask.title,quote:staged.sourceQuote,confidence:staged.confidence||0,metadata:{transcriptId:staged.transcriptId}}).catch(()=>{});
@@ -24237,35 +24237,6 @@ app.post('/api/val/transcripts/contact-updates/:updateId/approve',async(req,res)
     const allowed={email:'email',phone:'phone',firstName:'firstName',lastName:'lastName',companyName:'companyName',address1:'address1',city:'city',state:'state',postalCode:'postalCode'};const field=allowed[update.fieldToUpdate];if(!field)return res.status(400).json({ok:false,error:'This field cannot be written automatically; keep it as a reviewed intelligence note'});
     try{await ghlStrict('PUT',`/contacts/${encodeURIComponent(update.contactId)}`,{[field]:update.newValue});if(DEMO_MODE){const row=(transcriptDemoArray('transcriptContactUpdates')||[]).find(x=>x.updateId===update.updateId);if(row)row.approved=true;}else if(pgPool)await dbQuery('update transcript_contact_updates set approved=true where update_id=$1',[update.updateId]);else{const store=valStore(),row=store.transcriptContactUpdates.find(x=>x.updateId===update.updateId);if(row)row.approved=true;saveValStore(store);}await logTranscriptAction(update.transcriptId,'contact_updated',update.contactId,'completed');res.json({ok:true,update:{...update,approved:true}});}catch(error){await logTranscriptAction(update.transcriptId,'failed_action',update.contactId,'failed',error.message);throw error;}
   }catch(e){res.status(500).json({ok:false,error:e.message});}
-});
-app.post('/api/val/transcripts/:transcriptId/actions',async(req,res)=>{
-  try{
-    const id=decodeURIComponent(req.params.transcriptId),action=String(req.body.action||'');
-    const data=await transcriptIndexData(id);
-    let transcript=data.transcripts[0]?transcriptDetailFromIndex(data,data.transcripts[0]):null;
-    if(!transcript){
-      const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
-      if(record){
-        transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
-        transcript.sourceReceipt=transcriptSourceReceipt(transcript);
-      }
-    }
-    if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
-    if(action==='create_task'){
-      const candidates=(transcript.sourceReceipt?.actionItems||[]).map(item=>({title:item,description:'',assignedToName:'',dueDate:'',sourceQuote:item})).filter(item=>item.title);
-      const requestedTitle=String(req.body.title||'').trim();
-      const selected=requestedTitle?candidates.find(item=>String(item.title).trim().toLowerCase()===requestedTitle.toLowerCase()):candidates[0];
-      if(!selected)throw Object.assign(new Error(requestedTitle?'That action item is no longer present in this transcript.':'This transcript has no source action item to turn into a task.'),{statusCode:400});
-      const staged={taskId:uuid('tr_task'),transcriptId:transcript.id,assignedToContactId:transcript.contactId||'',assignedToName:req.body.assignedToName||selected.assignedToName||transcript.contactName||'',taskTitle:selected.title,taskDescription:req.body.description||selected.description||'',dueDate:req.body.dueDate||selected.dueDate||null,priority:req.body.priority||'medium',confidence:1,status:'staged',needsApproval:false,sourceQuote:String(req.body.sourceQuote||selected.sourceQuote||selected.title).trim(),calendarEventId:transcript.meetingId||'',calendarEventTitle:transcript.title,createdAt:new Date().toISOString()};
-      await saveStagedTranscriptTask(staged);const task=await promoteTranscriptTask(staged);return res.json({ok:true,task});
-    }
-    if(action==='prepare_overview'){
-      const prepared=await prepareTranscriptMeetingOverviewDraft(transcript,transcript.sourceReceipt?.actionItems||[]);
-      return res.json({ok:true,...prepared});
-    }
-    if(action==='mark_reviewed'){await updateTranscriptMetadata(id,{reviewStatus:'reviewed',reviewedAt:new Date().toISOString()});return res.json({ok:true,status:'reviewed'});}
-    res.status(400).json({ok:false,error:'Unsupported transcript action'});
-  }catch(e){console.error('[transcripts] action failed',e);res.status(e.statusCode||500).json({ok:false,error:e.message,sent:e.sent});}
 });
 async function processExistingTranscriptRecord(record){
   const rawText=String(record.rawTranscript||record.raw_text||record.rawText||record.transcriptText||'').trim();
@@ -25077,6 +25048,37 @@ async function prepareCoworkTranscriptMeetingOverview({transcriptId}={}){
   if(!transcript) throw new Error('VAL could not load the selected transcript. It did not substitute another meeting.');
   return prepareTranscriptMeetingOverviewDraft(transcript,transcript.sourceReceipt?.actionItems || []);
 }
+async function createCoworkTranscriptActionItem({transcriptId,actionItemIndex,actionItem,sessionId='',workItemId=''}={}){
+  const transcript=await loadTranscriptForCowork(transcriptId);
+  if(!transcript) throw new Error('VAL could not load the selected transcript. It did not substitute another meeting.');
+  const sourceItems=Array.isArray(transcript.sourceReceipt?.actionItems) ? transcript.sourceReceipt.actionItems.map((item)=>String(item||'').trim()).filter(Boolean) : [];
+  const index=Number(actionItemIndex);
+  const exactActionItem=Number.isInteger(index) && index >= 0 ? sourceItems[index] : '';
+  if(!exactActionItem || String(actionItem||'').trim() !== exactActionItem) throw new Error('That Action Item no longer matches the selected Krisp receipt. Nothing was created.');
+  const existing=(await transcriptIndexData(transcript.id)).tasks.find((task)=>String(task.sourceQuote||'').trim()===exactActionItem && String(task.status||'').toLowerCase()==='created');
+  if(existing) return {task:{id:existing.taskId || '',title:exactActionItem,sourceQuote:exactActionItem},alreadyCreated:true,noExternalAction:true};
+  const staged={
+    taskId:uuid('tr_task'),
+    transcriptId:transcript.id,
+    assignedToContactId:'',
+    assignedToName:'',
+    taskTitle:exactActionItem,
+    taskDescription:'',
+    dueDate:null,
+    priority:'medium',
+    confidence:1,
+    status:'staged',
+    needsApproval:false,
+    sourceQuote:exactActionItem,
+    calendarEventId:transcript.meetingId || '',
+    calendarEventTitle:transcript.title || transcript.meetingTitle || '',
+    preserveSourceTitle:true,
+    createdAt:new Date().toISOString()
+  };
+  await saveStagedTranscriptTask(staged);
+  const task=await promoteTranscriptTask(staged);
+  return {task,alreadyCreated:false,noExternalAction:true};
+}
 async function applyCoworkProjectWorkstreams({projectId,projectName,desiredOutcome='',workstreams=[],sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25642,6 +25644,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
   prepareTranscriptMeetingOverview:prepareCoworkTranscriptMeetingOverview,
+  createTranscriptActionItem:createCoworkTranscriptActionItem,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

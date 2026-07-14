@@ -5002,10 +5002,37 @@ function renderCoworkTranscriptOverviewItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkTranscriptActionItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const actionItem = String(payload.actionItem || '').trim();
+  if(!actionItem) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Created in Commitments' : (ready ? 'Ready for review' : 'Preparing exact Action Item');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading">',
+        '<span>Prepared Commitment</span>',
+        '<strong>' + escapeHtml(workItem.title || 'Transcript Action Item') + '</strong>',
+        '<small>' + escapeHtml(status) + '</small>',
+      '</div>',
+      '<div class="cowork-workstream-list"><article>',
+        '<strong>Exact Krisp Action Item</strong>',
+        '<pre class="timeline-source-email-preview">' + escapeHtml(actionItem) + '</pre>',
+        '<div class="cowork-workstream-fields">',
+          coworkWorkstreamField('Destination', 'Commitments'),
+          coworkWorkstreamField('Approval', 'Internal task only. Nothing is assigned, sent, or scheduled.'),
+        '</div>',
+      '</article></div>',
+      ready ? '<button type="button" data-cowork-apply-transcript-action-item="' + escapeHtml(workItem.id || '') + '">Create internal Commitment</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
-  const isTranscript = entrypointId === 'transcript.working_brief';
+  const isTranscript = entrypointId.startsWith('transcript.');
   const sectionLabel = entrypointId === 'project.overview' ? 'Round Table focus' : entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.prepared_work' ? 'prepared work' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
@@ -5048,7 +5075,9 @@ function updateCoworkEntryContext(result = {}){
       '<span>Transcripts</span>',
       '<strong>' + escapeHtml(brief.transcriptTitle || 'Selected transcript') + '</strong>',
       '<p>' + escapeHtml(brief.objective || fallbackObjective) + '</p>',
-      '<small>Exact Krisp receipt: ' + escapeHtml((receipt.actionItems || []).length) + ' Action Items and ' + escapeHtml((receipt.keyPoints || []).length) + ' Key Points.</small>'
+      brief.actionItem
+        ? '<small>Exact Krisp Action Item: ' + escapeHtml(brief.actionItem) + '</small>'
+        : '<small>Exact Krisp receipt: ' + escapeHtml((receipt.actionItems || []).length) + ' Action Items and ' + escapeHtml((receipt.keyPoints || []).length) + ' Key Points.</small>'
     ].join('');
     return;
   }
@@ -5114,15 +5143,20 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkNextMoveItem(workItem)
       : workItem.type === 'transcript_meeting_overview'
         ? renderCoworkTranscriptOverviewItem(workItem)
+        : workItem.type === 'transcript_action_item'
+          ? renderCoworkTranscriptActionItem(workItem)
         : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = workItem.status === 'applied' || session.status === 'completed';
+  const isTranscriptReadyForReview = !isComplete && session.entrypointId.startsWith('transcript.') && workItem.status === 'needs_review';
   if(textarea){
     const completeLabel = session.entrypointId === 'transcript.working_brief'
       ? 'Meeting overview draft created.'
+      : session.entrypointId === 'transcript.action_item'
+        ? 'Transcript Commitment created.'
       : session.entrypointId === 'project.documents'
         ? 'Project document links applied.'
       : session.entrypointId === 'project.people'
@@ -5156,11 +5190,11 @@ function renderCoworkEntryResult(result = {}, options = {}){
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
-    const returnSurface = session.entrypointId === 'transcript.working_brief' ? ' Transcripts' : ' Project Managers';
-    textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : coworkEntryPlaceholder(result.question || {});
-    textarea.disabled = isComplete;
+    const returnSurface = session.entrypointId.startsWith('transcript.') ? ' Transcripts' : ' Project Managers';
+    textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : isTranscriptReadyForReview ? 'Review the exact source above, then use Apply.' : coworkEntryPlaceholder(result.question || {});
+    textarea.disabled = isComplete || isTranscriptReadyForReview;
   }
-  if(submit) submit.disabled = isComplete;
+  if(submit) submit.disabled = isComplete || isTranscriptReadyForReview;
 }
 
 async function openProjectWorkstreamsCowork(node = null){
@@ -5594,6 +5628,40 @@ async function openTranscriptWorkingBriefCowork(transcriptId = ''){
   }
 }
 
+async function openTranscriptActionItemCowork(transcriptId = '', actionItemIndex = -1){
+  const transcript = currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId || '') ? currentTimelineTranscript : null;
+  if(!transcript || !transcriptId || !Number.isInteger(Number(actionItemIndex)) || Number(actionItemIndex) < 0) return;
+  const actionItem = timelineSourceReceipt(transcript).actionItems[Number(actionItemIndex)] || '';
+  if(!actionItem) return;
+  activeCoworkEntry = {entrypointId:'transcript.action_item',sessionId:'',workItemId:'',transcriptId,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'timeline',
+    title:'Create transcript Commitment',
+    meaning:'Holding one exact Krisp Action Item from ' + timelineTranscriptTitle(transcript) + '.',
+    context:[
+      'Transcript: ' + timelineTranscriptTitle(transcript),
+      'Exact Action Item: ' + actionItem,
+      'Nothing will be assigned, sent, scheduled, or changed outside VAL.'
+    ],
+    recommendation:'VAL will prepare one internal Commitment from this exact source line only.',
+    placeholder:'Review the prepared Commitment above before applying it.',
+    heading:'Reviewing one Action Item from ' + timelineTranscriptTitle(transcript),
+    detail:'This conversation is scoped to one exact Krisp Action Item.',
+    publicDetail:'Scoped to Transcripts: selected Action Item.',
+    lockContext:true
+  });
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'transcript.action_item',
+      scope:{entityType:'transcript',entityId:transcriptId,sectionId:'action_item',actionItemIndex:Number(actionItemIndex)}
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this transcript Action Item yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open this selected Action Item. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
 async function submitActiveCoworkEntry(){
   const entry = activeCoworkEntry;
   if(!entry?.sessionId) return false;
@@ -5606,7 +5674,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
@@ -5850,6 +5918,19 @@ async function applyActiveCoworkTranscriptOverview(workItemId = '', button = nul
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not create this internal meeting draft. Nothing was sent. ' + error.message);
+    if(button) button.disabled = false;
+  }
+}
+
+async function applyActiveCoworkTranscriptActionItem(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not create this internal Commitment yet.'});
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not create this internal Commitment. Nothing was assigned, sent, or scheduled. ' + error.message);
     if(button) button.disabled = false;
   }
 }
@@ -11507,13 +11588,15 @@ function renderTimelineTranscriptMetricStrip(transcript = {}, tasks = [], overvi
   const taskCount = draft.actionItems.length || tasks.length;
   const keyPointCount = draft.keyPoints.length;
   const savedDraft = timelineMeetingOverviewRecord(transcript);
-  const emailAction = savedDraft ? 'open_leverage' : 'prepare_overview';
   const emailLabel = savedDraft ? 'Open email draft' : 'Prepare email draft';
+  const emailControl = savedDraft
+    ? '<button type="button" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>'
+    : '<button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>';
   return [
     '<div class="timeline-transcript-summary-strip" aria-label="Transcript readiness">',
     '<button type="button" data-transcript-focus="action-items"><strong>' + escapeHtml(taskCount) + '</strong><span>Action Items</span></button>',
     '<button type="button" data-transcript-focus="key-points"><strong>' + escapeHtml(keyPointCount) + '</strong><span>Key Points</span></button>',
-    '<button type="button" data-transcript-action="' + emailAction + '" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><strong>Email</strong><span>' + escapeHtml(emailLabel) + '</span></button>',
+    emailControl,
     '</div>'
   ].join('');
 }
@@ -11545,11 +11628,13 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
 function renderTimelineMeetingOverviewDraft(transcript = {}, tasks = [], overviewDraft = null){
   const draft = overviewDraft || timelineMeetingOverviewDraft(transcript, tasks);
   const savedDraft = timelineMeetingOverviewRecord(transcript);
-  const action = savedDraft ? 'open_leverage' : 'prepare_overview';
   const label = savedDraft ? 'Open email draft' : 'Prepare email draft';
+  const actionControl = savedDraft
+    ? '<button type="button" class="timeline-overview-receipt timeline-overview-send" data-transcript-action="open_leverage" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><span>Email draft</span><strong>' + escapeHtml(label) + '</strong></button>'
+    : '<button type="button" class="timeline-overview-receipt timeline-overview-send" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '"><span>Email draft</span><strong>' + escapeHtml(label) + '</strong></button>';
   return [
     '<section class="timeline-transcript-section timeline-meeting-overview-ready" data-transcript-section="email-draft">',
-    '<button type="button" class="timeline-overview-receipt timeline-overview-send" data-transcript-action="' + action + '" data-transcript-id="' + escapeHtml(transcript.id || '') + '"><span>Email draft</span><strong>' + escapeHtml(label) + '</strong></button>',
+    actionControl,
     draft.body ? '<pre class="timeline-source-email-preview">' + escapeHtml(draft.body) + '</pre>' : '<p>No source Action Items or Key Points are available for an email draft.</p>',
     '</section>'
   ].join('');
@@ -11739,28 +11824,9 @@ function focusTimelineTranscriptSection(section){
   target?.scrollIntoView?.({block:'start', behavior:'smooth'});
 }
 
-async function timelineTranscriptAction(transcriptId, action, payload = {}){
-  if(action === 'open_leverage'){
-    await hydratePreparedWorkQueue();
-    openLeverageApprovalWorkspace();
-    return;
-  }
-  const status = document.querySelector('[data-transcript-action-status]');
-  if(status) status.textContent = action === 'prepare_overview'
-    ? 'VAL is preparing the meeting email for review...'
-    : 'VAL is creating this task from the selected action item...';
-  try{
-    const data = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/actions', {action, ...payload});
-    await openTimelineTranscript(transcriptId);
-    const updatedStatus = document.querySelector('[data-transcript-action-status]');
-    if(updatedStatus) updatedStatus.textContent = action === 'prepare_overview'
-      ? 'Meeting email draft is ready in Leverage. Nothing was sent.'
-      : 'Task created: ' + (data.task?.title || 'transcript action item');
-    return data;
-  }catch(error){
-    if(status) status.textContent = 'Action stayed blocked: ' + (error.message || 'Request failed.');
-    return null;
-  }
+async function openTranscriptLeverage(){
+  await hydratePreparedWorkQueue();
+  openLeverageApprovalWorkspace();
 }
 
 function renderTimelineStatus(data = null){
@@ -19805,16 +19871,14 @@ drawerTray.addEventListener('click', async (event) => {
   if(transcriptAction){
     event.preventDefault();
     event.stopPropagation();
-    await timelineTranscriptAction(transcriptAction.dataset.transcriptId, transcriptAction.dataset.transcriptAction);
+    if(transcriptAction.dataset.transcriptAction === 'open_leverage') await openTranscriptLeverage();
     return;
   }
   const transcriptTaskCreate = event.target.closest('[data-transcript-task-create]');
   if(transcriptTaskCreate){
     event.preventDefault();
     event.stopPropagation();
-    const tasks = timelineTranscriptTasks(currentTimelineTranscript || {});
-    const task = tasks[Number(transcriptTaskCreate.dataset.transcriptTaskIndex)];
-    if(task) await timelineTranscriptAction(transcriptTaskCreate.dataset.transcriptTaskCreate, 'create_task', {title:task.taskTitle,description:task.taskDescription,assignedToName:task.assignedToName,dueDate:task.dueDate,sourceQuote:task.sourceQuote});
+    await openTranscriptActionItemCowork(transcriptTaskCreate.dataset.transcriptTaskCreate, Number(transcriptTaskCreate.dataset.transcriptTaskIndex));
     return;
   }
   const transcriptFocus = event.target.closest('[data-transcript-focus]');
@@ -20277,7 +20341,8 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectPreparedWorkApply = event.target.closest('[data-cowork-apply-project-prepared-work]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectOnboardingApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply) return;
+  const transcriptActionItemApply = event.target.closest('[data-cowork-apply-transcript-action-item]');
+  if(!workstreamsApply && !projectOnboardingApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply && !transcriptActionItemApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -20298,6 +20363,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectPreparedWorkApply) await applyActiveCoworkProjectPreparedWork(projectPreparedWorkApply.dataset.coworkApplyProjectPreparedWork, projectPreparedWorkApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
+  if(transcriptActionItemApply) await applyActiveCoworkTranscriptActionItem(transcriptActionItemApply.dataset.coworkApplyTranscriptActionItem, transcriptActionItemApply);
 });
 workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;
