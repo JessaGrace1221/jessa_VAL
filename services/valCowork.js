@@ -1477,6 +1477,169 @@ function projectPreparedWorkQuestion(state={},brief={}){
   };
 }
 
+const PROJECT_OVERVIEW_FOCUS_TYPES=Object.freeze({
+  decision:{id:'decision',name:'Decision'},
+  plan:{id:'plan',name:'Plan'},
+  comparison:{id:'comparison',name:'Comparison'},
+  prepared_artifact:{id:'prepared_artifact',name:'Prepared artifact'},
+  missing_input:{id:'missing_input',name:'Missing input'}
+});
+const PROJECT_OVERVIEW_TARGET_SECTIONS=Object.freeze({
+  why_it_matters:'Why it matters',
+  next_move:'Next move',
+  people_involved:'People involved',
+  prepared_work:'Prepared work',
+  documents_sources:'Documents / sources',
+  risk_blocker:'Risk / blocker',
+  working_narrative:'Working narrative',
+  what_val_needs_next:'What VAL needs next',
+  sop_fit:'Operating System',
+  project_phase:'Current Phase',
+  project_interview:'Project Interview',
+  workstreams:'Workstreams',
+  milestones:'Milestones',
+  monitoring_rules:'Monitoring after launch',
+  relationship_nurture:'Relationship nurture'
+});
+function projectOverviewFocusType(value=''){
+  const normalized=compactText(value,180).toLowerCase();
+  if(!normalized) return '';
+  const match=Object.values(PROJECT_OVERVIEW_FOCUS_TYPES).find((option)=>normalized===option.id || normalized===option.name.toLowerCase() || normalized===option.id.replace(/_/g,' '));
+  return match?.id || '';
+}
+function projectOverviewTargetSection(value=''){
+  const normalized=compactText(value,180).toLowerCase();
+  if(!normalized) return '';
+  const match=Object.entries(PROJECT_OVERVIEW_TARGET_SECTIONS).find(([id,name])=>normalized===id || normalized===name.toLowerCase() || normalized===id.replace(/_/g,' '));
+  return match?.[0] || '';
+}
+function projectOverviewFocusTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {focusStatement:value} : (value || {});
+  const focusType=projectOverviewFocusType(raw.focusType || raw.focus_type || raw.type);
+  const targetSection=projectOverviewTargetSection(raw.targetSection || raw.target_section || raw.followThroughSection || raw.follow_through_section || raw.section);
+  return {
+    id:compactText(raw.id || stableKey(`project_overview_focus_${brief.entityId || brief.projectName || 'project'}_${focusType || raw.title || ''}`),220),
+    focusType,
+    focusTypeName:PROJECT_OVERVIEW_FOCUS_TYPES[focusType]?.name || '',
+    title:compactText(raw.title || raw.focusTitle || raw.focus_title || '',500),
+    focusStatement:compactText(raw.focusStatement || raw.focus_statement || raw.request || raw.question || raw.decision || '',900),
+    completionCondition:compactText(raw.completionCondition || raw.completion_condition || raw.successCondition || raw.success_condition || '',700),
+    targetSection,
+    targetSectionName:PROJECT_OVERVIEW_TARGET_SECTIONS[targetSection] || '',
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectOverviewFocus(value={},brief={}){
+  return projectOverviewFocusTemplate(value,brief);
+}
+function missingProjectOverviewFocusFields(value={},brief={}){
+  const focus=normalizeProjectOverviewFocus(value,brief);
+  const missing=[];
+  if(!focus.focusType) missing.push('focus type from the available choices');
+  if(!compactText(focus.title)) missing.push('focus title');
+  if(!compactText(focus.focusStatement)) missing.push('exact question, decision, or work to resolve');
+  if(!compactText(focus.completionCondition)) missing.push('useful completion condition');
+  if(!focus.targetSection) missing.push('Project Managers follow-through section');
+  if(!compactText(focus.basis)) missing.push('basis');
+  if(!compactText(focus.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectOverviewFocusLine(value={},brief={}){
+  const focus=normalizeProjectOverviewFocus(value,brief);
+  return [
+    focus.focusTypeName || 'Focus type: choose one available type',
+    'focus title: ' + (focus.title || '...'),
+    'focus: ' + (focus.focusStatement || '...'),
+    'complete when: ' + (focus.completionCondition || '...'),
+    'follow-through section: ' + (focus.targetSectionName || '...'),
+    'basis: ' + (focus.basis || '...'),
+    'confidence: ' + (focus.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectOverviewFocus(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectOverviewFocus(current,brief);
+  const previous=normalizeProjectOverviewFocus(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let focusType=projectOverviewFocusType(monitoringValueFromLine(source,'focus type|type'));
+  let title=monitoringValueFromLine(source,'focus title|title');
+  let focusStatement=monitoringValueFromLine(source,'focus|question|decision|work to resolve');
+  let completionCondition=monitoringValueFromLine(source,'complete when|completion condition|success condition');
+  let targetSection=projectOverviewTargetSection(monitoringValueFromLine(source,'follow-through section|target section|section'));
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 7){
+    focusType=focusType || projectOverviewFocusType(parts[0].replace(/^\s*(?:focus type|type)\s*:\s*/i,''));
+    title=title || parts[1].replace(/^\s*(?:focus title|title)\s*:\s*/i,'');
+    focusStatement=focusStatement || parts[2].replace(/^\s*(?:focus|question|decision|work to resolve)\s*:\s*/i,'');
+    completionCondition=completionCondition || parts[3].replace(/^\s*(?:complete when|completion condition|success condition)\s*:\s*/i,'');
+    targetSection=targetSection || projectOverviewTargetSection(parts[4].replace(/^\s*(?:follow-through section|target section|section)\s*:\s*/i,''));
+    basis=basis || parts[5].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[6].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectOverviewFocus({
+    ...previous,
+    focusType:focusType || previous.focusType,
+    title:title || previous.title,
+    focusStatement:focusStatement || previous.focusStatement,
+    completionCondition:completionCondition || previous.completionCondition,
+    targetSection:targetSection || previous.targetSection,
+    basis:basis || previous.basis,
+    confidence:confidence || previous.confidence,
+    sourceRefs:brief.sourceRefs
+  },brief);
+}
+function buildProjectOverviewBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const currentFocus=normalizeProjectOverviewFocus(project.projectOverviewFocus || metadata.projectOverviewFocus || {},{sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_overview_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.overview',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'project_overview',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentReality:compactText(project.livingNarrative || project.reality || project.summary || '',900),
+    recommendedNextMove:compactText(project.nextMove || metadata.nextMove || '',500),
+    availableFocusTypes:Object.values(PROJECT_OVERVIEW_FOCUS_TYPES),
+    availableTargetSections:Object.entries(PROJECT_OVERVIEW_TARGET_SECTIONS).map(([id,name])=>({id,name})),
+    currentFocus,
+    sourceRefs:references,
+    objective:'Choose the one bounded question or work item the Project Managers Round Table should focus on next.',
+    completionCondition:'One allowed focus type, title, exact focus, useful completion condition, named Project Managers follow-through section, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this focus changes only the selected project’s internal Round Table focus packet. It does not rewrite the named follow-through section, create a task, generate content, send a message, update CRM, change a calendar, or alter source evidence.'
+  };
+}
+function projectOverviewQuestion(state={},brief={}){
+  const focus=normalizeProjectOverviewFocus(state.draftProjectOverviewFocus || brief.currentFocus || {},brief);
+  const focusTypes=safeArray(brief.availableFocusTypes).map((option)=>`${option.name} (${option.id})`).join('; ');
+  const targetSections=safeArray(brief.availableTargetSections).map((option)=>`${option.name} (${option.id})`).join('; ');
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'project_overview'){
+    return {
+      targetField:'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus',
+      question:`What one thing should the ${brief.projectName || 'selected project'} Round Table focus on now? Choose one type: ${focusTypes}. Add one line: focus type | focus title | exact question, decision, or work to resolve | useful completion condition | Project Managers follow-through section (${targetSections}) | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This creates one visible focus only; it does not rewrite the target section. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}VAL will not create tasks, draft content, or take external action here.`
+    };
+  }
+  if(state.stage === 'project_overview_details'){
+    const missing=missingProjectOverviewFocusFields(focus,brief);
+    return {
+      targetField:'project_overview_focus_packet.{focus_type,title,focus_statement,completion_condition,target_section,basis,confidence} + Round Table focus',
+      question:`Fill only these missing Round Table Focus details: ${missing.join(', ')}.\n\n${projectOverviewFocusLine(focus,brief)}`,
+      detail:'Choose only a focus type and Project Managers follow-through section that already exist. This records the focus; it does not update the target section.'
+    };
+  }
+  return {
+    targetField:'project_overview_focus_packet',
+    question:'Review the Round Table Focus, then apply it to this Project Manager.',
+    detail:'Applying updates only this project’s internal focus packet. Nothing external happens and no other section is rewritten.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1995,6 +2158,12 @@ function confirmsTranscriptMeetingOverview(answer=''){
 }
 
 const COWORK_ENTRYPOINTS=Object.freeze({
+  'project.overview':{
+    id:'project.overview',surface:'project_managers',scopeType:'project_section',sectionId:'project_overview',
+    requiredPackets:['project_packet','project_manager_judgment_packet','project_overview_focus_packet'],
+    objective:'Choose the one bounded question or work item the selected Project Managers Round Table should focus on next.',
+    completionCondition:'One allowed focus type, title, exact focus, useful completion condition, named Project Managers follow-through section, basis, and confidence are ready for internal review.'
+  },
   'project.identity':{
     id:'project.identity',
     surface:'project_managers',
@@ -2129,6 +2298,7 @@ function createValCoworkService({
   applyProjectOperatingSystem=async()=>null,
   applyProjectPhase=async()=>null,
   applyProjectPreparedWork=async()=>null,
+  applyProjectOverview=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -2287,6 +2457,41 @@ function createValCoworkService({
       updatedAt:now
     });
     return publicResult(session,workItem,question.question,question);
+  }
+  async function openProjectOverviewEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.overview'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can set a Round Table focus.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectOverviewBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'project_overview',draftProjectOverviewFocus:{},answers:[]};
+    const question=projectOverviewQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_overview_focus',title:`Round Table focus for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectOverviewFocus:state.draftProjectOverviewFocus,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectOverview(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectOverviewFocus=parseProjectOverviewFocus(answer,brief,state.draftProjectOverviewFocus || {});
+    const focus=normalizeProjectOverviewFocus(state.draftProjectOverviewFocus,brief);
+    const missing=missingProjectOverviewFocusFields(focus,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectOverviewFocus:focus,completionCondition:brief.completionCondition};
+      question=projectOverviewQuestion(state,brief);message='VAL prepared the Round Table Focus for review. Apply it when this is true.';
+    }else{
+      state.stage='project_overview_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectOverviewQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
   async function openProjectIdentityEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.identity'];
@@ -2883,6 +3088,7 @@ function createValCoworkService({
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
+    if(entrypointId === 'project.overview') return openProjectOverviewEntry(input);
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
     if(entrypointId === 'project.people') return openProjectPeopleEntry(input);
     if(entrypointId === 'project.documents') return openProjectDocumentsEntry(input);
@@ -2949,6 +3155,7 @@ function createValCoworkService({
     if(!session) throw new Error('This Co-Work session no longer exists.');
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
+    if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);
     if(session.entrypointId === 'project.identity') return respondProjectIdentity(session,workItem,answer);
     if(session.entrypointId === 'project.people') return respondProjectPeople(session,workItem,answer);
     if(session.entrypointId === 'project.documents') return respondProjectDocuments(session,workItem,answer);
@@ -3098,6 +3305,20 @@ function createValCoworkService({
       await saveSession(session);
       await saveWorkItem(workItem);
       return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_overview_focus'){
+      if(workItem.status !== 'needs_review') throw new Error('The Round Table Focus must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectOverviewFocus=normalizeProjectOverviewFocus(payload.projectOverviewFocus || {},brief);
+      if(missingProjectOverviewFocusFields(projectOverviewFocus,brief).length) throw new Error('The Round Table Focus is incomplete and cannot be applied yet.');
+      const project=await applyProjectOverview({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectOverviewFocus,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the Round Table Focus to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_overview_focus',status:'completed',summary:`Applied the Round Table Focus to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectOverviewFocus,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType === 'project_identity'){
       if(workItem.status !== 'needs_review') throw new Error('The project foundation must be complete and reviewed before it can be applied.');

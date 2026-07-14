@@ -16816,6 +16816,21 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const projectNeedsNext=patch.projectNeedsNext&&typeof patch.projectNeedsNext==='object'&&!Array.isArray(patch.projectNeedsNext)?patch.projectNeedsNext:null;
     const projectOperatingSystem=patch.projectOperatingSystem&&typeof patch.projectOperatingSystem==='object'&&!Array.isArray(patch.projectOperatingSystem)?patch.projectOperatingSystem:null;
     const projectPhaseRecord=patch.projectPhaseRecord&&typeof patch.projectPhaseRecord==='object'&&!Array.isArray(patch.projectPhaseRecord)?patch.projectPhaseRecord:null;
+    const projectOverviewFocus=patch.projectOverviewFocus&&typeof patch.projectOverviewFocus==='object'&&!Array.isArray(patch.projectOverviewFocus)
+      ? {
+          id:String(patch.projectOverviewFocus.id||'').trim(),
+          focusType:String(patch.projectOverviewFocus.focusType||patch.projectOverviewFocus.focus_type||'').trim(),
+          focusTypeName:String(patch.projectOverviewFocus.focusTypeName||patch.projectOverviewFocus.focus_type_name||'').trim(),
+          title:String(patch.projectOverviewFocus.title||'').trim(),
+          focusStatement:String(patch.projectOverviewFocus.focusStatement||patch.projectOverviewFocus.focus_statement||'').trim(),
+          completionCondition:String(patch.projectOverviewFocus.completionCondition||patch.projectOverviewFocus.completion_condition||'').trim(),
+          targetSection:String(patch.projectOverviewFocus.targetSection||patch.projectOverviewFocus.target_section||'').trim(),
+          targetSectionName:String(patch.projectOverviewFocus.targetSectionName||patch.projectOverviewFocus.target_section_name||'').trim(),
+          basis:String(patch.projectOverviewFocus.basis||'').trim(),
+          confidence:String(patch.projectOverviewFocus.confidence||'').trim(),
+          sourceRefs:Array.isArray(patch.projectOverviewFocus.sourceRefs)?patch.projectOverviewFocus.sourceRefs:[]
+        }
+      : null;
     const projectPreparedWork=Array.isArray(patch.projectPreparedWork)
       ? patch.projectPreparedWork.map((item)=>({
           id:String(item?.id||'').trim(),
@@ -16917,6 +16932,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(projectNeedsNext?{projectNeedsNext}:{}),
       ...(projectOperatingSystem?{projectOperatingSystem}:{}),
       ...(projectPhaseRecord?{projectPhaseRecord}:{}),
+      ...(projectOverviewFocus?.id&&projectOverviewFocus.focusType&&projectOverviewFocus.title&&projectOverviewFocus.focusStatement&&projectOverviewFocus.completionCondition&&projectOverviewFocus.targetSection&&projectOverviewFocus.basis&&projectOverviewFocus.confidence?{projectOverviewFocus}:{}),
       ...(projectPreparedWork?{projectPreparedWork}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
@@ -17516,6 +17532,7 @@ function projectIndexItemFromProfile(profile={}){
   const projectNeedsNext=metadata.projectNeedsNext&&typeof metadata.projectNeedsNext==='object'&&!Array.isArray(metadata.projectNeedsNext)?metadata.projectNeedsNext:null;
   const projectOperatingSystem=metadata.projectOperatingSystem&&typeof metadata.projectOperatingSystem==='object'&&!Array.isArray(metadata.projectOperatingSystem)?metadata.projectOperatingSystem:null;
   const projectPhaseRecord=metadata.projectPhaseRecord&&typeof metadata.projectPhaseRecord==='object'&&!Array.isArray(metadata.projectPhaseRecord)?metadata.projectPhaseRecord:null;
+  const projectOverviewFocus=metadata.projectOverviewFocus&&typeof metadata.projectOverviewFocus==='object'&&!Array.isArray(metadata.projectOverviewFocus)?metadata.projectOverviewFocus:null;
   const currentReality=metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||profile.summary||'Canonical project profile from VAL relationship/project index.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
@@ -17564,6 +17581,7 @@ function projectIndexItemFromProfile(profile={}){
     projectPhaseBasis:metadata.projectPhaseBasis||projectPhaseRecord?.basis||'',
     projectPhaseConfidence:metadata.projectPhaseConfidence||projectPhaseRecord?.confidence||'',
     projectPhaseRecord,
+    projectOverviewFocus,
     projectInterviewNotes:metadata.projectInterviewNotes||'',
     whatValNowKnows:metadata.whatValNowKnows||projectNarrative?.whatValNowKnows||projectNarrative?.what_val_now_knows||'',
     currentBlocker:metadata.currentBlocker||projectNarrative?.whatIsBlocked||projectNarrative?.what_is_blocked||'',
@@ -25328,6 +25346,41 @@ async function applyCoworkProjectPhase({projectId,projectName='',sopId='',projec
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectOverview({projectId,projectName='',projectOverviewFocus={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const allowedTypes={decision:'Decision',plan:'Plan',comparison:'Comparison',prepared_artifact:'Prepared artifact',missing_input:'Missing input'};
+  const allowedSections={why_it_matters:'Why it matters',next_move:'Next move',people_involved:'People involved',prepared_work:'Prepared work',documents_sources:'Documents / sources',risk_blocker:'Risk / blocker',working_narrative:'Working narrative',what_val_needs_next:'What VAL needs next',sop_fit:'Operating System',project_phase:'Current Phase',project_interview:'Project Interview',workstreams:'Workstreams',milestones:'Milestones',monitoring_rules:'Monitoring after launch',relationship_nurture:'Relationship nurture'};
+  const raw=projectOverviewFocus&&typeof projectOverviewFocus==='object'&&!Array.isArray(projectOverviewFocus)?projectOverviewFocus:{};
+  const focusType=String(raw.focusType||raw.focus_type||raw.type||'').trim().toLowerCase();
+  const title=String(raw.title||'').trim();
+  const focusStatement=String(raw.focusStatement||raw.focus_statement||raw.request||raw.question||'').trim();
+  const completionCondition=String(raw.completionCondition||raw.completion_condition||'').trim();
+  const targetSection=String(raw.targetSection||raw.target_section||raw.section||'').trim().toLowerCase();
+  const basis=String(raw.basis||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!allowedTypes[focusType]||!title||!focusStatement||!completionCondition||!allowedSections[targetSection]||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const prepared={
+    id:String(raw.id||stableKey(`project_overview_focus_${projectId}_${focusType}_${title}`)).trim(),
+    focusType,
+    focusTypeName:allowedTypes[focusType],
+    title,
+    focusStatement,
+    completionCondition,
+    targetSection,
+    targetSectionName:allowedSections[targetSection],
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{name:current.name,projectOverviewFocus:prepared,rawContext:[current.sourceDetails?.rawContext||'',`Co-Work Round Table Focus applied from session ${sessionId||'unknown'}: ${sourceSummary||prepared.basis}`].filter(Boolean).join('\n')});
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectPreparedWork({projectId,projectName='',projectPreparedWork={},sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25467,6 +25520,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectNeedsNext:applyCoworkProjectNeedsNext,
   applyProjectOperatingSystem:applyCoworkProjectOperatingSystem,
   applyProjectPhase:applyCoworkProjectPhase,
+  applyProjectOverview:applyCoworkProjectOverview,
   applyProjectPreparedWork:applyCoworkProjectPreparedWork,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,

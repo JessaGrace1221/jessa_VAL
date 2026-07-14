@@ -3745,6 +3745,7 @@ function projectManagerPacket(project = {}){
   const documentReceipts = projectDocumentReceiptItems(project, docs);
   const interviewStage = projectInterviewStage(project);
   const interviewContract = projectInterviewStageContract(interviewStage);
+  const overviewFocusPacket = projectOverviewFocusPacketItem(project.projectOverviewFocus || metadata.projectOverviewFocus, {});
   const owner = projectCleanText(ownerAssignment.name, 'VAL is still matching the responsible owner.');
   const nextAction = projectCleanText(project.nextMove || project.recommendedAction, needsOnboarding ? 'Answer the project onboarding question.' : 'Decide the next narrow move.');
   const importancePacket = projectImportancePacketItem(project.projectImportance || metadata.projectImportance, {
@@ -3830,6 +3831,7 @@ function projectManagerPacket(project = {}){
     project_needs_next_packet: needsNextPacket,
     project_commitments_packet: Array.isArray(project.commitments) ? project.commitments : [],
     project_risk_packet: riskPacket,
+    project_overview_focus_packet: overviewFocusPacket,
     project_prepared_work_packets: prepared,
     project_next_action_packet: {
       next_action: nextAction,
@@ -3859,13 +3861,13 @@ function projectManagerPacket(project = {}){
 }
 
 function projectCoworkScopeLabel(field = ''){
-  if(field === 'project_overview') return 'Whole project';
+  if(field === 'project_overview') return 'Round Table focus';
   return String(field || 'project_context').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function projectCoworkAffectedObject(field = '', project = {}, packet = {}){
   const map = {
-    project_overview: 'project_manager_packet',
+    project_overview: 'project_overview_focus_packet',
     what_this_is: 'project_identity_packet',
     why_it_matters: 'project_manager_judgment_packet.why_it_matters',
     next_move: 'project_next_action_packet',
@@ -3904,7 +3906,7 @@ function projectCoworkSourceReceiptLines(project = {}, packet = {}){
 function projectScopedCoworkPacket(field = 'project_overview', project = activeProjectProfile){
   const item = project || activeProjectProfile || projectProfiles.frisson;
   const packet = projectManagerPacket(item);
-  const spec = projectCoworkSpec(field);
+  const spec = projectCoworkSpec(field) || {};
   const affectedObject = projectCoworkAffectedObject(field, item, packet);
   const sourceReceipts = projectCoworkSourceReceiptLines(item, packet);
   return {
@@ -4100,6 +4102,26 @@ function projectNarrativePacketItem(value = {}, fallback = {}){
   };
 }
 
+function projectOverviewFocusPacketItem(value = {}, fallback = {}){
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const focusType = projectCleanText(raw.focusType || raw.focus_type || raw.type || fallback.focus_type).toLowerCase();
+  const targetSection = projectCleanText(raw.targetSection || raw.target_section || raw.section || fallback.target_section).toLowerCase();
+  const typeLabels = {decision:'Decision',plan:'Plan',comparison:'Comparison',prepared_artifact:'Prepared artifact',missing_input:'Missing input'};
+  const sectionLabels = {why_it_matters:'Why it matters',next_move:'Next move',people_involved:'People involved',prepared_work:'Prepared work',documents_sources:'Documents / sources',risk_blocker:'Risk / blocker',working_narrative:'Working narrative',what_val_needs_next:'What VAL needs next',sop_fit:'Operating System',project_phase:'Current Phase',project_interview:'Project Interview',workstreams:'Workstreams',milestones:'Milestones',monitoring_rules:'Monitoring after launch',relationship_nurture:'Relationship nurture'};
+  return {
+    focus_type:focusType,
+    focus_type_name:projectCleanText(raw.focusTypeName || raw.focus_type_name || typeLabels[focusType]),
+    title:projectCleanText(raw.title || raw.focusTitle || raw.focus_title || fallback.title),
+    focus_statement:projectCleanText(raw.focusStatement || raw.focus_statement || raw.request || raw.question || fallback.focus_statement),
+    completion_condition:projectCleanText(raw.completionCondition || raw.completion_condition || fallback.completion_condition),
+    target_section:targetSection,
+    target_section_name:projectCleanText(raw.targetSectionName || raw.target_section_name || sectionLabels[targetSection]),
+    basis:projectCleanText(raw.basis || fallback.basis),
+    confidence:projectCleanText(raw.confidence || fallback.confidence),
+    source_refs:Array.isArray(raw.sourceRefs || raw.source_refs) ? (raw.sourceRefs || raw.source_refs) : []
+  };
+}
+
 function projectNeedsNextPacketItem(value = {}, fallback = {}){
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const needType = projectCleanText(raw.needType || raw.need_type || raw.type || raw.missingType || raw.missing_type || fallback.need_type).toLowerCase();
@@ -4155,6 +4177,18 @@ function renderProjectOnboardingPanel(project = activeProjectProfile, interview 
       '<button type="button" data-project-cowork-field="project_interview">Start onboarding chat</button>',
     '</section>'
   ].join('');
+}
+
+function renderProjectRoundTableFocus(focus = {}){
+  const hasFocus = Boolean(focus.title && focus.focus_statement && focus.target_section);
+  const title = hasFocus ? focus.title : 'Choose one focus for the Round Table';
+  const body = hasFocus
+    ? focus.focus_statement
+    : 'Set the one question, decision, plan, comparison, artifact direction, or missing input that should guide this project now.';
+  const detail = hasFocus
+    ? [focus.focus_type_name, focus.completion_condition ? 'Complete when: ' + focus.completion_condition : '', focus.target_section_name ? 'Follow through in: ' + focus.target_section_name : '', focus.basis ? 'Basis: ' + focus.basis : ''].filter(Boolean).join(' | ')
+    : 'This focus does not change any other project section until you open that section and apply its own reviewed work.';
+  return '<section class="project-manager-focus" aria-label="Project Round Table focus"><article class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="project_overview"><span>Round Table focus</span><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(body) + '</p><small>' + escapeHtml(detail) + '</small>' + projectCoworkChip() + '</article></section>';
 }
 
 function renderProjectRoundTableOverview(packet = {}, needsOnboarding = false){
@@ -4340,6 +4374,7 @@ function renderProjectManagerProfile(project = {}){
   const next = packet.project_next_action_packet;
   const sop = packet.project_sop_packet;
   const interview = packet.project_interview_packet;
+  const overviewFocus = packet.project_overview_focus_packet || {};
   const needsOnboarding = projectNeedsOnboarding(project);
   const assignedProjectManager = packet.project_manager_assignment_packet || projectManagerAssignment(project);
   const relationships = packet.project_relationships_packet.map((item) => item.relationship_name);
@@ -4384,6 +4419,7 @@ function renderProjectManagerProfile(project = {}){
         renderProjectPinControl(project),
       '</div>',
     '</section>',
+    renderProjectRoundTableFocus(overviewFocus),
     needsOnboarding ? renderProjectOnboardingPanel(project, interview) : '',
     renderProjectRoundTableOverview(packet, needsOnboarding),
     '<section class="project-manager-operating-system" aria-label="Project operating system">',
@@ -4465,12 +4501,6 @@ function projectCoworkSpec(field = ''){
   const interviewStage = projectInterviewStage(activeProjectProfile || {});
   const interviewContract = projectInterviewStageContract(interviewStage);
   const specs = {
-    project_overview: {
-      title: 'Co-Work on this project',
-      question: 'What should VAL help you think through for ' + projectName + '?',
-      detail: 'This stays scoped to the selected project, its source receipts, and the current Project Manager packet.',
-      placeholder: 'Help me think through the next move, risk, owner, draft, or decision for this project.'
-    },
     what_this_is: {
       title: 'Shape what this project is',
       question: 'What is ' + projectName + ', who is it for, and what outcome should it create?',
@@ -4788,6 +4818,22 @@ function renderCoworkProjectPreparedWorkItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkProjectOverviewFocusItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const focus = payload.projectOverviewFocus || {};
+  if(!focus || typeof focus !== 'object') return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to the Round Table focus' : (ready ? 'Ready for review' : 'Preparing one bounded focus');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Round Table Focus</span><strong>' + escapeHtml(focus.title || workItem.title || 'Project focus') + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(focus.focusTypeName || focus.focusType || 'Focus') + '</strong><div class="cowork-workstream-fields">' + coworkWorkstreamField('Question or work', focus.focusStatement || focus.focus_statement) + coworkWorkstreamField('Complete when', focus.completionCondition || focus.completion_condition) + coworkWorkstreamField('Follow through in', focus.targetSectionName || focus.target_section_name || focus.targetSection || focus.target_section) + coworkWorkstreamField('Basis', focus.basis) + coworkWorkstreamField('Confidence', focus.confidence) + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-project-overview="' + escapeHtml(workItem.id || '') + '">Apply Round Table focus</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkProjectRiskItem(workItem = {}){
   const payload = workItem.payload || {};
   const risk = payload.projectRisk || {};
@@ -4932,9 +4978,11 @@ function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId === 'transcript.working_brief';
-  const sectionLabel = entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.prepared_work' ? 'prepared work' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
+  const sectionLabel = entrypointId === 'project.overview' ? 'Round Table focus' : entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.prepared_work' ? 'prepared work' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
+    : entrypointId === 'project.overview'
+    ? 'Choose one bounded question or work item the Project Managers Round Table should focus on next.'
     : entrypointId === 'project.documents'
     ? 'Link existing evidence and name how it should inform this selected project.'
     : entrypointId === 'project.people'
@@ -5028,6 +5076,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkProjectOperatingSystemItem(workItem)
       : workItem.type === 'project_phase'
       ? renderCoworkProjectPhaseItem(workItem)
+      : workItem.type === 'project_overview_focus'
+      ? renderCoworkProjectOverviewFocusItem(workItem)
       : workItem.type === 'project_prepared_work'
       ? renderCoworkProjectPreparedWorkItem(workItem)
       : workItem.type === 'project_next_move'
@@ -5067,6 +5117,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Operating system applied.'
       : session.entrypointId === 'project.phase'
         ? 'Current phase applied.'
+      : session.entrypointId === 'project.overview'
+        ? 'Round Table focus applied.'
       : session.entrypointId === 'project.prepared_work'
         ? 'Prepared work applied.'
       : session.entrypointId === 'project.next_move'
@@ -5116,6 +5168,25 @@ async function openProjectWorkstreamsCowork(node = null){
     activeCoworkEntry = null;
     appendHomeCoworkMessage('val','VAL could not open the Workstreams interview. Nothing was changed. ' + error.message,{replace:true});
   }
+}
+
+async function openProjectOverviewCowork(node = null){
+  const project = projectProfileForCoworkNode(node);
+  if(!project) return;
+  const projectId = project.projectId || project.id || project.profileKey || '';
+  if(!projectId) return;
+  const scopedPacket = projectScopedCoworkPacket('project_overview', project);
+  const action = 'project:cowork:project_overview';
+  const baseSource = projectSource(project, action);
+  const source = {...baseSource,sourceItem:{...(baseSource.sourceItem || {}),scopedCoworkPacket:scopedPacket}};
+  activeProjectCoworkTarget = {field:'project_overview',mode:'registered_entry',projectId,projectName:project.name || 'project',title:'Set Round Table focus',scopedPacket};
+  activeCoworkEntry = {entrypointId:'project.overview',sessionId:'',workItemId:'',projectId,status:'opening'};
+  openContextualCoworkSession({returnTarget:'project',title:'Set Round Table focus',meaning:'Preparing the Round Table Focus for ' + (project.name || 'this project') + '.',context:projectScopedCoworkContextLines(scopedPacket),recommendation:'VAL will record one bounded focus, its completion condition, and the one Project Managers section that needs follow-through. It will not rewrite that section, create a task, generate content, or take external action.',placeholder:'Preparing the selected Project Managers Round Table brief...',heading:'Choosing one focus for ' + (project.name || 'this project'),detail:'This interview fills the Round Table focus at the top of this Project Manager.',publicDetail:'Scoped to Project Managers: Round Table focus.',lockContext:true});
+  void ensureHearthClickPacket({node,packetName:'project_packet',action,allowBlockedForInspection:true,source}).then((preflight) => {if(preflight.ok) renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);}).catch(() => {});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{entrypointId:'project.overview',scope:{entityType:'project_section',entityId:projectId,sectionId:'project_overview'}},{timeoutMs:10000,timeoutMessage:'VAL could not prepare this Round Table focus yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){activeCoworkEntry = null;appendHomeCoworkMessage('val','VAL could not open this Round Table Focus interview. Nothing was changed. ' + error.message,{replace:true});}
 }
 
 async function openProjectIdentityCowork(node = null, sourceField = 'what_this_is'){
@@ -5518,6 +5589,17 @@ async function applyActiveCoworkNextMove(workItemId = '', button = null){
   }
 }
 
+async function applyActiveCoworkProjectOverview(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this Round Table focus yet.'});
+    if(result.project){const refreshed = projectProfileFromIndexItem(result.project);projectIndexProfiles[refreshed.id] = refreshed;activeProjectProfile = refreshed;renderProjectRolodex();renderProjectManagerProfile(refreshed);}
+    renderCoworkEntryResult(result);
+  }catch(error){appendHomeCoworkMessage('val','VAL could not apply this Round Table focus. Nothing was changed. ' + error.message);if(button) button.disabled = false;}
+}
+
 async function applyActiveCoworkProjectIdentity(workItemId = '', button = null){
   const entry = activeCoworkEntry;
   if(!entry?.workItemId || entry.workItemId !== workItemId) return;
@@ -5685,6 +5767,7 @@ async function applyActiveCoworkTranscriptOverview(workItemId = '', button = nul
 
 async function openProjectScopedCowork(field = 'project_overview', node = null, options = {}){
   if(!activeProjectProfile) return;
+  if(field === 'project_overview') return openProjectOverviewCowork(node);
   if(field === 'what_this_is' || field === 'project_interview') return openProjectIdentityCowork(node,field);
   if(field === 'people_involved') return openProjectPeopleCowork(node);
   if(field === 'documents_sources') return openProjectDocumentsCowork(node);
@@ -5714,7 +5797,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
   };
   activeProjectCoworkTarget = {
     field,
-    mode: options.mode || (field === 'project_overview' ? 'project_cowork' : 'field_update'),
+    mode: options.mode || 'field_update',
     projectId:project.id || project.projectId || '',
     title:spec.title,
     scopedPacket
@@ -5724,9 +5807,7 @@ async function openProjectScopedCowork(field = 'project_overview', node = null, 
     title:spec.title,
     meaning:spec.question,
     context:projectScopedCoworkContextLines(scopedPacket),
-    recommendation:field === 'project_overview'
-      ? 'Use this to think, draft, compare, or decide within this project only. Anything external still needs its own approval surface.'
-      : 'Answer only for this one section. VAL will rewrite it as clear project-manager language and update the card.',
+    recommendation:'Answer only for this one section. VAL will rewrite it as clear project-manager language and update the card.',
     placeholder:spec.placeholder,
     heading:spec.question,
     detail:spec.detail || 'VAL will rewrite this into clear project-manager language.',
@@ -9546,7 +9627,7 @@ function showProjectReceipt({title, meaning, understanding = [], recommendation,
 }
 
 function openProjectCoworkSession(node = null){
-  return openProjectScopedCowork('project_overview', node, {mode:'project_cowork'});
+  return openProjectOverviewCowork(node);
 }
 
 function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false}){
@@ -20324,10 +20405,11 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectNeedsNextApply = event.target.closest('[data-cowork-apply-project-needs-next]');
   const projectOperatingSystemApply = event.target.closest('[data-cowork-apply-project-operating-system]');
   const projectPhaseApply = event.target.closest('[data-cowork-apply-project-phase]');
+  const projectOverviewApply = event.target.closest('[data-cowork-apply-project-overview]');
   const projectPreparedWorkApply = event.target.closest('[data-cowork-apply-project-prepared-work]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
-  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply) return;
+  if(!workstreamsApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -20343,6 +20425,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectNeedsNextApply) await applyActiveCoworkProjectNeedsNext(projectNeedsNextApply.dataset.coworkApplyProjectNeedsNext, projectNeedsNextApply);
   if(projectOperatingSystemApply) await applyActiveCoworkProjectOperatingSystem(projectOperatingSystemApply.dataset.coworkApplyProjectOperatingSystem, projectOperatingSystemApply);
   if(projectPhaseApply) await applyActiveCoworkProjectPhase(projectPhaseApply.dataset.coworkApplyProjectPhase, projectPhaseApply);
+  if(projectOverviewApply) await applyActiveCoworkProjectOverview(projectOverviewApply.dataset.coworkApplyProjectOverview, projectOverviewApply);
   if(projectPreparedWorkApply) await applyActiveCoworkProjectPreparedWork(projectPreparedWorkApply.dataset.coworkApplyProjectPreparedWork, projectPreparedWorkApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);

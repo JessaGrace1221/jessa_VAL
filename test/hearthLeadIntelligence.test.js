@@ -238,6 +238,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.match(hearthJs, /Mark reminder handled/);
   assert.match(hearthJs, /Only the reminder loop was cleared/);
   assert.match(hearthJs, /data-project-cowork-scope="project_overview"/);
+  assert.match(hearthJs, /if\(field === 'project_overview'\) return openProjectOverviewCowork/);
   assert.match(hearthJs, /project_scoped_cowork_packet/);
   assert.match(hearthJs, /selected_action_label/);
   assert.match(hearthJs, /affected_object/);
