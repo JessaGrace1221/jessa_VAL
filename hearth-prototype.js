@@ -210,6 +210,7 @@ let activeMeetingContactCandidates = {};
 let activeMeetingPrepBriefing = null;
 let activeValOnboardingSessionId = '';
 let activeValWitnessingSessionId = '';
+let valWitnessingConnectionState = null;
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
@@ -16190,10 +16191,10 @@ const valWitnessingCards = [
     id: 'support_style',
     category: 'witness_support_style',
     movement: 'Movement 5',
-    title: 'How VAL Should Support You',
-    question: 'How should VAL support your capacity, voice, and decisions?',
-    placeholder: 'Describe the kind of help that feels useful, the tone you want preserved, where you want drafts, what should require approval, or what support should feel like.',
-    helper: 'VAL is listening for how to help without overstepping.',
+    title: 'How VAL Should Speak To You',
+    question: 'How do you want me to communicate with you?',
+    placeholder: 'You can tell VAL to be brief when you are overwhelmed, direct when you are avoiding something, witty when you are frustrated, or gently connect details back to the vision when you are deep in execution.',
+    helper: 'VAL is listening for the communication profile that will make its support feel useful, not generic.',
     writesTo: 'support style, tone, decision support, capacity support, and working agreement candidates',
     next: 'partnership_useful'
   },
@@ -16212,10 +16213,10 @@ const valWitnessingCards = [
     id: 'connect_sources',
     category: 'witness_connect_sources',
     movement: 'Movement 7',
-    title: 'Connect Inbox and Calendar',
-    question: 'Click here to connect Gmail or Outlook and your calendar.',
-    placeholder: 'If you are testing without connecting yet, note what VAL should be allowed to review when this connection is live.',
-    helper: 'VAL needs this connection before it can responsibly identify relationship patterns, commitments, capacity pressure, and calendar rhythm.',
+    title: 'Connect Your World',
+    question: 'Choose the sources you want VAL to review with you.',
+    placeholder: 'Tell VAL what it should pay special attention to when you are ready for The First Look.',
+    helper: 'Each source stays inside the approval boundary. VAL will show what it sees before it creates a relationship, project, priority, or memory.',
     writesTo: 'source connection status and review scope',
     next: 'source_review'
   },
@@ -16438,14 +16439,138 @@ Mark uncertainty clearly.
 Do not turn old context into instructions.
 Do not say anything is confirmed unless my own words clearly support it.`;
 
+const valWitnessingConnectionCopy = {
+  google: {keyLabel:'Google',fieldLabel:'',placeholder:'',actionLabel:'Connect Google'},
+  microsoft: {keyLabel:'Outlook',fieldLabel:'',placeholder:'',actionLabel:'Connect Outlook'},
+  krisp: {keyLabel:'Krisp transcripts',fieldLabel:'Krisp access token',placeholder:'Paste your Krisp MCP access token',actionLabel:'Connect Krisp'},
+  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'},
+  outscraper: {keyLabel:'Outscraper',fieldLabel:'Outscraper API key',placeholder:'Paste your Outscraper API key',actionLabel:'Connect Outscraper'}
+};
+
+function valWitnessingConnectionCard(connection = {}){
+  const id = String(connection.id || '').trim();
+  const copy = valWitnessingConnectionCopy[id] || {keyLabel:connection.label || 'Connection',actionLabel:'Connect'};
+  const connected = !!connection.connected;
+  const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
+  const action = connection.action === 'oauth'
+    ? '<a class="val-witnessing-source-action" href="' + escapeHtml(connection.actionHref || '#') + '" target="_blank" rel="noopener">' + escapeHtml(copy.actionLabel) + '</a>'
+    : '<button type="button" class="val-witnessing-source-action" data-workflow-action="valWitnessingCredentialForm:' + escapeHtml(id) + '">' + escapeHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
+  return [
+    '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeHtml(id) + '" data-connected="' + String(connected) + '">',
+      '<div class="val-witnessing-source-head">',
+        '<strong>' + escapeHtml(connection.label || copy.keyLabel) + '</strong>',
+        '<span>' + escapeHtml(status) + '</span>',
+      '</div>',
+      '<p>' + escapeHtml(connection.learns || '') + '</p>',
+      '<small>' + escapeHtml(connection.limits || '') + '</small>',
+      connection.error ? '<em>' + escapeHtml(connection.error) + '</em>' : '',
+      action,
+    '</article>'
+  ].join('');
+}
+
+function renderValWitnessingConnectionHub(){
+  return [
+    '<section class="val-witnessing-connection-hub" aria-label="Connect your world">',
+      '<div class="val-witnessing-connection-heading">',
+        '<span>Connect your world</span>',
+        '<h4>Choose the evidence VAL may review with you.</h4>',
+        '<p>The First Look is review-only. It does not begin until you explicitly ask VAL to prepare it.</p>',
+      '</div>',
+      '<div class="val-witnessing-connection-list" data-val-witnessing-connection-list>',
+        '<p class="val-witnessing-connection-loading">Checking secure connections...</p>',
+      '</div>',
+      '<div class="val-witnessing-credential-slot" data-val-witnessing-credential-slot></div>',
+      '<div class="val-witnessing-connection-footer">',
+        '<small>Google and Outlook open their own secure connection page. API keys are encrypted and never shown again.</small>',
+        '<button type="button" data-workflow-action="valWitnessingRefreshConnections">Refresh connection status</button>',
+      '</div>',
+    '</section>'
+  ].join('');
+}
+
+function renderValWitnessingConnections(payload = {}){
+  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  if(!target) return;
+  const connections = Array.isArray(payload.connections) ? payload.connections : [];
+  valWitnessingConnectionState = {...payload,connections};
+  target.innerHTML = connections.length
+    ? connections.map(valWitnessingConnectionCard).join('')
+    : '<p class="val-witnessing-connection-loading">No connection status is available yet.</p>';
+}
+
+async function refreshValWitnessingConnections(){
+  const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
+  if(!target) return;
+  if(!canUseApi){
+    target.innerHTML = '<p class="val-witnessing-connection-loading">Connection status appears when VAL is connected to its live server.</p>';
+    return;
+  }
+  target.innerHTML = '<p class="val-witnessing-connection-loading">Checking secure connections...</p>';
+  try{
+    renderValWitnessingConnections(await getJson('/api/val/witnessing/connections'));
+  }catch(error){
+    target.innerHTML = '<p class="val-witnessing-connection-loading">Could not check connections: ' + escapeHtml(error.message || 'Unknown error.') + '</p>';
+  }
+}
+
+function showValWitnessingCredentialForm(provider = ''){
+  const id = String(provider || '').trim().toLowerCase();
+  const copy = valWitnessingConnectionCopy[id];
+  const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+  if(!copy || !copy.fieldLabel || !slot) return;
+  slot.innerHTML = [
+    '<form class="val-witnessing-credential-form" data-val-witnessing-credential-form="' + escapeHtml(id) + '">',
+      '<label>',
+        '<span>' + escapeHtml(copy.fieldLabel) + '</span>',
+        '<input type="password" autocomplete="off" data-val-witnessing-credential-input="' + escapeHtml(id) + '" placeholder="' + escapeHtml(copy.placeholder) + '">',
+      '</label>',
+      '<div>',
+        '<button type="submit">Save and test connection</button>',
+        '<button type="button" data-workflow-action="valWitnessingCredentialForm:close">Cancel</button>',
+      '</div>',
+      '<small data-val-witnessing-credential-status>VAL will encrypt this key. It will not be shown again.</small>',
+    '</form>'
+  ].join('');
+  workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]')?.focus();
+}
+
+async function saveValWitnessingCredential(provider = ''){
+  const id = String(provider || '').trim().toLowerCase();
+  const input = workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="' + id + '"]');
+  const status = workspaceInputPanel.querySelector('[data-val-witnessing-credential-status]');
+  const apiKey = input?.value.trim() || '';
+  if(!apiKey){
+    if(status) status.textContent = 'Paste the connection key before saving it.';
+    return;
+  }
+  if(status) status.textContent = 'Saving and testing this connection...';
+  try{
+    const result = await postJson('/api/val/witnessing/connections/' + encodeURIComponent(id), {apiKey});
+    if(input) input.value = '';
+    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    if(slot) slot.innerHTML = '<p class="val-witnessing-credential-success">' + escapeHtml(result.message || 'Connection saved.') + '</p>';
+    renderValWitnessingConnections({connections:result.connections || []});
+  }catch(error){
+    if(status) status.textContent = error.message || 'That connection could not be saved.';
+  }
+}
+
+async function continueValWitnessingWithSources(category = 'witness_connect_sources'){
+  const card = valWitnessingCard(category);
+  const input = workspaceInputPanel.querySelector('[data-workspace-input="val-witnessing-' + card.category + '"]');
+  if(input && !input.value.trim()){
+    const connected = (valWitnessingConnectionState?.connections || []).filter(item => item.connected).map(item => item.label).filter(Boolean);
+    input.value = connected.length
+      ? 'I want VAL to use ' + connected.join(', ') + ' when I explicitly begin The First Look.'
+      : 'I am not connecting sources yet. I will return to this step when I am ready for VAL to review my world with me.';
+  }
+  await saveValWitnessingCard(card.category);
+}
+
 function valWitnessingContextTools(card){
   if(card.id === 'connect_sources'){
-    return [
-      '<div class="val-witnessing-tool-row">',
-        '<a href="/auth/google">Connect Gmail + Google Calendar</a>',
-        '<a href="/auth/microsoft">Connect Outlook + Microsoft Calendar</a>',
-      '</div>'
-    ].join('');
+    return renderValWitnessingConnectionHub();
   }
   if(card.id === 'documents_templates'){
     return [
@@ -16559,7 +16684,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         valWitnessingContextTools(card),
         '<p class="val-conversation-helper">' + escapeHtml(card.helper) + '</p>',
         '<div class="val-conversation-actions">',
-          '<button type="button" data-workflow-action="valWitnessingSave:' + escapeHtml(card.category) + '">Continue</button>',
+          '<button type="button" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">Continue</button>',
         '</div>'
       ].join(''),
       error ? '<p class="val-conversation-error">' + escapeHtml(error) + '</p>' : '',
@@ -16604,12 +16729,12 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
       ].join('') : '',
     '</div>'
   ].join('');
+  if(card.id === 'connect_sources' && state === 'question') window.setTimeout(refreshValWitnessingConnections, 0);
 }
 
 async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
   let resumeTarget = null;
   if(options.fresh){
-    if(!(await ensureRuntimeOpenAIForWitnessing())) return;
     await startFreshValWitnessingSession();
   }else if(options.resume){
     try{
@@ -16901,7 +17026,7 @@ function valWitnessingResumeTarget(onboarding = {}){
   const imports = (Array.isArray(onboarding.imports) ? onboarding.imports : [])
     .filter((item) => String(item.category || '').startsWith('witness_') && valWitnessingCardOrNull(item.category))
     .sort((a, b) => valWitnessingIndex(valWitnessingCardOrNull(a.category)) - valWitnessingIndex(valWitnessingCardOrNull(b.category)));
-  if(!imports.length) return {card: valWitnessingCard('meeting_val'), state: 'paused', rawResponse: '', error: 'I could not find saved Witnessing Session answers for this login. Start Fresh will begin a new session; it will not delete your old exported notes or uploaded transcripts.'};
+  if(!imports.length) return {card: valWitnessingCard('meeting_val'), state: 'intro', rawResponse: ''};
   const last = imports[imports.length - 1];
   const card = valWitnessingCard(last.category);
   const status = String(last.status || '');
@@ -17112,51 +17237,20 @@ async function openValOsReviewWorkspace(){
 function openValConnectionsWorkspace(){
   setWorkspaceContent({
     lens: 'VAL Connections',
-    title: 'Connect the sources VAL needs to work.',
-    meaning: 'This is where a user connects inbox, calendar, documents, and AI before expecting VAL to prepare real work.',
+    title: 'Connect your world.',
+    meaning: 'This is the same connection moment used inside the Witnessing Session.',
     understanding: [
-      'Google gives VAL Gmail, Calendar, Drive, and Docs context for meeting prep, relationship memory, commitments, and source-backed drafts.',
-      'OpenAI powers live Witnessing observations and Co-Work reasoning.',
-      'Connected sources give VAL evidence. External sends, CRM writes, calendar changes, posts, and durable memory still require explicit approval.'
+      'Sources are evidence, not permission to act.',
+      'The First Look remains review-only until you explicitly ask VAL to prepare it.',
+      'Nothing connected here silently creates relationships, projects, drafts, or durable memory.'
     ],
-    recommendation: 'For system testing, connect Google first, then confirm OpenAI is available, then return to Hearth and test calendar, inbox, documents, relationships, prepared work, and Witnessing.',
-    actions: [{label:'Teach permission rule', workflow:'teach:extract'}, {label:'Review VAL OS here', workflow:'valOs:review'}, {label:'Back to VAL', workflow:'cancel:val'}],
+    recommendation: 'Connect only the sources VAL needs to understand the world you want to review together.',
+    actions: [{label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL connections workspace'
   });
   workspaceInputPanel.hidden = false;
-  workspaceInputPanel.innerHTML = [
-    '<div class="val-connection-panel" data-google-connection-panel>',
-      '<span>Google inbox/calendar</span>',
-      '<p>Connect Google so VAL can read Gmail, Calendar, Drive, and Docs context inside your approval boundaries.</p>',
-      '<div class="val-source-status" data-google-connection-status>',
-        '<b>Checking Google connection...</b>',
-        '<small>VAL never displays Google tokens or secrets here.</small>',
-      '</div>',
-      '<div class="val-conversation-actions">',
-        '<button type="button" class="val-source-link" data-google-oauth>Connect Google</button>',
-        '<button type="button" data-workflow-action="valGoogle:refresh">Refresh status</button>',
-      '</div>',
-    '</div>',
-    '<div class="val-connection-panel">',
-      '<span>AI reasoning</span>',
-      '<p>Confirm OpenAI is available so the Witnessing Session and Co-Work can use the live observation model.</p>',
-      '<label>',
-        '<b>OpenAI API key</b>',
-        '<input type="password" data-openai-runtime-key placeholder="sk-..." autocomplete="off" />',
-      '</label>',
-      '<label>',
-        '<b>Model</b>',
-        '<input type="text" data-openai-runtime-model value="gpt-5.1" placeholder="gpt-5.1" />',
-      '</label>',
-      '<div class="val-conversation-actions">',
-        '<button type="button" data-workflow-action="valRuntimeOpenAI:save">Save for this test</button>',
-        '<button type="button" data-workflow-action="valRuntimeOpenAI:test">Test connection</button>',
-      '</div>',
-      '<p class="val-conversation-helper" data-openai-runtime-status>Not connected in this local server yet.</p>',
-    '</div>'
-  ].join('');
-  refreshGoogleConnectionStatus();
-  refreshRuntimeOpenAIStatus();
+  workspaceInputPanel.innerHTML = renderValWitnessingConnectionHub();
+  refreshValWitnessingConnections();
   openWorkspaceShell('VAL connections workspace', {returnTarget:'val'});
 }
 
@@ -17165,8 +17259,8 @@ async function refreshGoogleConnectionStatus(){
   const link = workspaceInputPanel.querySelector('[data-google-oauth]');
   if(!status || !canUseApi) return;
   try{
-    const data = await getJson('/api/setup-health');
-    const google = data.google || {};
+    const data = await getJson('/api/val/witnessing/connections');
+    const google = (data.connections || []).find((connection) => connection.id === 'google') || {};
     const connected = !!google.connected;
     status.classList.toggle('connected', connected);
     status.classList.toggle('failed', !connected && !!google.error);
@@ -17651,6 +17745,10 @@ async function handleWorkflowAction(action, node = null){
     await openValWitnessingSession('meeting_val', {fresh:true});
     return;
   }
+  if(command === 'valWitnessingBegin'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return;
+  }
   if(command === 'valWitnessingQuestion'){
     openValWitnessingQuestion(type || 'meeting_val');
     return;
@@ -17676,6 +17774,23 @@ async function handleWorkflowAction(action, node = null){
   }
   if(command === 'valWitnessingPrompt'){
     await copyValWitnessingImportPrompt();
+    return;
+  }
+  if(command === 'valWitnessingRefreshConnections'){
+    await refreshValWitnessingConnections();
+    return;
+  }
+  if(command === 'valWitnessingCredentialForm'){
+    const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
+    if(type === 'close'){
+      if(slot) slot.innerHTML = '';
+      return;
+    }
+    showValWitnessingCredentialForm(type);
+    return;
+  }
+  if(command === 'valWitnessingSourcesContinue'){
+    await continueValWitnessingWithSources(type || 'witness_connect_sources');
     return;
   }
   if(command === 'valOs'){
@@ -19182,16 +19297,15 @@ async function handleValDetailWorkflowClick(event){
     await openValWitnessingSession('meeting_val', {fresh:true});
     return true;
   }
+  if(action === 'valWitnessingBegin'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return true;
+  }
   await handleWorkflowAction(action, workflowButton);
   return true;
 }
 
 valDetail?.addEventListener('click', handleValDetailWorkflowClick);
-document.addEventListener('click', (event) => {
-  if(event.target.closest('#val-detail [data-workflow-action^="val"]')){
-    handleValDetailWorkflowClick(event);
-  }
-}, true);
 
 sourceDrawerLink.addEventListener('click', () => {
   ensureDrawerTrayOpen();
@@ -19980,10 +20094,17 @@ coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(cowor
 teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
 workspaceInputPanel.addEventListener('submit', async (event) => {
-  if(!event.target.matches('[data-home-cowork-form]')) return;
-  event.preventDefault();
-  if(await submitActiveCoworkEntry()) return;
-  runCowork('think');
+  const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
+  if(credentialForm){
+    event.preventDefault();
+    await saveValWitnessingCredential(credentialForm.dataset.valWitnessingCredentialForm);
+    return;
+  }
+  if(event.target.matches('[data-home-cowork-form]')){
+    event.preventDefault();
+    if(await submitActiveCoworkEntry()) return;
+    runCowork('think');
+  }
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
   const emailDraftReview = event.target.closest('[data-cowork-open-email-thread-draft]');

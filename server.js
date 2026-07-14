@@ -3428,10 +3428,10 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
   {
     id:'support_style',
     category:'witness_support_style',
-    title:'How VAL Should Support You',
-    visibleQuestion:'How should VAL support your capacity, voice, and decisions?',
-    questionGoal:'Understand how VAL should support the user without overstepping: tone, drafts, decisions, capacity, boundaries, and preferred help.',
-    whyThisCardExistsNow:'VAL needs the preferred support style before it drafts, prioritizes, interrupts, or prepares work.',
+    title:'How VAL Should Speak To You',
+    visibleQuestion:'How do you want me to communicate with you?',
+    questionGoal:'Understand the user\'s situational communication profile without overstepping: brief and calm when overwhelmed, direct when avoiding a decision, witty when frustrated, vision-connected when deep in execution, and any other preferred support.',
+    whyThisCardExistsNow:'VAL needs the communication profile before it drafts, prioritizes, interrupts, or prepares work.',
     permanenceProfile:'constitution',
     creates:['support_preferences','writing_voice_raw','decision_support_style','capacity_support','forbidden_tones','working_agreement_candidates'],
     immediateConsumers:['witness_response','email_drafting','decision_engine'],
@@ -3452,10 +3452,10 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
   {
     id:'connect_sources',
     category:'witness_connect_sources',
-    title:'Connect Inbox and Calendar',
-    visibleQuestion:'Click here to connect Gmail or Outlook and your calendar.',
-    questionGoal:'Invite the user to connect Gmail or Outlook and calendar before VAL identifies key relationships, communication patterns, commitments, and capacity signals.',
-    whyThisCardExistsNow:'Inbox, outbox, and calendar context are needed before VAL can responsibly summarize relationship and capacity patterns.',
+    title:'Connect Your World',
+    visibleQuestion:'Choose the sources you want VAL to review with you.',
+    questionGoal:'Invite the user to connect Google, Outlook, transcripts, OpenAI, and approved research sources before VAL prepares a review-only First Look.',
+    whyThisCardExistsNow:'Connected sources are evidence, not automatic authority. VAL needs explicit permission and a visible source boundary before it prepares relationship or capacity patterns.',
     permanenceProfile:'mixed',
     creates:['inbox_connection_needed','calendar_connection_needed','source_review_scope'],
     immediateConsumers:['source_connection','calendar_review','inbox_review'],
@@ -7067,6 +7067,94 @@ app.get('/api/teach-val/onboarding',async(req,res)=>{
   try{res.json(await teachValStateResponse(req.query.sessionId||''));}
   catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+async function witnessingConnectionStatusPayload(){
+  const [google,microsoftTokens,tenantKeys,krispConfigured]=await Promise.all([
+    getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
+    loadOAuthTokens('microsoft').catch(()=>null),
+    tenantApiKeyConnectionStatuses().catch(()=>[]),
+    krispMcp.isConfigured().catch(()=>false)
+  ]);
+  const keyByProvider=new Map((tenantKeys||[]).map(item=>[item.providerId,item]));
+  const openaiKey=await resolveOpenAIKey().catch(()=> '');
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=> '');
+  const krispToken=await resolveKrispAccessToken('').catch(()=> '');
+  const keyConnection=(provider,connected)=>{
+    const record=keyByProvider.get(provider)||{};
+    return {configured:!!connected,status:connected?'connected':(record.status||'not_connected'),lastUpdatedAt:record.lastUpdatedAt||'',lastTestedAt:record.lastTestedAt||''};
+  };
+  return {
+    ok:true,
+    source:'witnessing_connection_hub',
+    connections:[
+      {
+        id:'google',
+        label:'Google',
+        status:google.connected?'connected':'not_connected',
+        connected:!!google.connected,
+        action:'oauth',
+        actionHref:'/auth/google',
+        learns:'Gmail, Google Calendar, Drive, and Docs context.',
+        limits:'VAL reads evidence only. It never sends, changes a calendar, or shares a file without approval.',
+        missingScopes:google.missingScopes||[],
+        error:google.error||''
+      },
+      {
+        id:'microsoft',
+        label:'Outlook',
+        status:microsoftTokens?.refresh_token?'connected':'not_connected',
+        connected:!!microsoftTokens?.refresh_token,
+        action:'oauth',
+        actionHref:'/auth/microsoft',
+        learns:'Outlook email and Microsoft Calendar context.',
+        limits:'VAL reads evidence only. It never sends, changes a calendar, or shares a file without approval.',
+        error:''
+      },
+      {
+        id:'krisp',
+        label:'Krisp transcripts',
+        ...keyConnection('krisp',!!krispToken&&!!krispConfigured),
+        action:'credential',
+        learns:'Meeting transcripts, exact Action Items, and Key Points.',
+        limits:'VAL preserves the source transcript and never rewrites Krisp material as if it were the original receipt.',
+        error:krispConfigured?'':'Krisp MCP is not configured yet.'
+      },
+      {
+        id:'openai',
+        label:'OpenAI',
+        ...keyConnection('openai',!!openaiKey),
+        action:'credential',
+        learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
+        limits:'A saved key is encrypted and never shown again.',
+        error:''
+      },
+      {
+        id:'outscraper',
+        label:'Outscraper',
+        ...keyConnection('outscraper',!!outscraperKey),
+        action:'credential',
+        learns:'Approved business search and enrichment context for Lead Intelligence.',
+        limits:'It is used only for approved lead research, never as a substitute for relationship evidence.',
+        error:''
+      }
+    ]
+  };
+}
+app.get('/api/val/witnessing/connections',async(req,res)=>{
+  try{res.json(await witnessingConnectionStatusPayload());}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
+  try{
+    const provider=String(req.params.provider||'').trim().toLowerCase();
+    if(!['openai','outscraper','krisp'].includes(provider)) return res.status(404).json({ok:false,error:'Use the Google or Outlook connection button for that source.'});
+    const apiKey=String(req.body.apiKey||req.body.key||req.body.token||'').trim();
+    if(!apiKey) return res.status(400).json({ok:false,error:'Paste the connection key before saving it.'});
+    await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub'}});
+    const test=await testTenantApiKey(req,provider);
+    await auditLog({req,action:'witnessing_connection_saved',resourceType:'witnessing_connection',resourceId:provider,metadata:{provider,status:test.status||''},success:!!test.ok}).catch(()=>{});
+    res.json({ok:true,provider,message:test.message||'Connection saved.',connections:(await witnessingConnectionStatusPayload()).connections});
+  }catch(e){res.status(400).json({ok:false,error:e.message});}
+});
 app.get('/api/teach-val/source-insights',async(req,res)=>{
   try{
     const payload=await buildTeachValConnectedSourceInsights(req,{force:req.query.force==='1'||req.query.refresh==='1'});
@@ -7201,22 +7289,19 @@ app.post('/api/val/os/rules',async(req,res)=>{
 app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
     let existing=null;
-    if(req.body.resume!==false){
-      if(req.body.resumeWitnessing){
-        existing=await getTeachValWitnessingResumeSession();
-        if(!existing || !(await teachValWitnessingSessionIsComplete(existing))){
-          existing=await restoreJessaRealWitnessingSessionBackup() || existing;
-        }
-      }
+    if(req.body.resume===true){
+      if(req.body.resumeWitnessing) existing=await getTeachValWitnessingResumeSession();
       existing=existing||await getTeachValSession(req.body.sessionId||'');
     }
     const requestedMode=req.body.mode==='update'?'update':'onboarding';
-    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'current_projects',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
+    const isNew=!existing;
+    const session=existing||await saveTeachValSession({id:uuid('tvo'),tenantId:tenantId(),userId:currentUserId(),status:'draft',state:{...teachValDefaultState(),stage:'welcome',mode:requestedMode,testMode:req.body.testMode!==false},createdAt:new Date().toISOString()});
     const state=normalizeTeachValState(session.state);
     state.mode=requestedMode;
-    state.stage=state.stage==='welcome'||state.stage==='voice_interview'?'current_projects':state.stage;
-    state.progress.welcome='Complete';
-    state.progress.current_projects=state.progress.current_projects==='Not Started'?'Ready':state.progress.current_projects;
+    if(isNew){
+      state.stage='welcome';
+      state.progress.welcome='Ready';
+    }
     session.state=state;
     await saveTeachValSession(session);
     res.json(await teachValStateResponse(session.id));
