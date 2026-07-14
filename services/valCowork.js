@@ -823,6 +823,109 @@ function projectImportanceQuestion(state={},brief={}){
   };
 }
 
+function projectNarrativeTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {currentReality:value} : (value || {});
+  return {
+    id:compactText(raw.id || stableKey(`project_narrative_${brief.entityId || brief.projectName || 'project'}`),220),
+    currentReality:compactText(raw.currentReality || raw.current_reality || raw.livingNarrative || raw.living_narrative || raw.reality || '',900),
+    whatValNowKnows:compactText(raw.whatValNowKnows || raw.what_val_now_knows || raw.currentLearning || raw.current_learning || '',700),
+    whatIsBlocked:compactText(raw.whatIsBlocked || raw.what_is_blocked || raw.currentBlocker || raw.current_blocker || raw.blocker || raw.blockedBy || raw.blocked_by || '',700),
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectNarrative(value={},brief={}){
+  return projectNarrativeTemplate(value,brief);
+}
+function missingProjectNarrativeFields(value={},brief={}){
+  const narrative=normalizeProjectNarrative(value,brief);
+  const missing=[];
+  if(!compactText(narrative.currentReality)) missing.push('current reality');
+  if(!compactText(narrative.whatValNowKnows)) missing.push('what VAL now knows');
+  if(!compactText(narrative.whatIsBlocked)) missing.push('what is blocked');
+  if(!compactText(narrative.basis)) missing.push('basis');
+  if(!compactText(narrative.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectNarrativeLine(value={},brief={}){
+  const narrative=normalizeProjectNarrative(value,brief);
+  return [
+    narrative.currentReality || 'Current reality',
+    'what VAL now knows: ' + (narrative.whatValNowKnows || '...'),
+    'what is blocked: ' + (narrative.whatIsBlocked || '...'),
+    'basis: ' + (narrative.basis || '...'),
+    'confidence: ' + (narrative.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectNarrative(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectNarrative(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let currentReality=monitoringValueFromLine(source,'current reality|reality|working narrative|narrative');
+  let whatValNowKnows=monitoringValueFromLine(source,'what val now knows|what val knows|current learning');
+  let whatIsBlocked=monitoringValueFromLine(source,'what is blocked|blocked|current blocker|blocker');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 5){
+    currentReality=currentReality || parts[0].replace(/^\s*(?:current reality|reality|working narrative|narrative)\s*:\s*/i,'');
+    whatValNowKnows=whatValNowKnows || parts[1].replace(/^\s*(?:what val now knows|what val knows|current learning)\s*:\s*/i,'');
+    whatIsBlocked=whatIsBlocked || parts[2].replace(/^\s*(?:what is blocked|blocked|current blocker|blocker)\s*:\s*/i,'');
+    basis=basis || parts[3].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[4].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectNarrative({currentReality,whatValNowKnows,whatIsBlocked,basis,confidence,sourceRefs:brief.sourceRefs},brief);
+}
+function buildProjectNarrativeBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const existingRaw=project.projectNarrative || metadata.projectNarrative || {
+    currentReality:project.livingNarrative || metadata.livingNarrative || project.reality || project.summary || '',
+    whatValNowKnows:project.whatValNowKnows || metadata.whatValNowKnows || project.momentumEvidence || '',
+    whatIsBlocked:project.currentBlocker || metadata.currentBlocker || project.blocker || project.blockedBy || metadata.blocker || metadata.blockedBy || '',
+    basis:project.narrativeBasis || metadata.narrativeBasis || '',
+    confidence:project.narrativeConfidence || metadata.narrativeConfidence || ''
+  };
+  const currentNarrative=normalizeProjectNarrative(existingRaw,{sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_narrative_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.narrative',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'working_narrative',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentNarrative,
+    sourceRefs:references,
+    objective:'Make the selected project\'s current state understandable without replacing evidence or inventing a blocked condition.',
+    completionCondition:'Current reality, what VAL now knows, what is blocked or explicitly not blocked, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this narrative changes only the internal Project Managers judgment packet. It does not create a task, message, CRM update, calendar change, or alter source evidence.'
+  };
+}
+function projectNarrativeQuestion(state={},brief={}){
+  const narrative=normalizeProjectNarrative(state.draftProjectNarrative || brief.currentNarrative || {},brief);
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'narrative'){
+    return {
+      targetField:'project_manager_judgment_packet.{current_reality,what_val_now_knows,what_is_blocked,evidence_summary,confidence} + Working narrative',
+      question:`What is the current reality for ${brief.projectName || 'this project'}, what does VAL now know, and what is blocked? Add one line: current reality | what VAL now knows | what is blocked (or No current blocker) | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > Working narrative and the Judgment round-table packet. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}If the basis is your judgment rather than a source fact, say “executive judgment.”`
+    };
+  }
+  if(state.stage === 'narrative_details'){
+    const missing=missingProjectNarrativeFields(narrative,brief);
+    return {
+      targetField:'project_manager_judgment_packet.{current_reality,what_val_now_knows,what_is_blocked,evidence_summary,confidence} + Working narrative',
+      question:`Fill only these missing narrative details: ${missing.join(', ')}.\n\n${projectNarrativeLine(narrative,brief)}`,
+      detail:'State “No current blocker” when that is true. Keep source-backed facts and executive judgment clearly distinct.'
+    };
+  }
+  return {
+    targetField:'project_manager_judgment_packet.current_reality',
+    question:'Review the prepared current-state narrative, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal narrative and judgment packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1392,6 +1495,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Assess one current material project risk precisely, or record that no material risk is currently proven.',
     completionCondition:'A material risk has its type, impact, severity, accountable existing project relationship, smallest mitigation, watch condition, confidence, and evidence; or a no-material-risk assessment has its review basis.'
   },
+  'project.narrative':{
+    id:'project.narrative',surface:'project_managers',scopeType:'project_section',sectionId:'working_narrative',
+    requiredPackets:['project_packet','project_manager_judgment_packet'],
+    objective:'Make the selected project current state understandable to the executive.',
+    completionCondition:'Current reality, what VAL now knows, what is blocked or explicitly not blocked, basis, and confidence are ready for internal review.'
+  },
   'project.workstreams':{
     id:'project.workstreams',
     surface:'project_managers',
@@ -1440,6 +1549,7 @@ function createValCoworkService({
   applyProjectRelationshipNurture=async()=>null,
   applyProjectImportance=async()=>null,
   applyProjectRisk=async()=>null,
+  applyProjectNarrative=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
   loadTranscript=async()=>null,
@@ -1835,6 +1945,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectNarrativeEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.narrative'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can prepare a current-state narrative.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectNarrativeBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'narrative',draftProjectNarrative:brief.currentNarrative,answers:[]};
+    const question=projectNarrativeQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_narrative',title:`Working narrative for ${brief.projectName}`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectNarrative:state.draftProjectNarrative,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectNarrative(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectNarrative=parseProjectNarrative(answer,brief,state.draftProjectNarrative || brief.currentNarrative || {});
+    const narrative=normalizeProjectNarrative(state.draftProjectNarrative,brief);
+    const missing=missingProjectNarrativeFields(narrative,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectNarrative:narrative,completionCondition:brief.completionCondition};
+      question=projectNarrativeQuestion(state,brief);message='VAL prepared the project\'s current-state narrative for review. Apply it when this is true.';
+    }else{
+      state.stage='narrative_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectNarrativeQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -2026,6 +2171,7 @@ function createValCoworkService({
     if(entrypointId === 'project.relationship_nurture') return openProjectRelationshipNurtureEntry(input);
     if(entrypointId === 'project.why_it_matters') return openProjectImportanceEntry(input);
     if(entrypointId === 'project.risk') return openProjectRiskEntry(input);
+    if(entrypointId === 'project.narrative') return openProjectNarrativeEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
     const scopeInput=input.scope || {};
@@ -2087,6 +2233,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.relationship_nurture') return respondProjectRelationshipNurture(session,workItem,answer);
     if(session.entrypointId === 'project.why_it_matters') return respondProjectImportance(session,workItem,answer);
     if(session.entrypointId === 'project.risk') return respondProjectRisk(session,workItem,answer);
+    if(session.entrypointId === 'project.narrative') return respondProjectNarrative(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
@@ -2352,6 +2499,20 @@ function createValCoworkService({
       if(!project) throw new Error('VAL could not save the risk assessment to the selected Project Manager.');
       const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
       const sc=scope();const outcome=projectRiskHasMaterialAssessment(projectRisk) ? 'project risk assessment' : 'no-material-risk assessment';const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_risk',status:'completed',summary:`Applied the ${outcome} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectRisk,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
+    if(workItem.workType === 'project_narrative'){
+      if(workItem.status !== 'needs_review') throw new Error('The project narrative must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectNarrative=normalizeProjectNarrative(payload.projectNarrative || {},brief);
+      if(missingProjectNarrativeFields(projectNarrative,brief).length) throw new Error('The project narrative is incomplete and cannot be applied yet.');
+      const project=await applyProjectNarrative({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectNarrative,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the narrative to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_narrative',status:'completed',summary:`Applied the current-state narrative to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectNarrative,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
     if(workItem.workType !== 'project_workstreams') throw new Error('This work item cannot apply project workstreams.');

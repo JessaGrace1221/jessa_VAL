@@ -194,6 +194,12 @@ When no material risk is proven, VAL can prepare an explicit internal no-risk as
 
 Applying the prepared judgment updates only `project_manager_judgment_packet.why_it_matters`, `project_manager_judgment_packet.evidence_summary`, `project_manager_judgment_packet.confidence`, and the project's strategic-importance fields. It does not create a task, message, CRM update, calendar change, or alter source evidence.
 
+### Working Narrative Contract
+
+`project.narrative` prepares the selected project's current-state judgment. It captures the current reality, what VAL now knows, what is blocked (or the explicit statement `No current blocker`), the basis, and confidence. The basis is either an available source receipt or explicitly labeled executive judgment; VAL must not treat executive judgment as source fact.
+
+Each question maps directly to `project_manager_judgment_packet.current_reality`, `project_manager_judgment_packet.what_val_now_knows`, `project_manager_judgment_packet.what_is_blocked`, `project_manager_judgment_packet.evidence_summary`, and `project_manager_judgment_packet.confidence`, as well as the visible Working narrative card. Applying the prepared narrative changes only that selected internal Project Managers packet. It does not create a task, message, CRM update, calendar change, or alter source evidence.
+
 ## Transcripts And Meeting Prep
 
 | Entry id | Scope | Objective | Completion condition | Writes / result |
@@ -262,7 +268,7 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 
 | Surface | Current contract status | What exists now | What is still missing |
 |---|---|---|---|
-| Project Managers | First ten canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.why_it_matters`, `project.risk`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `Why it matters`, `People involved`, `Documents / sources`, `Risk / blocker`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
+| Project Managers | First eleven canonical slices complete | `project.identity`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.why_it_matters`, `project.risk`, `project.narrative`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. `Start onboarding chat`, `Project interview`, `What this is`, `Why it matters`, `Working narrative`, `People involved`, `Documents / sources`, `Risk / blocker`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | First canonical slice complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. The legacy freeform transcript chat route has been removed. | Typed packet outputs for transcript-derived project, relationship, commitment, and task work still need their own scoped entries. |
 | Executive Inbox | Partial | Selected thread/source summary reaches a scoped chat launcher. | Typed email-thread brief, completion contract, and artifact/action routing. |
 | Relationships | Partial | Relationship and selected-card summaries reach a scoped chat launcher. | Field-level objectives, target writes, and completion/apply contracts. |

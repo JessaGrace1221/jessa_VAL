@@ -16812,6 +16812,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const relationshipNurtureRules=Array.isArray(patch.relationshipNurtureRules)?patch.relationshipNurtureRules:[];
     const projectImportance=patch.projectImportance&&typeof patch.projectImportance==='object'&&!Array.isArray(patch.projectImportance)?patch.projectImportance:null;
     const projectRisk=patch.projectRisk&&typeof patch.projectRisk==='object'&&!Array.isArray(patch.projectRisk)?patch.projectRisk:null;
+    const projectNarrative=patch.projectNarrative&&typeof patch.projectNarrative==='object'&&!Array.isArray(patch.projectNarrative)?patch.projectNarrative:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
       ? patch.projectPeople.map((person)=>({
@@ -16860,6 +16861,10 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.projectPhase?{projectPhase:patch.projectPhase}:{}),
       ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
       ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
+      ...(patch.livingNarrative?{livingNarrative:patch.livingNarrative}:{}),
+      ...(patch.currentBlocker?{currentBlocker:patch.currentBlocker}:{}),
+      ...(patch.narrativeBasis?{narrativeBasis:patch.narrativeBasis}:{}),
+      ...(patch.narrativeConfidence?{narrativeConfidence:patch.narrativeConfidence}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
       ...(patch.whyItMatters?{whyItMatters:patch.whyItMatters}:{}),
       ...(patch.strategicImportance?{strategicImportance:patch.strategicImportance}:{}),
@@ -16872,6 +16877,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
       ...(projectImportance?{projectImportance}:{}),
       ...(projectRisk?{projectRisk}:{}),
+      ...(projectNarrative?{projectNarrative}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
       ...(projectDocuments?{projectDocuments}:{}),
@@ -17466,6 +17472,8 @@ function projectIndexItemFromProfile(profile={}){
   const momentum=profile.opportunityCount>profile.riskCount?'Opportunity forming':profile.riskCount?'Needs care':'Active context';
   const decision=risks[0]?'Resolve the risk':openLoops[0]?'Close the open loop':opportunities[0]?'Choose the opportunity path':'Review project reality';
   const nextMove=metadata.nextMove||openLoops[0]||risks[0]||opportunities[0]||signals[0]||profile.summary||'Review the project file.';
+  const projectNarrative=metadata.projectNarrative&&typeof metadata.projectNarrative==='object'&&!Array.isArray(metadata.projectNarrative)?metadata.projectNarrative:null;
+  const currentReality=metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||profile.summary||'Canonical project profile from VAL relationship/project index.';
   const uploadedFileCount=uploadedFiles.length;
   const sourceDetails={
     files:uploadedFiles,
@@ -17483,7 +17491,8 @@ function projectIndexItemFromProfile(profile={}){
     initials:name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'P',
     status,
     signal:dashboardShortText(signals[0]||profile.summary||nextMove,'Project signal available.',140),
-    reality:profile.summary||'Canonical project profile from VAL relationship/project index.',
+    reality:currentReality,
+    livingNarrative:metadata.livingNarrative||projectNarrative?.currentReality||projectNarrative?.current_reality||'',
     momentum,
     momentumEvidence:dashboardShortText(opportunities[0]||signals[0]||profile.summary,'Project movement is visible in stored VAL evidence.',220),
     decision,
@@ -17507,7 +17516,12 @@ function projectIndexItemFromProfile(profile={}){
     nextStepDueAt:metadata.nextStepDueAt||'',
     projectPhase:metadata.projectPhase||'',
     projectInterviewNotes:metadata.projectInterviewNotes||'',
-    whatValNowKnows:metadata.whatValNowKnows||'',
+    whatValNowKnows:metadata.whatValNowKnows||projectNarrative?.whatValNowKnows||projectNarrative?.what_val_now_knows||'',
+    currentBlocker:metadata.currentBlocker||projectNarrative?.whatIsBlocked||projectNarrative?.what_is_blocked||'',
+    blocker:metadata.currentBlocker||projectNarrative?.whatIsBlocked||projectNarrative?.what_is_blocked||'',
+    narrativeBasis:metadata.narrativeBasis||projectNarrative?.basis||'',
+    narrativeConfidence:metadata.narrativeConfidence||projectNarrative?.confidence||'',
+    projectNarrative,
     ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
     whyItMatters:metadata.whyItMatters||metadata.projectImportance?.whyItMatters||'',
     strategicImportance:metadata.strategicImportance||metadata.projectImportance?.strategicImportance||'',
@@ -25058,6 +25072,45 @@ async function applyCoworkProjectRisk({projectId,projectName='',projectRisk={},s
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectNarrative({projectId,projectName='',projectNarrative={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const raw=projectNarrative&&typeof projectNarrative==='object'&&!Array.isArray(projectNarrative)?projectNarrative:{};
+  const currentReality=String(raw.currentReality||raw.current_reality||raw.livingNarrative||raw.living_narrative||raw.reality||'').trim();
+  const whatValNowKnows=String(raw.whatValNowKnows||raw.what_val_now_knows||raw.currentLearning||raw.current_learning||'').trim();
+  const whatIsBlocked=String(raw.whatIsBlocked||raw.what_is_blocked||raw.currentBlocker||raw.current_blocker||raw.blocker||raw.blockedBy||raw.blocked_by||'').trim();
+  const basis=String(raw.basis||raw.evidenceBasis||raw.evidence_basis||raw.evidence||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!currentReality||!whatValNowKnows||!whatIsBlocked||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const preparedNarrative={
+    id:String(raw.id||stableKey(`project_narrative_${projectId}`)).trim(),
+    currentReality,
+    whatValNowKnows,
+    whatIsBlocked,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    livingNarrative:preparedNarrative.currentReality,
+    whatValNowKnows:preparedNarrative.whatValNowKnows,
+    currentBlocker:preparedNarrative.whatIsBlocked,
+    narrativeBasis:preparedNarrative.basis,
+    narrativeConfidence:preparedNarrative.confidence,
+    projectNarrative:preparedNarrative,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work working narrative applied from session ${sessionId||'unknown'}: ${sourceSummary||preparedNarrative.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectNextMove({projectId,projectName,nextMove='',accountableOwner='',timingOrTrigger='',basis='',sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25098,6 +25151,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectRelationshipNurture:applyCoworkProjectRelationshipNurture,
   applyProjectImportance:applyCoworkProjectImportance,
   applyProjectRisk:applyCoworkProjectRisk,
+  applyProjectNarrative:applyCoworkProjectNarrative,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
   loadTranscript:loadTranscriptForCowork,
