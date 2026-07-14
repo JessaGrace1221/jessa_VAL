@@ -451,7 +451,7 @@ test('Project Managers drawer has a live project index source contract', () => {
 });
 
 test('Drawer buttons use distinct rose and green tones so retrieval choices stay legible', () => {
-  for(const tone of ['rose-sage', 'sage-rose', 'olive-blush', 'blush-sage', 'moss-rose', 'rose-mist', 'sage-clay', 'clay-green']){
+  for(const tone of ['rose-sage', 'sage-rose', 'olive-blush', 'blush-sage', 'sage-clay', 'clay-green']){
     assert.match(hearthHtml, new RegExp(`data-drawer-tone="${tone}"`));
   }
   assert.match(hearthCss, /--drawer-rose/);
@@ -489,12 +489,10 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
 
 test('Hearth drawers keep the shared frost surface and packet contracts', () => {
   const drawerContracts = [
-    ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
-    ['Project Managers', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
-    ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
-    ['Commitments', 'commitment-drawer-link', 'commitment-open', 'commitment-detail', 'commitment_packet', 'drawer.commitments'],
-    ['Documents', 'document-drawer-link', 'document-open', 'document-detail', 'document_packet', 'drawer.documents'],
+    ['Project Managers', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
+    ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
+    ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
     ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence'],
     ['VAL OS', 'val-drawer-link', 'val-open', 'val-detail', 'val_os_packet', 'drawer.val_os']
   ];
@@ -506,6 +504,14 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     assert.match(hearthJs, new RegExp(`packet:'${packetName}'`), label + ' packet contract missing from registry');
     assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
   }
+  const drawerLabels = Array.from(hearthHtml.matchAll(/class="drawer-link [^"]+"[\s\S]*?<span>([^<]+)<\/span>/g)).map((match) => match[1]);
+  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
+  assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
+  assert.match(hearthHtml, /id="commitment-detail" aria-hidden="true" hidden data-internal-surface="commitments"/);
+  assert.match(hearthHtml, /id="document-detail" aria-hidden="true" hidden data-internal-surface="documents"/);
+  assert.doesNotMatch(hearthJs, /contract:'drawer\.commitments'/);
+  assert.doesNotMatch(hearthJs, /contract:'drawer\.documents'/);
   assert.match(hearthCss, /--frost-open-surface:/);
   assert.match(hearthCss, /--frost-open-card:/);
   assert.match(hearthCss, /rgba\(255,255,255,\.92\)/);
@@ -820,9 +826,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.correspondence-brief/);
 });
 
-test('Commitments drawer opens accountability ledger inside the Hearth', () => {
-  assert.match(hearthHtml, /class="drawer-link commitment-drawer-link"/);
-  assert.match(hearthHtml, /aria-controls="commitment-detail"/);
+test('Commitments remain internal evidence-backed follow-through, not a Hearth drawer', () => {
+  assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
   assert.match(hearthHtml, /id="commitment-detail"/);
   assert.match(hearthHtml, /Accountability ledger/);
   assert.match(hearthHtml, /data-commitment-summary="you_owe"/);
@@ -830,7 +835,8 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.match(hearthHtml, /data-commitment-filter="overdue"/);
   assert.match(hearthHtml, /data-commitment-list/);
   assert.doesNotMatch(hearthHtml, /data-commitment-action="cowork_commitment"/);
-  assert.match(hearthJs, /mode === 'commitment'/);
+  assert.match(hearthJs, /Commitment follow-through is now handled from its source/);
+  assert.doesNotMatch(hearthJs, /function restoreCommitmentWindow/);
   assert.match(hearthHtml, /data-commitment-action="draft_email"/);
   assert.match(hearthHtml, /data-commitment-action="create_task"/);
   assert.match(hearthHtml, /data-commitment-action="complete"/);
@@ -848,26 +854,22 @@ test('Commitments drawer opens accountability ledger inside the Hearth', () => {
   assert.match(hearthJs, /button\.classList\.toggle\('active', isActive\)/);
   assert.match(hearthJs, /\/api\/val\/commitments\?limit=120/);
   assert.match(hearthJs, /\/api\/val\/commitments\/' \+ encodeURIComponent\(item\.id\) \+ '\/draft-email/);
-  assert.match(hearthJs, /function restoreCommitmentWindow/);
-  assert.match(hearthJs, /workspaceReturnTarget === 'commitment'/);
   assert.match(hearthJs, /action === 'cowork_commitment'/);
+  assert.match(hearthJs, /Commitment follow-through is now handled from its source/);
   assert.match(hearthJs, /action:'commitment:' \+ action/);
   assert.match(hearthJs, /allowBlockedForInspection:true, source:commitmentSource/);
   assert.match(hearthJs, /preflight\.packet\?\.status === 'blocked' && commitmentActionNeedsLiveConfirmation/);
   assert.match(hearthJs, /updateCommitmentSummary\(commitmentSummaryFromItems\(currentCommitmentItems\)\)/);
   assert.match(hearthJs, /no draft, task, schedule change, status update, delegation, dismissal, send, CRM update, or calendar change happened/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(lastHearthPacketReceipt\)/);
-  assert.match(hearthJs, /commitment-open/);
-  assert.match(hearthCss, /\.drawer-tray\.commitment-open \.commitment-detail/);
   assert.match(hearthCss, /\.commitment-summary-grid/);
   assert.match(hearthCss, /\.commitment-workbench/);
   assert.match(hearthCss, /\.commitment-list/);
   assert.match(hearthCss, /\.commitment-brief/);
 });
 
-test('Documents drawer opens a relationship and project organized reference library inside the Hearth', () => {
-  assert.match(hearthHtml, /class="drawer-link document-drawer-link"/);
-  assert.match(hearthHtml, /aria-controls="document-detail"/);
+test('Documents remain internal project and relationship evidence, not a Hearth drawer', () => {
+  assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
   assert.match(hearthHtml, /id="document-detail"/);
   assert.match(hearthHtml, /Reference library/);
   assert.match(hearthHtml, /uploaded, generated, CRM, email, or Google Docs artifact/);
@@ -878,7 +880,8 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthHtml, /data-document-list/);
   assert.match(hearthHtml, /data-document-preview/);
   assert.doesNotMatch(hearthHtml, /data-document-action="cowork_document"/);
-  assert.match(hearthJs, /mode === 'document'/);
+  assert.match(hearthJs, /Documents are now used from their linked Project Manager/);
+  assert.doesNotMatch(hearthJs, /function restoreDocumentWindow/);
   assert.match(hearthHtml, /data-document-action="present"/);
   assert.match(hearthHtml, /data-document-action="update"/);
   assert.match(hearthHtml, /data-document-action="send"/);
@@ -927,7 +930,7 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /item\.relationship/);
   assert.match(hearthJs, /item\.project/);
   assert.match(hearthJs, /function openDocumentWorkspace/);
-  assert.match(hearthJs, /openWorkspaceShell\(actionLabel, \{returnTarget:'document'\}\)/);
+  assert.match(hearthJs, /openWorkspaceShell\(actionLabel, \{returnTarget:'project'\}\)/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(lastHearthPacketReceipt\)/);
   assert.match(hearthJs, /action === 'cowork_document'/);
   assert.match(hearthJs, /function documentSendPayload/);
@@ -941,9 +944,6 @@ test('Documents drawer opens a relationship and project organized reference libr
   assert.match(hearthJs, /function hydrateProjectDocuments/);
   assert.match(hearthJs, /\/api\/val\/documents\/reference\?relationship=/);
   assert.match(hearthJs, /\/api\/val\/documents\/reference\?project=/);
-  assert.match(hearthJs, /Back to Documents drawer/);
-  assert.match(hearthJs, /restoreDocumentWindow/);
-  assert.match(hearthCss, /\.drawer-tray\.document-open \.document-detail/);
   assert.match(hearthCss, /\.document-status-panel/);
   assert.match(hearthCss, /\.document-library-controls/);
   assert.match(hearthCss, /\.document-workbench/);
@@ -1555,8 +1555,6 @@ test('Hearth drawer openings keep index packet receipts internal before item act
     'drawer:projects',
     'drawer:timeline',
     'drawer:executive_inbox',
-    'drawer:commitments',
-    'drawer:documents',
     'drawer:lead_intelligence',
     'drawer:val_os'
   ]){

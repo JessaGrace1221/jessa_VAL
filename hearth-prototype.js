@@ -420,8 +420,6 @@ const hearthClickContractRegistry = [
   {selector:'.project-drawer-link,[data-project-open-profile],[data-project-action],[data-project-cowork-scope],[data-project-cowork-field],[data-project-create-toggle],[data-project-create-cancel],[data-project-review-update],[data-project-document-action]', contract:'drawer.projects', packet:'project_packet', rule:'Project understanding prompt suite', actions:'Open full Project Manager page, scoped Co-Work, review source learning, assign documents to projects, create explicit project records only through the creation flow', never:'Do not create, mutate, or broaden project context without explicit flow'},
   {selector:'.timeline-drawer-link,[data-timeline-action],[data-timeline-match-review],[data-timeline-match-accept],[data-timeline-review-action]', contract:'drawer.timeline', packet:'timeline_packet', rule:'Calendar/transcript/task observer rules', actions:'Co-Work and review timeline proposals', never:'Do not create notes or tasks without review'},
   {selector:'.correspondence-drawer-link,[data-correspondence-item],[data-correspondence-action]', contract:'drawer.executive_inbox', packet:'email_packet', rule:'Executive Inbox classification/draft prompt suite', actions:'Edit draft, send, Co-Work, mark not executive contact', never:'Do not expose raw packet context or unrelated relationship/project context'},
-  {selector:'.commitment-drawer-link,[data-commitment-item],[data-commitment-filter],[data-commitment-action]', contract:'drawer.commitments', packet:'commitment_packet', rule:'Commitment observer/task support rules', actions:'Co-Work, draft email, create task, schedule, status, show source', never:'Do not send; status changes need visible user action'},
-  {selector:'.document-drawer-link,[data-document-item],[data-document-action],[data-document-search],[data-document-relationship-filter],[data-document-project-filter]', contract:'drawer.documents', packet:'document_packet', rule:'Document observer/reference prompt suite', actions:'Co-Work, present, update, send packet, open source, link context', never:'Do not send or update live document without approval gate'},
   {selector:'.source-drawer-link,[data-open-scraper],[data-preview-choice]', contract:'drawer.lead_intelligence', packet:'lead_intelligence_packet', rule:'Lead Intelligence scraper prompt suite', actions:'Run preview, approve/hold, import approved only', never:'Do not import unreviewed leads'},
   {selector:'.val-drawer-link,[data-val-action],[data-val-witnessing-file-input],[data-google-oauth]', contract:'drawer.val_os', packet:'val_os_packet', rule:'VAL OS / Teach VAL / connections prompt suite', actions:'Witnessing Session, connections, review OS, upload witnessing files', never:'Do not save durable memory or fake connected state without review/API proof'},
   {selector:'[data-workflow-action]', contract:'shared.workflow_action', packet:'workflow_scoped_packet', rule:'handleWorkflowAction dispatch rule', actions:'Only workflow-specific actions', never:'Do not dispatch unknown workflow silently'},
@@ -8523,13 +8521,13 @@ function openDocumentWorkspace(action, item = activeDocumentItem){
         ? 'Resolve relationship and project links so VAL can reference this document in the right places.'
         : 'Use this as a source-backed brief before deciding whether it should be updated, sent, or linked.',
     actions: [
-      {label:'Back to Documents', workflow:'cancel:document'},
+      {label:'Back to Project Managers', workflow:'cancel:project'},
       {label:'Teach VAL', workflow:'teach'}
     ],
     label: actionLabel,
-    returnTarget:'document'
+    returnTarget:'project'
   });
-  openWorkspaceShell(actionLabel, {returnTarget:'document'});
+  openWorkspaceShell(actionLabel, {returnTarget:'project'});
   renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
 }
 
@@ -8550,23 +8548,7 @@ async function handleDocumentAction(action){
   const item = activeDocumentItem;
   if(!item) return;
   if(action === 'cowork_document'){
-    openContextualCoworkSession({
-      returnTarget: 'document',
-      title: 'Co-Work with VAL about ' + (item.title || 'this document') + '.',
-      meaning: 'This Co-Work space is scoped to the selected document so VAL can help interpret, revise, summarize, or prepare from source evidence.',
-      context: [
-        'Document: ' + (item.title || 'Untitled'),
-        'Relationship: ' + (item.relationship || 'Unlinked'),
-        'Project: ' + (item.project || 'Unlinked'),
-        'Source: ' + (item.source || item.origin || 'Unknown'),
-        'Reference use: ' + (item.referenceUse || 'Use as relationship/project evidence.')
-      ],
-      recommendation: 'Use this to ask VAL what the document means, what should change, who it affects, or what artifact should be prepared next.',
-      placeholder: 'What should VAL help you do with ' + (item.title || 'this document') + '?',
-      helper: 'This Co-Work note is tagged to the selected document. Updating, sending, or changing source files still requires approval.',
-      backWorkflow: 'cancel:document'
-    });
-    renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
+    if(documentStatus) documentStatus.textContent = 'Documents are now used from their linked Project Manager, Executive Inbox thread, or Leverage review. No generic document Co-Work opened.';
     return;
   }
   if(action === 'present' || action === 'update' || action === 'link_context'){
@@ -9579,24 +9561,7 @@ async function handleCommitmentAction(action){
   const item = activeCommitmentItem;
   if(!item) return;
   if(action === 'cowork_commitment'){
-    openContextualCoworkSession({
-      returnTarget: 'commitment',
-      title: 'Co-Work with VAL about ' + (item.title || 'this commitment') + '.',
-      meaning: item.description || item.evidence_quote || 'This Co-Work space is scoped to the selected commitment.',
-      context: [
-        'Commitment: ' + (item.title || 'Untitled'),
-        'Owner: ' + [item.owner_name, commitmentLabel(item.owner_type)].filter(Boolean).join(' · '),
-        'Counterparty: ' + (item.counterparty_name || 'Unknown'),
-        'Due: ' + commitmentDueLabel(item.due_at),
-        'Evidence: ' + (item.evidence_quote || 'No quote attached yet.'),
-        'Next action: ' + (item.next_action || 'Review commitment.')
-      ],
-      recommendation: 'Use this to decide the right follow-through, draft language, renegotiate scope, or clarify ownership before acting.',
-      placeholder: 'What should VAL help you decide or prepare for this commitment?',
-      helper: 'This Co-Work note is tagged to the selected commitment. Sends, task changes, and status updates stay approval-gated.',
-      backWorkflow: 'cancel:commitment'
-    });
-    renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
+    if(commitmentStatus) commitmentStatus.textContent = 'Commitment follow-through is now handled from its source in Executive Inbox, Project Managers, Transcripts, or Leverage. No generic commitment Co-Work opened.';
     return;
   }
   if(String(item.id || '').startsWith('local-') && commitmentActionNeedsLiveConfirmation(action)){
@@ -9651,10 +9616,10 @@ async function handleCommitmentAction(action){
         meaning:item.title,
         understanding:[item.evidence_quote, item.owner_name, item.due_at ? commitmentDueLabel(item.due_at) : 'No due date yet'].filter(Boolean),
         recommendation:'Use the existing calendar/task scheduling flow once this commitment has a confirmed task or date.',
-        actions:[{label:'Back to Commitments', workflow:'cancel:commitment'}],
+        actions:[{label:'Back to Leverage', workflow:'cancel:home'}],
         label:'Commitment scheduling workspace'
       });
-      openWorkspaceShell('Commitment scheduling workspace', {returnTarget:'commitment'});
+      openWorkspaceShell('Commitment scheduling workspace', {returnTarget:'home'});
       renderHearthPacketReceiptStrip(lastHearthPacketReceipt);
       return;
     }
@@ -10592,16 +10557,6 @@ function updateWorkspaceReturnButton(){
     returnButton.setAttribute('aria-label', 'Back to Executive Inbox drawer');
     return;
   }
-  if(workspaceReturnTarget === 'commitment'){
-    returnButton.textContent = 'Back to Commitments';
-    returnButton.setAttribute('aria-label', 'Back to Commitments ledger');
-    return;
-  }
-  if(workspaceReturnTarget === 'document'){
-    returnButton.textContent = 'Back to Documents';
-    returnButton.setAttribute('aria-label', 'Back to Documents drawer');
-    return;
-  }
   if(workspaceReturnTarget === 'val'){
     returnButton.textContent = 'Back to VAL';
     returnButton.setAttribute('aria-label', 'Back to VAL onboarding drawer');
@@ -11383,8 +11338,6 @@ function activeDrawerCoworkMode(){
   if(drawerTray.classList.contains('project-open')) return 'project';
   if(drawerTray.classList.contains('timeline-open')) return 'timeline';
   if(drawerTray.classList.contains('correspondence-open')) return 'correspondence';
-  if(drawerTray.classList.contains('commitment-open')) return 'commitment';
-  if(drawerTray.classList.contains('document-open')) return 'document';
   return '';
 }
 
@@ -11434,8 +11387,6 @@ async function openDrawerCoworkFromIcon(event){
     project: 'project_packet',
     timeline: 'timeline_packet',
     correspondence: 'email_packet',
-    commitment: 'commitment_packet',
-    document: 'document_packet',
     val: 'val_packet',
     meeting_prep: 'meeting_prep_packet'
   };
@@ -13300,39 +13251,6 @@ function drawerCoworkContext(mode = ''){
         'Needs from user: ' + (item.needs || '')
       ],
       placeholder: 'What should VAL help you decide or rewrite about this reply?'
-    };
-  }
-  if(mode === 'commitment'){
-    const item = activeCommitmentItem || {};
-    return {
-      returnTarget: 'commitment',
-      title: 'Commitment: ' + compactSentence(item.title || 'selected commitment', 'selected commitment'),
-      meaning: item.description || item.evidence_quote || 'VAL is holding this commitment privately.',
-      context: [
-        'Commitment: ' + (item.title || 'Untitled'),
-        'Owner: ' + [item.owner_name, commitmentLabel(item.owner_type)].filter(Boolean).join(' - '),
-        'Counterparty: ' + (item.counterparty_name || ''),
-        'Due: ' + commitmentDueLabel(item.due_at),
-        'Evidence: ' + (item.evidence_quote || ''),
-        'Next action: ' + (item.next_action || '')
-      ],
-      placeholder: 'What should VAL help you decide or prepare for this commitment?'
-    };
-  }
-  if(mode === 'document'){
-    const item = activeDocumentItem || {};
-    return {
-      returnTarget: 'document',
-      title: 'Document: ' + compactSentence(item.title || 'selected document', 'selected document'),
-      meaning: 'VAL is holding this document context privately.',
-      context: [
-        'Document: ' + (item.title || 'Untitled'),
-        'Relationship: ' + (item.relationship || ''),
-        'Project: ' + (item.project || ''),
-        'Source: ' + (item.source || item.origin || ''),
-        'Reference use: ' + (item.referenceUse || '')
-      ],
-      placeholder: 'What should VAL help you do with this document?'
     };
   }
   return {
@@ -16111,60 +16029,6 @@ function restoreCorrespondenceWindow(){
   updateCloseAllDrawersButton();
 }
 
-function restoreCommitmentWindow(){
-  retrievalSystem.classList.add('open');
-  hearth.classList.add('drawer-open');
-  drawerPull.setAttribute('aria-expanded', 'true');
-  drawerTray.setAttribute('aria-hidden', 'false');
-  drawerTray.classList.add('commitment-open');
-  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'document-open', 'source-open');
-  commitmentDrawerLink?.setAttribute('aria-expanded', 'true');
-  valDrawerLink?.setAttribute('aria-expanded', 'false');
-  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-  projectDrawerLink.setAttribute('aria-expanded', 'false');
-  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
-  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
-  documentDrawerLink?.setAttribute('aria-expanded', 'false');
-  sourceDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'false');
-  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  renderCommitmentBrief(activeCommitmentItem || currentCommitmentItems[0]);
-  updateCloseAllDrawersButton();
-}
-
-function restoreDocumentWindow(){
-  retrievalSystem.classList.add('open');
-  hearth.classList.add('drawer-open');
-  drawerPull.setAttribute('aria-expanded', 'true');
-  drawerTray.setAttribute('aria-hidden', 'false');
-  drawerTray.classList.add('document-open');
-  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'source-open');
-  documentDrawerLink?.setAttribute('aria-expanded', 'true');
-  valDrawerLink?.setAttribute('aria-expanded', 'false');
-  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-  projectDrawerLink.setAttribute('aria-expanded', 'false');
-  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
-  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
-  commitmentDrawerLink?.setAttribute('aria-expanded', 'false');
-  sourceDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'false');
-  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  renderDocumentBrief(activeDocumentItem || filteredDocumentItems()[0]);
-  updateCloseAllDrawersButton();
-}
-
 function restoreLeadIntelligenceWindow(){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
@@ -16329,8 +16193,6 @@ function openWorkspaceShell(label, options = {}){
     if(options.returnTarget === 'project') restoreProjectWindow();
     if(options.returnTarget === 'timeline') restoreTimelineWindow();
     if(options.returnTarget === 'correspondence') restoreCorrespondenceWindow();
-    if(options.returnTarget === 'document') restoreDocumentWindow();
-    if(options.returnTarget === 'commitment') restoreCommitmentWindow();
     if(options.returnTarget === 'source') restoreLeadIntelligenceWindow();
     if(options.returnTarget === 'val') restoreValWindow();
   } else {
@@ -17801,12 +17663,8 @@ async function handleValAction(action){
   }
   if(action === 'route_documents_examples'){
     closeWorkspace();
-    restoreDocumentWindow();
-    hydrateDocumentDrawer();
-    if(documentSearchInput && valOnboardingRouteState.documentExamples.length){
-      documentSearchInput.value = '';
-      renderDocumentBrief(filteredDocumentItems()[0] || null);
-    }
+    restoreProjectWindow();
+    openProjectIndex();
     return;
   }
   const copy = valWorkspaceCopy(action);
@@ -18729,12 +18587,12 @@ function openHomeSourceDrawerDestination(workspace = {}){
     return;
   }
   if(/task|commitment/i.test(destination)){
-    restoreCommitmentWindow();
-    hydrateCommitmentDrawer();
+    openLeverageApprovalWorkspace();
     return;
   }
   if(/document|proposal/i.test(destination)){
-    restoreDocumentWindow();
+    restoreProjectWindow();
+    openProjectIndex();
     return;
   }
   restoreLeadIntelligenceWindow();
@@ -19428,8 +19286,6 @@ function closeWorkspace(){
   if(workspaceReturnTarget === 'project') restoreProjectWindow(projectReturnId);
   if(workspaceReturnTarget === 'timeline') restoreTimelineWindow();
   if(workspaceReturnTarget === 'correspondence') restoreCorrespondenceWindow();
-  if(workspaceReturnTarget === 'commitment') restoreCommitmentWindow();
-  if(workspaceReturnTarget === 'document') restoreDocumentWindow();
   if(workspaceReturnTarget === 'source') restoreLeadIntelligenceWindow();
   if(workspaceReturnTarget === 'val') restoreValWindow();
   activeProjectCoworkTarget = null;
@@ -19717,62 +19573,6 @@ correspondenceDrawerLink?.addEventListener('click', () => {
   }
 });
 
-commitmentDrawerLink?.addEventListener('click', () => {
-  ensureDrawerTrayOpen();
-  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'document-open', 'source-open');
-  valDrawerLink?.setAttribute('aria-expanded', 'false');
-  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-  projectDrawerLink.setAttribute('aria-expanded', 'false');
-  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
-  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
-  documentDrawerLink?.setAttribute('aria-expanded', 'false');
-  sourceDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  const isOpen = drawerTray.classList.toggle('commitment-open');
-  commitmentDrawerLink.setAttribute('aria-expanded', String(isOpen));
-  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen){
-    drawerIndexPacketReceipt({node:commitmentDrawerLink, packetName:'commitment_packet', action:'drawer:commitments', label:'Commitments drawer', downstreamConsumers:['commitment_drawer','timeline_packet','email_packet','relationship_packet','project_packet']});
-    hydrateCommitmentDrawer();
-  } else {
-    renderDrawerPacketReceiptStrip(null);
-  }
-});
-
-documentDrawerLink?.addEventListener('click', () => {
-  ensureDrawerTrayOpen();
-  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'source-open');
-  valDrawerLink?.setAttribute('aria-expanded', 'false');
-  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-  projectDrawerLink.setAttribute('aria-expanded', 'false');
-  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
-  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
-  commitmentDrawerLink?.setAttribute('aria-expanded', 'false');
-  sourceDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#relationship-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
-  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
-  document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  const isOpen = drawerTray.classList.toggle('document-open');
-  documentDrawerLink.setAttribute('aria-expanded', String(isOpen));
-  document.querySelector('#document-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen){
-    drawerIndexPacketReceipt({node:documentDrawerLink, packetName:'document_packet', action:'drawer:documents', label:'Documents drawer', downstreamConsumers:['document_drawer','relationship_packet','project_packet','email_packet']});
-    hydrateDocumentDrawer();
-  } else {
-    renderDrawerPacketReceiptStrip(null);
-  }
-});
-
 closeRelationshipDetail.addEventListener('click', () => {
   const detail = document.querySelector('#relationship-detail');
   if(detail?.classList.contains('show-index')){
@@ -19805,18 +19605,6 @@ closeCorrespondenceDetail?.addEventListener('click', () => {
   drawerTray.classList.remove('correspondence-open');
   correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
   document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-});
-
-closeCommitmentDetail?.addEventListener('click', () => {
-  drawerTray.classList.remove('commitment-open');
-  commitmentDrawerLink?.setAttribute('aria-expanded', 'false');
-  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
-});
-
-closeDocumentDetail?.addEventListener('click', () => {
-  drawerTray.classList.remove('document-open');
-  documentDrawerLink?.setAttribute('aria-expanded', 'false');
-  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
 });
 
 closeValDetail?.addEventListener('click', () => {

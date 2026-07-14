@@ -264,21 +264,19 @@ Transcript Working Brief opens the exact attendee overview already ready for rev
 
 `relationship.overview` receives the selected relationship’s durable identifier at click time and rejects a missing relationship rather than borrowing a nearby person or a generic dossier. It asks exactly one question: what small relationship outcome VAL should prepare next. The answer creates one review-gated internal stewardship focus, grounded in the selected profile’s readable receipts. Applying writes only that selected relationship’s internal packet and receipt; it does not draft or send outreach, create a task, update CRM, make an introduction, schedule time, or alter an external system. Section-level relationship buttons currently enter this canonical overview route while their individual field contracts are still pending; they must not claim to have directly updated a named card.
 
-## Commitments
+## Internal Evidence And Follow-Through
 
-| Entry id | Scope | Objective | Completion condition | Writes / result |
-|---|---|---|---|---|
-| `commitment.follow_through` | One commitment record, exact evidence quote, owner, counterparty, due state, and related source. | Choose and prepare responsible follow-through. | A commitment decision, prepared draft/task, or status action awaits the appropriate approval. | Commitment Packet, prepared artifact, or action proposal. |
+Commitments and Documents are internal infrastructure, not executive retrieval drawers. A commitment remains an evidence-backed internal follow-through record created from a transcript, email, project, or approved work item. A document remains immutable evidence attached to the relevant project, relationship, email thread, transcript, or prepared artifact.
 
-The current code contains a commitment Co-Work handler, but the active drawer does not render a validated Co-Work button. It must not be treated as an active production route until the entry is rendered and acceptance-tested.
+The executive reaches that information through its meaningful operating surface:
 
-## Documents
+- Executive Inbox for the source thread and its private reply draft.
+- Project Managers for project evidence, dependencies, and next work.
+- Stewardship for relationship evidence and a next stewardship move.
+- Transcripts for exact Krisp source material and internal Commitment creation.
+- Leverage for reviewable drafts and prepared work.
 
-| Entry id | Scope | Objective | Completion condition | Writes / result |
-|---|---|---|---|---|
-| `document.interpret` | One document receipt, its immutable source, relationship/project links, and intended use. | Interpret the document or prepare a permitted derivative without changing the source. | The document's use, links, and any proposed artifact are visible and reviewable. | Document Round Table result, document links, PreparedArtifact if requested. |
-
-The current code contains a document Co-Work handler, but the active drawer does not render a validated Co-Work button. It remains a target route, not a working user entry point.
+There is no visible `commitment.follow_through` or `document.interpret` Co-Work entry. The retired generic handlers explicitly refuse to open a conversation so they cannot compete with the canonical source-specific paths.
 
 ## Lead Intelligence
 
@@ -311,9 +309,8 @@ Witnessing and Teach VAL are structured flows, not generic Co-Work. Their curren
 | Project Managers | First seventeen canonical slices complete | `project.overview`, `project.identity`, `project.onboarding`, `project.people`, `project.documents`, `project.milestones`, `project.monitoring`, `project.relationship_nurture`, `project.why_it_matters`, `project.risk`, `project.narrative`, `project.needs_next`, `project.sop`, `project.phase`, `project.prepared_work`, `project.workstreams`, and `project.next_move` now have server-owned Working Briefs, field-targeted questions, structured prepared work, explicit internal Apply, action receipts, and return to the selected project. Top `Co-Work`, `Start onboarding chat`, `Continue onboarding chat`, `Project Interview`, `What this is`, `Why it matters`, `Working narrative`, `What VAL needs next`, `Operating System`, `Current Phase`, `Prepared work`, `People involved`, `Documents / sources`, `Risk / blocker`, `Milestones`, `Monitoring after launch`, and `Relationship nurture` now use registered entries rather than generic chat. | Every other Project Managers entry still uses the older scoped-chat/write-back path and must be replaced through this registry before it is treated as canonical. |
 | Transcripts | First two canonical slices complete | `transcript.working_brief` now loads one selected transcript, its exact Krisp Action Items and Key Points receipt, invitees, and draft state. It prepares the exact attendee meeting overview through an explicit internal Apply, creates a receipt, and never sends email or rewrites the source. `transcript.action_item` turns one selected exact Action Item into one review-gated internal Commitment, with no inferred assignee or changed wording. The legacy freeform chat and direct transcript mutation endpoint have been removed. | Typed packet outputs for transcript-derived project, relationship, and other task work still need their own scoped entries. |
 | Executive Inbox | First canonical slice complete | `email.thread` now receives one durable selected message/thread, loads its readable messages, asks for one reply outcome, and prepares one private draft for Leverage review without changing an external system. | Additional typed email actions still need their own contracts. |
-| Relationships | First canonical slice complete | `relationship.overview` now receives one selected relationship, readable relationship receipts, one executive direction, and writes only a review-gated internal next stewardship move with an action receipt. | Individual relationship-card contracts still need their own field-targeted entries; they currently use the canonical overview rather than generic chat. |
-| Commitments | Dormant | Handler code exists. | Visible validated entry point and the full contract above. |
-| Documents | Dormant | Handler code exists. | Visible validated entry point and the full contract above. |
+| Stewardship | First canonical slice complete | `relationship.overview` now receives one selected relationship, readable relationship receipts, one executive direction, and writes only a review-gated internal next stewardship move with an action receipt. | Individual relationship-card contracts still need their own field-targeted entries; they currently use the canonical overview rather than generic chat. |
+| Internal evidence and follow-through | Not a drawer | Commitments and documents remain source-linked internal records used by Executive Inbox, Project Managers, Stewardship, Transcripts, and Leverage. | Source-specific canonical entries cover the executive interaction; no generic document or commitment Co-Work may reappear. |
 | Lead Intelligence | Unmapped Co-Work | Protected scraper flows exist. | Scoped Co-Work entry for a specific run without bypassing approval flow. |
 | VAL drawer | Structured, not Co-Work | Witnessing and Teach VAL prompt suites are protected. | Explicit handoff only when a context-specific Co-Work task is appropriate. |
 

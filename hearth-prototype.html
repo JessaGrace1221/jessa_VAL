@@ -179,29 +179,21 @@
     <div class="drawer-tray" id="drawer-tray" aria-hidden="true">
       <p class="drawer-kicker">Retrieval</p>
       <div class="drawer-grid">
-        <button type="button" class="drawer-link relationship-drawer-link" data-drawer-tone="rose-sage" aria-expanded="false" aria-controls="relationship-detail">
-          <span>Stewardship</span>
-          <small>Network value and introductions</small>
+        <button type="button" class="drawer-link correspondence-drawer-link" data-drawer-tone="blush-sage" aria-expanded="false" aria-controls="correspondence-detail">
+          <span>Executive Inbox</span>
+          <small>Important replies and drafts</small>
         </button>
         <button type="button" class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail">
           <span>Project Managers</span>
           <small>Dossiers, momentum, decisions</small>
         </button>
+        <button type="button" class="drawer-link relationship-drawer-link" data-drawer-tone="rose-sage" aria-expanded="false" aria-controls="relationship-detail">
+          <span>Stewardship</span>
+          <small>Network value and introductions</small>
+        </button>
         <button type="button" class="drawer-link timeline-drawer-link" data-drawer-tone="olive-blush" aria-expanded="false" aria-controls="timeline-detail">
           <span>Transcripts</span>
           <small>Meeting evidence, notes, tasks</small>
-        </button>
-        <button type="button" class="drawer-link correspondence-drawer-link" data-drawer-tone="blush-sage" aria-expanded="false" aria-controls="correspondence-detail">
-          <span>Executive Inbox</span>
-          <small>Important replies and drafts</small>
-        </button>
-        <button type="button" class="drawer-link commitment-drawer-link" data-drawer-tone="moss-rose" aria-expanded="false" aria-controls="commitment-detail">
-          <span>Commitments</span>
-          <small>Promises, next steps, follow-through</small>
-        </button>
-        <button type="button" class="drawer-link document-drawer-link" data-drawer-tone="rose-mist" aria-expanded="false" aria-controls="document-detail">
-          <span>Documents</span>
-          <small>Prepared work and source material</small>
         </button>
         <button type="button" class="drawer-link source-drawer-link" data-drawer-tone="sage-clay" aria-expanded="false" aria-controls="source-detail">
           <span>Lead Intelligence</span>
@@ -233,7 +225,7 @@
           <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
         </div>
       </div>
-      <div class="source-detail document-detail" id="document-detail" aria-hidden="true">
+      <div class="source-detail document-detail" id="document-detail" aria-hidden="true" hidden data-internal-surface="documents">
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">Documents</p>
@@ -591,7 +583,7 @@
           </aside>
         </div>
       </div>
-      <div class="source-detail commitment-detail" id="commitment-detail" aria-hidden="true">
+      <div class="source-detail commitment-detail" id="commitment-detail" aria-hidden="true" hidden data-internal-surface="commitments">
         <div class="source-detail-header">
           <div>
             <p class="drawer-kicker">Commitments</p>
