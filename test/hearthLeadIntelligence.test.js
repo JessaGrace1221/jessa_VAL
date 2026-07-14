@@ -2213,6 +2213,13 @@ test('Witnessing Session questions dispatch before shared workflow packet valida
   assert.doesNotMatch(witnessingDispatcher, /ensureHearthClickPacket/);
 });
 
+test('Witnessing Session keeps its conversational surface after confirming an answer', () => {
+  const confirmationFlow = hearthJs.match(/async function confirmValWitnessingCard[\s\S]*?\n}\n\nconst valAiImportPromptCards/)?.[0] || '';
+
+  assert.match(hearthCss, /\.desk-workspace\.witnessing-mode \.judgment-sequence,[\s\S]*?\.workspace-grid,[\s\S]*?\.workspace-actions\{\s*display:none;/);
+  assert.match(confirmationFlow, /label: 'VAL Witnessing Session conversation'[\s\S]*?deskWorkspace\.classList\.add\('witnessing-mode'\);[\s\S]*?renderValWitnessingConversation/);
+});
+
 test('Stewardship drawer opens inside the Hearth instead of a CRM link', () => {
   assert.match(hearthHtml, /class="drawer-link relationship-drawer-link"/);
   assert.match(hearthHtml, /id="relationship-detail"/);

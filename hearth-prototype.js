@@ -16901,6 +16901,7 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
       actions: [{label:'Back to VAL', workflow:'cancel:val'}],
       label: 'VAL Witnessing Session conversation'
     });
+    deskWorkspace.classList.add('witnessing-mode');
     renderValWitnessingConversation({
       card: next,
       rawResponse: workspaceInputValue('val-witnessing-' + next.category),
