@@ -2888,6 +2888,21 @@ button.drawer-link{
     var(--drawer-base-hover,#fffaf1);
   outline:none;
 }
+.drawer-link.drawer-link-coming-soon:disabled{
+  cursor:not-allowed;
+  opacity:.62;
+  box-shadow:none;
+}
+.drawer-link.drawer-link-coming-soon:disabled:hover,
+.drawer-link.drawer-link-coming-soon:disabled:focus-visible{
+  transform:none;
+  border-color:var(--drawer-line);
+  background:
+    radial-gradient(circle at 8% 0%,var(--drawer-rose,rgba(239,185,173,.12)),transparent 9rem),
+    linear-gradient(135deg,rgba(255,255,250,.92),rgba(250,246,238,.82) 54%,var(--drawer-green,rgba(211,221,196,.13))),
+    var(--drawer-base,var(--drawer-paper));
+  outline:none;
+}
 .drawer-link[data-drawer-tone="rose-sage"]{
   --drawer-rose:rgba(239,185,173,.14);
   --drawer-green:rgba(199,218,184,.12);

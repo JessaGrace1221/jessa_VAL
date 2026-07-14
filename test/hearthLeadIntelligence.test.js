@@ -134,9 +134,10 @@ test('Lead Intelligence drawer opens only its own detail panel', () => {
   assert.doesNotMatch(hearthCss, /\.drawer-tray\.source-open \.source-detail/);
 });
 
-test('Project Managers drawer opens project dossiers from the Hearth instead of a dashboard shortcut', () => {
-  assert.match(hearthHtml, /class="drawer-link project-drawer-link"/);
-  assert.match(hearthHtml, /aria-controls="project-detail"/);
+test('Project Managers stays dormant while its packet and onboarding system are preserved', () => {
+  assert.match(hearthHtml, /class="drawer-link project-drawer-link drawer-link-coming-soon" data-drawer-tone="sage-rose" disabled aria-disabled="true"/);
+  assert.match(hearthHtml, /Project Managers Coming Soon/);
+  assert.doesNotMatch(hearthHtml, /class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail"/);
   assert.match(hearthHtml, /id="project-detail"/);
   assert.match(hearthHtml, /<p class="drawer-kicker">Project Managers<\/p>/);
   assert.doesNotMatch(hearthHtml, /Project Dossiers/);
@@ -168,6 +169,7 @@ test('Project Managers drawer opens project dossiers from the Hearth instead of 
   assert.doesNotMatch(hearthHtml, /class="project-actions"/);
   assert.match(hearthJs, /const projectProfiles/);
   assert.match(hearthJs, /function openProjectIndex/);
+  assert.match(hearthJs, /if\(projectDrawerLink\?\.disabled\) return;/);
   assert.match(hearthJs, /function renderProjectRolodex/);
   assert.match(hearthJs, /function renderProjectProfile/);
   assert.match(hearthJs, /function projectAdmissionPacket/);
@@ -487,7 +489,6 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
 test('Hearth drawers keep the shared frost surface and packet contracts', () => {
   const drawerContracts = [
     ['Executive Inbox', 'correspondence-drawer-link', 'correspondence-open', 'correspondence-detail', 'email_packet', 'drawer.executive_inbox'],
-    ['Project Managers', 'project-drawer-link', 'project-open', 'project-detail', 'project_packet', 'drawer.projects'],
     ['Stewardship', 'relationship-drawer-link', 'relationship-open', 'relationship-detail', 'relationship_packet', 'drawer.relationships'],
     ['Transcripts', 'timeline-drawer-link', 'timeline-open', 'timeline-detail', 'timeline_packet', 'drawer.timeline'],
     ['Lead Intelligence', 'source-drawer-link', 'source-open', 'source-detail', 'lead_intelligence_packet', 'drawer.lead_intelligence'],
@@ -502,7 +503,9 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
   }
   const drawerLabels = Array.from(hearthHtml.matchAll(/class="drawer-link [^"]+"[\s\S]*?<span>([^<]+)<\/span>/g)).map((match) => match[1]);
-  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers Coming Soon', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.match(hearthHtml, /class="drawer-link project-drawer-link drawer-link-coming-soon"[\s\S]*?disabled aria-disabled="true"/);
+  assert.match(hearthHtml, /id="project-detail"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
   assert.match(hearthHtml, /id="commitment-detail" aria-hidden="true" hidden data-internal-surface="commitments"/);

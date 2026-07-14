@@ -7688,6 +7688,7 @@ async function createProjectFromDrawer(event){
 }
 
 function openProjectIndex(){
+  if(projectDrawerLink?.disabled) return;
   hydrateRelationshipIndex();
   hydrateProjectSuggestions();
   if(canUseApi && !projectIndexLoaded){
@@ -15685,6 +15686,7 @@ function restoreRelationshipWindow(){
 }
 
 function restoreProjectWindow(projectId = ''){
+  if(projectDrawerLink?.disabled) return;
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
@@ -19251,6 +19253,7 @@ relationshipDrawerLink.addEventListener('click', () => {
 });
 
 projectDrawerLink.addEventListener('click', () => {
+  if(projectDrawerLink.disabled) return;
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
