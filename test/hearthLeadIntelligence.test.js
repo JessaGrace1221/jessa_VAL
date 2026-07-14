@@ -1370,8 +1370,20 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ready-send-20260713/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=transcript-ready-send-20260713/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=clean-baseline-20260714/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=clean-baseline-20260714/);
+});
+
+test('Transcript reads bypass cached browser responses after a tenant reset', () => {
+  const listRoute = server.slice(server.indexOf("app.get('/api/val/transcripts'"), server.indexOf("app.get('/api/val/transcripts/review'"));
+  const detailRoute = server.slice(server.indexOf("app.get('/api/val/transcripts/:transcriptId'"), server.indexOf("app.post('/api/val/transcripts'"));
+  const openTranscriptBody = hearthJs.match(/async function openTimelineTranscript[\s\S]*?\n}\n\nasync function loadTimelineTranscripts/)?.[0] || '';
+
+  assert.match(listRoute, /Cache-Control','no-store, max-age=0/);
+  assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
+  assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'\} = \{\}\)/);
+  assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
+  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days=3650&limit=30', \{cache: 'no-store'\}\)/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {

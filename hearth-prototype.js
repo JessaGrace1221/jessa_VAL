@@ -11708,7 +11708,7 @@ async function openTimelineTranscript(transcriptId){
   if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is opening the source receipt.</p></article>';
   resetTimelineTranscriptDetailScroll();
   try{
-    const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId));
+    const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId), {cache: 'no-store'});
     if(!data?.transcript) throw new Error('Transcript detail was empty.');
     if(requestId !== timelineTranscriptOpenRequest) return;
     renderTimelineTranscriptDetail(data.transcript);
@@ -11727,7 +11727,7 @@ async function loadTimelineTranscripts({openFirst = true} = {}){
   renderTimelineTranscriptEmpty();
   if(!canUseApi) return;
   try{
-    const data = await getJson('/api/val/transcripts?days=3650&limit=30');
+    const data = await getJson('/api/val/transcripts?days=3650&limit=30', {cache: 'no-store'});
     currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
@@ -13688,8 +13688,8 @@ async function postFormData(url, payload){
   return data;
 }
 
-async function getJson(url){
-  const response = await fetch(url, {credentials: 'same-origin'});
+async function getJson(url, {cache = 'default'} = {}){
+  const response = await fetch(url, {credentials: 'same-origin', cache});
   const text = await response.text();
   let data = {};
   try{ data = text ? JSON.parse(text) : {}; }

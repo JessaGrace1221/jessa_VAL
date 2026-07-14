@@ -24220,6 +24220,7 @@ function normalizedTranscriptWebhookPayload(body={}){
 }
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
+    res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
@@ -24233,6 +24234,7 @@ app.get('/api/val/transcripts',async(req,res)=>{
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
   try{
+    res.set('Cache-Control','no-store, max-age=0');
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const data=await transcriptIndexData();
     const review=transcriptReviewData(data);
@@ -24320,6 +24322,7 @@ app.delete('/api/val/transcripts/clear-all',async(req,res)=>{
 });
 app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   try{
+    res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){
