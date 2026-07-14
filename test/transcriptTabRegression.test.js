@@ -31,6 +31,9 @@ test('transcript ingress stays disabled until explicitly enabled and never expos
   const statusRouteStart=server.indexOf("app.get('/api/val/transcripts/webhook'");
   const statusRouteEnd=server.indexOf("app.all('/api/val/transcripts/ping'",statusRouteStart);
   const statusRoute=server.slice(statusRouteStart,statusRouteEnd);
+  const ingressStart=server.indexOf("app.post('/api/val/transcripts',express.raw");
+  const ingressEnd=server.indexOf("app.post('/api/val/transcripts/tasks/:taskId/approve'",ingressStart);
+  const ingressRoute=server.slice(ingressStart,ingressEnd);
 
   assert.match(server,/function transcriptIngressEnabled\(\)/);
   assert.match(server,/VAL_TRANSCRIPT_INGEST_ENABLED/);
@@ -38,6 +41,7 @@ test('transcript ingress stays disabled until explicitly enabled and never expos
   assert.doesNotMatch(webhookInfo,/\?token=/);
   assert.doesNotMatch(webhookInfo,/transcriptWebhookToken\(\)/);
   assert.match(statusRoute,/requireAuth,requirePermission\('settings:manage'\)/);
+  assert.match(ingressRoute,/if\(!transcriptIngressEnabled\(\)\) return res\.status\(403\)/);
 });
 
 test('webhook normalizes Krisp-style speaker turn payloads',()=>{

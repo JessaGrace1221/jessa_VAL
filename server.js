@@ -24336,6 +24336,7 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req,res)=>{
+  if(!transcriptIngressEnabled()) return res.status(403).json({ok:false,error:'Transcript ingestion is disabled until an executive explicitly connects a transcript source.'});
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
   if(!transcriptText.trim()){
