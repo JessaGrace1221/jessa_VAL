@@ -23,6 +23,11 @@ function rowToCamel(row={}){
   }
   return result;
 }
+function pgValueForColumn(column,value){
+  if(!/Json$/.test(String(column||''))) return value;
+  const fallback=/^(questionPlanJson|sourceRefsJson)$/.test(column) ? [] : {};
+  return JSON.stringify(value == null ? fallback : value);
+}
 function sourceRef(input={}){
   return {
     source_type:compactText(input.source_type || input.sourceType || 'project_packet',100),
@@ -2656,11 +2661,14 @@ function createValCoworkService({
   }
   async function pgUpsert(table,row,columns){
     const names=columns.map(toSnake);
-    const values=columns.map((key)=>row[key]);
+    // node-postgres treats JavaScript arrays as Postgres arrays. These columns are jsonb,
+    // so serialize every JSON payload explicitly before it crosses the database boundary.
+    const values=columns.map((key)=>pgValueForColumn(key,row[key]));
     const params=columns.map((_,index)=>`$${index+1}`).join(',');
     const updates=names.filter((name)=>!['id','created_at'].includes(name)).map((name)=>`${name}=excluded.${name}`).join(',');
     const result=await dbQuery(`insert into ${table} (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
-    return rowToCamel(result.rows?.[0] || row);
+    if(!result?.rows?.[0]) throw new Error('VAL could not save this scoped Co-Work session. Nothing was changed.');
+    return rowToCamel(result.rows[0]);
   }
   async function saveSession(row){
     const columns=['id','tenantId','userId','entrypointId','scopeType','scopeId','scopeSectionId','status','workingBriefJson','questionPlanJson','stateJson','createdAt','updatedAt'];

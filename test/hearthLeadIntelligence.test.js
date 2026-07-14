@@ -1166,6 +1166,14 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /data-home-cowork-response/);
   assert.match(hearthJs, /<textarea data-workspace-input="cowork"/);
   assert.match(hearthJs, /function appendHomeCoworkMessage/);
+  assert.match(hearthJs, /function showCoworkContextGathering/);
+  assert.match(hearthJs, /Gathering Context/);
+  assert.match(hearthJs, /data-cowork-context-gathering/);
+  assert.match(hearthJs, /function coworkScopeForEntry/);
+  assert.match(hearthJs, /'project\.risk':'risk_blocker'/);
+  assert.match(hearthJs, /'project\.narrative':'working_narrative'/);
+  assert.match(hearthJs, /'project\.needs_next':'what_val_needs_next'/);
+  assert.match(hearthJs, /Do not fall through to generic Home Co-Work while a source-specific session is opening/);
   assert.match(hearthJs, /keepHomeCoworkOpen/);
   assert.match(hearthJs, /What shall we accomplish together\?/);
   assert.match(hearthJs, /activeCoworkHeldContext = ''/);
@@ -1209,6 +1217,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.home-cowork-context/);
   assert.match(hearthCss, /\.home-cowork-chatbar/);
   assert.match(hearthCss, /\.home-cowork-chatbar textarea/);
+  assert.match(hearthCss, /\.home-cowork-context-gathering/);
+  assert.match(hearthCss, /context-gathering-pulse/);
   assert.match(hearthJs, /const linkedinVisibilityItems/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);

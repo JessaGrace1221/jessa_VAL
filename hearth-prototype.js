@@ -5062,6 +5062,7 @@ function updateCoworkEntryContext(result = {}){
 function renderCoworkEntryResult(result = {}, options = {}){
   const session = result.session || {};
   const workItem = result.workItem || {};
+  hideCoworkContextGathering();
   if(session.id){
     activeCoworkEntry = {
       ...(activeCoworkEntry || {}),
@@ -5069,6 +5070,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
       sessionId:session.id,
       workItemId:workItem.id || activeCoworkEntry?.workItemId || '',
       status:workItem.status || session.status || '',
+      sectionId:session.scope?.sectionId || activeCoworkEntry?.sectionId || '',
       projectId:session.scope?.entityType === 'project_section' ? (session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || '') : '',
       transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : '',
       emailThreadId:session.scope?.entityType === 'email_thread' ? session.scope?.entityId || '' : '',
@@ -5078,7 +5080,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
   updateCoworkEntryContext(result);
   const response = homeCoworkResponseNode();
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
-  const message = result.question?.question || result.message || '';
+  const message = options.suppressMessage ? '' : (result.question?.question || result.message || '');
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
   if(response && workItem.id){
     const item = workItem.type === 'project_documents'
@@ -5613,7 +5615,7 @@ async function openTranscriptActionItemCowork(transcriptId = '', actionItemIndex
   if(!transcript || !transcriptId || !Number.isInteger(Number(actionItemIndex)) || Number(actionItemIndex) < 0) return;
   const actionItem = timelineSourceReceipt(transcript).actionItems[Number(actionItemIndex)] || '';
   if(!actionItem) return;
-  activeCoworkEntry = {entrypointId:'transcript.action_item',sessionId:'',workItemId:'',transcriptId,status:'opening'};
+  activeCoworkEntry = {entrypointId:'transcript.action_item',sessionId:'',workItemId:'',transcriptId,actionItemIndex:Number(actionItemIndex),status:'opening'};
   openContextualCoworkSession({
     returnTarget:'timeline',
     title:'Create transcript Commitment',
@@ -5644,7 +5646,16 @@ async function openTranscriptActionItemCowork(transcriptId = '', actionItemIndex
 
 async function submitActiveCoworkEntry(){
   const entry = activeCoworkEntry;
-  if(!entry?.sessionId) return false;
+  if(!entry) return false;
+  if(!entry.sessionId){
+    if(entry.status === 'opening'){
+      const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
+      if(submit) submit.disabled = true;
+      showCoworkContextGathering('VAL is finishing the selected section packet. Your message remains here and will stay scoped to this Project Manager.');
+    }
+    // Do not fall through to generic Home Co-Work while a source-specific session is opening.
+    return true;
+  }
   if(entry.status === 'applied') return true;
   const input = workspaceInputValue('cowork');
   if(!projectCleanText(input)) return true;
@@ -5659,11 +5670,71 @@ async function submitActiveCoworkEntry(){
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     renderCoworkEntryResult(result);
   }catch(error){
+    if(/Co-Work session no longer exists/i.test(String(error.message || ''))){
+      try{
+        showCoworkContextGathering('The page refreshed while VAL was holding this section. Restoring the exact selected context before answering.');
+        const scope = coworkScopeForEntry(entry);
+        const restored = await postJson('/api/val/cowork/entries/open',{entrypointId:entry.entrypointId,scope},{timeoutMs:10000,timeoutMessage:'VAL could not restore this scoped session yet.'});
+        renderCoworkEntryResult(restored,{suppressMessage:true});
+        const recoveredEntry = activeCoworkEntry;
+        if(!recoveredEntry?.sessionId) throw new Error('VAL could not restore this scoped session.');
+        const recovered = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(recoveredEntry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this restored section yet.'});
+        renderCoworkEntryResult(recovered);
+        return true;
+      }catch(recoveryError){
+        hideCoworkContextGathering();
+        appendHomeCoworkMessage('val','VAL could not restore this scoped answer. Nothing was changed. ' + recoveryError.message);
+        return true;
+      }
+    }
     appendHomeCoworkMessage('val','VAL could not save that answer. Nothing was changed. ' + error.message);
   }finally{
     if(submit && activeCoworkEntry?.status !== 'applied' && activeCoworkEntry?.status !== 'needs_review') submit.disabled = false;
   }
   return true;
+}
+
+function coworkScopeForEntry(entry = {}){
+  const entrypointId = String(entry.entrypointId || '');
+  const sectionByEntrypoint = {
+    'project.overview':'project_overview',
+    'project.identity':'identity',
+    'project.onboarding':'project_interview',
+    'project.people':'people',
+    'project.documents':'documents',
+    'project.milestones':'milestones',
+    'project.monitoring':'monitoring_rules',
+    'project.relationship_nurture':'relationship_nurture',
+    'project.why_it_matters':'why_it_matters',
+    'project.risk':'risk_blocker',
+    'project.narrative':'working_narrative',
+    'project.needs_next':'what_val_needs_next',
+    'project.sop':'sop_fit',
+    'project.phase':'project_phase',
+    'project.prepared_work':'prepared_work',
+    'project.workstreams':'workstreams',
+    'project.next_move':'next_move',
+    'transcript.working_brief':'working_brief',
+    'transcript.action_item':'action_item',
+    'email.thread':'reply_draft',
+    'relationship.overview':'overview'
+  };
+  const scope = {sectionId:entry.sectionId || sectionByEntrypoint[entrypointId] || ''};
+  if(entrypointId.startsWith('project.')){
+    scope.entityType = 'project_section';
+    scope.entityId = entry.projectId || '';
+  }else if(entrypointId.startsWith('transcript.')){
+    scope.entityType = 'transcript';
+    scope.entityId = entry.transcriptId || '';
+    if(entrypointId === 'transcript.action_item' && Number.isInteger(Number(entry.actionItemIndex))) scope.actionItemIndex = Number(entry.actionItemIndex);
+  }else if(entrypointId === 'email.thread'){
+    scope.entityType = 'email_thread';
+    scope.entityId = entry.emailThreadId || '';
+  }else if(entrypointId === 'relationship.overview'){
+    scope.entityType = 'relationship';
+    scope.entityId = entry.relationshipId || '';
+  }
+  return scope;
 }
 
 async function applyActiveCoworkWorkstreams(workItemId = '', button = null){
@@ -9437,6 +9508,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     placeholder: placeholder || 'What should VAL help you think through here?'
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
+  showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
 }
 
 async function handleProjectAction(action){
@@ -15393,7 +15465,7 @@ async function runCowork(mode){
     return;
   }
   if(keepHomeCoworkOpen){
-    appendHomeCoworkMessage('val', 'VAL is thinking with you...');
+    showCoworkContextGathering('VAL is gathering the relevant packets and source material for this conversation.');
   }else{
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
@@ -18759,6 +18831,10 @@ function renderHomeCoworkPreview(options = {}){
           '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(heading) + '</p></article>',
         '</div>',
       '</section>',
+      '<section class="home-cowork-context-gathering" data-cowork-context-gathering hidden aria-live="polite" aria-busy="true">',
+        '<span class="home-cowork-context-gathering-mark" aria-hidden="true"><i></i><i></i><i></i></span>',
+        '<div><span>VAL</span><strong>Gathering Context</strong><p data-cowork-context-gathering-detail>VAL is preparing the selected context.</p></div>',
+      '</section>',
     '</div>'
   ].join('');
   workspaceInputPanel.hidden = false;
@@ -18795,7 +18871,21 @@ function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
     response.insertAdjacentHTML('beforeend', renderHomeCoworkMessage(role, text));
   }
   response.scrollTop = response.scrollHeight;
+  if(role === 'val') hideCoworkContextGathering();
   return response;
+}
+
+function showCoworkContextGathering(detail = ''){
+  const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
+  if(!panel) return;
+  const detailNode = panel.querySelector('[data-cowork-context-gathering-detail]');
+  if(detailNode && detail) detailNode.textContent = detail;
+  panel.hidden = false;
+}
+
+function hideCoworkContextGathering(){
+  const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
+  if(panel) panel.hidden = true;
 }
 
 function openObserverBoard(){

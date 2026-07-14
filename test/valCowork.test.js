@@ -80,7 +80,7 @@ function documents(){
   ];
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents()}={}){
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents(),hasPg=false,dbQuery}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
@@ -104,7 +104,8 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const createdTranscriptActionItems=[];
   const preparedEmailThreadDrafts=[];
   const service=createValCoworkService({
-    hasPg:()=>false,
+    hasPg:()=>hasPg,
+    dbQuery,
     getStore:()=>store,
     saveStore:value=>{store=value;},
     tenantId:()=>'tenant',
@@ -209,6 +210,40 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,appliedRelationshipOverviews,preparedTranscriptOverviews,createdTranscriptActionItems,preparedEmailThreadDrafts,get store(){return store;}};
 }
 
+function postgresCoworkDb(){
+  const tables={
+    val_cowork_sessions:new Map(),
+    val_cowork_work_items:new Map(),
+    val_cowork_action_receipts:new Map()
+  };
+  const inserts=[];
+  async function dbQuery(sql,params=[]){
+    const insert=String(sql).match(/^insert into (val_cowork_[a-z_]+) \(([^)]+)\)/i);
+    if(insert){
+      const [,table,columnText]=insert;
+      const columns=columnText.split(',').map(column=>column.trim());
+      const row=Object.fromEntries(columns.map((column,index)=>[column,params[index]]));
+      tables[table].set(row.id,{...(tables[table].get(row.id)||{}),...row});
+      inserts.push({table,row:{...tables[table].get(row.id)}});
+      return {rows:[{...tables[table].get(row.id)}],rowCount:1};
+    }
+    if(/from val_cowork_sessions/i.test(sql)){
+      const row=tables.val_cowork_sessions.get(params[0]);
+      return {rows:row?[{...row}]:[],rowCount:row?1:0};
+    }
+    if(/from val_cowork_work_items where id=/i.test(sql)){
+      const row=tables.val_cowork_work_items.get(params[0]);
+      return {rows:row?[{...row}]:[],rowCount:row?1:0};
+    }
+    if(/from val_cowork_work_items where session_id=/i.test(sql)){
+      const row=[...tables.val_cowork_work_items.values()].find(item=>String(item.session_id)===String(params[0]));
+      return {rows:row?[{...row}]:[],rowCount:row?1:0};
+    }
+    return {rows:[],rowCount:0};
+  }
+  return {dbQuery,tables,inserts};
+}
+
 test('Co-Work schema and routes are mounted as a durable service',()=>{
   for(const table of ['val_cowork_sessions','val_cowork_work_items','val_cowork_action_receipts']){
     assert.match(VAL_COWORK_SQL,new RegExp(`create table if not exists ${table}`));
@@ -221,6 +256,41 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
   assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview']);
+});
+
+test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
+  const pg=postgresCoworkDb();
+  const {service}=serviceFor({hasPg:true,dbQuery:pg.dbQuery});
+  const opened=await service.openEntry({
+    entrypointId:'project.identity',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'identity'}
+  });
+  const sessionInsert=pg.inserts.find(entry=>entry.table==='val_cowork_sessions');
+  const workItemInsert=pg.inserts.find(entry=>entry.table==='val_cowork_work_items');
+  assert.equal(typeof sessionInsert.row.working_brief_json,'string');
+  assert.equal(typeof sessionInsert.row.question_plan_json,'string');
+  assert.equal(typeof sessionInsert.row.state_json,'string');
+  assert.equal(typeof workItemInsert.row.payload_json,'string');
+  assert.equal(typeof workItemInsert.row.source_refs_json,'string');
+  assert.equal(JSON.parse(sessionInsert.row.working_brief_json).projectName,'Forever Freedom onboarding');
+  assert.ok(Array.isArray(JSON.parse(workItemInsert.row.source_refs_json)));
+
+  const responded=await service.respond(opened.session.id,{answer:[
+    'Project name: Forever Freedom organization onboarding',
+    'Serves: Forever Freedom and its first partner launch team.',
+    'Desired outcome: A ready partnership launch.'
+  ].join('\n')});
+  assert.equal(responded.session.id,opened.session.id);
+  const persisted=pg.tables.val_cowork_sessions.get(opened.session.id);
+  assert.equal(JSON.parse(persisted.state_json).answers.length,1);
+});
+
+test('Postgres Co-Work fails closed when a scoped session cannot be written',async()=>{
+  const {service}=serviceFor({hasPg:true,dbQuery:async()=>({rows:[],rowCount:0})});
+  await assert.rejects(
+    service.openEntry({entrypointId:'project.identity',scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'identity'}}),
+    /could not save this scoped Co-Work session/i
+  );
 });
 
 test('Project Interview preserves its protected question, applies only its mapped answer, and resumes at the next stage',async()=>{

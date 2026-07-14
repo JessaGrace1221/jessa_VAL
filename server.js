@@ -13929,6 +13929,65 @@ async function uploadedValDocumentContextForQuery(query){
     `Source text excerpt:\n${sourceText.slice(0,55000)}`
   ].filter(Boolean).join('\n\n');
 }
+function linkedDocumentReviewRequested(query=''){
+  const text=String(query||'');
+  return /\b(read|review|open|analy[sz]e|assess|examine|compare|look at|summari[sz]e)\b/i.test(text)
+    && /\b(document|file|attachment|agreement|contract|mou|memorandum|scope|proposal|deck)\b/i.test(text);
+}
+function linkedDocumentQueryTerms(query='',projectContext=null){
+  const stop=new Set(['about','after','again','also','and','are','can','could','document','documents','file','files','for','from','have','into','look','mou','our','please','read','review','that','the','this','with','would','you','your']);
+  const text=[query,projectContext?.projectName||'',projectContext?.projectId||''].join(' ').toLowerCase();
+  return [...new Set((text.match(/[a-z0-9]{3,}/g)||[]).filter(term=>!stop.has(term)))].slice(0,16);
+}
+function linkedDocumentScore(document={},query='',projectContext=null){
+  const title=String(document.title||'').toLowerCase();
+  const summary=String(document.summary||document.bodyPreview||'').toLowerCase();
+  const project=String(document.project||'').toLowerCase();
+  const source=[title,summary,project].join(' ');
+  let score=String(document.sourceType||'').toLowerCase()==='email_attachment' ? 20 : 0;
+  if(/\b(mou|memorandum|agreement|contract|scope|proposal)\b/i.test(query) && /\b(mou|memorandum|agreement|contract|scope|proposal)\b/.test(title)) score+=18;
+  for(const term of linkedDocumentQueryTerms(query,projectContext)){
+    if(title.includes(term)) score+=8;
+    else if(source.includes(term)) score+=2;
+  }
+  const requestedTitle=String(query||'').match(/["“]([^"”]{3,120})["”]/)?.[1]?.toLowerCase();
+  if(requestedTitle&&title.includes(requestedTitle)) score+=24;
+  return score;
+}
+async function linkedGmailAttachmentContextForQuery(query='',projectContext=null){
+  if(!linkedDocumentReviewRequested(query)) return '';
+  const result=await valDocuments.list({limit:180});
+  const candidates=(result.documents||[])
+    .filter(document=>String(document.sourceType||'').toLowerCase()==='email_attachment')
+    .map(document=>({document,score:linkedDocumentScore(document,query,projectContext)}))
+    .filter(candidate=>candidate.score>20)
+    .sort((a,b)=>b.score-a.score || String(b.document.createdAt||'').localeCompare(String(a.document.createdAt||'')));
+  const selected=candidates[0]?.document;
+  if(!selected) return '';
+  const raw=selected.raw&&typeof selected.raw==='object' ? selected.raw : {};
+  const messageId=String(selected.sourceId||raw.messageId||raw.message_id||'').trim();
+  const attachmentId=String(raw.attachmentId||raw.attachment_id||'').trim();
+  if(!messageId||!attachmentId) return '';
+  const payload=await gmailFetchJson(
+    `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    {},
+    'Gmail document attachment'
+  );
+  if(!payload?.data) return '';
+  const text=(await extractUploadedText({
+    originalname:selected.title||'email-attachment',
+    mimetype:selected.type||raw.mimeType||raw.contentType||'',
+    buffer:Buffer.from(payload.data,'base64url')
+  })).trim();
+  if(!text) return '';
+  return [
+    'Linked VAL attachment source found.',
+    `Title: ${selected.title}`,
+    'Source: Gmail attachment linked in VAL',
+    `Readable characters available: ${text.length}`,
+    `Source text excerpt:\n${text.slice(0,55000)}`
+  ].join('\n\n');
+}
 function micheleBookConfig(){
   return {
     title:process.env.MICHELE_BOOK_TITLE || CLIENT_CONFIG.projectName || 'The Big Trick',
@@ -27511,15 +27570,21 @@ app.post('/api/val/chat',async(req,res)=>{
         `Google Drive is only needed if you want me to create or update a Google Doc output. For reading and editorial review, I can use the uploaded VAL manuscript.`
       ].join('\n'));
     }
-    const uploadedDocs=await uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
+    const [uploadedDocs,linkedAttachmentDocs]=await Promise.all([
+      uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`),
+      linkedGmailAttachmentContextForQuery(lastUser+'\n'+memoryQuery,projectContext).catch(error=>{
+        console.warn('Linked Gmail attachment lookup failed:',error.message);
+        return '';
+      })
+    ]);
     const [memory,ghlContext,googleDocs,executiveBriefing]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
-      uploadedDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
+      uploadedDocs||linkedAttachmentDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
       isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
     ]);
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});

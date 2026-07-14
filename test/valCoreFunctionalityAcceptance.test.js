@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const hearthJs = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
+const serverJs = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const clickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
 const coworkRegistry = fs.readFileSync(path.join(root, 'docs', 'VAL_COWORK_ENTRYPOINT_REGISTRY.md'), 'utf8');
 const acceptanceGate = fs.readFileSync(path.join(root, 'docs', 'VAL_CORE_FUNCTIONALITY_ACCEPTANCE.md'), 'utf8');
@@ -49,6 +50,15 @@ test('canonical core entry points remain source-specific and review-gated', () =
   ].forEach((required) => assert.ok(hearthJs.includes(required), 'Missing canonical core route: ' + required));
   assert.match(hearthJs, /Documents are now used from their linked Project Manager/);
   assert.match(hearthJs, /Commitment follow-through is now handled from its source/);
+});
+
+test('explicit linked Gmail attachment review provides one readable source to VAL', () => {
+  assert.match(serverJs, /async function linkedGmailAttachmentContextForQuery/);
+  assert.match(serverJs, /Linked VAL attachment source found/);
+  assert.match(serverJs, /Gmail document attachment/);
+  assert.match(serverJs, /extractUploadedText\(\{/);
+  assert.match(serverJs, /Relevant linked VAL attachment source/);
+  assert.match(serverJs, /linkedGmailAttachmentContextForQuery\(lastUser\+'\\n'\+memoryQuery,projectContext\)/);
 });
 
 test('core drawer Co-Work controls route to selected canonical entries only', () => {
