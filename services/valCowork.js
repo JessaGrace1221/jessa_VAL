@@ -723,6 +723,106 @@ function projectRiskQuestion(state={},brief={}){
   };
 }
 
+function projectImportanceTemplate(value={},brief={}){
+  const raw=typeof value === 'string' ? {whyItMatters:value} : (value || {});
+  const whyItMatters=compactText(raw.whyItMatters || raw.why_it_matters || raw.strategicImportance || raw.strategic_importance || raw.importance || raw.consequence || raw.opportunity || '',700);
+  return {
+    id:compactText(raw.id || stableKey(`project_importance_${brief.entityId || brief.projectName || 'project'}`),220),
+    whyItMatters,
+    strategicImportance:compactText(raw.strategicImportance || raw.strategic_importance || whyItMatters,700),
+    whyNow:compactText(raw.whyNow || raw.why_now || raw.timing || '',500),
+    basis:compactText(raw.basis || raw.evidenceBasis || raw.evidence_basis || raw.evidence || '',700),
+    confidence:compactText(raw.confidence || '',120),
+    sourceRefs:safeArray(raw.sourceRefs || raw.source_refs || brief.sourceRefs).map(sourceRef)
+  };
+}
+function normalizeProjectImportance(value={},brief={}){
+  return projectImportanceTemplate(value,brief);
+}
+function missingProjectImportanceFields(value={},brief={}){
+  const importance=normalizeProjectImportance(value,brief);
+  const missing=[];
+  if(!compactText(importance.whyItMatters)) missing.push('consequence or opportunity');
+  if(!compactText(importance.whyNow)) missing.push('why now');
+  if(!compactText(importance.basis)) missing.push('basis');
+  if(!compactText(importance.confidence)) missing.push('confidence');
+  return missing;
+}
+function projectImportanceLine(value={},brief={}){
+  const importance=normalizeProjectImportance(value,brief);
+  return [
+    importance.whyItMatters || 'Consequence or opportunity',
+    'why now: ' + (importance.whyNow || '...'),
+    'basis: ' + (importance.basis || '...'),
+    'confidence: ' + (importance.confidence || '...')
+  ].join(' | ');
+}
+function parseProjectImportance(answer='',brief={},current={}){
+  const source=multilineText(answer,5000).trim();
+  if(!source) return normalizeProjectImportance(current,brief);
+  const parts=source.split('|').map((part)=>part.trim()).filter(Boolean);
+  let whyItMatters=monitoringValueFromLine(source,'consequence or opportunity|why it matters|strategic importance|importance');
+  let whyNow=monitoringValueFromLine(source,'why now|timing');
+  let basis=monitoringValueFromLine(source,'basis|evidence basis|evidence');
+  let confidence=monitoringValueFromLine(source,'confidence');
+  if(parts.length >= 4){
+    whyItMatters=whyItMatters || parts[0].replace(/^\s*(?:consequence or opportunity|why it matters|strategic importance|importance)\s*:\s*/i,'');
+    whyNow=whyNow || parts[1].replace(/^\s*(?:why now|timing)\s*:\s*/i,'');
+    basis=basis || parts[2].replace(/^\s*(?:basis|evidence basis|evidence)\s*:\s*/i,'');
+    confidence=confidence || parts[3].replace(/^\s*confidence\s*:\s*/i,'');
+  }
+  return normalizeProjectImportance({whyItMatters,whyNow,basis,confidence,sourceRefs:brief.sourceRefs},brief);
+}
+function buildProjectImportanceBrief(project={},input={}){
+  const metadata=project.metadataJson || project.metadata || {};
+  const references=projectIdentityReferences(project,input);
+  const existingRaw=project.projectImportance || metadata.projectImportance || {
+    whyItMatters:project.whyItMatters || metadata.whyItMatters || project.strategicImportance || metadata.strategicImportance || '',
+    strategicImportance:project.strategicImportance || metadata.strategicImportance || '',
+    whyNow:project.whyNow || metadata.whyNow || '',
+    basis:project.importanceBasis || metadata.importanceBasis || '',
+    confidence:project.importanceConfidence || metadata.importanceConfidence || ''
+  };
+  const currentImportance=normalizeProjectImportance(existingRaw,{sourceRefs:references});
+  return {
+    id:stableKey(`working_brief_project_importance_${project.projectId || project.id || input.scope?.entityId || project.name}`),
+    entrypointId:'project.why_it_matters',
+    entityType:'project_section',
+    entityId:String(project.projectId || project.id || input.scope?.entityId || ''),
+    sectionId:'why_it_matters',
+    projectName:compactText(project.name || project.displayName || metadata.projectName || 'Project',180),
+    currentImportance,
+    sourceRefs:references,
+    objective:'State the selected project\'s concrete consequence or opportunity, why it matters now, and whether the basis is source-backed or executive judgment.',
+    completionCondition:'The consequence or opportunity, why-now, basis, confidence, and immutable source references are explicit.',
+    approvalBoundary:'Applying this judgment changes only the internal Project Managers importance and judgment packet. It does not create a task, message, CRM update, calendar change, or alter source evidence.'
+  };
+}
+function projectImportanceQuestion(state={},brief={}){
+  const importance=normalizeProjectImportance(state.draftProjectImportance || brief.currentImportance || {},brief);
+  const receiptLabels=safeArray(brief.sourceRefs).map((ref)=>compactText(ref.quoteOrSummary || ref.quote_or_summary || ref.sourceId || ref.source_id || '',180)).filter(Boolean).slice(0,3);
+  if(state.stage === 'importance'){
+    return {
+      targetField:'project_manager_judgment_packet.{why_it_matters,evidence_summary,confidence} + project_identity_packet.strategic_importance + project_next_action_packet.why_now',
+      question:`What concrete consequence or opportunity makes ${brief.projectName || 'this project'} matter, why now, and what is the basis? Add one line: consequence or opportunity | why now | basis (source receipt or executive judgment) | confidence.`,
+      detail:`This fills Project Managers > Why it matters. ${receiptLabels.length ? 'Available source receipts: ' + receiptLabels.join('; ') + '. ' : ''}If this is your judgment rather than a source fact, say “executive judgment” in the basis.`
+    };
+  }
+  if(state.stage === 'importance_details'){
+    const missing=missingProjectImportanceFields(importance,brief);
+    return {
+      targetField:'project_manager_judgment_packet.{why_it_matters,evidence_summary,confidence} + project_identity_packet.strategic_importance + project_next_action_packet.why_now',
+      question:`Fill only these missing importance details: ${missing.join(', ')}.\n\n${projectImportanceLine(importance,brief)}`,
+      detail:'Keep source-backed facts and executive judgment clearly distinct.'
+    };
+  }
+  return {
+    targetField:'project_manager_judgment_packet.why_it_matters',
+    question:'Review the prepared strategic judgment, then apply it to this Project Manager.',
+    detail:'Applying changes only the selected internal importance packet. Nothing external happens.'
+  };
+}
+
 function answerField(answer='', labels=''){
   const source=String(answer || '');
   const match=source.match(new RegExp(`(?:^|[;\\n])\\s*(?:${labels})\\s*:\\s*([^;\\n]+)`, 'i'));
@@ -1280,6 +1380,12 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     objective:'Protect the relationships that make the selected project viable.',
     completionCondition:'Each rule has an existing project relationship, cadence, useful touch, trust risk, and review trigger.'
   },
+  'project.why_it_matters':{
+    id:'project.why_it_matters',surface:'project_managers',scopeType:'project_section',sectionId:'why_it_matters',
+    requiredPackets:['project_packet','project_manager_judgment_packet','project_identity_packet','project_next_action_packet'],
+    objective:'State the selected project\'s concrete consequence or opportunity, why it matters now, and whether the basis is source-backed or executive judgment.',
+    completionCondition:'The consequence or opportunity, why-now, basis, confidence, and immutable source references are explicit.'
+  },
   'project.risk':{
     id:'project.risk',surface:'project_managers',scopeType:'project_section',sectionId:'risk_blocker',
     requiredPackets:['project_packet','project_relationships_packet','project_risk_packet'],
@@ -1332,6 +1438,7 @@ function createValCoworkService({
   applyProjectMilestones=async()=>null,
   applyProjectMonitoring=async()=>null,
   applyProjectRelationshipNurture=async()=>null,
+  applyProjectImportance=async()=>null,
   applyProjectRisk=async()=>null,
   applyProjectWorkstreams=async()=>null,
   applyProjectNextMove=async()=>null,
@@ -1429,6 +1536,7 @@ function createValCoworkService({
           draftMilestones:safeArray(state.draftMilestones),
           draftMonitoringRules:safeArray(state.draftMonitoringRules),
           draftRelationshipNurtureRules:safeArray(state.draftRelationshipNurtureRules),
+          draftProjectImportance:state.draftProjectImportance || null,
           draftProjectRisk:state.draftProjectRisk || null,
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null
@@ -1692,6 +1800,41 @@ function createValCoworkService({
     session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
     await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
   }
+  async function openProjectImportanceEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['project.why_it_matters'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
+    if(!entityId) throw new Error('Project Managers needs the selected project before it can clarify why the work matters.');
+    const project=await loadProject(entityId);
+    if(!project) throw new Error('VAL could not load the selected project. It did not substitute another project.');
+    const brief=buildProjectImportanceBrief(project,input);
+    if(!brief.entityId) throw new Error('The selected project has no durable identifier yet.');
+    const state={stage:'importance',draftProjectImportance:brief.currentImportance,answers:[]};
+    const question=projectImportanceQuestion(state,brief);
+    const now=new Date().toISOString(),sc=scope();
+    const session=await saveSession({id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:entry.sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now});
+    const workItem=await saveWorkItem({id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'project_importance',title:`Why ${brief.projectName} matters`,status:'needs_input',payloadJson:{projectId:brief.entityId,projectName:brief.projectName,projectImportance:state.draftProjectImportance,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now});
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondProjectImportance(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.draftProjectImportance=parseProjectImportance(answer,brief,state.draftProjectImportance || brief.currentImportance || {});
+    const importance=normalizeProjectImportance(state.draftProjectImportance,brief);
+    const missing=missingProjectImportanceFields(importance,brief);
+    let question,message='';
+    if(!missing.length){
+      state.stage='ready_to_apply';session.status='needs_review';workItem.status='needs_review';
+      workItem.payloadJson={...workItem.payloadJson,projectId:brief.entityId,projectName:brief.projectName,projectImportance:importance,completionCondition:brief.completionCondition};
+      question=projectImportanceQuestion(state,brief);message='VAL prepared the project\'s strategic judgment for review. Apply it when this is true.';
+    }else{
+      state.stage='importance_details';session.status='needs_input';workItem.status='needs_input';
+      question=projectImportanceQuestion(state,brief);message=question.question;
+    }
+    session.stateJson=state;session.questionPlanJson=[...(session.questionPlanJson || []),question];session.updatedAt=new Date().toISOString();workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);await saveWorkItem(workItem);return publicResult(session,workItem,message,question);
+  }
   async function openProjectRiskEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.risk'];
     const scopeInput=input.scope || {};
@@ -1881,6 +2024,7 @@ function createValCoworkService({
     if(entrypointId === 'project.milestones') return openProjectMilestonesEntry(input);
     if(entrypointId === 'project.monitoring') return openProjectMonitoringEntry(input);
     if(entrypointId === 'project.relationship_nurture') return openProjectRelationshipNurtureEntry(input);
+    if(entrypointId === 'project.why_it_matters') return openProjectImportanceEntry(input);
     if(entrypointId === 'project.risk') return openProjectRiskEntry(input);
     if(entrypointId === 'project.next_move') return openProjectNextMoveEntry(input);
     if(entrypointId === 'transcript.working_brief') return openTranscriptWorkingBriefEntry(input);
@@ -1941,6 +2085,7 @@ function createValCoworkService({
     if(session.entrypointId === 'project.milestones') return respondProjectMilestones(session,workItem,answer);
     if(session.entrypointId === 'project.monitoring') return respondProjectMonitoring(session,workItem,answer);
     if(session.entrypointId === 'project.relationship_nurture') return respondProjectRelationshipNurture(session,workItem,answer);
+    if(session.entrypointId === 'project.why_it_matters') return respondProjectImportance(session,workItem,answer);
     if(session.entrypointId === 'project.risk') return respondProjectRisk(session,workItem,answer);
     if(session.entrypointId === 'project.next_move') return respondProjectNextMove(session,workItem,answer);
     if(session.entrypointId === 'transcript.working_brief') return respondTranscriptWorkingBrief(session,workItem,answer);
@@ -2181,6 +2326,20 @@ function createValCoworkService({
       const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_relationship_nurture',status:'completed',summary:`Applied ${relationshipNurtureRules.length} relationship nurture rule${relationshipNurtureRules.length === 1 ? '' : 's'} to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',relationshipNurtureRules,noExternalAction:true},createdAt:now});
       await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
     }
+    if(workItem.workType === 'project_importance'){
+      if(workItem.status !== 'needs_review') throw new Error('The project importance judgment must be complete and reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this prepared item is missing.');
+      const payload=workItem.payloadJson || {};
+      const brief=session.workingBriefJson || {};
+      const projectImportance=normalizeProjectImportance(payload.projectImportance || {},brief);
+      if(missingProjectImportanceFields(projectImportance,brief).length) throw new Error('The project importance judgment is incomplete and cannot be applied yet.');
+      const project=await applyProjectImportance({projectId:payload.projectId || session.scopeId,projectName:payload.projectName || brief.projectName || 'Project',projectImportance,sourceRefs:workItem.sourceRefsJson || [],sessionId:session.id,workItemId:workItem.id});
+      if(!project) throw new Error('VAL could not save the importance judgment to the selected Project Manager.');
+      const now=new Date().toISOString();workItem.status='applied';workItem.updatedAt=now;session.status='completed';session.updatedAt=now;session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();const receipt=await saveReceipt({id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_project_importance',status:'completed',summary:`Applied the strategic judgment to ${payload.projectName || 'the selected Project Manager'}.`,payloadJson:{projectId:payload.projectId || session.scopeId,projectName:payload.projectName || '',projectImportance,noExternalAction:true},createdAt:now});
+      await saveSession(session);await saveWorkItem(workItem);return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
+    }
     if(workItem.workType === 'project_risk'){
       if(workItem.status !== 'needs_review') throw new Error('The project risk assessment must be complete and reviewed before it can be applied.');
       const session=await getSession(workItem.sessionId);
@@ -2246,6 +2405,7 @@ module.exports={
   buildProjectMilestonesBrief,
   buildProjectMonitoringBrief,
   buildProjectRelationshipNurtureBrief,
+  buildProjectImportanceBrief,
   buildProjectRiskBrief,
   buildTranscriptWorkingBrief,
   buildProjectWorkstreamsBrief,
@@ -2260,6 +2420,8 @@ module.exports={
   projectMonitoringQuestion,
   missingRelationshipNurtureFields,
   projectRelationshipNurtureQuestion,
+  missingProjectImportanceFields,
+  projectImportanceQuestion,
   missingProjectRiskFields,
   projectRiskQuestion,
   missingWorkstreamFields,

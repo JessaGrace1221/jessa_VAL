@@ -16810,6 +16810,7 @@ async function updateProjectProfileLocal(projectId='',patch={}){
     const workstreams=Array.isArray(patch.workstreams)?patch.workstreams:[];
     const milestones=Array.isArray(patch.milestones)?patch.milestones:[];
     const relationshipNurtureRules=Array.isArray(patch.relationshipNurtureRules)?patch.relationshipNurtureRules:[];
+    const projectImportance=patch.projectImportance&&typeof patch.projectImportance==='object'&&!Array.isArray(patch.projectImportance)?patch.projectImportance:null;
     const projectRisk=patch.projectRisk&&typeof patch.projectRisk==='object'&&!Array.isArray(patch.projectRisk)?patch.projectRisk:null;
     const preparedWork=Array.isArray(patch.preparedWork)?patch.preparedWork:[];
     const projectPeople=Array.isArray(patch.projectPeople)
@@ -16860,10 +16861,16 @@ async function updateProjectProfileLocal(projectId='',patch={}){
       ...(patch.projectInterviewNotes?{projectInterviewNotes:patch.projectInterviewNotes}:{}),
       ...(patch.whatValNowKnows?{whatValNowKnows:patch.whatValNowKnows}:{}),
       ...(patch.ownerMonitoringNotes?{ownerMonitoringNotes:patch.ownerMonitoringNotes}:{}),
+      ...(patch.whyItMatters?{whyItMatters:patch.whyItMatters}:{}),
+      ...(patch.strategicImportance?{strategicImportance:patch.strategicImportance}:{}),
+      ...(patch.whyNow?{whyNow:patch.whyNow}:{}),
+      ...(patch.importanceBasis?{importanceBasis:patch.importanceBasis}:{}),
+      ...(patch.importanceConfidence?{importanceConfidence:patch.importanceConfidence}:{}),
       ...(monitoringRules.length?{monitoringRules}:{}),
       ...(workstreams.length?{workstreams}:{}),
       ...(milestones.length?{milestones}:{}),
       ...(relationshipNurtureRules.length?{relationshipNurtureRules}:{}),
+      ...(projectImportance?{projectImportance}:{}),
       ...(projectRisk?{projectRisk}:{}),
       ...(preparedWork.length?{preparedWork:preparedWork.map(item=>({title:item,summary:item}))}:{}),
       ...(projectPeople?{projectPeople}:{}),
@@ -17502,6 +17509,12 @@ function projectIndexItemFromProfile(profile={}){
     projectInterviewNotes:metadata.projectInterviewNotes||'',
     whatValNowKnows:metadata.whatValNowKnows||'',
     ownerMonitoringNotes:metadata.ownerMonitoringNotes||'',
+    whyItMatters:metadata.whyItMatters||metadata.projectImportance?.whyItMatters||'',
+    strategicImportance:metadata.strategicImportance||metadata.projectImportance?.strategicImportance||'',
+    whyNow:metadata.whyNow||metadata.projectImportance?.whyNow||'',
+    importanceBasis:metadata.importanceBasis||metadata.projectImportance?.basis||'',
+    importanceConfidence:metadata.importanceConfidence||metadata.projectImportance?.confidence||'',
+    projectImportance:metadata.projectImportance&&typeof metadata.projectImportance==='object'&&!Array.isArray(metadata.projectImportance)?metadata.projectImportance:null,
     monitoringRules:Array.isArray(metadata.monitoringRules)?metadata.monitoringRules:[],
     workstreams:Array.isArray(metadata.workstreams)?metadata.workstreams:[],
     milestones:Array.isArray(metadata.milestones)?metadata.milestones:[],
@@ -24950,6 +24963,44 @@ async function applyCoworkProjectRelationshipNurture({projectId,projectName='',r
   const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
   return refreshed ? projectIndexItemFromProfile(refreshed) : null;
 }
+async function applyCoworkProjectImportance({projectId,projectName='',projectImportance={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=await listProjectProfiles({limit:200});
+  const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  if(!found) return null;
+  const current=projectIndexItemFromProfile(found);
+  const raw=projectImportance&&typeof projectImportance==='object'&&!Array.isArray(projectImportance)?projectImportance:{};
+  const whyItMatters=String(raw.whyItMatters||raw.why_it_matters||raw.strategicImportance||raw.strategic_importance||'').trim();
+  const whyNow=String(raw.whyNow||raw.why_now||'').trim();
+  const basis=String(raw.basis||raw.evidenceBasis||raw.evidence_basis||raw.evidence||'').trim();
+  const confidence=String(raw.confidence||'').trim();
+  if(!whyItMatters||!whyNow||!basis||!confidence) return null;
+  const refs=Array.isArray(raw.sourceRefs)?raw.sourceRefs:(Array.isArray(sourceRefs)?sourceRefs:[]);
+  const preparedImportance={
+    id:String(raw.id||stableKey(`project_importance_${projectId}`)).trim(),
+    whyItMatters,
+    strategicImportance:String(raw.strategicImportance||raw.strategic_importance||whyItMatters).trim(),
+    whyNow,
+    basis,
+    confidence,
+    sourceRefs:refs
+  };
+  const sourceSummary=refs.map((ref)=>ref.quote_or_summary||ref.quoteOrSummary||ref.summary||'').filter(Boolean).slice(0,3).join(' | ');
+  await updateProjectProfileLocal(projectId,{
+    name:current.name,
+    whyItMatters:preparedImportance.whyItMatters,
+    strategicImportance:preparedImportance.strategicImportance,
+    whyNow:preparedImportance.whyNow,
+    importanceBasis:preparedImportance.basis,
+    importanceConfidence:preparedImportance.confidence,
+    projectImportance:preparedImportance,
+    rawContext:[
+      current.sourceDetails?.rawContext||'',
+      `Co-Work importance judgment applied from session ${sessionId||'unknown'}: ${sourceSummary||preparedImportance.basis}`
+    ].filter(Boolean).join('\n')
+  });
+  const refreshed=(await listProjectProfiles({limit:200})).find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
+  return refreshed ? projectIndexItemFromProfile(refreshed) : null;
+}
 async function applyCoworkProjectRisk({projectId,projectName='',projectRisk={},sourceRefs=[],sessionId='',workItemId=''}={}){
   const profiles=await listProjectProfiles({limit:200});
   const found=profiles.find((profile)=>projectProfileMatchesIdentifier(profile,projectId));
@@ -25045,6 +25096,7 @@ const valCowork = registerValCoworkRoutes(app,{
   applyProjectMilestones:applyCoworkProjectMilestones,
   applyProjectMonitoring:applyCoworkProjectMonitoring,
   applyProjectRelationshipNurture:applyCoworkProjectRelationshipNurture,
+  applyProjectImportance:applyCoworkProjectImportance,
   applyProjectRisk:applyCoworkProjectRisk,
   applyProjectWorkstreams:applyCoworkProjectWorkstreams,
   applyProjectNextMove:applyCoworkProjectNextMove,
