@@ -16700,7 +16700,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
           '<span>VAL</span>',
           '<div class="val-thinking-state" role="status" aria-live="polite">',
             '<div class="val-thinking-pulse" aria-hidden="true"><i></i><i></i><i></i></div>',
-            '<p><strong>VAL is observing and witnessing...</strong><small>This can take a moment because there are no canned responses.</small></p>',
+            '<p><strong>VAL is observing and witnessing...</strong><small>Your answer stays here while VAL prepares a thoughtful response.</small></p>',
           '</div>',
         '</section>'
       ].join('') : '',
@@ -16830,7 +16830,14 @@ async function saveValWitnessingCard(category){
   if(!(await ensureRuntimeOpenAIForWitnessing())) return;
   try{
     const sessionId = await ensureValWitnessingSession();
-    const result = await postJson('/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/witnessing-cards/' + encodeURIComponent(card.id), {rawResponse});
+    const result = await postJson(
+      '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/witnessing-cards/' + encodeURIComponent(card.id),
+      {rawResponse},
+      {
+        timeoutMs:55000,
+        timeoutMessage:'VAL took longer than expected. Your answer is still here. Please try again.'
+      }
+    );
     const witness = normalizeValWitnessingPayload(result?.witness || {}, rawResponse);
     valWitnessingState[card.category] = {rawResponse, witness, graph: result?.graph || null};
     const next = card.next ? valWitnessingCard(card.next) : null;
@@ -16843,11 +16850,14 @@ async function saveValWitnessingCard(category){
     renderValWitnessingConversation({card, rawResponse, state:'witnessed', witness});
     hydrateValDrawer();
   }catch(error){
+    const message = /timed out|taking longer/i.test(error.message || '')
+      ? 'VAL took longer than expected. Your answer is still here. Please try again.'
+      : (error.message || "Live witnessing is unavailable. I will not use a canned VAL response here.");
     renderValWitnessingConversation({
       card,
       rawResponse,
       state: /Live observation model unavailable|Live witnessing model unavailable|Live next-question model unavailable|previous Witnessing Session flow|wrong question/i.test(error.message || '') ? 'paused' : 'question',
-      error: error.message || "Live witnessing is unavailable. I will not use a canned VAL response here."
+      error: message
     });
   }
   openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});

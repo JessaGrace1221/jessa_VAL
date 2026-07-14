@@ -169,6 +169,10 @@ const GOALL_LEAD_IMPORT_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL
 const GOALL_LEAD_INDUSTRIES_PER_RUN = Math.min(Math.max(Number(process.env.GOALL_LEAD_INDUSTRIES_PER_RUN)||20,5),GOALL_LEAD_SEARCH_CALLS_MAX);
 const GOALL_LEAD_MIXED_JOB_CONCURRENCY = Math.min(Math.max(Number(process.env.GOALL_LEAD_MIXED_JOB_CONCURRENCY)||20,1),20);
 const OPENAI_WEB_RESEARCH_TIMEOUT_MS = Number(process.env.OPENAI_WEB_RESEARCH_TIMEOUT_MS) || 12000;
+const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_OBSERVATION_TIMEOUT_MS)||22000,8000),60000);
+const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_RESPONSE_TIMEOUT_MS)||16000,8000),60000);
+const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
+const VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS)||7000,3000),20000);
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -3689,7 +3693,14 @@ async function repairPartnershipProtocolJson({raw='',card,rawResponse,priorChain
     prior_evidence_chain:compactPartnershipEvidenceChain(priorChain),
     required_output:'valid JSON object for living_executive_graph_v1'
   });
-  const repaired=await callValModel({system,user,maxTokens:5200,temperature:0.08,json:true});
+  const repaired=await callValModel({
+    system,
+    user,
+    maxTokens:2200,
+    temperature:0.08,
+    json:true,
+    timeoutMs:VAL_WITNESSING_REPAIR_TIMEOUT_MS
+  });
   return parseModelJson(repaired);
 }
 async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[]}){
@@ -3719,13 +3730,23 @@ async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[
     current_answer:rawResponse,
     prior_evidence_chain:compactPartnershipEvidenceChain(priorChain),
     prior_current_state:partnershipCurrentState(priorChain,card),
-    prior_confirmed_context:priorImports.map(i=>({category:i.category,structuredSummary:i.structuredSummary})).slice(-6),
+    prior_confirmed_context:compactPartnershipPriorContext(priorImports),
     required_protocol:'living_executive_graph_v1'
   });
-  const raw=await callValModel({system,user,maxTokens:6500,temperature:0.12,json:true}).catch(e=>{
-    if(!IS_PRODUCTION) console.error('[Witnessing observe] live model call failed:',e.message);
-    return null;
-  });
+  let raw;
+  try{
+    raw=await callValModel({
+      system,
+      user,
+      maxTokens:2600,
+      temperature:0.12,
+      json:true,
+      timeoutMs:VAL_WITNESSING_OBSERVATION_TIMEOUT_MS
+    });
+  }catch(error){
+    console.warn('[Witnessing observe] model call failed for card',card.id,':',error.message);
+    throw new Error('VAL is taking longer than expected. Your answer is still here. Please try again.');
+  }
   try{
     let parsed=parseModelJson(raw);
     const graph=normalizePartnershipProtocolGraph(parsed,card,rawResponse);
@@ -3744,7 +3765,7 @@ async function observePartnershipProtocolAnswer({card,rawResponse,priorImports=[
       return graph;
     }catch(repairError){
       if(!IS_PRODUCTION) console.error('[Witnessing observe] repair failed:',repairError.message);
-      throw new Error('Live observation model unavailable. VAL will not use canned observer frames.');
+      throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
     }
   }
 }
@@ -3863,7 +3884,14 @@ async function repairPartnershipWitnessJson({raw='',card,rawResponse,graph,prior
     used_language:priorWitnessLanguage(priorImports),
     required_output:'valid JSON witness response'
   });
-  const repaired=await callValModel({system,user,maxTokens:1800,temperature:0.36,json:true});
+  const repaired=await callValModel({
+    system,
+    user,
+    maxTokens:900,
+    temperature:0.36,
+    json:true,
+    timeoutMs:VAL_WITNESSING_REPAIR_TIMEOUT_MS
+  });
   return parseModelJson(repaired);
 }
 function priorPartnershipAnswers(priorImports=[]){
@@ -3897,6 +3925,18 @@ function compactPartnershipEvidenceChain(chain=[]){
     C:{variable:entry.confirmation_variable,value:entry.C?.value||'pending',status:entry.C?.status||'pending'},
     goal:entry.goal||''
   }));
+}
+function compactPartnershipPriorContext(priorImports=[]){
+  return (Array.isArray(priorImports)?priorImports:[])
+    .filter(item=>String(item.category||'').startsWith('witness_'))
+    .map(item=>({
+      category:item.category,
+      card:item.structuredSummary?.card?.title||'',
+      observation:primaryPartnershipObservation(item.structuredSummary?.livingExecutiveGraph||{}),
+      witness_lines:normalizeWitnessLines(item.structuredSummary?.witness?.lines).slice(0,3),
+      confirmation:item.structuredSummary?.confirmation?.status||'pending'
+    }))
+    .slice(-6);
 }
 function partnershipThemeSignals(evidenceChain=[]){
   const text=evidenceChainText(evidenceChain);
@@ -4019,7 +4059,14 @@ async function composePartnershipProtocolNextQuestion({currentCard,nextCard,rawR
     good_pattern:'Earlier, you described relationships as something you protect, not something you optimize. Then your story turned at the moment work became meaningful instead of merely successful. When do you feel most aligned, when your actions, relationships, and purpose are all pointing in the same direction?',
     bad_patterns:['What makes you feel aligned?','Based on your answers, it seems you value relationships and purpose.']
   });
-  const raw=await callValModel({system,user,maxTokens:420,temperature:0.35,json:false}).catch(()=>null);
+  const raw=await callValModel({
+    system,
+    user,
+    maxTokens:260,
+    temperature:0.35,
+    json:false,
+    timeoutMs:VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS
+  }).catch(()=>null);
   const clean=String(raw||'').replace(/^["'\s]+|["'\s]+$/g,'').trim();
   const mentionsAlignment=!/alignment|aligned/i.test(nextCard.questionGoal||'')||/\balign(?:ed|ment)?\b/i.test(clean);
   if(clean&&clean.length>30&&clean.length<520&&mentionsAlignment&&!/\b(i hear you|thank you for sharing|based on your answers|it sounds like|as an ai|the user)\b/i.test(clean)&&contextualQuestionCarriesChain(clean,evidenceChain)) return clean.slice(0,900);
@@ -4067,12 +4114,22 @@ async function witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImp
     current_state:currentState,
     carried_questions_so_far:partnershipCarriedQuestions(priorImports),
     used_language:priorWitnessLanguage(priorImports),
-    prior_context:priorImports.map(i=>({category:i.category,structuredSummary:i.structuredSummary})).slice(-4)
+    prior_context:compactPartnershipPriorContext(priorImports)
   });
-  const raw=await callValModel({system,user,maxTokens:1800,temperature:0.42,json:true}).catch(e=>{
-    if(!IS_PRODUCTION) console.error('[Witnessing response] live model call failed:',e.message);
-    return null;
-  });
+  let raw;
+  try{
+    raw=await callValModel({
+      system,
+      user,
+      maxTokens:900,
+      temperature:0.42,
+      json:true,
+      timeoutMs:VAL_WITNESSING_RESPONSE_TIMEOUT_MS
+    });
+  }catch(error){
+    console.warn('[Witnessing response] model call failed for card',card.id,':',error.message);
+    throw new Error('VAL is taking longer than expected. Your answer is still here. Please try again.');
+  }
   try{
     const parsed=parseModelJson(raw);
     return normalizePartnershipWitnessResponse(parsed,graph,priorImports);
@@ -4085,7 +4142,7 @@ async function witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImp
       if(!IS_PRODUCTION) console.error('[Witnessing response] repair failed:',repairError.message);
     }
   }
-  return fallbackPartnershipProtocolWitness({card,rawResponse,graph});
+  throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
 }
 function partnershipGraphItems(category,graph){
   const buckets=['facts','preferences','observations','hypotheses','principles','protected','executive_vocabulary','stewardship_implications'];
@@ -7418,10 +7475,12 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
-    const graph=await observePartnershipProtocolAnswer({card,rawResponse,priorImports});
-    const witness=await witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports});
     const nextCard=nextPartnershipProtocolCard(card);
-    const contextualNextQuestion=await composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse,graph,priorImports});
+    const graph=await observePartnershipProtocolAnswer({card,rawResponse,priorImports});
+    const [witness,contextualNextQuestion]=await Promise.all([
+      witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImports}),
+      composePartnershipProtocolNextQuestion({currentCard:card,nextCard,rawResponse,graph,priorImports})
+    ]);
     if(contextualNextQuestion) witness.next_question=contextualNextQuestion;
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
@@ -20113,8 +20172,8 @@ async function ghlPlatformContext(query,dashboard,opts={}){
     notes?'Targeted GHL note and call transcript history:\n'+notes:''
   ].filter(Boolean).join('\n\n');
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false}){
-  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json});
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,timeoutMs=0}){
+  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,timeoutMs});
 }
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
@@ -20152,7 +20211,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,timeoutMs=0}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -20172,20 +20231,23 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     temperature
   };
   if(json) body.text = {format:{type:'json_object'}};
-  let r=await fetch('https://api.openai.com/v1/responses',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
-    body:JSON.stringify(body)
-  });
-  let d=await r.json();
-  if(d.error && /temperature/i.test(d.error.message||'')){
-    delete body.temperature;
-    r=await fetch('https://api.openai.com/v1/responses',{
+  const request=async()=>{
+    const options={
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':`Bearer ${openAiKey}`},
       body:JSON.stringify(body)
-    });
-    d=await r.json();
+    };
+    const r=timeoutMs
+      ? await fetchWithTimeout('https://api.openai.com/v1/responses',options,timeoutMs,'OpenAI response')
+      : await fetch('https://api.openai.com/v1/responses',options);
+    const d=await readJsonResponse(r);
+    if(!r.ok&&!d.error) throw new Error(`OpenAI response failed (${r.status}): ${d.raw||'upstream error'}`);
+    return d;
+  };
+  let d=await request();
+  if(d.error && /temperature/i.test(d.error.message||'')){
+    delete body.temperature;
+    d=await request();
   }
   if(d.error) throw new Error(d.error.message);
   return responseText(d);

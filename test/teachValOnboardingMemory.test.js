@@ -590,3 +590,23 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/status:'Witnessed'/);
   assert.doesNotMatch(server,/Memory saved/);
 });
+
+test('Witnessing Session bounds model work to one responsive conversation turn',()=>{
+  const observer=server.match(/async function observePartnershipProtocolAnswer[\s\S]*?\n}\nfunction userFacingWitnessLine/)?.[0] || '';
+  const witness=server.match(/async function witnessPartnershipProtocolAnswer[\s\S]*?\n}\nfunction partnershipGraphItems/)?.[0] || '';
+  const route=server.match(/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId',[\s\S]*?\n}\);\napp\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'/)?.[0] || '';
+  const openAi=server.match(/async function callOpenAIResponses[\s\S]*?\n}\n\nasync function callOpenAIWebResearch/)?.[0] || '';
+
+  assert.match(server,/const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS/);
+  assert.match(server,/const VAL_WITNESSING_RESPONSE_TIMEOUT_MS/);
+  assert.match(server,/const VAL_WITNESSING_REPAIR_TIMEOUT_MS/);
+  assert.match(openAi,/fetchWithTimeout\('https:\/\/api\.openai\.com\/v1\/responses',options,timeoutMs,'OpenAI response'\)/);
+  assert.match(observer,/maxTokens:2600/);
+  assert.match(observer,/timeoutMs:VAL_WITNESSING_OBSERVATION_TIMEOUT_MS/);
+  assert.doesNotMatch(observer,/maxTokens:6500/);
+  assert.match(witness,/maxTokens:900/);
+  assert.match(witness,/timeoutMs:VAL_WITNESSING_RESPONSE_TIMEOUT_MS/);
+  assert.match(route,/const \[witness,contextualNextQuestion\]=await Promise\.all\(\[/);
+  assert.match(route,/witnessPartnershipProtocolAnswer\([\s\S]*?composePartnershipProtocolNextQuestion/);
+  assert.match(server,/Your answer is still here\. Please try again\./);
+});

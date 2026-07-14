@@ -2220,6 +2220,16 @@ test('Witnessing Session keeps its conversational surface after confirming an an
   assert.match(confirmationFlow, /label: 'VAL Witnessing Session conversation'[\s\S]*?deskWorkspace\.classList\.add\('witnessing-mode'\);[\s\S]*?renderValWitnessingConversation/);
 });
 
+test('Witnessing Session keeps the answer visible when a model turn is slow', () => {
+  const saveFlow = hearthJs.match(/async function saveValWitnessingCard[\s\S]*?\n}\n\nfunction skipValWitnessingToQuestion/)?.[0] || '';
+
+  assert.match(saveFlow,/timeoutMs:55000/);
+  assert.match(saveFlow,/timeoutMessage:'VAL took longer than expected\. Your answer is still here\. Please try again\.'/);
+  assert.match(saveFlow,/const message = \/timed out\|taking longer\/i\.test/);
+  assert.match(saveFlow,/rawResponse,/);
+  assert.match(hearthJs,/Your answer stays here while VAL prepares a thoughtful response\./);
+});
+
 test('Stewardship drawer opens inside the Hearth instead of a CRM link', () => {
   assert.match(hearthHtml, /class="drawer-link relationship-drawer-link"/);
   assert.match(hearthHtml, /id="relationship-detail"/);
