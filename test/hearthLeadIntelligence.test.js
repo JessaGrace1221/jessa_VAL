@@ -1377,8 +1377,6 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
     'relationship_packet',
     'project_packet',
     'email_packet',
-    'commitment_packet',
-    'document_packet',
     'timeline_packet',
     'lead_intelligence_packet',
     'val_os_packet',
@@ -1390,8 +1388,6 @@ test('Hearth click surfaces have prompt and variable packet contracts', () => {
     'data-project-action',
     'data-timeline-action',
     'data-correspondence-action',
-    'data-commitment-action',
-    'data-document-action',
     'data-open-scraper',
     'data-val-action',
     'data-workflow-action',
@@ -1560,6 +1556,16 @@ test('Hearth drawer openings keep index packet receipts internal before item act
   ]){
     assert.match(hearthJs, new RegExp(action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('Hearth click map keeps documents and commitments as internal source records', () => {
+  assert.match(hearthClickContracts, /## Internal Evidence And Follow-Through/);
+  assert.match(hearthClickContracts, /not public Hearth drawers or generic Co-Work destinations/);
+  assert.match(hearthClickContracts, /Executive Inbox, Project Managers, Stewardship, Transcripts, or Leverage/);
+  assert.doesNotMatch(hearthClickContracts, /## Commitments\n\n\| Surface/);
+  assert.doesNotMatch(hearthClickContracts, /## Documents\n\n\| Surface/);
+  assert.doesNotMatch(hearthClickContracts, /Commitment Co-Work/);
+  assert.doesNotMatch(hearthClickContracts, /Document Co-Work/);
 });
 
 test('Hearth packet hydration audit distinguishes live providers from builder gaps', () => {

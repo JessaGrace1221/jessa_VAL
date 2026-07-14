@@ -144,32 +144,16 @@ Global rule:
 | Tighten draft | `data-correspondence-action="revise"` | `drafts.current` plus email source | Email draft revision prompt | Existing draft and source refs | Revised draft review | Do not send | Draft revised receipt/status |
 | Send draft | `data-correspondence-action="send"` | `email_packet` / `drafts.current` | External email send packet rule | Draft source refs and recipient | Prepare send packet only | Do not send directly | Send packet ready receipt |
 
-## Commitments
+## Internal Evidence And Follow-Through
 
-| Surface | Trigger | Variable packet | Prompt or rule | Source-of-source | Allowed actions | Never do | Receipt |
-|---|---|---|---|---|---|---|---|
-| Commitment filter | `data-commitment-filter` | Commitment index packet | Commitment filter rule | Commitment metadata | Filter list | Do not mutate records | List updates |
-| Commitment row | `data-commitment-item` | `commitment_packet` selected commitment | Commitment detail rule | Source quote/task/email/calendar refs | Select item | Do not mutate records | Brief updates |
-| Commitment Co-Work | `data-commitment-action="cowork_commitment"` | `cowork_packet` with `commitment_packet` | Co-Work prompt suite | Commitment source quote | Think/Draft/Back | Do not send or change task status | Scoped Co-Work |
-| Draft email | `data-commitment-action="draft_email"` | `commitment_packet` | Commitment follow-up draft rule | Commitment evidence | Draft review | Do not send | Draft created receipt/status |
-| Create task | `data-commitment-action="create_task"` | `commitment_packet` | Commitment task creation rule | Commitment evidence | Task review/status | Do not set due date without context | Task created receipt/status |
-| Schedule | `data-commitment-action="schedule"` | `commitment_packet` plus calendar availability | Task scheduling suggestion rule | Calendar availability and task evidence | Suggested time blocks | Do not create calendar event without approval | Schedule workspace/status |
-| Complete/delegate/dismiss | `data-commitment-action` status values | `commitment_packet` | Commitment status rule | Selected commitment id/source | Status update | Do not alter other commitments | Status receipt |
-| Show source | `data-commitment-action="show_source"` | `commitment_packet` | Source receipt rule | Commitment source id/quote | Open source if available | Do not infer missing source | Source receipt/status |
-| Resolve contact | `data-commitment-action="resolve_contact"` | Commitment counterparty identity packet | Contact resolution rule | Counterparty/source evidence | Resolve/review contact | Do not attach wrong contact | Resolution receipt |
+Commitments and documents are retained as source-linked internal records, not public Hearth drawers or generic Co-Work destinations.
 
-## Documents
+| Internal record | Created or used from | Executive-facing destination | Guardrail |
+|---|---|---|---|
+| Commitment | Exact transcript Action Item, email thread, selected project, or approved prepared work | Transcripts, Executive Inbox, Project Managers, or Leverage | Preserve source wording and require the relevant approval path for consequential action. |
+| Document | Email attachment, Drive/Docs receipt, upload, CRM file, or VAL-prepared artifact | Executive Inbox, Project Managers, Stewardship, Transcripts, or Leverage | Keep the source immutable; interpret, link, or prepare through the specific source surface. |
 
-| Surface | Trigger | Variable packet | Prompt or rule | Source-of-source | Allowed actions | Never do | Receipt |
-|---|---|---|---|---|---|---|---|
-| Document search/filter | `data-document-search`, relationship/project filters | Document index packet | Document filter rule | Document metadata | Filter list | Do not mutate docs | List updates |
-| Document row | `data-document-item` | `document_packet` selected document | Document brief rule | Document/source refs | Select item | Do not send/update | Brief updates |
-| Document Co-Work | `data-document-action="cowork_document"` | `cowork_packet` with `document_packet` | Co-Work prompt suite | Selected document refs | Think/Draft/Back | Do not update/send | Scoped Co-Work |
-| Present | `data-document-action="present"` | `document_packet` | Document review/presentation rule | Document body/source refs | Back, Teach VAL | Do not alter source | Review workspace |
-| Update | `data-document-action="update"` | `document_packet` | Document update preparation rule | Document body/source refs | Back, Teach VAL | Do not update live doc without approval | Update workspace |
-| Send | `data-document-action="send"` | `document_packet` | External email send packet rule | Document source refs and recipient | Prepare send packet | Do not send directly | Send packet ready/status |
-| Open Source | `data-document-action="open_source"` | `document_packet` | Source open rule | Source URL/id | Open source | Do not change VAL records | Status receipt |
-| Link Context | `data-document-action="link_context"` | `document_packet` plus selected relationship/project | Document context linking rule | Relationship/project/document refs | Back, Teach VAL | Do not link wrong entity | Link workspace |
+No `commitment.follow_through` or `document.interpret` generic Co-Work route may reappear. The relevant source-specific Co-Work entry owns the context, questions, output, approval boundary, and receipt.
 
 ## Lead Intelligence
 
