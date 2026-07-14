@@ -22,6 +22,24 @@ test('webhook accepts common transcript payload shapes and accepts note-only eve
   assert.match(server,/\[transcripts\] save failed/);
 });
 
+test('transcript ingress stays disabled until explicitly enabled and never exposes its callback token',()=>{
+  const infoStart=server.indexOf('function transcriptWebhookInfo');
+  const infoEnd=server.indexOf('function requestBaseUrl',infoStart) > infoStart
+    ? server.indexOf('function requestBaseUrl',infoStart)
+    : server.indexOf('function parseTranscriptWebhookRequestBody',infoStart);
+  const webhookInfo=server.slice(infoStart,infoEnd);
+  const statusRouteStart=server.indexOf("app.get('/api/val/transcripts/webhook'");
+  const statusRouteEnd=server.indexOf("app.all('/api/val/transcripts/ping'",statusRouteStart);
+  const statusRoute=server.slice(statusRouteStart,statusRouteEnd);
+
+  assert.match(server,/function transcriptIngressEnabled\(\)/);
+  assert.match(server,/VAL_TRANSCRIPT_INGEST_ENABLED/);
+  assert.match(server,/if\(!transcriptIngressEnabled\(\)\) return false/);
+  assert.doesNotMatch(webhookInfo,/\?token=/);
+  assert.doesNotMatch(webhookInfo,/transcriptWebhookToken\(\)/);
+  assert.match(statusRoute,/requireAuth,requirePermission\('settings:manage'\)/);
+});
+
 test('webhook normalizes Krisp-style speaker turn payloads',()=>{
   assert.match(server,/krispSamplePayload/);
   assert.match(server,/function transcriptTurnsFromValue/);

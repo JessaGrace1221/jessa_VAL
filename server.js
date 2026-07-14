@@ -2238,7 +2238,11 @@ function tenantId(){
 function transcriptWebhookToken(){
   return process.env.TRANSCRIPT_WEBHOOK_TOKEN || crypto.createHmac('sha256',SESSION_SECRET).update(`transcript:${tenantId()}`).digest('hex').slice(0,48);
 }
+function transcriptIngressEnabled(){
+  return /^(1|true|yes|on)$/i.test(String(process.env.VAL_TRANSCRIPT_INGEST_ENABLED||''));
+}
 function isValidTranscriptWebhookReq(req){
+  if(!transcriptIngressEnabled()) return false;
   const auth=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();
   const token=String(req.query.token||req.headers['x-val-transcript-token']||req.headers['x-webhook-token']||auth||req.body?.token||'');
   const expected=transcriptWebhookToken();
@@ -2251,24 +2255,22 @@ function requestBaseUrl(req){
 }
 function transcriptWebhookInfo(req){
   const base=requestBaseUrl(req);
-  const token=transcriptWebhookToken();
+  const enabled=transcriptIngressEnabled();
   return {
     ok:true,
-    live:true,
-    status:'live',
+    live:enabled,
+    status:enabled?'enabled':'disabled',
     clientName:CLIENT_CONFIG.clientName,
     clientSlug:CLIENT_CONFIG.clientSlug,
-    method:'POST',
-    url:`${base}/api/val/transcripts?token=${encodeURIComponent(token)}`,
-    pingUrl:`${base}/api/val/transcripts/ping?token=${encodeURIComponent(token)}`,
-    authentication:'Signed webhook URL',
+    endpoint:`${base}/api/val/transcripts`,
+    authentication:'Managed privately by VAL',
     contentType:'application/json',
-    processDefault:true,
+    processDefault:enabled,
     recent30DaysCount:0,
     matchedToMeetings30DaysCount:0,
     lastReceivedAt:null,
     lastTranscriptTitle:'',
-    message:'Webhook is live. Send POST requests with JSON to this URL from a transcriber, Make.com, Zapier, or any tool that can call a webhook.',
+    message:enabled?'Transcript ingestion is enabled for this VAL.':'Transcript ingestion is disabled until the executive explicitly connects a transcript source.',
     acceptedTranscriptFields:['transcript','rawText','text','segments','sentences','utterances','speakerTurns','meeting.transcript'],
     samplePayload:{
       title:'Meeting with Contact Name',
@@ -7741,7 +7743,7 @@ app.delete('/api/security/delete-my-data',requirePermission('data:delete'),async
     res.status(400).json({ok:false,error:e.message});
   }
 });
-app.get('/api/val/transcripts/webhook',async(req,res)=>{
+app.get('/api/val/transcripts/webhook',requireAuth,requirePermission('settings:manage'),async(req,res)=>{
   try{
     const [transcripts,matched]=await Promise.all([
       recentTranscripts(30).catch(()=>[]),

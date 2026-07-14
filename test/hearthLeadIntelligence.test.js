@@ -1370,8 +1370,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=clean-baseline-20260714/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=clean-baseline-20260714/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ingress-off-20260714/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=transcript-ingress-off-20260714/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
