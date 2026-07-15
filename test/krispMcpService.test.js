@@ -128,7 +128,7 @@ test('searches Krisp meetings with Krisp-native search and date parameters',asyn
   }
 });
 
-test('verifies Krisp transcript receipts through the date-filtered meeting index before falling back',async()=>{
+test('verifies Krisp transcript receipts through the date-filtered meeting index',async()=>{
   const {createKrispMcpService}=require('../services/krispMcpService');
   const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
   const originalFetch=global.fetch;

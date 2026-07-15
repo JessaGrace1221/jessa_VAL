@@ -678,27 +678,6 @@ function createKrispMcpService({
       probes.push({label:'Krisp meetings',state:'unavailable',returned:0,error:'Krisp did not expose a meeting search.'});
     }else{
       await runMeetingSearch('Meetings available to this Krisp account');
-      if(!documents.length&&toolHasArgument(found.searchMeetings,'isOwner')){
-        await runMeetingSearch('Meetings owned by this Krisp account',{isOwner:true});
-      }
-      if(!documents.length&&toolHasArgument(found.searchMeetings,'sharedWithMe')){
-        await runMeetingSearch('Meetings shared with this Krisp account',{sharedWithMe:true});
-      }
-    }
-
-    if(!documents.length&&found.listActionItems?.name){
-      try{
-        const data=await callTool(found.listActionItems.name,{limit:safeLimit});
-        const candidates=documentCandidatesFromRows(rowsFromKrispResponse(data));
-        for(const candidate of candidates){
-          if(!candidate.documentId||seen.has(candidate.documentId))continue;
-          seen.add(candidate.documentId);
-          documents.push({...candidate,source:found.listActionItems.name});
-        }
-        probes.push({label:'Meeting receipts attached to Krisp action items',state:'complete',returned:candidates.length});
-      }catch(error){
-        probes.push({label:'Meeting receipts attached to Krisp action items',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
-      }
     }
 
     const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
