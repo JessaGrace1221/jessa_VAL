@@ -2567,9 +2567,10 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(server, /fetchGmailMessages\(\{query:'in:inbox newer_than:90d'/);
   assert.match(server, /fetchGoogleCalendarEvents\(windowStart,windowEnd,2500\)/);
   assert.match(server, /async function listGoogleDriveFirstLookFiles/);
-  assert.match(server, /krispMcp\.listDocumentCandidates\(\{limit:50,from:window\.start,to:window\.end\}\)/);
+  assert.match(server, /krispMcp\.discoverTranscriptReceipts\(\{limit:50,from:window\.start,to:window\.end\}\)/);
   assert.match(server, /app\.get\('\/api\/val\/first-look'/);
   assert.match(server, /app\.post\('\/api\/val\/first-look\/prepare'/);
+  assert.match(server, /app\.post\('\/api\/val\/first-look\/krisp-verify'/);
   assert.match(server, /application\/x-ndjson/);
   assert.match(server, /Nothing else is being created/);
   assert.match(server, /if\(card\.id==='source_review'\)return res\.status\(409\)/);
@@ -2580,6 +2581,7 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(server, /Checking Drive and Docs metadata/);
   assert.match(server, /Krisp transcript receipts/);
   assert.match(hearthJs, /Prepare my First Look/);
+  assert.match(hearthJs, /Verify Krisp meeting receipts/);
   assert.match(hearthJs, /First Look complete/);
   assert.match(hearthJs, /VAL did not create projects, relationships, tasks, drafts, or memory/);
   assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);

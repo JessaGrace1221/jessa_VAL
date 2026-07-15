@@ -25,6 +25,17 @@ function safeArray(value){
   return [];
 }
 
+function rowsFromKrispResponse(value,depth=0){
+  if(depth>4||value==null)return [];
+  if(Array.isArray(value))return value;
+  if(typeof value!=='object')return [];
+  for(const key of ['meetings','documents','items','results','data']){
+    const rows=rowsFromKrispResponse(value[key],depth+1);
+    if(rows.length)return rows;
+  }
+  return [];
+}
+
 function findFirstString(...values){
   for(const value of values.flat()){
     if(typeof value==='string'&&value.trim())return value.trim();
@@ -631,6 +642,75 @@ function createKrispMcpService({
     return candidates.slice(0,limit);
   }
 
+  async function discoverTranscriptReceipts({limit=50,from='',to=''}={}){
+    const found=await findTools();
+    const startDate=from?String(from).slice(0,10):'';
+    const endDate=to?String(to).slice(0,10):'';
+    const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
+    const fields=['name','date','url','attendees','speakers','transcript','agenda','meeting_notes','key_points','action_items'];
+    const documents=[];
+    const seen=new Set();
+    const probes=[];
+    const pushMeetings=(rows,source)=>{
+      const meetings=rows.map(normalizeKrispMeeting).filter(meeting=>meeting.documentId||meeting.title);
+      for(const meeting of meetings){
+        if(!meeting.documentId||seen.has(meeting.documentId))continue;
+        seen.add(meeting.documentId);
+        documents.push({...meeting,source});
+      }
+      return meetings.length;
+    };
+    const runMeetingSearch=async(label,extra={})=>{
+      const args={limit:safeLimit,after:startDate,before:endDate,fields,...extra};
+      const compactArgs=Object.fromEntries(Object.entries(args).filter(([,value])=>value!==''&&value!==undefined&&value!==null));
+      try{
+        const data=await callTool(found.searchMeetings.name,compactArgs);
+        const returned=pushMeetings(rowsFromKrispResponse(data),found.searchMeetings.name);
+        probes.push({label,state:'complete',returned});
+        return returned;
+      }catch(error){
+        probes.push({label,state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+        return 0;
+      }
+    };
+
+    if(!found.searchMeetings?.name){
+      probes.push({label:'Krisp meetings',state:'unavailable',returned:0,error:'Krisp did not expose a meeting search.'});
+    }else{
+      await runMeetingSearch('Meetings available to this Krisp account');
+      if(!documents.length&&toolHasArgument(found.searchMeetings,'isOwner')){
+        await runMeetingSearch('Meetings owned by this Krisp account',{isOwner:true});
+      }
+      if(!documents.length&&toolHasArgument(found.searchMeetings,'sharedWithMe')){
+        await runMeetingSearch('Meetings shared with this Krisp account',{sharedWithMe:true});
+      }
+    }
+
+    if(!documents.length&&found.listActionItems?.name){
+      try{
+        const data=await callTool(found.listActionItems.name,{limit:safeLimit});
+        const candidates=documentCandidatesFromRows(rowsFromKrispResponse(data));
+        for(const candidate of candidates){
+          if(!candidate.documentId||seen.has(candidate.documentId))continue;
+          seen.add(candidate.documentId);
+          documents.push({...candidate,source:found.listActionItems.name});
+        }
+        probes.push({label:'Meeting receipts attached to Krisp action items',state:'complete',returned:candidates.length});
+      }catch(error){
+        probes.push({label:'Meeting receipts attached to Krisp action items',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+      }
+    }
+
+    const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
+    const status=documents.length?'complete':(allUnavailable?'unavailable':'needs_verification');
+    const detail=documents.length
+      ? `Krisp returned ${documents.length} meeting receipt${documents.length===1?'':'s'} from this connection.`
+      : allUnavailable
+        ? 'Krisp could not return meeting receipts from this connection.'
+        : 'Krisp is connected, but it did not return any meeting receipts for this check. This does not prove there are no transcripts.';
+    return {documents:documents.slice(0,safeLimit),probes,status,detail,checkedAt:new Date().toISOString(),window:{start:startDate,end:endDate}};
+  }
+
   async function getDocument(documentId){
     const normalizedId=normalizeKrispDocumentId(documentId);
     if(!isKrispDocumentId(normalizedId))throw new Error('Krisp document IDs must be 32 lowercase hexadecimal characters, with dashes removed.');
@@ -758,6 +838,7 @@ function createKrispMcpService({
     findTools,
     searchMeetings,
     listDocumentCandidates,
+    discoverTranscriptReceipts,
     getDocument,
     resolveTranscriptDocument,
     inspectTranscriptDocument,

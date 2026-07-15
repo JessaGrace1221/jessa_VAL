@@ -7968,6 +7968,33 @@ app.get('/api/val/first-look',async(_req,res)=>{
     res.status(500).json({ok:false,error:error.message});
   }
 });
+app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
+  try{
+    const run=await getValFirstLookRun();
+    if(!run?.snapshot?.window) return res.status(404).json({ok:false,error:'Prepare the First Look before verifying Krisp.'});
+    if(!(await krispMcp.isConfigured())) return res.status(409).json({ok:false,error:'Krisp is not connected.'});
+    const verification=await withTimeout(
+      krispMcp.discoverTranscriptReceipts({
+        limit:50,
+        from:run.snapshot.window.start||run.windowStart,
+        to:run.snapshot.window.end||run.windowEnd
+      }),
+      65000,
+      'Krisp took too long to verify its meeting receipts.'
+    );
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json({ok:true,reviewOnly:true,noDownstreamWrites:true,verification:{
+      id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.detail,
+      checkedAt:verification.checkedAt,window:verification.window,
+      counts:{reviewed:verification.documents.length},
+      limitNote:'This was a fresh, read-only check of Krisp meeting receipts. It does not alter your original First Look receipt.',
+      examples:verification.documents.slice(0,12).map(firstLookKrispReceipt),
+      probes:verification.probes
+    }});
+  }catch(error){
+    res.status(500).json({ok:false,error:firstLookError(error)});
+  }
+});
 app.post('/api/val/first-look/prepare',async(req,res)=>{
   res.status(200);
   res.set({
@@ -14677,20 +14704,20 @@ async function buildValFirstLookSnapshot({scope='',onProgress=async()=>{}}={}){
   await report('krisp','reading','Checking Krisp transcript receipts. VAL preserves Krisp material exactly as Krisp provided it.');
   try{
     if(!(await krispMcp.isConfigured())) throw new Error('Krisp is not connected.');
-    const documents=await withTimeout(
-      krispMcp.listDocumentCandidates({limit:50,from:window.start,to:window.end}),
+    const discovery=await withTimeout(
+      krispMcp.discoverTranscriptReceipts({limit:50,from:window.start,to:window.end}),
       65000,
       'Krisp transcript check timed out before it returned a receipt'
     );
     const source={
-      id:'krisp',label:'Krisp transcripts',status:'complete',
-      detail:`Found ${documents.length} available Krisp transcript receipt${documents.length===1?'':'s'}.`,window,
-      counts:{reviewed:documents.length},
+      id:'krisp',label:'Krisp transcripts',status:discovery.status,
+      detail:discovery.detail,window,
+      counts:{reviewed:discovery.documents.length},
       limitNote:'The First Look records up to 50 available Krisp transcript receipts. Transcript text is never rewritten.',
-      examples:documents.slice(0,12).map(firstLookKrispReceipt),error:''
+      examples:discovery.documents.slice(0,12).map(firstLookKrispReceipt),error:'',checks:discovery.probes
     };
     sources.push(source);
-    await report('krisp','complete',source.detail,{count:documents.length});
+    await report('krisp',source.status,source.detail,{count:discovery.documents.length});
   }catch(error){
     const source={id:'krisp',label:'Krisp transcripts',status:'unavailable',detail:'Krisp transcripts could not be read for this First Look.',window,counts:{reviewed:0},examples:[],error:firstLookError(error)};
     sources.push(source);

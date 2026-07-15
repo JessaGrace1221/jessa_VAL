@@ -16690,6 +16690,7 @@ const valFirstLookSourceOrder = [
 let valFirstLookRun = null;
 let valFirstLookProgress = [];
 let valFirstLookActivity = '';
+let valFirstLookKrispVerification = null;
 
 function valFirstLookComplete(run = valFirstLookRun){
   return String(run?.status || '').toLowerCase() === 'complete';
@@ -16705,6 +16706,7 @@ function valFirstLookSourceStateLabel(state = ''){
     saving:'Saving receipt',
     complete:'Checked',
     partial:'Partially checked',
+    needs_verification:'Needs verification',
     unavailable:'Unavailable'
   };
   return labels[String(state || '').toLowerCase()] || 'Waiting';
@@ -16724,7 +16726,7 @@ function renderValFirstLookProgress(){
       '<div class="val-first-look-source-grid">',
         valFirstLookProgressRows().map(source => [
           '<article data-state="' + escapeHtml(source.state || 'waiting') + '">',
-            '<div><b>' + escapeHtml(source.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.state)) + '</em></div>',
+            '<div><b>' + escapeConnectionHtml(source.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.state)) + '</em></div>',
             '<p>' + escapeHtml(source.message || 'Waiting for VAL to begin this source.') + '</p>',
             source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
           '</article>'
@@ -16732,6 +16734,18 @@ function renderValFirstLookProgress(){
       '</div>',
     '</section>'
   ].join('');
+}
+function valFirstLookDisplaySource(source,definition){
+  const current={...(source||{}),label:source?.label||definition.label};
+  if(current.id==='krisp'&&Number(current.counts?.reviewed||0)===0&&current.status==='complete'){
+    return {
+      ...current,
+      status:'needs_verification',
+      detail:'Krisp is connected, but this First Look did not receive any meeting receipts. That does not prove there are no transcripts.',
+      limitNote:'Verify Krisp to check its meetings again without changing your original First Look receipt.'
+    };
+  }
+  return current;
 }
 function renderValFirstLookReceipt(run = valFirstLookRun){
   const snapshot = run?.snapshot || {};
@@ -16745,15 +16759,19 @@ function renderValFirstLookReceipt(run = valFirstLookRun){
       '<p>' + escapeHtml((valFirstLookDate(window.start) || 'The start of your review window') + ' through ' + (valFirstLookDate(window.end) || 'today') + '. This is a private, review-only receipt. VAL did not create projects, relationships, tasks, drafts, or memory.') + '</p>',
       '<div class="val-first-look-source-grid">',
         valFirstLookSourceOrder.map(definition => {
-          const source = sourceById.get(definition.id) || {label:definition.label,status:'unavailable',detail:'This source was not available for the First Look.',examples:[]};
+          const original = sourceById.get(definition.id) || {id:definition.id,label:definition.label,status:'unavailable',detail:'This source was not available for the First Look.',examples:[]};
+          const source = definition.id==='krisp'&&valFirstLookKrispVerification
+            ? valFirstLookKrispVerification
+            : valFirstLookDisplaySource(original,definition);
           const examples = (source.examples || []).slice(0,3);
           return [
             '<article data-state="' + escapeHtml(source.status || 'unavailable') + '">',
-              '<div><b>' + escapeHtml(source.label || definition.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.status)) + '</em></div>',
+              '<div><b>' + escapeConnectionHtml(source.label || definition.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.status)) + '</em></div>',
               '<p>' + escapeHtml(source.detail || '') + '</p>',
               source.limitNote ? '<small>' + escapeHtml(source.limitNote) + '</small>' : '',
               source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
               examples.length ? '<ul>' + examples.map(example => '<li>' + escapeHtml(example.title || example.subject || '(Untitled item)') + (example.date || example.startTime || example.modifiedTime || example.startedAt ? '<small>' + escapeHtml(valFirstLookDate(example.date || example.startTime || example.modifiedTime || example.startedAt)) + '</small>' : '') + '</li>').join('') + '</ul>' : '',
+              definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingVerifyKrisp">Verify Krisp meeting receipts</button>' : '',
             '</article>'
           ].join('');
         }).join(''),
@@ -16869,6 +16887,27 @@ async function prepareValFirstLook(){
   }catch(error){
     renderValFirstLookConversation({state:'ready',error:error.message || 'VAL could not finish the First Look.'});
   }
+}
+async function verifyValFirstLookKrisp(){
+  if(!canUseApi || mockScrapers) return;
+  valFirstLookKrispVerification = {
+    id:'krisp',label:'Krisp transcripts',status:'reading',
+    detail:'Checking Krisp meetings available to this connection. VAL is not opening or changing any transcript.',
+    examples:[]
+  };
+  renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+  try{
+    const result=await postJson('/api/val/first-look/krisp-verify',{});
+    valFirstLookKrispVerification=result?.verification||null;
+    if(!valFirstLookKrispVerification) throw new Error('Krisp did not return a verification receipt.');
+  }catch(error){
+    valFirstLookKrispVerification={
+      id:'krisp',label:'Krisp transcripts',status:'unavailable',
+      detail:'Krisp could not verify its meeting receipts right now.',examples:[],
+      error:error.message||'Krisp could not be verified.'
+    };
+  }
+  renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
 }
 async function continueValWitnessingAfterFirstLook(){
   await openValWitnessingQuestion('key_relationships');
@@ -17913,7 +17952,8 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingCredentialForm',
   'valWitnessingSourcesContinue',
   'valWitnessingFirstLookPrepare',
-  'valWitnessingFirstLookContinue'
+  'valWitnessingFirstLookContinue',
+  'valWitnessingVerifyKrisp'
 ]);
 
 async function handleValWitnessingWorkflowAction(command, type, rest = []){
@@ -17984,6 +18024,10 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingFirstLookContinue'){
     await continueValWitnessingAfterFirstLook();
+    return;
+  }
+  if(command === 'valWitnessingVerifyKrisp'){
+    await verifyValFirstLookKrisp();
     return;
   }
 }
