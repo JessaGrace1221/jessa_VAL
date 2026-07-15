@@ -174,6 +174,30 @@ const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.
 const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
 const VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS)||7000,3000),20000);
 const VAL_WITNESSING_TURN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_TIMEOUT_MS)||30000,8000),45000);
+const VAL_WITNESSING_TURN_OUTPUT_TOKENS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_OUTPUT_TOKENS)||1800,1000),3200);
+const VAL_WITNESSING_TURN_RETRY_OUTPUT_TOKENS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_RETRY_OUTPUT_TOKENS)||2600,1400),3600);
+const VAL_WITNESSING_TURN_RESPONSE_FORMAT = {
+  type:'json_schema',
+  name:'val_witnessing_turn',
+  strict:true,
+  schema:{
+    type:'object',
+    additionalProperties:false,
+    required:['fact','preference','observation','hypothesis','curiosity','principle','protected','vocabulary','next_question','witness_lines'],
+    properties:{
+      fact:{type:'string'},
+      preference:{type:'string'},
+      observation:{type:'string'},
+      hypothesis:{type:'string'},
+      curiosity:{type:'string'},
+      principle:{type:'string'},
+      protected:{type:'string'},
+      vocabulary:{type:'array',items:{type:'string'}},
+      next_question:{type:'string'},
+      witness_lines:{type:'array',items:{type:'string'}}
+    }
+  }
+};
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -4185,22 +4209,36 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     current_state:currentState,
     required_protocol:'living_executive_graph_v1'
   });
-  let raw;
-  try{
-    raw=await callValModel({
-      system,
+  const requestTurn=async({maxTokens,retry=false}={})=>{
+    const raw=await callValModel({
+      system:retry ? [system,'The prior response did not finish cleanly. Return only the complete required JSON object, with short values.'].join('\n') : system,
       user,
-      maxTokens:700,
+      maxTokens,
       temperature:0.35,
       json:true,
+      jsonSchema:VAL_WITNESSING_TURN_RESPONSE_FORMAT,
       timeoutMs:VAL_WITNESSING_TURN_TIMEOUT_MS
     });
+    return parseModelJson(raw);
+  };
+  let parsed;
+  try{
+    parsed=await requestTurn({maxTokens:VAL_WITNESSING_TURN_OUTPUT_TOKENS});
   }catch(error){
-    console.warn('[Witnessing turn] model call failed for card',card.id,':',error.message);
-    throw new Error('VAL is taking longer than expected. Your answer is still here. Please try again.');
+    const retryable=/incomplete|json/i.test(String(error.message||''));
+    if(!retryable){
+      console.warn('[Witnessing turn] model call failed for card',card.id,':',error.message);
+      throw new Error('VAL is taking longer than expected. Your answer is still here. Please try again.');
+    }
+    console.warn('[Witnessing turn] incomplete structured output for card',card.id,'; retrying with a larger completion budget.');
+    try{
+      parsed=await requestTurn({maxTokens:VAL_WITNESSING_TURN_RETRY_OUTPUT_TOKENS,retry:true});
+    }catch(retryError){
+      console.warn('[Witnessing turn] structured-output retry failed for card',card.id,':',retryError.message);
+      throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
+    }
   }
   try{
-    const parsed=parseModelJson(raw);
     const signal=(claim='')=>String(claim||'').trim()?[
       {claim:String(claim).trim(),status:'noticed',evidence_refs:['current_answer'],confidence_source:'single_answer'}
     ]:[];
@@ -4236,7 +4274,7 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};
   }catch(error){
-    console.warn('[Witnessing turn] unusable model response for card',card.id,':',error.message);
+    console.warn('[Witnessing turn] unusable structured output for card',card.id,':',error.message);
     throw new Error('VAL could not finish this turn. Your answer is still here. Please try again.');
   }
 }
@@ -20326,8 +20364,8 @@ async function ghlPlatformContext(query,dashboard,opts={}){
     notes?'Targeted GHL note and call transcript history:\n'+notes:''
   ].filter(Boolean).join('\n\n');
 }
-async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,timeoutMs=0}){
-  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,timeoutMs});
+async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
+  return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
 }
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
@@ -20365,7 +20403,7 @@ function responseText(payload){
   return parts.join('\n').trim();
 }
 
-async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,timeoutMs=0}){
+async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
   const openAiKey=await resolveOpenAIKey();
   const openAiModel=await resolveOpenAIModel();
   if(!openAiKey) throw new Error('OPENAI_API_KEY not configured');
@@ -20384,7 +20422,8 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     max_output_tokens:maxTokens,
     temperature
   };
-  if(json) body.text = {format:{type:'json_object'}};
+  if(jsonSchema) body.text = {format:jsonSchema};
+  else if(json) body.text = {format:{type:'json_object'}};
   const request=async()=>{
     const options={
       method:'POST',
@@ -20403,7 +20442,15 @@ async function callOpenAIResponses({system,messages,maxTokens=1200,temperature=0
     delete body.temperature;
     d=await request();
   }
+  if(d.error && jsonSchema && /json_schema|structured output|response format|schema/i.test(d.error.message||'')){
+    body.text={format:{type:'json_object'}};
+    d=await request();
+  }
   if(d.error) throw new Error(d.error.message);
+  if(d.status==='incomplete'){
+    const reason=d.incomplete_details?.reason||'unknown reason';
+    throw new Error('OpenAI response incomplete: '+reason+'.');
+  }
   return responseText(d);
 }
 
