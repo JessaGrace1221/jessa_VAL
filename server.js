@@ -8902,6 +8902,15 @@ const KRISP_OAUTH_SCOPES = [
   'user::meetings:notes::read',
   'user::meetings:transcripts::read'
 ];
+const CONFIGURED_KRISP_OAUTH_METADATA = KRISP_OAUTH_CLIENT_ID ? {
+  resource:'https://mcp.krisp.ai',
+  authorizationServer:'https://mcp.krisp.ai',
+  authorizationEndpoint:'https://api.krisp.ai/platform/v1/oauth2/authorize',
+  tokenEndpoint:'https://api.krisp.ai/platform/v1/oauth2/token',
+  registrationEndpoint:'',
+  scopesSupported:KRISP_OAUTH_SCOPES,
+  tokenEndpointAuthMethods:['client_secret_basic','client_secret_post']
+} : null;
 const KRISP_OAUTH_PENDING_TTL_MS = 10 * 60 * 1000;
 const krispOAuthPendingAuthorizations = new Map();
 let krispOAuthMetadataCache = {value:null,expiresAt:0};
@@ -9200,7 +9209,7 @@ app.get('/auth/krisp/start',async(req,res)=>{
   try{
     cleanExpiredKrispOAuthAuthorizations();
     const redirectUri=krispOAuthRedirectUri(req);
-    const metadata=await discoverKrispOAuthMetadata();
+    const metadata=CONFIGURED_KRISP_OAUTH_METADATA||await discoverKrispOAuthMetadata();
     const client=await krispOAuthClientForConnection(metadata,redirectUri);
     const verifier=crypto.randomBytes(32).toString('base64url');
     const state=crypto.randomBytes(32).toString('base64url');
