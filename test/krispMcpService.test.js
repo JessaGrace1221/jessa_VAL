@@ -357,9 +357,12 @@ test('server exposes Krisp OAuth as the transcript witness connector',()=>{
   assert.match(server,/providerId:'krisp'/);
   assert.match(server,/\/api\/val\/krisp\/status/);
   assert.match(server,/app\.get\('\/auth\/krisp'/);
+  assert.match(server,/app\.get\('\/auth\/krisp\/start'/);
   assert.match(server,/app\.get\('\/auth\/krisp\/callback'/);
   assert.match(server,/code_challenge_method:'S256'/);
   assert.match(server,/code_verifier:pending\.verifier/);
+  assert.match(server,/Opening Krisp securely/);
+  assert.match(server,/oauth_client_id:registered\.clientId/);
   assert.match(server,/Krisp transcripts are connected to VAL/);
   assert.doesNotMatch(server,/\/api\/val\/krisp\/import/);
 });

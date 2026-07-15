@@ -8995,7 +8995,15 @@ async function krispOAuthClientForConnection(metadata,redirectUri){
   if(saved?.oauth_client_id){
     return {clientId:saved.oauth_client_id,clientSecret:saved.oauth_client_secret||'',tokenAuthMethod:saved.oauth_token_auth_method||'client_secret_post'};
   }
-  return registerKrispOAuthClient(metadata,redirectUri);
+  const registered=await registerKrispOAuthClient(metadata,redirectUri);
+  // Dynamic registration can be slow. Persist the client before the user
+  // signs in so returning to the connection does not repeat that wait.
+  await saveOAuthTokens('krisp',{
+    oauth_client_id:registered.clientId,
+    oauth_client_secret:registered.clientSecret,
+    oauth_token_auth_method:registered.tokenAuthMethod
+  });
+  return registered;
 }
 
 function krispTokenExpiresAt(tokens={}){
@@ -9183,7 +9191,12 @@ app.get('/auth/google', (req, res) => {
   res.redirect(url);
 });
 
-app.get('/auth/krisp',async(req,res)=>{
+app.get('/auth/krisp',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><title>Opening Krisp</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f7f2;color:#2e2b29;font-family:ui-sans-serif,system-ui,sans-serif}.card{width:min(420px,calc(100% - 48px));padding:44px 38px;border:1px solid #d9ddd2;border-radius:12px;background:#fffefa;box-shadow:0 16px 45px rgba(38,43,31,.1)}.mark{display:flex;gap:8px;align-items:center;margin-bottom:26px;color:#657560;font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.pulse{width:10px;height:10px;border-radius:50%;background:#79936f;animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{transform:scale(.62);opacity:.45}}h1{margin:0 0 12px;font:500 34px Georgia,serif}p{margin:0;color:#5f625d;line-height:1.6}</style></head><body><main class="card"><div class="mark"><span class="pulse"></span>VAL + Krisp</div><h1>Opening Krisp securely.</h1><p>Preparing your sign-in. Keep this window open while Krisp loads.</p></main><script>window.location.replace('/auth/krisp/start');</script></body></html>`);
+});
+
+app.get('/auth/krisp/start',async(req,res)=>{
   try{
     cleanExpiredKrispOAuthAuthorizations();
     const redirectUri=krispOAuthRedirectUri(req);
