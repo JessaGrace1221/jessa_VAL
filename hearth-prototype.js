@@ -16465,8 +16465,8 @@ function valWitnessingConnectionCard(connection = {}){
   const copy = valWitnessingConnectionCopy[id] || {keyLabel:connection.label || 'Connection',actionLabel:'Connect'};
   const connected = !!connection.connected;
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
-  const action = connection.action === 'oauth'
-    ? '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingOAuth:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(copy.actionLabel) + '</button>'
+  const action = connection.action === 'oauth' && connection.actionHref
+    ? '<a class="val-witnessing-source-action" href="' + escapeConnectionHtml(connection.actionHref) + '" target="_blank" rel="noopener">' + escapeConnectionHtml(copy.actionLabel) + '</a>'
     : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
   return [
     '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeConnectionHtml(id) + '" data-connected="' + String(connected) + '">',

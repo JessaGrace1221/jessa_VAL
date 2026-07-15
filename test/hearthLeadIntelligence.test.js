@@ -2220,12 +2220,13 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthCss, /\.workspace-prompt-shelf/);
 });
 
-test('Krisp connection card preserves its provider name and OAuth identifier', () => {
+test('Krisp connection card preserves its provider name and links directly to OAuth', () => {
   const card = hearthJs.match(/function valWitnessingConnectionCard\(connection = \{\}\)\{[\s\S]*?\n}\n\nfunction renderValWitnessingConnectionHub/)?.[0] || '';
   assert.match(hearthJs, /function escapeConnectionHtml\(value\)/);
-  assert.match(card, /valWitnessingOAuth:' \+ escapeConnectionHtml\(id\)/);
+  assert.match(card, /<a class=/);
+  assert.match(card, /escapeConnectionHtml\(connection\.actionHref\)/);
   assert.match(card, /escapeConnectionHtml\(connection\.label \|\| copy\.keyLabel\)/);
-  assert.doesNotMatch(card, /valWitnessingOAuth:' \+ escapeHtml\(id\)/);
+  assert.doesNotMatch(card, /valWitnessingOAuth:/);
 });
 
 test('Witnessing Session questions dispatch before shared workflow packet validation', () => {
