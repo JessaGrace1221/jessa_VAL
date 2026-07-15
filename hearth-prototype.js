@@ -16491,6 +16491,59 @@ function renderValWitnessingConnectionHub(){
   ].join('');
 }
 
+let pendingValWitnessingLaunch = null;
+
+function renderValOpenAISetup(){
+  return [
+    '<section class="val-witnessing-openai-gate" aria-label="Connect OpenAI">',
+      '<span>First, connect OpenAI</span>',
+      '<h4>Connect the intelligence that powers VAL.</h4>',
+      '<p>Your OpenAI API key lets VAL have its Witnessing conversation, prepare drafts, and reason across the parts of your world you choose to connect later.</p>',
+      '<form class="val-witnessing-credential-form" data-val-openai-setup-form>',
+        '<label>',
+          '<span>OpenAI API key</span>',
+          '<input type="password" autocomplete="off" data-val-witnessing-credential-input="openai" placeholder="sk-...">',
+        '</label>',
+        '<div>',
+          '<button type="submit">Save and test OpenAI</button>',
+        '</div>',
+        '<small data-val-witnessing-credential-status>Your key is encrypted and never shown again. You will choose other connections later, only when you are ready.</small>',
+      '</form>',
+    '</section>'
+  ].join('');
+}
+
+function openValOpenAISetup(cardId = 'meeting_val', options = {}){
+  pendingValWitnessingLaunch = {cardId,options};
+  setWorkspaceContent({
+    lens: 'VAL',
+    title: 'Connect OpenAI to start VAL.',
+    meaning: 'Before VAL asks anything of you, it needs the intelligence that makes its responses thoughtful and specific.',
+    understanding: ['Your key powers VAL. It does not give VAL permission to send, change, or share anything.'],
+    recommendation: 'Save and test your OpenAI API key to begin your Witnessing Session.',
+    actions: [{label:'Back to VAL', workflow:'cancel:val'}],
+    label: 'VAL OpenAI setup'
+  });
+  deskWorkspace.classList.add('witnessing-mode');
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = renderValOpenAISetup();
+  workspaceInputPanel.querySelector('[data-val-witnessing-credential-input="openai"]')?.focus();
+  openWorkspaceShell('VAL OpenAI setup', {returnTarget:'val'});
+}
+
+async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', options = {}){
+  if(!canUseApi || mockScrapers) return true;
+  try{
+    const readiness = await getJson('/api/val/witnessing/readiness', {cache:'no-store'});
+    if(!readiness.requiresOpenAIKey) return true;
+    openValOpenAISetup(cardId,options);
+    return false;
+  }catch(error){
+    valLiveStatus.textContent = 'Could not check the OpenAI connection: ' + error.message;
+    return false;
+  }
+}
+
 function renderValWitnessingConnections(payload = {}){
   const target = workspaceInputPanel.querySelector('[data-val-witnessing-connection-list]');
   if(!target) return;
@@ -16553,8 +16606,10 @@ async function saveValWitnessingCredential(provider = ''){
     const slot = workspaceInputPanel.querySelector('[data-val-witnessing-credential-slot]');
     if(slot) slot.innerHTML = '<p class="val-witnessing-credential-success">' + escapeHtml(result.message || 'Connection saved.') + '</p>';
     renderValWitnessingConnections({connections:result.connections || []});
+    return true;
   }catch(error){
     if(status) status.textContent = error.message || 'That connection could not be saved.';
+    return false;
   }
 }
 
@@ -16621,8 +16676,8 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
   const index = valWitnessingIndex(card);
   const total = valWitnessingCards.length;
   const next = card.next ? valWitnessingCard(card.next) : null;
-  const answered = state === 'thinking' || state === 'witnessed' || state === 'confirmed' || state === 'paused';
-  const showAnswer = state === 'witnessed' || state === 'confirmed' || state === 'paused';
+  const answered = state === 'thinking' || state === 'shaping' || state === 'witnessed' || state === 'confirmed' || state === 'paused';
+  const showAnswer = state === 'shaping' || state === 'witnessed' || state === 'confirmed' || state === 'paused';
   const witnessed = normalizeValWitnessingPayload(witness || valWitnessingState[card.category]?.witness || {}, rawResponse);
   if(state === 'intro'){
     workspaceInputPanel.hidden = false;
@@ -16706,6 +16761,15 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
           '</div>',
         '</section>'
       ].join('') : '',
+      state === 'shaping' ? [
+        '<section class="val-conversation-val" aria-label="VAL response">',
+          '<span>VAL</span>',
+          '<div class="val-thinking-state" role="status" aria-live="polite">',
+            '<div class="val-thinking-pulse" aria-hidden="true"><i></i><i></i><i></i></div>',
+            '<p><strong>VAL is carrying that forward...</strong><small>It is shaping the next question from what you just confirmed.</small></p>',
+          '</div>',
+        '</section>'
+      ].join('') : '',
       state === 'witnessed' ? [
         '<section class="val-conversation-val" aria-label="VAL response">',
           '<span>VAL</span>',
@@ -16735,6 +16799,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
 }
 
 async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
+  if(!(await ensureOpenAIConnectionBeforeWitnessing(cardId,options))) return;
   let resumeTarget = null;
   if(options.fresh){
     await startFreshValWitnessingSession();
@@ -16826,7 +16891,7 @@ async function saveValWitnessingCard(category){
     openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
     return;
   }
-  if(!(await ensureRuntimeOpenAIForWitnessing())) return;
+  if(!(await ensureOpenAIConnectionBeforeWitnessing(card.id,{resume:true}))) return;
   try{
     const sessionId = await ensureValWitnessingSession();
     const result = await postJson(
@@ -16881,9 +16946,29 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
     confirmation
   };
   if(canUseApi && !mockScrapers){
+    if(confirmation === 'yes'){
+      renderValWitnessingConversation({
+        card,
+        rawResponse,
+        state:'shaping',
+        witness:valWitnessingState[card.category]?.witness || null
+      });
+    }
     try{
       const sessionId = await ensureValWitnessingSession();
-      await postJson('/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/witnessing-cards/' + encodeURIComponent(card.id) + '/confirm', {confirmation});
+      const result = await postJson(
+        '/api/teach-val/onboarding/' + encodeURIComponent(sessionId) + '/witnessing-cards/' + encodeURIComponent(card.id) + '/confirm',
+        {confirmation},
+        {timeoutMs:12000,timeoutMessage:'VAL is shaping the next question from what you just confirmed. Please try again.'}
+      );
+      const next = card.next ? valWitnessingCard(card.next) : null;
+      const nextQuestion = String(result?.nextQuestion || '').trim();
+      if(next && nextQuestion){
+        valWitnessingState[next.category] = {
+          ...(valWitnessingState[next.category] || {}),
+          questionOverride:nextQuestion
+        };
+      }
     }catch(error){
       valWitnessingState[card.category].confirmationError = error.message;
     }
@@ -20123,6 +20208,17 @@ coworkNotebook.addEventListener('click', () => openCoworkSessionWithPacket(cowor
 teachPen.addEventListener('click', () => openTeachValSessionWithPacket(teachPen));
 linkedinWidget?.addEventListener('click', () => openLinkedInEngagementWorkspaceWithPacket(linkedinWidget));
 workspaceInputPanel.addEventListener('submit', async (event) => {
+  const openAiSetupForm = event.target.closest('[data-val-openai-setup-form]');
+  if(openAiSetupForm){
+    event.preventDefault();
+    const connected = await saveValWitnessingCredential('openai');
+    if(connected){
+      const launch = pendingValWitnessingLaunch || {cardId:'meeting_val',options:{fresh:true}};
+      pendingValWitnessingLaunch = null;
+      await openValWitnessingSession(launch.cardId,launch.options);
+    }
+    return;
+  }
   const credentialForm = event.target.closest('[data-val-witnessing-credential-form]');
   if(credentialForm){
     event.preventDefault();

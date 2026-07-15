@@ -2073,6 +2073,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /fullCalendarPanel\?\.addEventListener\('click'/);
   assert.match(hearthJs, /data-google-oauth/);
   assert.match(hearthJs, /\/api\/val\/witnessing\/connections/);
+  assert.match(hearthJs, /\/api\/val\/witnessing\/readiness/);
+  assert.match(hearthJs, /function openValOpenAISetup/);
+  assert.match(hearthJs, /Connect OpenAI to start VAL\./);
+  assert.match(hearthJs, /data-val-openai-setup-form/);
   assert.match(hearthJs, /\/auth\/google/);
   assert.match(hearthJs, /const valWitnessingCards/);
   assert.match(hearthJs, /async function openValWitnessingSession/);
@@ -2104,6 +2108,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /questionOverride: witness\.next_question/);
   assert.match(hearthJs, /escapeHtml\(valWitnessingQuestionText\(card\)\)/);
   assert.match(hearthJs, /witnessing-cards\/' \+ encodeURIComponent\(card\.id\) \+ '\/confirm/);
+  assert.match(hearthJs, /const nextQuestion = String\(result\?\.nextQuestion \|\| ''\)\.trim\(\)/);
   assert.match(hearthJs, /confirmationError/);
   assert.match(hearthJs, /normalizeValWitnessingPayload/);
   assert.match(hearthJs, /valWitnessingLinesTooThin/);
@@ -2121,6 +2126,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /result\?\.witness/);
   assert.match(hearthJs, /result\?\.graph/);
   assert.match(hearthJs, /state:'thinking'/);
+  assert.match(hearthJs, /state:'shaping'/);
+  assert.match(hearthJs, /VAL is carrying that forward/);
   assert.match(hearthJs, /Yes, exactly/);
   assert.match(hearthJs, /Mostly/);
   assert.match(hearthJs, /Let me clarify/);

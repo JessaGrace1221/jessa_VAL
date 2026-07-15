@@ -608,5 +608,8 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/normalizePartnershipWitnessResponse/);
   assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
   assert.doesNotMatch(route,/composePartnershipProtocolNextQuestion/);
+  assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'[\s\S]*?composePartnershipProtocolNextQuestion/);
+  assert.match(server,/nextQuestion/);
+  assert.match(server,/openai_connection_required/);
   assert.match(server,/Your answer is still here\. Please try again\./);
 });

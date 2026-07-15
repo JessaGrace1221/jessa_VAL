@@ -4023,11 +4023,11 @@ function contextualQuestionCarriesChain(question='',evidenceChain=[]){
   const present=families.filter(pattern=>pattern.test(evidenceChainText(compact))&&pattern.test(text)).length;
   return present>=Math.min(2,compact.length);
 }
-async function composePartnershipProtocolNextQuestion({currentCard,nextCard,rawResponse,graph,priorImports=[]}){
+async function composePartnershipProtocolNextQuestion({currentCard,nextCard,rawResponse,graph,priorImports=[],confirmation=null}){
   if(!nextCard) return '';
   const currentIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===currentCard.id)+1;
   const evidenceChain=priorPartnershipAnswers(priorImports).concat([
-    partnershipIntegrityChainEntry({index:currentIndex,card:currentCard,rawResponse,graph})
+    partnershipIntegrityChainEntry({index:currentIndex,card:currentCard,rawResponse,graph,confirmation})
   ]);
   const currentState=partnershipCurrentState(evidenceChain,nextCard);
   const system=[
@@ -7222,6 +7222,46 @@ app.get('/api/teach-val/onboarding',async(req,res)=>{
   try{res.json(await teachValStateResponse(req.query.sessionId||''));}
   catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+async function tenantOpenAIConnectionReadiness(){
+  const [row,secret]=await Promise.all([
+    getTenantApiKeyRow('openai').catch(()=>null),
+    getTenantApiKeySecret('openai').catch(()=> '')
+  ]);
+  const saved=normalizeTenantApiKeyRow(row);
+  const keyLooksValid=tenantApiKeyLooksValid('openai',secret);
+  return {
+    connected:!!(keyLooksValid&&saved?.status==='connected'),
+    status:saved?.status||'not_connected',
+    lastUpdatedAt:saved?.lastUpdatedAt||'',
+    lastTestedAt:saved?.lastTestedAt||''
+  };
+}
+async function witnessingOpenAIReadiness(){
+  const [openai,resumableSession]=await Promise.all([
+    tenantOpenAIConnectionReadiness(),
+    getTeachValWitnessingResumeSession().catch(()=>null)
+  ]);
+  const continuationAllowed=!!resumableSession?.id;
+  return {
+    ok:true,
+    openai,
+    continuationAllowed,
+    requiresOpenAIKey:!openai.connected&&!continuationAllowed
+  };
+}
+async function requireOpenAIForNewWitnessing(res){
+  const readiness=await witnessingOpenAIReadiness();
+  if(readiness.requiresOpenAIKey){
+    res.status(428).json({
+      ok:false,
+      code:'openai_connection_required',
+      error:'Connect your OpenAI API key before starting VAL.',
+      readiness
+    });
+    return false;
+  }
+  return true;
+}
 async function witnessingConnectionStatusPayload(){
   const [google,microsoftTokens,tenantKeys,krispConfigured]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
@@ -7230,7 +7270,7 @@ async function witnessingConnectionStatusPayload(){
     krispMcp.isConfigured().catch(()=>false)
   ]);
   const keyByProvider=new Map((tenantKeys||[]).map(item=>[item.providerId,item]));
-  const openaiKey=await resolveOpenAIKey().catch(()=> '');
+  const openai=await tenantOpenAIConnectionReadiness();
   const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=> '');
   const krispToken=await resolveKrispAccessToken('').catch(()=> '');
   const keyConnection=(provider,connected)=>{
@@ -7276,7 +7316,7 @@ async function witnessingConnectionStatusPayload(){
       {
         id:'openai',
         label:'OpenAI',
-        ...keyConnection('openai',!!openaiKey),
+        ...keyConnection('openai',openai.connected),
         action:'credential',
         learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
         limits:'A saved key is encrypted and never shown again.',
@@ -7296,6 +7336,10 @@ async function witnessingConnectionStatusPayload(){
 }
 app.get('/api/val/witnessing/connections',async(req,res)=>{
   try{res.json(await witnessingConnectionStatusPayload());}
+  catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/witnessing/readiness',async(req,res)=>{
+  try{res.json(await witnessingOpenAIReadiness());}
   catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
@@ -7443,6 +7487,7 @@ app.post('/api/val/os/rules',async(req,res)=>{
 });
 app.post('/api/teach-val/onboarding/start',async(req,res)=>{
   try{
+    if(!(await requireOpenAIForNewWitnessing(res))) return;
     let existing=null;
     if(req.body.resume===true){
       if(req.body.resumeWitnessing) existing=await getTeachValWitnessingResumeSession();
@@ -7464,6 +7509,7 @@ app.post('/api/teach-val/onboarding/start',async(req,res)=>{
 });
 app.post('/api/teach-val/onboarding/:id/reset',async(req,res)=>{
   try{
+    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const old=await getTeachValSession(req.params.id);
     if(old){
       old.status='archived';
@@ -7563,6 +7609,7 @@ app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)=>{
   try{
+    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const session=await getTeachValSession(req.params.id);
     if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
     const card=partnershipProtocolCardFor(req.params.cardId);
@@ -7671,13 +7718,29 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
       ? structuredSummary.integrityChain||partnershipIntegrityChainEntry({index:index+1,card,rawResponse:existing.rawResponse,graph:structuredSummary.livingExecutiveGraph||{},confirmation})
       : item.structuredSummary?.integrityChain||partnershipIntegrityChainEntry({index:index+1,card:partnershipProtocolCardFor(item.category)||card,rawResponse:item.rawResponse,graph:item.structuredSummary?.livingExecutiveGraph||{},confirmation:item.structuredSummary?.confirmation||null})
     ));
+    const nextCard=nextPartnershipProtocolCard(card);
+    let nextQuestion='';
+    if(confirmation.status==='confirmed'&&nextCard){
+      nextQuestion=await composePartnershipProtocolNextQuestion({
+        currentCard:card,
+        nextCard,
+        rawResponse:existing.rawResponse,
+        graph:structuredSummary.livingExecutiveGraph||{},
+        priorImports:imports.filter(item=>item.id!==existing.id),
+        confirmation
+      });
+      if(nextQuestion){
+        structuredSummary.witness={...(structuredSummary.witness||{}),next_question:nextQuestion};
+        structuredSummary.nextQuestion=nextQuestion;
+      }
+    }
     const saved=await saveTeachValImport({
       ...existing,
       structuredSummary,
       reviewed:confirmation.status==='confirmed',
       status:confirmation.status==='confirmed'?'Confirmed':'Needs Clarification'
     });
-    res.json({ok:true,card,confirmation,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    res.json({ok:true,card,confirmation,nextQuestion,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.patch('/api/teach-val/onboarding/:id/imports/:importId/items/:itemId',async(req,res)=>{
