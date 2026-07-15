@@ -2559,3 +2559,30 @@ test('Relationship actions can return focus to the desk lenses', () => {
   assert.match(hearthJs, /openWorkspace\(roomButton\.dataset\.openRoom\)/);
   assert.match(hearthJs, /'\.living-room'/);
 });
+
+test('Witnessing First Look is source-backed, receipt-first, and cannot use the generic witness path', () => {
+  assert.match(server, /create table if not exists val_first_look_runs/);
+  assert.match(server, /unique \(tenant_id,user_id\)/);
+  assert.match(server, /async function buildValFirstLookSnapshot/);
+  assert.match(server, /fetchGmailMessages\(\{query:'in:inbox newer_than:90d'/);
+  assert.match(server, /fetchGoogleCalendarEvents\(windowStart,windowEnd,2500\)/);
+  assert.match(server, /async function listGoogleDriveFirstLookFiles/);
+  assert.match(server, /krispMcp\.listDocumentCandidates\(\{limit:50,from:window\.start,to:window\.end\}\)/);
+  assert.match(server, /app\.get\('\/api\/val\/first-look'/);
+  assert.match(server, /app\.post\('\/api\/val\/first-look\/prepare'/);
+  assert.match(server, /application\/x-ndjson/);
+  assert.match(server, /Nothing else is being created/);
+  assert.match(server, /if\(card\.id==='source_review'\)return res\.status\(409\)/);
+  const witnessingRoute = server.slice(server.indexOf("app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId'"), server.indexOf("app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm'"));
+  assert.ok(witnessingRoute.indexOf("card.id==='source_review'") < witnessingRoute.indexOf('generatePartnershipProtocolTurn'), 'source review guard must run before generic Witnessing generation');
+  assert.match(hearthJs, /function prepareValFirstLook/);
+  assert.match(server, /Reading Gmail from the last 90 days/);
+  assert.match(server, /Checking Drive and Docs metadata/);
+  assert.match(server, /Krisp transcript receipts/);
+  assert.match(hearthJs, /Prepare my First Look/);
+  assert.match(hearthJs, /First Look complete/);
+  assert.match(hearthJs, /VAL did not create projects, relationships, tasks, drafts, or memory/);
+  assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);
+  assert.match(hearthCss, /\.val-first-look-progress/);
+  assert.match(hearthCss, /\.val-first-look-source-grid/);
+});

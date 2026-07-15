@@ -16681,6 +16681,199 @@ function valWitnessingContextTools(card){
   return '';
 }
 
+const valFirstLookSourceOrder = [
+  {id:'gmail',label:'Gmail'},
+  {id:'calendar',label:'Google Calendar'},
+  {id:'drive',label:'Drive & Docs'},
+  {id:'krisp',label:'Krisp transcripts'}
+];
+let valFirstLookRun = null;
+let valFirstLookProgress = [];
+let valFirstLookActivity = '';
+
+function valFirstLookComplete(run = valFirstLookRun){
+  return String(run?.status || '').toLowerCase() === 'complete';
+}
+function valFirstLookDate(value){
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+}
+function valFirstLookSourceStateLabel(state = ''){
+  const labels = {
+    waiting:'Waiting',
+    reading:'Reading now',
+    saving:'Saving receipt',
+    complete:'Checked',
+    partial:'Partially checked',
+    unavailable:'Unavailable'
+  };
+  return labels[String(state || '').toLowerCase()] || 'Waiting';
+}
+function valFirstLookProgressRows(){
+  const byId = new Map((valFirstLookProgress || []).map(item => [item.id, item]));
+  return valFirstLookSourceOrder.map(source => ({
+    ...source,
+    ...(byId.get(source.id) || {state:'waiting',message:'Waiting for VAL to begin this source.'})
+  }));
+}
+function renderValFirstLookProgress(){
+  return [
+    '<section class="val-first-look-progress" aria-live="polite" aria-label="First Look activity">',
+      '<span>First Look activity</span>',
+      '<strong>' + escapeHtml(valFirstLookActivity || 'Checking the sources you approved.') + '</strong>',
+      '<div class="val-first-look-source-grid">',
+        valFirstLookProgressRows().map(source => [
+          '<article data-state="' + escapeHtml(source.state || 'waiting') + '">',
+            '<div><b>' + escapeHtml(source.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.state)) + '</em></div>',
+            '<p>' + escapeHtml(source.message || 'Waiting for VAL to begin this source.') + '</p>',
+            source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
+          '</article>'
+        ].join('')).join(''),
+      '</div>',
+    '</section>'
+  ].join('');
+}
+function renderValFirstLookReceipt(run = valFirstLookRun){
+  const snapshot = run?.snapshot || {};
+  const sources = Array.isArray(snapshot.sources) ? snapshot.sources : [];
+  const sourceById = new Map(sources.map(source => [source.id, source]));
+  const window = snapshot.window || {start:run?.windowStart || '',end:run?.windowEnd || ''};
+  return [
+    '<section class="val-first-look-receipt" aria-label="Your First Look receipt">',
+      '<span>First Look complete</span>',
+      '<h4>VAL checked the sources you approved.</h4>',
+      '<p>' + escapeHtml((valFirstLookDate(window.start) || 'The start of your review window') + ' through ' + (valFirstLookDate(window.end) || 'today') + '. This is a private, review-only receipt. VAL did not create projects, relationships, tasks, drafts, or memory.') + '</p>',
+      '<div class="val-first-look-source-grid">',
+        valFirstLookSourceOrder.map(definition => {
+          const source = sourceById.get(definition.id) || {label:definition.label,status:'unavailable',detail:'This source was not available for the First Look.',examples:[]};
+          const examples = (source.examples || []).slice(0,3);
+          return [
+            '<article data-state="' + escapeHtml(source.status || 'unavailable') + '">',
+              '<div><b>' + escapeHtml(source.label || definition.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.status)) + '</em></div>',
+              '<p>' + escapeHtml(source.detail || '') + '</p>',
+              source.limitNote ? '<small>' + escapeHtml(source.limitNote) + '</small>' : '',
+              source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
+              examples.length ? '<ul>' + examples.map(example => '<li>' + escapeHtml(example.title || example.subject || '(Untitled item)') + (example.date || example.startTime || example.modifiedTime || example.startedAt ? '<small>' + escapeHtml(valFirstLookDate(example.date || example.startTime || example.modifiedTime || example.startedAt)) + '</small>' : '') + '</li>').join('') + '</ul>' : '',
+            '</article>'
+          ].join('');
+        }).join(''),
+      '</div>',
+    '</section>'
+  ].join('');
+}
+function renderValFirstLookConversation({state = 'ready', error = '', run = valFirstLookRun} = {}){
+  const card = valWitnessingCard('source_review');
+  const index = valWitnessingIndex(card);
+  const total = valWitnessingCards.length;
+  const complete = valFirstLookComplete(run);
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = [
+    '<div class="val-conversation val-first-look" data-val-witnessing-state="' + escapeHtml(state) + '">',
+      '<div class="val-conversation-progress" aria-label="Witnessing Session progress">',
+        '<span>Witnessing Session</span>',
+        '<b>' + (index + 1) + ' of ' + total + '</b>',
+        '<i style="--progress:' + (((index + 1) / total) * 100).toFixed(2) + '%"></i>',
+      '</div>',
+      renderValWitnessingPhaseMap(index),
+      '<section class="val-conversation-question" aria-label="The First Look">',
+        '<span>Movement 8 · The First Look</span>',
+        '<h3>Before we move on, VAL will show you exactly what it can see.</h3>',
+        '<p class="val-conversation-helper">This is one private, review-only 90-day source receipt. VAL will name each source as it checks it and will not create anything from what it finds.</p>',
+      '</section>',
+      complete ? renderValFirstLookReceipt(run) : state === 'preparing' ? renderValFirstLookProgress() : [
+        '<section class="val-first-look-intro" aria-label="Prepare the First Look">',
+          '<span>What VAL will check</span>',
+          '<ul><li>Gmail message records</li><li>Google Calendar events</li><li>Drive and Docs metadata, without opening document content</li><li>Krisp transcript receipts, preserved exactly as Krisp provided them</li></ul>',
+          '<p>Nothing will be routed into Projects, Relationships, Executive Inbox, Transcripts, or memory until you review it later.</p>',
+        '</section>',
+      ].join(''),
+      error ? '<p class="val-conversation-error">' + escapeHtml(error) + '</p>' : '',
+      '<div class="val-conversation-actions">',
+        complete
+          ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue to relationships</button>'
+          : state === 'preparing'
+            ? ''
+            : '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookPrepare">Prepare my First Look</button>',
+      '</div>',
+    '</div>'
+  ].join('');
+}
+async function loadValFirstLookRun(){
+  if(!canUseApi || mockScrapers) return valFirstLookRun;
+  const result = await getJson('/api/val/first-look',{cache:'no-store'});
+  valFirstLookRun = result?.run || null;
+  return valFirstLookRun;
+}
+async function prepareValFirstLook(){
+  if(!canUseApi || mockScrapers){
+    renderValFirstLookConversation({state:'ready',error:'The live VAL connection is required before it can read your sources.'});
+    return;
+  }
+  const sourceCard = valWitnessingCard('connect_sources');
+  const scope = String(valWitnessingState[sourceCard.category]?.rawResponse || workspaceInputValue('val-witnessing-' + sourceCard.category) || '').trim();
+  valFirstLookProgress = valFirstLookSourceOrder.map(source => ({...source,state:'waiting',message:'Waiting for VAL to begin this source.'}));
+  valFirstLookActivity = 'Starting your private, review-only First Look.';
+  renderValFirstLookConversation({state:'preparing'});
+  try{
+    const sessionId = await ensureValWitnessingSession();
+    const response = await fetch('/api/val/first-look/prepare',{
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sessionId,scope})
+    });
+    if(!response.ok || !response.body){
+      const body = await response.text();
+      let payload = {};
+      try{payload = body ? JSON.parse(body) : {};}catch(_e){}
+      throw new Error(payload.error || 'VAL could not begin the First Look.');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    let completed = false;
+    const handleEvent = event => {
+      if(event.type === 'progress'){
+        if(event.source === 'snapshot'){
+          valFirstLookActivity = event.message || valFirstLookActivity;
+        }else{
+          const current = valFirstLookProgress.find(item => item.id === event.source);
+          if(current) Object.assign(current,{state:event.state || current.state,message:event.message || current.message,error:event.error || ''});
+        }
+        renderValFirstLookConversation({state:'preparing'});
+        return;
+      }
+      if(event.type === 'complete'){
+        valFirstLookRun = event.run || null;
+        valFirstLookActivity = event.reused ? 'Your existing First Look is ready.' : 'Your First Look receipt is ready.';
+        completed = true;
+        renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+        hydrateValDrawer();
+        return;
+      }
+      if(event.type === 'error') throw new Error(event.message || 'VAL could not finish the First Look.');
+    };
+    while(true){
+      const chunk = await reader.read();
+      if(chunk.done) break;
+      pending += decoder.decode(chunk.value,{stream:true});
+      const lines = pending.split('\n');
+      pending = lines.pop() || '';
+      for(const line of lines){
+        if(!line.trim()) continue;
+        handleEvent(JSON.parse(line));
+      }
+    }
+    if(pending.trim()) handleEvent(JSON.parse(pending));
+    if(!completed) throw new Error('VAL finished without returning a First Look receipt.');
+  }catch(error){
+    renderValFirstLookConversation({state:'ready',error:error.message || 'VAL could not finish the First Look.'});
+  }
+}
+async function continueValWitnessingAfterFirstLook(){
+  await openValWitnessingQuestion('key_relationships');
+}
+
 function renderValWitnessingCompletion(result = {}){
   const memoryCount = Number(result?.memory?.length || result?.promotion?.memoryCount || 0);
   const savedLine = memoryCount
@@ -16710,6 +16903,10 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
   const answered = state === 'thinking' || state === 'shaping' || state === 'witnessed' || state === 'confirmed' || state === 'paused';
   const showAnswer = state === 'shaping' || state === 'witnessed' || state === 'confirmed' || state === 'paused';
   const witnessed = normalizeValWitnessingPayload(witness || valWitnessingState[card.category]?.witness || {}, rawResponse);
+  if(card.id === 'source_review'){
+    renderValFirstLookConversation({state:valFirstLookComplete() ? 'complete' : state === 'preparing' ? 'preparing' : 'ready',error,run:valFirstLookRun});
+    return;
+  }
   if(state === 'intro'){
     workspaceInputPanel.hidden = false;
     workspaceInputPanel.innerHTML = [
@@ -16879,18 +17076,31 @@ async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
   openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
 }
 
-function openValWitnessingQuestion(cardId = 'meeting_val'){
+async function openValWitnessingQuestion(cardId = 'meeting_val', options = {}){
   const card = valWitnessingCard(cardId);
+  if(card.id === 'source_review' && canUseApi && !mockScrapers){
+    try{await loadValFirstLookRun();}
+    catch(error){options.error = options.error || ('VAL could not check whether the First Look is ready: ' + error.message);}
+  }
   renderValWitnessingConversation({
     card,
     rawResponse: workspaceInputValue('val-witnessing-' + card.category),
-    state: 'question'
+    state: 'question',
+    error: options.error || ''
   });
   openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
 }
 
 async function saveValWitnessingCard(category){
   const card = valWitnessingCard(category);
+  const firstLookCard = valWitnessingCard('source_review');
+  if(valWitnessingIndex(card) > valWitnessingIndex(firstLookCard) && !valFirstLookComplete()){
+    try{await loadValFirstLookRun();}catch(_e){}
+    if(!valFirstLookComplete()){
+      await openValWitnessingQuestion('source_review', {error:'Before we continue, VAL needs to complete your First Look and show you the source receipt.'});
+      return;
+    }
+  }
   const mode = 'val-witnessing-' + card.category;
   const rawResponse = workspaceInputValue(mode);
   if(!rawResponse){
@@ -16991,6 +17201,14 @@ function skipValWitnessingToQuestion(cardId = 'meeting_val'){
 
 async function confirmValWitnessingCard(category, confirmation = 'yes'){
   const card = valWitnessingCard(category);
+  const firstLookCard = valWitnessingCard('source_review');
+  if(card.id === 'source_review' || (valWitnessingIndex(card) > valWitnessingIndex(firstLookCard) && !valFirstLookComplete())){
+    try{await loadValFirstLookRun();}catch(_e){}
+    if(!valFirstLookComplete()){
+      await openValWitnessingQuestion('source_review', {error:'Before we continue, VAL needs to complete your First Look and show you the source receipt.'});
+      return;
+    }
+  }
   const rawResponse = workspaceInputPanel.querySelector('.val-conversation-answer p')?.textContent.trim() || workspaceInputValue('val-witnessing-' + card.category);
   valWitnessingState[card.category] = {
     ...(valWitnessingState[card.category] || {}),
@@ -17193,7 +17411,18 @@ async function resumeValWitnessingSession(){
   const result = await postJson('/api/teach-val/onboarding/start', {resume:true, resumeWitnessing:true, testMode:false, mode:'onboarding'});
   activeValWitnessingSessionId = result.session?.id || result.id || '';
   restoreValWitnessingStateFromOnboarding(result);
-  return {sessionId: activeValWitnessingSessionId, target: valWitnessingResumeTarget(result), onboarding: result};
+  let target = valWitnessingResumeTarget(result);
+  try{await loadValFirstLookRun();}catch(_e){valFirstLookRun=null;}
+  const firstLookCard = valWitnessingCard('source_review');
+  if(valWitnessingIndex(target.card) > valWitnessingIndex(firstLookCard) && !valFirstLookComplete()){
+    target = {
+      card:firstLookCard,
+      state:'question',
+      rawResponse:'',
+      error:'Before we continue, VAL needs to prepare your First Look and show you the exact source receipt.'
+    };
+  }
+  return {sessionId: activeValWitnessingSessionId, target, onboarding: result};
 }
 
 async function startFreshValWitnessingSession(){
@@ -17682,7 +17911,9 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingRefreshConnections',
   'valWitnessingOAuth',
   'valWitnessingCredentialForm',
-  'valWitnessingSourcesContinue'
+  'valWitnessingSourcesContinue',
+  'valWitnessingFirstLookPrepare',
+  'valWitnessingFirstLookContinue'
 ]);
 
 async function handleValWitnessingWorkflowAction(command, type, rest = []){
@@ -17703,7 +17934,7 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
     return;
   }
   if(command === 'valWitnessingQuestion'){
-    openValWitnessingQuestion(type || 'meeting_val');
+    await openValWitnessingQuestion(type || 'meeting_val');
     return;
   }
   if(command === 'valWitnessingSave'){
@@ -17745,6 +17976,15 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingSourcesContinue'){
     await continueValWitnessingWithSources(type || 'witness_connect_sources');
+    return;
+  }
+  if(command === 'valWitnessingFirstLookPrepare'){
+    await prepareValFirstLook();
+    return;
+  }
+  if(command === 'valWitnessingFirstLookContinue'){
+    await continueValWitnessingAfterFirstLook();
+    return;
   }
 }
 

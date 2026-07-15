@@ -1407,7 +1407,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -3155,6 +3155,26 @@ function teachValImportRow(row){
     updatedAt:row.updated_at||row.updatedAt||new Date().toISOString()
   };
 }
+function firstLookSnapshotValue(value){
+  if(value&&typeof value==='object') return value;
+  try{return JSON.parse(String(value||'{}'));}catch(_e){return {};}
+}
+function valFirstLookRunRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    sessionId:row.session_id||row.sessionId||'',
+    status:row.status||'complete',
+    windowStart:row.window_start||row.windowStart||'',
+    windowEnd:row.window_end||row.windowEnd||'',
+    scope:row.scope||'',
+    snapshot:firstLookSnapshotValue(row.snapshot_json||row.snapshotJson||row.snapshot||{}),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    completedAt:row.completed_at||row.completedAt||row.created_at||row.createdAt||new Date().toISOString()
+  };
+}
 function teachValPublicCard(card){
   return card?{category:card.category,title:card.title,prompt:card.prompt}:null;
 }
@@ -3322,6 +3342,52 @@ async function saveTeachValImport(record){
   if(idx>=0)rows[idx]=stored;else rows.push(stored);
   saveValStore(store);
   return teachValImportRow(stored);
+}
+async function getValFirstLookRun(){
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select * from val_first_look_runs where tenant_id=$1 and user_id=$2 order by created_at desc limit 1',[tenantId(),currentUserId()]);
+    return valFirstLookRunRow(result.rows[0]);
+  }
+  const {rows}=teachValStoreArray('valFirstLookRuns');
+  const found=rows
+    .filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId())
+    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0))[0];
+  return valFirstLookRunRow(found);
+}
+async function saveValFirstLookRun(record){
+  await valDbReady;
+  const run=valFirstLookRunRow({
+    ...record,
+    id:record.id||uuid('flr'),
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    status:record.status||'complete',
+    createdAt:record.createdAt||new Date().toISOString(),
+    completedAt:record.completedAt||new Date().toISOString()
+  });
+  if(pgPool){
+    const inserted=await dbQuery(`insert into val_first_look_runs
+      (id,tenant_id,user_id,session_id,status,window_start,window_end,scope,snapshot_json,created_at,completed_at)
+      values ($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8,$9,$10::timestamptz,$11::timestamptz)
+      on conflict (tenant_id,user_id) do nothing
+      returning *`,[
+      run.id,run.tenantId,run.userId,run.sessionId,run.status,run.windowStart,run.windowEnd,run.scope,
+      JSON.stringify(run.snapshot||{}),run.createdAt,run.completedAt
+    ]);
+    if(inserted.rows[0]) return valFirstLookRunRow(inserted.rows[0]);
+    return getValFirstLookRun();
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookRuns');
+  const existing=rows.find(row=>row.tenantId===run.tenantId&&row.userId===run.userId);
+  if(existing)return valFirstLookRunRow(existing);
+  rows.push({
+    id:run.id,tenantId:run.tenantId,userId:run.userId,sessionId:run.sessionId,status:run.status,
+    windowStart:run.windowStart,windowEnd:run.windowEnd,scope:run.scope,snapshot:run.snapshot,
+    createdAt:run.createdAt,completedAt:run.completedAt
+  });
+  saveValStore(store);
+  return run;
 }
 async function listTeachValMemory(sessionId){
   await valDbReady;
@@ -6426,6 +6492,20 @@ async function initValDb(){
       data_json jsonb not null default '{}',
       created_at timestamptz not null default now()
     );
+    create table if not exists val_first_look_runs (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      session_id text,
+      status text not null default 'complete',
+      window_start timestamptz not null,
+      window_end timestamptz not null,
+      scope text not null default '',
+      snapshot_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      completed_at timestamptz not null default now(),
+      unique (tenant_id,user_id)
+    );
     create table if not exists val_oauth_tokens (
       provider text primary key,
       user_id text not null default 'default',
@@ -7662,12 +7742,13 @@ app.post('/api/teach-val/onboarding/:id/imports/:category',async(req,res)=>{
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)=>{
   try{
-    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const session=await getTeachValSession(req.params.id);
     if(!session)return res.status(404).json({ok:false,error:'Teach VAL onboarding session not found.'});
     const card=partnershipProtocolCardFor(req.params.cardId);
     if(!card&&isLegacyPartnershipProtocolCard(req.params.cardId))return res.status(409).json({ok:false,error:'This answer belongs to the previous Witnessing Session flow. Please click Start Fresh so VAL does not attach your answer to the wrong question.'});
     if(!card)return res.status(404).json({ok:false,error:'Partnership Protocol card not found.'});
+    if(card.id==='source_review')return res.status(409).json({ok:false,error:'The First Look is prepared directly from your connected sources. Use Prepare my First Look so VAL can show exactly what it read.'});
+    if(!(await requireOpenAIForNewWitnessing(res))) return;
     const rawResponse=String(req.body.rawResponse||req.body.raw_response||'').trim();
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
@@ -7877,6 +7958,61 @@ app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
     await auditLog({req,action:'teach_val_source_insights_imported',resourceType:'teach_val_onboarding',resourceId:session.id,metadata:{insightCount:insights.length},success:true}).catch(()=>{});
     res.json(await teachValStateResponse(session.id));
   }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/val/first-look',async(_req,res)=>{
+  try{
+    const run=await getValFirstLookRun();
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json({ok:true,run,reviewOnly:true,noDownstreamWrites:true});
+  }catch(error){
+    res.status(500).json({ok:false,error:error.message});
+  }
+});
+app.post('/api/val/first-look/prepare',async(req,res)=>{
+  res.status(200);
+  res.set({
+    'Content-Type':'application/x-ndjson; charset=utf-8',
+    'Cache-Control':'no-store, no-cache, must-revalidate',
+    'X-Accel-Buffering':'no'
+  });
+  res.flushHeaders?.();
+  const write=(event={})=>{
+    if(!res.writableEnded){
+      res.write(JSON.stringify(event)+'\n');
+      res.flush?.();
+    }
+  };
+  try{
+    const sessionId=String(req.body?.sessionId||'').trim();
+    if(!sessionId) throw new Error('The Witnessing Session is not ready yet. Return to the session and try again.');
+    const session=await getTeachValSession(sessionId);
+    if(!session) throw new Error('This Witnessing Session could not be found. Start the session again before preparing the First Look.');
+    const existing=await getValFirstLookRun();
+    if(existing?.status==='complete'){
+      write({type:'progress',source:'snapshot',state:'complete',message:'Opening your existing First Look. VAL does not regenerate it.'});
+      write({type:'complete',run:existing,reused:true});
+      return res.end();
+    }
+    write({type:'progress',source:'snapshot',state:'reading',message:'Starting your private, review-only First Look.'});
+    const snapshot=await buildValFirstLookSnapshot({
+      scope:String(req.body?.scope||'').trim(),
+      onProgress:write
+    });
+    write({type:'progress',source:'snapshot',state:'saving',message:'Saving this exact First Look receipt. Nothing else is being created.'});
+    const run=await saveValFirstLookRun({
+      sessionId:session.id,
+      status:'complete',
+      windowStart:snapshot.window.start,
+      windowEnd:snapshot.window.end,
+      scope:snapshot.scope,
+      snapshot,
+      completedAt:snapshot.completedAt
+    });
+    write({type:'complete',run,reused:false});
+  }catch(error){
+    write({type:'error',message:firstLookError(error)});
+  }
+  res.end();
 });
 app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
   try{
@@ -14389,6 +14525,188 @@ async function searchGoogleDocs(query,limit=8){
     if(files.length>=limit) break;
   }
   return files.slice(0,limit);
+}
+function firstLookWindow(days=90){
+  const windowEnd=new Date();
+  const windowStart=new Date(windowEnd.getTime()-days*24*60*60*1000);
+  return {windowStart,windowEnd};
+}
+function firstLookError(error){
+  return String(error?.message||error||'Source could not be read.')
+    .replace(/Bearer\s+[^\s]+/gi,'Bearer [redacted]')
+    .replace(/\s+/g,' ').trim().slice(0,420);
+}
+function firstLookEmailReceipt(email={}){
+  return {
+    id:String(email.messageId||''),
+    subject:String(email.subject||'(No subject)').slice(0,220),
+    from:String(email.from?.name||email.from?.email||'').slice(0,160),
+    date:email.date||email.receivedAt||'',
+    attachments:(email.attachments||[]).slice(0,8).map(item=>String(item.name||item.filename||'').slice(0,180)).filter(Boolean),
+    snippet:String(email.snippet||email.bodyPreview||'').replace(/\s+/g,' ').trim().slice(0,280)
+  };
+}
+function firstLookCalendarReceipt(event={}){
+  return {
+    id:String(event.id||''),
+    title:String(event.title||event.summary||'(No title)').slice(0,220),
+    startTime:event.startTime||'',
+    attendees:(event.attendees||[]).slice(0,12).map(person=>String(person.name||person.email||'').slice(0,160)).filter(Boolean)
+  };
+}
+function firstLookKrispReceipt(document={}){
+  return {
+    id:String(document.documentId||document.id||''),
+    title:String(document.title||document.name||'Untitled meeting').slice(0,220),
+    startedAt:document.startedAt||document.date||document.createdAt||'',
+    participants:(document.participants||document.attendees||[]).slice(0,12).map(person=>String(person.name||person.email||person||'').slice(0,160)).filter(Boolean)
+  };
+}
+async function listGoogleDriveFirstLookFiles({windowStart,limit=100}={}){
+  const token=await googleDocsToken();
+  const documentMimeTypes=[
+    'application/vnd.google-apps.document',
+    'application/vnd.google-apps.spreadsheet',
+    'application/vnd.google-apps.presentation',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ];
+  const q=[
+    'trashed = false',
+    `modifiedTime >= '${new Date(windowStart).toISOString()}'`,
+    '('+documentMimeTypes.map(type=>`mimeType = '${type}'`).join(' or ')+')'
+  ].join(' and ');
+  const url='https://www.googleapis.com/drive/v3/files?'+new URLSearchParams({
+    q,
+    fields:'nextPageToken,files(id,name,mimeType,modifiedTime,sharedWithMeTime,webViewLink,owners(displayName,emailAddress))',
+    orderBy:'modifiedTime desc',
+    pageSize:String(Math.max(1,Math.min(Number(limit)||100,100))),
+    corpora:'allDrives',
+    includeItemsFromAllDrives:'true',
+    supportsAllDrives:'true'
+  }).toString();
+  const data=await googleApiJson(url,{headers:{Authorization:`Bearer ${token}`}});
+  return {
+    files:(data.files||[]).map(file=>({
+      id:String(file.id||''),
+      title:String(file.name||'Untitled document').slice(0,220),
+      mimeType:String(file.mimeType||''),
+      modifiedTime:file.modifiedTime||'',
+      sharedWithMeTime:file.sharedWithMeTime||'',
+      url:file.webViewLink||''
+    })),
+    limited:!!data.nextPageToken
+  };
+}
+async function buildValFirstLookSnapshot({scope='',onProgress=async()=>{}}={}){
+  const {windowStart,windowEnd}=firstLookWindow(90);
+  const window={start:windowStart.toISOString(),end:windowEnd.toISOString(),days:90};
+  const sources=[];
+  const report=async(source,state,message,extra={})=>onProgress({type:'progress',source,state,message,...extra});
+
+  await report('gmail','reading','Reading Gmail from the last 90 days.');
+  try{
+    const [inbox,sent]=await Promise.all([
+      fetchGmailMessages({query:'in:inbox newer_than:90d',maxResults:100,includeBody:false}),
+      fetchGmailMessages({query:'in:sent newer_than:90d',maxResults:100,includeBody:false})
+    ]);
+    const inboxRows=inbox.emails||[];
+    const sentRows=sent.emails||[];
+    const unique=[...inboxRows,...sentRows].filter((email,index,rows)=>{
+      const id=String(email.messageId||'');
+      return !id||rows.findIndex(item=>String(item.messageId||'')===id)===index;
+    });
+    const errors=[inbox.error,sent.error].filter(Boolean);
+    const status=errors.length?(unique.length?'partial':'unavailable'):'complete';
+    const detail=status==='complete'
+      ? `Read ${inboxRows.length} recent inbox and ${sentRows.length} recent sent message records.`
+      : (unique.length?`Read ${unique.length} message records, but one Gmail view was unavailable.`:errors[0]||'Google authorization is required.');
+    const source={
+      id:'gmail',label:'Gmail',status,detail,window,
+      counts:{inbox:inboxRows.length,sent:sentRows.length,reviewed:unique.length},
+      limitNote:'This First Look records up to 100 inbox and 100 sent messages inside the 90-day window.',
+      examples:unique.sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,8).map(firstLookEmailReceipt),
+      error:errors[0]||''
+    };
+    sources.push(source);
+    await report('gmail',status,detail,{count:unique.length,error:source.error});
+  }catch(error){
+    const source={id:'gmail',label:'Gmail',status:'unavailable',detail:'Gmail could not be read for this First Look.',window,counts:{reviewed:0},examples:[],error:firstLookError(error)};
+    sources.push(source);
+    await report('gmail','unavailable',source.detail,{count:0,error:source.error});
+  }
+
+  await report('calendar','reading','Reading Google Calendar across the same 90 days.');
+  try{
+    const events=await fetchGoogleCalendarEvents(windowStart,windowEnd,2500);
+    const source={
+      id:'calendar',label:'Google Calendar',status:'complete',
+      detail:`Read ${events.length} calendar event${events.length===1?'':'s'}.`,window,
+      counts:{reviewed:events.length},
+      limitNote:events.length>=2500?'Calendar returned the first 2,500 events in this window.':'',
+      examples:events.slice(0,12).map(firstLookCalendarReceipt),error:''
+    };
+    sources.push(source);
+    await report('calendar','complete',source.detail,{count:events.length});
+  }catch(error){
+    const source={id:'calendar',label:'Google Calendar',status:'unavailable',detail:'Google Calendar could not be read for this First Look.',window,counts:{reviewed:0},examples:[],error:firstLookError(error)};
+    sources.push(source);
+    await report('calendar','unavailable',source.detail,{count:0,error:source.error});
+  }
+
+  await report('drive','reading','Checking Drive and Docs metadata. VAL will not open document content yet.');
+  try{
+    const drive=await listGoogleDriveFirstLookFiles({windowStart,limit:100});
+    const source={
+      id:'drive',label:'Drive & Docs',status:'complete',
+      detail:`Read metadata for ${drive.files.length} recently modified or shared document${drive.files.length===1?'':'s'}; no document content was opened.`,window,
+      counts:{reviewed:drive.files.length},
+      limitNote:drive.limited?'The First Look records the 100 most recently modified or shared documents in this window.':'',
+      examples:drive.files.slice(0,12),error:''
+    };
+    sources.push(source);
+    await report('drive','complete',source.detail,{count:drive.files.length});
+  }catch(error){
+    const source={id:'drive',label:'Drive & Docs',status:'unavailable',detail:'Drive and Docs could not be read for this First Look.',window,counts:{reviewed:0},examples:[],error:firstLookError(error)};
+    sources.push(source);
+    await report('drive','unavailable',source.detail,{count:0,error:source.error});
+  }
+
+  await report('krisp','reading','Checking Krisp transcript receipts. VAL preserves Krisp material exactly as Krisp provided it.');
+  try{
+    if(!(await krispMcp.isConfigured())) throw new Error('Krisp is not connected.');
+    const documents=await withTimeout(
+      krispMcp.listDocumentCandidates({limit:50,from:window.start,to:window.end}),
+      65000,
+      'Krisp transcript check timed out before it returned a receipt'
+    );
+    const source={
+      id:'krisp',label:'Krisp transcripts',status:'complete',
+      detail:`Found ${documents.length} available Krisp transcript receipt${documents.length===1?'':'s'}.`,window,
+      counts:{reviewed:documents.length},
+      limitNote:'The First Look records up to 50 available Krisp transcript receipts. Transcript text is never rewritten.',
+      examples:documents.slice(0,12).map(firstLookKrispReceipt),error:''
+    };
+    sources.push(source);
+    await report('krisp','complete',source.detail,{count:documents.length});
+  }catch(error){
+    const source={id:'krisp',label:'Krisp transcripts',status:'unavailable',detail:'Krisp transcripts could not be read for this First Look.',window,counts:{reviewed:0},examples:[],error:firstLookError(error)};
+    sources.push(source);
+    await report('krisp','unavailable',source.detail,{count:0,error:source.error});
+  }
+
+  return {
+    version:'val_first_look_v1',
+    reviewOnly:true,
+    scope:String(scope||'').trim().slice(0,1200),
+    window,
+    sources,
+    completedAt:new Date().toISOString(),
+    noDownstreamWrites:true,
+    next:'Review this receipt with the user before VAL proposes any relationship, project, priority, memory, task, or draft.'
+  };
 }
 async function readGoogleDoc({documentId,query}){
   const token=await googleDocsToken();
