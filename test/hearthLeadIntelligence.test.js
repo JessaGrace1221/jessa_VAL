@@ -1371,7 +1371,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ingress-off-20260714/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=witnessing-direct-route-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-oauth-20260715/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
@@ -2152,7 +2152,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /renderValWitnessingConnectionHub/);
   assert.match(hearthJs, /google: \{keyLabel:'Google'/);
   assert.match(hearthJs, /microsoft: \{keyLabel:'Outlook'/);
-  assert.match(hearthJs, /Google and Outlook open their own secure connection page/);
+  assert.match(hearthJs, /Google, Outlook, and Krisp open their own secure connection page/);
   assert.match(hearthJs, /Krisp transcripts/);
   assert.match(hearthJs, /Optional: what should VAL look for first\?/);
   assert.match(hearthJs, /meetings that need follow-up/);
@@ -2160,7 +2160,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /valWitnessingOAuth/);
   assert.match(hearthJs, /window\.addEventListener\('message'/);
   assert.match(hearthJs, /openai: \{keyLabel:'OpenAI'/);
-  assert.match(hearthJs, /Outscraper/);
+  assert.doesNotMatch(hearthJs, /outscraper: \{keyLabel:'Outscraper'/);
   assert.match(hearthJs, /valWitnessingCredentialForm/);
   assert.match(hearthJs, /valWitnessingSourcesContinue/);
   assert.match(hearthJs, /async function openValOsReviewWorkspace/);
@@ -2172,10 +2172,17 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /'\/api\/teach-val\/onboarding\/' \+ encodeURIComponent\(sessionId\) \+ '\/witnessing-cards\/' \+ encodeURIComponent\(card\.id\)/);
   assert.match(server, /async function witnessingConnectionStatusPayload/);
   const witnessingConnections = server.match(/async function witnessingConnectionStatusPayload\(\)[\s\S]*?\n}\napp\.get\('\/api\/val\/witnessing\/connections'/)?.[0] || '';
-  assert.match(witnessingConnections, /status:krispToken\?'connected':'optional'/);
+  assert.match(witnessingConnections, /actionHref:'\/auth\/krisp'/);
+  assert.match(witnessingConnections, /Sign in to let VAL read your Krisp meeting material/);
+  assert.doesNotMatch(witnessingConnections, /id:'outscraper'/);
   assert.doesNotMatch(witnessingConnections, /Krisp MCP is not configured yet/);
   assert.match(server, /app\.get\('\/api\/val\/witnessing\/connections'/);
   assert.match(server, /app\.post\('\/api\/val\/witnessing\/connections\/:provider'/);
+  assert.match(server, /app\.get\('\/auth\/krisp'/);
+  assert.match(server, /app\.get\('\/auth\/krisp\/callback'/);
+  assert.match(server, /code_challenge_method:'S256'/);
+  assert.match(server, /code_verifier:pending\.verifier/);
+  assert.match(server, /saveOAuthTokens\('krisp'/);
   assert.match(server, /async function teachValWitnessingSessionIsComplete/);
   assert.match(server, /witness_partnership_agreement/);
   assert.doesNotMatch(server, /restoreJessaRealWitnessingSessionBackup\(\) \|\| existing/);

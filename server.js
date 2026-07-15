@@ -104,6 +104,14 @@ const CLIENT_CONFIG = {
   projectName: process.env.VAL_PROJECT_NAME || '',
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
+function requestBaseUrl(req=null){
+  if(CLIENT_CONFIG.publicBaseUrl) return CLIENT_CONFIG.publicBaseUrl;
+  const host=String(req?.get?.('host')||req?.headers?.host||'').trim();
+  if(!host) return '';
+  const forwardedProto=String(req?.get?.('x-forwarded-proto')||req?.headers?.['x-forwarded-proto']||'').split(',')[0].trim();
+  const protocol=forwardedProto||req?.protocol||'https';
+  return `${protocol}://${host}`.replace(/\/+$/,'');
+}
 const DEMO_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_DEMO_MODE || ''));
 const PUBLIC_HEARTH_TEST_MODE = /^(1|true|yes)$/i.test(String(process.env.VAL_PUBLIC_HEARTH_TEST_MODE || ''));
 const IS_PRODUCTION = process.env.NODE_ENV==='production' || !!process.env.RAILWAY_PUBLIC_DOMAIN;
@@ -7318,19 +7326,12 @@ async function requireOpenAIForNewWitnessing(res){
   return true;
 }
 async function witnessingConnectionStatusPayload(){
-  const [google,microsoftTokens,tenantKeys]=await Promise.all([
+  const [google,microsoftTokens]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
-    loadOAuthTokens('microsoft').catch(()=>null),
-    tenantApiKeyConnectionStatuses().catch(()=>[])
+    loadOAuthTokens('microsoft').catch(()=>null)
   ]);
-  const keyByProvider=new Map((tenantKeys||[]).map(item=>[item.providerId,item]));
   const openai=await tenantOpenAIConnectionReadiness();
-  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY).catch(()=> '');
-  const krispToken=await resolveKrispAccessToken('').catch(()=> '');
-  const keyConnection=(provider,connected)=>{
-    const record=keyByProvider.get(provider)||{};
-    return {configured:!!connected,status:connected?'connected':(record.status||'not_connected'),lastUpdatedAt:record.lastUpdatedAt||'',lastTestedAt:record.lastTestedAt||''};
-  };
+  const krisp=await krispOAuthConnectionStatus().catch(error=>({connected:false,error:error.message||'Krisp needs to reconnect.'}));
   return {
     ok:true,
     source:'witnessing_connection_hub',
@@ -7361,30 +7362,26 @@ async function witnessingConnectionStatusPayload(){
       {
         id:'krisp',
         label:'Krisp transcripts',
-        configured:!!krispToken,
-        status:krispToken?'connected':'optional',
-        connected:!!krispToken,
-        action:'credential',
-        learns:'Optional: meeting transcripts, Action Items, and Key Points from Krisp.',
-        limits:'Connect Krisp only if you use it. You can also add transcripts to VAL later. VAL preserves the original transcript exactly.',
-        error:''
+        configured:!!krisp.connected,
+        status:krisp.connected?'connected':'not_connected',
+        connected:!!krisp.connected,
+        action:'oauth',
+        actionHref:'/auth/krisp',
+        learns:'Meeting transcripts, exact Action Items, and Key Points from Krisp.',
+        limits:'Sign in to let VAL read your Krisp meeting material. VAL keeps the original transcript exactly as Krisp provided it.',
+        error:krisp.error||''
       },
       {
         id:'openai',
         label:'OpenAI',
-        ...keyConnection('openai',openai.connected),
+        configured:!!openai.connected,
+        status:openai.status||'not_connected',
+        connected:!!openai.connected,
+        lastUpdatedAt:openai.lastUpdatedAt||'',
+        lastTestedAt:openai.lastTestedAt||'',
         action:'credential',
         learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
         limits:'A saved key is encrypted and never shown again.',
-        error:''
-      },
-      {
-        id:'outscraper',
-        label:'Outscraper',
-        ...keyConnection('outscraper',!!outscraperKey),
-        action:'credential',
-        learns:'Approved business search and enrichment context for Lead Intelligence.',
-        limits:'It is used only for approved lead research, never as a substitute for relationship evidence.',
         error:''
       }
     ]
@@ -7401,7 +7398,7 @@ app.get('/api/val/witnessing/readiness',async(req,res)=>{
 app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
   try{
     const provider=String(req.params.provider||'').trim().toLowerCase();
-    if(!['openai','outscraper','krisp'].includes(provider)) return res.status(404).json({ok:false,error:'Use the Google or Outlook connection button for that source.'});
+    if(!['openai','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
     const apiKey=String(req.body.apiKey||req.body.key||req.body.token||'').trim();
     if(!apiKey) return res.status(400).json({ok:false,error:'Paste the connection key before saving it.'});
     await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub'}});
@@ -8822,7 +8819,7 @@ function validGoogleClientId(id=GOOGLE_CLIENT_ID){
   return /^\d+[-\w]*\.apps\.googleusercontent\.com$/.test(String(id||'').trim());
 }
 function googleRedirectUri(req=null){
-  return CONFIGURED_GOOGLE_REDIRECT_URI || (req ? `${baseUrl(req)}/auth/callback` : REDIRECT_URI);
+  return CONFIGURED_GOOGLE_REDIRECT_URI || (req ? `${requestBaseUrl(req)}/auth/callback` : REDIRECT_URI);
 }
 function googleOAuthConfigProblems(req=null){
   const problems=[];
@@ -8892,9 +8889,160 @@ async function loadOAuthTokens(provider){
   return tokens[`${tenant}:${userId}:${provider}`] ? decryptOAuthTokens(tokens[`${tenant}:${userId}:${provider}`]) : null;
 }
 
-async function resolveKrispAccessToken(fallback=''){
+const KRISP_OAUTH_CLIENT_ID_ENV_NAMES = ['KRISP_OAUTH_CLIENT_ID','KRISP_CLIENT_ID'];
+const KRISP_OAUTH_CLIENT_SECRET_ENV_NAMES = ['KRISP_OAUTH_CLIENT_SECRET','KRISP_CLIENT_SECRET'];
+const KRISP_OAUTH_REDIRECT_URI_ENV_NAMES = ['KRISP_OAUTH_REDIRECT_URI','KRISP_REDIRECT_URI'];
+const KRISP_OAUTH_CLIENT_ID = firstEnvValue(KRISP_OAUTH_CLIENT_ID_ENV_NAMES);
+const KRISP_OAUTH_CLIENT_SECRET = firstEnvValue(KRISP_OAUTH_CLIENT_SECRET_ENV_NAMES);
+const CONFIGURED_KRISP_OAUTH_REDIRECT_URI = firstEnvValue(KRISP_OAUTH_REDIRECT_URI_ENV_NAMES);
+const KRISP_OAUTH_SCOPES = [
+  'user::me::read',
+  'user::meetings::list',
+  'user::meetings:metadata::read',
+  'user::meetings:notes::read',
+  'user::meetings:transcripts::read'
+];
+const KRISP_OAUTH_PENDING_TTL_MS = 10 * 60 * 1000;
+const krispOAuthPendingAuthorizations = new Map();
+let krispOAuthMetadataCache = {value:null,expiresAt:0};
+
+function krispOAuthRedirectUri(req=null){
+  return CONFIGURED_KRISP_OAUTH_REDIRECT_URI || (req ? `${requestBaseUrl(req)}/auth/krisp/callback` : `${CLIENT_CONFIG.publicBaseUrl}/auth/krisp/callback`);
+}
+
+function base64urlSha256(value=''){
+  return crypto.createHash('sha256').update(String(value)).digest('base64url');
+}
+
+function cleanExpiredKrispOAuthAuthorizations(){
+  const expiresBefore=Date.now()-KRISP_OAUTH_PENDING_TTL_MS;
+  for(const [state,entry] of krispOAuthPendingAuthorizations){
+    if(Number(entry?.createdAt||0)<expiresBefore) krispOAuthPendingAuthorizations.delete(state);
+  }
+}
+
+async function fetchKrispOAuthJson(url,options={}){
+  const response=await fetch(url,{headers:{Accept:'application/json',...(options.headers||{})},...options});
+  const body=await readJsonResponse(response);
+  if(!response.ok||body?.error) throw new Error(body?.error_description||body?.error||body?.message||`Krisp OAuth request failed (${response.status})`);
+  return body;
+}
+
+async function discoverKrispOAuthMetadata({force=false}={}){
+  if(!force&&krispOAuthMetadataCache.value&&Date.now()<krispOAuthMetadataCache.expiresAt) return krispOAuthMetadataCache.value;
+  const mcpUrl=new URL(KRISP_MCP_URL);
+  const discoveryUrls=Array.from(new Set([
+    `${KRISP_MCP_URL.replace(/\/+$/,'')}/.well-known/oauth-protected-resource`,
+    `${mcpUrl.origin}/.well-known/oauth-protected-resource`
+  ]));
+  let resourceMetadata=null;
+  let discoveryError=null;
+  for(const url of discoveryUrls){
+    try{
+      const candidate=await fetchKrispOAuthJson(url);
+      if(Array.isArray(candidate?.authorization_servers)&&candidate.authorization_servers.length){
+        resourceMetadata=candidate;
+        break;
+      }
+    }catch(error){
+      discoveryError=error;
+    }
+  }
+  if(!resourceMetadata) throw new Error(discoveryError?.message||'Krisp OAuth discovery is unavailable right now.');
+  const authorizationServer=String(resourceMetadata.authorization_servers[0]||'').replace(/\/+$/,'');
+  const authorizationMetadata=await fetchKrispOAuthJson(`${authorizationServer}/.well-known/oauth-authorization-server`);
+  if(!authorizationMetadata.authorization_endpoint||!authorizationMetadata.token_endpoint){
+    throw new Error('Krisp OAuth did not provide the connection details VAL needs.');
+  }
+  const metadata={
+    resource:resourceMetadata.resource||mcpUrl.origin,
+    authorizationServer,
+    authorizationEndpoint:authorizationMetadata.authorization_endpoint,
+    tokenEndpoint:authorizationMetadata.token_endpoint,
+    registrationEndpoint:authorizationMetadata.registration_endpoint||'',
+    scopesSupported:Array.isArray(authorizationMetadata.scopes_supported)?authorizationMetadata.scopes_supported:[],
+    tokenEndpointAuthMethods:Array.isArray(authorizationMetadata.token_endpoint_auth_methods_supported)?authorizationMetadata.token_endpoint_auth_methods_supported:[]
+  };
+  krispOAuthMetadataCache={value:metadata,expiresAt:Date.now()+5*60*1000};
+  return metadata;
+}
+
+async function registerKrispOAuthClient(metadata,redirectUri){
+  if(!metadata.registrationEndpoint) throw new Error('Krisp did not provide a secure registration route for this connection.');
+  const response=await fetch(metadata.registrationEndpoint,{
+    method:'POST',
+    headers:{Accept:'application/json','Content-Type':'application/json'},
+    body:JSON.stringify({
+      client_name:'VAL',
+      redirect_uris:[redirectUri],
+      response_types:['code'],
+      grant_types:['authorization_code','refresh_token'],
+      token_endpoint_auth_method:metadata.tokenEndpointAuthMethods.includes('client_secret_post')?'client_secret_post':'client_secret_basic'
+    })
+  });
+  const registration=await readJsonResponse(response);
+  if(!response.ok||!registration?.client_id){
+    throw new Error(registration?.error_description||registration?.error||registration?.message||'Krisp could not prepare the secure connection.');
+  }
+  return {clientId:registration.client_id,clientSecret:registration.client_secret||'',tokenAuthMethod:registration.token_endpoint_auth_method||'client_secret_post'};
+}
+
+async function krispOAuthClientForConnection(metadata,redirectUri){
+  if(KRISP_OAUTH_CLIENT_ID){
+    return {clientId:KRISP_OAUTH_CLIENT_ID,clientSecret:KRISP_OAUTH_CLIENT_SECRET,tokenAuthMethod:'client_secret_post'};
+  }
   const saved=await loadOAuthTokens('krisp').catch(()=>null);
-  if(saved?.access_token)return saved.access_token;
+  if(saved?.oauth_client_id){
+    return {clientId:saved.oauth_client_id,clientSecret:saved.oauth_client_secret||'',tokenAuthMethod:saved.oauth_token_auth_method||'client_secret_post'};
+  }
+  return registerKrispOAuthClient(metadata,redirectUri);
+}
+
+function krispTokenExpiresAt(tokens={}){
+  if(!tokens?.issued_at||!tokens?.expires_in) return 0;
+  return Number(tokens.issued_at)+(Number(tokens.expires_in)*1000)-60000;
+}
+
+async function getKrispOAuthAccessToken(){
+  const saved=await loadOAuthTokens('krisp').catch(()=>null);
+  if(!saved?.access_token) return '';
+  const expiresAt=krispTokenExpiresAt(saved);
+  if(!expiresAt||Date.now()<expiresAt) return saved.access_token;
+  if(!saved.refresh_token||!saved.oauth_token_endpoint||!saved.oauth_client_id) return '';
+  const form=new URLSearchParams({
+    grant_type:'refresh_token',
+    refresh_token:saved.refresh_token,
+    client_id:saved.oauth_client_id
+  });
+  if(saved.oauth_client_secret) form.set('client_secret',saved.oauth_client_secret);
+  try{
+    const refreshed=await fetchKrispOAuthJson(saved.oauth_token_endpoint,{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:form.toString()
+    });
+    const next={...saved,...refreshed,refresh_token:refreshed.refresh_token||saved.refresh_token,issued_at:Date.now()};
+    await saveOAuthTokens('krisp',next);
+    return next.access_token||'';
+  }catch(error){
+    console.error('Krisp token refresh failed:',error.message);
+    return '';
+  }
+}
+
+async function krispOAuthConnectionStatus(){
+  const saved=await loadOAuthTokens('krisp').catch(()=>null);
+  if(saved?.access_token){
+    const accessToken=await getKrispOAuthAccessToken();
+    return {connected:!!accessToken,error:accessToken?'':'Krisp needs to reconnect.'};
+  }
+  const legacyToken=await resolveIntegrationSecret('krisp','access_token',KRISP_MCP_ACCESS_TOKEN).catch(()=>KRISP_MCP_ACCESS_TOKEN);
+  return {connected:!!legacyToken,error:''};
+}
+
+async function resolveKrispAccessToken(fallback=''){
+  const oauthToken=await getKrispOAuthAccessToken().catch(()=> '');
+  if(oauthToken) return oauthToken;
   const credential=await resolveIntegrationSecret('krisp','access_token',fallback||KRISP_MCP_ACCESS_TOKEN).catch(()=>fallback||KRISP_MCP_ACCESS_TOKEN);
   return credential || resolveIntegrationSecret('krisp','api_key',fallback||KRISP_MCP_ACCESS_TOKEN);
 }
@@ -9028,11 +9176,89 @@ app.get('/auth/google', (req, res) => {
   const redirectUri=googleRedirectUri(req);
   if(problems.length){
     lastGoogleAuthError=problems.join('; ');
-    return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth needs configuration</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(redirectUri)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(baseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
+    return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Google OAuth needs configuration</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>VAL stopped before redirecting to Google because this deployment is missing required configuration.</p><ul>${problems.map(p=>`<li>${escapeHtml(p)}</li>`).join('')}</ul><p><strong>Redirect URI expected in Google Cloud:</strong><br><code>${escapeHtml(redirectUri)}</code></p><p><strong>OAuth client ID loaded:</strong> ${GOOGLE_CLIENT_ID?escapeHtml(maskSecret(GOOGLE_CLIENT_ID)):'not configured'}</p><p>Add/fix these Railway variables on the service serving <code>${escapeHtml(requestBaseUrl(req))}</code>, redeploy, then reconnect Google again.</p></div>`);
   }
   const scopes = GOOGLE_SCOPES.join(' ');
   const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&access_type=offline&prompt=consent&include_granted_scopes=true`;
   res.redirect(url);
+});
+
+app.get('/auth/krisp',async(req,res)=>{
+  try{
+    cleanExpiredKrispOAuthAuthorizations();
+    const redirectUri=krispOAuthRedirectUri(req);
+    const metadata=await discoverKrispOAuthMetadata();
+    const client=await krispOAuthClientForConnection(metadata,redirectUri);
+    const verifier=crypto.randomBytes(32).toString('base64url');
+    const state=crypto.randomBytes(32).toString('base64url');
+    const requestedScopes=KRISP_OAUTH_SCOPES.filter(scope=>!metadata.scopesSupported.length||metadata.scopesSupported.includes(scope));
+    krispOAuthPendingAuthorizations.set(state,{
+      createdAt:Date.now(),
+      verifier,
+      redirectUri,
+      resource:metadata.resource,
+      tokenEndpoint:metadata.tokenEndpoint,
+      clientId:client.clientId,
+      clientSecret:client.clientSecret,
+      tokenAuthMethod:client.tokenAuthMethod
+    });
+    const authorizationUrl=new URL(metadata.authorizationEndpoint);
+    authorizationUrl.search=new URLSearchParams({
+      response_type:'code',
+      client_id:client.clientId,
+      redirect_uri:redirectUri,
+      scope:requestedScopes.join(' '),
+      state,
+      code_challenge:base64urlSha256(verifier),
+      code_challenge_method:'S256',
+      resource:metadata.resource
+    }).toString();
+    res.redirect(authorizationUrl.toString());
+  }catch(error){
+    console.error('Krisp OAuth start failed:',error.message);
+    res.status(500).send(`<!doctype html><html><head><meta charset="utf-8"><title>Krisp cannot connect to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>Krisp cannot connect to VAL yet.</h2><p>${escapeHtml(error.message||'Please try again in a moment.')}</p><p>Close this window and try Connect Krisp again.</p></body></html>`);
+  }
+});
+
+app.get('/auth/krisp/callback',async(req,res)=>{
+  const code=String(req.query.code||'');
+  const state=String(req.query.state||'');
+  const providerError=String(req.query.error||'');
+  cleanExpiredKrispOAuthAuthorizations();
+  const pending=krispOAuthPendingAuthorizations.get(state);
+  krispOAuthPendingAuthorizations.delete(state);
+  if(providerError) return res.status(400).send(`<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>Krisp connection was not completed.</h2><p>${escapeHtml(String(req.query.error_description||providerError))}</p></body></html>`);
+  if(!code||!state||!pending) return res.status(400).send('<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>Krisp connection expired.</h2><p>Close this window and start Connect Krisp again from VAL.</p></body></html>');
+  try{
+    const form=new URLSearchParams({
+      grant_type:'authorization_code',
+      code,
+      redirect_uri:pending.redirectUri,
+      client_id:pending.clientId,
+      code_verifier:pending.verifier
+    });
+    if(pending.clientSecret) form.set('client_secret',pending.clientSecret);
+    const tokens=await fetchKrispOAuthJson(pending.tokenEndpoint,{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:form.toString()
+    });
+    if(!tokens.access_token) throw new Error('Krisp did not return an access token.');
+    await saveOAuthTokens('krisp',{
+      ...tokens,
+      issued_at:Date.now(),
+      oauth_resource:pending.resource,
+      oauth_token_endpoint:pending.tokenEndpoint,
+      oauth_client_id:pending.clientId,
+      oauth_client_secret:pending.clientSecret,
+      oauth_token_auth_method:pending.tokenAuthMethod
+    });
+    await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'krisp',metadata:{scopes:String(tokens.scope||KRISP_OAUTH_SCOPES.join(' ')).split(/\s+/),hasRefreshToken:!!tokens.refresh_token},success:true}).catch(()=>{});
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Krisp connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>Krisp transcripts are connected to VAL.</h2><p>Returning to VAL now.</p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'krisp'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
+  }catch(error){
+    console.error('Krisp OAuth callback failed:',error.message);
+    res.status(500).send(`<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>Krisp could not finish connecting.</h2><p>${escapeHtml(error.message||'Please try again.')}</p><p>Close this window and try Connect Krisp again.</p></body></html>`);
+  }
 });
 
 // Step 2 — Google redirects back with code, exchange for tokens
@@ -9197,7 +9423,7 @@ app.get('/api/google/calendar', async (req, res) => {
 
 app.get('/auth/microsoft',(req,res)=>{
   const missing=missingEnvNames(['MICROSOFT_CLIENT_ID','MICROSOFT_CLIENT_SECRET','MICROSOFT_REDIRECT_URI']);
-  if(missing.length) return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Microsoft cannot connect yet</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>Microsoft cannot connect yet because these Railway variables are missing: ${missing.map(escapeHtml).join(', ')}.</p><p>Add them in Railway → Variables, then redeploy.</p><p><strong>Redirect URI should be:</strong><br><code>${escapeHtml((CLIENT_CONFIG.publicBaseUrl||baseUrl(req)).replace(/\/$/,'')+'/auth/microsoft/callback')}</code></p></div>`);
+  if(missing.length) return res.status(200).send(`<h2 style="font-family:sans-serif;padding:2rem 2rem 0">Microsoft cannot connect yet</h2><div style="font-family:sans-serif;padding:0 2rem 2rem;line-height:1.5"><p>Microsoft cannot connect yet because these Railway variables are missing: ${missing.map(escapeHtml).join(', ')}.</p><p>Add them in Railway → Variables, then redeploy.</p><p><strong>Redirect URI should be:</strong><br><code>${escapeHtml((CLIENT_CONFIG.publicBaseUrl||requestBaseUrl(req)).replace(/\/$/,'')+'/auth/microsoft/callback')}</code></p></div>`);
   const url='https://login.microsoftonline.com/common/oauth2/v2.0/authorize?'+new URLSearchParams({
     client_id:MICROSOFT_CLIENT_ID,
     response_type:'code',

@@ -352,11 +352,14 @@ test('resolves a pasted Krisp meeting ID through search before fetching transcri
   }
 });
 
-test('server exposes Krisp MCP as transcript witness connector',()=>{
+test('server exposes Krisp OAuth as the transcript witness connector',()=>{
   assert.match(server,/createKrispMcpService/);
   assert.match(server,/providerId:'krisp'/);
   assert.match(server,/\/api\/val\/krisp\/status/);
-  assert.match(server,/Krisp MCP token is saved/);
+  assert.match(server,/app\.get\('\/auth\/krisp'/);
+  assert.match(server,/app\.get\('\/auth\/krisp\/callback'/);
+  assert.match(server,/code_challenge_method:'S256'/);
+  assert.match(server,/code_verifier:pending\.verifier/);
+  assert.match(server,/Krisp transcripts are connected to VAL/);
   assert.doesNotMatch(server,/\/api\/val\/krisp\/import/);
-  assert.doesNotMatch(server,/\/auth\/krisp/);
 });

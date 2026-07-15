@@ -16444,9 +16444,8 @@ Do not say anything is confirmed unless my own words clearly support it.`;
 const valWitnessingConnectionCopy = {
   google: {keyLabel:'Google',fieldLabel:'',placeholder:'',actionLabel:'Connect Google'},
   microsoft: {keyLabel:'Outlook',fieldLabel:'',placeholder:'',actionLabel:'Connect Outlook'},
-  krisp: {keyLabel:'Krisp transcripts',fieldLabel:'Krisp access token',placeholder:'Paste your Krisp MCP access token',actionLabel:'Connect Krisp'},
-  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'},
-  outscraper: {keyLabel:'Outscraper',fieldLabel:'Outscraper API key',placeholder:'Paste your Outscraper API key',actionLabel:'Connect Outscraper'}
+  krisp: {keyLabel:'Krisp transcripts',fieldLabel:'',placeholder:'',actionLabel:'Connect Krisp'},
+  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'}
 };
 
 function valWitnessingConnectionCard(connection = {}){
@@ -16484,7 +16483,7 @@ function renderValWitnessingConnectionHub(){
       '</div>',
       '<div class="val-witnessing-credential-slot" data-val-witnessing-credential-slot></div>',
       '<div class="val-witnessing-connection-footer">',
-        '<small>Google and Outlook open their own secure connection page. API keys are encrypted and never shown again.</small>',
+        '<small>Google, Outlook, and Krisp open their own secure connection page. API keys are encrypted and never shown again.</small>',
         '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingRefreshConnections">Refresh connection status</button>',
       '</div>',
     '</section>'
@@ -16572,7 +16571,7 @@ async function refreshValWitnessingConnections(){
 function openValWitnessingOAuthConnection(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
   const connection = (valWitnessingConnectionState?.connections || []).find(item => String(item.id || '').toLowerCase() === id);
-  const href = connection?.actionHref || (id === 'google' ? '/auth/google' : id === 'microsoft' ? '/auth/microsoft' : '');
+  const href = connection?.actionHref || (id === 'google' ? '/auth/google' : id === 'microsoft' ? '/auth/microsoft' : id === 'krisp' ? '/auth/krisp' : '');
   if(!href) return;
   const popup = window.open(href, 'val-witnessing-' + id, 'width=620,height=720');
   if(!popup){
