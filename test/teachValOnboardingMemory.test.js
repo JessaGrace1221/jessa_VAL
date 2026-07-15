@@ -4,6 +4,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
 
 const server=fs.readFileSync(path.join(__dirname,'..','server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(__dirname,'..','dashboard.html'),'utf8');
@@ -517,6 +518,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.doesNotMatch(server,/VAL_ALLOW_CANNED_WITNESSING/);
   assert.doesNotMatch(server,/function contextualFallbackQuestion/);
   assert.match(server,/function witnessLinesTooThin/);
+  assert.match(server,/function witnessGroundingMatches/);
   assert.match(server,/function priorWitnessLanguage/);
   assert.match(server,/function witnessLinesReusePrior/);
   assert.match(server,/used_language/);
@@ -589,6 +591,20 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/saveTeachValImport/);
   assert.match(server,/status:'Witnessed'/);
   assert.doesNotMatch(server,/Memory saved/);
+});
+
+test('Witnessing accepts concise lines grounded in the current answer without allowing boilerplate',()=>{
+  const validator=server.match(/function userFacingWitnessLine[\s\S]*?(?=function fallbackPartnershipProtocolWitness)/)?.[0]||'';
+  assert.ok(validator,'Witnessing validation helpers should be available for regression coverage.');
+  const context={};
+  vm.runInNewContext(`${validator}\nresult={witnessLinesTooThin};`,context);
+  const answer='I am first and foremost a mom. After that I use technology to support people\'s visions, capacity, and integrity/accountability.';
+  const grounded=[
+    'Being a mom comes first, and technology is in service of people\'s visions.',
+    'That order makes integrity and accountability part of how VAL should support you.'
+  ];
+  assert.equal(context.result.witnessLinesTooThin(grounded,answer,{}),false);
+  assert.equal(context.result.witnessLinesTooThin(['I hear you, and I will listen carefully.'],answer,{}),true);
 });
 
 test('Witnessing Session bounds model work to one responsive conversation turn',()=>{

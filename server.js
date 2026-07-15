@@ -3837,7 +3837,22 @@ function witnessLinesReusePrior(lines=[],priorImports=[]){
     return phrase.length>18&&prior.has(phrase);
   });
 }
-function witnessLinesTooThin(lines=[]){
+function witnessGroundingTerms(value=''){
+  const stop=new Set(['about','after','again','also','and','are','before','because','been','but','can','could','does','for','from','have','here','how','into','just','like','more','not','now','our','out','please','said','should','that','the','their','them','then','there','they','this','through','together','was','what','when','where','which','with','would','you','your']);
+  const aliases={mom:['mom','mother','motherhood'],mother:['mom','mother','motherhood'],motherhood:['mom','mother','motherhood'],dad:['dad','father','fatherhood'],father:['dad','father','fatherhood'],fatherhood:['dad','father','fatherhood'],tech:['tech','technology'],technology:['tech','technology']};
+  const terms=String(value||'').toLowerCase().match(/[a-z0-9']{3,}/g)||[];
+  return new Set(terms.flatMap(term=>{
+    const clean=term.replace(/'/g,'');
+    return clean&&!stop.has(clean)?(aliases[clean]||[clean]):[];
+  }));
+}
+function witnessGroundingMatches(lines=[],rawResponse='',graph={}){
+  let sourceTerms=witnessGroundingTerms(rawResponse);
+  if(!sourceTerms.size) sourceTerms=witnessGroundingTerms(JSON.stringify(graph||{}));
+  const witnessTerms=witnessGroundingTerms(normalizeWitnessLines(lines).join(' '));
+  return [...witnessTerms].filter(term=>sourceTerms.has(term)).length;
+}
+function witnessLinesTooThin(lines=[],rawResponse='',graph={}){
   const rawJoined=(Array.isArray(lines)?lines:[]).join(' ').toLowerCase();
   if(/\bthe user\b|\btheir story\b|\btheir work\b|\btheir communication\b|\bthe thread the user chose\b/.test(rawJoined)) return true;
   if(/something about that (gives|makes)/.test(rawJoined)) return true;
@@ -3850,7 +3865,9 @@ function witnessLinesTooThin(lines=[]){
   if(/you said,/.test(joined)&&/holding that as a beginning/.test(joined)) return true;
   const lastLine=normalizeWitnessLines(lines).slice(-1)[0]||'';
   if(/\?\s*$/.test(lastLine)&&!/underst(oo|a)nd|accurate|right|correct|close|mostly|exactly/i.test(lastLine)) return true;
-  return joined.length<120;
+  if(joined.length<45) return true;
+  const matches=witnessGroundingMatches(lines,rawResponse,graph);
+  return matches<(joined.length<90?2:1);
 }
 function fallbackPartnershipProtocolWitness({card,rawResponse,graph}){
   throw new Error('Live witnessing model unavailable. VAL will not use canned witnessing responses.');
@@ -3868,9 +3885,9 @@ function partnershipCarriedQuestions(priorImports=[]){
     .filter(item=>item.question)
     .slice(-20);
 }
-function normalizePartnershipWitnessResponse(parsed={},graph={},priorImports=[]){
+function normalizePartnershipWitnessResponse(parsed={},graph={},priorImports=[],rawResponse=''){
   const lines=normalizeWitnessLines(parsed?.lines);
-  if(lines.length&&!witnessLinesTooThin(lines)&&!witnessLinesReusePrior(lines,priorImports)) return {
+  if(lines.length&&!witnessLinesTooThin(lines,rawResponse,graph)&&!witnessLinesReusePrior(lines,priorImports)) return {
     lines,
     confirmation_options:normalizeWitnessLines(parsed.confirmation_options).length?normalizeWitnessLines(parsed.confirmation_options):['Yes, exactly','Mostly','Let me clarify'],
     follow_up_lines:normalizeWitnessLines(parsed.follow_up_lines),
@@ -4157,12 +4174,12 @@ async function witnessPartnershipProtocolAnswer({card,rawResponse,graph,priorImp
   }
   try{
     const parsed=parseModelJson(raw);
-    return normalizePartnershipWitnessResponse(parsed,graph,priorImports);
+    return normalizePartnershipWitnessResponse(parsed,graph,priorImports,rawResponse);
   }catch(e){
     if(!IS_PRODUCTION) console.error('[Witnessing response] unusable model response, retrying repair:',e.message);
     try{
       const repaired=await repairPartnershipWitnessJson({raw,card,rawResponse,graph,priorImports,evidenceChain,currentState});
-      return normalizePartnershipWitnessResponse(repaired,graph,priorImports);
+      return normalizePartnershipWitnessResponse(repaired,graph,priorImports,rawResponse);
     }catch(repairError){
       if(!IS_PRODUCTION) console.error('[Witnessing response] repair failed:',repairError.message);
     }
@@ -4270,7 +4287,7 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
       follow_up_lines:[],
       carried_questions:[],
       next_question:String(parsed.next_question||'').trim()
-    },graph,priorImports);
+    },graph,priorImports,rawResponse);
     if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};
   }catch(error){
