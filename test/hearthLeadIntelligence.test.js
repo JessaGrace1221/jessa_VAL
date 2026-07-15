@@ -2163,6 +2163,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.doesNotMatch(hearthJs, /outscraper: \{keyLabel:'Outscraper'/);
   assert.match(hearthJs, /valWitnessingCredentialForm/);
   assert.match(hearthJs, /valWitnessingSourcesContinue/);
+  assert.match(hearthJs, /Continue to First Look/);
+  assert.match(hearthJs, /result\?\.advance && next/);
   assert.match(hearthJs, /async function openValOsReviewWorkspace/);
   assert.match(hearthJs, /async function hydrateValDrawer/);
   assert.match(hearthJs, /getJson\('\/api\/val\/os'\)/);
@@ -2180,6 +2182,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(server, /app\.post\('\/api\/val\/witnessing\/connections\/:provider'/);
   assert.match(server, /app\.get\('\/auth\/krisp'/);
   assert.match(server, /app\.get\('\/auth\/krisp\/callback'/);
+  assert.match(server, /const isSourceConnectionStep=card\.id==='connect_sources'/);
+  assert.match(server, /advance:isSourceConnectionStep/);
   assert.match(server, /code_challenge_method:'S256'/);
   assert.match(server, /code_verifier:pending\.verifier/);
   assert.match(server, /saveOAuthTokens\('krisp'/);

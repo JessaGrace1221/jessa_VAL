@@ -7672,10 +7672,41 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
     if(!rawResponse)return res.status(400).json({ok:false,error:'Share one thing first. It can be short.'});
     const priorImports=await listTeachValImports(session.id);
     const nextCard=nextPartnershipProtocolCard(card);
-    const {graph,witness}=await generatePartnershipProtocolTurn({card,rawResponse,priorImports});
     const movementIndex=PARTNERSHIP_PROTOCOL_CARDS.findIndex(item=>item.id===card.id)+1;
     const priorEvidenceChain=priorPartnershipAnswers(priorImports);
-    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph});
+    const isSourceConnectionStep=card.id==='connect_sources';
+    const sourceConnectionConfirmation=isSourceConnectionStep ? {
+      value:'sources_selected',
+      status:'confirmed',
+      source:'user_connection_scope',
+      confirmedAt:new Date().toISOString()
+    } : null;
+    const sourceConnectionGraph=isSourceConnectionStep ? normalizePartnershipProtocolGraph({
+      preferences:[{
+        claim:'The user chose the private First Look scope: '+answerExcerpt(rawResponse,500),
+        status:'confirmed',
+        confidence_source:'user_selected_scope',
+        evidence_refs:['current_answer']
+      }],
+      next_question_recommendation:{
+        question:nextCard?.visibleQuestion||'',
+        why:'The user has chosen what VAL may review. The next step is a private, confirmable First Look.',
+        evidence_refs:['current_answer']
+      }
+    },card,rawResponse) : null;
+    const {graph,witness}=isSourceConnectionStep
+      ? {
+          graph:sourceConnectionGraph,
+          witness:{
+            lines:[],
+            confirmation_options:[],
+            follow_up_lines:[],
+            carried_questions:[],
+            next_question:nextCard?.visibleQuestion||''
+          }
+        }
+      : await generatePartnershipProtocolTurn({card,rawResponse,priorImports});
+    const integrityChain=partnershipIntegrityChainEntry({index:movementIndex,card,rawResponse,graph,confirmation:sourceConnectionConfirmation});
     const evidenceChain=priorEvidenceChain.concat([integrityChain]);
     const currentState=partnershipCurrentState(evidenceChain,nextCard);
     const existing=priorImports.find(i=>i.category===card.category);
@@ -7723,15 +7754,15 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       rawResponse,
       structuredSummary,
       extractedItems:partnershipGraphItems(card.category,graph),
-      reviewed:false,
-      status:'Witnessed'
+      reviewed:isSourceConnectionStep,
+      status:isSourceConnectionStep?'Confirmed':'Witnessed'
     });
     const state=normalizeTeachValState(session.state);
     state.progress[card.category]='Witnessed';
     state.stage=card.category;
     session.state=state;
     await saveTeachValSession(session);
-    res.json({ok:true,card,graph,witness,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
+    res.json({ok:true,card,graph,witness,advance:isSourceConnectionStep,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(req,res)=>{

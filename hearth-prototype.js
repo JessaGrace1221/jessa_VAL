@@ -16773,7 +16773,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         valWitnessingContextTools(card),
         '<p class="val-conversation-helper">' + escapeHtml(card.helper) + '</p>',
         '<div class="val-conversation-actions">',
-          '<button type="button" data-val-witnessing-action="true" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">Continue</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">' + (card.id === 'connect_sources' ? 'Continue to First Look' : 'Continue') + '</button>',
         '</div>'
       ].join(''),
       error ? '<p class="val-conversation-error">' + escapeHtml(error) + '</p>' : '',
@@ -16942,6 +16942,26 @@ async function saveValWitnessingCard(category){
         ...(valWitnessingState[next.category] || {}),
         questionOverride: witness.next_question
       };
+    }
+    if(result?.advance && next){
+      setWorkspaceContent({
+        lens: 'VAL Witnessing Session',
+        title: next.title,
+        meaning: "Let's look at this together.",
+        understanding: [],
+        recommendation: valWitnessingQuestionText(next),
+        actions: [{label:'Back to VAL', workflow:'cancel:val'}],
+        label: 'VAL Witnessing Session conversation'
+      });
+      deskWorkspace.classList.add('witnessing-mode');
+      renderValWitnessingConversation({
+        card: next,
+        rawResponse: workspaceInputValue('val-witnessing-' + next.category),
+        state: 'question'
+      });
+      hydrateValDrawer();
+      openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
+      return;
     }
     renderValWitnessingConversation({card, rawResponse, state:'witnessed', witness});
     hydrateValDrawer();
