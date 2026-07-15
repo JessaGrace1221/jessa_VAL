@@ -401,6 +401,7 @@ const hearthPacketCompletenessRegistry = {
 };
 
 const hearthClickContractRegistry = [
+  {selector:'[data-val-witnessing-action]', contract:'val.witnessing_direct', packet:'', rule:'Witnessing Session direct conversation rule', actions:'Continue the active Witnessing conversation or connection step', never:'Do not run Witnessing controls through generic packet preflight or expose packet internals'},
   {selector:'.observer-board-button', contract:'home.board_of_observers', packet:'observer_board_packet', rule:'Board of Observers inspection rule', actions:'Open observer truths and Chief of Staff synthesis', never:'Do not mutate source data or memory'},
   {selector:'.return-button,.close-calendar-button,.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail', contract:'nav.close_context', packet:'active_context_packet', rule:'Close active context without mutation', actions:'Close active card/detail and return to prior Hearth context', never:'Do not save, send, import, or mutate while closing'},
   {selector:'.workspace-card button,.workspace-actions button:not([data-workflow-action])', contract:'workspace.static_action', packet:'workspace_seed_packet', rule:'Static workspace action rule', actions:'Open the matching review/approval/teaching workspace only', never:'Do not execute external action from static demo card'},
@@ -12977,6 +12978,7 @@ function renderWorkspaceActionButtons(actions = []){
     const attrs = [
       ' class="' + classes.join(' ') + '"',
       spec.workflow ? ' data-workflow-action="' + escapeHtml(spec.workflow) + '"' : '',
+      /^valWitnessing/.test(String(spec.workflow || '')) ? ' data-val-witnessing-action="true"' : '',
       spec.homeAction ? ' data-home-action="' + escapeHtml(spec.homeAction) + '"' : '',
       spec.projectAction ? ' data-project-action="' + escapeHtml(spec.projectAction) + '"' : '',
       spec.packet ? ' data-val-variable-packet="' + escapeHtml(spec.packet) + '"' : '',
@@ -16454,7 +16456,7 @@ function valWitnessingConnectionCard(connection = {}){
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
   const action = connection.action === 'oauth'
     ? '<a class="val-witnessing-source-action" href="' + escapeHtml(connection.actionHref || '#') + '" target="_blank" rel="noopener">' + escapeHtml(copy.actionLabel) + '</a>'
-    : '<button type="button" class="val-witnessing-source-action" data-workflow-action="valWitnessingCredentialForm:' + escapeHtml(id) + '">' + escapeHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
+    : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeHtml(id) + '">' + escapeHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
   return [
     '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeHtml(id) + '" data-connected="' + String(connected) + '">',
       '<div class="val-witnessing-source-head">',
@@ -16483,7 +16485,7 @@ function renderValWitnessingConnectionHub(){
       '<div class="val-witnessing-credential-slot" data-val-witnessing-credential-slot></div>',
       '<div class="val-witnessing-connection-footer">',
         '<small>Google and Outlook open their own secure connection page. API keys are encrypted and never shown again.</small>',
-        '<button type="button" data-workflow-action="valWitnessingRefreshConnections">Refresh connection status</button>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingRefreshConnections">Refresh connection status</button>',
       '</div>',
     '</section>'
   ].join('');
@@ -16527,7 +16529,7 @@ function showValWitnessingCredentialForm(provider = ''){
       '</label>',
       '<div>',
         '<button type="submit">Save and test connection</button>',
-        '<button type="button" data-workflow-action="valWitnessingCredentialForm:close">Cancel</button>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:close">Cancel</button>',
       '</div>',
       '<small data-val-witnessing-credential-status>VAL will encrypt this key. It will not be shown again.</small>',
     '</form>'
@@ -16575,7 +16577,7 @@ function valWitnessingContextTools(card){
   if(card.id === 'documents_templates'){
     return [
       '<div class="val-witnessing-tool-row">',
-        '<button type="button" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload document or template</button>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingUpload:' + escapeHtml(card.category) + '">Upload document or template</button>',
         '<input type="file" data-val-witnessing-file-input="' + escapeHtml(card.category) + '" multiple hidden>',
       '</div>'
     ].join('');
@@ -16586,7 +16588,7 @@ function valWitnessingContextTools(card){
         '<span>ChatGPT / Claude</span>',
         '<strong>One prompt. One import packet.</strong>',
         '<p>Run this once in ChatGPT or Claude, then paste the full response here.</p>',
-        '<button type="button" data-workflow-action="valWitnessingPrompt:' + escapeHtml(card.category) + '">Copy the prompt</button>',
+        '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingPrompt:' + escapeHtml(card.category) + '">Copy the prompt</button>',
       '</div>'
     ].join('');
   }
@@ -16637,7 +16639,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
           '<p class="val-conversation-line val-conversation-question-intro">May I ask you my first question?</p>',
         '</section>',
         '<div class="val-conversation-actions">',
-          '<button type="button" data-workflow-action="valWitnessingQuestion:' + escapeHtml(card.id) + '">Begin</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(card.id) + '">Begin</button>',
         '</div>',
       '</div>'
     ].join('');
@@ -16684,15 +16686,15 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         valWitnessingContextTools(card),
         '<p class="val-conversation-helper">' + escapeHtml(card.helper) + '</p>',
         '<div class="val-conversation-actions">',
-          '<button type="button" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">Continue</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">Continue</button>',
         '</div>'
       ].join(''),
       error ? '<p class="val-conversation-error">' + escapeHtml(error) + '</p>' : '',
       state === 'paused' ? [
         '<div class="val-conversation-actions">',
-          next ? '<button type="button" data-workflow-action="valWitnessingSkipTo:' + escapeHtml(next.id) + '">Continue testing questions</button>' : '',
-          '<button type="button" data-workflow-action="valWitnessingFresh">Start Fresh</button>',
-          '<button type="button" data-workflow-action="valWitnessingQuestion:' + escapeHtml(card.id) + '">Try again</button>',
+        next ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingSkipTo:' + escapeHtml(next.id) + '">Continue testing questions</button>' : '',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFresh">Start Fresh</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(card.id) + '">Try again</button>',
         '</div>'
       ].join('') : '',
       state === 'thinking' ? [
@@ -16711,9 +16713,9 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
           renderValWitnessingLineList(witnessed.lines, 'val-witnessed-line'),
         '</section>',
         '<div class="val-confirmation-actions" aria-label="Confirm VAL understanding">',
-          '<button type="button" data-workflow-action="valWitnessingConfirm:yes:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[0] || 'Yes, exactly') + '</button>',
-          '<button type="button" data-workflow-action="valWitnessingConfirm:mostly:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[1] || 'Mostly') + '</button>',
-          '<button type="button" data-workflow-action="valWitnessingConfirm:clarify:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[2] || 'Let me clarify') + '</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingConfirm:yes:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[0] || 'Yes, exactly') + '</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingConfirm:mostly:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[1] || 'Mostly') + '</button>',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingConfirm:clarify:' + escapeHtml(card.category) + '">' + escapeHtml(witnessed.confirmation_options[2] || 'Let me clarify') + '</button>',
         '</div>'
       ].join('') : '',
       state === 'confirmed' ? [
@@ -16723,7 +16725,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         '</section>',
         next ? [
           '<div class="val-conversation-actions">',
-            '<button type="button" data-workflow-action="valWitnessingQuestion:' + escapeHtml(next.id) + '">Continue</button>',
+            '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(next.id) + '">Continue</button>',
           '</div>'
         ].join('') : ''
       ].join('') : '',
@@ -16766,10 +16768,7 @@ async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
       : "Let's keep going slowly.",
     understanding: [sessionLine],
     recommendation: card.question,
-    actions: [
-      {label:'Continue', workflow:'valWitnessingSave:' + card.category},
-      {label:'Back to VAL', workflow:'cancel:val'}
-    ].filter(Boolean),
+    actions: [{label:'Back to VAL', workflow:'cancel:val'}],
     label: 'VAL Witnessing Session workspace'
   });
   deskWorkspace.classList.add('witnessing-mode');
@@ -20277,6 +20276,16 @@ async function routeWorkspaceActionClick(event){
 workspaceActions.addEventListener('click', (event) => {
   routeWorkspaceActionClick(event);
 });
+function routeValWitnessingActionClick(event){
+  const actionButton = event.target.closest('[data-val-witnessing-action][data-workflow-action]');
+  if(!actionButton) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void handleWorkflowAction(actionButton.dataset.workflowAction, actionButton).catch((error) => {
+    console.error('Witnessing action failed', error);
+  });
+}
+document.addEventListener('click', routeValWitnessingActionClick, true);
 document.addEventListener('click', async (event) => {
   const projectActionButton = event.target.closest('#desk-workspace .workspace-actions [data-project-action]');
   if(!projectActionButton) return;

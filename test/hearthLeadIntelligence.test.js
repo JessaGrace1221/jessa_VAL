@@ -2052,7 +2052,7 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /One thoughtful question at a time/);
   assert.match(hearthHtml, /Nothing leaves this session/);
   assert.match(hearthHtml, /data-val-live-status/);
-  assert.match(hearthHtml, /data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session/);
+  assert.match(hearthHtml, /data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session/);
   assert.doesNotMatch(hearthHtml, /Pick Up Where We Left Off/);
   assert.doesNotMatch(hearthHtml, />Start Fresh</);
   assert.match(hearthJs, /const valDetail = document\.querySelector\('#val-detail'\)/);
@@ -2211,6 +2211,17 @@ test('Witnessing Session questions dispatch before shared workflow packet valida
   assert.match(witnessingDispatcher, /saveValWitnessingCard\(type \|\| 'witness_meeting_val'\)/);
   assert.match(witnessingDispatcher, /continueValWitnessingWithSources\(type \|\| 'witness_connect_sources'\)/);
   assert.doesNotMatch(witnessingDispatcher, /ensureHearthClickPacket/);
+});
+
+test('Witnessing Session controls cannot enter the generic packet workflow', () => {
+  const sessionOpen = hearthJs.match(/async function openValWitnessingSession[\s\S]*?\n}\n\nfunction openValWitnessingQuestion/)?.[0] || '';
+
+  assert.match(hearthJs, /\{selector:'\[data-val-witnessing-action\]', contract:'val\.witnessing_direct', packet:''/);
+  assert.match(hearthJs, /data-val-witnessing-action="true" data-workflow-action="' \+ \(card\.id === 'connect_sources' \? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:'\)/);
+  assert.match(hearthJs, /function routeValWitnessingActionClick\(event\)/);
+  assert.match(hearthJs, /event\.stopImmediatePropagation\(\);[\s\S]*?handleWorkflowAction\(actionButton\.dataset\.workflowAction, actionButton\)/);
+  assert.match(hearthJs, /document\.addEventListener\('click', routeValWitnessingActionClick, true\);/);
+  assert.doesNotMatch(sessionOpen, /\{label:'Continue', workflow:'valWitnessingSave:/);
 });
 
 test('Witnessing Session keeps its conversational surface after confirming an answer', () => {
