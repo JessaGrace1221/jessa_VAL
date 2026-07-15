@@ -16217,8 +16217,8 @@ const valWitnessingCards = [
     movement: 'Movement 7',
     title: 'Connect Your World',
     question: 'Choose the sources you want VAL to review with you.',
-    placeholder: 'Tell VAL what it should pay special attention to when you are ready for The First Look.',
-    helper: 'Each source stays inside the approval boundary. VAL will show what it sees before it creates a relationship, project, priority, or memory.',
+    placeholder: 'Optional. For example: “meetings that need follow-up,” “new relationships,” or “projects that feel stuck.” Leave this blank if nothing comes to mind yet.',
+    helper: 'Choose any source below. Later, VAL will prepare a private first review for you to approve. It will not create a relationship, project, priority, or memory without your say-so.',
     writesTo: 'source connection status and review scope',
     next: 'source_review'
   },
@@ -16455,7 +16455,7 @@ function valWitnessingConnectionCard(connection = {}){
   const connected = !!connection.connected;
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
   const action = connection.action === 'oauth'
-    ? '<a class="val-witnessing-source-action" href="' + escapeHtml(connection.actionHref || '#') + '" target="_blank" rel="noopener">' + escapeHtml(copy.actionLabel) + '</a>'
+    ? '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingOAuth:' + escapeHtml(id) + '">' + escapeHtml(copy.actionLabel) + '</button>'
     : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeHtml(id) + '">' + escapeHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
   return [
     '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeHtml(id) + '" data-connected="' + String(connected) + '">',
@@ -16476,8 +16476,8 @@ function renderValWitnessingConnectionHub(){
     '<section class="val-witnessing-connection-hub" aria-label="Connect your world">',
       '<div class="val-witnessing-connection-heading">',
         '<span>Connect your world</span>',
-        '<h4>Choose the evidence VAL may review with you.</h4>',
-        '<p>The First Look is review-only. It does not begin until you explicitly ask VAL to prepare it.</p>',
+        '<h4>Connect only what feels useful today.</h4>',
+        '<p>Choose a source now or later. VAL will prepare a private first review only when you ask it to.</p>',
       '</div>',
       '<div class="val-witnessing-connection-list" data-val-witnessing-connection-list>',
         '<p class="val-witnessing-connection-loading">Checking secure connections...</p>',
@@ -16569,6 +16569,26 @@ async function refreshValWitnessingConnections(){
   }
 }
 
+function openValWitnessingOAuthConnection(provider = ''){
+  const id = String(provider || '').trim().toLowerCase();
+  const connection = (valWitnessingConnectionState?.connections || []).find(item => String(item.id || '').toLowerCase() === id);
+  const href = connection?.actionHref || (id === 'google' ? '/auth/google' : id === 'microsoft' ? '/auth/microsoft' : '');
+  if(!href) return;
+  const popup = window.open(href, 'val-witnessing-' + id, 'width=620,height=720');
+  if(!popup){
+    window.location.assign(href);
+    return;
+  }
+  const refreshWhenReturned = () => window.setTimeout(refreshValWitnessingConnections, 250);
+  window.addEventListener('focus', refreshWhenReturned, {once:true});
+  popup.focus();
+}
+
+window.addEventListener('message', event => {
+  if(event.origin !== window.location.origin || event.data?.type !== 'val-oauth-connected') return;
+  window.setTimeout(refreshValWitnessingConnections, 100);
+});
+
 function showValWitnessingCredentialForm(provider = ''){
   const id = String(provider || '').trim().toLowerCase();
   const copy = valWitnessingConnectionCopy[id];
@@ -16619,7 +16639,7 @@ async function continueValWitnessingWithSources(category = 'witness_connect_sour
   if(input && !input.value.trim()){
     const connected = (valWitnessingConnectionState?.connections || []).filter(item => item.connected).map(item => item.label).filter(Boolean);
     input.value = connected.length
-      ? 'I want VAL to use ' + connected.join(', ') + ' when I explicitly begin The First Look.'
+      ? 'I want VAL to use ' + connected.join(', ') + ' when I ask for a private first review.'
       : 'I am not connecting sources yet. I will return to this step when I am ready for VAL to review my world with me.';
   }
   await saveValWitnessingCard(card.category);
@@ -16736,6 +16756,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         '</section>'
       ].join('') : state === 'thinking' ? '' : [
         '<label class="val-conversation-input">',
+          card.id === 'connect_sources' ? '<span>Optional: what should VAL look for first?</span>' : '',
           '<textarea data-workspace-input="' + escapeHtml(mode) + '" placeholder="' + escapeHtml(card.placeholder) + '">' + escapeHtml(rawResponse) + '</textarea>',
         '</label>',
         valWitnessingContextTools(card),
@@ -17628,6 +17649,7 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingUpload',
   'valWitnessingPrompt',
   'valWitnessingRefreshConnections',
+  'valWitnessingOAuth',
   'valWitnessingCredentialForm',
   'valWitnessingSourcesContinue'
 ]);
@@ -17675,6 +17697,10 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingRefreshConnections'){
     await refreshValWitnessingConnections();
+    return;
+  }
+  if(command === 'valWitnessingOAuth'){
+    openValWitnessingOAuthConnection(type);
     return;
   }
   if(command === 'valWitnessingCredentialForm'){

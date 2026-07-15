@@ -4206,7 +4206,7 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     'You are VAL in one calm Witnessing Session turn. Produce the internal evidence signal and the visible human response together.',
     'Use only the current answer and prior evidence chain. Do not invent, diagnose, flatter, or turn this into therapy.',
     'Keep the internal signal compact. Use an empty string when there is no source-grounded signal.',
-    'The visible witness must be two or three short, specific lines, followed only by a confirmation question. It must not summarize the entire answer.',
+    'The visible witness must feel like a thoughtful person has been paying close attention: three or four calm, specific sentences across two or three short lines, followed only by a confirmation question. Aim for roughly 90 to 160 words. It must not summarize the entire answer, read like a slogan, or feel like a tweet.',
     'Do not mention graph, memory, database, prompts, onboarding, fields, extraction, or schema in visible text.',
     'The next_question is the next visible question. Make it one short, personal question that reduces uncertainty without repeating what the person already said.',
     'Return strict JSON only with this exact shape:',
@@ -7318,11 +7318,10 @@ async function requireOpenAIForNewWitnessing(res){
   return true;
 }
 async function witnessingConnectionStatusPayload(){
-  const [google,microsoftTokens,tenantKeys,krispConfigured]=await Promise.all([
+  const [google,microsoftTokens,tenantKeys]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
     loadOAuthTokens('microsoft').catch(()=>null),
-    tenantApiKeyConnectionStatuses().catch(()=>[]),
-    krispMcp.isConfigured().catch(()=>false)
+    tenantApiKeyConnectionStatuses().catch(()=>[])
   ]);
   const keyByProvider=new Map((tenantKeys||[]).map(item=>[item.providerId,item]));
   const openai=await tenantOpenAIConnectionReadiness();
@@ -7362,11 +7361,13 @@ async function witnessingConnectionStatusPayload(){
       {
         id:'krisp',
         label:'Krisp transcripts',
-        ...keyConnection('krisp',!!krispToken&&!!krispConfigured),
+        configured:!!krispToken,
+        status:krispToken?'connected':'optional',
+        connected:!!krispToken,
         action:'credential',
-        learns:'Meeting transcripts, exact Action Items, and Key Points.',
-        limits:'VAL preserves the source transcript and never rewrites Krisp material as if it were the original receipt.',
-        error:krispConfigured?'':'Krisp MCP is not configured yet.'
+        learns:'Optional: meeting transcripts, Action Items, and Key Points from Krisp.',
+        limits:'Connect Krisp only if you use it. You can also add transcripts to VAL later. VAL preserves the original transcript exactly.',
+        error:''
       },
       {
         id:'openai',
@@ -9066,7 +9067,7 @@ app.get('/auth/callback', async (req, res) => {
     await saveOAuthTokens('google',googleTokens);
     console.log('Google tokens stored. refresh_token present:', !!googleTokens.refresh_token, 'scope count:', googleScopeList().length);
     await auditLog({req,action:'oauth_account_connected',resourceType:'oauth',resourceId:'google',metadata:{scopes:googleScopeList(),hasRefreshToken:!!googleTokens.refresh_token},success:true}).catch(()=>{});
-    res.send(`<h2 style="font-family:sans-serif;padding:2rem">Google Calendar, Gmail, Drive, and Docs connected to VAL.<br><br>You can close this tab.</h2>`);
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Google connected to VAL</title></head><body style="font-family:sans-serif;padding:2rem"><h2>Google Calendar, Gmail, Drive, and Docs are connected to VAL.</h2><p>Returning to VAL now.</p><p><a href="/">Return to VAL</a></p><script>if(window.opener){window.opener.postMessage({type:'val-oauth-connected',provider:'google'},window.location.origin);window.setTimeout(function(){window.close();},750);}</script></body></html>`);
   } catch(e) {
     res.status(500).send('Auth failed: '+e.message);
   }

@@ -2360,6 +2360,14 @@ button,a{font:inherit}
   padding:18px;
   resize:vertical;
 }
+.val-conversation-input > span{
+  display:block;
+  margin:0 0 8px;
+  color:rgba(64,86,61,.92);
+  font:800 .72rem var(--mono);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
 .val-witnessing-tool-row,
 .val-witnessing-prompt-card{
   width:min(680px,100%);

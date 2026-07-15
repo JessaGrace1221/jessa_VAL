@@ -628,6 +628,8 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/incomplete structured output/);
   assert.match(turn,/timeoutMs:VAL_WITNESSING_TURN_TIMEOUT_MS/);
   assert.match(turn,/witness_lines/);
+  assert.match(turn,/three or four calm, specific sentences/);
+  assert.match(turn,/roughly 90 to 160 words/);
   assert.match(turn,/living_executive_graph/);
   assert.match(turn,/normalizePartnershipWitnessResponse/);
   assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);

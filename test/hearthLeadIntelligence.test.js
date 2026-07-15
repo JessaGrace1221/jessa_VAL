@@ -2154,6 +2154,11 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /microsoft: \{keyLabel:'Outlook'/);
   assert.match(hearthJs, /Google and Outlook open their own secure connection page/);
   assert.match(hearthJs, /Krisp transcripts/);
+  assert.match(hearthJs, /Optional: what should VAL look for first\?/);
+  assert.match(hearthJs, /meetings that need follow-up/);
+  assert.match(hearthJs, /function openValWitnessingOAuthConnection/);
+  assert.match(hearthJs, /valWitnessingOAuth/);
+  assert.match(hearthJs, /window\.addEventListener\('message'/);
   assert.match(hearthJs, /openai: \{keyLabel:'OpenAI'/);
   assert.match(hearthJs, /Outscraper/);
   assert.match(hearthJs, /valWitnessingCredentialForm/);
@@ -2166,6 +2171,9 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /'\/api\/teach-val\/onboarding\/' \+ encodeURIComponent\(sessionId\) \+ '\/imports\/' \+ encodeURIComponent\(spec\.category\)/);
   assert.match(hearthJs, /'\/api\/teach-val\/onboarding\/' \+ encodeURIComponent\(sessionId\) \+ '\/witnessing-cards\/' \+ encodeURIComponent\(card\.id\)/);
   assert.match(server, /async function witnessingConnectionStatusPayload/);
+  const witnessingConnections = server.match(/async function witnessingConnectionStatusPayload\(\)[\s\S]*?\n}\napp\.get\('\/api\/val\/witnessing\/connections'/)?.[0] || '';
+  assert.match(witnessingConnections, /status:krispToken\?'connected':'optional'/);
+  assert.doesNotMatch(witnessingConnections, /Krisp MCP is not configured yet/);
   assert.match(server, /app\.get\('\/api\/val\/witnessing\/connections'/);
   assert.match(server, /app\.post\('\/api\/val\/witnessing\/connections\/:provider'/);
   assert.match(server, /async function teachValWitnessingSessionIsComplete/);
