@@ -2059,6 +2059,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /function handleValDetailWorkflowClick\(event\)/);
   assert.match(hearthJs, /document\.addEventListener\('click', \(event\) =>/);
   assert.match(hearthJs, /action === 'valWitnessingBegin'/);
+  const valDetailWorkflowStart = hearthJs.indexOf('async function handleValDetailWorkflowClick(event)');
+  const valDetailWorkflowEnd = hearthJs.indexOf("valDetail?.addEventListener('click', handleValDetailWorkflowClick);", valDetailWorkflowStart);
+  const valDetailWorkflowHandler = hearthJs.slice(valDetailWorkflowStart, valDetailWorkflowEnd);
+  assert.ok(valDetailWorkflowHandler.indexOf("action === 'valWitnessingBegin'") < valDetailWorkflowHandler.indexOf('const preflight = await ensureHearthClickPacket'), 'Witnessing must open before generic packet preflight');
   assert.doesNotMatch(hearthHtml, /val-status-panel/);
   assert.doesNotMatch(hearthHtml, /val-routing-panel/);
   assert.doesNotMatch(hearthHtml, /val-action-grid/);

@@ -19386,6 +19386,19 @@ async function handleValDetailWorkflowClick(event){
   if(!action.startsWith('val')) return false;
   event.preventDefault();
   event.stopPropagation();
+  // Witnessing controls own their context and must not be blocked by the generic packet gate.
+  if(action === 'valWitnessingResume'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return true;
+  }
+  if(action === 'valWitnessingFresh'){
+    await openValWitnessingSession('meeting_val', {fresh:true});
+    return true;
+  }
+  if(action === 'valWitnessingBegin'){
+    await openValWitnessingSession('meeting_val', {resume:true});
+    return true;
+  }
   const preflight = await ensureHearthClickPacket({
     node:workflowButton,
     packetName:'val_os_packet',
@@ -19401,18 +19414,6 @@ async function handleValDetailWorkflowClick(event){
   renderDrawerPacketReceiptStrip(preflight.packet || lastHearthPacketReceipt);
   if(action === 'valConnections:review' || action === 'valConnections'){
     openValConnectionsWorkspace();
-    return true;
-  }
-  if(action === 'valWitnessingResume'){
-    await openValWitnessingSession('meeting_val', {resume:true});
-    return true;
-  }
-  if(action === 'valWitnessingFresh'){
-    await openValWitnessingSession('meeting_val', {fresh:true});
-    return true;
-  }
-  if(action === 'valWitnessingBegin'){
-    await openValWitnessingSession('meeting_val', {resume:true});
     return true;
   }
   await handleWorkflowAction(action, workflowButton);
