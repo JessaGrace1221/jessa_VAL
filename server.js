@@ -173,7 +173,7 @@ const VAL_WITNESSING_OBSERVATION_TIMEOUT_MS = Math.min(Math.max(Number(process.e
 const VAL_WITNESSING_RESPONSE_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_RESPONSE_TIMEOUT_MS)||16000,8000),60000);
 const VAL_WITNESSING_REPAIR_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_REPAIR_TIMEOUT_MS)||12000,5000),30000);
 const VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_NEXT_QUESTION_TIMEOUT_MS)||7000,3000),20000);
-const VAL_WITNESSING_TURN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_TIMEOUT_MS)||40000,15000),55000);
+const VAL_WITNESSING_TURN_TIMEOUT_MS = Math.min(Math.max(Number(process.env.VAL_WITNESSING_TURN_TIMEOUT_MS)||30000,8000),45000);
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -4164,13 +4164,12 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     '',
     'You are VAL in one calm Witnessing Session turn. Produce the internal evidence signal and the visible human response together.',
     'Use only the current answer and prior evidence chain. Do not invent, diagnose, flatter, or turn this into therapy.',
-    'Keep the internal graph compact. Every array may have at most one item. Use empty arrays when there is no source-grounded signal.',
-    'For each graph claim, include evidence_refs:["current_answer"] and confidence_source:"single_answer" unless a prior chain supports repetition.',
+    'Keep the internal signal compact. Use an empty string when there is no source-grounded signal.',
     'The visible witness must be two or three short, specific lines, followed only by a confirmation question. It must not summarize the entire answer.',
     'Do not mention graph, memory, database, prompts, onboarding, fields, extraction, or schema in visible text.',
     'The next_question is the next visible question. Make it one short, personal question that reduces uncertainty without repeating what the person already said.',
     'Return strict JSON only with this exact shape:',
-    '{"living_executive_graph":{"facts":[],"preferences":[],"observations":[],"hypotheses":[],"curiosity":{"surprises":[],"repeated_words_or_ideas":[],"chosen_beginning":"","notable_omission":"","genuine_wonder":"","relational_focus":""},"principles":[],"protected":[],"executive_vocabulary":[],"relationship_graph_updates":[],"contradictions":[],"stewardship_implications":[],"next_question_recommendation":{"question":"","why":"","evidence_refs":["current_answer"]}},"witness":{"lines":[""],"confirmation_options":["Yes, exactly","Mostly","Let me clarify"],"follow_up_lines":[],"carried_questions":[],"next_question":""}}'
+    '{"fact":"","preference":"","observation":"","hypothesis":"","curiosity":"","principle":"","protected":"","vocabulary":[],"next_question":"","witness_lines":["",""]}'
   ].join('\n');
   const user=JSON.stringify({
     card:{
@@ -4191,7 +4190,7 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     raw=await callValModel({
       system,
       user,
-      maxTokens:1200,
+      maxTokens:700,
       temperature:0.35,
       json:true,
       timeoutMs:VAL_WITNESSING_TURN_TIMEOUT_MS
@@ -4202,9 +4201,39 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
   }
   try{
     const parsed=parseModelJson(raw);
-    const graph=normalizePartnershipProtocolGraph(parsed.living_executive_graph,card,rawResponse);
-    const witness=normalizePartnershipWitnessResponse(parsed.witness,graph,priorImports);
-    if(!witness.next_question) witness.next_question=graph.next_question_recommendation?.question||nextCard?.visibleQuestion||'';
+    const signal=(claim='')=>String(claim||'').trim()?[
+      {claim:String(claim).trim(),status:'noticed',evidence_refs:['current_answer'],confidence_source:'single_answer'}
+    ]:[];
+    const graph=normalizePartnershipProtocolGraph({
+      facts:signal(parsed.fact),
+      preferences:signal(parsed.preference),
+      observations:signal(parsed.observation),
+      hypotheses:signal(parsed.hypothesis),
+      curiosity:{
+        surprises:[],
+        repeated_words_or_ideas:[],
+        chosen_beginning:'',
+        notable_omission:'',
+        genuine_wonder:String(parsed.curiosity||'').trim(),
+        relational_focus:String(parsed.observation||parsed.curiosity||'').trim()
+      },
+      principles:signal(parsed.principle),
+      protected:signal(parsed.protected),
+      executive_vocabulary:(Array.isArray(parsed.vocabulary)?parsed.vocabulary:[]).slice(0,4).map(term=>({term:String(term||'').trim(),evidence_refs:['current_answer'],confidence_source:'single_answer'})).filter(item=>item.term),
+      next_question_recommendation:{
+        question:String(parsed.next_question||nextCard?.visibleQuestion||'').trim(),
+        why:String(parsed.curiosity||'').trim(),
+        evidence_refs:['current_answer']
+      }
+    },card,rawResponse);
+    const witness=normalizePartnershipWitnessResponse({
+      lines:Array.isArray(parsed.witness_lines)?parsed.witness_lines:[],
+      confirmation_options:['Yes, exactly','Mostly','Let me clarify'],
+      follow_up_lines:[],
+      carried_questions:[],
+      next_question:String(parsed.next_question||'').trim()
+    },graph,priorImports);
+    if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};
   }catch(error){
     console.warn('[Witnessing turn] unusable model response for card',card.id,':',error.message);

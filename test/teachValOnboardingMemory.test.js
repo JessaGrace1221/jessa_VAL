@@ -601,8 +601,9 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(server,/const VAL_WITNESSING_REPAIR_TIMEOUT_MS/);
   assert.match(server,/const VAL_WITNESSING_TURN_TIMEOUT_MS/);
   assert.match(openAi,/fetchWithTimeout\('https:\/\/api\.openai\.com\/v1\/responses',options,timeoutMs,'OpenAI response'\)/);
-  assert.match(turn,/maxTokens:1200/);
+  assert.match(turn,/maxTokens:700/);
   assert.match(turn,/timeoutMs:VAL_WITNESSING_TURN_TIMEOUT_MS/);
+  assert.match(turn,/witness_lines/);
   assert.match(turn,/living_executive_graph/);
   assert.match(turn,/normalizePartnershipWitnessResponse/);
   assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
