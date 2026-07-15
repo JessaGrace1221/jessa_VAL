@@ -16691,6 +16691,10 @@ let valFirstLookRun = null;
 let valFirstLookProgress = [];
 let valFirstLookActivity = '';
 let valFirstLookKrispVerification = null;
+let valFirstLookCandidates = [];
+let valFirstLookCandidateProgress = [];
+let valFirstLookCandidateActivity = '';
+let valFirstLookDelivery = null;
 
 function valFirstLookComplete(run = valFirstLookRun){
   return String(run?.status || '').toLowerCase() === 'complete';
@@ -16704,8 +16708,8 @@ function valFirstLookSourceStateLabel(state = ''){
     waiting:'Waiting',
     reading:'Reading now',
     saving:'Saving receipt',
-    complete:'Checked',
-    partial:'Partially checked',
+    complete:'Scanned',
+    partial:'Partially scanned',
     needs_verification:'Needs verification',
     unavailable:'Unavailable'
   };
@@ -16747,6 +16751,87 @@ function valFirstLookDisplaySource(source,definition){
   }
   return current;
 }
+function valFirstLookCountLabel(source = {}){
+  const count=Number(source.counts?.reviewed||0);
+  if(!Number.isFinite(count))return '';
+  return count+' record'+(count===1?'':'s')+' scanned';
+}
+function valFirstLookCandidateLabel(candidate = {}){
+  const payload=candidate.payload||{};
+  const destination=candidate.type==='project'?'Project Managers':'Stewardship';
+  if(candidate.decision==='delivered')return 'Delivered to '+destination;
+  if(['kept','corrected'].includes(candidate.decision))return 'Ready for '+destination;
+  if(candidate.decision==='deferred')return 'Held for later';
+  if(candidate.decision==='excluded')return 'Not included';
+  return 'Needs your review';
+}
+function valFirstLookCandidateEvidence(candidate = {}){
+  const evidence=Array.isArray(candidate.sourceEvidence)?candidate.sourceEvidence:[];
+  if(!evidence.length)return '';
+  return '<ul class="val-first-look-candidate-evidence">'+evidence.slice(0,4).map(item=>[
+    '<li><b>'+escapeHtml(item.source==='witnessing'?'Witnessing':'Source')+'</b> '+escapeHtml(item.title||'Source receipt')+(item.date?' <small>'+escapeHtml(valFirstLookDate(item.date))+'</small>':'')+'</li>'
+  ].join('')).join('')+'</ul>';
+}
+function renderValFirstLookCandidate(candidate = {}){
+  const payload=candidate.payload||{};
+  const destination=candidate.type==='project'?'Project Managers':'Stewardship';
+  const title=payload.proposedName||'Unnamed proposal';
+  const canDecide=candidate.decision==='proposed'||candidate.decision==='deferred';
+  const canCorrect=candidate.decision!=='delivered'&&candidate.decision!=='excluded';
+  return [
+    '<article class="val-first-look-candidate" data-state="'+escapeHtml(candidate.decision||'proposed')+'">',
+      '<div class="val-first-look-candidate-heading"><span>'+escapeHtml(destination)+'</span><em>'+escapeHtml(valFirstLookCandidateLabel(candidate))+'</em></div>',
+      '<h5>'+escapeHtml(title)+'</h5>',
+      '<p>'+escapeHtml(payload.note||'VAL found source-backed context that needs your review.')+'</p>',
+      payload.confidence?'<small>Confidence: '+escapeHtml(String(payload.confidence).replace(/_/g,' '))+'</small>':'',
+      candidate.type==='project'&&payload.knownPeople?.length?'<small>People named: '+escapeHtml(payload.knownPeople.join(', '))+'</small>':'',
+      candidate.type==='project'&&payload.onboardingQuestion?'<small>On arrival: '+escapeHtml(payload.onboardingQuestion)+'</small>':'',
+      valFirstLookCandidateEvidence(candidate),
+      canCorrect?'<label class="val-first-look-candidate-correction"><span>Correct the name</span><input type="text" value="'+escapeHtml(title)+'" data-first-look-candidate-name="'+escapeHtml(candidate.id)+'"></label>':'',
+      '<div class="val-first-look-candidate-actions">',
+        canDecide?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookCandidateDecision:'+escapeHtml(candidate.id)+':kept">Keep</button>':'',
+        canCorrect?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookCandidateCorrect:'+escapeHtml(candidate.id)+'">Save correction</button>':'',
+        canDecide?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookCandidateDecision:'+escapeHtml(candidate.id)+':excluded">Not '+(candidate.type==='project'?'a project':'a relationship')+'</button>':'',
+      '</div>',
+    '</article>'
+  ].join('');
+}
+function renderValFirstLookCandidateMap(){
+  const candidates=Array.isArray(valFirstLookCandidates)?valFirstLookCandidates:[];
+  const relationships=candidates.filter(candidate=>candidate.type==='relationship');
+  const projects=candidates.filter(candidate=>candidate.type==='project');
+  const ready=candidates.filter(candidate=>['kept','corrected'].includes(candidate.decision));
+  const delivered=candidates.filter(candidate=>candidate.decision==='delivered');
+  return [
+    '<section class="val-first-look-candidate-map" aria-label="What VAL found">',
+      '<span>What VAL found</span>',
+      '<h4>A proposed map, ready for your judgment.</h4>',
+      '<p>Nothing below exists in a drawer yet. Keep what belongs, correct what needs context, and leave out anything that does not belong.</p>',
+      relationships.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Relationships for Stewardship</h5><small>'+relationships.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+relationships.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
+      projects.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Projects for Project Managers</h5><small>'+projects.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+projects.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
+      ready.length?'<div class="val-first-look-delivery"><strong>'+ready.length+' approved item'+(ready.length===1?'':'s')+' ready for delivery.</strong><p>Delivery creates local Stewardship and Project Managers packets with their notes and source references. It does not send, schedule, or change anything outside VAL.</p><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookDeliver">Deliver approved items</button></div>':'',
+      delivered.length?'<div class="val-first-look-delivery delivered"><strong>'+delivered.length+' item'+(delivered.length===1?'':'s')+' delivered.</strong><p>VAL created the approved local packets and preserved their First Look notes and source references.</p><div><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:stewardship">Open Stewardship</button><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:projects">Open Project Managers</button></div></div>':'',
+    '</section>'
+  ].join('');
+}
+function renderValFirstLookCandidateProgress(){
+  const byId=new Map((valFirstLookCandidateProgress||[]).map(item=>[item.id,item]));
+  const rows=[
+    {id:'witnessing',label:'Witnessing Session'},
+    ...valFirstLookSourceOrder,
+    {id:'reasoning',label:'Relationship and project map'},
+    {id:'review',label:'Review packets'}
+  ].map(source=>({...source,...(byId.get(source.id)||{state:'waiting',message:'Waiting for VAL to begin this step.'})}));
+  return [
+    '<section class="val-first-look-progress" aria-live="polite" aria-label="Proposed map activity">',
+      '<span>Building the proposed map</span>',
+      '<strong>'+escapeHtml(valFirstLookCandidateActivity||'VAL is preparing the map from the sources you approved.')+'</strong>',
+      '<div class="val-first-look-source-grid">',
+        rows.map(source=>'<article data-state="'+escapeHtml(source.state||'waiting')+'"><div><b>'+escapeHtml(source.label)+'</b><em>'+escapeHtml(valFirstLookSourceStateLabel(source.state))+'</em></div><p>'+escapeHtml(source.message||'Waiting for VAL to begin this step.')+'</p></article>').join(''),
+      '</div>',
+    '</section>'
+  ].join('');
+}
 function renderValFirstLookReceipt(run = valFirstLookRun){
   const snapshot = run?.snapshot || {};
   const sources = Array.isArray(snapshot.sources) ? snapshot.sources : [];
@@ -16763,19 +16848,19 @@ function renderValFirstLookReceipt(run = valFirstLookRun){
           const source = definition.id==='krisp'&&valFirstLookKrispVerification
             ? valFirstLookKrispVerification
             : valFirstLookDisplaySource(original,definition);
-          const examples = (source.examples || []).slice(0,3);
           return [
             '<article data-state="' + escapeHtml(source.status || 'unavailable') + '">',
               '<div><b>' + escapeConnectionHtml(source.label || definition.label) + '</b><em>' + escapeHtml(valFirstLookSourceStateLabel(source.status)) + '</em></div>',
               '<p>' + escapeHtml(source.detail || '') + '</p>',
+              valFirstLookCountLabel(source)?'<small>'+escapeHtml(valFirstLookCountLabel(source))+'</small>':'',
               source.limitNote ? '<small>' + escapeHtml(source.limitNote) + '</small>' : '',
               source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
-              examples.length ? '<ul>' + examples.map(example => '<li>' + escapeHtml(example.title || example.subject || '(Untitled item)') + (example.date || example.startTime || example.modifiedTime || example.startedAt ? '<small>' + escapeHtml(valFirstLookDate(example.date || example.startTime || example.modifiedTime || example.startedAt)) + '</small>' : '') + '</li>').join('') + '</ul>' : '',
               definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingVerifyKrisp">Verify Krisp meeting receipts</button>' : '',
             '</article>'
           ].join('');
         }).join(''),
       '</div>',
+      valFirstLookCandidates.length?renderValFirstLookCandidateMap():'',
     '</section>'
   ].join('');
 }
@@ -16798,7 +16883,7 @@ function renderValFirstLookConversation({state = 'ready', error = '', run = valF
         '<h3>Before we move on, VAL will show you exactly what it can see.</h3>',
         '<p class="val-conversation-helper">This is one private, review-only 90-day source receipt. VAL will name each source as it checks it and will not create anything from what it finds.</p>',
       '</section>',
-      complete ? renderValFirstLookReceipt(run) : state === 'preparing' ? renderValFirstLookProgress() : [
+      complete ? (state === 'mapping' ? renderValFirstLookCandidateProgress() : renderValFirstLookReceipt(run)) : state === 'preparing' ? renderValFirstLookProgress() : [
         '<section class="val-first-look-intro" aria-label="Prepare the First Look">',
           '<span>What VAL will check</span>',
           '<ul><li>Gmail message records</li><li>Google Calendar events</li><li>Drive and Docs metadata, without opening document content</li><li>Krisp transcript receipts, preserved exactly as Krisp provided them</li></ul>',
@@ -16808,7 +16893,9 @@ function renderValFirstLookConversation({state = 'ready', error = '', run = valF
       error ? '<p class="val-conversation-error">' + escapeHtml(error) + '</p>' : '',
       '<div class="val-conversation-actions">',
         complete
-          ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue to relationships</button>'
+          ? (valFirstLookCandidates.length
+            ? (valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')?'<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookContinue">Continue Witnessing</button>':'')
+            : '<button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookBuildMap">Build the proposed map</button>')
           : state === 'preparing'
             ? ''
             : '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingFirstLookPrepare">Prepare my First Look</button>',
@@ -16820,6 +16907,7 @@ async function loadValFirstLookRun(){
   if(!canUseApi || mockScrapers) return valFirstLookRun;
   const result = await getJson('/api/val/first-look',{cache:'no-store'});
   valFirstLookRun = result?.run || null;
+  valFirstLookCandidates = Array.isArray(result?.candidates)?result.candidates:[];
   return valFirstLookRun;
 }
 async function prepareValFirstLook(){
@@ -16909,7 +16997,109 @@ async function verifyValFirstLookKrisp(){
   }
   renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
 }
+async function prepareValFirstLookCandidateMap(){
+  if(!canUseApi || mockScrapers || !valFirstLookRun?.id){
+    renderValFirstLookConversation({state:'complete',error:'Open your completed First Look before building the proposed map.'});
+    return;
+  }
+  valFirstLookCandidateProgress=[
+    {id:'witnessing',state:'waiting',message:'Waiting to read your Witnessing answers.'},
+    ...valFirstLookSourceOrder.map(source=>({id:source.id,state:'waiting',message:'Waiting to read this source.'})),
+    {id:'reasoning',state:'waiting',message:'Waiting to map the source evidence.'},
+    {id:'review',state:'waiting',message:'Waiting to prepare your review packets.'}
+  ];
+  valFirstLookCandidateActivity='Starting a private, review-only proposed map.';
+  renderValFirstLookConversation({state:'mapping',run:valFirstLookRun});
+  try{
+    const response=await fetch('/api/val/first-look/'+encodeURIComponent(valFirstLookRun.id)+'/candidates/prepare',{
+      method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'
+    });
+    if(!response.ok||!response.body){
+      const body=await response.text();
+      let payload={};
+      try{payload=body?JSON.parse(body):{};}catch(_e){}
+      throw new Error(payload.error||'VAL could not prepare the proposed map.');
+    }
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let pending='';
+    let completed=false;
+    const handleEvent=event=>{
+      if(event.type==='progress'){
+        if(event.source==='snapshot')valFirstLookCandidateActivity=event.message||valFirstLookCandidateActivity;
+        else{
+          const current=valFirstLookCandidateProgress.find(item=>item.id===event.source);
+          if(current)Object.assign(current,{state:event.state||current.state,message:event.message||current.message,error:event.error||''});
+        }
+        renderValFirstLookConversation({state:'mapping',run:valFirstLookRun});
+        return;
+      }
+      if(event.type==='complete'){
+        valFirstLookCandidates=Array.isArray(event.candidates)?event.candidates:[];
+        valFirstLookCandidateActivity=event.reused?'Your proposed map is ready to review.':'Your proposed map is ready to review.';
+        completed=true;
+        renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+        return;
+      }
+      if(event.type==='error')throw new Error(event.message||'VAL could not prepare the proposed map.');
+    };
+    while(true){
+      const chunk=await reader.read();
+      if(chunk.done)break;
+      pending+=decoder.decode(chunk.value,{stream:true});
+      const lines=pending.split('\n');
+      pending=lines.pop()||'';
+      for(const line of lines){if(line.trim())handleEvent(JSON.parse(line));}
+    }
+    if(pending.trim())handleEvent(JSON.parse(pending));
+    if(!completed)throw new Error('VAL finished without returning the proposed map.');
+  }catch(error){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:error.message||'VAL could not prepare the proposed map.'});
+  }
+}
+async function decideValFirstLookCandidate(candidateId='',decision='kept',payload={}){
+  if(!canUseApi || mockScrapers || !valFirstLookRun?.id)return;
+  try{
+    const result=await postJson('/api/val/first-look/'+encodeURIComponent(valFirstLookRun.id)+'/candidates/'+encodeURIComponent(candidateId)+'/decision',{decision,...payload});
+    valFirstLookCandidates=Array.isArray(result?.candidates)?result.candidates:valFirstLookCandidates;
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+  }catch(error){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:error.message||'VAL could not save that review choice.'});
+  }
+}
+async function correctValFirstLookCandidate(candidateId=''){
+  const input=workspaceInputPanel.querySelector('[data-first-look-candidate-name="'+String(candidateId).replace(/"/g,'')+'"]');
+  const proposedName=String(input?.value||'').trim();
+  if(!proposedName){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Give this proposed item a clear name first.'});
+    return;
+  }
+  await decideValFirstLookCandidate(candidateId,'corrected',{proposedName});
+}
+async function deliverValFirstLookCandidates(){
+  if(!canUseApi || mockScrapers || !valFirstLookRun?.id)return;
+  try{
+    const result=await postJson('/api/val/first-look/'+encodeURIComponent(valFirstLookRun.id)+'/apply',{});
+    valFirstLookCandidates=Array.isArray(result?.candidates)?result.candidates:valFirstLookCandidates;
+    valFirstLookDelivery=result?.changeSet||null;
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+  }catch(error){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:error.message||'VAL could not deliver the approved items.'});
+  }
+}
+function openValFirstLookDestination(destination=''){
+  closeWorkspace();
+  if(destination==='stewardship'){
+    relationshipDrawerLink?.click();
+    return;
+  }
+  if(destination==='projects')projectDrawerLink?.click();
+}
 async function continueValWitnessingAfterFirstLook(){
+  if(valFirstLookCandidates.length&&!valFirstLookCandidates.every(candidate=>candidate.decision==='delivered')){
+    renderValFirstLookConversation({state:'complete',run:valFirstLookRun,error:'Review and deliver the proposed relationship and project packets before moving past the First Look.'});
+    return;
+  }
   await openValWitnessingQuestion('key_relationships');
 }
 
@@ -17953,7 +18143,12 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingSourcesContinue',
   'valWitnessingFirstLookPrepare',
   'valWitnessingFirstLookContinue',
-  'valWitnessingVerifyKrisp'
+  'valWitnessingVerifyKrisp',
+  'valFirstLookBuildMap',
+  'valFirstLookCandidateDecision',
+  'valFirstLookCandidateCorrect',
+  'valFirstLookDeliver',
+  'valFirstLookOpen'
 ]);
 
 async function handleValWitnessingWorkflowAction(command, type, rest = []){
@@ -18028,6 +18223,26 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingVerifyKrisp'){
     await verifyValFirstLookKrisp();
+    return;
+  }
+  if(command === 'valFirstLookBuildMap'){
+    await prepareValFirstLookCandidateMap();
+    return;
+  }
+  if(command === 'valFirstLookCandidateDecision'){
+    await decideValFirstLookCandidate(type,rest[0]||'kept');
+    return;
+  }
+  if(command === 'valFirstLookCandidateCorrect'){
+    await correctValFirstLookCandidate(type);
+    return;
+  }
+  if(command === 'valFirstLookDeliver'){
+    await deliverValFirstLookCandidates();
+    return;
+  }
+  if(command === 'valFirstLookOpen'){
+    openValFirstLookDestination(type);
     return;
   }
 }

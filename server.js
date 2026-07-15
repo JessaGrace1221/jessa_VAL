@@ -1407,7 +1407,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -3175,6 +3175,50 @@ function valFirstLookRunRow(row){
     completedAt:row.completed_at||row.completedAt||row.created_at||row.createdAt||new Date().toISOString()
   };
 }
+function valFirstLookCandidateAnalysisRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    runId:row.run_id||row.runId||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    status:row.status||'complete',
+    sourceReceipt:firstLookSnapshotValue(row.source_receipt_json||row.sourceReceiptJson||row.sourceReceipt||{}),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    completedAt:row.completed_at||row.completedAt||row.created_at||row.createdAt||new Date().toISOString()
+  };
+}
+function valFirstLookCandidateRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    runId:row.run_id||row.runId||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    type:row.candidate_type||row.type||'',
+    candidateKey:row.candidate_key||row.candidateKey||'',
+    decision:row.decision||'proposed',
+    payload:firstLookSnapshotValue(row.payload_json||row.payloadJson||row.payload||{}),
+    sourceEvidence:Array.isArray(row.source_evidence_json||row.sourceEvidenceJson||row.sourceEvidence)?(row.source_evidence_json||row.sourceEvidenceJson||row.sourceEvidence):firstLookSnapshotValue(row.source_evidence_json||row.sourceEvidenceJson||row.sourceEvidence||[]),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    updatedAt:row.updated_at||row.updatedAt||row.created_at||row.createdAt||new Date().toISOString(),
+    deliveredAt:row.delivered_at||row.deliveredAt||''
+  };
+}
+function valFirstLookChangeSetRow(row){
+  if(!row)return null;
+  return {
+    id:row.id,
+    runId:row.run_id||row.runId||'',
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    status:row.status||'prepared',
+    candidateIds:Array.isArray(row.candidate_ids_json||row.candidateIdsJson||row.candidateIds)?(row.candidate_ids_json||row.candidateIdsJson||row.candidateIds):firstLookSnapshotValue(row.candidate_ids_json||row.candidateIdsJson||row.candidateIds||[]),
+    result:firstLookSnapshotValue(row.result_json||row.resultJson||row.result||{}),
+    createdAt:row.created_at||row.createdAt||new Date().toISOString(),
+    appliedAt:row.applied_at||row.appliedAt||''
+  };
+}
 function teachValPublicCard(card){
   return card?{category:card.category,title:card.title,prompt:card.prompt}:null;
 }
@@ -3388,6 +3432,114 @@ async function saveValFirstLookRun(record){
   });
   saveValStore(store);
   return run;
+}
+async function getValFirstLookCandidateAnalysis(runId=''){
+  const id=String(runId||'').trim();
+  if(!id)return null;
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select * from val_first_look_candidate_analyses where tenant_id=$1 and user_id=$2 and run_id=$3 limit 1',[tenantId(),currentUserId(),id]);
+    return valFirstLookCandidateAnalysisRow(result.rows[0]);
+  }
+  const {rows}=teachValStoreArray('valFirstLookCandidateAnalyses');
+  return valFirstLookCandidateAnalysisRow(rows.find(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.runId===id));
+}
+async function saveValFirstLookCandidateAnalysis(record={}){
+  const row=valFirstLookCandidateAnalysisRow({...record,id:record.id||uuid('flca'),tenantId:tenantId(),userId:currentUserId(),createdAt:record.createdAt||new Date().toISOString(),completedAt:record.completedAt||new Date().toISOString()});
+  if(!row.runId)throw new Error('First Look candidate analysis needs a source receipt.');
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`insert into val_first_look_candidate_analyses (id,run_id,tenant_id,user_id,status,source_receipt_json,created_at,completed_at)
+      values ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz)
+      on conflict (run_id) do nothing returning *`,[row.id,row.runId,row.tenantId,row.userId,row.status,JSON.stringify(row.sourceReceipt||{}),row.createdAt,row.completedAt]);
+    if(result.rows[0])return valFirstLookCandidateAnalysisRow(result.rows[0]);
+    return getValFirstLookCandidateAnalysis(row.runId);
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookCandidateAnalyses');
+  const existing=rows.find(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.runId===row.runId);
+  if(existing)return valFirstLookCandidateAnalysisRow(existing);
+  rows.push(row);
+  saveValStore(store);
+  return row;
+}
+async function listValFirstLookCandidates(runId=''){
+  const id=String(runId||'').trim();
+  if(!id)return [];
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`select * from val_first_look_candidates where tenant_id=$1 and user_id=$2 and run_id=$3
+      order by case candidate_type when 'relationship' then 1 when 'project' then 2 else 3 end, created_at asc`,[tenantId(),currentUserId(),id]);
+    return result.rows.map(valFirstLookCandidateRow).filter(Boolean);
+  }
+  const {rows}=teachValStoreArray('valFirstLookCandidates');
+  return rows.filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.runId===id).map(valFirstLookCandidateRow).filter(Boolean);
+}
+async function saveValFirstLookCandidates(runId='', candidates=[]){
+  const id=String(runId||'').trim();
+  if(!id)throw new Error('First Look candidate packets need a First Look receipt.');
+  const rows=(Array.isArray(candidates)?candidates:[]).map(candidate=>valFirstLookCandidateRow({
+    ...candidate,
+    id:candidate.id||uuid('flc'),
+    runId:id,
+    tenantId:tenantId(),
+    userId:currentUserId(),
+    decision:candidate.decision||'proposed',
+    createdAt:candidate.createdAt||new Date().toISOString(),
+    updatedAt:new Date().toISOString()
+  })).filter(candidate=>candidate.type&&candidate.candidateKey);
+  await valDbReady;
+  if(pgPool){
+    for(const row of rows){
+      await dbQuery(`insert into val_first_look_candidates (id,run_id,tenant_id,user_id,candidate_type,candidate_key,decision,payload_json,source_evidence_json,created_at,updated_at,delivered_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::timestamptz,$11::timestamptz,$12::timestamptz)
+        on conflict (run_id,candidate_type,candidate_key) do nothing`,[row.id,row.runId,row.tenantId,row.userId,row.type,row.candidateKey,row.decision,JSON.stringify(row.payload||{}),JSON.stringify(row.sourceEvidence||[]),row.createdAt,row.updatedAt,row.deliveredAt||null]);
+    }
+    return listValFirstLookCandidates(id);
+  }
+  const {store,rows:stored}=teachValStoreArray('valFirstLookCandidates');
+  for(const row of rows){
+    const existing=stored.find(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.runId===row.runId&&item.type===row.type&&item.candidateKey===row.candidateKey);
+    if(!existing)stored.push(row);
+  }
+  saveValStore(store);
+  return listValFirstLookCandidates(id);
+}
+async function updateValFirstLookCandidate({runId='',candidateId='',decision='',payloadPatch={}}={}){
+  const allowed=new Set(['kept','corrected','deferred','excluded']);
+  const id=String(runId||'').trim();
+  const candidate=String(candidateId||'').trim();
+  if(!id||!candidate||!allowed.has(String(decision||'')))throw new Error('Choose how VAL should handle this proposed item.');
+  const now=new Date().toISOString();
+  await valDbReady;
+  if(pgPool){
+    const current=(await dbQuery('select * from val_first_look_candidates where tenant_id=$1 and user_id=$2 and run_id=$3 and id=$4 limit 1',[tenantId(),currentUserId(),id,candidate])).rows[0];
+    if(!current)throw new Error('That proposed item is no longer available. Reopen your First Look.');
+    const existing=valFirstLookCandidateRow(current);
+    const payload={...existing.payload,...(payloadPatch&&typeof payloadPatch==='object'?payloadPatch:{})};
+    const result=await dbQuery(`update val_first_look_candidates set decision=$1,payload_json=$2,updated_at=$3::timestamptz
+      where tenant_id=$4 and user_id=$5 and run_id=$6 and id=$7 returning *`,[decision,JSON.stringify(payload),now,tenantId(),currentUserId(),id,candidate]);
+    return valFirstLookCandidateRow(result.rows[0]);
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookCandidates');
+  const index=rows.findIndex(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.runId===id&&row.id===candidate);
+  if(index<0)throw new Error('That proposed item is no longer available. Reopen your First Look.');
+  rows[index]={...rows[index],decision,payload:{...(rows[index].payload||{}),...(payloadPatch&&typeof payloadPatch==='object'?payloadPatch:{})},updatedAt:now};
+  saveValStore(store);
+  return valFirstLookCandidateRow(rows[index]);
+}
+async function saveValFirstLookChangeSet(record={}){
+  const row=valFirstLookChangeSetRow({...record,id:record.id||uuid('flcs'),tenantId:tenantId(),userId:currentUserId(),createdAt:record.createdAt||new Date().toISOString()});
+  if(!row.runId)throw new Error('First Look delivery needs its source receipt.');
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`insert into val_first_look_change_sets (id,run_id,tenant_id,user_id,status,candidate_ids_json,result_json,created_at,applied_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz) returning *`,[row.id,row.runId,row.tenantId,row.userId,row.status,JSON.stringify(row.candidateIds||[]),JSON.stringify(row.result||{}),row.createdAt,row.appliedAt||null]);
+    return valFirstLookChangeSetRow(result.rows[0]);
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookChangeSets');
+  rows.push(row);
+  saveValStore(store);
+  return row;
 }
 async function listTeachValMemory(sessionId){
   await valDbReady;
@@ -6506,6 +6658,43 @@ async function initValDb(){
       completed_at timestamptz not null default now(),
       unique (tenant_id,user_id)
     );
+    create table if not exists val_first_look_candidate_analyses (
+      id text primary key,
+      run_id text not null references val_first_look_runs(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      status text not null default 'complete',
+      source_receipt_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      completed_at timestamptz not null default now(),
+      unique (run_id)
+    );
+    create table if not exists val_first_look_candidates (
+      id text primary key,
+      run_id text not null references val_first_look_runs(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      candidate_type text not null,
+      candidate_key text not null,
+      decision text not null default 'proposed',
+      payload_json jsonb not null default '{}',
+      source_evidence_json jsonb not null default '[]',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      delivered_at timestamptz,
+      unique (run_id,candidate_type,candidate_key)
+    );
+    create table if not exists val_first_look_change_sets (
+      id text primary key,
+      run_id text not null references val_first_look_runs(id) on delete cascade,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      status text not null default 'prepared',
+      candidate_ids_json jsonb not null default '[]',
+      result_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      applied_at timestamptz
+    );
     create table if not exists val_oauth_tokens (
       provider text primary key,
       user_id text not null default 'default',
@@ -7962,11 +8151,56 @@ app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
 app.get('/api/val/first-look',async(_req,res)=>{
   try{
     const run=await getValFirstLookRun();
+    const candidates=run?await listValFirstLookCandidates(run.id):[];
+    const candidateAnalysis=run?await getValFirstLookCandidateAnalysis(run.id):null;
     res.set('Cache-Control','no-store, max-age=0');
-    res.json({ok:true,run,reviewOnly:true,noDownstreamWrites:true});
+    res.json({ok:true,run,candidates,candidateAnalysis,reviewOnly:true,noDownstreamWrites:true});
   }catch(error){
     res.status(500).json({ok:false,error:error.message});
   }
+});
+app.post('/api/val/first-look/:runId/candidates/prepare',async(req,res)=>{
+  res.status(200);
+  res.set({'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store, no-cache, must-revalidate','X-Accel-Buffering':'no'});
+  res.flushHeaders?.();
+  const write=(event={})=>{
+    if(!res.writableEnded){res.write(JSON.stringify(event)+'\n');res.flush?.();}
+  };
+  try{
+    const run=await getValFirstLookRun();
+    if(!run||run.id!==String(req.params.runId||''))throw new Error('Open your current First Look before building its proposed map.');
+    const existing=await listValFirstLookCandidates(run.id);
+    if(existing.length){
+      write({type:'progress',source:'review',state:'complete',message:'Opening the proposed map VAL already prepared from this First Look.'});
+      write({type:'complete',candidates:existing,reused:true});
+      return res.end();
+    }
+    write({type:'progress',source:'snapshot',state:'reading',message:'Preparing the proposed map from the sources you approved.'});
+    const result=await buildValFirstLookCandidateMap({run,onProgress:write});
+    write({type:'complete',candidates:result.candidates,reused:false});
+  }catch(error){
+    write({type:'error',message:firstLookError(error)});
+  }
+  res.end();
+});
+app.post('/api/val/first-look/:runId/candidates/:candidateId/decision',async(req,res)=>{
+  try{
+    const run=await getValFirstLookRun();
+    if(!run||run.id!==String(req.params.runId||''))return res.status(404).json({ok:false,error:'This First Look is not available.'});
+    const payloadPatch={};
+    if(req.body?.proposedName||req.body?.name)payloadPatch.proposedName=firstLookCandidateCleanName(req.body.proposedName||req.body.name);
+    if(req.body?.note)payloadPatch.note=String(req.body.note).replace(/\s+/g,' ').trim().slice(0,900);
+    const candidate=await updateValFirstLookCandidate({runId:run.id,candidateId:req.params.candidateId,decision:req.body?.decision,payloadPatch});
+    res.json({ok:true,candidate,candidates:await listValFirstLookCandidates(run.id),reviewOnly:true,noDownstreamWrites:true});
+  }catch(error){res.status(400).json({ok:false,error:firstLookError(error)});}
+});
+app.post('/api/val/first-look/:runId/apply',async(req,res)=>{
+  try{
+    const run=await getValFirstLookRun();
+    if(!run||run.id!==String(req.params.runId||''))return res.status(404).json({ok:false,error:'This First Look is not available.'});
+    const changeSet=await applyValFirstLookCandidates(run);
+    res.json({ok:true,changeSet,candidates:await listValFirstLookCandidates(run.id),noExternalAction:true});
+  }catch(error){res.status(400).json({ok:false,error:firstLookError(error)});}
 });
 app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
   try{
@@ -14734,6 +14968,482 @@ async function buildValFirstLookSnapshot({scope='',onProgress=async()=>{}}={}){
     noDownstreamWrites:true,
     next:'Review this receipt with the user before VAL proposes any relationship, project, priority, memory, task, or draft.'
   };
+}
+function firstLookCandidateSourceRecord(source,record={}){
+  const date=record.date||record.startTime||record.modifiedTime||record.startedAt||'';
+  return {
+    id:String(record.id||uuid('flsrc')),
+    source,
+    title:String(record.subject||record.title||'(Untitled item)').replace(/\s+/g,' ').trim().slice(0,220),
+    date,
+    people:Array.isArray(record.attendees)?record.attendees:(Array.isArray(record.participants)?record.participants:[]),
+    from:String(record.from||''),
+    attachments:Array.isArray(record.attachments)?record.attachments:[],
+    snippet:String(record.snippet||'').replace(/\s+/g,' ').trim().slice(0,280)
+  };
+}
+function firstLookCandidateSignalKey(prefix,value=''){
+  return prefix+':'+stableKey(String(value||'').trim().toLowerCase());
+}
+function firstLookCandidateSignalLabel(source,detail,count){
+  return [source,detail,count?count+' source record'+(count===1?'':'s'):''].filter(Boolean).join(' | ');
+}
+function firstLookCandidateConfidence(value=''){
+  const clean=String(value||'').toLowerCase().replace(/\s+/g,'_');
+  if(clean==='high'||clean==='likely'||clean==='needs_confirmation')return clean;
+  if(/high|strong/.test(clean))return 'high';
+  if(/likely|medium/.test(clean))return 'likely';
+  return 'needs_confirmation';
+}
+function firstLookCandidateCleanName(value=''){
+  return String(value||'').replace(/\s+/g,' ').replace(/^[\-:;,]+|[\-:;,]+$/g,'').trim().slice(0,180);
+}
+function firstLookCandidatePromptReceipt({sources=[],witnessing=[]}={}){
+  const sourceRecords=sources.flatMap(source=>(source.records||[]).map(record=>({...record,source:source.id||record.source||''})));
+  const evidenceById=new Map(sourceRecords.map(record=>[record.id,record]));
+  const signals=[];
+  const addSignal=(signal={})=>{
+    if(!signal.id||!signal.label||!Array.isArray(signal.evidenceIds)||!signal.evidenceIds.length)return;
+    signals.push(signal);
+  };
+  const emailGroups=new Map();
+  const calendarPeople=new Map();
+  const calendarTopics=new Map();
+  const krispPeople=new Map();
+  for(const record of sourceRecords){
+    if(record.source==='gmail'){
+      const from=firstLookCandidateCleanName(record.from||'');
+      if(!from)continue;
+      const key=from.toLowerCase();
+      const group=emailGroups.get(key)||{name:from,records:[]};
+      group.records.push(record);
+      emailGroups.set(key,group);
+    }
+    if(record.source==='calendar'){
+      const topic=firstLookCandidateCleanName(record.title||'');
+      if(topic){
+        const key=topic.toLowerCase();
+        const group=calendarTopics.get(key)||{title:topic,records:[]};
+        group.records.push(record);
+        calendarTopics.set(key,group);
+      }
+      for(const person of record.people||[]){
+        const name=firstLookCandidateCleanName(person);
+        if(!name)continue;
+        const key=name.toLowerCase();
+        const group=calendarPeople.get(key)||{name,records:[]};
+        group.records.push(record);
+        calendarPeople.set(key,group);
+      }
+    }
+    if(record.source==='krisp'){
+      for(const person of record.people||[]){
+        const name=firstLookCandidateCleanName(person);
+        if(!name)continue;
+        const key=name.toLowerCase();
+        const group=krispPeople.get(key)||{name,records:[]};
+        group.records.push(record);
+        krispPeople.set(key,group);
+      }
+    }
+  }
+  for(const group of emailGroups.values()){
+    const evidenceIds=group.records.map(item=>item.id);
+    addSignal({
+      id:firstLookCandidateSignalKey('email_person',group.name),
+      kind:'email_correspondent',
+      label:firstLookCandidateSignalLabel('Email correspondent',group.name,group.records.length),
+      evidenceIds,
+      detail:'Recent subjects: '+group.records.slice(0,4).map(item=>item.title).filter(Boolean).join(' | ')
+    });
+  }
+  for(const group of calendarPeople.values()){
+    const evidenceIds=group.records.map(item=>item.id);
+    addSignal({
+      id:firstLookCandidateSignalKey('calendar_person',group.name),
+      kind:'calendar_participant',
+      label:firstLookCandidateSignalLabel('Calendar participant',group.name,group.records.length),
+      evidenceIds,
+      detail:'Meetings: '+group.records.slice(0,4).map(item=>item.title).filter(Boolean).join(' | ')
+    });
+  }
+  for(const group of calendarTopics.values()){
+    const evidenceIds=group.records.map(item=>item.id);
+    addSignal({
+      id:firstLookCandidateSignalKey('calendar_topic',group.title),
+      kind:'calendar_topic',
+      label:firstLookCandidateSignalLabel('Calendar topic',group.title,group.records.length),
+      evidenceIds,
+      detail:'Appears in '+group.records.length+' calendar event'+(group.records.length===1?'':'s')
+    });
+  }
+  for(const source of sources.filter(item=>item.id==='drive')){
+    for(const record of source.records||[]){
+      addSignal({
+        id:firstLookCandidateSignalKey('document',record.id||record.title),
+        kind:'document',
+        label:firstLookCandidateSignalLabel('Document',record.title,1),
+        evidenceIds:[record.id],
+        detail:record.title
+      });
+    }
+  }
+  for(const group of krispPeople.values()){
+    const evidenceIds=group.records.map(item=>item.id);
+    addSignal({
+      id:firstLookCandidateSignalKey('krisp_person',group.name),
+      kind:'krisp_participant',
+      label:firstLookCandidateSignalLabel('Krisp participant',group.name,group.records.length),
+      evidenceIds,
+      detail:'Meetings: '+group.records.slice(0,4).map(item=>item.title).filter(Boolean).join(' | ')
+    });
+  }
+  for(const item of witnessing){
+    addSignal({
+      id:'witness:'+item.id,
+      kind:'witnessing_answer',
+      label:'Witnessing answer: '+item.label,
+      evidenceIds:['witness:'+item.id],
+      detail:item.text
+    });
+    evidenceById.set('witness:'+item.id,{id:'witness:'+item.id,source:'witnessing',title:item.label,date:item.createdAt||'',snippet:item.text,people:[]});
+  }
+  const promptSignals=signals.map(signal=>({id:signal.id,kind:signal.kind,label:signal.label,detail:signal.detail}));
+  return {signals,promptSignals,evidenceById};
+}
+async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={}){
+  const originalWindow=run?.snapshot?.window||{};
+  const start=new Date(originalWindow.start||run?.windowStart||'');
+  const end=new Date(originalWindow.end||run?.windowEnd||'');
+  if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime()))throw new Error('The original First Look window is unavailable. Reopen your First Look before building the proposed map.');
+  const window={start:start.toISOString(),end:end.toISOString(),days:Number(originalWindow.days||90)};
+  const sources=[];
+  const report=async(source,state,message,extra={})=>onProgress({type:'progress',source,state,message,...extra});
+  const gmailDate=value=>value.toISOString().slice(0,10).replace(/-/g,'/');
+  await report('witnessing','reading','Reading the context you shared in your Witnessing Session.');
+  const imports=await listTeachValImports(run.sessionId);
+  const witnessing=imports.filter(item=>String(item.category||'').startsWith('witness_')).map(item=>({
+    id:item.id,
+    label:String(item.category||'Witnessing answer').replace(/^witness_/,'').replace(/_/g,' '),
+    text:String(item.rawResponse||item.raw_response||'').replace(/\s+/g,' ').trim().slice(0,5000),
+    createdAt:item.createdAt||item.created_at||''
+  })).filter(item=>item.text);
+  await report('witnessing','complete','Read '+witnessing.length+' Witnessing answer'+(witnessing.length===1?'':'s')+'.',{count:witnessing.length});
+
+  await report('gmail','reading','Reading relationship signals across the original Gmail window.');
+  try{
+    const query='after:'+gmailDate(start)+' before:'+gmailDate(end);
+    const [inbox,sent]=await Promise.all([
+      fetchGmailMessages({query:'in:inbox '+query,maxResults:100,includeBody:false}),
+      fetchGmailMessages({query:'in:sent '+query,maxResults:100,includeBody:false})
+    ]);
+    const unique=[...(inbox.emails||[]),...(sent.emails||[])].filter((email,index,rows)=>{
+      const id=String(email.messageId||'');
+      return !id||rows.findIndex(item=>String(item.messageId||'')===id)===index;
+    });
+    const records=unique.map(firstLookEmailReceipt).map(record=>firstLookCandidateSourceRecord('gmail',record));
+    sources.push({id:'gmail',label:'Gmail',status:'complete',counts:{reviewed:records.length},records,error:[inbox.error,sent.error].filter(Boolean)[0]||''});
+    await report('gmail','complete','Read '+records.length+' Gmail message record'+(records.length===1?'':'s')+'.',{count:records.length});
+  }catch(error){
+    sources.push({id:'gmail',label:'Gmail',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
+    await report('gmail','unavailable','Gmail could not be read for the proposed map.',{count:0,error:firstLookError(error)});
+  }
+
+  await report('calendar','reading','Reading calendar relationship and project signals.');
+  try{
+    const events=await fetchGoogleCalendarEvents(start,end,2500);
+    const records=events.map(firstLookCalendarReceipt).map(record=>firstLookCandidateSourceRecord('calendar',record));
+    sources.push({id:'calendar',label:'Google Calendar',status:'complete',counts:{reviewed:records.length},records,error:''});
+    await report('calendar','complete','Read '+records.length+' calendar event'+(records.length===1?'':'s')+'.',{count:records.length});
+  }catch(error){
+    sources.push({id:'calendar',label:'Google Calendar',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
+    await report('calendar','unavailable','Google Calendar could not be read for the proposed map.',{count:0,error:firstLookError(error)});
+  }
+
+  await report('drive','reading','Reading Drive and Docs titles as project evidence.');
+  try{
+    const drive=await listGoogleDriveFirstLookFiles({windowStart:start,limit:100});
+    const records=(drive.files||[]).map(record=>firstLookCandidateSourceRecord('drive',record));
+    sources.push({id:'drive',label:'Drive & Docs',status:'complete',counts:{reviewed:records.length},records,error:''});
+    await report('drive','complete','Read metadata for '+records.length+' Drive or Docs item'+(records.length===1?'':'s')+'.',{count:records.length});
+  }catch(error){
+    sources.push({id:'drive',label:'Drive & Docs',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
+    await report('drive','unavailable','Drive and Docs could not be read for the proposed map.',{count:0,error:firstLookError(error)});
+  }
+
+  await report('krisp','reading','Checking the available Krisp meeting receipts.');
+  try{
+    if(!(await krispMcp.isConfigured())) throw new Error('Krisp is not connected.');
+    const discovery=await withTimeout(krispMcp.discoverTranscriptReceipts({limit:50,from:window.start,to:window.end}),65000,'Krisp transcript check timed out before it returned a receipt');
+    const records=(discovery.documents||[]).map(firstLookKrispReceipt).map(record=>firstLookCandidateSourceRecord('krisp',record));
+    sources.push({id:'krisp',label:'Krisp transcripts',status:discovery.status||'complete',counts:{reviewed:records.length},records,error:''});
+    await report('krisp',discovery.status||'complete',discovery.detail||('Read '+records.length+' Krisp receipt'+(records.length===1?'':'s')+'.'),{count:records.length});
+  }catch(error){
+    sources.push({id:'krisp',label:'Krisp transcripts',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
+    await report('krisp','unavailable','Krisp could not be read for the proposed map.',{count:0,error:firstLookError(error)});
+  }
+  return {version:'val_first_look_candidate_analysis_v1',reviewOnly:true,window,sources,witnessing,createdAt:new Date().toISOString(),noDownstreamWrites:true};
+}
+function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
+  const data=firstLookCandidatePromptReceipt({sources:analysis.sources||[],witnessing:analysis.witnessing||[]});
+  const signalById=new Map(data.signals.map(signal=>[signal.id,signal]));
+  const evidenceFor=(signalIds=[])=>{
+    const evidence=[];
+    const seen=new Set();
+    for(const signalId of Array.isArray(signalIds)?signalIds:[]){
+      const signal=signalById.get(String(signalId||''));
+      if(!signal)continue;
+      for(const evidenceId of signal.evidenceIds||[]){
+        if(seen.has(evidenceId))continue;
+        const item=data.evidenceById.get(evidenceId);
+        if(!item)continue;
+        seen.add(evidenceId);
+        evidence.push({id:item.id,source:item.source,title:item.title,date:item.date||'',reason:signal.label});
+        if(evidence.length>=8)break;
+      }
+      if(evidence.length>=8)break;
+    }
+    return evidence;
+  };
+  const candidates=[];
+  const add=(type,input={})=>{
+    const proposedName=firstLookCandidateCleanName(input.name||input.proposed_name||input.proposedName||'');
+    if(!proposedName||/^(unknown|none|n\/a|not provided)$/i.test(proposedName))return;
+    const evidenceSignalIds=[...(input.evidence_signal_ids||input.evidenceSignalIds||[]),...(input.witnessing_signal_ids||input.witnessingSignalIds||[])].map(String);
+    const sourceEvidence=evidenceFor(evidenceSignalIds);
+    if(!sourceEvidence.length)return;
+    const candidateKey=type+':'+stableKey(proposedName.toLowerCase());
+    if(candidates.some(candidate=>candidate.type===type&&candidate.candidateKey===candidateKey))return;
+    const note=String(input.note||input.summary||input.why||'').replace(/\s+/g,' ').trim().slice(0,900);
+    const confidence=firstLookCandidateConfidence(input.confidence);
+    if(type==='relationship'){
+      const kind=String(input.kind||input.relationship_kind||'person').toLowerCase()==='organization'?'organization':'person';
+      candidates.push({
+        id:uuid('flc'),type,candidateKey,decision:'proposed',sourceEvidence,
+        payload:{proposedName,kind,email:String(input.email||'').trim().slice(0,180),organization:firstLookCandidateCleanName(input.organization||''),note:note||'VAL found repeated relationship evidence that needs your confirmation.',confidence,witnessingEvidence:sourceEvidence.filter(item=>item.source==='witnessing').map(item=>item.title)}
+      });
+      return;
+    }
+    const knownPeople=(Array.isArray(input.known_people)?input.known_people:(Array.isArray(input.knownPeople)?input.knownPeople:[])).map(firstLookCandidateCleanName).filter(Boolean).slice(0,12);
+    candidates.push({
+      id:uuid('flc'),type,candidateKey,decision:'proposed',sourceEvidence,
+      payload:{proposedName,note:note||'VAL found a defined body of work that may need project coordination.',confidence,knownPeople,ownerRelationshipName:firstLookCandidateCleanName(input.owner_relationship_name||input.ownerRelationshipName||''),onboardingQuestion:'What outcome should '+proposedName+' create, who owns it, and what should VAL monitor first?',witnessingEvidence:sourceEvidence.filter(item=>item.source==='witnessing').map(item=>item.title)}
+    });
+  };
+  for(const item of Array.isArray(modelPayload.relationships)?modelPayload.relationships.slice(0,24):[])add('relationship',item);
+  for(const item of Array.isArray(modelPayload.projects)?modelPayload.projects.slice(0,16):[])add('project',item);
+  return candidates;
+}
+async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
+  if(!(await resolveOpenAIKey()))throw new Error('Connect OpenAI before VAL can build the proposed map.');
+  const analysis=await readValFirstLookCandidateSources({run,onProgress});
+  const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
+  await onProgress({type:'progress',source:'reasoning',state:'reading',message:'Mapping the people and projects that repeat across your approved sources.'});
+  const raw=await callValModel({
+    system:[
+      'You prepare a private First Look candidate map for an executive assistant. Return JSON only.',
+      'Create proposals, never claims. Do not create any business record and do not propose an action.',
+      'Use only the supplied Witnessing answers and source signal IDs. Do not invent names, organizations, projects, ownership, or evidence IDs.',
+      'Prefer items the user named during Witnessing. A relationship needs a real person or organization signal. Ignore newsletters, receipts, automated senders, generic vendors, and calendar mechanics.',
+      'A project needs a defined body of work, outcome, or ongoing coordination signal. Do not treat every subject line or meeting as a project.',
+      'For every proposal return at least one exact signal ID from the supplied source signals. Keep notes factual, short, and useful for a user reviewing the proposal.'
+    ].join('\n'),
+    user:JSON.stringify({
+      task:'Prepare relationship candidates for Stewardship and project candidates for Project Managers.',
+      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}]},
+      witnessing_answers:analysis.witnessing.map(item=>({signal_id:'witness:'+item.id,label:item.label,text:item.text})),
+      source_signals:promptData.promptSignals
+    }),
+    maxTokens:5200,
+    temperature:0.15,
+    json:true,
+    timeoutMs:90000
+  });
+  const modelPayload=parseModelJson(raw);
+  const candidates=normalizeValFirstLookCandidateMap({modelPayload,analysis});
+  if(!candidates.length)throw new Error('VAL could not find a source-backed relationship or project proposal yet. The scan remains intact and no changes were made.');
+  const storedAnalysis=await saveValFirstLookCandidateAnalysis({runId:run.id,status:'complete',sourceReceipt:analysis,completedAt:new Date().toISOString()});
+  const storedCandidates=await saveValFirstLookCandidates(run.id,candidates);
+  await onProgress({type:'progress',source:'review',state:'complete',message:'Prepared '+storedCandidates.length+' source-backed proposal'+(storedCandidates.length===1?'':'s')+' for your review.'});
+  return {analysis:storedAnalysis,candidates:storedCandidates};
+}
+function firstLookDeliveryProfileCandidate(candidate={},relationshipProfilesByName=new Map()){
+  const payload=candidate.payload||{};
+  const name=firstLookCandidateCleanName(payload.proposedName||'');
+  const evidence=Array.isArray(candidate.sourceEvidence)?candidate.sourceEvidence:[];
+  const baseMetadata={
+    source:'val_first_look_delivery',
+    firstLookRunId:candidate.runId,
+    firstLookCandidateId:candidate.id,
+    sourceEvidence:evidence,
+    witnessingEvidence:Array.isArray(payload.witnessingEvidence)?payload.witnessingEvidence:[],
+    candidateNote:String(payload.note||''),
+    noExternalAction:true
+  };
+  if(candidate.type==='relationship'){
+    const profileType=payload.kind==='organization'?'organization':'person';
+    const email=String(payload.email||'').trim().toLowerCase();
+    return {
+      profileType,
+      profileKey:profileType==='organization'
+        ? 'organization:first-look:'+stableKey(name)
+        : (email?personKey(name,email):'person:first-look:'+stableKey(name)),
+      organizationId:'',
+      personId:'',
+      projectId:'',
+      displayName:name,
+      summary:String(payload.note||'First Look relationship packet approved by the user.'),
+      relationshipStatus:'confirmed_context',
+      confidence:payload.confidence==='high'?0.88:(payload.confidence==='likely'?0.74:0.58),
+      lastObservedAt:evidence[0]?.date||new Date().toISOString(),
+      metadataJson:{...baseMetadata,email,organization:String(payload.organization||''),candidateDestination:'stewardship'}
+    };
+  }
+  const ownerName=firstLookCandidateCleanName(payload.ownerRelationshipName||'').toLowerCase();
+  const owner=ownerName?relationshipProfilesByName.get(ownerName)||null:null;
+  return {
+    profileType:'project',
+    profileKey:'project:first-look:'+stableKey(name),
+    organizationId:'',
+    personId:'',
+    projectId:'first-look-'+stableKey(name),
+    displayName:name,
+    summary:String(payload.note||'First Look project packet approved by the user.'),
+    relationshipStatus:'intake',
+    confidence:payload.confidence==='high'?0.82:(payload.confidence==='likely'?0.7:0.56),
+    lastObservedAt:evidence[0]?.date||new Date().toISOString(),
+    metadataJson:{
+      ...baseMetadata,
+      candidateDestination:'project_managers',
+      projectPeople:Array.isArray(payload.knownPeople)?payload.knownPeople:[],
+      owner:owner?{type:'relationship',id:owner.id||owner.personId||owner.profileKey,name:owner.displayName,email:owner.metadata?.email||'',source:'first_look_confirmed'}:null,
+      needsProjectOnboarding:true,
+      projectOnboarding:{status:'needs_interview',currentQuestion:String(payload.onboardingQuestion||('What outcome should '+name+' create, who owns it, and what should VAL monitor first?'))},
+      desiredOutcome:'',
+      projectInterviewNotes:'',
+      workstreams:[],
+      milestones:[],
+      monitoringRules:[],
+      relationshipNurtureRules:[]
+    }
+  };
+}
+function firstLookDeliveryRow(target={}){
+  const now=new Date().toISOString();
+  const row={
+    id:uuid('relprof'),tenantId:tenantId(),profileType:target.profileType,profileKey:target.profileKey,
+    personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',
+    displayName:target.displayName,summary:target.summary||'',relationshipStatus:target.relationshipStatus||'observed',
+    confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,
+    metadataJson:target.metadataJson||{},createdAt:now,updatedAt:now
+  };
+  row.metadataJson=relationshipProfilePersonPacketMetadata(row);
+  return row;
+}
+async function firstLookDeliveryUpsertProfile(client,row){
+  const result=await client.query(`insert into relationship_profiles (id,tenant_id,profile_type,profile_key,person_id,organization_id,project_id,display_name,summary,relationship_status,confidence,last_observed_at,metadata_json,created_at,updated_at)
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
+    on conflict (tenant_id,profile_type,profile_key) do update set person_id=coalesce(nullif(excluded.person_id,''),relationship_profiles.person_id), organization_id=coalesce(nullif(excluded.organization_id,''),relationship_profiles.organization_id), project_id=coalesce(nullif(excluded.project_id,''),relationship_profiles.project_id), display_name=coalesce(nullif(excluded.display_name,''),relationship_profiles.display_name), summary=coalesce(nullif(excluded.summary,''),relationship_profiles.summary), relationship_status=excluded.relationship_status, confidence=greatest(relationship_profiles.confidence,excluded.confidence), metadata_json=relationship_profiles.metadata_json||excluded.metadata_json, updated_at=now()
+    returning *`,[row.id,row.tenantId,row.profileType,row.profileKey,row.personId,row.organizationId,row.projectId,row.displayName,row.summary,row.relationshipStatus,row.confidence,row.lastObservedAt,JSON.stringify(row.metadataJson)]);
+  return transcriptPgRow(result.rows[0]);
+}
+async function applyValFirstLookCandidates(run={}){
+  const candidates=(await listValFirstLookCandidates(run.id)).filter(candidate=>['kept','corrected'].includes(candidate.decision));
+  if(!candidates.length)throw new Error('Keep at least one relationship or project before delivering the proposed map.');
+  if(candidates.some(candidate=>!firstLookCandidateCleanName(candidate.payload?.proposedName||'')))throw new Error('Every kept proposal needs a clear name before it can be delivered.');
+  const changeSetId=uuid('flcs');
+  const now=new Date().toISOString();
+  const relationshipCandidates=candidates.filter(candidate=>candidate.type==='relationship');
+  const projectCandidates=candidates.filter(candidate=>candidate.type==='project');
+  const buildResult=async(upsert,linkOwner)=>{
+    const relationshipProfilesByName=new Map();
+    const deliveredRelationships=[];
+    const deliveredProjects=[];
+    const relationshipLinks=[];
+    for(const candidate of relationshipCandidates){
+      const profile=await upsert(firstLookDeliveryRow(firstLookDeliveryProfileCandidate(candidate,relationshipProfilesByName)));
+      relationshipProfilesByName.set(firstLookCandidateCleanName(candidate.payload?.proposedName||'').toLowerCase(),publicRelationshipProfile(profile));
+      deliveredRelationships.push({candidateId:candidate.id,id:profile.id,name:profile.displayName,profileKey:profile.profileKey||profile.profile_key||''});
+    }
+    for(const candidate of projectCandidates){
+      const profile=await upsert(firstLookDeliveryRow(firstLookDeliveryProfileCandidate(candidate,relationshipProfilesByName)));
+      const ownerName=firstLookCandidateCleanName(candidate.payload?.ownerRelationshipName||'').toLowerCase();
+      const owner=ownerName?relationshipProfilesByName.get(ownerName)||null:null;
+      if(owner){
+        const projectId=profile.projectId||profile.project_id||profile.profileKey||profile.profile_key||profile.id;
+        const link=await linkOwner({
+          projectId,
+          projectName:profile.displayName||profile.display_name||candidate.payload?.proposedName||'',
+          relationshipId:owner.id||owner.personId||owner.profileKey||'',
+          relationshipName:owner.displayName||candidate.payload?.ownerRelationshipName||'',
+          candidateId:candidate.id
+        });
+        if(link)relationshipLinks.push(link);
+      }
+      deliveredProjects.push({candidateId:candidate.id,id:profile.id,name:profile.displayName,projectId:profile.projectId||profile.project_id||'',profileKey:profile.profileKey||profile.profile_key||''});
+    }
+    return {relationships:deliveredRelationships,projects:deliveredProjects,relationshipLinks,noExternalAction:true};
+  };
+  let result;
+  await valDbReady;
+  if(pgPool){
+    const client=await pgPool.connect();
+    try{
+      await client.query('BEGIN');
+      result=await buildResult(
+        row=>firstLookDeliveryUpsertProfile(client,row),
+        async link=>{
+          const id=uuid('evlink');
+          await client.query(`insert into val_evidence_links (id,tenant_id,user_id,source_type,source_id,source_label,target_type,target_id,relationship,summary,quote,confidence,metadata,created_at)
+            values ($1,$2,$3,'relationship_profile',$4,$5,'project_profile',$6,'linked_to_project',$7,'',$8,$9,now())`,[
+            id,tenantId(),currentUserId(),link.relationshipId,link.relationshipName,link.projectId,
+            link.relationshipName+' is linked to '+link.projectName+' from an approved First Look packet.',0.8,
+            JSON.stringify({source:'val_first_look_delivery',candidateId:link.candidateId,projectName:link.projectName,relationshipName:link.relationshipName,noExternalAction:true})
+          ]);
+          return {id,projectId:link.projectId,relationshipId:link.relationshipId};
+        }
+      );
+      await client.query(`update val_first_look_candidates set decision='delivered',delivered_at=$1::timestamptz,updated_at=$1::timestamptz
+        where tenant_id=$2 and user_id=$3 and run_id=$4 and id = any($5::text[])`,[now,tenantId(),currentUserId(),run.id,candidates.map(candidate=>candidate.id)]);
+      await client.query(`insert into val_first_look_change_sets (id,run_id,tenant_id,user_id,status,candidate_ids_json,result_json,created_at,applied_at)
+        values ($1,$2,$3,$4,'applied',$5,$6,$7::timestamptz,$7::timestamptz)`,[changeSetId,run.id,tenantId(),currentUserId(),JSON.stringify(candidates.map(candidate=>candidate.id)),JSON.stringify(result),now]);
+      await client.query('COMMIT');
+    }catch(error){
+      await client.query('ROLLBACK').catch(()=>{});
+      throw error;
+    }finally{client.release();}
+  }else{
+    const store=valStore();
+    const profiles=transcriptFileArray(store,'relationshipProfiles');
+    const upsert=async row=>{
+      const index=profiles.findIndex(item=>item.tenantId===row.tenantId&&item.profileType===row.profileType&&item.profileKey===row.profileKey);
+      if(index>=0){
+        profiles[index]={...profiles[index],...row,id:profiles[index].id,createdAt:profiles[index].createdAt||row.createdAt,metadataJson:{...evidenceJsonValue(profiles[index].metadataJson||profiles[index].metadata,{}),...row.metadataJson}};
+        return profiles[index];
+      }
+      profiles.push(row);
+      return row;
+    };
+    result=await buildResult(upsert,async link=>{
+      const row={
+        id:uuid('evlink'),tenantId:tenantId(),userId:currentUserId(),sourceType:'relationship_profile',sourceId:link.relationshipId,
+        sourceLabel:link.relationshipName,targetType:'project_profile',targetId:link.projectId,relationship:'linked_to_project',
+        summary:link.relationshipName+' is linked to '+link.projectName+' from an approved First Look packet.',quote:'',confidence:0.8,
+        metadata:{source:'val_first_look_delivery',candidateId:link.candidateId,projectName:link.projectName,relationshipName:link.relationshipName,noExternalAction:true},createdAt:now
+      };
+      transcriptFileArray(store,'evidenceLinks').push(row);
+      return {id:row.id,projectId:link.projectId,relationshipId:link.relationshipId};
+    });
+    const candidateRows=store.valFirstLookCandidates||[];
+    for(const candidate of candidates){
+      const index=candidateRows.findIndex(item=>item.tenantId===tenantId()&&item.userId===currentUserId()&&item.runId===run.id&&item.id===candidate.id);
+      if(index>=0)candidateRows[index]={...candidateRows[index],decision:'delivered',deliveredAt:now,updatedAt:now};
+    }
+    store.valFirstLookChangeSets.push({id:changeSetId,runId:run.id,tenantId:tenantId(),userId:currentUserId(),status:'applied',candidateIds:candidates.map(candidate=>candidate.id),result,createdAt:now,appliedAt:now});
+    saveValStore(store);
+  }
+  await auditLog({action:'val_first_look_candidates_delivered',resourceType:'val_first_look',resourceId:run.id,metadata:{changeSetId,relationshipCount:result.relationships.length,projectCount:result.projects.length},success:true}).catch(()=>{});
+  return {id:changeSetId,runId:run.id,status:'applied',candidateIds:candidates.map(candidate=>candidate.id),result,appliedAt:now};
 }
 async function readGoogleDoc({documentId,query}){
   const token=await googleDocsToken();

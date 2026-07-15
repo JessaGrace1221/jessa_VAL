@@ -210,4 +210,4 @@ Later phases establish:
 
 ## Immediate Build Boundary
 
-The next implementation step is Phase 1 only: make the source connection moment explicit inside Witnessing, remove stale first-run behavior, and preserve honest connection state. No First Look scan, candidate creation, or cross-drawer write will happen until the immutable snapshot and confirmation model exist.
+The source connection hub and immutable First Look snapshot are now implemented. The next implementation step is the relationship and project slice of Phase 3 and Phase 4: build a user-requested candidate map from the approved 90-day sources and the Witnessing Session, then deliver only explicitly kept and unambiguous packets into Stewardship and Project Managers. The detailed product and data contract lives in `docs/VAL_FIRST_LOOK_CANDIDATE_REVIEW_AND_DELIVERY.md`.

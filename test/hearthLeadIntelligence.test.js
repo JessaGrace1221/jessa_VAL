@@ -19,6 +19,7 @@ const valProjectManagerRoundTable = fs.readFileSync(path.join(root, 'docs', 'VAL
 const valStewardshipRoundTable = fs.readFileSync(path.join(root, 'docs', 'VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md'), 'utf8');
 const valExecutiveReasoningArchitecture = fs.readFileSync(path.join(root, 'docs', 'VAL_EXECUTIVE_REASONING_ARCHITECTURE.md'), 'utf8');
 const valConstitution = fs.readFileSync(path.join(root, 'docs', 'VAL_CONSTITUTION.md'), 'utf8');
+const valFirstLookCandidateReview = fs.readFileSync(path.join(root, 'docs', 'VAL_FIRST_LOOK_CANDIDATE_REVIEW_AND_DELIVERY.md'), 'utf8');
 
 function extractObjectLiteral(source, marker){
   const start = source.indexOf(marker);
@@ -134,10 +135,10 @@ test('Lead Intelligence drawer opens only its own detail panel', () => {
   assert.doesNotMatch(hearthCss, /\.drawer-tray\.source-open \.source-detail/);
 });
 
-test('Project Managers stays dormant while its packet and onboarding system are preserved', () => {
-  assert.match(hearthHtml, /class="drawer-link project-drawer-link drawer-link-coming-soon" data-drawer-tone="sage-rose" disabled aria-disabled="true"/);
-  assert.match(hearthHtml, /Project Managers Coming Soon/);
-  assert.doesNotMatch(hearthHtml, /class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail"/);
+test('Project Managers receives approved First Look project packets through its preserved onboarding system', () => {
+  assert.match(hearthHtml, /class="drawer-link project-drawer-link" data-drawer-tone="sage-rose" aria-expanded="false" aria-controls="project-detail"/);
+  assert.match(hearthHtml, /<span>Project Managers<\/span>/);
+  assert.doesNotMatch(hearthHtml, /Project Managers Coming Soon/);
   assert.match(hearthHtml, /id="project-detail"/);
   assert.match(hearthHtml, /<p class="drawer-kicker">Project Managers<\/p>/);
   assert.doesNotMatch(hearthHtml, /Project Dossiers/);
@@ -503,8 +504,8 @@ test('Hearth drawers keep the shared frost surface and packet contracts', () => 
     assert.match(hearthJs, new RegExp(`contract:'${clickContract}'`), label + ' click contract missing from registry');
   }
   const drawerLabels = Array.from(hearthHtml.matchAll(/class="drawer-link [^"]+"[\s\S]*?<span>([^<]+)<\/span>/g)).map((match) => match[1]);
-  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers Coming Soon', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
-  assert.match(hearthHtml, /class="drawer-link project-drawer-link drawer-link-coming-soon"[\s\S]*?disabled aria-disabled="true"/);
+  assert.deepEqual(drawerLabels, ['Executive Inbox', 'Project Managers', 'Stewardship', 'Transcripts', 'Lead Intelligence', 'VAL']);
+  assert.match(hearthHtml, /class="drawer-link project-drawer-link"[\s\S]*?aria-controls="project-detail"/);
   assert.match(hearthHtml, /id="project-detail"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link commitment-drawer-link"/);
   assert.doesNotMatch(hearthHtml, /class="drawer-link document-drawer-link"/);
@@ -1370,8 +1371,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ingress-off-20260714/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-connection-fix-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=first-look-candidate-map-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=first-look-candidate-map-20260715/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
@@ -2587,4 +2588,30 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);
   assert.match(hearthCss, /\.val-first-look-progress/);
   assert.match(hearthCss, /\.val-first-look-source-grid/);
+});
+
+test('First Look turns approved source scans into reviewable relationship and project packets before delivery', () => {
+  assert.match(server, /create table if not exists val_first_look_candidate_analyses/);
+  assert.match(server, /create table if not exists val_first_look_candidates/);
+  assert.match(server, /create table if not exists val_first_look_change_sets/);
+  assert.match(server, /async function buildValFirstLookCandidateMap/);
+  assert.match(server, /async function applyValFirstLookCandidates/);
+  assert.match(server, /relationship:'linked_to_project'/);
+  assert.match(server, /relationshipLinks/);
+  assert.match(server, /app\.post\('\/api\/val\/first-look\/:runId\/candidates\/prepare'/);
+  assert.match(server, /app\.post\('\/api\/val\/first-look\/:runId\/candidates\/:candidateId\/decision'/);
+  assert.match(server, /app\.post\('\/api\/val\/first-look\/:runId\/apply'/);
+  assert.match(server, /await client\.query\('BEGIN'\)/);
+  assert.match(server, /await client\.query\('ROLLBACK'\)/);
+  assert.match(hearthJs, /Build the proposed map/);
+  assert.match(hearthJs, /What VAL found/);
+  assert.match(hearthJs, /Relationships for Stewardship/);
+  assert.match(hearthJs, /Projects for Project Managers/);
+  assert.match(hearthJs, /Deliver approved items/);
+  assert.match(hearthJs, /Open Stewardship/);
+  assert.match(hearthJs, /Open Project Managers/);
+  const receipt = hearthJs.slice(hearthJs.indexOf('function renderValFirstLookReceipt'), hearthJs.indexOf('function renderValFirstLookConversation'));
+  assert.doesNotMatch(receipt, /examples\.length/);
+  assert.match(valFirstLookCandidateReview, /A candidate is not a new relationship, project, task, draft, or memory item\./);
+  assert.match(valFirstLookCandidateReview, /Projects are delivered to Project Managers as clean project shells/);
 });
