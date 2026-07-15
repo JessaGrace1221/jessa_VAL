@@ -1371,7 +1371,7 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
   assert.match(hearthHtml, /hearth-prototype\.css\?v=transcript-ingress-off-20260714/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-oauth-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-connection-fix-20260715/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
@@ -2218,6 +2218,14 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthCss, /@keyframes val-line-arrive/);
   assert.match(hearthCss, /@keyframes val-thinking-pause/);
   assert.match(hearthCss, /\.workspace-prompt-shelf/);
+});
+
+test('Krisp connection card preserves its provider name and OAuth identifier', () => {
+  const card = hearthJs.match(/function valWitnessingConnectionCard\(connection = \{\}\)\{[\s\S]*?\n}\n\nfunction renderValWitnessingConnectionHub/)?.[0] || '';
+  assert.match(hearthJs, /function escapeConnectionHtml\(value\)/);
+  assert.match(card, /valWitnessingOAuth:' \+ escapeConnectionHtml\(id\)/);
+  assert.match(card, /escapeConnectionHtml\(connection\.label \|\| copy\.keyLabel\)/);
+  assert.doesNotMatch(card, /valWitnessingOAuth:' \+ escapeHtml\(id\)/);
 });
 
 test('Witnessing Session questions dispatch before shared workflow packet validation', () => {

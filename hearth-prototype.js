@@ -13605,6 +13605,18 @@ function escapeHtml(value){
   })[char]);
 }
 
+// Connection providers are user-chosen external services. Do not pass their
+// names or workflow identifiers through the generic internal-name masker.
+function escapeConnectionHtml(value){
+  return String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
 function leadField(lead, keys, fallback = ''){
   for(const key of keys){
     if(lead && lead[key] != null && String(lead[key]).trim()) return String(lead[key]).trim();
@@ -16454,17 +16466,17 @@ function valWitnessingConnectionCard(connection = {}){
   const connected = !!connection.connected;
   const status = connected ? 'Connected' : connection.status === 'not_connected' ? 'Not connected' : String(connection.status || 'Needs attention').replace(/_/g, ' ');
   const action = connection.action === 'oauth'
-    ? '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingOAuth:' + escapeHtml(id) + '">' + escapeHtml(copy.actionLabel) + '</button>'
-    : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeHtml(id) + '">' + escapeHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
+    ? '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingOAuth:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(copy.actionLabel) + '</button>'
+    : '<button type="button" class="val-witnessing-source-action" data-val-witnessing-action="true" data-workflow-action="valWitnessingCredentialForm:' + escapeConnectionHtml(id) + '">' + escapeConnectionHtml(connected ? 'Update connection' : copy.actionLabel) + '</button>';
   return [
-    '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeHtml(id) + '" data-connected="' + String(connected) + '">',
+    '<article class="val-witnessing-source-card" data-val-witnessing-source="' + escapeConnectionHtml(id) + '" data-connected="' + String(connected) + '">',
       '<div class="val-witnessing-source-head">',
-        '<strong>' + escapeHtml(connection.label || copy.keyLabel) + '</strong>',
-        '<span>' + escapeHtml(status) + '</span>',
+        '<strong>' + escapeConnectionHtml(connection.label || copy.keyLabel) + '</strong>',
+        '<span>' + escapeConnectionHtml(status) + '</span>',
       '</div>',
-      '<p>' + escapeHtml(connection.learns || '') + '</p>',
-      '<small>' + escapeHtml(connection.limits || '') + '</small>',
-      connection.error ? '<em>' + escapeHtml(connection.error) + '</em>' : '',
+      '<p>' + escapeConnectionHtml(connection.learns || '') + '</p>',
+      '<small>' + escapeConnectionHtml(connection.limits || '') + '</small>',
+      connection.error ? '<em>' + escapeConnectionHtml(connection.error) + '</em>' : '',
       action,
     '</article>'
   ].join('');
