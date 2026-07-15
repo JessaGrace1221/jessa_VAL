@@ -1371,8 +1371,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=first-look-candidate-map-20260715/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=first-look-candidate-map-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=first-look-admission-gate-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=first-look-admission-gate-20260715/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
@@ -2596,6 +2596,13 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(server, /create table if not exists val_first_look_change_sets/);
   assert.match(server, /async function buildValFirstLookCandidateMap/);
   assert.match(server, /async function applyValFirstLookCandidates/);
+  assert.match(server, /function firstLookCandidateIdentityLooksSafe/);
+  assert.match(server, /function firstLookCandidateAdmission/);
+  assert.match(server, /function firstLookCandidateAuthoritativeEmail/);
+  assert.match(server, /async function discardValFirstLookProposedCandidatesWithoutAdmission/);
+  assert.match(server, /One-sided inbound email without other context is not relationship or project admission/);
+  assert.match(server, /Never return a phone number in any field/);
+  assert.match(server, /This map never creates an Executive Inbox item/);
   assert.match(server, /relationship:'linked_to_project'/);
   assert.match(server, /relationshipLinks/);
   assert.match(server, /app\.post\('\/api\/val\/first-look\/:runId\/candidates\/prepare'/);
@@ -2610,8 +2617,12 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(hearthJs, /Deliver approved items/);
   assert.match(hearthJs, /Open Stewardship/);
   assert.match(hearthJs, /Open Project Managers/);
+  assert.match(hearthJs, /Identity is supported by the cited source evidence/);
+  assert.match(hearthJs, /Keep it only if it belongs in your network/);
   const receipt = hearthJs.slice(hearthJs.indexOf('function renderValFirstLookReceipt'), hearthJs.indexOf('function renderValFirstLookConversation'));
   assert.doesNotMatch(receipt, /examples\.length/);
   assert.match(valFirstLookCandidateReview, /A candidate is not a new relationship, project, task, draft, or memory item\./);
   assert.match(valFirstLookCandidateReview, /Projects are delivered to Project Managers as clean project shells/);
+  assert.match(valFirstLookCandidateReview, /First Look never creates, changes, or admits an Executive Inbox conversation/);
+  assert.match(valFirstLookCandidateReview, /Phone numbers, email addresses, generic mailboxes, automated senders, and unnamed participants cannot become candidates/);
 });

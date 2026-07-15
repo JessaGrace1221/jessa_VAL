@@ -16765,6 +16765,13 @@ function valFirstLookCandidateLabel(candidate = {}){
   if(candidate.decision==='excluded')return 'Not included';
   return 'Needs your review';
 }
+function valFirstLookCandidateIdentityNote(candidate = {}){
+  const admission=candidate.payload?.admission||{};
+  if(candidate.decision==='delivered')return '';
+  if(admission.status==='user_confirmation_required')return 'VAL found this name in your Witnessing context. Keep it only if it belongs in your network.';
+  if(admission.status==='user_confirmed_identity')return 'Identity confirmed by you.';
+  return 'Identity is supported by the cited source evidence.';
+}
 function valFirstLookCandidateEvidence(candidate = {}){
   const evidence=Array.isArray(candidate.sourceEvidence)?candidate.sourceEvidence:[];
   if(!evidence.length)return '';
@@ -16783,6 +16790,7 @@ function renderValFirstLookCandidate(candidate = {}){
       '<div class="val-first-look-candidate-heading"><span>'+escapeHtml(destination)+'</span><em>'+escapeHtml(valFirstLookCandidateLabel(candidate))+'</em></div>',
       '<h5>'+escapeHtml(title)+'</h5>',
       '<p>'+escapeHtml(payload.note||'VAL found source-backed context that needs your review.')+'</p>',
+      '<small>'+escapeHtml(valFirstLookCandidateIdentityNote(candidate))+'</small>',
       payload.confidence?'<small>Confidence: '+escapeHtml(String(payload.confidence).replace(/_/g,' '))+'</small>':'',
       candidate.type==='project'&&payload.knownPeople?.length?'<small>People named: '+escapeHtml(payload.knownPeople.join(', '))+'</small>':'',
       candidate.type==='project'&&payload.onboardingQuestion?'<small>On arrival: '+escapeHtml(payload.onboardingQuestion)+'</small>':'',

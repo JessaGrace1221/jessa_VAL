@@ -19,6 +19,9 @@ The map is always a proposal. It is never an automatic import.
 - Witnessing answers are first-class evidence. A relationship or project the user named during Witnessing must be considered before weaker inferred patterns.
 - A candidate is not a new relationship, project, task, draft, or memory item.
 - Identity ambiguity blocks relationship delivery. A project without a sufficiently clear name remains a question, not a project.
+- First Look never creates, changes, or admits an Executive Inbox conversation. Source material may become quiet relationship or project evidence only through this separate review flow.
+- A relationship proposal must name a plausible person or organization that appears in its cited evidence. Phone numbers, email addresses, generic mailboxes, automated senders, and unnamed participants cannot become candidates.
+- One-sided inbound email alone is not relationship admission. It needs a sent-mail, calendar, transcript, project, document, or explicit Witnessing signal before VAL may prepare a candidate.
 - Delivery requires an explicit user decision and produces an auditable receipt. It does not send email, change a calendar, update a CRM, or take any external action.
 
 ## First Look Sequence
@@ -72,6 +75,7 @@ Project packets additionally include:
 ## Initial Candidate Rules
 
 - Do not propose automated senders, newsletters, receipts, vendors, or generic meeting links as relationships.
+- Do not trust a model-supplied email address or phone number. VAL may retain an email only when the exact address came from the cited source metadata; First Look never stores a phone number as relationship identity.
 - Prefer a person or organization the user named during Witnessing, a repeated substantive correspondent, or a recurring meeting participant.
 - Do not treat every topic as a project. A project needs a defined body of work, outcome, or ongoing coordination signal.
 - Use source evidence to explain a proposal, but do not expose raw email bodies or full transcript text in this view.
@@ -85,4 +89,3 @@ This implementation adds only relationship and project candidate packets and the
 - **Project Managers** receives approved project shells and their linked approved relationship packets.
 
 Inbox treatment, tasks, drafts, memory, writing profiles, LinkedIn support, and external actions remain outside this delivery action. They will be prepared in their own review flows after this system has a clean, trustworthy source map.
-
