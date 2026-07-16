@@ -2614,6 +2614,7 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(hearthJs, /What VAL found/);
   assert.match(hearthJs, /Relationships for Stewardship/);
   assert.match(hearthJs, /Projects for Project Managers/);
+  assert.match(hearthJs, /Witnessing coverage:/);
   assert.match(hearthJs, /Deliver approved items/);
   assert.match(hearthJs, /Open Stewardship/);
   assert.match(hearthJs, /Open Project Managers/);
@@ -2625,4 +2626,5 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(valFirstLookCandidateReview, /Projects are delivered to Project Managers as clean project shells/);
   assert.match(valFirstLookCandidateReview, /First Look never creates, changes, or admits an Executive Inbox conversation/);
   assert.match(valFirstLookCandidateReview, /Phone numbers, email addresses, generic mailboxes, automated senders, and unnamed participants cannot become candidates/);
+  assert.match(valFirstLookCandidateReview, /cannot save a proposed map until every completed Witnessing answer has a coverage receipt/i);
 });

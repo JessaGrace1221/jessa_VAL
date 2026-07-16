@@ -58,6 +58,21 @@ The governing rule remains:
 
 Each packet receives only the evidence relevant to its decision. A packet may say that it has no relevant evidence; it may not invent any.
 
+### Witnessing Completeness Gate
+
+The Witnessing Session is not background flavor. Every completed answer is retained as a direct, first-class source receipt for the First Look. Before VAL can show the relationship and project review map, it must prove all of the following:
+
+1. every completed Witnessing answer was read by the candidate-analysis pass;
+2. every answer has an explicit coverage receipt, including answers that do not name a relationship or project;
+3. any person, organization, or project the user explicitly frames as important, protected, owned, or needing organization appears as a reviewable packet backed by that same Witnessing answer; and
+4. no inferred relationship or project may outrank a direct Witnessing instruction merely because it occurred in a random email or calendar event.
+
+If VAL cannot meet this gate, it must stop before saving the proposed map. It must never silently omit a user-named relationship or project.
+
+This does **not** mean that every Round Table rereads every raw email, event, document, and transcript. The complete source receipt is read once; the relevant packet carries the bounded evidence to the relevant Round Table. The source coverage and packet routes remain visible in the First Look analysis so the user can see what VAL used and where it will go after approval.
+
+The shared packet root also hydrates the current Witnessing answers directly. A Witnessing answer is therefore available to later packet and Round Table work even when it has not been condensed into durable memory. Direct source evidence remains distinct from any later memory proposal or approved working agreement.
+
 ## Krisp Thirty-Day Intake
 
 Once Krisp is connected, VAL's first source intake requests the previous 30 calendar days of Krisp meeting receipts. For every receipt Krisp returns, VAL:
@@ -69,6 +84,8 @@ Once Krisp is connected, VAL's first source intake requests the previous 30 cale
 5. gives the user a coverage receipt: found, imported, already present, unavailable, skipped without transcript text, and failed.
 
 The coverage receipt must state the time window and whether Krisp returned a capped result. VAL must never claim that it read a transcript it did not receive.
+
+The relationship/project candidate pass uses that same 30-day Krisp window. It cannot quietly broaden into older transcript receipts after the intake coverage has been stated.
 
 ## First Look Delivery Boundary
 

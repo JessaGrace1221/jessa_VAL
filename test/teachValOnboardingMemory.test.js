@@ -589,7 +589,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/immediate_consumers/);
   assert.match(server,/future_consumers/);
   assert.match(server,/saveTeachValImport/);
-  assert.match(server,/status:'Witnessed'/);
+  assert.match(server,/status:isSourceConnectionStep\?'Confirmed':'Witnessed'/);
   assert.doesNotMatch(server,/Memory saved/);
 });
 

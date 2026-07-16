@@ -3550,6 +3550,32 @@ async function listTeachValImports(sessionId){
   const {rows}=teachValStoreArray('teachValImports');
   return rows.filter(r=>r.tenantId===tenantId()&&r.userId===currentUserId()&&r.sessionId===sessionId).map(teachValImportRow);
 }
+async function listTeachValWitnessingSourceMemory({limit=40}={}){
+  const session=await getTeachValSession();
+  if(!session?.id)return [];
+  const imports=await listTeachValImports(session.id);
+  return imports
+    .filter(item=>String(item.category||'').startsWith('witness_'))
+    .filter(item=>String(item.rawResponse||item.raw_response||'').trim())
+    .slice(-Math.max(1,Math.min(Number(limit)||40,80)))
+    .map(item=>({
+      id:'witness:'+item.id,
+      kind:'teach_val_witnessing_answer',
+      category:String(item.category||'witnessing_answer').replace(/^witness_/,'').replace(/_/g,' '),
+      title:'Witnessing: '+String(item.category||'answer').replace(/^witness_/,'').replace(/_/g,' '),
+      summary:'Direct answer from the current Witnessing Session.',
+      detail:String(item.rawResponse||item.raw_response||'').trim(),
+      metadata:{
+        source:'teach_val_witnessing_session',
+        sessionId:session.id,
+        importId:item.id,
+        category:item.category||'',
+        reviewed:!!item.reviewed,
+        status:item.status||''
+      },
+      createdAt:item.createdAt||item.created_at||''
+    }));
+}
 async function listTeachValPublicImports(sessionId){
   return (await listTeachValImports(sessionId)).map(teachValPublicImport).filter(Boolean);
 }
@@ -8400,12 +8426,12 @@ app.post('/api/val/first-look/:runId/candidates/prepare',async(req,res)=>{
     if(retired)existing=await listValFirstLookCandidates(run.id);
     if(existing.length){
       write({type:'progress',source:'review',state:'complete',message:'Opening the proposed map VAL already prepared from this First Look.'});
-      write({type:'complete',candidates:existing,reused:true});
+      write({type:'complete',candidates:existing,candidateAnalysis:await getValFirstLookCandidateAnalysis(run.id),reused:true});
       return res.end();
     }
     write({type:'progress',source:'snapshot',state:'reading',message:'Preparing the proposed map from the sources you approved.'});
     const result=await buildValFirstLookCandidateMap({run,onProgress:write});
-    write({type:'complete',candidates:result.candidates,reused:false});
+    write({type:'complete',candidates:result.candidates,candidateAnalysis:result.analysis,reused:false});
   }catch(error){
     write({type:'error',message:firstLookError(error)});
   }
@@ -15300,14 +15326,15 @@ function firstLookCandidateLooksLikePhone(value=''){
   const digits=(text.match(/\d/g)||[]).length;
   return digits>=7||/^[+().\-\s\d]{7,}$/.test(text);
 }
-function firstLookCandidateIdentityLooksSafe(value='',kind='person'){
+function firstLookCandidateIdentityLooksSafe(value='',kind='person',{allowSingleWordPerson=false}={}){
   const name=firstLookCandidateCleanName(value);
   const comparable=firstLookCandidateComparableText(name);
   if(!name||name.length<2||name.length>120||name.includes('@')||firstLookCandidateLooksLikePhone(name))return false;
   if(kind!=='project'&&/\b(no reply|noreply|do not reply|mailer daemon|postmaster|notification|calendar|google calendar|zoom|google meet|krisp|speaker \d+|attendee|organizer|invite|webinar|newsletter|email|phone|contact|unknown)\b/i.test(name))return false;
   if(kind==='person'){
     const words=comparable.split(' ').filter(Boolean);
-    return words.length>=2&&words.every(word=>/^[a-z][a-z'\-]*$/.test(word));
+    const minimumWords=allowSingleWordPerson?1:2;
+    return words.length>=minimumWords&&words.every(word=>/^[a-z][a-z'\-]*$/.test(word));
   }
   return /[a-z]/i.test(name)&&comparable.length>=2;
 }
@@ -15332,14 +15359,14 @@ function firstLookCandidateAuthoritativeEmail(signals=[],name=''){
 }
 function firstLookCandidateAdmission({type='',kind='person',name='',signals=[]}={}){
   const identityKind=type==='relationship'?kind:'project';
-  if(!firstLookCandidateIdentityLooksSafe(name,identityKind)){
+  const kinds=new Set(signals.map(signal=>signal.kind));
+  const hasWitnessing=kinds.has('witnessing_answer');
+  if(!firstLookCandidateIdentityLooksSafe(name,identityKind,{allowSingleWordPerson:hasWitnessing&&identityKind==='person'})){
     return {accepted:false,status:'blocked_by_identity',reason:'The proposed name is not a clear person, organization, or project identity.'};
   }
   if(!signals.length||!signals.some(signal=>firstLookCandidateSignalMentionsName(signal,name))){
     return {accepted:false,status:'blocked_by_evidence',reason:'The proposed name does not appear in the cited source evidence.'};
   }
-  const kinds=new Set(signals.map(signal=>signal.kind));
-  const hasWitnessing=kinds.has('witnessing_answer');
   const hasRelationshipSignal=['email_correspondent','calendar_participant','krisp_participant'].some(kindName=>kinds.has(kindName));
   const hasIndependentSignal=['calendar_participant','krisp_participant','calendar_topic','document'].some(kindName=>kinds.has(kindName));
   const emailSignals=signals.filter(signal=>signal.kind==='email_correspondent');
@@ -15599,9 +15626,14 @@ function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null}={})
   const source=(id)=>sources.find(item=>item.id===id)||{};
   return {
     version:'first_look_packet_coverage_v1',
-    rule:'Round Tables receive bounded source packets, not every raw source.',
+    rule:'Every approved source is considered once. Round Tables receive bounded, relevant packets rather than rereading every raw source.',
+    reviewBoundary:'First Look records source coverage and prepares proposals. It does not create a relationship, project, task, draft, or Chief of Staff recommendation until the user approves delivery.',
     sources:{
-      witnessing:{read:witnessing.length,packets:['val_foundation','stewardship','project_managers','chief_of_staff']},
+      witnessing:{
+        read:witnessing.length,
+        sourceTruth:'each answer is retained as direct Witnessing evidence',
+        packets:['val_foundation','stewardship','project_managers','chief_of_staff']
+      },
       gmail:{read:Number(source('gmail').counts?.reviewed||0),packets:['executive_inbox','stewardship','project_managers','chief_of_staff']},
       calendar:{read:Number(source('calendar').counts?.reviewed||0),packets:['stewardship','project_managers','transcripts','chief_of_staff']},
       drive:{read:Number(source('drive').counts?.reviewed||0),packets:['project_managers','stewardship','chief_of_staff']},
@@ -15676,10 +15708,11 @@ async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={})
   await report('krisp','reading','Checking the available Krisp meeting receipts.');
   try{
     if(!(await krispMcp.isConfigured())) throw new Error('Krisp is not connected.');
-    const discovery=await withTimeout(krispMcp.discoverTranscriptReceipts({limit:50,from:window.start,to:window.end}),65000,'Krisp transcript check timed out before it returned a receipt');
+    const krispWindow=krispThirtyDayWindow(30);
+    const discovery=await withTimeout(krispMcp.discoverTranscriptReceipts({limit:50,from:krispWindow.start,to:krispWindow.end}),65000,'Krisp transcript check timed out before it returned a receipt');
     const records=(discovery.documents||[]).map(firstLookKrispReceipt).map(record=>firstLookCandidateSourceRecord('krisp',record));
-    sources.push({id:'krisp',label:'Krisp transcripts',status:discovery.status||'complete',counts:{reviewed:records.length},records,error:''});
-    await report('krisp',discovery.status||'complete',discovery.detail||('Read '+records.length+' Krisp receipt'+(records.length===1?'':'s')+'.'),{count:records.length});
+    sources.push({id:'krisp',label:'Krisp transcripts',status:discovery.status||'complete',window:krispWindow,counts:{reviewed:records.length},records,error:''});
+    await report('krisp',discovery.status||'complete',(discovery.detail||('Read '+records.length+' Krisp receipt'+(records.length===1?'':'s')+'.'))+' This is the last 30 days of Krisp material.',{count:records.length});
   }catch(error){
     sources.push({id:'krisp',label:'Krisp transcripts',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
     await report('krisp','unavailable','Krisp could not be read for the proposed map.',{count:0,error:firstLookError(error)});
@@ -15754,6 +15787,71 @@ function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
   for(const item of Array.isArray(modelPayload.projects)?modelPayload.projects.slice(0,16):[])add('project',item);
   return candidates;
 }
+function firstLookCandidateNamesMatch(left='',right=''){
+  const a=firstLookCandidateComparableText(left);
+  const b=firstLookCandidateComparableText(right);
+  if(!a||!b)return false;
+  return a===b||(Math.min(a.length,b.length)>=4&&(a.includes(b)||b.includes(a)));
+}
+function firstLookWitnessingCoverage({modelPayload={},analysis={},candidates=[]}={}){
+  const expected=(analysis.witnessing||[]).map(item=>({
+    signalId:'witness:'+item.id,
+    label:item.label,
+    text:item.text
+  }));
+  const expectedIds=new Set(expected.map(item=>item.signalId));
+  const supplied=Array.isArray(modelPayload.witnessing_coverage)?modelPayload.witnessing_coverage:[];
+  const bySignal=new Map();
+  for(const item of supplied){
+    const signalId=String(item?.signal_id||item?.signalId||'').trim();
+    if(!expectedIds.has(signalId)||bySignal.has(signalId))continue;
+    const names=(value,kind)=>Array.isArray(value)?value
+      .map(name=>firstLookCandidateCleanName(name))
+      .filter(name=>firstLookCandidateIdentityLooksSafe(name,kind,{allowSingleWordPerson:kind==='person'}))
+      .slice(0,12):[];
+    bySignal.set(signalId,{
+      signalId,
+      relationships:names(item.relationship_names||item.relationshipNames,'person'),
+      projects:names(item.project_names||item.projectNames,'project'),
+      note:String(item.note||item.summary||'').replace(/\s+/g,' ').trim().slice(0,500)
+    });
+  }
+  const missing=expected.filter(item=>!bySignal.has(item.signalId));
+  if(missing.length){
+    throw new Error('VAL did not account for every Witnessing answer. No proposed map was saved; please try the First Look again.');
+  }
+  const candidateFor=(type,name,signalId)=>candidates.some(candidate=>candidate.type===type
+    && firstLookCandidateNamesMatch(candidate.payload?.proposedName,name)
+    && (candidate.sourceEvidence||[]).some(item=>item.id===signalId));
+  const missingProposals=[];
+  for(const coverage of bySignal.values()){
+    for(const name of coverage.relationships){
+      if(!candidateFor('relationship',name,coverage.signalId))missingProposals.push({type:'relationship',name,signalId:coverage.signalId});
+    }
+    for(const name of coverage.projects){
+      if(!candidateFor('project',name,coverage.signalId))missingProposals.push({type:'project',name,signalId:coverage.signalId});
+    }
+  }
+  if(missingProposals.length){
+    throw new Error('VAL did not prepare review packets for every relationship or project you explicitly named. No proposed map was saved; please try the First Look again.');
+  }
+  return {
+    version:'first_look_witnessing_coverage_v1',
+    answersRead:expected.length,
+    answersAccountedFor:bySignal.size,
+    directItemsProposed:missingProposals.length===0,
+    answers:expected.map(item=>{
+      const coverage=bySignal.get(item.signalId);
+      return {
+        signalId:item.signalId,
+        label:item.label,
+        relationshipNames:coverage.relationships,
+        projectNames:coverage.projects,
+        note:coverage.note
+      };
+    })
+  };
+}
 async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   if(!(await resolveOpenAIKey()))throw new Error('Connect OpenAI before VAL can build the proposed map.');
   let krispIntake=null;
@@ -15777,11 +15875,12 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
       'Follow the Executive Inbox relevance standard: one-sided inbound email without an independent source or explicit Witnessing context is noise, not a relationship or project. This map never creates an Executive Inbox item.',
       'Never return an email address unless it appears in the supplied source signal metadata. Never return a phone number in any field.',
       'A project needs a defined body of work, outcome, or ongoing coordination signal. Do not treat every subject line or meeting as a project.',
-      'For every proposal return at least one exact signal ID from the supplied source signals. Keep notes factual, short, and useful for a user reviewing the proposal.'
+      'For every proposal return at least one exact signal ID from the supplied source signals. Keep notes factual, short, and useful for a user reviewing the proposal.',
+      'You must account for every Witnessing answer in witnessing_coverage. For each answer, list relationship_names and project_names only when the user explicitly framed them as a relationship or project VAL should understand, protect, or organize. For every listed name, return a matching proposal backed by that same Witnessing signal. Do not include the user themself, vague categories, or a name merely mentioned in passing.'
     ].join('\n'),
     user:JSON.stringify({
       task:'Prepare relationship candidates for Stewardship and project candidates for Project Managers.',
-      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}]},
+      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}],witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only directly named relationships'],project_names:['only directly named projects'],note:''}]},
       witnessing_answers:analysis.witnessing.map(item=>({signal_id:'witness:'+item.id,label:item.label,text:item.text})),
       source_signals:promptData.promptSignals
     }),
@@ -15792,7 +15891,9 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   });
   const modelPayload=parseModelJson(raw);
   const candidates=normalizeValFirstLookCandidateMap({modelPayload,analysis});
+  analysis.witnessingCoverage=firstLookWitnessingCoverage({modelPayload,analysis,candidates});
   if(!candidates.length)throw new Error('VAL could not find a source-backed relationship or project proposal yet. The scan remains intact and no changes were made.');
+  await onProgress({type:'progress',source:'witnessing',state:'complete',message:'Accounted for all '+analysis.witnessingCoverage.answersAccountedFor+' Witnessing answer'+(analysis.witnessingCoverage.answersAccountedFor===1?'':'s')+' before preparing the review map.',count:analysis.witnessingCoverage.answersAccountedFor});
   const storedAnalysis=await saveValFirstLookCandidateAnalysis({runId:run.id,status:'complete',sourceReceipt:analysis,completedAt:new Date().toISOString()});
   const storedCandidates=await saveValFirstLookCandidates(run.id,candidates);
   await onProgress({type:'progress',source:'review',state:'complete',message:'Prepared '+storedCandidates.length+' source-backed proposal'+(storedCandidates.length===1?'':'s')+' for your review.'});
@@ -15884,7 +15985,8 @@ async function applyValFirstLookCandidates(run={}){
   for(const candidate of candidates){
     const payload=candidate.payload||{};
     const kind=candidate.type==='relationship'?(payload.kind||'person'):'project';
-    if(!firstLookCandidateIdentityLooksSafe(payload.proposedName||'',kind))throw new Error('Every kept proposal needs a clear person, organization, or project name before it can be delivered.');
+    const hasWitnessingEvidence=(candidate.sourceEvidence||[]).some(item=>item.source==='witnessing')||Array.isArray(payload.witnessingEvidence)&&payload.witnessingEvidence.length>0;
+    if(!firstLookCandidateIdentityLooksSafe(payload.proposedName||'',kind,{allowSingleWordPerson:hasWitnessingEvidence&&kind==='person'}))throw new Error('Every kept proposal needs a clear person, organization, or project name before it can be delivered.');
     if(!Array.isArray(candidate.sourceEvidence)||!candidate.sourceEvidence.length)throw new Error('Every kept proposal needs source evidence before it can be delivered.');
     if(payload.admission?.accepted!==true)throw new Error('Resolve the identity evidence for every kept proposal before it can be delivered.');
   }
@@ -20093,16 +20195,17 @@ function parseTeachValCoreMemory(row={}){
   return {id:row.id||'',kind,category,title:title||category.replace(/_/g,' '),summary,detail,metadata,createdAt:row.createdAt||row.created_at||''};
 }
 async function listTeachValCoreMemory({limit=80}={}){
+  const witnessAnswers=await listTeachValWitnessingSourceMemory({limit});
   if(DEMO_MODE){
     const rows=(requestContext.getStore()?.demoState?.memoryItems||[]).filter(m=>/^teach_val_/i.test(String(m.kind||'')));
-    return rows.map(parseTeachValCoreMemory).slice(0,limit);
+    return witnessAnswers.concat(rows.map(parseTeachValCoreMemory)).slice(0,limit);
   }
   await valDbReady;
   if(pgPool){
     const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and kind like 'teach_val_%' order by created_at desc limit $2",[VAL_USER_ID,limit]);
-    return r.rows.map(row=>parseTeachValCoreMemory({id:row.id,kind:row.kind,summary:row.summary,rawText:row.raw_text,metadata:row.metadata,createdAt:row.created_at?.toISOString?.()||row.created_at||''}));
+    return witnessAnswers.concat(r.rows.map(row=>parseTeachValCoreMemory({id:row.id,kind:row.kind,summary:row.summary,rawText:row.raw_text,metadata:row.metadata,createdAt:row.created_at?.toISOString?.()||row.created_at||''}))).slice(0,limit);
   }
-  return (valStore().memoryItems||[]).filter(m=>/^teach_val_/i.test(String(m.kind||''))).map(parseTeachValCoreMemory).slice(0,limit);
+  return witnessAnswers.concat((valStore().memoryItems||[]).filter(m=>/^teach_val_/i.test(String(m.kind||''))).map(parseTeachValCoreMemory)).slice(0,limit);
 }
 function uniqueNamedRows(rows=[],key='name',limit=6){
   const seen=new Set(),out=[];

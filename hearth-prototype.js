@@ -16692,6 +16692,7 @@ let valFirstLookProgress = [];
 let valFirstLookActivity = '';
 let valFirstLookKrispVerification = null;
 let valFirstLookCandidates = [];
+let valFirstLookCandidateAnalysis = null;
 let valFirstLookCandidateProgress = [];
 let valFirstLookCandidateActivity = '';
 let valFirstLookDelivery = null;
@@ -16810,11 +16811,15 @@ function renderValFirstLookCandidateMap(){
   const projects=candidates.filter(candidate=>candidate.type==='project');
   const ready=candidates.filter(candidate=>['kept','corrected'].includes(candidate.decision));
   const delivered=candidates.filter(candidate=>candidate.decision==='delivered');
+  const coverage=valFirstLookCandidateAnalysis?.sourceReceipt?.witnessingCoverage||{};
+  const answersRead=Number(coverage.answersRead||0);
+  const answersAccountedFor=Number(coverage.answersAccountedFor||0);
   return [
     '<section class="val-first-look-candidate-map" aria-label="What VAL found">',
       '<span>What VAL found</span>',
       '<h4>A proposed map, ready for your judgment.</h4>',
       '<p>Nothing below exists in a drawer yet. Keep what belongs, correct what needs context, and leave out anything that does not belong.</p>',
+      answersRead?'<p><b>Witnessing coverage:</b> '+answersAccountedFor+' of '+answersRead+' answers accounted for. Any relationship or project you explicitly named is shown below as a review packet; the rest remains context and does not become a record on its own.</p>':'',
       relationships.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Relationships for Stewardship</h5><small>'+relationships.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+relationships.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       projects.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Projects for Project Managers</h5><small>'+projects.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+projects.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       ready.length?'<div class="val-first-look-delivery"><strong>'+ready.length+' approved item'+(ready.length===1?'':'s')+' ready for delivery.</strong><p>Delivery creates local Stewardship and Project Managers packets with their notes and source references. It does not send, schedule, or change anything outside VAL.</p><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookDeliver">Deliver approved items</button></div>':'',
@@ -16916,6 +16921,7 @@ async function loadValFirstLookRun(){
   const result = await getJson('/api/val/first-look',{cache:'no-store'});
   valFirstLookRun = result?.run || null;
   valFirstLookCandidates = Array.isArray(result?.candidates)?result.candidates:[];
+  valFirstLookCandidateAnalysis = result?.candidateAnalysis || null;
   return valFirstLookRun;
 }
 async function prepareValFirstLook(){
@@ -17044,6 +17050,7 @@ async function prepareValFirstLookCandidateMap(){
       }
       if(event.type==='complete'){
         valFirstLookCandidates=Array.isArray(event.candidates)?event.candidates:[];
+        valFirstLookCandidateAnalysis=event.candidateAnalysis||valFirstLookCandidateAnalysis;
         valFirstLookCandidateActivity=event.reused?'Your proposed map is ready to review.':'Your proposed map is ready to review.';
         completed=true;
         renderValFirstLookConversation({state:'complete',run:valFirstLookRun});

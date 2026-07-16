@@ -17,6 +17,7 @@ The map is always a proposal. It is never an automatic import.
 - The candidate map is generated only after the user chooses to build it.
 - Candidate evidence is source-backed and retains the exact source receipt references used to make the proposal.
 - Witnessing answers are first-class evidence. A relationship or project the user named during Witnessing must be considered before weaker inferred patterns.
+- VAL cannot save a proposed map until every completed Witnessing answer has a coverage receipt. If an answer explicitly names a relationship or project that VAL should understand, protect, or organize, the map must include that item as a review packet with the same Witnessing answer cited as evidence.
 - A candidate is not a new relationship, project, task, draft, or memory item.
 - Identity ambiguity blocks relationship delivery. A project without a sufficiently clear name remains a question, not a project.
 - First Look never creates, changes, or admits an Executive Inbox conversation. Source material may become quiet relationship or project evidence only through this separate review flow.
@@ -35,6 +36,7 @@ The map is always a proposal. It is never an automatic import.
    - VAL rereads the approved source metadata for the immutable First Look window and the completed Witnessing answers tied to that First Look.
    - This is a separate, read-only candidate-analysis receipt. It never overwrites the immutable First Look snapshot.
    - While the map is being prepared, VAL says what it is reading: Witnessing answers, relationship signals in email and calendar, named projects, and source references.
+   - The finished map states how many Witnessing answers were accounted for. It cannot quietly omit a relationship or project the user explicitly named for VAL to understand.
 
 3. **Review relationships**
    - Each relationship packet includes a proposed name, any known email or organization, a concise note, confidence, and linked source receipts.
@@ -80,6 +82,7 @@ Project packets additionally include:
 - Do not treat every topic as a project. A project needs a defined body of work, outcome, or ongoing coordination signal.
 - Use source evidence to explain a proposal, but do not expose raw email bodies or full transcript text in this view.
 - Krisp material remains exact. VAL may cite a Krisp meeting receipt but must never rewrite it as the original transcript.
+- The Krisp portion of this map comes from the same last-30-calendar-day receipt window that VAL imports into Transcripts. Gmail and Calendar retain the First Look's stated 90-day review boundary; Drive and Docs retain their stated metadata limit.
 
 ## Delivery Scope In This Slice
 

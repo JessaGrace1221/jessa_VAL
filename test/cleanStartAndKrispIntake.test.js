@@ -55,4 +55,19 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
   assert.match(server, /\/api\/val\/krisp\/sync/);
   assert.match(server, /firstLookPacketCoverage/);
   assert.match(server, /syncKrispTranscriptsForLastThirtyDays\(\{days:30,onProgress\}\)/);
+  assert.match(server, /krispThirtyDayWindow\(30\)/);
+  assert.match(server, /This is the last 30 days of Krisp material/);
+});
+
+test('First Look treats every Witnessing answer as source evidence and blocks a partial proposed map', () => {
+  assert.match(server, /function firstLookWitnessingCoverage/);
+  assert.match(server, /VAL did not account for every Witnessing answer/);
+  assert.match(server, /VAL did not prepare review packets for every relationship or project you explicitly named/);
+  assert.match(server, /analysis\.witnessingCoverage=firstLookWitnessingCoverage/);
+  assert.match(server, /answersAccountedFor/);
+  assert.match(server, /relationship_names/);
+  assert.match(server, /async function listTeachValWitnessingSourceMemory/);
+  assert.match(server, /const witnessAnswers=await listTeachValWitnessingSourceMemory/);
+  assert.match(contract, /Witnessing Completeness Gate/);
+  assert.match(contract, /must never silently omit a user-named relationship or project/i);
 });
