@@ -2582,7 +2582,7 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(server, /Checking Drive and Docs metadata/);
   assert.match(server, /Krisp transcript receipts/);
   assert.match(hearthJs, /Prepare my First Look/);
-  assert.match(hearthJs, /Import the last 30 days from Krisp/);
+  assert.match(hearthJs, /Check Krisp meeting receipts again/);
   assert.match(hearthJs, /First Look complete/);
   assert.match(hearthJs, /VAL did not create projects, relationships, tasks, drafts, or memory/);
   assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);

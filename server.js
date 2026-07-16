@@ -3660,13 +3660,20 @@ async function saveValFirstLookCandidateAnalysis(record={}){
   if(pgPool){
     const result=await dbQuery(`insert into val_first_look_candidate_analyses (id,run_id,tenant_id,user_id,status,source_receipt_json,created_at,completed_at)
       values ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz)
-      on conflict (run_id) do nothing returning *`,[row.id,row.runId,row.tenantId,row.userId,row.status,JSON.stringify(row.sourceReceipt||{}),row.createdAt,row.completedAt]);
-    if(result.rows[0])return valFirstLookCandidateAnalysisRow(result.rows[0]);
-    return getValFirstLookCandidateAnalysis(row.runId);
+      on conflict (run_id) do update set
+        status=excluded.status,
+        source_receipt_json=excluded.source_receipt_json,
+        completed_at=excluded.completed_at
+      returning *`,[row.id,row.runId,row.tenantId,row.userId,row.status,JSON.stringify(row.sourceReceipt||{}),row.createdAt,row.completedAt]);
+    return valFirstLookCandidateAnalysisRow(result.rows[0]);
   }
   const {store,rows}=teachValStoreArray('valFirstLookCandidateAnalyses');
   const existing=rows.find(item=>item.tenantId===row.tenantId&&item.userId===row.userId&&item.runId===row.runId);
-  if(existing)return valFirstLookCandidateAnalysisRow(existing);
+  if(existing){
+    Object.assign(existing,{status:row.status,sourceReceipt:row.sourceReceipt,completedAt:row.completedAt});
+    saveValStore(store);
+    return valFirstLookCandidateAnalysisRow(existing);
+  }
   rows.push(row);
   saveValStore(store);
   return row;
@@ -15631,10 +15638,103 @@ function firstLookCandidatePromptReceipt({sources=[],witnessing=[]}={}){
     evidenceById.set('witness:'+item.id,{id:'witness:'+item.id,source:'witnessing',title:item.label,date:item.createdAt||'',snippet:item.text,people:[]});
   }
   const promptSignals=signals.map(signal=>({
-    id:signal.id,kind:signal.kind,label:signal.label,detail:signal.detail,
+    id:signal.id,source:firstLookCandidateSignalSource(signal),kind:signal.kind,label:signal.label,detail:signal.detail,
     email_addresses:signal.emailAddresses||[],inbound_count:signal.inboundCount||0,sent_count:signal.sentCount||0,attachment_count:signal.attachmentCount||0
   }));
   return {signals,promptSignals,evidenceById};
+}
+function firstLookCandidateSignalSource(signal={}){
+  const kind=String(signal.kind||'').toLowerCase();
+  if(kind==='witnessing_answer')return 'witnessing';
+  if(kind==='email_correspondent')return 'gmail';
+  if(kind==='calendar_participant'||kind==='calendar_topic')return 'calendar';
+  if(kind==='document')return 'drive';
+  if(kind==='krisp_participant')return 'krisp';
+  return 'other';
+}
+function firstLookCandidateModelPayload(payload={}){
+  const value=payload&&typeof payload==='object'?payload:{};
+  return {
+    relationships:Array.isArray(value.relationships)?value.relationships:[],
+    projects:Array.isArray(value.projects)?value.projects:[],
+    witnessing_coverage:Array.isArray(value.witnessing_coverage)?value.witnessing_coverage:[],
+    routing_rule_coverage:Array.isArray(value.routing_rule_coverage)?value.routing_rule_coverage:[]
+  };
+}
+function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
+  const witnessingAnswers=(analysis.witnessing||[]).map(item=>({
+    signal_id:'witness:'+item.id,label:item.label,text:item.text
+  }));
+  const routingRules=Array.isArray(analysis.routingRules)?analysis.routingRules:[];
+  const executiveGuidance={
+    witnessing_answers:witnessingAnswers,
+    routing_rules:routingRules
+  };
+  const sharedSystem=[
+    'You prepare one bounded First Look packet for an executive assistant. Return JSON only.',
+    'This is review preparation, not an instruction to create or change any record, relationship, project, task, draft, memory, email, or calendar event.',
+    'Use only the supplied evidence IDs. Do not invent names, organizations, projects, owners, or evidence IDs.',
+    'An executive should see only a meaningful person, organization, or defined body of work. Reject newsletters, receipts, automated senders, generic vendors, phone numbers, email addresses, generic mailboxes, and calendar mechanics.',
+    'One-sided inbound email without an independent source or explicit Witnessing instruction is noise, not a relationship or project.',
+    'This map never creates an Executive Inbox item. Never return a phone number in any field.',
+    'A relationship needs a direct person or organization signal. A project needs a defined outcome, body of work, or ongoing coordination signal. Do not treat every subject line, meeting, or document as a project.',
+    'Each proposed relationship or project must cite one or more exact supplied signal IDs. Keep each note factual, brief, and useful for a human reviewing it.',
+    'Return an email address only when it appears in supplied signal metadata.'
+  ].join('\n');
+  const candidateOutput={
+    relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],
+    projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}]
+  };
+  const sourceDefinitions=[
+    {id:'gmail',label:'Gmail',why:'This packet distinguishes real reciprocal relationships and active work from inbox noise.',nextStep:'Its source-backed candidates will be merged with Calendar, Drive, Krisp, and Witnessing packets before the executive sees a review map.'},
+    {id:'calendar',label:'Google Calendar',why:'This packet identifies recurring people and work that show up through actual time commitments.',nextStep:'Its source-backed candidates will be merged with the other packets before the executive sees a review map.'},
+    {id:'drive',label:'Drive & Docs',why:'This packet identifies named work and organizations from documents without treating a file title as proof by itself.',nextStep:'Its source-backed candidates will be merged with relationship and transcript evidence before the executive sees a review map.'},
+    {id:'krisp',label:'Krisp transcripts',why:'This packet uses exact Krisp meeting receipts to surface recurring people and work without rewriting the source material.',nextStep:'Its source-backed candidates will be merged with the other packets before the executive sees a review map.'}
+  ];
+  const steps=[{
+    id:'witnessing',source:'witnessing',label:'Witnessing Session',maxTokens:1400,
+    inputCount:witnessingAnswers.length+routingRules.length,
+    objective:'Turn the executive\'s own words into explicit priorities, protected context, named relationships, named projects, and routing instructions.',
+    why:'This is the governing context for every later source packet. It keeps VAL from flattening personal priorities into generic CRM data.',
+    nextStep:'This packet will set the review coverage requirements and guide Gmail, Calendar, Drive, and Krisp interpretation.',
+    system:[
+      sharedSystem,
+      'You are reading the Witnessing packet. Account for every supplied Witnessing answer and every routing rule.',
+      'When the executive explicitly names a relationship or project VAL should understand, protect, or organize, prepare a matching candidate using that Witnessing signal ID.',
+      'When a rule protects children, private people, or sensitive context, mark protected_context true and do not create a relationship from the protected name alone.'
+    ].join('\n'),
+    user:{
+      task:'Prepare the Witnessing guidance packet for the First Look review map.',
+      objective:'Turn the executive\'s own words into direct, source-linked guidance for later packets.',
+      why:'The user must be able to see that every important instruction was understood before any proposal is shown.',
+      next_step:'Code will verify coverage, then pass this guidance to the Gmail, Calendar, Drive, and Krisp packet steps.',
+      output:{...candidateOutput,witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only explicitly named relationships'],project_names:['only explicitly named projects'],note:''}],routing_rule_coverage:[{rule_id:'routing rule id',relationship_names:['direct relationship targets'],project_names:['direct project targets'],protected_context:false,note:''}]},
+      ...executiveGuidance
+    }
+  }];
+  for(const definition of sourceDefinitions){
+    const sourceSignals=(promptData.promptSignals||[]).filter(signal=>signal.source===definition.id);
+    steps.push({
+      ...definition,source:definition.id,maxTokens:900,inputCount:sourceSignals.length,
+      objective:'Identify only source-backed relationships and projects worth an executive\'s review from this '+definition.label+' packet.',
+      system:[
+        sharedSystem,
+        'You are reading only the '+definition.label+' packet.',
+        definition.why,
+        'The next step is a deterministic merge with the other source packets. Return only candidates supported by this packet\'s exact signal IDs; do not repeat a candidate merely because it appears in the Witnessing guidance.'
+      ].join('\n'),
+      user:{
+        task:'Prepare the '+definition.label+' contribution to the First Look review map.',
+        objective:'Identify only the people, organizations, and defined work this source can support for executive review.',
+        why:definition.why,
+        next_step:definition.nextStep,
+        output:candidateOutput,
+        executive_guidance:executiveGuidance,
+        source_signals:sourceSignals
+      }
+    });
+  }
+  return steps;
 }
 function krispThirtyDayWindow(days=30){
   const end=new Date();
@@ -16063,39 +16163,74 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   analysis.krispIntake=krispIntake;
   analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
-  await onProgress({type:'progress',source:'reasoning',state:'reading',message:'Mapping the people and projects that repeat across your approved sources.'});
-  const raw=await callValModel({
-    system:[
-      'You prepare a private First Look candidate map for an executive assistant. Return JSON only.',
-      'Create proposals, never claims. Do not create any business record and do not propose an action.',
-      'Use only the supplied Witnessing answers and source signal IDs. Do not invent names, organizations, projects, ownership, or evidence IDs.',
-      'Prefer items the user named during Witnessing. A relationship needs a real person or organization signal. Ignore newsletters, receipts, automated senders, generic vendors, phone numbers, email addresses, generic mailboxes, and calendar mechanics.',
-      'Follow the Executive Inbox relevance standard: one-sided inbound email without an independent source or explicit Witnessing context is noise, not a relationship or project. This map never creates an Executive Inbox item.',
-      'Never return an email address unless it appears in the supplied source signal metadata. Never return a phone number in any field.',
-      'A project needs a defined body of work, outcome, or ongoing coordination signal. Do not treat every subject line or meeting as a project.',
-      'For every proposal return at least one exact signal ID from the supplied source signals. Keep notes factual, short, and useful for a user reviewing the proposal.',
-      'You must account for every Witnessing answer in witnessing_coverage. For each answer, list relationship_names and project_names only when the user explicitly framed them as a relationship or project VAL should understand, protect, or organize. For every listed name, return a matching proposal backed by that same Witnessing signal. Do not include the user themself, vague categories, or a name merely mentioned in passing.',
-      'Explicit routing instructions are direct user guidance, not incidental prose. Account for every item in routing_rule_coverage. When an instruction names a project or an important relationship, prepare the corresponding proposal with that rule source signal. When it protects a child, private person, or other sensitive context, mark protected_context true and do not create a relationship record from the name alone.'
-    ].join('\n'),
-    user:JSON.stringify({
-      task:'Prepare relationship candidates for Stewardship and project candidates for Project Managers.',
-      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}],witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only directly named relationships'],project_names:['only directly named projects'],note:''}],routing_rule_coverage:[{rule_id:'routing rule id',relationship_names:['direct relationship targets'],project_names:['direct project targets'],protected_context:false,note:''}]},
-      witnessing_answers:analysis.witnessing.map(item=>({signal_id:'witness:'+item.id,label:item.label,text:item.text})),
-      routing_rules:analysis.routingRules,
-      source_signals:promptData.promptSignals
-    }),
-    maxTokens:5200,
-    temperature:0.15,
-    json:true,
-    timeoutMs:90000
-  });
-  const modelPayload=parseModelJson(raw);
+  const priorAnalysis=await getValFirstLookCandidateAnalysis(run.id);
+  const generationVersion='first_look_packet_map_v2';
+  const priorSteps=priorAnalysis?.sourceReceipt?.mapBuild?.version===generationVersion
+    ? priorAnalysis.sourceReceipt.mapBuild.steps||[]
+    : [];
+  const priorById=new Map(priorSteps.map(step=>[String(step.id||''),step]));
+  const modelSteps=firstLookCandidateModelSteps({analysis,promptData});
+  const completedSteps=[];
+  const persistStepProgress=async(status='processing')=>{
+    analysis.mapBuild={
+      version:generationVersion,status,
+      steps:completedSteps,
+      updatedAt:new Date().toISOString(),
+      objective:'Prepare the review map through bounded Witnessing, Gmail, Calendar, Drive, and Krisp packets before local evidence checks merge them.'
+    };
+    return saveValFirstLookCandidateAnalysis({
+      id:priorAnalysis?.id||'',runId:run.id,status,
+      sourceReceipt:analysis,
+      createdAt:priorAnalysis?.createdAt||new Date().toISOString(),
+      completedAt:new Date().toISOString()
+    });
+  };
+  const modelPayload={relationships:[],projects:[],witnessing_coverage:[],routing_rule_coverage:[]};
+  await onProgress({type:'progress',source:'reasoning',state:'reading',message:'Preparing one bounded evidence packet at a time for the review map.'});
+  for(const step of modelSteps){
+    const prior=priorById.get(step.id);
+    let payload=null;
+    if(prior?.status==='complete'&&Number(prior.inputCount)===Number(step.inputCount)&&prior.output){
+      payload=firstLookCandidateModelPayload(prior.output);
+      await onProgress({type:'progress',source:step.source,state:'complete',message:'Reusing the completed '+step.label+' packet for the next step.',count:step.inputCount});
+    }else if(step.source!=='witnessing'&&!step.inputCount){
+      payload=firstLookCandidateModelPayload();
+      await onProgress({type:'progress',source:step.source,state:'complete',message:'No '+step.label+' signals were available for this First Look packet.',count:0});
+    }else{
+      await onProgress({type:'progress',source:step.source,state:'reading',message:step.label+': '+step.objective,count:step.inputCount});
+      try{
+        const raw=await callValModel({
+          system:step.system,
+          user:JSON.stringify(step.user),
+          maxTokens:step.maxTokens,
+          temperature:0.15,
+          json:true,
+          timeoutMs:90000
+        });
+        payload=firstLookCandidateModelPayload(parseModelJson(raw));
+      }catch(error){
+        completedSteps.push({id:step.id,source:step.source,label:step.label,status:'failed',inputCount:step.inputCount,error:firstLookError(error),completedAt:new Date().toISOString()});
+        await persistStepProgress('processing');
+        throw new Error(step.label+' packet could not finish. Completed packets are saved. Try again to resume here. '+firstLookError(error));
+      }
+      await onProgress({type:'progress',source:step.source,state:'complete',message:step.label+' packet is ready for the next step.',count:step.inputCount});
+    }
+    completedSteps.push({
+      id:step.id,source:step.source,label:step.label,status:'complete',inputCount:step.inputCount,
+      objective:step.objective,why:step.why||'',nextStep:step.nextStep||'',output:payload,completedAt:new Date().toISOString()
+    });
+    await persistStepProgress('processing');
+    modelPayload.relationships.push(...payload.relationships);
+    modelPayload.projects.push(...payload.projects);
+    modelPayload.witnessing_coverage.push(...payload.witnessing_coverage);
+    modelPayload.routing_rule_coverage.push(...payload.routing_rule_coverage);
+  }
   const candidates=normalizeValFirstLookCandidateMap({modelPayload,analysis});
   analysis.witnessingCoverage=firstLookWitnessingCoverage({modelPayload,analysis,candidates});
   analysis.routingRuleCoverage=firstLookRoutingRuleCoverage({modelPayload,analysis,candidates});
   if(!candidates.length)throw new Error('VAL could not find a source-backed relationship or project proposal yet. The scan remains intact and no changes were made.');
   await onProgress({type:'progress',source:'witnessing',state:'complete',message:'Accounted for all '+analysis.witnessingCoverage.answersAccountedFor+' Witnessing answer'+(analysis.witnessingCoverage.answersAccountedFor===1?'':'s')+' before preparing the review map.',count:analysis.witnessingCoverage.answersAccountedFor});
-  const storedAnalysis=await saveValFirstLookCandidateAnalysis({runId:run.id,status:'complete',sourceReceipt:analysis,completedAt:new Date().toISOString()});
+  const storedAnalysis=await persistStepProgress('complete');
   const storedCandidates=await saveValFirstLookCandidates(run.id,candidates);
   await onProgress({type:'progress',source:'review',state:'complete',message:'Prepared '+storedCandidates.length+' source-backed proposal'+(storedCandidates.length===1?'':'s')+' for your review.'});
   return {analysis:storedAnalysis,candidates:storedCandidates};

@@ -86,6 +86,32 @@ test('First Look treats every Witnessing answer as source evidence and blocks a 
   assert.match(contract, /must never silently omit a user-named relationship or project/i);
 });
 
+test('First Look builds the proposed map through bounded, resumable evidence packets', () => {
+  const helper = server.match(/function firstLookCandidateModelSteps[\s\S]*?(?=function krispThirtyDayWindow)/)?.[0] || '';
+  assert.ok(helper, 'First Look packet-step prompt builder should be available.');
+  assert.match(helper, /objective:/);
+  assert.match(helper, /why:/);
+  assert.match(helper, /next_step:/);
+  assert.match(helper, /This map never creates an Executive Inbox item/);
+  assert.match(helper, /Never return a phone number in any field/);
+  assert.match(helper, /id:'witnessing'/);
+  assert.match(helper, /id:'gmail'/);
+  assert.match(helper, /id:'calendar'/);
+  assert.match(helper, /id:'drive'/);
+  assert.match(helper, /id:'krisp'/);
+  assert.match(helper, /maxTokens:1400/);
+  assert.match(helper, /maxTokens:900/);
+
+  const builder = server.slice(server.indexOf('async function buildValFirstLookCandidateMap'), server.indexOf('function firstLookDeliveryProfileCandidate'));
+  assert.match(builder, /generationVersion='first_look_packet_map_v2'/);
+  assert.match(builder, /prior\?\.status==='complete'/);
+  assert.match(builder, /Completed packets are saved\. Try again to resume here\./);
+  assert.match(builder, /await persistStepProgress\('processing'\)/);
+  assert.match(builder, /const storedAnalysis=await persistStepProgress\('complete'\)/);
+  assert.doesNotMatch(builder, /maxTokens:5200/);
+  assert.match(server, /on conflict \(run_id\) do update set/);
+});
+
 test('First Look preserves explicit project, relationship, and protected-context routing instructions from Witnessing', () => {
   const helper = server.match(/function firstLookWitnessingRoutingRules[\s\S]*?(?=function firstLookPacketCoverage)/)?.[0] || '';
   assert.ok(helper, 'First Look routing extraction should be available for regression coverage.');
