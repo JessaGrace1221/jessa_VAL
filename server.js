@@ -4342,6 +4342,7 @@ function witnessLinesTooThin(lines=[],rawResponse='',graph={}){
 function sourceWitnessingSentences(rawResponse=''){
   return String(rawResponse||'')
     .replace(/\s+/g,' ')
+    .replace(/(^|\s)\d+[.)]\s*/g,'$1')
     .split(/(?<=[.!?])\s+/)
     .map(sentence=>sentence.trim().replace(/[.!?]+$/,'').trim())
     .filter(Boolean)
@@ -4351,17 +4352,15 @@ function sourceGroundedWitnessRecovery({card,rawResponse,graph}){
   const [first='',second='']=sourceWitnessingSentences(rawResponse);
   const sourceLine=first||String(rawResponse||'').replace(/\s+/g,' ').trim().slice(0,220);
   if(!sourceLine) throw new Error('Live witnessing response returned no source language.');
-  const sourceTerms=witnessGroundingTerms(rawResponse);
   const namesCareOrPeople=/\b(mom|mother|motherhood|child|children|family|people|person|relationship|relationships|care)\b/i.test(rawResponse);
   const namesToolsOrWork=/\b(technology|tech|system|systems|work|business|project|projects)\b/i.test(rawResponse);
   const namesCapacityOrIntegrity=/\b(capacity|integrity|accountability|trust|values|vision|visions)\b/i.test(rawResponse);
+  const sourceAnchor=(second||sourceLine).slice(0,220);
   const centralLine=namesCareOrPeople&&namesToolsOrWork
     ? 'That order gives me an early standard: the tools should serve the people and care you named, never become the point themselves.'
     : namesCapacityOrIntegrity
-      ? 'Those words give me an early standard for support: useful help should protect the capacity, integrity, and commitments you named.'
-      : sourceTerms.size
-        ? 'The language you chose gives me an early guide for what should remain central as I learn how to support you.'
-        : 'I will hold those exact words as a beginning and check my understanding as more of your story appears.';
+      ? `I will keep the language you used about "${sourceAnchor}" close as I learn what it asks VAL to protect.`
+      : `I will hold the meaning in "${sourceAnchor}" as a beginning and check my understanding as more of your story appears.`;
   const lines=[
     `You began by saying, "${sourceLine}."`,
     ...(second?[`Then you added, "${second}."`]:[]),
@@ -4800,12 +4799,7 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
     }catch(witnessError){
       if(!/Live witness response (was too generic|returned no lines)\./.test(String(witnessError.message||''))) throw witnessError;
       console.warn('[Witnessing turn] recovering thin witness response for card',card.id,'from the current answer.');
-      witness=normalizePartnershipWitnessResponse(
-        fallbackPartnershipProtocolWitness({card,rawResponse,graph}),
-        graph,
-        priorImports,
-        rawResponse
-      );
+      witness=fallbackPartnershipProtocolWitness({card,rawResponse,graph});
     }
     if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};

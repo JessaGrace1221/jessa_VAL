@@ -611,6 +611,12 @@ test('Witnessing accepts concise lines grounded in the current answer without al
   assert.match(recovery.lines.join(' '),/mom/i);
   assert.match(recovery.lines.join(' '),/technology/i);
   assert.match(recovery.lines.join(' '),/people and care/i);
+  const longNumberedAnswer='1. I survived a very dangerous childhood and emotionally toxic young adulthood. 2. I found myself when I left home, traveled the world, and finally learned that true connection was not just safe, but warm and supportive.';
+  const longRecovery=context.result.sourceGroundedWitnessRecovery({card:{id:'your_story'},rawResponse:longNumberedAnswer,graph:{next_question_recommendation:{question:'What are you trying to change?'}}});
+  assert.equal(context.result.witnessLinesTooThin(longRecovery.lines,longNumberedAnswer,{}),false);
+  assert.match(longRecovery.lines[0],/survived a very dangerous childhood/i);
+  assert.doesNotMatch(longRecovery.lines[0],/"1\./);
+  assert.match(longRecovery.lines[1],/found myself/i);
 });
 
 test('Witnessing Session bounds model work to one responsive conversation turn',()=>{
