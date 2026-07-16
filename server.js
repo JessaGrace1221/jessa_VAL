@@ -8550,7 +8550,7 @@ app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
       id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.detail,
       checkedAt:verification.checkedAt,window:verification.window,
       counts:{reviewed:verification.documents.length},
-      limitNote:'This was a fresh, read-only check of accessible, owned, shared, action-item-linked, content-indexed, and folder-held Krisp meetings. It did not change your original First Look receipt.',
+      limitNote:'This was a fresh, read-only check of accessible, owned, shared, action-item-linked, content-indexed, and activity-linked Krisp meetings. It did not change your original First Look receipt.',
       examples:verification.documents.slice(0,12).map(firstLookKrispReceipt),
       probes:verification.probes
     }});
