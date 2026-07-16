@@ -169,3 +169,39 @@ test('First Look preserves explicit project, relationship, and protected-context
   assert.ok(projects.includes('Goddess of Everything'));
   assert.ok(projects.includes('Court'));
 });
+
+test('First Look and Stewardship admit Network contacts only from sent mail evidence', () => {
+  const helper = server.match(/function firstLookCandidateCleanName[\s\S]*?(?=function firstLookCandidatePromptReceipt)/)?.[0] || '';
+  assert.ok(helper, 'First Look relationship admission helpers should be available.');
+  const context = {
+    normalizeExecutiveEmailAddress:value => String(value || '').trim().toLowerCase(),
+    relationshipEmailIsGenericMailbox:() => false
+  };
+  vm.runInNewContext(`${helper}\nresult={firstLookCandidateAdmission,firstLookCandidateRelationshipEmailQualification};`, context);
+
+  const sentFour = {
+    kind:'email_correspondent',name:'Jane Smith',emailAddresses:['jane@example.com'],sentCount:4,
+    label:'Email correspondent | Jane Smith'
+  };
+  const sentThree = {...sentFour,sentCount:3};
+  const calendarOnly = {kind:'calendar_participant',name:'Jane Smith',label:'Calendar participant | Jane Smith'};
+  const accepted = context.result.firstLookCandidateAdmission({type:'relationship',kind:'person',name:'Jane Smith',signals:[calendarOnly,sentFour]});
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.email, 'jane@example.com');
+  assert.equal(accepted.sentCount, 4);
+  assert.equal(context.result.firstLookCandidateAdmission({type:'relationship',kind:'person',name:'Jane Smith',signals:[sentThree]}).accepted, false);
+  assert.equal(context.result.firstLookCandidateAdmission({type:'relationship',kind:'person',name:'Jane Smith',signals:[calendarOnly]}).accepted, false);
+
+  const firstLookRoute = server.slice(server.indexOf("app.get('/api/val/first-look'"), server.indexOf("app.post('/api/val/first-look/:runId/candidates/:candidateId/decision'"));
+  assert.match(firstLookRoute, /discardValFirstLookProposedRelationshipsWithoutSentMailQualification/);
+  assert.match(server, /sentMailCount:Math\.max\(0,Number\(payload\.sentMailCount\|\|payload\.admission\?\.sentCount\|\|0\)\)/);
+  assert.match(server, /sentCount>3/);
+  assert.match(server, /function stewardshipNetworkSentMailQualification/);
+  const relationshipIndexRoute = server.slice(server.indexOf("app.get('/api/relationships/index'"), server.indexOf("app.post('/api/relationships/create'"));
+  const personPacketRoute = server.slice(server.indexOf("app.get('/api/relationships/person-packets'"), server.indexOf("app.get('/api/projects/links'"));
+  assert.doesNotMatch(server, /function calendarRelationshipProfiles/);
+  assert.doesNotMatch(relationshipIndexRoute, /calendarRelationshipProfiles/);
+  assert.doesNotMatch(personPacketRoute, /calendarRelationshipProfiles/);
+  assert.match(relationshipIndexRoute, /stewardshipNetworkSentMailQualification/);
+  assert.match(personPacketRoute, /stewardshipNetworkSentMailQualification/);
+});

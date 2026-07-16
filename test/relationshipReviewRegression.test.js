@@ -23,16 +23,13 @@ test('emails and meetings attribute evidence to external participants',()=>{
   assert.match(server,/if\(isOwnerRelationship\(\{name:cleanName,email:cleanEmail\},owner\)/);
 });
 
-test('calendar attendees are admitted into Stewardship people and packets',()=>{
-  assert.match(server,/async function calendarRelationshipProfiles/);
-  assert.match(server,/function calendarAttendeeProfileFromEvent/);
-  assert.match(server,/relationshipAdmissionSignals:\['meeting_participant'\]/);
-  assert.match(server,/reason:'direct_meeting_participant'/);
-  assert.match(server,/const calendarProfiles=await calendarRelationshipProfiles\(\{limit:Math\.max\(limit,120\),days:90\}\)/);
-  assert.match(server,/const calendarProfiles=DEMO_MODE\?\[\]:await calendarRelationshipProfiles\(\{limit:Math\.max\(limit,120\),days:90\}\)/);
-  assert.match(server,/\[\.\.\.storedProfiles,\.\.\.calendarProfiles\]/);
-  assert.match(server,/sidebarCalendarEventLooksPrivateBlock\(event\)/);
-  assert.match(server,/calendarAttendeeLooksLikeResource/);
+test('Stewardship admits Network people only from qualifying sent mail',()=>{
+  assert.match(server,/function firstLookCandidateRelationshipEmailQualification/);
+  assert.match(server,/sentCount>3/);
+  assert.match(server,/function stewardshipNetworkSentMailQualification/);
+  assert.match(server,/\.filter\(profile=>stewardshipNetworkSentMailQualification\(profile,candidateAnalysis\)\.accepted\)/);
+  assert.doesNotMatch(server,/function calendarRelationshipProfiles/);
+  assert.doesNotMatch(server,/function calendarAttendeeProfileFromEvent/);
 });
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{

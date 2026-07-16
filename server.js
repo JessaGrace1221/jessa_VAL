@@ -3794,6 +3794,70 @@ async function discardValFirstLookProposedCandidatesWithoutAdmission(runId=''){
   }
   return removed;
 }
+function firstLookCandidateMatchesDirectRoutingTarget(candidate={},targets=[]){
+  const name=String(candidate?.payload?.proposedName||'');
+  return (Array.isArray(targets)?targets:[]).some(target=>target.type===candidate.type&&firstLookCandidateNamesMatch(target.name,name));
+}
+async function discardValFirstLookProposedProjectsOutsideWitnessingRouting(runId='',candidateAnalysis=null){
+  const id=String(runId||'').trim();
+  if(!id)return 0;
+  const storedAnalysis=candidateAnalysis||await getValFirstLookCandidateAnalysis(id);
+  const analysis=storedAnalysis?.sourceReceipt||storedAnalysis||{};
+  const targets=firstLookRoutingDirectTargets(analysis?.routingRules||[]).filter(target=>target.type==='project');
+  const candidates=await listValFirstLookCandidates(id);
+  const removeIds=candidates
+    .filter(candidate=>candidate.type==='project'&&candidate.decision==='proposed'&&!firstLookCandidateMatchesDirectRoutingTarget(candidate,targets))
+    .map(candidate=>candidate.id);
+  if(!removeIds.length)return 0;
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`delete from val_first_look_candidates
+      where tenant_id=$1 and user_id=$2 and run_id=$3 and decision='proposed' and id = any($4::text[])`,[tenantId(),currentUserId(),id,removeIds]);
+    return Number(result.rowCount||0);
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookCandidates');
+  const removedSet=new Set(removeIds);
+  const retained=rows.filter(row=>!(row.tenantId===tenantId()&&row.userId===currentUserId()&&row.runId===id&&removedSet.has(row.id)));
+  const removed=rows.length-retained.length;
+  if(removed){
+    rows.splice(0,rows.length,...retained);
+    saveValStore(store);
+  }
+  return removed;
+}
+function firstLookCandidateHasSentMailRelationshipQualification(candidate={},analysis={}){
+  const name=String(candidate?.payload?.proposedName||'');
+  if(!name)return {accepted:false,email:'',sentCount:0,emailCount:0};
+  const data=firstLookCandidatePromptReceipt({sources:analysis?.sources||[],witnessing:analysis?.witnessing||[]});
+  return firstLookCandidateRelationshipEmailQualification(data.signals,name);
+}
+async function discardValFirstLookProposedRelationshipsWithoutSentMailQualification(runId='',candidateAnalysis=null){
+  const id=String(runId||'').trim();
+  if(!id)return 0;
+  const storedAnalysis=candidateAnalysis||await getValFirstLookCandidateAnalysis(id);
+  const analysis=storedAnalysis?.sourceReceipt||storedAnalysis||{};
+  const candidates=await listValFirstLookCandidates(id);
+  const removeIds=candidates
+    .filter(candidate=>candidate.type==='relationship'&&candidate.decision==='proposed')
+    .filter(candidate=>!firstLookCandidateHasSentMailRelationshipQualification(candidate,analysis).accepted)
+    .map(candidate=>candidate.id);
+  if(!removeIds.length)return 0;
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`delete from val_first_look_candidates
+      where tenant_id=$1 and user_id=$2 and run_id=$3 and decision='proposed' and id = any($4::text[])`,[tenantId(),currentUserId(),id,removeIds]);
+    return Number(result.rowCount||0);
+  }
+  const {store,rows}=teachValStoreArray('valFirstLookCandidates');
+  const removedSet=new Set(removeIds);
+  const retained=rows.filter(row=>!(row.tenantId===tenantId()&&row.userId===currentUserId()&&row.runId===id&&removedSet.has(row.id)));
+  const removed=rows.length-retained.length;
+  if(removed){
+    rows.splice(0,rows.length,...retained);
+    saveValStore(store);
+  }
+  return removed;
+}
 async function updateValFirstLookCandidate({runId='',candidateId='',decision='',payloadPatch={}}={}){
   const allowed=new Set(['kept','corrected','deferred','excluded']);
   const id=String(runId||'').trim();
@@ -8519,8 +8583,13 @@ app.post('/api/teach-val/onboarding/:id/source-insights',async(req,res)=>{
 app.get('/api/val/first-look',async(_req,res)=>{
   try{
     const run=await getValFirstLookRun();
-    const candidates=run?await listValFirstLookCandidates(run.id):[];
     const candidateAnalysis=run?await getValFirstLookCandidateAnalysis(run.id):null;
+    if(run){
+      await discardValFirstLookProposedCandidatesWithoutAdmission(run.id);
+      await discardValFirstLookProposedProjectsOutsideWitnessingRouting(run.id,candidateAnalysis);
+      await discardValFirstLookProposedRelationshipsWithoutSentMailQualification(run.id,candidateAnalysis);
+    }
+    const candidates=run?await listValFirstLookCandidates(run.id):[];
     res.set('Cache-Control','no-store, max-age=0');
     res.json({ok:true,run,candidates,candidateAnalysis,reviewOnly:true,noDownstreamWrites:true});
   }catch(error){
@@ -8537,9 +8606,12 @@ app.post('/api/val/first-look/:runId/candidates/prepare',async(req,res)=>{
   try{
     const run=await getValFirstLookRun();
     if(!run||run.id!==String(req.params.runId||''))throw new Error('Open your current First Look before building its proposed map.');
+    const candidateAnalysis=await getValFirstLookCandidateAnalysis(run.id);
     let existing=await listValFirstLookCandidates(run.id);
     const retired=await discardValFirstLookProposedCandidatesWithoutAdmission(run.id);
-    if(retired)existing=await listValFirstLookCandidates(run.id);
+    const retiredProjects=await discardValFirstLookProposedProjectsOutsideWitnessingRouting(run.id,candidateAnalysis);
+    const retiredRelationships=await discardValFirstLookProposedRelationshipsWithoutSentMailQualification(run.id,candidateAnalysis);
+    if(retired||retiredProjects||retiredRelationships)existing=await listValFirstLookCandidates(run.id);
     if(existing.length){
       write({type:'progress',source:'review',state:'complete',message:'Opening the proposed map VAL already prepared from this First Look.'});
       write({type:'complete',candidates:existing,candidateAnalysis:await getValFirstLookCandidateAnalysis(run.id),reused:true});
@@ -15537,7 +15609,40 @@ function firstLookCandidateAuthoritativeEmail(signals=[],name=''){
   }
   return '';
 }
-function firstLookCandidateAdmission({type='',kind='person',name='',signals=[]}={}){
+function firstLookCandidateRelationshipEmailQualification(signals=[],name=''){
+  const sentByAddress=new Map();
+  for(const signal of Array.isArray(signals)?signals:[]){
+    if(signal?.kind!=='email_correspondent'||!firstLookCandidateSignalMentionsName(signal,name))continue;
+    const sentCount=Math.max(0,Number(signal.sentCount||0));
+    for(const value of Array.isArray(signal.emailAddresses)?signal.emailAddresses:[]){
+      const email=firstLookCandidateSafeEmail(value);
+      if(!email)continue;
+      sentByAddress.set(email,(sentByAddress.get(email)||0)+sentCount);
+    }
+  }
+  const addresses=[...sentByAddress.entries()]
+    .map(([email,sentCount])=>({email,sentCount}))
+    .sort((left,right)=>right.sentCount-left.sentCount||left.email.localeCompare(right.email));
+  const sentCount=addresses.reduce((total,item)=>total+item.sentCount,0);
+  return {
+    accepted:!!addresses.length&&sentCount>3,
+    email:addresses[0]?.email||'',
+    sentCount,
+    emailCount:addresses.length,
+    emails:addresses.map(item=>item.email)
+  };
+}
+function firstLookCandidateRelationshipAdmissionSignals({signals=[],allSignals=[],name=''}){
+  const seen=new Set();
+  return [...signals,...allSignals]
+    .filter(signal=>signal&&signal.kind==='email_correspondent'&&firstLookCandidateSignalMentionsName(signal,name))
+    .filter(signal=>{
+      if(seen.has(signal.id))return false;
+      seen.add(signal.id);
+      return true;
+    });
+}
+function firstLookCandidateAdmission({type='',kind='person',name='',signals=[],directRouting=false}={}){
   const identityKind=type==='relationship'?kind:'project';
   const kinds=new Set(signals.map(signal=>signal.kind));
   const hasWitnessing=kinds.has('witnessing_answer');
@@ -15546,6 +15651,13 @@ function firstLookCandidateAdmission({type='',kind='person',name='',signals=[]}=
   }
   if(!signals.length||!signals.some(signal=>firstLookCandidateSignalMentionsName(signal,name))){
     return {accepted:false,status:'blocked_by_evidence',reason:'The proposed name does not appear in the cited source evidence.'};
+  }
+  if(type==='project'&&!directRouting){
+    return {accepted:false,status:'blocked_by_project_scope',reason:'A calendar title, email pattern, document title, or meeting history can inform a project, but only direct Witnessing routing may propose one during First Look.'};
+  }
+  const relationshipEmail=firstLookCandidateRelationshipEmailQualification(signals,name);
+  if(type==='relationship'&&!relationshipEmail.accepted){
+    return {accepted:false,status:'blocked_by_sent_mail_qualification',reason:'A Network relationship needs a real email address and more than three messages sent to that person by the user.',email:'',sentCount:relationshipEmail.sentCount};
   }
   const hasRelationshipSignal=['email_correspondent','calendar_participant','krisp_participant'].some(kindName=>kinds.has(kindName));
   const hasIndependentSignal=['calendar_participant','krisp_participant','calendar_topic','document'].some(kindName=>kinds.has(kindName));
@@ -15560,11 +15672,15 @@ function firstLookCandidateAdmission({type='',kind='person',name='',signals=[]}=
   if(type==='project'&&!hasWitnessing&&!hasIndependentSignal&&!emailSignals.some(signal=>Number(signal.sentCount||0)>0||Number(signal.attachmentCount||0)>0)){
     return {accepted:false,status:'blocked_by_evidence',reason:'A project needs more than an unconnected inbound email signal.'};
   }
-  const directIdentity=signals.some(signal=>['email_correspondent','calendar_participant','krisp_participant'].includes(signal.kind)&&firstLookCandidateSignalMentionsName(signal,name));
+  const directIdentity=type==='relationship'?relationshipEmail.accepted:signals.some(signal=>['email_correspondent','calendar_participant','krisp_participant'].includes(signal.kind)&&firstLookCandidateSignalMentionsName(signal,name));
   return {
     accepted:true,
     status:directIdentity?'identity_supported':'user_confirmation_required',
-    reason:directIdentity?'The proposed identity appears in direct source evidence.':'This proposed identity appears in the Witnessing context and needs the user to confirm it.'
+    reason:directIdentity
+      ? (type==='relationship'?'The proposed identity has a real email address and more than three messages sent by the user.':'The proposed identity appears in direct source evidence.')
+      :'This proposed identity appears in the Witnessing context and needs the user to confirm it.',
+    email:type==='relationship'?relationshipEmail.email:'',
+    sentCount:type==='relationship'?relationshipEmail.sentCount:0
   };
 }
 function firstLookCandidatePromptReceipt({sources=[],witnessing=[]}={}){
@@ -15734,7 +15850,7 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     'An executive should see only a meaningful person, organization, or defined body of work. Reject newsletters, receipts, automated senders, generic vendors, phone numbers, email addresses, generic mailboxes, and calendar mechanics.',
     'One-sided inbound email without an independent source or explicit Witnessing instruction is noise, not a relationship or project.',
     'This map never creates an Executive Inbox item. Never return a phone number in any field.',
-    'A relationship needs a direct person or organization signal. A project needs a defined outcome, body of work, or ongoing coordination signal. Do not treat every subject line, meeting, or document as a project.',
+    'A Network relationship must have a real email address and more than three messages sent to that person by the user in the approved window. Calendar and Krisp participants can enrich a qualified relationship, but never create one. Calendar titles, email patterns, document titles, and meeting history may inform a project but never create one on their own. Only direct Witnessing routing may propose a First Look project.',
     'Each proposed relationship or project must cite one or more exact supplied signal IDs. Keep each note factual, brief, and useful for a human reviewing it.',
     'Return no more than six total relationship and project candidates in any packet. Keep every candidate note under 160 characters and omit weak or duplicated signals.',
     'Return an email address only when it appears in supplied signal metadata.'
@@ -16164,29 +16280,34 @@ function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
     const proposedName=firstLookCandidateCleanName(input.name||input.proposed_name||input.proposedName||'');
     if(!proposedName||/^(unknown|none|n\/a|not provided)$/i.test(proposedName))return;
     const evidenceSignalIds=[...(input.evidence_signal_ids||input.evidenceSignalIds||[]),...(input.witnessing_signal_ids||input.witnessingSignalIds||[])].map(String);
-    const sourceEvidence=evidenceFor(evidenceSignalIds);
+    let sourceEvidence=evidenceFor(evidenceSignalIds);
     if(!sourceEvidence.length)return;
-    const sourceSignals=evidenceSignalIds.map(signalId=>signalById.get(signalId)).filter(Boolean);
+    let sourceSignals=evidenceSignalIds.map(signalId=>signalById.get(signalId)).filter(Boolean);
     const candidateKey=type+':'+stableKey(proposedName.toLowerCase());
+    const directRouting=!!(input.routing_direct||input.routingDirect);
     if(candidates.some(candidate=>candidate.type===type&&candidate.candidateKey===candidateKey))return;
     const note=String(input.note||input.summary||input.why||'').replace(/\s+/g,' ').trim().slice(0,900);
     const confidence=firstLookCandidateConfidence(input.confidence);
     if(type==='relationship'){
       const kind=String(input.kind||input.relationship_kind||'person').toLowerCase()==='organization'?'organization':'person';
+      const sentMailSignals=firstLookCandidateRelationshipAdmissionSignals({signals:sourceSignals,allSignals:data.signals,name:proposedName});
+      const seenSignalIds=new Set(sourceSignals.map(signal=>signal.id));
+      sourceSignals=[...sourceSignals,...sentMailSignals.filter(signal=>!seenSignalIds.has(signal.id))];
+      sourceEvidence=evidenceFor([...evidenceSignalIds,...sentMailSignals.map(signal=>signal.id)]);
       const admission=firstLookCandidateAdmission({type,kind,name:proposedName,signals:sourceSignals});
       if(!admission.accepted)return;
       candidates.push({
         id:uuid('flc'),type,candidateKey,decision:'proposed',sourceEvidence,
         payload:{
-          proposedName,kind,email:firstLookCandidateAuthoritativeEmail(sourceSignals,proposedName),
+          proposedName,kind,email:admission.email,
           organization:firstLookCandidateIdentityLooksSafe(input.organization||'','organization')?firstLookCandidateCleanName(input.organization||''):'',
           note:note||'VAL found repeated relationship evidence that needs your confirmation.',confidence,
-          admission,witnessingEvidence:sourceEvidence.filter(item=>item.source==='witnessing').map(item=>item.title)
+          admission,sentMailCount:admission.sentCount,witnessingEvidence:sourceEvidence.filter(item=>item.source==='witnessing').map(item=>item.title)
         }
       });
       return;
     }
-    const admission=firstLookCandidateAdmission({type,kind:'project',name:proposedName,signals:sourceSignals});
+    const admission=firstLookCandidateAdmission({type,kind:'project',name:proposedName,signals:sourceSignals,directRouting});
     if(!admission.accepted)return;
     const knownPeople=(Array.isArray(input.known_people)?input.known_people:(Array.isArray(input.knownPeople)?input.knownPeople:[]))
       .map(firstLookCandidateCleanName)
@@ -16197,7 +16318,7 @@ function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
       payload:{
         proposedName,note:note||'VAL found a defined body of work that may need project coordination.',confidence,knownPeople,
         ownerRelationshipName:firstLookCandidateIdentityLooksSafe(input.owner_relationship_name||input.ownerRelationshipName||'','person')?firstLookCandidateCleanName(input.owner_relationship_name||input.ownerRelationshipName||''):'',
-        admission,onboardingQuestion:'What outcome should '+proposedName+' create, who owns it, and what should VAL monitor first?',
+        admission,routingDirect:directRouting,onboardingQuestion:'What outcome should '+proposedName+' create, who owns it, and what should VAL monitor first?',
         witnessingEvidence:sourceEvidence.filter(item=>item.source==='witnessing').map(item=>item.title)
       }
     });
@@ -16386,6 +16507,7 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
         ? 'Directly named as a project destination in your Witnessing instructions.'
         : 'Directly named as an important relationship in your Witnessing instructions.',
       confidence:'needs_confirmation',
+      routing_direct:true,
       evidence_signal_ids:[target.sourceSignalId]
     };
     if(target.type==='relationship')modelPayload.relationships.push({...item,kind:target.kind});
@@ -16430,7 +16552,14 @@ function firstLookDeliveryProfileCandidate(candidate={},relationshipProfilesByNa
       relationshipStatus:'confirmed_context',
       confidence:payload.confidence==='high'?0.88:(payload.confidence==='likely'?0.74:0.58),
       lastObservedAt:evidence[0]?.date||new Date().toISOString(),
-      metadataJson:{...baseMetadata,email,organization:String(payload.organization||''),candidateDestination:'stewardship'}
+      metadataJson:{
+        ...baseMetadata,
+        email,
+        sentMailCount:Math.max(0,Number(payload.sentMailCount||payload.admission?.sentCount||0)),
+        organization:String(payload.organization||''),
+        candidateDestination:'stewardship',
+        relationshipAdmissionSignals:['sent_mail_threshold']
+      }
     };
   }
   const ownerName=firstLookCandidateCleanName(payload.ownerRelationshipName||'').toLowerCase();
@@ -19521,89 +19650,6 @@ async function listRelationshipProfiles({limit=80}={}){
   }
   return transcriptFileArray(valStore(),'relationshipProfiles').map(publicRelationshipProfile).filter(Boolean).sort((a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount)).slice(0,limit);
 }
-function calendarAttendeeLooksLikeResource(attendee={}){
-  const email=normalizeContextEmail(attendee.email||attendee.address||'');
-  const name=String(attendee.name||attendee.displayName||'').toLowerCase();
-  const local=email.split('@')[0]||'';
-  return /\b(room|conference|calendar|resource|zoom|meet|teams|webex|no.?reply|donotreply|notification|booking|appointments?)\b/i.test([local,name].join(' '));
-}
-function calendarAttendeeProfileFromEvent(attendee={},event={}){
-  const email=normalizeContextEmail(attendee.email||attendee.address||'');
-  const name=cleanPersonName(attendee.name||attendee.displayName||'',email);
-  if((!email&&!name)||calendarAttendeeLooksLikeResource({name,email}))return null;
-  const quality=relationshipContactQuality({
-    email:{subject:event.title||event.summary||'',snippet:event.description||'',from:{name,email}},
-    participant:{name,email},
-    role:'calendar_attendee'
-  });
-  if(quality.hardRejected)return null;
-  const title=event.title||event.summary||'Calendar meeting';
-  const occurredAt=event.startTime||event.start||event.date||event.createdAt||new Date().toISOString();
-  const eventDate=occurredAt&&!Number.isNaN(new Date(occurredAt).getTime())?new Date(occurredAt).toLocaleDateString('en-US'):'recently';
-  const displayName=name&&name!=='Unknown'?name:(email||'Calendar attendee');
-  const summary=`Direct meeting participant from ${title}${eventDate?' on '+eventDate:''}.`;
-  const evidence=relationshipEvidence('calendar_meeting',summary,occurredAt,'high',event.id||event.eventId||'');
-  return {
-    id:`calendar:${crypto.createHash('sha1').update([tenantId(),email||displayName,event.id||event.eventId||title].join('|')).digest('hex').slice(0,24)}`,
-    profileType:'person',
-    profileKey:relationshipProfileKeyForTarget({profileType:'person',displayName,email}),
-    personId:'',
-    displayName,
-    summary,
-    relationshipStatus:'meeting participant',
-    confidence:0.82,
-    lastObservedAt:occurredAt,
-    observationCount:1,
-    openLoopCount:0,
-    promiseCount:0,
-    riskCount:0,
-    opportunityCount:0,
-    preferenceCount:0,
-    emotionalContext:[],
-    relationshipSignals:[{content:'Direct meeting participant',summary,sourceType:'calendar',sourceId:event.id||event.eventId||''}],
-    risks:[],
-    opportunities:[],
-    preferences:[],
-    openLoops:[],
-    evidence:[evidence],
-    metadata:{
-      source:'calendar_attendee',
-      email,
-      calendarEventId:event.id||event.eventId||'',
-      calendarTitle:title,
-      calendarStart:occurredAt,
-      calendarSource:event.source||event.calendarName||'calendar',
-      relationshipAdmissionSignals:['meeting_participant'],
-      relationshipIntakeReason:'meeting_participant',
-      relationshipContactQuality:{...quality,accepted:true,trustedSignals:[...new Set([...(quality.trustedSignals||[]),'meeting_participant'])]}
-    },
-    updatedAt:new Date().toISOString()
-  };
-}
-async function calendarRelationshipProfiles({limit=120,days=90}={}){
-  const now=new Date();
-  const start=new Date(now);start.setDate(start.getDate()-Math.max(Number(days)||90,1));
-  const end=new Date(now);end.setDate(end.getDate()+Math.max(Math.min(Number(days)||90,90),14));
-  const {events}=await loadContextCalendarEvents(start,end).catch(()=>({events:[]}));
-  const owner=relationshipOwnerIdentity();
-  const profiles=[];
-  const seen=new Set();
-  for(const event of events||[]){
-    if(!event||String(event.status||'').toLowerCase()==='cancelled')continue;
-    if(sidebarCalendarEventLooksPrivateBlock(event))continue;
-    for(const attendee of inferAttendeesFromEvent(event)){
-      if(isOwnerRelationship(attendee,owner))continue;
-      const profile=calendarAttendeeProfileFromEvent(attendee,event);
-      if(!profile)continue;
-      const key=profile.profileKey||profile.metadata?.email||profile.displayName;
-      if(!key||seen.has(key))continue;
-      seen.add(key);
-      profiles.push(profile);
-      if(profiles.length>=limit)return profiles;
-    }
-  }
-  return profiles;
-}
 async function listProjectProfiles({limit=80}={}){
   const capped=Math.max(1,Math.min(Number(limit)||80,200));
   return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
@@ -20040,6 +20086,15 @@ function relationshipProfilePrimaryEmail(profile={}){
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
   const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
   return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
+}
+function stewardshipNetworkSentMailQualification(profile={},candidateAnalysis=null){
+  const email=relationshipProfilePrimaryEmail(profile);
+  const name=String(profile.displayName||profile.display_name||profile.name||'').trim();
+  if(!email||!name)return {accepted:false,email:'',sentCount:0,emailCount:0,emails:[]};
+  const analysis=candidateAnalysis?.sourceReceipt||candidateAnalysis||{};
+  const data=firstLookCandidatePromptReceipt({sources:analysis.sources||[],witnessing:analysis.witnessing||[]});
+  const qualification=firstLookCandidateRelationshipEmailQualification(data.signals,name);
+  return {...qualification,accepted:qualification.accepted&&qualification.emails.includes(email)};
 }
 function relationshipProfileKnownAlias(profile={}){
   return knownRelationshipEmailAlias(relationshipProfilePrimaryEmail(profile));
@@ -29678,10 +29733,12 @@ app.get('/api/relationships/index',async(req,res)=>{
       const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
     }
+    const currentFirstLook=await getValFirstLookRun();
+    const candidateAnalysis=currentFirstLook?await getValFirstLookCandidateAnalysis(currentFirstLook.id):null;
     const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
-    const calendarProfiles=await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
-    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
+    const profiles=dedupeStewardshipProfiles((await Promise.all(storedProfiles
       .filter(profile=>profile.profileType==='person')
+      .filter(profile=>stewardshipNetworkSentMailQualification(profile,candidateAnalysis).accepted)
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
@@ -29724,10 +29781,12 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
     if(await cleanStartSourceIntakeLocked()){
       return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:0,maturityCounts:{blocked_by_identity:0,thin:0,developing:0,usable:0,strong:0},needsReviewCount:0,packets:[],message:'VAL is starting fresh. Person packets will be prepared from your new First Look.',noExternalAction:true});
     }
+    const currentFirstLook=await getValFirstLookRun();
+    const candidateAnalysis=currentFirstLook?await getValFirstLookCandidateAnalysis(currentFirstLook.id):null;
     const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
-    const calendarProfiles=DEMO_MODE?[]:await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
-    const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
+    const profiles=dedupeStewardshipProfiles((await Promise.all(storedProfiles
       .filter(profile=>profile.profileType==='person')
+      .filter(profile=>stewardshipNetworkSentMailQualification(profile,candidateAnalysis).accepted)
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
