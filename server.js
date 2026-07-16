@@ -8530,6 +8530,34 @@ app.post('/api/val/first-look/krisp-import',async(_req,res)=>{
   }
   res.end();
 });
+// Keep already-open First Look tabs useful while their browser receives the current import client.
+app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
+  try{
+    const run=await getValFirstLookRun();
+    if(!run?.snapshot?.window) return res.status(404).json({ok:false,error:'Prepare the First Look before checking Krisp.'});
+    if(!(await krispMcp.isConfigured())) return res.status(409).json({ok:false,error:'Krisp is not connected.'});
+    const verification=await withTimeout(
+      krispMcp.discoverTranscriptReceipts({
+        limit:50,
+        from:run.snapshot.window.start||run.windowStart,
+        to:run.snapshot.window.end||run.windowEnd
+      }),
+      65000,
+      'Krisp took too long to check its meeting receipts.'
+    );
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json({ok:true,reviewOnly:true,noDownstreamWrites:true,verification:{
+      id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.detail,
+      checkedAt:verification.checkedAt,window:verification.window,
+      counts:{reviewed:verification.documents.length},
+      limitNote:'This was a fresh, read-only check of accessible, owned, shared, and action-item-linked Krisp meetings. It did not change your original First Look receipt.',
+      examples:verification.documents.slice(0,12).map(firstLookKrispReceipt),
+      probes:verification.probes
+    }});
+  }catch(error){
+    res.status(500).json({ok:false,error:firstLookError(error)});
+  }
+});
 app.post('/api/val/krisp/sync',requirePermission('settings:manage'),async(req,res)=>{
   res.status(200);
   res.set({'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store, no-cache, must-revalidate','X-Accel-Buffering':'no'});

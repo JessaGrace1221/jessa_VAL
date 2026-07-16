@@ -1371,8 +1371,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=first-look-admission-gate-20260715/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=first-look-admission-gate-20260715/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=krisp-client-recovery-20260716/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-client-recovery-20260716/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
