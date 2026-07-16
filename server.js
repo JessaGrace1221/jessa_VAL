@@ -2937,6 +2937,243 @@ async function purgeTenantData({req,confirmation}={}){
   const tombstone=await auditLog({req,tenantId:tenant,userId,action:'data_deleted',resourceType:'tenant',resourceId:tenant,metadata:{deleted,externalSystems:'External Gmail, Microsoft, and GHL records were not deleted; VAL access tokens/credentials were removed.'},success:true});
   return {ok:true,tenantId:tenant,deleted,tombstoneId:tombstone.id,message:'VAL tenant data deleted. External provider records were not deleted, but VAL access credentials were removed.'};
 }
+function cleanStartRowBelongsToCurrentUser(row={},tenant=tenantId(),userId=currentUserId()){
+  const rowTenant=String(row.tenantId||row.tenant_id||tenant);
+  const rowUser=String(row.userId||row.user_id||userId);
+  return rowTenant===String(tenant)&&rowUser===String(userId);
+}
+function cleanStartStoreDeleteRows(store,key,{tenant=tenantId(),userId=currentUserId()}={}){
+  const rows=Array.isArray(store[key])?store[key]:[];
+  const retained=rows.filter(row=>!cleanStartRowBelongsToCurrentUser(row,tenant,userId));
+  store[key]=retained;
+  return rows.length-retained.length;
+}
+async function cleanStartDeleteTable(client,table,where,params=[]){
+  const exists=await client.query('select to_regclass($1) as relation',[`public.${table}`]);
+  if(!exists.rows?.[0]?.relation)return 0;
+  const result=await client.query(`delete from ${table} where ${where}`,params);
+  return Number(result.rowCount||0);
+}
+async function cleanStartLocalContentStatus(){
+  const tenant=tenantId(),userId=currentUserId();
+  const keys=['witnessingSessions','firstLookRuns','relationshipProfiles','evidenceItems','transcripts','emailMessages','emailThreads','conversationClassifications','leadResearch','packetRuns','preparedWork','coworkSessions','drafts','tasks','conversations'];
+  const empty=Object.fromEntries(keys.map(key=>[key,0]));
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState||{};
+    return {
+      witnessingSessions:(state.teachValOnboardingSessions||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      firstLookRuns:(state.valFirstLookRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      relationshipProfiles:(state.relationshipProfiles||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      evidenceItems:(state.evidenceItems||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      transcripts:(state.transcripts||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      emailMessages:(state.emailMessages||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      emailThreads:(state.emailThreads||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      conversationClassifications:(state.conversationClassifications||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      leadResearch:(state.externalResearchResults||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      packetRuns:(state.sourceProcessingRecords||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.observerRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.roundTableRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.chiefOfStaffRecommendations||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      preparedWork:(state.preparedArtifactRecords||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.readyForYouItems||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.valReviewUpdates||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(state.valExternalActionPackets||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      coworkSessions:(state.valCoworkSessions||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      drafts:(state.drafts||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      tasks:(state.tasks||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      conversations:(state.savedConversations||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length
+    };
+  }
+  await valDbReady;
+  if(!pgPool){
+    const store=valStore();
+    return {
+      witnessingSessions:(store.teachValOnboardingSessions||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      firstLookRuns:(store.valFirstLookRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      relationshipProfiles:(store.relationshipProfiles||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      evidenceItems:(store.evidenceItems||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      transcripts:(store.transcripts||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      emailMessages:(store.emailMessages||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      emailThreads:(store.emailThreads||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      conversationClassifications:(store.conversationClassifications||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      leadResearch:(store.externalResearchResults||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      packetRuns:(store.sourceProcessingRecords||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.observerRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.roundTableRuns||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.chiefOfStaffRecommendations||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      preparedWork:(store.preparedArtifactRecords||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.readyForYouItems||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.valReviewUpdates||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length+(store.valExternalActionPackets||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      coworkSessions:(store.valCoworkSessions||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      drafts:(store.drafts||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      tasks:(store.tasks||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length,
+      conversations:(store.conversations||[]).filter(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)).length
+    };
+  }
+  const count=async(table,where,params)=>{
+    const exists=await pgPool.query('select to_regclass($1) as relation',[`public.${table}`]);
+    if(!exists.rows?.[0]?.relation)return 0;
+    const result=await pgPool.query(`select count(*)::int as count from ${table} where ${where}`,params);
+    return Number(result.rows?.[0]?.count||0);
+  };
+  try{
+    return {
+      witnessingSessions:await count('teach_val_onboarding_sessions','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      firstLookRuns:await count('val_first_look_runs','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      relationshipProfiles:await count('relationship_profiles','tenant_id=$1',[tenant]),
+      evidenceItems:await count('evidence_items','tenant_id=$1',[tenant]),
+      transcripts:(await count('transcripts','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('val_transcripts','user_id=$1',[userId])),
+      emailMessages:await count('email_messages','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      emailThreads:await count('email_threads','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      conversationClassifications:await count('conversation_classifications','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      leadResearch:await count('external_research_results','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      packetRuns:(await count('source_processing_records','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('observer_runs','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('round_table_runs','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('chief_of_staff_recommendations','tenant_id=$1 and user_id=$2',[tenant,userId])),
+      preparedWork:(await count('prepared_artifact_records','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('ready_for_you_items','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('val_review_updates','tenant_id=$1 and user_id=$2',[tenant,userId]))+(await count('val_external_action_packets','tenant_id=$1 and user_id=$2',[tenant,userId])),
+      coworkSessions:await count('val_cowork_sessions','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      drafts:await count('drafts','tenant_id=$1 and user_id=$2',[tenant,userId]),
+      tasks:await count('val_tasks','user_id=$1',[userId]),
+      conversations:await count('val_conversations','user_id=$1',[userId])
+    };
+  }catch(error){
+    console.error('[clean-start] status count failed',error.message);
+    return empty;
+  }
+}
+async function cleanStartSourceIntakeLocked(){
+  const tenant=tenantId(),userId=currentUserId();
+  if(DEMO_MODE){
+    const rows=requestContext.getStore()?.demoState?.cleanStartStates||[];
+    return !!rows.find(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)&&row.sourceIntakeLocked);
+  }
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select source_intake_locked from val_clean_start_states where tenant_id=$1 and user_id=$2 limit 1',[tenant,userId]);
+    return !!result.rows?.[0]?.source_intake_locked;
+  }
+  const rows=valStore().cleanStartStates||[];
+  return !!rows.find(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId)&&row.sourceIntakeLocked);
+}
+async function setCleanStartSourceIntakeLocked(locked){
+  const tenant=tenantId(),userId=currentUserId(),now=new Date().toISOString();
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state){
+      state.cleanStartStates=Array.isArray(state.cleanStartStates)?state.cleanStartStates:[];
+      const index=state.cleanStartStates.findIndex(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId));
+      const next={tenantId:tenant,userId,sourceIntakeLocked:!!locked,resetAt:locked?now:(state.cleanStartStates[index]?.resetAt||''),sourceIntakeStartedAt:locked?'':now,updatedAt:now};
+      if(index>=0)state.cleanStartStates[index]=next;else state.cleanStartStates.push(next);
+    }
+    return;
+  }
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into val_clean_start_states (tenant_id,user_id,source_intake_locked,reset_at,source_intake_started_at,updated_at)
+      values ($1,$2,$3,case when $3 then now() else null end,case when $3 then null else now() end,now())
+      on conflict (tenant_id,user_id) do update set source_intake_locked=excluded.source_intake_locked, reset_at=case when excluded.source_intake_locked then now() else val_clean_start_states.reset_at end, source_intake_started_at=case when excluded.source_intake_locked then null else now() end, updated_at=now()`,[tenant,userId,!!locked]);
+    return;
+  }
+  const store=valStore();
+  store.cleanStartStates=Array.isArray(store.cleanStartStates)?store.cleanStartStates:[];
+  const index=store.cleanStartStates.findIndex(row=>cleanStartRowBelongsToCurrentUser(row,tenant,userId));
+  const next={tenantId:tenant,userId,sourceIntakeLocked:!!locked,resetAt:locked?now:(store.cleanStartStates[index]?.resetAt||''),sourceIntakeStartedAt:locked?'':now,updatedAt:now};
+  if(index>=0)store.cleanStartStates[index]=next;else store.cleanStartStates.push(next);
+  saveValStore(store);
+}
+async function resetValLocalContentForCleanStart({req,confirmation}={}){
+  const expected='START FRESH WITH VAL';
+  if(String(confirmation||'').trim()!==expected)throw new Error(`Type exactly "${expected}" to confirm.`);
+  const tenant=tenantId(),userId=currentUserId();
+  const deleted={};
+  const add=async(key,work)=>{deleted[key]=(deleted[key]||0)+Number(await work()||0);};
+  if(DEMO_MODE){
+    const state=requestContext.getStore()?.demoState;
+    if(state){
+      const keys=['transcripts','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','savedConversations','drafts','tasks','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','identityLinks','valDecisions','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','projectPins'];
+      for(const key of keys)deleted[key]=cleanStartStoreDeleteRows(state,key,{tenant,userId});
+      state.memoryItems=(state.memoryItems||[]).filter(row=>!cleanStartRowBelongsToCurrentUser(row,tenant,userId));
+    }
+  }else{
+    await valDbReady;
+    if(pgPool){
+      const client=await pgPool.connect();
+      try{
+        await client.query('BEGIN');
+        const transcriptWhere='tenant_id=$1 and user_id=$2';
+        const transcriptParams=[tenant,userId];
+        await add('val_execution_reconciliation_events',()=>cleanStartDeleteTable(client,'val_execution_reconciliation_events','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_execution_receipts',()=>cleanStartDeleteTable(client,'val_execution_receipts','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_external_action_audit',()=>cleanStartDeleteTable(client,'val_external_action_audit','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_external_action_packets',()=>cleanStartDeleteTable(client,'val_external_action_packets','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_cowork_action_receipts',()=>cleanStartDeleteTable(client,'val_cowork_action_receipts','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_cowork_work_items',()=>cleanStartDeleteTable(client,'val_cowork_work_items','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_cowork_sessions',()=>cleanStartDeleteTable(client,'val_cowork_sessions','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('transcript_intelligence_items',()=>cleanStartDeleteTable(client,'transcript_intelligence_items','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('transcript_intelligence_runs',()=>cleanStartDeleteTable(client,'transcript_intelligence_runs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('attendee_intelligence',()=>cleanStartDeleteTable(client,'attendee_intelligence','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('meeting_prep_briefs',()=>cleanStartDeleteTable(client,'meeting_prep_briefs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('chief_of_staff_recommendations',()=>cleanStartDeleteTable(client,'chief_of_staff_recommendations','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('ready_for_you_items',()=>cleanStartDeleteTable(client,'ready_for_you_items','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('momentum_snapshots',()=>cleanStartDeleteTable(client,'momentum_snapshots','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('round_table_runs',()=>cleanStartDeleteTable(client,'round_table_runs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('observer_runs',()=>cleanStartDeleteTable(client,'observer_runs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('event_intelligence_runs',()=>cleanStartDeleteTable(client,'event_intelligence_runs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('surface_registrations',()=>cleanStartDeleteTable(client,'surface_registrations','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('prepared_artifact_records',()=>cleanStartDeleteTable(client,'prepared_artifact_records','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_review_update_audit',()=>cleanStartDeleteTable(client,'val_review_update_audit','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_review_updates',()=>cleanStartDeleteTable(client,'val_review_updates','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('source_processing_records',()=>cleanStartDeleteTable(client,'source_processing_records','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('external_research_results',()=>cleanStartDeleteTable(client,'external_research_results','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('project_pins',()=>cleanStartDeleteTable(client,'project_pins','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_user_preferences',()=>cleanStartDeleteTable(client,'val_user_preferences','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('transcript_action_log',()=>cleanStartDeleteTable(client,'transcript_action_log','transcript_id in (select transcript_id from transcripts where '+transcriptWhere+')',transcriptParams));
+        await add('transcript_contact_updates',()=>cleanStartDeleteTable(client,'transcript_contact_updates','transcript_id in (select transcript_id from transcripts where '+transcriptWhere+')',transcriptParams));
+        await add('transcript_tasks',()=>cleanStartDeleteTable(client,'transcript_tasks','transcript_id in (select transcript_id from transcripts where '+transcriptWhere+')',transcriptParams));
+        await add('transcript_summaries',()=>cleanStartDeleteTable(client,'transcript_summaries','transcript_id in (select transcript_id from transcripts where '+transcriptWhere+')',transcriptParams));
+        await add('transcript_participants',()=>cleanStartDeleteTable(client,'transcript_participants','transcript_id in (select transcript_id from transcripts where '+transcriptWhere+')',transcriptParams));
+        await add('meeting_transcript_links',()=>cleanStartDeleteTable(client,'meeting_transcript_links','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_evidence_links',()=>cleanStartDeleteTable(client,'val_evidence_links','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('identity_links',()=>cleanStartDeleteTable(client,'identity_links','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_decisions',()=>cleanStartDeleteTable(client,'val_decisions','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('agency_move_sources',()=>cleanStartDeleteTable(client,'agency_move_sources','tenant_id=$1',[tenant]));
+        await add('agency_moves',()=>cleanStartDeleteTable(client,'agency_moves','tenant_id=$1',[tenant]));
+        await add('relationship_timeline_events',()=>cleanStartDeleteTable(client,'relationship_timeline_events','tenant_id=$1',[tenant]));
+        await add('evidence_observations',()=>cleanStartDeleteTable(client,'evidence_observations','tenant_id=$1',[tenant]));
+        await add('evidence_items',()=>cleanStartDeleteTable(client,'evidence_items','tenant_id=$1',[tenant]));
+        await add('relationship_profiles',()=>cleanStartDeleteTable(client,'relationship_profiles','tenant_id=$1',[tenant]));
+        await add('val_first_look_runs',()=>cleanStartDeleteTable(client,'val_first_look_runs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('teach_val_onboarding_sessions',()=>cleanStartDeleteTable(client,'teach_val_onboarding_sessions','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('email_draft_evaluations',()=>cleanStartDeleteTable(client,'email_draft_evaluations','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('conversation_classifications',()=>cleanStartDeleteTable(client,'conversation_classifications','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('email_messages',()=>cleanStartDeleteTable(client,'email_messages','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('email_threads',()=>cleanStartDeleteTable(client,'email_threads','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('unified_conversations',()=>cleanStartDeleteTable(client,'unified_conversations','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('email_action_log',()=>cleanStartDeleteTable(client,'email_action_log','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('email_rules',()=>cleanStartDeleteTable(client,'email_rules','tenant_id=$1 and (user_id=$2 or user_id is null)',[tenant,userId]));
+        await add('val_messages',()=>cleanStartDeleteTable(client,'val_messages','conversation_id in (select id from val_conversations where user_id=$1)',[userId]));
+        await add('val_conversations',()=>cleanStartDeleteTable(client,'val_conversations','user_id=$1',[userId]));
+        await add('val_task_calendar_blocks',()=>cleanStartDeleteTable(client,'val_task_calendar_blocks','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_tasks',()=>cleanStartDeleteTable(client,'val_tasks','user_id=$1',[userId]));
+        await add('drafts',()=>cleanStartDeleteTable(client,'drafts','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_templates',()=>cleanStartDeleteTable(client,'val_templates','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_memory_items',()=>cleanStartDeleteTable(client,'val_memory_items','user_id=$1',[userId]));
+        await add('val_calendar_events',()=>cleanStartDeleteTable(client,'val_calendar_events','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_transcripts',()=>cleanStartDeleteTable(client,'val_transcripts','user_id=$1',[userId]));
+        await add('transcripts',()=>cleanStartDeleteTable(client,'transcripts',transcriptWhere,transcriptParams));
+        await add('baby_val_studio_settings',()=>cleanStartDeleteTable(client,'baby_val_studio_settings','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('hearth_packet_receipts',()=>cleanStartDeleteTable(client,'hearth_packet_receipts','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('security_audit_logs',()=>cleanStartDeleteTable(client,'security_audit_logs','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await client.query('COMMIT');
+      }catch(error){
+        await client.query('ROLLBACK').catch(()=>{});
+        throw error;
+      }finally{client.release();}
+    }else{
+      const store=valStore();
+      const keys=['conversations','messages','transcripts','memoryItems','drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','identityLinks','valDecisions','emailRules','emailActionLog','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','unifiedConversations','emailMessages','emailThreads','conversationClassifications','emailDraftEvaluations','hearthPacketReceipts','projectPins','userPreferences'];
+      for(const key of keys)deleted[key]=cleanStartStoreDeleteRows(store,key,{tenant,userId});
+      saveValStore(store);
+    }
+  }
+  const legacyWitnessingBackup=path.join(DATA_DIR,'jessa-real-witnessing-session-2026-07-06.json');
+  if(fs.existsSync(legacyWitnessingBackup)){
+    fs.unlinkSync(legacyWitnessingBackup);
+    deleted.legacy_witnessing_backup=1;
+  }
+  gmailSyncStatus={lastAttemptAt:'',lastSuccessfulSyncAt:'',lastError:'',lastFetchedCount:0,lastAnalyzedCount:0,lastQuery:''};
+  lastGoogleAuthError='';
+  await setCleanStartSourceIntakeLocked(true);
+  const tombstone=await auditLog({req,tenantId:tenant,userId,action:'clean_start_completed',resourceType:'val_content',resourceId:userId,metadata:{deleted,connectionsPreserved:true,externalSystemsUntouched:true,contentRetained:false},success:true});
+  return {ok:true,tenantId:tenant,userId,deleted,after:await cleanStartLocalContentStatus(),connectionsPreserved:true,externalSystemsUntouched:true,sourceIntakeLocked:true,tombstoneId:tombstone.id,message:'VAL is empty and ready for a fresh Witnessing Session. Your external connections remain connected.'};
+}
 function memoryChunks(text){
   const clean = String(text||'').replace(/\r\n/g,'\n').trim();
   if(!clean) return [];
@@ -3286,61 +3523,6 @@ async function teachValWitnessingSessionIsComplete(session){
   const imports=await listTeachValImports(session.id).catch(()=>[]);
   const hasFinalCard=imports.some(i=>String(i.category||'')==='witness_partnership_agreement' && !/Needs Clarification/i.test(String(i.status||'')));
   return state.stage==='complete' && hasFinalCard;
-}
-async function restoreJessaRealWitnessingSessionBackup(){
-  const backupPath=path.join(DATA_DIR,'jessa-real-witnessing-session-2026-07-06.json');
-  if(!fs.existsSync(backupPath)) return null;
-  let backup=null;
-  try{backup=JSON.parse(fs.readFileSync(backupPath,'utf8'));}catch(_e){return null;}
-  if(!backup||!Array.isArray(backup.imports)||!backup.imports.some(i=>String(i.category||'').startsWith('witness_'))) return null;
-  const sessionId=String(backup.targetSessionId||backup.session?.id||'tvo_jessa_real_witnessing_20260706');
-  const existing=await getTeachValSession(sessionId);
-  if(existing){
-    const existingImports=await listTeachValImports(existing.id);
-    if(existingImports.some(i=>String(i.category||'').startsWith('witness_'))) return existing;
-  }
-  const state=backup.session?.state&&typeof backup.session.state==='object'
-    ? backup.session.state
-    : {...teachValDefaultState(),stage:'complete',mode:'onboarding',testMode:false};
-  const session=await saveTeachValSession({
-    id:sessionId,
-    tenantId:tenantId(),
-    userId:currentUserId(),
-    status:backup.session?.status||'committed',
-    state,
-    createdAt:backup.session?.createdAt||backup.exportedAt||new Date().toISOString()
-  });
-  for(const item of backup.imports){
-    await saveTeachValImport({
-      id:item.id,
-      sessionId:session.id,
-      category:item.category,
-      promptUsed:item.promptUsed||item.prompt_used||'',
-      rawResponse:item.rawResponse||item.raw_response||'',
-      structuredSummary:item.structuredSummary||item.structured_json||{},
-      extractedItems:item.extractedItems||item.items_json||[],
-      reviewed:item.reviewed!==false,
-      status:item.status||'Confirmed',
-      createdAt:item.createdAt||backup.exportedAt||new Date().toISOString()
-    });
-  }
-  const memoryItems=Array.isArray(backup.memoryItems)?backup.memoryItems:[];
-  if(memoryItems.length){
-    const existingMemory=await listTeachValMemory(session.id).catch(()=>[]);
-    if(!existingMemory.length){
-      await insertTeachValMemoryItems(memoryItems.map(item=>({
-        id:item.id,
-        sessionId:session.id,
-        category:item.category,
-        title:item.title,
-        summary:item.summary,
-        source:item.source||'jessa_real_witnessing_backup',
-        confidence:item.confidence,
-        data:item.data||item.data_json||{}
-      })));
-    }
-  }
-  return session;
 }
 async function saveTeachValSession(session){
   await valDbReady;
@@ -6730,6 +6912,15 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       applied_at timestamptz
     );
+    create table if not exists val_clean_start_states (
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      source_intake_locked boolean not null default false,
+      reset_at timestamptz,
+      source_intake_started_at timestamptz,
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id)
+    );
     create table if not exists val_oauth_tokens (
       provider text primary key,
       user_id text not null default 'default',
@@ -8266,6 +8457,23 @@ app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
     res.status(500).json({ok:false,error:firstLookError(error)});
   }
 });
+app.post('/api/val/krisp/sync',requirePermission('settings:manage'),async(req,res)=>{
+  res.status(200);
+  res.set({'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store, no-cache, must-revalidate','X-Accel-Buffering':'no'});
+  res.flushHeaders?.();
+  const write=(event={})=>{
+    if(!res.writableEnded){res.write(JSON.stringify(event)+'\n');res.flush?.();}
+  };
+  try{
+    const result=await syncKrispTranscriptsForLastThirtyDays({days:30,onProgress:write});
+    await auditLog({req,action:'krisp_thirty_day_intake_completed',resourceType:'transcript',metadata:{found:result.found,imported:result.imported,alreadyPresent:result.alreadyPresent,withoutTranscriptText:result.withoutTranscriptText,failed:result.failed,window:result.window},success:result.failed===0}).catch(()=>{});
+    write({type:'complete',result});
+  }catch(error){
+    await auditLog({req,action:'krisp_thirty_day_intake_failed',resourceType:'transcript',metadata:{error:firstLookError(error)},success:false}).catch(()=>{});
+    write({type:'error',message:firstLookError(error)});
+  }
+  res.end();
+});
 app.post('/api/val/first-look/prepare',async(req,res)=>{
   res.status(200);
   res.set({
@@ -8285,6 +8493,7 @@ app.post('/api/val/first-look/prepare',async(req,res)=>{
     if(!sessionId) throw new Error('The Witnessing Session is not ready yet. Return to the session and try again.');
     const session=await getTeachValSession(sessionId);
     if(!session) throw new Error('This Witnessing Session could not be found. Start the session again before preparing the First Look.');
+    await setCleanStartSourceIntakeLocked(false);
     const existing=await getValFirstLookRun();
     if(existing?.status==='complete'){
       write({type:'progress',source:'snapshot',state:'complete',message:'Opening your existing First Look. VAL does not regenerate it.'});
@@ -8472,6 +8681,24 @@ app.delete('/api/security/delete-my-data',requirePermission('data:delete'),async
   }catch(e){
     await auditLog({req,action:'data_delete_failed',resourceType:'tenant',metadata:{reason:e.message},success:false}).catch(()=>{});
     res.status(400).json({ok:false,error:e.message});
+  }
+});
+app.get('/api/val/clean-start/status',requirePermission('data:delete'),async(_req,res)=>{
+  try{
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json({ok:true,status:await cleanStartLocalContentStatus(),sourceIntakeLocked:await cleanStartSourceIntakeLocked(),connectionsPreservedByCleanStart:true,externalSystemsUntouched:true});
+  }catch(error){
+    res.status(500).json({ok:false,error:'VAL could not read the clean-start status.'});
+  }
+});
+app.delete('/api/val/clean-start',requirePermission('data:delete'),async(req,res)=>{
+  try{
+    const result=await resetValLocalContentForCleanStart({req,confirmation:req.body?.confirmation});
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json(result);
+  }catch(error){
+    await auditLog({req,action:'clean_start_failed',resourceType:'val_content',metadata:{reason:error.message},success:false}).catch(()=>{});
+    res.status(400).json({ok:false,error:error.message});
   }
 });
 app.get('/api/val/transcripts/webhook',requireAuth,requirePermission('settings:manage'),async(req,res)=>{
@@ -8906,6 +9133,19 @@ app.get('/api/integrations/health',async(req,res)=>{
 });
 async function emailIntelligencePayload(req,{force=false}={}){
   try{
+    if(await cleanStartSourceIntakeLocked()){
+      return {
+        ok:true,
+        source:'clean_start',
+        sourceIntakeLocked:true,
+        message:'VAL is starting fresh. Email intake begins at First Look after Witnessing.',
+        needsAttention:[],needsReply:[],lowPriority:[],waitingOnResponse:[],draftSuggestions:[],relationshipContext:[],emails:[],rules:[],errors:[],
+        providers:{gmail:{status:'connected',sourceIntakeLocked:true,needsAuth:false,error:'',recentInboxCount:0,unreadCount:0,sentCount:0,documentAttachmentCount:0,durableEmailMessages:0,fetchedCount:0,analyzedCount:0,evidenceCaptured:0,relationshipProfilesTouched:0,personPacketsTouched:0,projectManagerSuggestions:0},outlook:{status:'connected',sourceIntakeLocked:true,needsAuth:false,error:''}},
+        relationshipIntake:{relationshipProfiles:0,personPackets:0,personPacketIds:[]},
+        sourceProcessing:{projectManagers:{processed:0,eligible:0,suggestions:0,noExternalAction:true}},
+        summary:{total:0,buckets:{},draftsPrepared:0,waitingOnResponse:0,forwardingSuggestions:0,ignoredLowPriority:0,evidenceCaptured:0,relationshipProfilesTouched:0,personPacketsTouched:0,projectManagerDocumentEmails:0,projectManagerSuggestions:0,ruleSuggestions:0,savedRules:0,activeDays:0,activeWindow:'Waiting for First Look'}
+      };
+    }
     if(DEMO_MODE){
       const s=requestContext.getStore()?.demoState||{emails:[]}, emails=s.emails||[];
       const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
@@ -15251,6 +15491,124 @@ function firstLookCandidatePromptReceipt({sources=[],witnessing=[]}={}){
   }));
   return {signals,promptSignals,evidenceById};
 }
+function krispThirtyDayWindow(days=30){
+  const end=new Date();
+  const start=new Date(end.getTime()-Math.max(1,Number(days)||30)*24*60*60*1000);
+  return {start:start.toISOString(),end:end.toISOString(),days:Math.max(1,Number(days)||30)};
+}
+async function krispTranscriptAlreadyStored(transcriptId=''){
+  const id=String(transcriptId||'').trim();
+  if(!id)return false;
+  if(DEMO_MODE)return (requestContext.getStore()?.demoState?.transcripts||[]).some(row=>String(row.id)===id);
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select id from val_transcripts where id=$1 and user_id=$2 limit 1',[id,currentUserId()]);
+    return !!result.rows?.[0];
+  }
+  return (valStore().transcripts||[]).some(row=>String(row.id)===id&&String(row.userId||row.user_id||currentUserId())===String(currentUserId()));
+}
+async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={}){
+  const transcriptId=String(payload.id||'').trim();
+  const transcript=String(payload.transcript||payload.rawText||'').trim();
+  if(!transcriptId||!transcript)throw new Error('Krisp did not provide readable transcript text.');
+  const title=transcriptDisplayTitleFromPayload(payload,transcript);
+  const metadata=payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{};
+  const nativeSummary=String(metadata.krispSummary||'').trim();
+  const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:[];
+  const participants=Array.isArray(payload.attendees)?payload.attendees:[];
+  const saved=await saveTranscript({...payload,title});
+  if(meetingMatch){
+    await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle||title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:meetingMatch.startTime||payload.timestamp||null}).catch(()=>{});
+  }
+  await updateTranscriptMetadata(saved.id,{
+    source:'krisp_mcp',provider:'krisp',reviewStatus:'ready_for_review',processingStatus:'source_captured',summaryStatus:'krisp_exact',
+    nativeSummary,nativeActionItems,krispNative:true,sourceCapture:{capturedAt:new Date().toISOString(),preservedExactly:true,packetEligibility:['transcripts','stewardship','project_managers','chief_of_staff']}
+  });
+  const evidence=await saveEvidenceItem({
+    sourceType:'transcript',sourceId:saved.id,title,sourceUrl:payload.sourceUrl||'',occurredAt:payload.timestamp||new Date().toISOString(),capturedAt:new Date().toISOString(),
+    rawText:transcript,summary:nativeSummary,participantsJson:participants,entitiesJson:{provider:'krisp',participantCount:participants.length,actionItemCount:nativeActionItems.length},confidence:1,status:'captured',
+    metadataJson:{provider:'krisp',source:'krisp_mcp',documentId:metadata.documentId||'',krispSummary:nativeSummary,krispActionItems:nativeActionItems,sourceTruth:'exact_krisp_receipt',preservedExactly:true,packetEligibility:['transcripts','stewardship','project_managers','chief_of_staff']}
+  }).catch(()=>null);
+  if(evidence?.id){
+    await saveEvidenceLink({sourceType:'transcript',sourceId:saved.id,sourceLabel:title,targetType:'evidence_item',targetId:evidence.id,relationship:'exact_source_receipt',summary:'Exact Krisp transcript receipt preserved for bounded packet use.',confidence:1,metadata:{provider:'krisp',preservedExactly:true}}).catch(()=>{});
+  }
+  return {id:saved.id,title,evidenceItemId:evidence?.id||'',actionItemCount:nativeActionItems.length,hasKeyPoints:!!nativeSummary,meetingMatched:!!meetingMatch};
+}
+async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgress=async()=>{}}={}){
+  if(await cleanStartSourceIntakeLocked())throw new Error('VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.');
+  if(!(await krispMcp.isConfigured()))throw new Error('Krisp is not connected.');
+  const window=krispThirtyDayWindow(days);
+  const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
+  const report=(state,message,extra={})=>onProgress({type:'progress',source:'krisp',state,message,...extra});
+  await report('reading','Krisp is listing meeting transcripts from the last '+window.days+' days.');
+  const discovery=await withTimeout(
+    krispMcp.discoverTranscriptReceipts({limit:safeLimit,from:window.start,to:window.end}),
+    65000,
+    'Krisp took too long to list meeting transcripts.'
+  );
+  const receipts=Array.isArray(discovery.documents)?discovery.documents:[];
+  const result={
+    version:'krisp_thirty_day_intake_v1',window,receiptLimit:safeLimit,receiptLimitReached:receipts.length>=safeLimit,
+    found:receipts.length,imported:0,alreadyPresent:0,withoutTranscriptText:0,failed:0,records:[],failures:[],status:discovery.status||'complete',checkedAt:new Date().toISOString()
+  };
+  if(!receipts.length){
+    await report('complete','Krisp did not return a transcript receipt in the last '+window.days+' days.',{count:0});
+    return result;
+  }
+  await report('reading','Krisp returned '+receipts.length+' transcript receipt'+(receipts.length===1?'':'s')+'. VAL is preserving the original material exactly as Krisp provided it.',{count:receipts.length});
+  for(let index=0;index<receipts.length;index++){
+    const receipt=receipts[index];
+    const documentId=String(receipt.documentId||receipt.id||'').trim();
+    const title=String(receipt.title||receipt.name||'Krisp meeting').trim();
+    if(!documentId){
+      result.failed++;
+      result.failures.push({title,reason:'Krisp returned a receipt without a document identifier.'});
+      continue;
+    }
+    const transcriptId='krisp_'+documentId.replace(/-/g,'').toLowerCase();
+    if(await krispTranscriptAlreadyStored(transcriptId)){
+      result.alreadyPresent++;
+      result.records.push({id:transcriptId,title,status:'already_present'});
+      continue;
+    }
+    await report('reading','Saving transcript '+(index+1)+' of '+receipts.length+': '+title+'.',{current:index+1,total:receipts.length,title});
+    try{
+      const document=await withTimeout(krispMcp.getDocument(documentId),65000,'Krisp took too long to return "'+title+'".');
+      const payload=krispMcp.krispTranscriptPayloadFromDocument(document);
+      if(!String(payload.transcript||'').trim()){
+        result.withoutTranscriptText++;
+        result.records.push({id:transcriptId,title,status:'no_transcript_text'});
+        continue;
+      }
+      const meetingMatch=await linkTranscriptToBestMeeting({id:payload.id,title:payload.title,rawText:payload.transcript,metadata:payload.metadata,createdAt:payload.timestamp}).catch(()=>null);
+      const saved=await saveKrispTranscriptSourceReceipt({payload,meetingMatch});
+      result.imported++;
+      result.records.push({...saved,status:'imported'});
+    }catch(error){
+      result.failed++;
+      result.failures.push({title,reason:firstLookError(error)});
+    }
+  }
+  const outcome=result.failed
+    ? `Krisp intake finished: ${result.imported} saved, ${result.alreadyPresent} already present, and ${result.failed} unavailable for review.`
+    : `Krisp intake finished: ${result.imported} exact transcript${result.imported===1?'':'s'} saved and ${result.alreadyPresent} already present.`;
+  await report(result.failed?'partial':'complete',outcome,{count:result.imported,receipt:result});
+  return result;
+}
+function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null}={}){
+  const source=(id)=>sources.find(item=>item.id===id)||{};
+  return {
+    version:'first_look_packet_coverage_v1',
+    rule:'Round Tables receive bounded source packets, not every raw source.',
+    sources:{
+      witnessing:{read:witnessing.length,packets:['val_foundation','stewardship','project_managers','chief_of_staff']},
+      gmail:{read:Number(source('gmail').counts?.reviewed||0),packets:['executive_inbox','stewardship','project_managers','chief_of_staff']},
+      calendar:{read:Number(source('calendar').counts?.reviewed||0),packets:['stewardship','project_managers','transcripts','chief_of_staff']},
+      drive:{read:Number(source('drive').counts?.reviewed||0),packets:['project_managers','stewardship','chief_of_staff']},
+      krisp:{read:Number(krispIntake?.imported||source('krisp').counts?.reviewed||0),packets:['transcripts','stewardship','project_managers','chief_of_staff'],exactSourcePreserved:true}
+    }
+  };
+}
 async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={}){
   const originalWindow=run?.snapshot?.window||{};
   const start=new Date(originalWindow.start||run?.windowStart||'');
@@ -15398,7 +15756,16 @@ function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
 }
 async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   if(!(await resolveOpenAIKey()))throw new Error('Connect OpenAI before VAL can build the proposed map.');
+  let krispIntake=null;
+  try{
+    krispIntake=await syncKrispTranscriptsForLastThirtyDays({days:30,onProgress});
+  }catch(error){
+    krispIntake={version:'krisp_thirty_day_intake_v1',window:krispThirtyDayWindow(30),found:0,imported:0,alreadyPresent:0,withoutTranscriptText:0,failed:1,records:[],failures:[{reason:firstLookError(error)}],status:'unavailable',checkedAt:new Date().toISOString()};
+    await onProgress({type:'progress',source:'krisp',state:'unavailable',message:'Krisp could not be imported yet. VAL will continue with the other approved sources.',error:firstLookError(error)});
+  }
   const analysis=await readValFirstLookCandidateSources({run,onProgress});
+  analysis.krispIntake=krispIntake;
+  analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   await onProgress({type:'progress',source:'reasoning',state:'reading',message:'Mapping the people and projects that repeat across your approved sources.'});
   const raw=await callValModel({
@@ -26082,6 +26449,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
 });
 app.post('/api/val/transcripts/recover-existing',async(req,res)=>{
   try{
+    if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Transcript recovery begins after First Look.'});
     await purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
@@ -26122,6 +26490,7 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
 });
 app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req,res)=>{
   if(!transcriptIngressEnabled()) return res.status(403).json({ok:false,error:'Transcript ingestion is disabled until an executive explicitly connects a transcript source.'});
+  if(await cleanStartSourceIntakeLocked())return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,cleanStartProtected:true,message:'VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.'});
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
   if(!transcriptText.trim()){
@@ -28561,6 +28930,9 @@ app.post('/api/val/meeting-briefing',async(req,res)=>{
 });
 app.get('/api/relationships/review',async(req,res)=>{
   try{
+    if(await cleanStartSourceIntakeLocked()){
+      return res.json({ok:true,source:'clean_start',relationshipProfiles:[],message:'VAL is starting fresh. Relationship source intake begins at First Look after Witnessing.'});
+    }
     if(DEMO_MODE){
       return res.json(demoRelationshipReview(demoState(req,res),Number(req.query.windowDays)||7));
     }
@@ -28576,6 +28948,9 @@ app.get('/api/relationships/review',async(req,res)=>{
 app.get('/api/relationships/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
+    if(await cleanStartSourceIntakeLocked()){
+      return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:0,relationships:[],message:'VAL is starting fresh. Relationship source intake begins at First Look after Witnessing.'});
+    }
     if(DEMO_MODE){
       const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
       return res.json({ok:true,source:'demo_relationships',generatedAt:new Date().toISOString(),count:profiles.length,relationships:profiles.map(relationshipIndexItemFromProfile)});
@@ -28623,6 +28998,9 @@ app.get('/api/relationships/person-packets',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(300,Number(req.query.limit)||120));
     const includeThin=String(req.query.includeThin||'1')!=='0';
+    if(await cleanStartSourceIntakeLocked()){
+      return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:0,maturityCounts:{blocked_by_identity:0,thin:0,developing:0,usable:0,strong:0},needsReviewCount:0,packets:[],message:'VAL is starting fresh. Person packets will be prepared from your new First Look.',noExternalAction:true});
+    }
     const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
     const calendarProfiles=DEMO_MODE?[]:await calendarRelationshipProfiles({limit:Math.max(limit,120),days:90}).catch(()=>[]);
     const profiles=dedupeStewardshipProfiles((await Promise.all([...storedProfiles,...calendarProfiles]
@@ -28834,6 +29212,9 @@ function relationshipDossierInputFromQuery(query={}){
 }
 app.get('/api/relationships/dossier',async(req,res)=>{
   try{
+    if(await cleanStartSourceIntakeLocked()){
+      return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Relationship dossiers will be available after First Look creates reviewed proposals.'});
+    }
     const input=relationshipDossierInputFromQuery(req.query||{});
     if(DEMO_MODE){
       const rows=demoState(req,res).relationships||[];
@@ -28912,6 +29293,7 @@ app.get('/api/relationships/dossier',async(req,res)=>{
 });
 app.post('/api/val/intelligence/backfill',async(req,res)=>{
   try{
+    if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Intelligence backfill begins after First Look.'});
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     const result=await backfillValIntelligence(req.body||{});
     await auditLog({req,action:'val_intelligence_backfill',resourceType:'intelligence',metadata:{days:result.days,transcripts:result.transcripts?.processed||0,email:result.email?.processed||0,relationshipProfiles:result.relationshipProfiles||0},success:true}).catch(()=>{});
@@ -28927,6 +29309,7 @@ app.get('/admin/transcript-migration',(req,res)=>{
 });
 app.post('/api/val/transcripts/migrate',async(req,res)=>{
   try{
+    if(await cleanStartSourceIntakeLocked())return res.status(409).json({ok:false,error:'clean_start_in_progress',message:'VAL is starting fresh. Transcript intake begins after First Look.'});
     if(isBookEditorProject())return res.json({ok:true,bookMode:true,message:'Michele book/editor VAL remains on its separate workflow.'});
     if(!DEMO_MODE&&!pgPool)throw new Error('Postgres is not connected. Attach Railway Postgres and confirm DATABASE_URL before migrating transcripts.');
     const days=Math.max(1,Math.min(3650,Number(req.body?.days)||3650));
