@@ -15727,7 +15727,6 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     for(let index=0;index<values.length;index+=size)output.push(values.slice(index,index+size));
     return output;
   };
-  const sourceExecutiveGuidance={routing_rules:routingRules};
   const sharedSystem=[
     'You prepare one bounded First Look packet for an executive assistant. Return JSON only.',
     'This is review preparation, not an instruction to create or change any record, relationship, project, task, draft, memory, email, or calendar event.',
@@ -15802,26 +15801,34 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
   }
   for(const definition of sourceDefinitions){
     const sourceSignals=(promptData.promptSignals||[]).filter(signal=>signal.source===definition.id);
-    steps.push({
-      ...definition,source:definition.id,maxTokens:900,inputCount:sourceSignals.length,
-      objective:'Identify only source-backed relationships and projects worth an executive\'s review from this '+definition.label+' packet.',
-      system:[
-        sharedSystem,
-        'You are reading only the '+definition.label+' packet.',
-        definition.why,
-        'Source signals can be numerous. Select only the strongest distinct candidates and do not attempt to summarize or account for every signal.',
-        'The next step is a deterministic merge with the other source packets. Return only candidates supported by this packet\'s exact signal IDs; do not repeat a candidate merely because it appears in the Witnessing guidance.'
-      ].join('\n'),
-      user:{
-        task:'Prepare the '+definition.label+' contribution to the First Look review map.',
-        objective:'Identify only the people, organizations, and defined work this source can support for executive review.',
-        why:definition.why,
-        next_step:definition.nextStep,
-        output:candidateOutput,
-        executive_guidance:sourceExecutiveGuidance,
-        source_signals:sourceSignals
-      }
-    });
+    const sourceChunks=chunk(sourceSignals,30);
+    const boundedChunks=sourceChunks.length?sourceChunks:[[]];
+    for(const [index,signals] of boundedChunks.entries()){
+      const label=definition.label+' '+(index+1)+' of '+boundedChunks.length;
+      steps.push({
+        ...definition,id:definition.id+'-'+(index+1),label,source:definition.id,maxTokens:900,inputCount:signals.length,
+        objective:'Identify only source-backed relationships and projects worth an executive\'s review from this bounded '+definition.label+' packet.',
+        why:definition.why+' This slice contains '+signals.length+' signal'+(signals.length===1?'':'s')+' so VAL can stay precise rather than compressing an entire source into one response.',
+        nextStep:'This bounded source packet will be merged with the other source and Witnessing packets before the executive sees a review map.',
+        system:[
+          sharedSystem,
+          'You are reading one small '+definition.label+' slice, not the entire source.',
+          definition.why,
+          'Return at most two total candidates from this slice. Do not summarize every signal or repeat the executive\'s routing instructions.',
+          'Direct Witnessing routing is handled in its own packet. This packet contributes only source-backed evidence for the later deterministic merge.',
+          'The next step is a deterministic merge with the other packets. Return only candidates supported by this slice\'s exact signal IDs.'
+        ].join('\n'),
+        user:{
+          task:'Prepare the '+label+' contribution to the First Look review map.',
+          objective:'Identify only the people, organizations, and defined work this source slice can support for executive review.',
+          why:definition.why,
+          next_step:'This small packet will be merged with the other source and Witnessing packets before the executive sees a review map.',
+          output:candidateOutput,
+          packet:{number:index+1,total:boundedChunks.length,source:definition.label},
+          source_signals:signals
+        }
+      });
+    }
   }
   return steps;
 }
@@ -16295,10 +16302,8 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake:analysis.krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   const priorAnalysis=await getValFirstLookCandidateAnalysis(run.id);
-  const generationVersion='first_look_packet_map_v4';
-  const priorSteps=priorAnalysis?.sourceReceipt?.mapBuild?.version===generationVersion
-    ? priorAnalysis.sourceReceipt.mapBuild.steps||[]
-    : [];
+  const generationVersion='first_look_packet_map_v5';
+  const priorSteps=priorAnalysis?.sourceReceipt?.mapBuild?.steps||[];
   const priorById=new Map(priorSteps.map(step=>[String(step.id||''),step]));
   const modelSteps=firstLookCandidateModelSteps({analysis,promptData});
   const completedSteps=[];

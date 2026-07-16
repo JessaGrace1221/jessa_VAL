@@ -96,19 +96,20 @@ test('First Look builds the proposed map through bounded, resumable evidence pac
   assert.match(helper, /Never return a phone number in any field/);
   assert.match(helper, /id:'witnessing-'\+\(index\+1\)/);
   assert.match(helper, /id:'routing-'\+\(index\+1\)/);
-  assert.match(helper, /id:'gmail'/);
-  assert.match(helper, /id:'calendar'/);
-  assert.match(helper, /id:'drive'/);
-  assert.match(helper, /id:'krisp'/);
+  assert.match(helper, /const sourceChunks=chunk\(sourceSignals,30\)/);
+  assert.match(helper, /id:definition\.id\+'-'\+\(index\+1\)/);
+  assert.match(helper, /Return at most two total candidates from this slice/);
+  assert.match(helper, /You are reading one small/);
   assert.match(helper, /maxTokens:900/);
   assert.match(helper, /maxTokens:800/);
   assert.match(helper, /maxTokens:900/);
 
   const builder = server.slice(server.indexOf('async function buildValFirstLookCandidateMap'), server.indexOf('function firstLookDeliveryProfileCandidate'));
-  assert.match(builder, /generationVersion='first_look_packet_map_v4'/);
+  assert.match(builder, /generationVersion='first_look_packet_map_v5'/);
   assert.match(builder, /FIRST_LOOK_CANDIDATE_PACKET_RESPONSE_FORMAT/);
   assert.match(builder, /needs one compact retry/);
   assert.match(builder, /prior\?\.status==='complete'/);
+  assert.match(builder, /const priorSteps=priorAnalysis\?\.sourceReceipt\?\.mapBuild\?\.steps\|\|\[\]/);
   assert.match(builder, /Completed packets are saved\. Try again to resume here\./);
   assert.match(builder, /await persistStepProgress\('processing'\)/);
   assert.match(builder, /const storedAnalysis=await persistStepProgress\('complete'\)/);
