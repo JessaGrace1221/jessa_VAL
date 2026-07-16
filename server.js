@@ -8547,10 +8547,14 @@ app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
     );
     res.set('Cache-Control','no-store, max-age=0');
     res.json({ok:true,reviewOnly:true,noDownstreamWrites:true,verification:{
-      id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.detail,
+      id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.documents.length
+        ? verification.detail
+        : 'Krisp is connected, but it did not expose any meeting receipts to VAL for this review window.',
       checkedAt:verification.checkedAt,window:verification.window,
       counts:{reviewed:verification.documents.length},
-      limitNote:'This was a fresh, read-only check of accessible, owned, shared, action-item-linked, content-indexed, and activity-linked Krisp meetings. It did not change your original First Look receipt.',
+      limitNote:verification.documents.length
+        ? 'This was a fresh, read-only check of accessible, owned, shared, action-item-linked, content-indexed, and activity-linked Krisp meetings. It did not change your original First Look receipt.'
+        : 'VAL did not create a substitute transcript. Check that a known meeting is visible in Krisp to this account; if it is, Krisp is not sharing that receipt with VAL.',
       examples:verification.documents.slice(0,12).map(firstLookKrispReceipt),
       probes:verification.probes
     }});
