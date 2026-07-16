@@ -4339,8 +4339,45 @@ function witnessLinesTooThin(lines=[],rawResponse='',graph={}){
   const matches=witnessGroundingMatches(lines,rawResponse,graph);
   return matches<(joined.length<90?2:1);
 }
+function sourceWitnessingSentences(rawResponse=''){
+  return String(rawResponse||'')
+    .replace(/\s+/g,' ')
+    .split(/(?<=[.!?])\s+/)
+    .map(sentence=>sentence.trim().replace(/[.!?]+$/,'').trim())
+    .filter(Boolean)
+    .slice(0,2);
+}
+function sourceGroundedWitnessRecovery({card,rawResponse,graph}){
+  const [first='',second='']=sourceWitnessingSentences(rawResponse);
+  const sourceLine=first||String(rawResponse||'').replace(/\s+/g,' ').trim().slice(0,220);
+  if(!sourceLine) throw new Error('Live witnessing response returned no source language.');
+  const sourceTerms=witnessGroundingTerms(rawResponse);
+  const namesCareOrPeople=/\b(mom|mother|motherhood|child|children|family|people|person|relationship|relationships|care)\b/i.test(rawResponse);
+  const namesToolsOrWork=/\b(technology|tech|system|systems|work|business|project|projects)\b/i.test(rawResponse);
+  const namesCapacityOrIntegrity=/\b(capacity|integrity|accountability|trust|values|vision|visions)\b/i.test(rawResponse);
+  const centralLine=namesCareOrPeople&&namesToolsOrWork
+    ? 'That order gives me an early standard: the tools should serve the people and care you named, never become the point themselves.'
+    : namesCapacityOrIntegrity
+      ? 'Those words give me an early standard for support: useful help should protect the capacity, integrity, and commitments you named.'
+      : sourceTerms.size
+        ? 'The language you chose gives me an early guide for what should remain central as I learn how to support you.'
+        : 'I will hold those exact words as a beginning and check my understanding as more of your story appears.';
+  const lines=[
+    `You began by saying, "${sourceLine}."`,
+    ...(second?[`Then you added, "${second}."`]:[]),
+    centralLine,
+    'Does that feel accurate as a beginning?'
+  ];
+  return {
+    lines,
+    confirmation_options:['Yes, exactly','Mostly','Let me clarify'],
+    follow_up_lines:[],
+    carried_questions:[],
+    next_question:String(graph?.next_question_recommendation?.question||nextPartnershipProtocolCard(card)?.visibleQuestion||'').trim()
+  };
+}
 function fallbackPartnershipProtocolWitness({card,rawResponse,graph}){
-  throw new Error('Live witnessing model unavailable. VAL will not use canned witnessing responses.');
+  return sourceGroundedWitnessRecovery({card,rawResponse,graph});
 }
 function partnershipCarriedQuestions(priorImports=[]){
   return (Array.isArray(priorImports)?priorImports:[])
@@ -4751,13 +4788,25 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
         evidence_refs:['current_answer']
       }
     },card,rawResponse);
-    const witness=normalizePartnershipWitnessResponse({
-      lines:Array.isArray(parsed.witness_lines)?parsed.witness_lines:[],
-      confirmation_options:['Yes, exactly','Mostly','Let me clarify'],
-      follow_up_lines:[],
-      carried_questions:[],
-      next_question:String(parsed.next_question||'').trim()
-    },graph,priorImports,rawResponse);
+    let witness;
+    try{
+      witness=normalizePartnershipWitnessResponse({
+        lines:Array.isArray(parsed.witness_lines)?parsed.witness_lines:[],
+        confirmation_options:['Yes, exactly','Mostly','Let me clarify'],
+        follow_up_lines:[],
+        carried_questions:[],
+        next_question:String(parsed.next_question||'').trim()
+      },graph,priorImports,rawResponse);
+    }catch(witnessError){
+      if(!/Live witness response (was too generic|returned no lines)\./.test(String(witnessError.message||''))) throw witnessError;
+      console.warn('[Witnessing turn] recovering thin witness response for card',card.id,'from the current answer.');
+      witness=normalizePartnershipWitnessResponse(
+        fallbackPartnershipProtocolWitness({card,rawResponse,graph}),
+        graph,
+        priorImports,
+        rawResponse
+      );
+    }
     if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};
   }catch(error){

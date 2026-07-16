@@ -501,10 +501,11 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/async function witnessPartnershipProtocolAnswer/);
   assert.match(server,/function fallbackPartnershipProtocolGraph/);
   assert.match(server,/function fallbackPartnershipProtocolWitness/);
+  assert.match(server,/function sourceGroundedWitnessRecovery/);
   assert.match(server,/function partnershipFallbackFrame/);
   assert.match(server,/Live observation model unavailable\. VAL will not use canned observer frames\./);
   assert.match(server,/return nextCard\.visibleQuestion \|\| ''/);
-  assert.match(server,/Live witnessing model unavailable\. VAL will not use canned witnessing responses\./);
+  assert.match(server,/recovering thin witness response for card/);
   assert.match(server,/let RUNTIME_OPENAI_KEY = ''/);
   assert.match(server,/let RUNTIME_OPENAI_MODEL = ''/);
   assert.match(server,/app\.post\('\/api\/dev\/openai-runtime'/);
@@ -594,10 +595,10 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
 });
 
 test('Witnessing accepts concise lines grounded in the current answer without allowing boilerplate',()=>{
-  const validator=server.match(/function userFacingWitnessLine[\s\S]*?(?=function fallbackPartnershipProtocolWitness)/)?.[0]||'';
+  const validator=server.match(/function userFacingWitnessLine[\s\S]*?(?=function partnershipCarriedQuestions)/)?.[0]||'';
   assert.ok(validator,'Witnessing validation helpers should be available for regression coverage.');
-  const context={};
-  vm.runInNewContext(`${validator}\nresult={witnessLinesTooThin};`,context);
+  const context={nextPartnershipProtocolCard:()=>({visibleQuestion:'Tell me your story. Not your resume. Your story.'})};
+  vm.runInNewContext(`${validator}\nresult={witnessLinesTooThin,sourceGroundedWitnessRecovery};`,context);
   const answer='I am first and foremost a mom. After that I use technology to support people\'s visions, capacity, and integrity/accountability.';
   const grounded=[
     'Being a mom comes first, and technology is in service of people\'s visions.',
@@ -605,6 +606,11 @@ test('Witnessing accepts concise lines grounded in the current answer without al
   ];
   assert.equal(context.result.witnessLinesTooThin(grounded,answer,{}),false);
   assert.equal(context.result.witnessLinesTooThin(['I hear you, and I will listen carefully.'],answer,{}),true);
+  const recovery=context.result.sourceGroundedWitnessRecovery({card:{id:'meeting_val'},rawResponse:answer,graph:{next_question_recommendation:{question:'Tell me your story. Not your resume. Your story.'}}});
+  assert.equal(context.result.witnessLinesTooThin(recovery.lines,answer,{}),false);
+  assert.match(recovery.lines.join(' '),/mom/i);
+  assert.match(recovery.lines.join(' '),/technology/i);
+  assert.match(recovery.lines.join(' '),/people and care/i);
 });
 
 test('Witnessing Session bounds model work to one responsive conversation turn',()=>{
@@ -632,6 +638,7 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/roughly 90 to 160 words/);
   assert.match(turn,/living_executive_graph/);
   assert.match(turn,/normalizePartnershipWitnessResponse/);
+  assert.match(turn,/fallbackPartnershipProtocolWitness\(\{card,rawResponse,graph\}\)/);
   assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
   assert.doesNotMatch(route,/composePartnershipProtocolNextQuestion/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId\/confirm'[\s\S]*?composePartnershipProtocolNextQuestion/);
