@@ -15,6 +15,7 @@ const {createGhlMcpService} = require('./services/ghlMcpService');
 const {createKrispMcpService} = require('./services/krispMcpService');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
+const {DEFAULT_OBSERVERS} = require('./services/valIntelligenceSpine');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
@@ -28438,6 +28439,115 @@ function buildHearthTruthLineageRegistry(){
   };
 }
 
+function titleFromPacketName(value=''){
+  return String(value||'')
+    .replace(/_/g,' ')
+    .replace(/\b\w/g,letter=>letter.toUpperCase());
+}
+
+function buildWitnessingPacketArchitectureMap(){
+  const hydrationPackets=Object.entries(HEARTH_PACKET_HYDRATION_REQUIREMENTS).map(([id,requirements])=>({
+    id,
+    label:titleFromPacketName(id),
+    type:'hydrated_packet',
+    witnessingAccess:'direct_shared_root',
+    retrieval:[
+      'listTeachValCoreMemory',
+      'listTeachValWitnessingSourceMemory',
+      'current Teach VAL session imports with a witness_ category'
+    ],
+    variables:requirements.map(([variable,provider,source])=>({variable,provider,source})),
+    downstream:HEARTH_PACKET_DOWNSTREAM_CONSUMERS[id]||[],
+    purpose:HEARTH_CLICK_PURPOSES[id]||[]
+  }));
+  const declaredDownstream=new Set(Object.values(HEARTH_PACKET_DOWNSTREAM_CONSUMERS).flat());
+  const separatelyHydrated=new Set(hydrationPackets.map(packet=>packet.id));
+  const inheritedPackets=[...declaredDownstream]
+    .filter(id=>id.endsWith('_packet')&&!separatelyHydrated.has(id))
+    .sort()
+    .map(id=>({
+      id,
+      label:titleFromPacketName(id),
+      type:'inherited_packet',
+      witnessingAccess:'inherited_from_selected_upstream_packet',
+      retrieval:['The selected relationship, project, email, timeline, Home, or workflow packet carries its source receipt forward.'],
+      variables:[],
+      downstream:[],
+      purpose:['This packet is declared as a downstream consumer but does not yet have an independent Hearth hydration contract.']
+    }));
+  const observerRetrieval={
+    source:'buildSharedContextPacket',
+    path:[
+      'Witnessing Session answer',
+      'Teach VAL import with witness_ category',
+      'listTeachValWitnessingSourceMemory',
+      'listTeachValCoreMemory',
+      'context.teachVal',
+      'observer run',
+      'Round Table'
+    ],
+    rule:'Every observer receives the shared context root. Each observer uses only the evidence relevant to its responsibility.'
+  };
+  return {
+    ok:true,
+    generatedAt:new Date().toISOString(),
+    title:'Witnessing to Work',
+    governingRule:'Round Table decides. Packet stores. Custom fields persist. Drawer displays. User approves action.',
+    evidenceBoundary:'Witnessing answers remain direct source evidence. They do not become permanent memory or an external action merely because they were read.',
+    sourceRoot:{
+      id:'witnessing_source_root',
+      label:'Witnessing Session',
+      retrieval:[
+        'getTeachValSession',
+        'listTeachValImports',
+        'listTeachValWitnessingSourceMemory'
+      ],
+      stores:'Each answer is retained as a durable Teach VAL import with its category, raw answer, status, and source provenance.',
+      firstLookRule:'First Look reads every answer directly. It cannot save a proposed map until every answer is accounted for and every explicitly named relationship or project has a source-linked review packet.'
+    },
+    firstLook:{
+      id:'first_look_source_receipt',
+      label:'First Look',
+      retrieval:[
+        'listTeachValImports for direct Witnessing answers',
+        'connected Gmail, Calendar, Drive and Docs sources',
+        'Krisp receipts from the most recent 30 days'
+      ],
+      output:'Reviewable relationship and Project Managers packets. Nothing is created until the user approves delivery.'
+    },
+    sharedContext:{
+      id:'shared_intelligence_context',
+      label:'Shared Intelligence Context',
+      retrieval:observerRetrieval,
+      output:'One bounded context packet for the observer suite, with direct Witnessing evidence, current sources, source references, and uncertainty.'
+    },
+    observers:DEFAULT_OBSERVERS.map(({observerName,promptKey})=>({
+      id:String(observerName).toLowerCase().replace(/[^a-z0-9]+/g,'_'),
+      label:observerName,
+      promptKey,
+      witnessingAccess:'shared_context_root',
+      retrieval:observerRetrieval.path
+    })),
+    roundTable:{
+      id:'round_table',
+      label:'Round Table',
+      retrieval:[
+        'observer runs',
+        'observer evidence references',
+        'observer agreements, tensions, opposing views, and uncertainty'
+      ],
+      output:'A synthesized judgment. It does not create an external action.'
+    },
+    chiefOfStaff:{
+      id:'chief_of_staff',
+      label:'Chief of Staff',
+      retrieval:['Round Table output','source references carried by observer runs'],
+      output:'A recommended next move and competing view, held for user judgment.'
+    },
+    packets:[...hydrationPackets,...inheritedPackets]
+  };
+}
+
 function hearthHydrationProviderMap(){
   return {
     teach_val_memory:{status:'available',route:'internal',description:'Teach VAL reviewed memory is loaded by listTeachValCoreMemory and Executive Briefing onboardingReflection.'},
@@ -28847,6 +28957,15 @@ app.get('/api/hearth/packet-hydration-audit',async(req,res)=>{
 app.get('/api/hearth/truth-lineage',async(req,res)=>{
   try{
     res.json(buildHearthTruthLineageRegistry());
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+
+app.get('/api/val/architecture/witnessing-packet-map',async(req,res)=>{
+  try{
+    res.set('Cache-Control','no-store, max-age=0');
+    res.json(buildWitnessingPacketArchitectureMap());
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }
