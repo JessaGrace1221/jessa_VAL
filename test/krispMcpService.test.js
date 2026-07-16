@@ -161,6 +161,39 @@ test('verifies Krisp transcript receipts through the date-filtered meeting index
   }
 });
 
+test('selects Krisp tools by exact name instead of misleading description text',async()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
+  const originalFetch=global.fetch;
+  const calls=[];
+  global.fetch=async(_url,options={})=>{
+    const body=JSON.parse(options.body||'{}');
+    calls.push(body);
+    if(body.method==='initialize')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'krisp-test',version:'1.0.0'}}},{headers:{'mcp-session-id':'test-session'}});
+    if(body.method==='notifications/initialized')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
+    if(body.method==='tools/list')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{tools:[
+      {name:'get_multiple_documents',description:'Fetch meetings, transcripts, and action items.',inputSchema:{type:'object',properties:{ids:{type:'array'}}}},
+      {name:'list_action_items',description:'List action items from meetings.',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}},
+      {name:'search_meetings',description:'Search meetings by text.',inputSchema:{type:'object',properties:{after:{type:'string'},before:{type:'string'},limit:{type:'integer'},fields:{type:'array'},isOwner:{type:'boolean'},sharedWithMe:{type:'boolean'}}}},
+      {name:'search_meeting_content',description:'Search transcript content.',inputSchema:{type:'object',properties:{search:{type:'string'},limit:{type:'integer'},after:{type:'string'},before:{type:'string'}}}},
+      {name:'list_activities',description:'List recent updates.',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}}
+    ]}});
+    if(body.method==='tools/call'&&body.params.name==='search_meetings')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[{meeting_id:'1234567890abcdef1234567890abcdef',name:'Actual Krisp meeting'}]}}});
+    throw new Error('Unexpected MCP call: '+body.params?.name);
+  };
+  try{
+    const discovery=await svc.discoverTranscriptReceipts({from:'2026-06-16T00:00:00.000Z',to:'2026-07-16T23:59:59.999Z',limit:50});
+    assert.equal(discovery.documents.length,1);
+    const searchCall=calls.find(call=>call.params?.name==='search_meetings');
+    assert.ok(searchCall);
+    assert.ok(searchCall.params.arguments.fields.includes('duration_seconds'));
+    assert.equal(searchCall.params.arguments.fields.includes('duration'),false);
+    assert.equal(calls.some(call=>call.params?.name==='get_multiple_documents'),false);
+  }finally{
+    global.fetch=originalFetch;
+  }
+});
+
 test('falls back through owned, shared, and action-item meeting indexes when the broad Krisp search is empty',async()=>{
   const {createKrispMcpService}=require('../services/krispMcpService');
   const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});

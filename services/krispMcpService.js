@@ -29,7 +29,7 @@ function rowsFromKrispResponse(value,depth=0){
   if(depth>4||value==null)return [];
   if(Array.isArray(value))return value;
   if(typeof value!=='object')return [];
-  for(const key of ['meetings','documents','items','results','data']){
+  for(const key of ['meetings','documents','items','results','data','chunks','activities','action_items','actionItems']){
     const rows=rowsFromKrispResponse(value[key],depth+1);
     if(rows.length)return rows;
   }
@@ -182,6 +182,12 @@ function toolMatches(tool,patterns=[]){
 
 function pickTool(tools,patterns=[]){
   return tools.find(tool=>toolMatches(tool,patterns))||null;
+}
+
+function pickToolByName(tools,names=[],patterns=[]){
+  const expected=new Set(names.map(name=>String(name||'').toLowerCase()));
+  return tools.find(tool=>expected.has(String(tool?.name||'').toLowerCase()))
+    || pickTool(tools,patterns);
 }
 
 function knownTool(name,description='Krisp MCP documented tool'){
@@ -538,13 +544,13 @@ function createKrispMcpService({
     const tools=await listTools();
     return {
       tools,
-      searchMeetings:pickTool(tools,[/^search_meetings$/,/search.*meeting/,/meeting.*search/,/list.*meeting/,/meetings/])||knownTool('search_meetings','Search Krisp meetings by text, date, or meeting ID.'),
-      searchMeetingContent:pickTool(tools,[/^search_meeting_content$/,/full.*text.*search/,/search.*meeting.*content/])||knownTool('search_meeting_content','Full-text search across meeting transcripts, agendas, and notes.'),
-      getDocument:pickTool(tools,[/^get_document$/,/\bget[_ -]?document\b/,/\bread.*document\b/,/\bfetch.*transcript\b/,/\bmeeting.*content\b/]),
-      getMultipleDocuments:pickTool(tools,[/^get_multiple_documents$/,/\bget[_ -]?multiple[_ -]?documents\b/,/\bmultiple.*documents\b/,/\bbatch.*documents\b/])||knownTool('get_multiple_documents','Fetch one or more Krisp documents/transcripts by document ID.'),
-      listActionItems:pickTool(tools,[/^list_action_items$/,/action.*item/,/\btasks?\b/])||knownTool('list_action_items','List Krisp meeting action items.'),
-      listActivities:pickTool(tools,[/^list_activities$/,/activit(y|ies)/,/notifications?/])||knownTool('list_activities','List Krisp Activity Center items.'),
-      upcomingMeetings:pickTool(tools,[/^list_upcoming_meetings$/,/upcoming.*meeting/,/calendar.*meeting/,/agenda/])||knownTool('list_upcoming_meetings','List upcoming Krisp calendar meetings.')
+      searchMeetings:pickToolByName(tools,['search_meetings'],[/^search[_ -]?meetings?$/,/\bsearch[_ -]?meetings?\b/,/^list[_ -]?meetings?$/])||knownTool('search_meetings','Search Krisp meetings by text, date, or meeting ID.'),
+      searchMeetingContent:pickToolByName(tools,['search_meeting_content'],[/^search[_ -]?meeting[_ -]?content$/,/\bsearch meeting content\b/,/\bfull[- ]text search\b/])||knownTool('search_meeting_content','Full-text search across meeting transcripts, agendas, and notes.'),
+      getDocument:pickToolByName(tools,['get_document'],[/^get[_ -]?document$/,/\bfetch document\b/]),
+      getMultipleDocuments:pickToolByName(tools,['get_multiple_documents'],[/^get[_ -]?multiple[_ -]?documents$/,/\bmultiple documents\b/])||knownTool('get_multiple_documents','Fetch one or more Krisp documents/transcripts by document ID.'),
+      listActionItems:pickToolByName(tools,['list_action_items'],[/^list[_ -]?action[_ -]?items?$/])||knownTool('list_action_items','List Krisp meeting action items.'),
+      listActivities:pickToolByName(tools,['list_activities'],[/^list[_ -]?activities$/])||knownTool('list_activities','List Krisp Activity Center items.'),
+      upcomingMeetings:pickToolByName(tools,['list_upcoming_meetings'],[/^list[_ -]?upcoming[_ -]?meetings?$/])||knownTool('list_upcoming_meetings','List upcoming Krisp calendar meetings.')
     };
   }
 
@@ -659,7 +665,7 @@ function createKrispMcpService({
         window:{start:startDate,end:endDate}
       };
     }
-    const fields=['name','date','url','attendees','speakers','transcript','agenda','meeting_notes','key_points','action_items'];
+    const fields=['name','date','duration_seconds','url','attendees','speakers','transcript','agenda','meeting_notes','key_points','action_items'];
     const documents=[];
     const seen=new Set();
     const probes=[];
