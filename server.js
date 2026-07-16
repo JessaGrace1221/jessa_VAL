@@ -9092,19 +9092,29 @@ app.delete('/api/integrations/oauth/:provider',async(req,res)=>{
 });
 app.get('/api/val/krisp/status',async(req,res)=>{
   try{
-    const configured=await krispMcp.isConfigured();
+    const connection=await krispOAuthConnectionStatus();
+    const configured=connection.connected&&await krispMcp.isConfigured();
     if(!configured){
       return res.json({
         ok:true,
         configured:false,
         connected:false,
         url:krispMcp.url,
-        message:'Krisp MCP is not connected yet.'
+        credentialSource:connection.source,
+        message:connection.error||'Krisp MCP is not connected yet.'
       });
     }
     const includeTools=req.query.tools==='1'||req.query.tools==='true';
+    const includeIdentity=req.query.identity==='1'||req.query.identity==='true';
     const tools=includeTools
       ? await krispMcp.listTools().catch(e=>({error:e.message}))
+      : undefined;
+    const identity=includeIdentity
+      ? await krispMcp.callTool('get_user_preferences',{}).then(profile=>({
+        name:String(profile?.name||'').slice(0,160),
+        timezone:String(profile?.timezone||'').slice(0,120),
+        company:String(profile?.company||'').slice(0,160)
+      })).catch(error=>({error:firstLookError(error)}))
       : undefined;
     res.json({
       ok:true,
@@ -9112,7 +9122,10 @@ app.get('/api/val/krisp/status',async(req,res)=>{
       connected:!tools?.error,
       url:krispMcp.url,
       client:krispMcp.usesSdk?.()?'sdk-streamable-http':'legacy-jsonrpc',
-      ...(includeTools?{tools}: {})
+      credentialSource:connection.source,
+      grantedScopes:connection.scopes||[],
+      ...(includeTools?{tools}: {}),
+      ...(includeIdentity?{identity}: {})
     });
   }catch(e){
     res.status(500).json({ok:false,configured:false,connected:false,error:e.message});
@@ -9857,15 +9870,20 @@ async function krispOAuthConnectionStatus(){
   const saved=await loadOAuthTokens('krisp').catch(()=>null);
   if(saved?.access_token){
     const accessToken=await getKrispOAuthAccessToken();
-    return {connected:!!accessToken,error:accessToken?'':'Krisp needs to reconnect.'};
+    return {
+      connected:!!accessToken,
+      source:'oauth',
+      scopes:String(saved.scope||'').split(/\s+/).filter(Boolean),
+      error:accessToken?'':'Krisp needs to reconnect.'
+    };
   }
   const legacyToken=await resolveIntegrationSecret('krisp','access_token',KRISP_MCP_ACCESS_TOKEN).catch(()=>KRISP_MCP_ACCESS_TOKEN);
-  return {connected:!!legacyToken,error:''};
+  return {connected:!!legacyToken,source:legacyToken?'service_credential':'none',scopes:[],error:''};
 }
 
 async function resolveKrispAccessToken(fallback=''){
-  const oauthToken=await getKrispOAuthAccessToken().catch(()=> '');
-  if(oauthToken) return oauthToken;
+  const saved=await loadOAuthTokens('krisp').catch(()=>null);
+  if(saved?.access_token) return getKrispOAuthAccessToken().catch(()=> '');
   const credential=await resolveIntegrationSecret('krisp','access_token',fallback||KRISP_MCP_ACCESS_TOKEN).catch(()=>fallback||KRISP_MCP_ACCESS_TOKEN);
   return credential || resolveIntegrationSecret('krisp','api_key',fallback||KRISP_MCP_ACCESS_TOKEN);
 }
