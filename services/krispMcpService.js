@@ -544,6 +544,8 @@ function createKrispMcpService({
       getMultipleDocuments:pickTool(tools,[/^get_multiple_documents$/,/\bget[_ -]?multiple[_ -]?documents\b/,/\bmultiple.*documents\b/,/\bbatch.*documents\b/])||knownTool('get_multiple_documents','Fetch one or more Krisp documents/transcripts by document ID.'),
       listActionItems:pickTool(tools,[/^list_action_items$/,/action.*item/,/\btasks?\b/])||knownTool('list_action_items','List Krisp meeting action items.'),
       listActivities:pickTool(tools,[/^list_activities$/,/activit(y|ies)/,/notifications?/])||knownTool('list_activities','List Krisp Activity Center items.'),
+      listFolders:pickTool(tools,[/^listfolders$/i,/\blist.*folders?\b/,/\bfolders?\b/]),
+      getFolder:pickTool(tools,[/^getfolder$/i,/\bget.*folder\b/,/\bfolder.*details?\b/]),
       upcomingMeetings:pickTool(tools,[/^list_upcoming_meetings$/,/upcoming.*meeting/,/calendar.*meeting/,/agenda/])||knownTool('list_upcoming_meetings','List upcoming Krisp calendar meetings.')
     };
   }
@@ -712,13 +714,40 @@ function createKrispMcpService({
       }
     }
 
+    if(!documents.length&&found.listFolders?.name&&found.getFolder?.name){
+      try{
+        const data=await callTool(found.listFolders.name,{limit:50});
+        const folderRows=safeArray(data.folders||data.items||data.results||data);
+        const folders=folderRows.map(folder=>({
+          id:normalizeKrispDocumentId(folder.folder_id||folder.folderId||folder.id||''),
+          meetingCount:Number(folder.meeting_count||folder.meetingCount||0)
+        })).filter(folder=>folder.id&&folder.meetingCount!==0).slice(0,Math.min(12,safeLimit));
+        let returned=0;
+        const startAt=startDate?new Date(startDate+'T00:00:00.000Z').getTime():0;
+        const endAt=endDate?new Date(endDate+'T23:59:59.999Z').getTime():Infinity;
+        for(const folder of folders){
+          const detail=await callTool(found.getFolder.name,{folder_id:folder.id,limit:safeLimit});
+          const meetings=rowsFromKrispResponse(detail).filter(row=>{
+            const value=row.date||row.startedAt||row.started_at||row.startTime||row.start_time||row.meeting_date||'';
+            const time=new Date(value).getTime();
+            return Number.isFinite(time)&&time>=startAt&&time<=endAt;
+          });
+          returned+=pushMeetings(meetings,found.getFolder.name);
+          if(documents.length>=safeLimit)break;
+        }
+        probes.push({label:'Meetings inside accessible Krisp folders',state:'complete',returned});
+      }catch(error){
+        probes.push({label:'Meetings inside accessible Krisp folders',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+      }
+    }
+
     const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
     const status=documents.length?'complete':(allUnavailable?'unavailable':'needs_verification');
     const detail=documents.length
       ? `Krisp returned ${documents.length} meeting receipt${documents.length===1?'':'s'} from this connection.`
       : allUnavailable
         ? 'Krisp could not return meeting receipts from this connection.'
-        : 'Krisp checked accessible, owned, shared, and action-item-linked meetings but did not return a meeting receipt for this window.';
+        : 'Krisp checked accessible, owned, shared, action-item-linked, content-indexed, and folder-held meetings but did not return a meeting receipt for this window.';
     return {documents:documents.slice(0,safeLimit),probes,status,detail,checkedAt:new Date().toISOString(),window:{start:startDate,end:endDate}};
   }
 

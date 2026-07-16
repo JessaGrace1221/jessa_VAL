@@ -231,6 +231,45 @@ test('falls back to the workspace-wide Krisp content index when metadata indexes
   }
 });
 
+test('falls back to meetings inside accessible Krisp folders when global indexes are empty',async()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
+  const originalFetch=global.fetch;
+  const calls=[];
+  global.fetch=async(_url,options={})=>{
+    const body=JSON.parse(options.body||'{}');
+    calls.push(body);
+    if(body.method==='initialize')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'krisp-test',version:'1.0.0'}}},{headers:{'mcp-session-id':'test-session'}});
+    if(body.method==='notifications/initialized')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
+    if(body.method==='tools/list')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{tools:[
+      {name:'search_meetings',description:'Search meetings',inputSchema:{type:'object',properties:{after:{type:'string'},before:{type:'string'},limit:{type:'integer'},fields:{type:'array'},isOwner:{type:'boolean'},sharedWithMe:{type:'boolean'}}}},
+      {name:'list_action_items',description:'List action items',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}},
+      {name:'listFolders',description:'List folders',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}},
+      {name:'getFolder',description:'Get folder',inputSchema:{type:'object',properties:{folder_id:{type:'string'},limit:{type:'integer'}}}}
+    ]}});
+    if(body.method==='tools/call'&&body.params.name==='search_meetings')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[]}}});
+    if(body.method==='tools/call'&&body.params.name==='list_action_items')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{action_items:[]}}});
+    if(body.method==='tools/call'&&body.params.name==='listFolders')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{folders:[{folder_id:'abcdefabcdefabcdefabcdefabcdefab',meeting_count:2}]}}});
+    if(body.method==='tools/call'&&body.params.name==='getFolder'){
+      assert.equal(body.params.arguments.folder_id,'abcdefabcdefabcdefabcdefabcdefab');
+      return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[{meeting_id:'1234567890abcdef1234567890abcdef',name:'Folder meeting',date:'2026-07-14T14:00:00.000Z'}]}}});
+    }
+    throw new Error('Unexpected MCP call: '+body.params?.name);
+  };
+  try{
+    const discovery=await svc.discoverTranscriptReceipts({from:'2026-06-16T00:00:00.000Z',to:'2026-07-16T23:59:59.999Z',limit:50});
+    assert.equal(discovery.status,'complete');
+    assert.equal(discovery.documents.length,1);
+    assert.equal(discovery.documents[0].documentId,'1234567890abcdef1234567890abcdef');
+    assert.equal(discovery.documents[0].source,'getFolder');
+    assert.ok(calls.some(call=>call.params?.name==='listFolders'));
+    assert.ok(calls.some(call=>call.params?.name==='getFolder'));
+    assert.ok(discovery.probes.some(probe=>probe.label==='Meetings inside accessible Krisp folders'&&probe.returned===1));
+  }finally{
+    global.fetch=originalFetch;
+  }
+});
+
 test('tries Krisp document ID argument shapes until transcript text is returned',async()=>{
   const {createKrispMcpService}=require('../services/krispMcpService');
   const svc=createKrispMcpService({
