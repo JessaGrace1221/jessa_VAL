@@ -8510,32 +8510,25 @@ app.post('/api/val/first-look/:runId/apply',async(req,res)=>{
     res.json({ok:true,changeSet,candidates:await listValFirstLookCandidates(run.id),noExternalAction:true});
   }catch(error){res.status(400).json({ok:false,error:firstLookError(error)});}
 });
-app.post('/api/val/first-look/krisp-verify',async(_req,res)=>{
+app.post('/api/val/first-look/krisp-import',async(_req,res)=>{
+  const run=await getValFirstLookRun().catch(()=>null);
+  if(!run?.snapshot?.window) return res.status(404).json({ok:false,error:'Prepare the First Look before importing Krisp transcripts.'});
+  res.status(200);
+  res.set({'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store, no-cache, must-revalidate','X-Accel-Buffering':'no'});
+  res.flushHeaders?.();
+  const write=(event={})=>{
+    if(!res.writableEnded){res.write(JSON.stringify(event)+'\n');res.flush?.();}
+  };
   try{
-    const run=await getValFirstLookRun();
-    if(!run?.snapshot?.window) return res.status(404).json({ok:false,error:'Prepare the First Look before verifying Krisp.'});
-    if(!(await krispMcp.isConfigured())) return res.status(409).json({ok:false,error:'Krisp is not connected.'});
-    const verification=await withTimeout(
-      krispMcp.discoverTranscriptReceipts({
-        limit:50,
-        from:run.snapshot.window.start||run.windowStart,
-        to:run.snapshot.window.end||run.windowEnd
-      }),
-      65000,
-      'Krisp took too long to verify its meeting receipts.'
-    );
-    res.set('Cache-Control','no-store, max-age=0');
-    res.json({ok:true,reviewOnly:true,noDownstreamWrites:true,verification:{
-      id:'krisp',label:'Krisp transcripts',status:verification.status,detail:verification.detail,
-      checkedAt:verification.checkedAt,window:verification.window,
-      counts:{reviewed:verification.documents.length},
-      limitNote:'This was a fresh, read-only check of Krisp meeting receipts. It does not alter your original First Look receipt.',
-      examples:verification.documents.slice(0,12).map(firstLookKrispReceipt),
-      probes:verification.probes
-    }});
+    const result=await syncKrispTranscriptsForLastThirtyDays({days:30,onProgress:write});
+    const source=firstLookKrispIntakeReceipt(result);
+    await auditLog({req:_req,action:'first_look_krisp_thirty_day_intake_completed',resourceType:'transcript',metadata:{found:result.found,imported:result.imported,alreadyPresent:result.alreadyPresent,withoutTranscriptText:result.withoutTranscriptText,failed:result.failed,window:result.window},success:result.failed===0}).catch(()=>{});
+    write({type:'complete',result,source,sourceIntakeOnly:true,noProjectsOrRelationshipsCreated:true});
   }catch(error){
-    res.status(500).json({ok:false,error:firstLookError(error)});
+    await auditLog({req:_req,action:'first_look_krisp_thirty_day_intake_failed',resourceType:'transcript',metadata:{error:firstLookError(error)},success:false}).catch(()=>{});
+    write({type:'error',message:firstLookError(error)});
   }
+  res.end();
 });
 app.post('/api/val/krisp/sync',requirePermission('settings:manage'),async(req,res)=>{
   res.status(200);
@@ -15179,6 +15172,27 @@ function firstLookKrispReceipt(document={}){
     title:String(document.title||document.name||'Untitled meeting').slice(0,220),
     startedAt:document.startedAt||document.date||document.createdAt||'',
     participants:(document.participants||document.attendees||[]).slice(0,12).map(person=>String(person.name||person.email||person||'').slice(0,160)).filter(Boolean)
+  };
+}
+function firstLookKrispIntakeReceipt(result={}){
+  const found=Math.max(0,Number(result.found)||0);
+  const imported=Math.max(0,Number(result.imported)||0);
+  const alreadyPresent=Math.max(0,Number(result.alreadyPresent)||0);
+  const withoutTranscriptText=Math.max(0,Number(result.withoutTranscriptText)||0);
+  const failed=Math.max(0,Number(result.failed)||0);
+  const status=failed||withoutTranscriptText
+    ? (found?'partial':'unavailable')
+    : found?'complete':'needs_verification';
+  const detail=found
+    ? 'Krisp found '+found+' meeting receipt'+(found===1?'':'s')+' from the last 30 days and preserved '+imported+' exact transcript'+(imported===1?'':'s')+'.'
+    : 'Krisp checked the last 30 days of accessible, owned, shared, and action-item-linked meetings but did not return a meeting receipt.';
+  const limitNote=found
+    ? 'Exact Krisp material is now available to Transcripts. VAL did not rewrite the original receipt.'
+    : 'No substitute transcript was created. Reconnect Krisp only if this account should have recent meeting receipts.';
+  return {
+    id:'krisp',label:'Krisp transcripts',status,detail,checkedAt:result.checkedAt||new Date().toISOString(),window:result.window||krispThirtyDayWindow(30),
+    counts:{reviewed:found,imported,alreadyPresent,withoutTranscriptText,failed},limitNote,
+    examples:(Array.isArray(result.records)?result.records:[]).filter(item=>item.status==='imported'||item.status==='already_present').slice(0,12).map(firstLookKrispReceipt)
   };
 }
 async function listGoogleDriveFirstLookFiles({windowStart,limit=100}={}){

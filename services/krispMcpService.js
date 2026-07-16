@@ -678,6 +678,24 @@ function createKrispMcpService({
       probes.push({label:'Krisp meetings',state:'unavailable',returned:0,error:'Krisp did not expose a meeting search.'});
     }else{
       await runMeetingSearch('Meetings available to this Krisp account');
+      if(!documents.length) await runMeetingSearch('Meetings you own in Krisp',{isOwner:true});
+      if(!documents.length) await runMeetingSearch('Meetings shared with you in Krisp',{sharedWithMe:true});
+    }
+
+    if(!documents.length&&found.listActionItems?.name){
+      try{
+        const data=await callTool(found.listActionItems.name,{limit:safeLimit});
+        const actionItems=safeArray(data.actionItems||data.action_items||data.items||data.results||data);
+        const meetingRows=actionItems.map(item=>({
+          meetingId:item.meeting_id||item.meetingId||item.source_meeting_id||item.sourceMeetingId||'',
+          title:item.meeting_name||item.meetingName||item.source_meeting_name||item.sourceMeetingName||'Krisp meeting',
+          startedAt:item.meeting_date||item.meetingDate||item.created_at||item.createdAt||''
+        })).filter(item=>item.meetingId);
+        const returned=pushMeetings(meetingRows,found.listActionItems.name);
+        probes.push({label:'Meetings linked to Krisp action items',state:'complete',returned});
+      }catch(error){
+        probes.push({label:'Meetings linked to Krisp action items',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+      }
     }
 
     const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
@@ -686,7 +704,7 @@ function createKrispMcpService({
       ? `Krisp returned ${documents.length} meeting receipt${documents.length===1?'':'s'} from this connection.`
       : allUnavailable
         ? 'Krisp could not return meeting receipts from this connection.'
-        : 'Krisp is connected, but it did not return any meeting receipts for this check. This does not prove there are no transcripts.';
+        : 'Krisp checked accessible, owned, shared, and action-item-linked meetings but did not return a meeting receipt for this window.';
     return {documents:documents.slice(0,safeLimit),probes,status,detail,checkedAt:new Date().toISOString(),window:{start:startDate,end:endDate}};
   }
 

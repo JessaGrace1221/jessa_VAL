@@ -161,6 +161,38 @@ test('verifies Krisp transcript receipts through the date-filtered meeting index
   }
 });
 
+test('falls back through owned, shared, and action-item meeting indexes when the broad Krisp search is empty',async()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
+  const originalFetch=global.fetch;
+  const calls=[];
+  global.fetch=async(_url,options={})=>{
+    const body=JSON.parse(options.body||'{}');
+    calls.push(body);
+    if(body.method==='initialize')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'krisp-test',version:'1.0.0'}}},{headers:{'mcp-session-id':'test-session'} });
+    if(body.method==='notifications/initialized')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
+    if(body.method==='tools/list')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{tools:[
+      {name:'search_meetings',description:'Search meetings',inputSchema:{type:'object',properties:{after:{type:'string'},before:{type:'string'},limit:{type:'integer'},fields:{type:'array'},isOwner:{type:'boolean'},sharedWithMe:{type:'boolean'}}}},
+      {name:'list_action_items',description:'List action items',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}}
+    ]}});
+    if(body.method==='tools/call'&&body.params.name==='search_meetings')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[]}}});
+    if(body.method==='tools/call'&&body.params.name==='list_action_items')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{action_items:[{meeting_id:'abcdefabcdefabcdefabcdefabcdefab',meeting_name:'Action item source meeting',meeting_date:'2026-07-14T14:00:00.000Z'}]}}});
+    throw new Error('Unexpected MCP call: '+body.params?.name);
+  };
+  try{
+    const discovery=await svc.discoverTranscriptReceipts({from:'2026-06-16T00:00:00.000Z',to:'2026-07-16T23:59:59.999Z',limit:50});
+    assert.equal(discovery.status,'complete');
+    assert.equal(discovery.documents.length,1);
+    assert.equal(discovery.documents[0].documentId,'abcdefabcdefabcdefabcdefabcdefab');
+    assert.ok(calls.some(call=>call.params?.name==='search_meetings'&&call.params.arguments.isOwner===true));
+    assert.ok(calls.some(call=>call.params?.name==='search_meetings'&&call.params.arguments.sharedWithMe===true));
+    assert.ok(calls.some(call=>call.params?.name==='list_action_items'));
+    assert.ok(discovery.probes.some(probe=>probe.label==='Meetings linked to Krisp action items'&&probe.returned===1));
+  }finally{
+    global.fetch=originalFetch;
+  }
+});
+
 test('tries Krisp document ID argument shapes until transcript text is returned',async()=>{
   const {createKrispMcpService}=require('../services/krispMcpService');
   const svc=createKrispMcpService({

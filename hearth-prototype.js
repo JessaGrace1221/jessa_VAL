@@ -16868,7 +16868,7 @@ function renderValFirstLookReceipt(run = valFirstLookRun){
               valFirstLookCountLabel(source)?'<small>'+escapeHtml(valFirstLookCountLabel(source))+'</small>':'',
               source.limitNote ? '<small>' + escapeHtml(source.limitNote) + '</small>' : '',
               source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
-              definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingVerifyKrisp">Verify Krisp meeting receipts</button>' : '',
+              definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingImportKrisp">Import the last 30 days from Krisp</button>' : '',
             '</article>'
           ].join('');
         }).join(''),
@@ -16990,23 +16990,58 @@ async function prepareValFirstLook(){
     renderValFirstLookConversation({state:'ready',error:error.message || 'VAL could not finish the First Look.'});
   }
 }
-async function verifyValFirstLookKrisp(){
+async function importValFirstLookKrisp(){
   if(!canUseApi || mockScrapers) return;
   valFirstLookKrispVerification = {
     id:'krisp',label:'Krisp transcripts',status:'reading',
-    detail:'Checking Krisp meetings available to this connection. VAL is not opening or changing any transcript.',
+    detail:'Checking your accessible, owned, shared, and action-item-linked Krisp meetings from the last 30 days.',
     examples:[]
   };
   renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
   try{
-    const result=await postJson('/api/val/first-look/krisp-verify',{});
-    valFirstLookKrispVerification=result?.verification||null;
-    if(!valFirstLookKrispVerification) throw new Error('Krisp did not return a verification receipt.');
+    const response=await fetch('/api/val/first-look/krisp-import',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(!response.ok||!response.body){
+      const body=await response.text();
+      let payload={};
+      try{payload=body?JSON.parse(body):{};}catch(_e){}
+      throw new Error(payload.error||'Krisp could not begin the 30-day intake.');
+    }
+    const reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let pending='';
+    let completed=false;
+    const handleEvent=event=>{
+      if(event.type==='progress'){
+        valFirstLookKrispVerification={
+          ...valFirstLookKrispVerification,
+          status:event.state||'reading',detail:event.message||valFirstLookKrispVerification.detail,
+          counts:{...(valFirstLookKrispVerification.counts||{}),reviewed:Number(event.count||valFirstLookKrispVerification.counts?.reviewed||0)}
+        };
+        renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
+        return;
+      }
+      if(event.type==='complete'){
+        valFirstLookKrispVerification=event.source||null;
+        completed=true;
+        return;
+      }
+      if(event.type==='error')throw new Error(event.message||'Krisp could not finish the 30-day intake.');
+    };
+    while(true){
+      const chunk=await reader.read();
+      if(chunk.done)break;
+      pending+=decoder.decode(chunk.value,{stream:true});
+      const lines=pending.split('\n');
+      pending=lines.pop()||'';
+      for(const line of lines){if(line.trim())handleEvent(JSON.parse(line));}
+    }
+    if(pending.trim())handleEvent(JSON.parse(pending));
+    if(!completed)throw new Error('Krisp finished without returning an intake receipt.');
   }catch(error){
     valFirstLookKrispVerification={
       id:'krisp',label:'Krisp transcripts',status:'unavailable',
-      detail:'Krisp could not verify its meeting receipts right now.',examples:[],
-      error:error.message||'Krisp could not be verified.'
+      detail:'Krisp could not complete the 30-day intake right now.',examples:[],
+      error:error.message||'Krisp could not be imported.'
     };
   }
   renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
@@ -18158,7 +18193,7 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingSourcesContinue',
   'valWitnessingFirstLookPrepare',
   'valWitnessingFirstLookContinue',
-  'valWitnessingVerifyKrisp',
+  'valWitnessingImportKrisp',
   'valFirstLookBuildMap',
   'valFirstLookCandidateDecision',
   'valFirstLookCandidateCorrect',
@@ -18236,8 +18271,8 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
     await continueValWitnessingAfterFirstLook();
     return;
   }
-  if(command === 'valWitnessingVerifyKrisp'){
-    await verifyValFirstLookKrisp();
+  if(command === 'valWitnessingImportKrisp'){
+    await importValFirstLookKrisp();
     return;
   }
   if(command === 'valFirstLookBuildMap'){

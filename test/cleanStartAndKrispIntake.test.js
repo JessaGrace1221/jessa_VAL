@@ -54,6 +54,8 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
   assert.match(server, /packetEligibility:\['transcripts','stewardship','project_managers','chief_of_staff'\]/);
   assert.match(server, /receiptLimitReached/);
   assert.match(server, /\/api\/val\/krisp\/sync/);
+  assert.match(server, /\/api\/val\/first-look\/krisp-import/);
+  assert.match(server, /firstLookKrispIntakeReceipt/);
   assert.match(server, /firstLookPacketCoverage/);
   assert.match(server, /syncKrispTranscriptsForLastThirtyDays\(\{days:30,onProgress\}\)/);
   assert.match(server, /krispThirtyDayWindow\(30\)/);
