@@ -15231,10 +15231,10 @@ function firstLookKrispIntakeReceipt(result={}){
     : found?'complete':'needs_verification';
   const detail=found
     ? 'Krisp found '+found+' meeting receipt'+(found===1?'':'s')+' from the last 30 days and preserved '+imported+' exact transcript'+(imported===1?'':'s')+'.'
-    : 'Krisp checked the last 30 days of accessible, owned, shared, and action-item-linked meetings but did not return a meeting receipt.';
+    : 'Krisp is connected, but it did not expose a meeting receipt from the last 30 days through this integration.';
   const limitNote=found
     ? 'Exact Krisp material is now available to Transcripts. VAL did not rewrite the original receipt.'
-    : 'No substitute transcript was created. Reconnect Krisp only if this account should have recent meeting receipts.';
+    : 'VAL did not create a substitute transcript. Check that a known meeting is visible in Krisp to this account; if it is, Krisp is not sharing that receipt with VAL.';
   return {
     id:'krisp',label:'Krisp transcripts',status,detail,checkedAt:result.checkedAt||new Date().toISOString(),window:result.window||krispThirtyDayWindow(30),
     counts:{reviewed:found,imported,alreadyPresent,withoutTranscriptText,failed},limitNote,

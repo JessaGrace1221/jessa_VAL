@@ -16747,7 +16747,7 @@ function valFirstLookDisplaySource(source,definition){
       ...current,
       status:'needs_verification',
       detail:'Krisp is connected, but this First Look did not receive any meeting receipts. That does not prove there are no transcripts.',
-      limitNote:'Verify Krisp to check its meetings again without changing your original First Look receipt.'
+      limitNote:'Check that a known meeting is visible in Krisp to this account. VAL will never create a substitute transcript.'
     };
   }
   return current;
@@ -16868,7 +16868,7 @@ function renderValFirstLookReceipt(run = valFirstLookRun){
               valFirstLookCountLabel(source)?'<small>'+escapeHtml(valFirstLookCountLabel(source))+'</small>':'',
               source.limitNote ? '<small>' + escapeHtml(source.limitNote) + '</small>' : '',
               source.error ? '<small>' + escapeHtml(source.error) + '</small>' : '',
-              definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingImportKrisp">Import the last 30 days from Krisp</button>' : '',
+              definition.id==='krisp'&&source.status==='needs_verification' ? '<button type="button" class="val-first-look-verify" data-val-witnessing-action="true" data-workflow-action="valWitnessingImportKrisp">Check Krisp meeting receipts again</button>' : '',
             '</article>'
           ].join('');
         }).join(''),

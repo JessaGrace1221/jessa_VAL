@@ -57,6 +57,8 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
   assert.match(server, /\/api\/val\/first-look\/krisp-import/);
   assert.match(server, /\/api\/val\/first-look\/krisp-verify/);
   assert.match(server, /firstLookKrispIntakeReceipt/);
+  assert.match(server, /Krisp is connected, but it did not expose a meeting receipt/);
+  assert.match(server, /VAL did not create a substitute transcript/);
   assert.match(server, /credentialSource:connection\.source/);
   assert.match(server, /source:'oauth'/);
   assert.match(server, /source:legacyToken\?'service_credential':'none'/);
