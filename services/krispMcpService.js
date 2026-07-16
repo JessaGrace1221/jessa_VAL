@@ -698,6 +698,20 @@ function createKrispMcpService({
       }
     }
 
+    if(!documents.length&&found.searchMeetingContent?.name){
+      const args={
+        search:'the',limit:safeLimit,after:startDate,before:endDate,
+        fields:['document_id','title','content','chunk_type','date']
+      };
+      try{
+        const data=await callTool(found.searchMeetingContent.name,args);
+        const returned=pushMeetings(rowsFromKrispResponse(data),found.searchMeetingContent.name);
+        probes.push({label:'Meeting content across accessible Krisp transcripts',state:'complete',returned});
+      }catch(error){
+        probes.push({label:'Meeting content across accessible Krisp transcripts',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+      }
+    }
+
     const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
     const status=documents.length?'complete':(allUnavailable?'unavailable':'needs_verification');
     const detail=documents.length
