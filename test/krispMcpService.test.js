@@ -63,6 +63,17 @@ test('converts a Krisp document into a real transcript payload',()=>{
   assert.match(payload.transcript,/Friday/);
 });
 
+test('unwraps Krisp get_multiple_documents result wrappers',()=>{
+  const normalized=normalizeKrispDocument({
+    results:[{
+      id:'1234567890abcdef1234567890abcdef',
+      document:'Jessa: This is the exact transcript returned by Krisp.'
+    }]
+  });
+  assert.equal(normalized.documentId,'1234567890abcdef1234567890abcdef');
+  assert.match(normalized.transcriptText,/exact transcript returned by Krisp/);
+});
+
 test('sanitizes Krisp inspection output without leaking raw documents',()=>{
   const transcriptText='Jessa: This is private transcript text that should only appear as a short preview for debugging.';
   const inspection=sanitizeKrispDocumentInspection({

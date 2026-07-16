@@ -356,8 +356,8 @@ function sanitizeKrispDocumentInspection(document={}){
 
 function normalizeKrispDocument(doc={},fallback={}){
   const source=Array.isArray(doc)
-    ?(doc.find(item=>extractText(item?.transcript||item?.fullTranscript||item?.full_transcript||item?.transcriptText||item?.transcript_text||item?.content||''))||doc[0]||{})
-    :(safeArray(doc.documents||doc.items||doc.results).find(item=>extractText(item?.transcript||item?.fullTranscript||item?.full_transcript||item?.transcriptText||item?.transcript_text||item?.content||''))||doc.document||doc.meeting||doc.data||doc);
+    ?(doc.find(item=>extractText(item?.transcript||item?.fullTranscript||item?.full_transcript||item?.transcriptText||item?.transcript_text||item?.content||item?.document||''))||doc[0]||{})
+    :(safeArray(doc.documents||doc.items||doc.results).find(item=>extractText(item?.transcript||item?.fullTranscript||item?.full_transcript||item?.transcriptText||item?.transcript_text||item?.content||item?.document||''))||doc.document||doc.meeting||doc.data||doc);
   const documentId=normalizeKrispDocumentId(source.documentId||source.document_id||source.id||fallback.documentId||fallback.document_id||'');
   const transcriptText=extractText(source.transcript||source.fullTranscript||source.full_transcript||source.transcriptText||source.transcript_text||source.content||source);
   const summary=extractText(source.summary||source.notes||source.keyPoints||source.key_points||'');
