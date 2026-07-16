@@ -5,6 +5,7 @@ const orientation = document.querySelector('[data-line="orientation"]');
 const permission = document.querySelector('[data-line="permission"]');
 const evidence = document.querySelector('#hearth-evidence');
 const observerBoardButton = document.querySelector('.observer-board-button');
+const completionSoundToggle = document.querySelector('[data-completion-sound-toggle]');
 const leanButton = document.querySelector('.lean-button');
 const freshDeskButton = document.querySelector('.fresh-desk-button');
 const switches = Array.from(document.querySelectorAll('[data-state-option]'));
@@ -13650,7 +13651,105 @@ function sessionFor(type){
   return scraperSessions[type];
 }
 
+const VAL_COMPLETION_SOUND_STORAGE_KEY = 'valCompletionSoundEnabled';
+const VAL_COMPLETION_SOUND_MIN_WAIT_MS = 650;
+const VAL_COMPLETION_SOUND_THROTTLE_MS = 1600;
+let valCompletionSoundEnabled = true;
+let valCompletionAudioContext = null;
+let valCompletionLastUserGestureAt = 0;
+let valCompletionLastPlayedAt = 0;
+
+function readValCompletionSoundPreference(){
+  try{
+    return window.localStorage.getItem(VAL_COMPLETION_SOUND_STORAGE_KEY) !== 'false';
+  }catch(_error){
+    return true;
+  }
+}
+
+function updateValCompletionSoundToggle(){
+  if(!completionSoundToggle) return;
+  completionSoundToggle.checked = valCompletionSoundEnabled;
+  const label = valCompletionSoundEnabled ? 'Completion sound on' : 'Completion sound off';
+  completionSoundToggle.setAttribute('aria-label', label + '. Play a quiet sound when VAL finishes.');
+  const toggle = completionSoundToggle.closest('.completion-sound-toggle');
+  if(toggle){
+    toggle.dataset.tooltip = label;
+    toggle.title = label;
+  }
+}
+
+function primeValCompletionAudio(){
+  if(!valCompletionSoundEnabled) return;
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if(!AudioContext) return;
+  if(!valCompletionAudioContext) valCompletionAudioContext = new AudioContext();
+  if(valCompletionAudioContext.state === 'suspended'){
+    void valCompletionAudioContext.resume().catch(() => {});
+  }
+}
+
+function noteValCompletionUserGesture(){
+  valCompletionLastUserGestureAt = Date.now();
+  primeValCompletionAudio();
+}
+
+function setValCompletionSoundEnabled(enabled){
+  valCompletionSoundEnabled = !!enabled;
+  try{
+    window.localStorage.setItem(VAL_COMPLETION_SOUND_STORAGE_KEY, String(valCompletionSoundEnabled));
+  }catch(_error){}
+  updateValCompletionSoundToggle();
+  if(valCompletionSoundEnabled) primeValCompletionAudio();
+}
+
+function captureValCompletionCue(){
+  return valCompletionSoundEnabled && Date.now() - valCompletionLastUserGestureAt < 1500;
+}
+
+function valCompletionSoundIsBackgroundRequest(url = ''){
+  return /\/api\/(?:hearth\/build-packet|val\/ready-for-you\/build|val\/review-updates\/build|val\/executive-instructions\/extract|teach-val\/onboarding\/(?:start|[^/]+\/reset)|dev\/)/.test(String(url || ''));
+}
+
+function shouldPlayValCompletionCue(url = '', options = {}){
+  if(options.completionCue === false || valCompletionSoundIsBackgroundRequest(url)) return false;
+  return options.completionCue === true || captureValCompletionCue();
+}
+
+function playValCompletionCue({cue = true, requestStartedAt = Date.now()} = {}){
+  if(!cue || !valCompletionSoundEnabled || Date.now() - requestStartedAt < VAL_COMPLETION_SOUND_MIN_WAIT_MS) return;
+  const context = valCompletionAudioContext;
+  if(!context || context.state !== 'running' || Date.now() - valCompletionLastPlayedAt < VAL_COMPLETION_SOUND_THROTTLE_MS) return;
+  valCompletionLastPlayedAt = Date.now();
+  const now = context.currentTime;
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(.0001, now);
+  gain.gain.exponentialRampToValueAtTime(.026, now + .015);
+  gain.gain.exponentialRampToValueAtTime(.0001, now + .30);
+  gain.connect(context.destination);
+  [523.25, 659.25].forEach((frequency, index) => {
+    const tone = context.createOscillator();
+    tone.type = 'sine';
+    tone.frequency.setValueAtTime(frequency, now + index * .065);
+    tone.connect(gain);
+    tone.start(now + index * .065);
+    tone.stop(now + .32);
+  });
+}
+
+valCompletionSoundEnabled = readValCompletionSoundPreference();
+updateValCompletionSoundToggle();
+document.addEventListener('pointerdown', noteValCompletionUserGesture, true);
+document.addEventListener('keydown', (event) => {
+  if(event.key === 'Enter' || event.key === ' ') noteValCompletionUserGesture();
+}, true);
+completionSoundToggle?.addEventListener('change', (event) => {
+  setValCompletionSoundEnabled(event.target.checked);
+});
+
 async function postJson(url, payload, options = {}){
+  const completionCue = shouldPlayValCompletionCue(url, options);
+  const requestStartedAt = Date.now();
   const controller = options.timeoutMs && window.AbortController ? new AbortController() : null;
   const timeoutId = controller ? window.setTimeout(() => controller.abort(), options.timeoutMs) : null;
   let response;
@@ -13680,10 +13779,13 @@ async function postJson(url, payload, options = {}){
     error.status = response.status;
     throw error;
   }
+  playValCompletionCue({cue:completionCue,requestStartedAt});
   return data;
 }
 
-async function postFormData(url, payload){
+async function postFormData(url, payload, options = {}){
+  const completionCue = shouldPlayValCompletionCue(url, options);
+  const requestStartedAt = Date.now();
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'same-origin',
@@ -13699,6 +13801,7 @@ async function postFormData(url, payload){
     error.status = response.status;
     throw error;
   }
+  playValCompletionCue({cue:completionCue,requestStartedAt});
   return data;
 }
 
@@ -16935,6 +17038,8 @@ async function prepareValFirstLook(){
   valFirstLookActivity = 'Starting your private, review-only First Look.';
   renderValFirstLookConversation({state:'preparing'});
   try{
+    const completionCue = captureValCompletionCue();
+    const requestStartedAt = Date.now();
     const sessionId = await ensureValWitnessingSession();
     const response = await fetch('/api/val/first-look/prepare',{
       method:'POST',
@@ -16967,6 +17072,7 @@ async function prepareValFirstLook(){
         valFirstLookRun = event.run || null;
         valFirstLookActivity = event.reused ? 'Your existing First Look is ready.' : 'Your First Look receipt is ready.';
         completed = true;
+        playValCompletionCue({cue:completionCue,requestStartedAt});
         renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
         hydrateValDrawer();
         return;
@@ -16999,6 +17105,8 @@ async function importValFirstLookKrisp(){
   };
   renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
   try{
+    const completionCue = captureValCompletionCue();
+    const requestStartedAt = Date.now();
     const response=await fetch('/api/val/first-look/krisp-import',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
     if(!response.ok||!response.body){
       const body=await response.text();
@@ -17023,6 +17131,7 @@ async function importValFirstLookKrisp(){
       if(event.type==='complete'){
         valFirstLookKrispVerification=event.source||null;
         completed=true;
+        playValCompletionCue({cue:completionCue,requestStartedAt});
         return;
       }
       if(event.type==='error')throw new Error(event.message||'Krisp could not finish the 30-day intake.');
@@ -17060,6 +17169,8 @@ async function prepareValFirstLookCandidateMap(){
   valFirstLookCandidateActivity='Starting a private, review-only proposed map.';
   renderValFirstLookConversation({state:'mapping',run:valFirstLookRun});
   try{
+    const completionCue = captureValCompletionCue();
+    const requestStartedAt = Date.now();
     const response=await fetch('/api/val/first-look/'+encodeURIComponent(valFirstLookRun.id)+'/candidates/prepare',{
       method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'
     });
@@ -17088,6 +17199,7 @@ async function prepareValFirstLookCandidateMap(){
         valFirstLookCandidateAnalysis=event.candidateAnalysis||valFirstLookCandidateAnalysis;
         valFirstLookCandidateActivity=event.reused?'Your proposed map is ready to review.':'Your proposed map is ready to review.';
         completed=true;
+        playValCompletionCue({cue:completionCue,requestStartedAt});
         renderValFirstLookConversation({state:'complete',run:valFirstLookRun});
         return;
       }

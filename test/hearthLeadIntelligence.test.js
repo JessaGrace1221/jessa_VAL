@@ -1371,8 +1371,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=krisp-client-recovery-20260716/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=krisp-client-recovery-20260716/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=completion-cue-20260716/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=completion-cue-20260716/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {
@@ -2588,6 +2588,23 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);
   assert.match(hearthCss, /\.val-first-look-progress/);
   assert.match(hearthCss, /\.val-first-look-source-grid/);
+});
+
+test('VAL completion cue is user-gesture gated and quiet for background work', () => {
+  assert.match(hearthHtml, /data-completion-sound-toggle/);
+  assert.match(hearthCss, /\.completion-sound-toggle/);
+  assert.match(hearthJs, /function playValCompletionCue/);
+  assert.match(hearthJs, /VAL_COMPLETION_SOUND_MIN_WAIT_MS = 650/);
+  assert.match(hearthJs, /VAL_COMPLETION_SOUND_THROTTLE_MS = 1600/);
+  assert.match(hearthJs, /document\.addEventListener\('pointerdown', noteValCompletionUserGesture, true\)/);
+  assert.match(hearthJs, /function valCompletionSoundIsBackgroundRequest/);
+  assert.match(hearthJs, /hearth\\\/build-packet/);
+  assert.match(hearthJs, /ready-for-you\\\/build/);
+  assert.match(hearthJs, /const completionCue = shouldPlayValCompletionCue\(url, options\)/);
+  assert.match(hearthJs, /playValCompletionCue\(\{cue:completionCue,requestStartedAt\}\)/);
+  const firstLook = hearthJs.slice(hearthJs.indexOf('async function prepareValFirstLook'), hearthJs.indexOf('async function decideValFirstLookCandidate'));
+  assert.match(firstLook, /const completionCue = captureValCompletionCue\(\)/);
+  assert.match(firstLook, /playValCompletionCue\(\{cue:completionCue,requestStartedAt\}\)/);
 });
 
 test('First Look turns approved source scans into reviewable relationship and project packets before delivery', () => {
