@@ -207,6 +207,61 @@ const VAL_WITNESSING_TURN_RESPONSE_FORMAT = {
     }
   }
 };
+const FIRST_LOOK_CANDIDATE_PACKET_RESPONSE_FORMAT = {
+  type:'json_schema',
+  name:'first_look_candidate_packet',
+  strict:true,
+  schema:{
+    type:'object',
+    additionalProperties:false,
+    required:['relationships','projects','witnessing_coverage','routing_rule_coverage'],
+    properties:{
+      relationships:{
+        type:'array',maxItems:3,
+        items:{
+          type:'object',additionalProperties:false,
+          required:['name','kind','email','organization','note','confidence','evidence_signal_ids'],
+          properties:{
+            name:{type:'string',maxLength:120},kind:{type:'string',maxLength:32},email:{type:'string',maxLength:180},organization:{type:'string',maxLength:120},note:{type:'string',maxLength:160},confidence:{type:'string',maxLength:32},
+            evidence_signal_ids:{type:'array',maxItems:3,items:{type:'string',maxLength:180}}
+          }
+        }
+      },
+      projects:{
+        type:'array',maxItems:3,
+        items:{
+          type:'object',additionalProperties:false,
+          required:['name','note','confidence','known_people','owner_relationship_name','evidence_signal_ids'],
+          properties:{
+            name:{type:'string',maxLength:120},note:{type:'string',maxLength:160},confidence:{type:'string',maxLength:32},owner_relationship_name:{type:'string',maxLength:120},
+            known_people:{type:'array',maxItems:4,items:{type:'string',maxLength:120}},
+            evidence_signal_ids:{type:'array',maxItems:3,items:{type:'string',maxLength:180}}
+          }
+        }
+      },
+      witnessing_coverage:{
+        type:'array',maxItems:1,
+        items:{
+          type:'object',additionalProperties:false,
+          required:['signal_id','relationship_names','project_names','note'],
+          properties:{
+            signal_id:{type:'string',maxLength:180},relationship_names:{type:'array',maxItems:4,items:{type:'string',maxLength:120}},project_names:{type:'array',maxItems:4,items:{type:'string',maxLength:120}},note:{type:'string',maxLength:160}
+          }
+        }
+      },
+      routing_rule_coverage:{
+        type:'array',maxItems:1,
+        items:{
+          type:'object',additionalProperties:false,
+          required:['rule_id','relationship_names','project_names','protected_context','note'],
+          properties:{
+            rule_id:{type:'string',maxLength:180},relationship_names:{type:'array',maxItems:4,items:{type:'string',maxLength:120}},project_names:{type:'array',maxItems:4,items:{type:'string',maxLength:120}},protected_context:{type:'boolean'},note:{type:'string',maxLength:160}
+          }
+        }
+      }
+    }
+  }
+};
 const GOALL_PIPELINE_MINIMUM = Number(process.env.GOALL_PIPELINE_MINIMUM) || 300;
 const GOALL_COMPANY_EMPLOYEE_MINIMUM = Number(process.env.GOALL_COMPANY_EMPLOYEE_MINIMUM) || 10;
 const GOALL_ARIZONA_CITIES = [
@@ -15696,18 +15751,18 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     {id:'krisp',label:'Krisp transcripts',why:'This packet uses exact Krisp meeting receipts to surface recurring people and work without rewriting the source material.',nextStep:'Its source-backed candidates will be merged with the other packets before the executive sees a review map.'}
   ];
   const steps=[];
-  const answerChunks=chunk(witnessingAnswers,2);
+  const answerChunks=chunk(witnessingAnswers,1);
   for(const [index,answers] of answerChunks.entries()){
     steps.push({
-      id:'witnessing-'+(index+1),source:'witnessing',label:'Witnessing Session '+(index+1)+' of '+answerChunks.length,maxTokens:700,
+      id:'witnessing-'+(index+1),source:'witnessing',label:'Witnessing Session '+(index+1)+' of '+answerChunks.length,maxTokens:900,
       inputCount:answers.length,
-      objective:'Account for these two executive answers without flattening their meaning or repeating their language.',
+      objective:'Account for this executive answer without flattening its meaning or repeating its language.',
       why:'Each answer is handled independently so a long personal answer cannot exhaust the response needed to create a trustworthy review map.',
       nextStep:'Code will merge this answer receipt with the other Witnessing packets, then guide source interpretation without asking the model to repeat the full session.',
       system:[
         sharedSystem,
-        'You are reading at most two Witnessing answers. Return exactly one witnessing_coverage receipt for each supplied answer.',
-        'Never quote or paraphrase the answer. Keep every note under 160 characters. Propose no more than four candidates total.',
+        'You are reading exactly one Witnessing answer. Return exactly one witnessing_coverage receipt for it.',
+        'Never quote or paraphrase the answer. Keep every note under 160 characters. Propose no more than three candidates total.',
         'Only name a relationship or project when the executive explicitly names it or directly assigns it. Use the supplied Witnessing signal ID for every candidate.',
         'Protected people and context are coverage only unless the executive explicitly directs VAL to create a relationship or project.'
       ].join('\n'),
@@ -15721,18 +15776,18 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
       }
     });
   }
-  const routingChunks=chunk(routingRules,3);
+  const routingChunks=chunk(routingRules,1);
   for(const [index,rules] of routingChunks.entries()){
     steps.push({
-      id:'routing-'+(index+1),source:'witnessing',label:'Routing instructions '+(index+1)+' of '+routingChunks.length,maxTokens:650,
+      id:'routing-'+(index+1),source:'witnessing',label:'Routing instructions '+(index+1)+' of '+routingChunks.length,maxTokens:800,
       inputCount:rules.length,
       objective:'Turn these explicit routing instructions into compact, reviewable project and relationship guidance.',
       why:'Each routing instruction is kept separate so its scope, protected context, and intended destination remain clear.',
       nextStep:'Code will verify every rule has a coverage receipt, then use the rules to interpret the matching Gmail, Calendar, Drive, and Krisp signals.',
       system:[
         sharedSystem,
-        'You are reading at most three explicit routing instructions. Return exactly one routing_rule_coverage receipt for each supplied rule.',
-        'Never quote or paraphrase a rule. Keep every note under 160 characters. Propose no more than four candidates total.',
+        'You are reading exactly one explicit routing instruction. Return exactly one routing_rule_coverage receipt for it.',
+        'Never quote or paraphrase a rule. Keep every note under 160 characters. Propose no more than three candidates total.',
         'Use only direct relationship or project targets named in the rule. If a rule is about children, a private person, or sensitive context, set protected_context true and do not create a relationship from the protected name alone.'
       ].join('\n'),
       user:{
@@ -16198,7 +16253,7 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   const priorAnalysis=await getValFirstLookCandidateAnalysis(run.id);
-  const generationVersion='first_look_packet_map_v3';
+  const generationVersion='first_look_packet_map_v4';
   const priorSteps=priorAnalysis?.sourceReceipt?.mapBuild?.version===generationVersion
     ? priorAnalysis.sourceReceipt.mapBuild.steps||[]
     : [];
@@ -16233,15 +16288,27 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
     }else{
       await onProgress({type:'progress',source:step.source,state:'reading',message:step.label+': '+step.objective,count:step.inputCount});
       try{
-        const raw=await callValModel({
-          system:step.system,
-          user:JSON.stringify(step.user),
-          maxTokens:step.maxTokens,
-          temperature:0.15,
-          json:true,
-          timeoutMs:90000
-        });
-        payload=firstLookCandidateModelPayload(parseModelJson(raw));
+        const preparePacket=async({maxTokens,retry=false}={})=>{
+          const raw=await callValModel({
+            system:retry
+              ? [step.system,'The prior response did not finish. Return only the strict JSON object with empty arrays for anything unsupported. Do not explain the work.'].join('\n')
+              : step.system,
+            user:JSON.stringify(step.user),
+            maxTokens,
+            temperature:0.15,
+            json:true,
+            jsonSchema:FIRST_LOOK_CANDIDATE_PACKET_RESPONSE_FORMAT,
+            timeoutMs:90000
+          });
+          return firstLookCandidateModelPayload(parseModelJson(raw));
+        };
+        try{
+          payload=await preparePacket({maxTokens:step.maxTokens});
+        }catch(error){
+          if(!/incomplete|max_output_tokens|json/i.test(String(error.message||'')))throw error;
+          await onProgress({type:'progress',source:step.source,state:'reading',message:step.label+' needs one compact retry. VAL is keeping the completed packets intact.',count:step.inputCount});
+          payload=await preparePacket({maxTokens:Math.max(Number(step.maxTokens||0)*2,1600),retry:true});
+        }
       }catch(error){
         completedSteps.push({id:step.id,source:step.source,label:step.label,status:'failed',inputCount:step.inputCount,error:firstLookError(error),completedAt:new Date().toISOString()});
         await persistStepProgress('processing');

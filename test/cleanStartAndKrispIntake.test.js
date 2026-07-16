@@ -100,12 +100,14 @@ test('First Look builds the proposed map through bounded, resumable evidence pac
   assert.match(helper, /id:'calendar'/);
   assert.match(helper, /id:'drive'/);
   assert.match(helper, /id:'krisp'/);
-  assert.match(helper, /maxTokens:700/);
-  assert.match(helper, /maxTokens:650/);
+  assert.match(helper, /maxTokens:900/);
+  assert.match(helper, /maxTokens:800/);
   assert.match(helper, /maxTokens:900/);
 
   const builder = server.slice(server.indexOf('async function buildValFirstLookCandidateMap'), server.indexOf('function firstLookDeliveryProfileCandidate'));
-  assert.match(builder, /generationVersion='first_look_packet_map_v3'/);
+  assert.match(builder, /generationVersion='first_look_packet_map_v4'/);
+  assert.match(builder, /FIRST_LOOK_CANDIDATE_PACKET_RESPONSE_FORMAT/);
+  assert.match(builder, /needs one compact retry/);
   assert.match(builder, /prior\?\.status==='complete'/);
   assert.match(builder, /Completed packets are saved\. Try again to resume here\./);
   assert.match(builder, /await persistStepProgress\('processing'\)/);
