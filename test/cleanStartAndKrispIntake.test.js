@@ -63,9 +63,9 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
   assert.match(server, /source:'oauth'/);
   assert.match(server, /source:legacyToken\?'service_credential':'none'/);
   assert.match(server, /firstLookPacketCoverage/);
-  assert.match(server, /syncKrispTranscriptsForLastThirtyDays\(\{days:30,onProgress\}\)/);
+  assert.match(server, /syncKrispTranscriptsForLastThirtyDays\(\{days:30,onProgress:write\}\)/);
   assert.match(server, /krispThirtyDayWindow\(30\)/);
-  assert.match(server, /This is the last 30 days of Krisp material/);
+  assert.match(server, /Krisp is listing meeting transcripts from the last/);
 });
 
 test('First Look treats every Witnessing answer as source evidence and blocks a partial proposed map', () => {
@@ -112,8 +112,20 @@ test('First Look builds the proposed map through bounded, resumable evidence pac
   assert.match(builder, /Completed packets are saved\. Try again to resume here\./);
   assert.match(builder, /await persistStepProgress\('processing'\)/);
   assert.match(builder, /const storedAnalysis=await persistStepProgress\('complete'\)/);
+  assert.doesNotMatch(builder, /syncKrispTranscriptsForLastThirtyDays/);
   assert.doesNotMatch(builder, /maxTokens:5200/);
   assert.match(server, /on conflict \(run_id\) do update set/);
+});
+
+test('First Look proposed maps reuse saved Krisp receipts instead of reopening Krisp', () => {
+  const reader = server.slice(server.indexOf('async function readValFirstLookCandidateSources'), server.indexOf('function normalizeValFirstLookCandidateMap'));
+  const krispStart = reader.indexOf("await report('krisp','reading'");
+  const krispPacket = reader.slice(krispStart, reader.indexOf('  return {',krispStart));
+  assert.match(server, /async function readStoredFirstLookKrispSource/);
+  assert.match(krispPacket, /Reusing the Krisp receipt already preserved during your First Look/);
+  assert.match(krispPacket, /readStoredFirstLookKrispSource\(\{run,window:krispThirtyDayWindow\(30\)\}\)/);
+  assert.doesNotMatch(krispPacket, /krispMcp\.discoverTranscriptReceipts/);
+  assert.doesNotMatch(krispPacket, /status:'unavailable'/);
 });
 
 test('First Look preserves explicit project, relationship, and protected-context routing instructions from Witnessing', () => {

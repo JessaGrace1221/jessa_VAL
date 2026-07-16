@@ -15970,6 +15970,64 @@ function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null,rout
     }
   };
 }
+function firstLookStoredKrispTranscriptReceipt(transcript={}){
+  const metadata=transcript.metadata&&typeof transcript.metadata==='object'?transcript.metadata:{};
+  const rawParticipants=Array.isArray(metadata.attendees)?metadata.attendees:(Array.isArray(metadata.participants)?metadata.participants:[]);
+  const participants=rawParticipants
+    .map(person=>String(person?.name||person?.email||person||'').replace(/\s+/g,' ').trim())
+    .filter(Boolean)
+    .slice(0,12);
+  return {
+    id:String(transcript.id||''),
+    title:String(transcript.title||metadata.title||'Untitled meeting').slice(0,220),
+    startedAt:transcript.createdAt||metadata.timestamp||metadata.createdAt||'',
+    participants,
+    snippet:String(metadata.krispSummary||metadata.summary||'').replace(/\s+/g,' ').trim().slice(0,280)
+  };
+}
+async function readStoredFirstLookKrispSource({run,window}={}){
+  const snapshotSource=(run?.snapshot?.sources||[]).find(source=>source?.id==='krisp')||{};
+  const krispWindow=krispThirtyDayWindow(30);
+  const sourceWindow={...krispWindow,...(window||{})};
+  const stored=(await recentTranscripts(3650).catch(()=>[]))
+    .filter(transcript=>{
+      const metadata=transcript?.metadata||{};
+      return metadata.provider==='krisp'||metadata.source==='krisp_mcp'||metadata.krispNative===true;
+    })
+    .filter(transcript=>{
+      const occurredAt=new Date(transcript.createdAt||transcript.metadata?.timestamp||0).getTime();
+      const startedAt=new Date(sourceWindow.start||0).getTime();
+      const endedAt=new Date(sourceWindow.end||Date.now()).getTime();
+      return !Number.isFinite(occurredAt)||!Number.isFinite(startedAt)||!Number.isFinite(endedAt)||(occurredAt>=startedAt&&occurredAt<=endedAt);
+    })
+    .slice(0,50)
+    .map(firstLookStoredKrispTranscriptReceipt)
+    .filter(record=>record.id);
+  if(stored.length){
+    return {
+      source:{
+        id:'krisp',label:'Krisp transcripts',status:'complete',window:sourceWindow,
+        counts:{reviewed:stored.length,imported:stored.length},
+        records:stored.map(record=>firstLookCandidateSourceRecord('krisp',record)),error:'',
+        detail:'Reusing '+stored.length+' exact Krisp transcript receipt'+(stored.length===1?'':'s')+' preserved during your First Look.'
+      },
+      intake:{version:'first_look_krisp_receipt_reuse_v1',window:sourceWindow,found:stored.length,imported:stored.length,alreadyPresent:0,withoutTranscriptText:0,failed:0,records:stored,status:'complete',checkedAt:new Date().toISOString()}
+    };
+  }
+  const receiptRecords=(Array.isArray(snapshotSource.examples)?snapshotSource.examples:[])
+    .map(firstLookKrispReceipt)
+    .map(record=>firstLookCandidateSourceRecord('krisp',record));
+  return {
+    source:{
+      id:'krisp',label:'Krisp transcripts',status:'complete',window:sourceWindow,
+      counts:{reviewed:receiptRecords.length,imported:0},records:receiptRecords,error:'',
+      detail:receiptRecords.length
+        ? 'Reusing '+receiptRecords.length+' Krisp meeting receipt'+(receiptRecords.length===1?'':'s')+' from the saved First Look. Exact transcript text was not imported for this map.'
+        : 'No Krisp meeting receipt was preserved in this First Look. VAL will continue without a transcript packet.'
+    },
+    intake:{version:'first_look_krisp_receipt_reuse_v1',window:sourceWindow,found:receiptRecords.length,imported:0,alreadyPresent:0,withoutTranscriptText:0,failed:0,records:[],status:'complete',checkedAt:new Date().toISOString()}
+  };
+}
 async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={}){
   const originalWindow=run?.snapshot?.window||{};
   const start=new Date(originalWindow.start||run?.windowStart||'');
@@ -16034,21 +16092,13 @@ async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={})
     await report('drive','unavailable','Drive and Docs could not be read for the proposed map.',{count:0,error:firstLookError(error)});
   }
 
-  await report('krisp','reading','Checking the available Krisp meeting receipts.');
-  try{
-    if(!(await krispMcp.isConfigured())) throw new Error('Krisp is not connected.');
-    const krispWindow=krispThirtyDayWindow(30);
-    const discovery=await withTimeout(krispMcp.discoverTranscriptReceipts({limit:50,from:krispWindow.start,to:krispWindow.end}),65000,'Krisp transcript check timed out before it returned a receipt');
-    const records=(discovery.documents||[]).map(firstLookKrispReceipt).map(record=>firstLookCandidateSourceRecord('krisp',record));
-    sources.push({id:'krisp',label:'Krisp transcripts',status:discovery.status||'complete',window:krispWindow,counts:{reviewed:records.length},records,error:''});
-    await report('krisp',discovery.status||'complete',(discovery.detail||('Read '+records.length+' Krisp receipt'+(records.length===1?'':'s')+'.'))+' This is the last 30 days of Krisp material.',{count:records.length});
-  }catch(error){
-    sources.push({id:'krisp',label:'Krisp transcripts',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
-    await report('krisp','unavailable','Krisp could not be read for the proposed map.',{count:0,error:firstLookError(error)});
-  }
+  await report('krisp','reading','Reusing the Krisp receipt already preserved during your First Look.');
+  const savedKrisp=await readStoredFirstLookKrispSource({run,window:krispThirtyDayWindow(30)});
+  sources.push(savedKrisp.source);
+  await report('krisp','complete',savedKrisp.source.detail,{count:savedKrisp.source.counts.reviewed});
   return {
     version:'val_first_look_candidate_analysis_v1',reviewOnly:true,window,sources,witnessing,
-    routingRules:firstLookWitnessingRoutingRules(witnessing),
+    routingRules:firstLookWitnessingRoutingRules(witnessing),krispIntake:savedKrisp.intake,
     createdAt:new Date().toISOString(),noDownstreamWrites:true
   };
 }
@@ -16241,16 +16291,8 @@ function firstLookRoutingRuleCoverage({modelPayload={},analysis={},candidates=[]
 }
 async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   if(!(await resolveOpenAIKey()))throw new Error('Connect OpenAI before VAL can build the proposed map.');
-  let krispIntake=null;
-  try{
-    krispIntake=await syncKrispTranscriptsForLastThirtyDays({days:30,onProgress});
-  }catch(error){
-    krispIntake={version:'krisp_thirty_day_intake_v1',window:krispThirtyDayWindow(30),found:0,imported:0,alreadyPresent:0,withoutTranscriptText:0,failed:1,records:[],failures:[{reason:firstLookError(error)}],status:'unavailable',checkedAt:new Date().toISOString()};
-    await onProgress({type:'progress',source:'krisp',state:'unavailable',message:'Krisp could not be imported yet. VAL will continue with the other approved sources.',error:firstLookError(error)});
-  }
   const analysis=await readValFirstLookCandidateSources({run,onProgress});
-  analysis.krispIntake=krispIntake;
-  analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake,routingRules:analysis.routingRules});
+  analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake:analysis.krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   const priorAnalysis=await getValFirstLookCandidateAnalysis(run.id);
   const generationVersion='first_look_packet_map_v4';
