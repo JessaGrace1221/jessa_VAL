@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
@@ -61,13 +62,43 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
 
 test('First Look treats every Witnessing answer as source evidence and blocks a partial proposed map', () => {
   assert.match(server, /function firstLookWitnessingCoverage/);
+  assert.match(server, /function firstLookWitnessingRoutingRules/);
+  assert.match(server, /function firstLookRoutingRuleCoverage/);
   assert.match(server, /VAL did not account for every Witnessing answer/);
+  assert.match(server, /VAL did not account for every explicit First Look routing instruction/);
   assert.match(server, /VAL did not prepare review packets for every relationship or project you explicitly named/);
+  assert.match(server, /routing_rule_coverage/);
   assert.match(server, /analysis\.witnessingCoverage=firstLookWitnessingCoverage/);
+  assert.match(server, /analysis\.routingRuleCoverage=firstLookRoutingRuleCoverage/);
   assert.match(server, /answersAccountedFor/);
   assert.match(server, /relationship_names/);
   assert.match(server, /async function listTeachValWitnessingSourceMemory/);
   assert.match(server, /const witnessAnswers=await listTeachValWitnessingSourceMemory/);
   assert.match(contract, /Witnessing Completeness Gate/);
   assert.match(contract, /must never silently omit a user-named relationship or project/i);
+});
+
+test('First Look preserves explicit project, relationship, and protected-context routing instructions from Witnessing', () => {
+  const helper = server.match(/function firstLookWitnessingRoutingRules[\s\S]*?(?=function firstLookPacketCoverage)/)?.[0] || '';
+  assert.ok(helper, 'First Look routing extraction should be available for regression coverage.');
+  const context = {stableKey:value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')};
+  vm.runInNewContext(`${helper}\nresult={firstLookWitnessingRoutingRules};`, context);
+  const instructions = [
+    'Any emails that have @goallagency.com or @goallprogram.com are part of the GOALL project',
+    'Michele Julian has multiple email addresses and is one of my most important people',
+    "Anything from a school district is about my children and should be added to a 'School' project",
+    'Anything from @westwoodintl.com and @hellohopemakers.com are also their own projects',
+    'Anything about non-profits is most certainly a Frisson Consulting project',
+    'Aric Soyring is a very important contact and has multiple emails',
+    "Anything in my Google Docs relating to Heartfelt Ai, Grace Intelligence, Bespoke Ai or VAL belongs in a project called 'Goddess of Everything'",
+    'Anything with the names Ellington, Langston, Winston, or Hargrove are related to my children',
+    "Anything from my lawyer Valen goes in a project called 'Court'"
+  ].join('\n');
+  const rules = context.result.firstLookWitnessingRoutingRules([{id:'connect-1', text:instructions}]);
+  assert.equal(rules.length, 9);
+  assert.ok(rules.every(rule => rule.sourceSignalId === 'witness:connect-1'));
+  assert.match(rules.map(rule => rule.instruction).join('\n'), /GOALL project/);
+  assert.match(rules.map(rule => rule.instruction).join('\n'), /Michele Julian/);
+  assert.match(rules.map(rule => rule.instruction).join('\n'), /Goddess of Everything/);
+  assert.match(rules.map(rule => rule.instruction).join('\n'), /Court/);
 });

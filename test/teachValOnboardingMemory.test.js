@@ -505,7 +505,8 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/function partnershipFallbackFrame/);
   assert.match(server,/Live observation model unavailable\. VAL will not use canned observer frames\./);
   assert.match(server,/return nextCard\.visibleQuestion \|\| ''/);
-  assert.match(server,/recovering thin witness response for card/);
+  assert.match(server,/repairing thin witness response for card/);
+  assert.match(server,/using source-grounded recovery for card/);
   assert.match(server,/let RUNTIME_OPENAI_KEY = ''/);
   assert.match(server,/let RUNTIME_OPENAI_MODEL = ''/);
   assert.match(server,/app\.post\('\/api\/dev\/openai-runtime'/);
@@ -644,6 +645,7 @@ test('Witnessing Session bounds model work to one responsive conversation turn',
   assert.match(turn,/roughly 90 to 160 words/);
   assert.match(turn,/living_executive_graph/);
   assert.match(turn,/normalizePartnershipWitnessResponse/);
+  assert.match(turn,/repairPartnershipWitnessJson/);
   assert.match(turn,/fallbackPartnershipProtocolWitness\(\{card,rawResponse,graph\}\)/);
   assert.match(route,/generatePartnershipProtocolTurn\(\{card,rawResponse,priorImports\}\)/);
   assert.doesNotMatch(route,/composePartnershipProtocolNextQuestion/);

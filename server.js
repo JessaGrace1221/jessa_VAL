@@ -4415,7 +4415,9 @@ async function repairPartnershipWitnessJson({raw='',card,rawResponse,graph,prior
     'Use only the current answer, living executive graph, evidence chain, and current state.',
     'Do not use canned reassurance.',
     'Do not summarize.',
-    'Say one specific thing VAL noticed that another AI could not reuse for a different person.',
+    'Write three or four calm, specific sentences across two or three short lines, followed only by a direct accuracy check. Aim for roughly 90 to 160 words.',
+    'Say one specific thing VAL noticed that another AI could not reuse for a different person. Name at least two exact words, ideas, or a short phrase from the current answer.',
+    'Explain why that pattern matters for how VAL should support, protect, or prioritize for this person. Do not restate the answer sentence by sentence.',
     'If you name a question, make clear it is not for the user to answer now. VAL will look for evidence as the process continues.',
     'Vary that clarification each time. Do not reuse the same sentence shape across movements.',
     'Use direct second person language.',
@@ -4798,8 +4800,16 @@ async function generatePartnershipProtocolTurn({card,rawResponse,priorImports=[]
       },graph,priorImports,rawResponse);
     }catch(witnessError){
       if(!/Live witness response (was too generic|returned no lines)\./.test(String(witnessError.message||''))) throw witnessError;
-      console.warn('[Witnessing turn] recovering thin witness response for card',card.id,'from the current answer.');
-      witness=fallbackPartnershipProtocolWitness({card,rawResponse,graph});
+      console.warn('[Witnessing turn] repairing thin witness response for card',card.id,'from the current answer.');
+      try{
+        const repaired=await repairPartnershipWitnessJson({
+          raw:JSON.stringify(parsed),card,rawResponse,graph,priorImports,evidenceChain,currentState
+        });
+        witness=normalizePartnershipWitnessResponse(repaired,graph,priorImports,rawResponse);
+      }catch(repairError){
+        console.warn('[Witnessing turn] using source-grounded recovery for card',card.id,':',repairError.message);
+        witness=fallbackPartnershipProtocolWitness({card,rawResponse,graph});
+      }
     }
     if(!witness.next_question) witness.next_question=nextCard?.visibleQuestion||'';
     return {graph,witness};
@@ -15666,7 +15676,28 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
   await report(result.failed?'partial':'complete',outcome,{count:result.imported,receipt:result});
   return result;
 }
-function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null}={}){
+function firstLookWitnessingRoutingRules(witnessing=[]){
+  const rules=[];
+  const seen=new Set();
+  for(const item of Array.isArray(witnessing)?witnessing:[]){
+    const text=String(item?.text||'').trim();
+    if(!text)continue;
+    const fragments=text.split(/\n+|(?<=[.!?])\s+/).map(value=>value.replace(/\s+/g,' ').trim()).filter(Boolean);
+    for(const instruction of fragments){
+      if(!/\b(any(?:thing| emails?)|all emails?|belongs?|belongs? to|part of|project|important (?:person|contact)|multiple emails?|school district|non[- ]?profit|children|lawyer|google docs?|document)\b/i.test(instruction))continue;
+      const key=stableKey(instruction.toLowerCase());
+      if(!key||seen.has(key))continue;
+      seen.add(key);
+      rules.push({
+        id:'routing:'+String(item.id||uuid('witness')).replace(/[^a-z0-9_-]/gi,'')+':'+(rules.length+1),
+        sourceSignalId:'witness:'+String(item.id||''),
+        instruction
+      });
+    }
+  }
+  return rules.slice(0,40);
+}
+function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null,routingRules=[]}={}){
   const source=(id)=>sources.find(item=>item.id===id)||{};
   return {
     version:'first_look_packet_coverage_v1',
@@ -15676,6 +15707,7 @@ function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null}={})
       witnessing:{
         read:witnessing.length,
         sourceTruth:'each answer is retained as direct Witnessing evidence',
+        routingRulesRead:Array.isArray(routingRules)?routingRules.length:0,
         packets:['val_foundation','stewardship','project_managers','chief_of_staff']
       },
       gmail:{read:Number(source('gmail').counts?.reviewed||0),packets:['executive_inbox','stewardship','project_managers','chief_of_staff']},
@@ -15699,7 +15731,7 @@ async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={})
   const witnessing=imports.filter(item=>String(item.category||'').startsWith('witness_')).map(item=>({
     id:item.id,
     label:String(item.category||'Witnessing answer').replace(/^witness_/,'').replace(/_/g,' '),
-    text:String(item.rawResponse||item.raw_response||'').replace(/\s+/g,' ').trim().slice(0,5000),
+    text:String(item.rawResponse||item.raw_response||'').trim().slice(0,5000),
     createdAt:item.createdAt||item.created_at||''
   })).filter(item=>item.text);
   await report('witnessing','complete','Read '+witnessing.length+' Witnessing answer'+(witnessing.length===1?'':'s')+'.',{count:witnessing.length});
@@ -15761,7 +15793,11 @@ async function readValFirstLookCandidateSources({run,onProgress=async()=>{}}={})
     sources.push({id:'krisp',label:'Krisp transcripts',status:'unavailable',counts:{reviewed:0},records:[],error:firstLookError(error)});
     await report('krisp','unavailable','Krisp could not be read for the proposed map.',{count:0,error:firstLookError(error)});
   }
-  return {version:'val_first_look_candidate_analysis_v1',reviewOnly:true,window,sources,witnessing,createdAt:new Date().toISOString(),noDownstreamWrites:true};
+  return {
+    version:'val_first_look_candidate_analysis_v1',reviewOnly:true,window,sources,witnessing,
+    routingRules:firstLookWitnessingRoutingRules(witnessing),
+    createdAt:new Date().toISOString(),noDownstreamWrites:true
+  };
 }
 function normalizeValFirstLookCandidateMap({modelPayload={},analysis={}}={}){
   const data=firstLookCandidatePromptReceipt({sources:analysis.sources||[],witnessing:analysis.witnessing||[]});
@@ -15896,6 +15932,60 @@ function firstLookWitnessingCoverage({modelPayload={},analysis={},candidates=[]}
     })
   };
 }
+function firstLookRoutingRuleCoverage({modelPayload={},analysis={},candidates=[]}={}){
+  const expected=Array.isArray(analysis.routingRules)?analysis.routingRules:[];
+  if(!expected.length)return {version:'first_look_routing_rule_coverage_v1',rulesRead:0,rulesAccountedFor:0,rules:[]};
+  const supplied=Array.isArray(modelPayload.routing_rule_coverage)?modelPayload.routing_rule_coverage:[];
+  const coverageById=new Map(supplied.map(item=>[String(item?.rule_id||item?.ruleId||'').trim(),item]));
+  const candidateFor=(type,name,signalId)=>(Array.isArray(candidates)?candidates:[]).some(candidate=>candidate.type===type
+    && firstLookCandidateNamesMatch(candidate.payload?.proposedName,name)
+    && (candidate.sourceEvidence||[]).some(item=>item.id===signalId));
+  for(const rule of expected){
+    if(coverageById.has(rule.id))continue;
+    const instruction=firstLookCandidateComparableText(rule.instruction);
+    const linked=(Array.isArray(candidates)?candidates:[]).filter(candidate=>{
+      if(!(candidate.sourceEvidence||[]).some(item=>item.id===rule.sourceSignalId))return false;
+      const name=firstLookCandidateComparableText(candidate.payload?.proposedName||'');
+      return name&&instruction.includes(name);
+    });
+    const requiresProposal=/\b(project|important (?:person|contact)|key relationship|understand first)\b/i.test(rule.instruction);
+    if(!linked.length&&requiresProposal)continue;
+    coverageById.set(rule.id,{
+      relationship_names:linked.filter(candidate=>candidate.type==='relationship').map(candidate=>candidate.payload?.proposedName).filter(Boolean),
+      project_names:linked.filter(candidate=>candidate.type==='project').map(candidate=>candidate.payload?.proposedName).filter(Boolean),
+      protected_context:!requiresProposal&&/\b(child|children|private|sensitive)\b/i.test(rule.instruction),
+      note:'Recorded from the source-linked proposals prepared for this Witnessing instruction.'
+    });
+  }
+  const missing=expected.filter(rule=>!coverageById.has(rule.id));
+  if(missing.length)throw new Error('VAL did not account for every explicit First Look routing instruction. No proposed map was saved; please try the First Look again.');
+  const missingProposals=[];
+  for(const rule of expected){
+    const coverage=coverageById.get(rule.id)||{};
+    for(const name of Array.isArray(coverage.relationship_names)?coverage.relationship_names:[]){
+      if(!candidateFor('relationship',name,rule.sourceSignalId))missingProposals.push({type:'relationship',name,ruleId:rule.id});
+    }
+    for(const name of Array.isArray(coverage.project_names)?coverage.project_names:[]){
+      if(!candidateFor('project',name,rule.sourceSignalId))missingProposals.push({type:'project',name,ruleId:rule.id});
+    }
+  }
+  if(missingProposals.length)throw new Error('VAL did not prepare review packets for every relationship or project named in the First Look routing instructions. No proposed map was saved; please try the First Look again.');
+  return {
+    version:'first_look_routing_rule_coverage_v1',
+    rulesRead:expected.length,
+    rulesAccountedFor:expected.length,
+    rules:expected.map(rule=>{
+      const coverage=coverageById.get(rule.id)||{};
+      return {
+        id:rule.id,sourceSignalId:rule.sourceSignalId,instruction:rule.instruction,
+        relationshipNames:Array.isArray(coverage.relationship_names)?coverage.relationship_names.map(firstLookCandidateCleanName).filter(Boolean).slice(0,12):[],
+        projectNames:Array.isArray(coverage.project_names)?coverage.project_names.map(firstLookCandidateCleanName).filter(Boolean).slice(0,12):[],
+        protectedContext:!!coverage.protected_context,
+        note:String(coverage.note||'').replace(/\s+/g,' ').trim().slice(0,500)
+      };
+    })
+  };
+}
 async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   if(!(await resolveOpenAIKey()))throw new Error('Connect OpenAI before VAL can build the proposed map.');
   let krispIntake=null;
@@ -15907,7 +15997,7 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   }
   const analysis=await readValFirstLookCandidateSources({run,onProgress});
   analysis.krispIntake=krispIntake;
-  analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake});
+  analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   await onProgress({type:'progress',source:'reasoning',state:'reading',message:'Mapping the people and projects that repeat across your approved sources.'});
   const raw=await callValModel({
@@ -15920,12 +16010,14 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
       'Never return an email address unless it appears in the supplied source signal metadata. Never return a phone number in any field.',
       'A project needs a defined body of work, outcome, or ongoing coordination signal. Do not treat every subject line or meeting as a project.',
       'For every proposal return at least one exact signal ID from the supplied source signals. Keep notes factual, short, and useful for a user reviewing the proposal.',
-      'You must account for every Witnessing answer in witnessing_coverage. For each answer, list relationship_names and project_names only when the user explicitly framed them as a relationship or project VAL should understand, protect, or organize. For every listed name, return a matching proposal backed by that same Witnessing signal. Do not include the user themself, vague categories, or a name merely mentioned in passing.'
+      'You must account for every Witnessing answer in witnessing_coverage. For each answer, list relationship_names and project_names only when the user explicitly framed them as a relationship or project VAL should understand, protect, or organize. For every listed name, return a matching proposal backed by that same Witnessing signal. Do not include the user themself, vague categories, or a name merely mentioned in passing.',
+      'Explicit routing instructions are direct user guidance, not incidental prose. Account for every item in routing_rule_coverage. When an instruction names a project or an important relationship, prepare the corresponding proposal with that rule source signal. When it protects a child, private person, or other sensitive context, mark protected_context true and do not create a relationship record from the name alone.'
     ].join('\n'),
     user:JSON.stringify({
       task:'Prepare relationship candidates for Stewardship and project candidates for Project Managers.',
-      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}],witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only directly named relationships'],project_names:['only directly named projects'],note:''}]},
+      output:{relationships:[{name:'',kind:'person or organization',email:'',organization:'',note:'',confidence:'high|likely|needs_confirmation',evidence_signal_ids:['signal id']}],projects:[{name:'',note:'',confidence:'high|likely|needs_confirmation',known_people:['names'],owner_relationship_name:'',evidence_signal_ids:['signal id']}],witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only directly named relationships'],project_names:['only directly named projects'],note:''}],routing_rule_coverage:[{rule_id:'routing rule id',relationship_names:['direct relationship targets'],project_names:['direct project targets'],protected_context:false,note:''}]},
       witnessing_answers:analysis.witnessing.map(item=>({signal_id:'witness:'+item.id,label:item.label,text:item.text})),
+      routing_rules:analysis.routingRules,
       source_signals:promptData.promptSignals
     }),
     maxTokens:5200,
@@ -15936,6 +16028,7 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   const modelPayload=parseModelJson(raw);
   const candidates=normalizeValFirstLookCandidateMap({modelPayload,analysis});
   analysis.witnessingCoverage=firstLookWitnessingCoverage({modelPayload,analysis,candidates});
+  analysis.routingRuleCoverage=firstLookRoutingRuleCoverage({modelPayload,analysis,candidates});
   if(!candidates.length)throw new Error('VAL could not find a source-backed relationship or project proposal yet. The scan remains intact and no changes were made.');
   await onProgress({type:'progress',source:'witnessing',state:'complete',message:'Accounted for all '+analysis.witnessingCoverage.answersAccountedFor+' Witnessing answer'+(analysis.witnessingCoverage.answersAccountedFor===1?'':'s')+' before preparing the review map.',count:analysis.witnessingCoverage.answersAccountedFor});
   const storedAnalysis=await saveValFirstLookCandidateAnalysis({runId:run.id,status:'complete',sourceReceipt:analysis,completedAt:new Date().toISOString()});
