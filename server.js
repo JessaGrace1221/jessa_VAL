@@ -15666,10 +15666,13 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     signal_id:'witness:'+item.id,label:item.label,text:item.text
   }));
   const routingRules=Array.isArray(analysis.routingRules)?analysis.routingRules:[];
-  const executiveGuidance={
-    witnessing_answers:witnessingAnswers,
-    routing_rules:routingRules
+  const chunk=(items,size)=>{
+    const values=Array.isArray(items)?items:[];
+    const output=[];
+    for(let index=0;index<values.length;index+=size)output.push(values.slice(index,index+size));
+    return output;
   };
+  const sourceExecutiveGuidance={routing_rules:routingRules};
   const sharedSystem=[
     'You prepare one bounded First Look packet for an executive assistant. Return JSON only.',
     'This is review preparation, not an instruction to create or change any record, relationship, project, task, draft, memory, email, or calendar event.',
@@ -15679,6 +15682,7 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     'This map never creates an Executive Inbox item. Never return a phone number in any field.',
     'A relationship needs a direct person or organization signal. A project needs a defined outcome, body of work, or ongoing coordination signal. Do not treat every subject line, meeting, or document as a project.',
     'Each proposed relationship or project must cite one or more exact supplied signal IDs. Keep each note factual, brief, and useful for a human reviewing it.',
+    'Return no more than six total relationship and project candidates in any packet. Keep every candidate note under 160 characters and omit weak or duplicated signals.',
     'Return an email address only when it appears in supplied signal metadata.'
   ].join('\n');
   const candidateOutput={
@@ -15691,27 +15695,56 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
     {id:'drive',label:'Drive & Docs',why:'This packet identifies named work and organizations from documents without treating a file title as proof by itself.',nextStep:'Its source-backed candidates will be merged with relationship and transcript evidence before the executive sees a review map.'},
     {id:'krisp',label:'Krisp transcripts',why:'This packet uses exact Krisp meeting receipts to surface recurring people and work without rewriting the source material.',nextStep:'Its source-backed candidates will be merged with the other packets before the executive sees a review map.'}
   ];
-  const steps=[{
-    id:'witnessing',source:'witnessing',label:'Witnessing Session',maxTokens:1400,
-    inputCount:witnessingAnswers.length+routingRules.length,
-    objective:'Turn the executive\'s own words into explicit priorities, protected context, named relationships, named projects, and routing instructions.',
-    why:'This is the governing context for every later source packet. It keeps VAL from flattening personal priorities into generic CRM data.',
-    nextStep:'This packet will set the review coverage requirements and guide Gmail, Calendar, Drive, and Krisp interpretation.',
-    system:[
-      sharedSystem,
-      'You are reading the Witnessing packet. Account for every supplied Witnessing answer and every routing rule.',
-      'When the executive explicitly names a relationship or project VAL should understand, protect, or organize, prepare a matching candidate using that Witnessing signal ID.',
-      'When a rule protects children, private people, or sensitive context, mark protected_context true and do not create a relationship from the protected name alone.'
-    ].join('\n'),
-    user:{
-      task:'Prepare the Witnessing guidance packet for the First Look review map.',
-      objective:'Turn the executive\'s own words into direct, source-linked guidance for later packets.',
-      why:'The user must be able to see that every important instruction was understood before any proposal is shown.',
-      next_step:'Code will verify coverage, then pass this guidance to the Gmail, Calendar, Drive, and Krisp packet steps.',
-      output:{...candidateOutput,witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only explicitly named relationships'],project_names:['only explicitly named projects'],note:''}],routing_rule_coverage:[{rule_id:'routing rule id',relationship_names:['direct relationship targets'],project_names:['direct project targets'],protected_context:false,note:''}]},
-      ...executiveGuidance
-    }
-  }];
+  const steps=[];
+  const answerChunks=chunk(witnessingAnswers,2);
+  for(const [index,answers] of answerChunks.entries()){
+    steps.push({
+      id:'witnessing-'+(index+1),source:'witnessing',label:'Witnessing Session '+(index+1)+' of '+answerChunks.length,maxTokens:700,
+      inputCount:answers.length,
+      objective:'Account for these two executive answers without flattening their meaning or repeating their language.',
+      why:'Each answer is handled independently so a long personal answer cannot exhaust the response needed to create a trustworthy review map.',
+      nextStep:'Code will merge this answer receipt with the other Witnessing packets, then guide source interpretation without asking the model to repeat the full session.',
+      system:[
+        sharedSystem,
+        'You are reading at most two Witnessing answers. Return exactly one witnessing_coverage receipt for each supplied answer.',
+        'Never quote or paraphrase the answer. Keep every note under 160 characters. Propose no more than four candidates total.',
+        'Only name a relationship or project when the executive explicitly names it or directly assigns it. Use the supplied Witnessing signal ID for every candidate.',
+        'Protected people and context are coverage only unless the executive explicitly directs VAL to create a relationship or project.'
+      ].join('\n'),
+      user:{
+        task:'Prepare this bounded Witnessing answer packet for the First Look review map.',
+        objective:'Preserve the executive\'s stated priorities and direct routing context as short, source-linked review guidance.',
+        why:'The user needs proof that every answer was considered without making the model retell their story.',
+        next_step:'This packet will be deterministically merged with the remaining Witnessing, source, and review packets.',
+        output:{...candidateOutput,witnessing_coverage:[{signal_id:'witness signal id',relationship_names:['only explicitly named relationships'],project_names:['only explicitly named projects'],note:''}]},
+        witnessing_answers:answers
+      }
+    });
+  }
+  const routingChunks=chunk(routingRules,3);
+  for(const [index,rules] of routingChunks.entries()){
+    steps.push({
+      id:'routing-'+(index+1),source:'witnessing',label:'Routing instructions '+(index+1)+' of '+routingChunks.length,maxTokens:650,
+      inputCount:rules.length,
+      objective:'Turn these explicit routing instructions into compact, reviewable project and relationship guidance.',
+      why:'Each routing instruction is kept separate so its scope, protected context, and intended destination remain clear.',
+      nextStep:'Code will verify every rule has a coverage receipt, then use the rules to interpret the matching Gmail, Calendar, Drive, and Krisp signals.',
+      system:[
+        sharedSystem,
+        'You are reading at most three explicit routing instructions. Return exactly one routing_rule_coverage receipt for each supplied rule.',
+        'Never quote or paraphrase a rule. Keep every note under 160 characters. Propose no more than four candidates total.',
+        'Use only direct relationship or project targets named in the rule. If a rule is about children, a private person, or sensitive context, set protected_context true and do not create a relationship from the protected name alone.'
+      ].join('\n'),
+      user:{
+        task:'Prepare this bounded routing-instruction packet for the First Look review map.',
+        objective:'Keep the executive\'s explicit routing instructions actionable, source-linked, and safely scoped.',
+        why:'The user needs every instruction applied without unrelated source data widening its meaning.',
+        next_step:'This packet will be merged with source evidence before a relationship or project is proposed for review.',
+        output:{...candidateOutput,routing_rule_coverage:[{rule_id:'routing rule id',relationship_names:['direct relationship targets'],project_names:['direct project targets'],protected_context:false,note:''}]},
+        routing_rules:rules
+      }
+    });
+  }
   for(const definition of sourceDefinitions){
     const sourceSignals=(promptData.promptSignals||[]).filter(signal=>signal.source===definition.id);
     steps.push({
@@ -15721,6 +15754,7 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
         sharedSystem,
         'You are reading only the '+definition.label+' packet.',
         definition.why,
+        'Source signals can be numerous. Select only the strongest distinct candidates and do not attempt to summarize or account for every signal.',
         'The next step is a deterministic merge with the other source packets. Return only candidates supported by this packet\'s exact signal IDs; do not repeat a candidate merely because it appears in the Witnessing guidance.'
       ].join('\n'),
       user:{
@@ -15729,7 +15763,7 @@ function firstLookCandidateModelSteps({analysis={},promptData={}}={}){
         why:definition.why,
         next_step:definition.nextStep,
         output:candidateOutput,
-        executive_guidance:executiveGuidance,
+        executive_guidance:sourceExecutiveGuidance,
         source_signals:sourceSignals
       }
     });
@@ -16164,7 +16198,7 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
   analysis.packetCoverage=firstLookPacketCoverage({witnessing:analysis.witnessing,sources:analysis.sources,krispIntake,routingRules:analysis.routingRules});
   const promptData=firstLookCandidatePromptReceipt({sources:analysis.sources,witnessing:analysis.witnessing});
   const priorAnalysis=await getValFirstLookCandidateAnalysis(run.id);
-  const generationVersion='first_look_packet_map_v2';
+  const generationVersion='first_look_packet_map_v3';
   const priorSteps=priorAnalysis?.sourceReceipt?.mapBuild?.version===generationVersion
     ? priorAnalysis.sourceReceipt.mapBuild.steps||[]
     : [];
