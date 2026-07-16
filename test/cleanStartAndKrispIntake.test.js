@@ -71,10 +71,10 @@ test('Krisp thirty-day intake keeps Krisp source truth exact and reports coverag
 test('First Look treats every Witnessing answer as source evidence and blocks a partial proposed map', () => {
   assert.match(server, /function firstLookWitnessingCoverage/);
   assert.match(server, /function firstLookWitnessingRoutingRules/);
+  assert.match(server, /function firstLookRoutingDirectTargets/);
   assert.match(server, /function firstLookRoutingRuleCoverage/);
   assert.match(server, /VAL did not account for every Witnessing answer/);
-  assert.match(server, /VAL did not account for every explicit First Look routing instruction/);
-  assert.match(server, /VAL did not prepare review packets for every relationship or project you explicitly named/);
+  assert.match(server, /Directly named as a project destination in your Witnessing instructions/);
   assert.match(server, /routing_rule_coverage/);
   assert.match(server, /analysis\.witnessingCoverage=firstLookWitnessingCoverage/);
   assert.match(server, /analysis\.routingRuleCoverage=firstLookRoutingRuleCoverage/);
@@ -132,8 +132,13 @@ test('First Look proposed maps reuse saved Krisp receipts instead of reopening K
 test('First Look preserves explicit project, relationship, and protected-context routing instructions from Witnessing', () => {
   const helper = server.match(/function firstLookWitnessingRoutingRules[\s\S]*?(?=function firstLookPacketCoverage)/)?.[0] || '';
   assert.ok(helper, 'First Look routing extraction should be available for regression coverage.');
-  const context = {stableKey:value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')};
-  vm.runInNewContext(`${helper}\nresult={firstLookWitnessingRoutingRules};`, context);
+  const context = {
+    stableKey:value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    firstLookCandidateCleanName:value => String(value||'').replace(/\s+/g, ' ').trim(),
+    firstLookCandidateComparableText:value => String(value||'').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(),
+    firstLookCandidateIdentityLooksSafe:value => String(value||'').trim().length >= 2
+  };
+  vm.runInNewContext(`${helper}\nresult={firstLookWitnessingRoutingRules,firstLookRoutingDirectTargets};`, context);
   const instructions = [
     'Any emails that have @goallagency.com or @goallprogram.com are part of the GOALL project',
     'Michele Julian has multiple email addresses and is one of my most important people',
@@ -152,4 +157,15 @@ test('First Look preserves explicit project, relationship, and protected-context
   assert.match(rules.map(rule => rule.instruction).join('\n'), /Michele Julian/);
   assert.match(rules.map(rule => rule.instruction).join('\n'), /Goddess of Everything/);
   assert.match(rules.map(rule => rule.instruction).join('\n'), /Court/);
+  const directTargets = context.result.firstLookRoutingDirectTargets(rules);
+  assert.equal(
+    JSON.stringify(directTargets.filter(target => target.type==='relationship').map(target => target.name).sort()),
+    JSON.stringify(['Aric Soyring', 'Michele Julian', 'Valen'])
+  );
+  const projects = directTargets.filter(target => target.type==='project').map(target => target.name);
+  assert.ok(projects.includes('GOALL'));
+  assert.ok(projects.includes('School'));
+  assert.ok(projects.includes('Frisson Consulting'));
+  assert.ok(projects.includes('Goddess of Everything'));
+  assert.ok(projects.includes('Court'));
 });

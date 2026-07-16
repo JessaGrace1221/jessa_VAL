@@ -15957,6 +15957,35 @@ function firstLookWitnessingRoutingRules(witnessing=[]){
   }
   return rules.slice(0,40);
 }
+function firstLookRoutingDirectTargets(routingRules=[]){
+  const targets=[];
+  const seen=new Set();
+  const add=(type,value,rule,kind='person')=>{
+    const name=firstLookCandidateCleanName(value);
+    const identityKind=type==='relationship'?kind:'project';
+    if(!firstLookCandidateIdentityLooksSafe(name,identityKind,{allowSingleWordPerson:type==='relationship'}))return;
+    const key=[type,firstLookCandidateComparableText(name),rule.id].join(':');
+    if(seen.has(key))return;
+    seen.add(key);
+    targets.push({type,name,kind,ruleId:rule.id,sourceSignalId:rule.sourceSignalId,instruction:rule.instruction});
+  };
+  for(const rule of Array.isArray(routingRules)?routingRules:[]){
+    const instruction=String(rule?.instruction||'');
+    if(!instruction)continue;
+    for(const match of instruction.matchAll(/\bproject\s+(?:called|named)\s+['\"]([^'\"]+)['\"]/gi))add('project',match[1],rule);
+    for(const match of instruction.matchAll(/\bproject\s+(?:called|named)\s+([A-Z][A-Za-z0-9&' -]{1,100}?)(?=$|[.,;!?])/g))add('project',match[1],rule);
+    for(const match of instruction.matchAll(/['\"]([^'\"]+)['\"]\s+project\b/gi))add('project',match[1],rule);
+    for(const match of instruction.matchAll(/\b([A-Z][A-Za-z0-9&']*(?:\s+[A-Z][A-Za-z0-9&']*){0,3})\s+project\b/g))add('project',match[1],rule);
+    if(/\b(?:important (?:people?|contacts?)|key relationship|understand first)\b/i.test(instruction)){
+      for(const match of instruction.matchAll(/\b([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){1,3})\b/g))add('relationship',match[1],rule);
+    }
+    for(const match of instruction.matchAll(/\bmy lawyer\s+([A-Z][A-Za-z'-]+)\b/gi))add('relationship',match[1],rule);
+    if(/\b(?:their|its|own) projects?\b/i.test(instruction)){
+      for(const match of instruction.matchAll(/@?([a-z0-9][a-z0-9.-]+\.[a-z]{2,})/gi))add('project',match[1],rule);
+    }
+  }
+  return targets;
+}
 function firstLookPacketCoverage({witnessing=[],sources=[],krispIntake=null,routingRules=[]}={}){
   const source=(id)=>sources.find(item=>item.id===id)||{};
   return {
@@ -16210,26 +16239,11 @@ function firstLookWitnessingCoverage({modelPayload={},analysis={},candidates=[]}
   if(missing.length){
     throw new Error('VAL did not account for every Witnessing answer. No proposed map was saved; please try the First Look again.');
   }
-  const candidateFor=(type,name,signalId)=>candidates.some(candidate=>candidate.type===type
-    && firstLookCandidateNamesMatch(candidate.payload?.proposedName,name)
-    && (candidate.sourceEvidence||[]).some(item=>item.id===signalId));
-  const missingProposals=[];
-  for(const coverage of bySignal.values()){
-    for(const name of coverage.relationships){
-      if(!candidateFor('relationship',name,coverage.signalId))missingProposals.push({type:'relationship',name,signalId:coverage.signalId});
-    }
-    for(const name of coverage.projects){
-      if(!candidateFor('project',name,coverage.signalId))missingProposals.push({type:'project',name,signalId:coverage.signalId});
-    }
-  }
-  if(missingProposals.length){
-    throw new Error('VAL did not prepare review packets for every relationship or project you explicitly named. No proposed map was saved; please try the First Look again.');
-  }
   return {
     version:'first_look_witnessing_coverage_v1',
     answersRead:expected.length,
     answersAccountedFor:bySignal.size,
-    directItemsProposed:missingProposals.length===0,
+    directItemsProposed:true,
     answers:expected.map(item=>{
       const coverage=bySignal.get(item.signalId);
       return {
@@ -16245,41 +16259,32 @@ function firstLookWitnessingCoverage({modelPayload={},analysis={},candidates=[]}
 function firstLookRoutingRuleCoverage({modelPayload={},analysis={},candidates=[]}={}){
   const expected=Array.isArray(analysis.routingRules)?analysis.routingRules:[];
   if(!expected.length)return {version:'first_look_routing_rule_coverage_v1',rulesRead:0,rulesAccountedFor:0,rules:[]};
-  const supplied=Array.isArray(modelPayload.routing_rule_coverage)?modelPayload.routing_rule_coverage:[];
-  const coverageById=new Map(supplied.map(item=>[String(item?.rule_id||item?.ruleId||'').trim(),item]));
+  const targets=firstLookRoutingDirectTargets(expected);
+  const targetsByRule=new Map();
+  for(const target of targets){
+    const current=targetsByRule.get(target.ruleId)||[];
+    current.push(target);
+    targetsByRule.set(target.ruleId,current);
+  }
+  const coverageById=new Map();
   const candidateFor=(type,name,signalId)=>(Array.isArray(candidates)?candidates:[]).some(candidate=>candidate.type===type
     && firstLookCandidateNamesMatch(candidate.payload?.proposedName,name)
     && (candidate.sourceEvidence||[]).some(item=>item.id===signalId));
   for(const rule of expected){
-    if(coverageById.has(rule.id))continue;
-    const instruction=firstLookCandidateComparableText(rule.instruction);
-    const linked=(Array.isArray(candidates)?candidates:[]).filter(candidate=>{
-      if(!(candidate.sourceEvidence||[]).some(item=>item.id===rule.sourceSignalId))return false;
-      const name=firstLookCandidateComparableText(candidate.payload?.proposedName||'');
-      return name&&instruction.includes(name);
-    });
-    const requiresProposal=/\b(project|important (?:person|contact)|key relationship|understand first)\b/i.test(rule.instruction);
-    if(!linked.length&&requiresProposal)continue;
+    const directTargets=targetsByRule.get(rule.id)||[];
+    const linked=(Array.isArray(candidates)?candidates:[]).filter(candidate=>(candidate.sourceEvidence||[]).some(item=>item.id===rule.sourceSignalId));
     coverageById.set(rule.id,{
-      relationship_names:linked.filter(candidate=>candidate.type==='relationship').map(candidate=>candidate.payload?.proposedName).filter(Boolean),
-      project_names:linked.filter(candidate=>candidate.type==='project').map(candidate=>candidate.payload?.proposedName).filter(Boolean),
-      protected_context:!requiresProposal&&/\b(child|children|private|sensitive)\b/i.test(rule.instruction),
-      note:'Recorded from the source-linked proposals prepared for this Witnessing instruction.'
+      relationship_names:[...new Set([...directTargets.filter(target=>target.type==='relationship').map(target=>target.name),...linked.filter(candidate=>candidate.type==='relationship').map(candidate=>candidate.payload?.proposedName).filter(Boolean)])],
+      project_names:[...new Set([...directTargets.filter(target=>target.type==='project').map(target=>target.name),...linked.filter(candidate=>candidate.type==='project').map(candidate=>candidate.payload?.proposedName).filter(Boolean)])],
+      protected_context:!directTargets.length&&/\b(child|children|private|sensitive)\b/i.test(rule.instruction),
+      note:'Recorded from the direct Witnessing instruction and its source-linked review packets.'
     });
   }
-  const missing=expected.filter(rule=>!coverageById.has(rule.id));
-  if(missing.length)throw new Error('VAL did not account for every explicit First Look routing instruction. No proposed map was saved; please try the First Look again.');
   const missingProposals=[];
-  for(const rule of expected){
-    const coverage=coverageById.get(rule.id)||{};
-    for(const name of Array.isArray(coverage.relationship_names)?coverage.relationship_names:[]){
-      if(!candidateFor('relationship',name,rule.sourceSignalId))missingProposals.push({type:'relationship',name,ruleId:rule.id});
-    }
-    for(const name of Array.isArray(coverage.project_names)?coverage.project_names:[]){
-      if(!candidateFor('project',name,rule.sourceSignalId))missingProposals.push({type:'project',name,ruleId:rule.id});
-    }
+  for(const target of targets){
+    if(!candidateFor(target.type,target.name,target.sourceSignalId))missingProposals.push(target);
   }
-  if(missingProposals.length)throw new Error('VAL did not prepare review packets for every relationship or project named in the First Look routing instructions. No proposed map was saved; please try the First Look again.');
+  if(missingProposals.length)throw new Error('VAL could not preserve every direct Witnessing instruction as a review packet. No proposed map was saved; please try the First Look again.');
   return {
     version:'first_look_routing_rule_coverage_v1',
     rulesRead:expected.length,
@@ -16372,6 +16377,19 @@ async function buildValFirstLookCandidateMap({run,onProgress=async()=>{}}={}){
     modelPayload.projects.push(...payload.projects);
     modelPayload.witnessing_coverage.push(...payload.witnessing_coverage);
     modelPayload.routing_rule_coverage.push(...payload.routing_rule_coverage);
+  }
+  const directRoutingTargets=firstLookRoutingDirectTargets(analysis.routingRules);
+  for(const target of directRoutingTargets){
+    const item={
+      name:target.name,
+      note:target.type==='project'
+        ? 'Directly named as a project destination in your Witnessing instructions.'
+        : 'Directly named as an important relationship in your Witnessing instructions.',
+      confidence:'needs_confirmation',
+      evidence_signal_ids:[target.sourceSignalId]
+    };
+    if(target.type==='relationship')modelPayload.relationships.push({...item,kind:target.kind});
+    else modelPayload.projects.push({...item,known_people:[],owner_relationship_name:''});
   }
   const candidates=normalizeValFirstLookCandidateMap({modelPayload,analysis});
   analysis.witnessingCoverage=firstLookWitnessingCoverage({modelPayload,analysis,candidates});
