@@ -172,6 +172,7 @@ const stewardshipComparison = document.querySelector('[data-stewardship-comparis
 const stewardshipNetworkDetail = document.querySelector('[data-stewardship-network-detail]');
 const stewardshipNetworkStatus = document.querySelector('[data-stewardship-network-status]');
 const stewardshipNetworkAddForm = document.querySelector('[data-stewardship-network-add-form]');
+const stewardshipNetworkImportInput = document.querySelector('[data-stewardship-network-import]');
 const relationshipProjectPanel = document.querySelector('[data-relationship-project-panel]');
 const relationshipProjectCount = document.querySelector('[data-relationship-project-count]');
 const relationshipDocumentPanel = document.querySelector('[data-relationship-document-panel]');
@@ -2801,6 +2802,24 @@ async function refreshStewardshipNetworkFromSentMail(button){
     setStewardshipNetworkStatus(error.message || 'VAL could not refresh Network from sent mail.','error');
   }finally{
     if(button) button.disabled = false;
+  }
+}
+
+async function importStewardshipNetworkCsv(file){
+  if(!file||!canUseApi) return;
+  const payload = new FormData();
+  payload.append('file', file, file.name || 'network.csv');
+  setStewardshipNetworkStatus('Importing your Network CSV. VAL will keep only rows with a usable name and email.');
+  try{
+    const result = await postFormData('/api/relationships/network/import-csv', payload, {timeoutMs:60000,timeoutMessage:'CSV import took longer than expected. Please try again.'});
+    relationshipIndexSearch = '';
+    if(relationshipSearchInput) relationshipSearchInput.value = '';
+    await hydrateRelationshipIndex({force:true});
+    setStewardshipNetworkStatus(result.message || 'Network CSV imported.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not import that CSV.','error');
+  }finally{
+    if(stewardshipNetworkImportInput) stewardshipNetworkImportInput.value = '';
   }
 }
 
@@ -20522,6 +20541,10 @@ stewardshipNetworkAddForm?.addEventListener('submit', async(event) => {
   }
 });
 
+stewardshipNetworkImportInput?.addEventListener('change', async(event) => {
+  await importStewardshipNetworkCsv(event.target.files?.[0]);
+});
+
 relationshipSortSelect?.addEventListener('change', () => {
   relationshipSortMode = relationshipSortSelect.value || 'attention';
   renderRelationshipRolodex();
@@ -20788,6 +20811,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     setStewardshipNetworkAddFormVisible(true);
+    return;
+  }
+  const importNetwork = event.target.closest('[data-stewardship-import-network]');
+  if(importNetwork){
+    event.preventDefault();
+    event.stopPropagation();
+    stewardshipNetworkImportInput?.click();
     return;
   }
   const cancelNetworkPerson = event.target.closest('[data-stewardship-cancel-add]');

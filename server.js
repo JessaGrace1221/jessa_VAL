@@ -10745,8 +10745,8 @@ function parseEmailAddress(raw){
   const text=String(raw||'').trim();
   const match=text.match(/^(.*?)\s*<([^>]+)>$/);
   const email=(match?match[2]:text).replace(/"/g,'').trim().toLowerCase();
-  const name=(match?match[1]:text.replace(email,'')).replace(/"/g,'').trim();
-  return {name:name||email.split('@')[0]||'',email};
+  const explicitName=(match?match[1]:text.replace(email,'')).replace(/"/g,'').trim();
+  return {name:explicitName||email.split('@')[0]||'',explicitName,email};
 }
 function decodeBase64Url(value){
   if(!value)return '';
@@ -11601,6 +11601,30 @@ async function fetchGmailMessages({userId=currentUserId(),tenantId:tenantIdValue
     }catch(e){return null;}
   });
   return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:messages.length};
+}
+async function fetchGmailSentNetworkMessages({userId=currentUserId(),tenantId:tenantIdValue=tenantId()}={}){
+  await ensureGoogleTokensLoaded();
+  const token=await getGoogleToken();
+  if(token)await hydrateGoogleTokenScopes(token);
+  const missing=missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']);
+  if(missing.length||!token)return {emails:[],needsAuth:true,missingScopes:missing,error:lastGoogleAuthError||'Reconnect Google to grant Gmail read permission.',provider:'gmail',userId,tenantId:tenantIdValue};
+  const query='in:sent newer_than:90d';
+  let listing;
+  try{
+    const searchUrl=`https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=500`;
+    listing=await gmailFetchJson(searchUrl,{},'Gmail sent mail search');
+  }catch(error){
+    return {emails:[],needsAuth:/auth|token|permission|scope|401/i.test(error.message),error:error.message,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue};
+  }
+  const headerQuery=new URLSearchParams({format:'metadata'});
+  for(const header of ['To','Cc','Subject','Date'])headerQuery.append('metadataHeaders',header);
+  const details=await mapWithConcurrency((listing.messages||[]).slice(0,500),12,async(message)=>{
+    try{
+      const url=`https://www.googleapis.com/gmail/v1/users/me/messages/${message.id}?${headerQuery.toString()}`;
+      return normalizeGmailMessage(await gmailFetchJson(url,{},'Gmail sent mail recipient detail'));
+    }catch(error){return null;}
+  });
+  return {emails:sortEmailsNewestFirst(details.filter(Boolean)),needsAuth:false,provider:'gmail',missingScopes:missingGoogleScopes(['https://www.googleapis.com/auth/gmail.readonly']),query,userId,tenantId:tenantIdValue,fetchedAt:new Date().toISOString(),resultCount:(listing.messages||[]).length};
 }
 async function fetchUnifiedGmailEmails(limit=20){
   return fetchGmailMessages({query:'in:inbox newer_than:14d',maxResults:limit});
@@ -20102,6 +20126,39 @@ function stewardshipNetworkStoredSentMailAdmission(profile={}){
   const sentCount=Math.max(0,Number(metadata.sentMailCount||0));
   return metadata.networkAdmission==='sent_mail'&&sentCount>3&&stewardshipNetworkNamedEmailAdmission(profile);
 }
+function stewardshipNetworkNameFromSentRecipient(person={},email=''){
+  const explicitName=firstLookCandidateCleanName(person.explicitName||person.displayName||'');
+  if(firstLookCandidateIdentityLooksSafe(explicitName,'person',{allowSingleWordPerson:true}))return explicitName;
+  const knownAlias=knownRelationshipEmailAlias(email);
+  if(knownAlias?.name)return knownAlias.name;
+  const local=String(email||'').split('@')[0]||'';
+  const parts=local.split(/[._-]+/).filter((part)=>/^[a-z]{2,}$/i.test(part));
+  if(parts.length<2||parts.join('').length>60)return '';
+  const derived=parts.map((part)=>part.charAt(0).toUpperCase()+part.slice(1).toLowerCase()).join(' ');
+  return firstLookCandidateIdentityLooksSafe(derived,'person')?derived:'';
+}
+function stewardshipNetworkSentMailCandidates(messages=[]){
+  const byEmail=new Map();
+  for(const message of Array.isArray(messages)?messages:[]){
+    for(const recipient of [...(message?.to||[]),...(message?.cc||[])] ){
+      const email=firstLookCandidateSafeEmail(recipient?.email||recipient?.address||'');
+      if(!email)continue;
+      const current=byEmail.get(email)||{email,sentCount:0,names:new Map()};
+      current.sentCount+=1;
+      const name=stewardshipNetworkNameFromSentRecipient(recipient,email);
+      if(name)current.names.set(name,(current.names.get(name)||0)+1);
+      byEmail.set(email,current);
+    }
+  }
+  const owner=relationshipOwnerIdentity();
+  return [...byEmail.values()]
+    .map((candidate)=>{
+      const name=[...candidate.names.entries()].sort((left,right)=>right[1]-left[1]||left[0].localeCompare(right[0]))[0]?.[0]||'';
+      return {...candidate,name};
+    })
+    .filter((candidate)=>candidate.sentCount>3&&candidate.name&&firstLookCandidateIdentityLooksSafe(candidate.name,'person',{allowSingleWordPerson:true}))
+    .filter((candidate)=>!isOwnerRelationship(candidate,owner));
+}
 function stewardshipNetworkSentMailQualification(profile={},candidateAnalysis=null){
   const email=relationshipProfilePrimaryEmail(profile);
   const name=String(profile.displayName||profile.display_name||profile.name||'').trim();
@@ -20118,26 +20175,11 @@ function stewardshipNetworkSentMailQualification(profile={},candidateAnalysis=nu
   return {...qualification,accepted:qualification.accepted&&qualification.emails.includes(email)};
 }
 async function refreshStewardshipNetworkFromSentMail(){
-  const sent=await fetchGmailMessages({query:'in:sent newer_than:90d',maxResults:100,includeBody:false});
+  const sent=await fetchGmailSentNetworkMessages();
   if(sent.needsAuth)throw new Error(sent.error||'Reconnect Google before refreshing Network from sent mail.');
   if(sent.error)throw new Error(sent.error);
   const messages=(sent.emails||[]).filter(isMeaningfulRelationshipEmail);
-  const receipt=firstLookCandidatePromptReceipt({
-    sources:[{
-      id:'gmail',
-      records:messages.flatMap((email)=>firstLookCandidateGmailSourceRecords(email,'sent'))
-    }]
-  });
-  const owner=relationshipOwnerIdentity();
-  const candidates=receipt.signals
-    .filter((signal)=>signal?.kind==='email_correspondent')
-    .map((signal)=>{
-      const name=firstLookCandidateCleanName(signal.name||'');
-      const email=(signal.emailAddresses||[]).map(firstLookCandidateSafeEmail).find(Boolean)||'';
-      return {name,email,sentCount:Math.max(0,Number(signal.sentCount||0))};
-    })
-    .filter((candidate)=>candidate.sentCount>3&&candidate.email&&firstLookCandidateIdentityLooksSafe(candidate.name,'person'))
-    .filter((candidate)=>!isOwnerRelationship(candidate,owner));
+  const candidates=stewardshipNetworkSentMailCandidates(messages);
   const existingProfiles=await listRelationshipProfiles({limit:400});
   const existingByEmail=new Map(existingProfiles
     .map((profile)=>[relationshipProfilePrimaryEmail(profile),profile])
@@ -20170,6 +20212,86 @@ async function refreshStewardshipNetworkFromSentMail(){
     else added+=1;
   }
   return {reviewedMessages:messages.length,qualifiedRecipients:candidates.length,added,updated};
+}
+function parseNetworkCsv(text=''){
+  const rows=[];
+  let row=[];
+  let value='';
+  let quoted=false;
+  const source=String(text||'').replace(/^\uFEFF/,'');
+  for(let index=0;index<source.length;index+=1){
+    const character=source[index];
+    if(character==='"'){
+      if(quoted&&source[index+1]==='"'){value+='"';index+=1;}
+      else quoted=!quoted;
+      continue;
+    }
+    if(character===','&&!quoted){row.push(value);value='';continue;}
+    if((character==='\n'||character==='\r')&&!quoted){
+      if(character==='\r'&&source[index+1]==='\n')index+=1;
+      row.push(value);
+      if(row.some((cell)=>String(cell||'').trim()))rows.push(row);
+      row=[];
+      value='';
+      continue;
+    }
+    value+=character;
+  }
+  row.push(value);
+  if(row.some((cell)=>String(cell||'').trim()))rows.push(row);
+  if(rows.length<2)return [];
+  const headers=rows[0].map((header)=>String(header||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''));
+  return rows.slice(1,501).map((cells)=>headers.reduce((record,header,index)=>{
+    if(header)record[header]=String(cells[index]||'').trim();
+    return record;
+  },{}));
+}
+function networkCsvField(record={},names=[]){
+  for(const name of names){
+    const value=String(record[name]||'').trim();
+    if(value)return value;
+  }
+  return '';
+}
+function networkCsvPerson(record={}){
+  const first=networkCsvField(record,['first_name','firstname','first']);
+  const last=networkCsvField(record,['last_name','lastname','last']);
+  return {
+    name:networkCsvField(record,['name','full_name','fullname','contact_name','contact'])||[first,last].filter(Boolean).join(' '),
+    email:networkCsvField(record,['email','email_address','e_mail']),
+    organization:networkCsvField(record,['organization','company','company_name','business']),
+    summary:networkCsvField(record,['notes','note','summary','detail','details','context'])
+  };
+}
+async function saveStewardshipNetworkManualPerson({name='',email='',organization='',summary='',source='network_manual_add',existingByEmail=null}={}){
+  const displayName=firstLookCandidateCleanName(name);
+  const cleanEmail=normalizeExecutiveEmailAddress(email);
+  const cleanOrganization=firstLookCandidateCleanName(organization);
+  const cleanSummary=String(summary||'').replace(/\s+/g,' ').trim().slice(0,800);
+  if(!displayName||!cleanEmail)throw new Error('A name and real email address are required to add someone to Network.');
+  if(!stewardshipNetworkNamedEmailAdmission({displayName,email:cleanEmail}))throw new Error('Use a real person name and email address. Your own email address cannot be added to Network.');
+  const existing=existingByEmail?.get(cleanEmail)||(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===cleanEmail)||null;
+  const row=await saveRelationshipProfile({
+    ...(existing||{}),
+    profileType:'person',
+    displayName,
+    email:cleanEmail,
+    summary:cleanSummary||existing?.summary||'Added directly by the user to Network.',
+    relationshipStatus:existing?.relationshipStatus||'manually added',
+    confidence:Math.max(Number(existing?.confidence||0),0.7),
+    metadataJson:{
+      ...(existing?.metadata||{}),
+      source,
+      networkAdmission:'manual',
+      email:cleanEmail,
+      company:cleanOrganization||existing?.metadata?.company||'',
+      relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'manual_network'])),
+      noExternalAction:true
+    }
+  });
+  const profile=publicRelationshipProfile(row);
+  if(existingByEmail)existingByEmail.set(cleanEmail,profile);
+  return {profile,relationship:relationshipIndexItemFromProfile(profile),created:!existing};
 }
 function relationshipProfileKnownAlias(profile={}){
   return knownRelationshipEmailAlias(relationshipProfilePrimaryEmail(profile));
@@ -29865,33 +29987,41 @@ app.post('/api/relationships/network/refresh-sent-mail',async(req,res)=>{
 });
 app.post('/api/relationships/network/manual',async(req,res)=>{
   try{
-    const name=firstLookCandidateCleanName(req.body.name||req.body.displayName||'');
-    const email=normalizeExecutiveEmailAddress(req.body.email||'');
-    const organization=firstLookCandidateCleanName(req.body.organization||'');
-    const summary=String(req.body.summary||req.body.detail||'').replace(/\s+/g,' ').trim().slice(0,800);
-    if(!name||!email)return res.status(400).json({ok:false,error:'A name and real email address are required to add someone to Network.'});
-    if(!stewardshipNetworkNamedEmailAdmission({displayName:name,email}))return res.status(400).json({ok:false,error:'Use a real person name and email address. Your own email address cannot be added to Network.'});
-    const existing=(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===email)||null;
-    const row=await saveRelationshipProfile({
-      ...(existing||{}),
-      profileType:'person',
-      displayName:name,
-      email,
-      summary:summary||existing?.summary||'Added directly by the user to Network.',
-      relationshipStatus:existing?.relationshipStatus||'manually added',
-      confidence:Math.max(Number(existing?.confidence||0),0.7),
-      metadataJson:{
-        ...(existing?.metadata||{}),
-        source:'network_manual_add',
-        networkAdmission:'manual',
-        email,
-        company:organization||existing?.metadata?.company||'',
-        relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'manual_network'])),
-        noExternalAction:true
-      }
+    const saved=await saveStewardshipNetworkManualPerson({
+      name:req.body.name||req.body.displayName||'',
+      email:req.body.email||'',
+      organization:req.body.organization||'',
+      summary:req.body.summary||req.body.detail||''
     });
-    const relationship=relationshipIndexItemFromProfile(publicRelationshipProfile(row));
-    res.json({ok:true,relationship,message:`${name} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});
+    res.json({ok:true,relationship:saved.relationship,message:`${saved.profile.displayName} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});
+  }catch(e){
+    res.status(/required|Use a real person/i.test(e.message)?400:500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/network/import-csv',upload.single('file'),async(req,res)=>{
+  try{
+    const file=req.file;
+    if(!file)return res.status(400).json({ok:false,error:'Choose a CSV file to import.'});
+    if(!/\.csv$/i.test(file.originalname||'')&&!/csv|plain/i.test(file.mimetype||''))return res.status(400).json({ok:false,error:'Choose a CSV file with Name and Email columns.'});
+    const rows=parseNetworkCsv(file.buffer.toString('utf8'));
+    if(!rows.length)return res.status(400).json({ok:false,error:'VAL could not find any contact rows in that CSV.'});
+    const existingByEmail=new Map((await listRelationshipProfiles({limit:600}))
+      .map((profile)=>[relationshipProfilePrimaryEmail(profile),profile])
+      .filter(([email])=>!!email));
+    let added=0;
+    let updated=0;
+    let skipped=0;
+    for(const row of rows){
+      try{
+        const person=networkCsvPerson(row);
+        const saved=await saveStewardshipNetworkManualPerson({...person,source:'network_csv_import',existingByEmail});
+        if(saved.created)added+=1;
+        else updated+=1;
+      }catch(error){
+        skipped+=1;
+      }
+    }
+    res.json({ok:true,added,updated,skipped,totalRows:rows.length,message:`Imported ${added} people and updated ${updated}. Skipped ${skipped} rows without a usable name and email. No external system changed.`,noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }

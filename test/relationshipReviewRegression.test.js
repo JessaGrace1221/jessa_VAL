@@ -36,14 +36,18 @@ test('Stewardship admits Network people only from qualifying sent mail',()=>{
 
 test('Network offers a sent-mail refresh and an explicit manual person path',()=>{
   assert.match(server,/app\.post\('\/api\/relationships\/network\/refresh-sent-mail'/);
-  assert.match(server,/query:'in:sent newer_than:90d'/);
+  assert.match(server,/function fetchGmailSentNetworkMessages/);
+  assert.match(server,/maxResults=500/);
   assert.match(server,/sentCount>3/);
   assert.match(server,/app\.post\('\/api\/relationships\/network\/manual'/);
+  assert.match(server,/app\.post\('\/api\/relationships\/network\/import-csv'/);
   assert.match(server,/networkAdmission:'manual'/);
   assert.match(hearth,/data-stewardship-refresh-network/);
   assert.match(hearth,/data-stewardship-network-add-form/);
+  assert.match(hearth,/data-stewardship-import-network/);
   assert.match(hearthJs,/refreshStewardshipNetworkFromSentMail/);
   assert.match(hearthJs,/api\/relationships\/network\/manual/);
+  assert.match(hearthJs,/api\/relationships\/network\/import-csv/);
 });
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{
