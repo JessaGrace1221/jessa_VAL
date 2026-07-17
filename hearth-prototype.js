@@ -1964,13 +1964,22 @@ function stewardshipLooksLikePerson(profile = {}){
   return /[a-z]/i.test(name);
 }
 
+function stewardshipManualSectionRows(profile = {}, sectionId = ''){
+  const manual = profile.relationshipManualContext || profile.relationship_manual_context || {};
+  const section = manual[sectionId] && typeof manual[sectionId] === 'object' ? manual[sectionId] : {};
+  const values = Array.isArray(section.values) ? section.values : [section.value];
+  return stewardshipActionableRows(stewardshipCleanList(values, ''));
+}
+
 function stewardshipNeeds(profile = {}){
-  const rows = stewardshipActionableRows(stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, ''));
+  const manualRows = stewardshipManualSectionRows(profile, 'needs');
+  const rows = manualRows.length ? manualRows : stewardshipActionableRows(stewardshipCleanList(profile.packetNeeds?.length ? profile.packetNeeds : profile.openLoops, ''));
   return rows.length ? rows : ['No clear need is ready yet.'];
 }
 
 function stewardshipOffers(profile = {}){
-  const rows = stewardshipActionableRows(stewardshipCleanList(profile.packetOffers?.length ? profile.packetOffers : profile.valueTheyCreate, ''));
+  const manualRows = stewardshipManualSectionRows(profile, 'offers');
+  const rows = manualRows.length ? manualRows : stewardshipActionableRows(stewardshipCleanList(profile.packetOffers?.length ? profile.packetOffers : profile.valueTheyCreate, ''));
   return rows.length ? rows : ['No clear offer is ready yet.'];
 }
 
@@ -1981,8 +1990,9 @@ function stewardshipEvidence(profile = {}){
     .concat(packet.relationship_origin?.source_receipts || [])
     .concat(Array.isArray(profile.evidenceBindings) ? profile.evidenceBindings : []);
   const rows = stewardshipCleanList(receipts.map((item) => item.summary || item.relationship_context || item.title || item.source_type || ''), '');
+  const manualRows = stewardshipManualSectionRows(profile, 'evidence');
   const profileRows = stewardshipCleanList([profile.evidencePosture, profile.sourceEvidence, profile.signal, profile.summary], '');
-  const usefulRows = rows.concat(profileRows).filter((line) => !stewardshipIsGenericClassifierRow(String(line || '').replace(/^Latest observation:\s*/i, '')));
+  const usefulRows = manualRows.concat(rows, profileRows).filter((line) => !stewardshipIsGenericClassifierRow(String(line || '').replace(/^Latest observation:\s*/i, '')));
   return usefulRows.length ? usefulRows.slice(0, 5) : ['Evidence is still developing.'];
 }
 
@@ -2829,6 +2839,36 @@ function setStewardshipNetworkStatus(message='',tone=''){
   else delete stewardshipNetworkStatus.dataset.tone;
 }
 
+function setStewardshipNetworkButtonWorking(button = null, working = false, label = ''){
+  if(!button) return;
+  if(working){
+    button.dataset.stewardshipOriginalLabel = button.textContent || '';
+    button.disabled = true;
+    button.classList.add('is-working');
+    button.setAttribute('aria-busy','true');
+    if(label) button.textContent = label;
+    return;
+  }
+  button.disabled = false;
+  button.classList.remove('is-working');
+  button.removeAttribute('aria-busy');
+  if(button.dataset.stewardshipOriginalLabel){
+    button.textContent = button.dataset.stewardshipOriginalLabel;
+    delete button.dataset.stewardshipOriginalLabel;
+  }
+}
+
+function applyStewardshipRelationshipRefresh(item = {}){
+  if(!item || typeof item !== 'object') return null;
+  const refreshed = relationshipProfileWithPersonPacket(relationshipProfileFromIndexItem(item));
+  if(!refreshed.id) return null;
+  relationshipIndexProfiles[refreshed.id] = refreshed;
+  if(activeRelationshipProfile && String(activeRelationshipProfile.id || activeRelationshipProfile.profileId || '') === String(refreshed.id)) activeRelationshipProfile = refreshed;
+  if(!stewardshipSelectedNetworkId) stewardshipSelectedNetworkId = refreshed.id;
+  renderRelationshipRolodex();
+  return refreshed;
+}
+
 function setStewardshipNetworkAddFormVisible(visible){
   if(!stewardshipNetworkAddForm) return;
   stewardshipNetworkAddForm.hidden = !visible;
@@ -2861,17 +2901,54 @@ async function enrichStewardshipRelationshipContext(personId = '', button = null
   if(!canUseApi || !personId) return;
   const profile = stewardshipPersonById(personId);
   const hasSavedContext = profile?.relationshipEnrichment?.status === 'complete' || profile?.relationship_enrichment?.status === 'complete';
-  if(button) button.disabled = true;
-  setStewardshipNetworkStatus((hasSavedContext ? 'Refreshing' : 'Gathering') + ' public relationship context for ' + (profile?.name || 'this person') + '. VAL will save the result and reuse it in meeting preparation.');
+  const name = profile?.name || 'this person';
+  setStewardshipNetworkButtonWorking(button, true, hasSavedContext ? 'Refreshing public context...' : 'Gathering public context...');
+  setStewardshipNetworkStatus((hasSavedContext ? 'Refreshing' : 'Gathering') + ' public relationship context for ' + name + '. VAL is checking public listings and will save the result for future meeting preparation. This can take a moment.');
   try{
     const result = await postJson('/api/relationships/network/enrich', {relationshipId:personId, force:hasSavedContext}, {timeoutMs:120000,timeoutMessage:'Relationship context took longer than expected. Your saved context was not changed.'});
     stewardshipSelectedNetworkId = personId;
-    await hydrateRelationshipIndex({force:true});
+    applyStewardshipRelationshipRefresh(result.relationship);
+    void hydrateRelationshipIndex({force:true});
     setStewardshipNetworkStatus(result.message || 'Relationship context was saved for future meeting preparation.');
   }catch(error){
     setStewardshipNetworkStatus(error.message || 'VAL could not enrich this relationship right now.','error');
   }finally{
-    if(button) button.disabled = false;
+    setStewardshipNetworkButtonWorking(button, false);
+  }
+}
+
+async function enrichAllStewardshipRelationshipContext(button = null){
+  if(!canUseApi) return;
+  const people = stewardshipPeople().filter((item) => item?.id && item?.profile?.query?.email);
+  if(!people.length){
+    setStewardshipNetworkStatus('There are no named email contacts in Network to enrich yet.','error');
+    return;
+  }
+  let completed = 0;
+  let saved = 0;
+  const failures = [];
+  setStewardshipNetworkButtonWorking(button, true, 'Refreshing 0 of ' + people.length + '...');
+  setStewardshipNetworkStatus('Refreshing saved public context for ' + people.length + ' Network contact' + (people.length === 1 ? '' : 's') + '. VAL is using Outscraper one relationship at a time so progress and saved context stay reliable.');
+  try{
+    for(const item of people){
+      const name = item.name || 'this relationship';
+      if(button) button.textContent = 'Refreshing ' + (completed + 1) + ' of ' + people.length + '...';
+      setStewardshipNetworkStatus('Refreshing public context ' + (completed + 1) + ' of ' + people.length + ': ' + name + '. VAL is checking public listings and saving useful context for meeting preparation.');
+      try{
+        const result = await postJson('/api/relationships/network/enrich', {relationshipId:item.id, force:true}, {timeoutMs:120000,timeoutMessage:'Public context took longer than expected for ' + name + '. VAL will continue with the remaining contacts.'});
+        if(result.relationship) applyStewardshipRelationshipRefresh(result.relationship);
+        saved += 1;
+      }catch(error){
+        failures.push(name);
+      }finally{
+        completed += 1;
+      }
+    }
+    void hydrateRelationshipIndex({force:true});
+    const failureText = failures.length ? ' ' + failures.length + ' could not be refreshed: ' + failures.slice(0,3).join(', ') + (failures.length > 3 ? ', and others.' : '.') : '';
+    setStewardshipNetworkStatus('Saved public context for ' + saved + ' of ' + people.length + ' Network contact' + (people.length === 1 ? '.' : 's.') + failureText, failures.length ? 'error' : '');
+  }finally{
+    setStewardshipNetworkButtonWorking(button, false);
   }
 }
 
@@ -5795,6 +5872,37 @@ async function openTranscriptActionItemCowork(transcriptId = '', actionItemIndex
   }
 }
 
+function applyStewardshipRelationshipCardResult(result = {}){
+  const refreshed = applyStewardshipRelationshipRefresh(result.relationship);
+  if(!refreshed) return null;
+  activeRelationshipProfile = refreshed;
+  stewardshipSelectedNetworkId = refreshed.id || stewardshipSelectedNetworkId;
+  renderRelationshipProfile(refreshed.id, refreshed);
+  renderStewardshipNetworkDetail(refreshed);
+  return refreshed;
+}
+
+async function finalizeActiveCoworkResponse(entry = {}, result = {}){
+  const workItem = result.workItem || {};
+  const isDirectRelationshipCardUpdate = entry?.entrypointId === 'relationship.section'
+    && workItem.status === 'needs_review'
+    && Boolean(workItem.id);
+  if(!isDirectRelationshipCardUpdate){
+    renderCoworkEntryResult(result);
+    return result;
+  }
+  const sectionLabel = workItem.payload?.relationshipSectionUpdate?.sectionLabel || 'relationship card';
+  showCoworkContextGathering('VAL is saving this confirmed ' + sectionLabel.toLowerCase() + ' update to the selected Network profile.');
+  const applied = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItem.id) + '/apply', {}, {
+    timeoutMs:15000,
+    timeoutMessage:'VAL could not save this confirmed relationship card update yet.'
+  });
+  applyStewardshipRelationshipCardResult(applied);
+  void hydrateRelationshipIndex({force:true});
+  renderCoworkEntryResult(applied);
+  return applied;
+}
+
 async function submitActiveCoworkEntry(){
   const entry = activeCoworkEntry;
   if(!entry) return false;
@@ -5819,7 +5927,7 @@ async function submitActiveCoworkEntry(){
     const label = entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'relationship.overview' ? 'Relationship next move' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
-    renderCoworkEntryResult(result);
+    await finalizeActiveCoworkResponse(entry, result);
   }catch(error){
     if(/Co-Work session no longer exists/i.test(String(error.message || ''))){
       try{
@@ -5830,7 +5938,7 @@ async function submitActiveCoworkEntry(){
         const recoveredEntry = activeCoworkEntry;
         if(!recoveredEntry?.sessionId) throw new Error('VAL could not restore this scoped session.');
         const recovered = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(recoveredEntry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this restored section yet.'});
-        renderCoworkEntryResult(recovered);
+        await finalizeActiveCoworkResponse(recoveredEntry, recovered);
         return true;
       }catch(recoveryError){
         hideCoworkContextGathering();
@@ -5966,13 +6074,8 @@ async function applyActiveCoworkRelationshipSection(workItemId = '', button = nu
   try{
     const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this relationship card update yet.'});
     if(result.relationship){
-      const refreshed = relationshipProfileWithPersonPacket(relationshipProfileFromIndexItem(result.relationship));
-      relationshipIndexProfiles[refreshed.id] = refreshed;
-      activeRelationshipProfile = refreshed;
-      stewardshipSelectedNetworkId = refreshed.id || stewardshipSelectedNetworkId;
-      renderRelationshipProfile(refreshed.id, refreshed);
-      renderStewardshipNetworkDetail(refreshed);
-      renderRelationshipRolodex();
+      applyStewardshipRelationshipCardResult(result);
+      void hydrateRelationshipIndex({force:true});
     }
     renderCoworkEntryResult(result);
   }catch(error){
@@ -20974,6 +21077,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await refreshStewardshipNetworkFromSentMail(refreshNetwork);
+    return;
+  }
+  const enrichAllNetwork = event.target.closest('[data-stewardship-enrich-all]');
+  if(enrichAllNetwork){
+    event.preventDefault();
+    event.stopPropagation();
+    await enrichAllStewardshipRelationshipContext(enrichAllNetwork);
     return;
   }
   const addNetworkPerson = event.target.closest('[data-stewardship-add-person]');

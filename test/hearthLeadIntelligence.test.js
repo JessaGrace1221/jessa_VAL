@@ -94,6 +94,20 @@ test('Network renders every admitted relationship and enriches context only when
   assert.match(meetingPrepService, /Saved public relationship context/);
 });
 
+test('Stewardship makes confirmed card updates visible immediately and offers deliberate bulk enrichment', () => {
+  assert.match(hearthHtml, /data-stewardship-enrich-all/);
+  assert.match(hearthJs, /async function enrichAllStewardshipRelationshipContext/);
+  assert.match(hearthJs, /Refreshing public context .* of/);
+  assert.match(hearthJs, /setStewardshipNetworkButtonWorking/);
+  assert.match(hearthJs, /async function finalizeActiveCoworkResponse/);
+  assert.match(hearthJs, /entry\?\.entrypointId === 'relationship\.section'/);
+  assert.match(hearthJs, /applyStewardshipRelationshipCardResult\(applied\)/);
+  assert.match(hearthJs, /function stewardshipManualSectionRows/);
+  assert.match(hearthJs, /stewardshipManualSectionRows\(profile, 'needs'\)/);
+  assert.match(hearthJs, /stewardshipManualSectionRows\(profile, 'offers'\)/);
+  assert.match(hearthCss, /stewardship-working-pulse/);
+});
+
 test('Hearth scraper preview requires approve or hold before import', () => {
   assert.match(hearthHtml, /Lead Sourcing/);
   assert.match(hearthHtml, /Two starter scraper definitions are ready/);
