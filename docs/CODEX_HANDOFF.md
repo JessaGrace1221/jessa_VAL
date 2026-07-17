@@ -1,660 +1,241 @@
-# Codex Handoff: July 10 Live Truth Baseline
+# Jessa VAL Handoff: Executive Inbox Reset
 
-Last updated: 2026-07-12 live promotion plus Co-Work hotfix, source-processing receipts, Drive document evidence, MOU validation fixes, source-only document preservation, Documents Gmail intake scan, and Executive Inbox readable-thread fix
+Updated: 2026-07-17
 
-## 2026-07-12 Live Continuation
+## Start Here
 
-The first system-wide source-processing / Project Managers implementation slice is deployed live from `codex/stewardship-person-packets`, plus the focused Co-Work open-timing and drawer-layering hotfix, the shared source-processing "What VAL did" receipt slice, Google Drive share/link handling as document evidence, the Aric/Frisson MOU validation fixes, source-only document preservation for unmatched document senders, and a Documents drawer Gmail intake scan control.
+This is the active clean baseline for the next VAL session. Do not work from
+`/Users/jessagrace/Documents/VAL drawer - Correspondence`; that is a different
+project and not the live Jessa VAL implementation.
 
-New implementation:
-
-- `services/valSourceProcessingSchema.js`
-- `services/valSourceProcessing.js`
-- `services/valSourceProcessingRoutes.js`
-- `test/valSourceProcessing.test.js`
-- `services/valProjectPinsSchema.js`
-- `services/valProjectPins.js`
-- `services/valProjectPinsRoutes.js`
-- `test/valProjectPins.test.js`
-
-Behavior implemented:
-
-- relationship-sent documents create source-processing records
-- admitted relationship senders with document evidence can produce a suggested-project review update
-- suggested projects register to both Project Managers and Leverage / Ready For You
-- the Project Managers drawer has a subtle top suggestion lane above the project index
-- approval/rejection uses the existing review-update route
-- approval creates one local project owner and assigns a color-named Project Manager
-- pending-only surface filtering prevents approved/rejected suggestions from resurfacing
-- `Put a pin in it` persists project reminders, records `reopened_at` when the reminder becomes due, surfaces due pins in Project Managers and Home Alignment as newly reopened loops, and provides a `Mark reminder handled` action that clears only the reminder loop
-- scoped Project Managers Co-Work opens from a subtle top action and from project packet/action rows, preflights `project_packet`, and locks held context to the selected project, selected action, source receipts, and affected artifact/object only
-- assigned color-named Project Managers appear in the Project Manager page header as a subtle ownership cue and are included in the project manager packet
-- owner reassignment is available from the People involved card, with choose-existing/create-new relationship owner paths, persisted project metadata, and no-external-action relationship/project link receipts
-- live email intelligence and intelligence backfill route admitted relationship document attachments into source-processing, using Gmail/Outlook attachment metadata and the same Project Managers suggested-project review path
-- `relationship-document-email` treats Google Drive/Docs links and Google Drive share notifications as document evidence, and can use a parsed Drive sharer instead of Google's no-reply sender when matching admitted relationships
-- `relationship-document-email` can admit senders through existing project owner metadata, so a project owner like Aric attached to Frisson can produce document/project processing even before Executive Inbox has a separate relationship match
-- the Documents drawer reads `source_processing_records` directly, so source-processed email attachments and Drive documents appear as reference-library rows before project approval
-- live document intake now persists source-only source-processing records for unmatched document senders instead of returning before record creation; these records can appear in Documents while still creating no Project Managers suggestion
-- Documents now has a subtle `Scan Gmail` control that runs `/api/email/gmail/refresh`, refreshes `/api/val/documents`, and reports document-email/source-record/suggestion/source-only counts in the drawer status line
-- Executive Inbox now renders the selected email body immediately under sender/date, preserves a longer readable body excerpt, and shows attachment metadata as chips when Gmail returns attachments
-- source-processing records now carry a shared `whatValDidReceipt` / `what_val_did_receipt` explaining what VAL did from the email/document, and the same receipt travels to prepared artifacts, Ready For You metadata, and Project Managers/Home surface registrations
-- Project Managers suggestion rows can render a quiet `VAL handled:` receipt line from that shared receipt
-- backend-only source-processing POST is blocked in public Hearth test mode; live read routes remain available
-- the one no-action source-processing smoke-test record created during deployment validation was deleted from production
-- Co-Work opens immediately before packet hydration completes, hydrates packet receipts in the background, and renders above open drawers at `z-index:1800`
-
-Verified:
-
-```text
-node --check services/valSourceProcessingSchema.js services/valSourceProcessing.js services/valSourceProcessingRoutes.js services/valProjectPinsSchema.js services/valProjectPins.js services/valProjectPinsRoutes.js services/valReviewUpdates.js hearth-prototype.js server.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
-node --check server.js services/valSourceProcessing.js test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
-node --check services/valDocuments.js services/valDocumentsRoutes.js server.js test/valDocuments.test.js
-node --test --test-reporter=dot test/valProjectPins.test.js test/valSourceProcessing.test.js test/valReviewUpdates.test.js test/valReadyForYou.test.js test/hearthLeadIntelligence.test.js test/intelligenceBackfill.test.js
-node --test --test-reporter=dot test/valSourceProcessing.test.js test/intelligenceBackfill.test.js
-node --test --test-reporter=dot test/valDocuments.test.js test/valSourceProcessing.test.js test/hearthLeadIntelligence.test.js test/valReadyForYou.test.js
-git diff --check
-```
-
-Live verification completed:
-
-- production root returns `200`
-- production `/api/config/status` returns `VAL Proxy OK`
-- production `/api/val/source-processing/records` returns `200` with an empty records array after cleanup
-- production `/api/val/documents?q=MOU&limit=3` returns `200` unauthenticated with an empty public-test result, expected until the authenticated Gmail flow reprocesses the Aric email
-- production `/api/val/source-processing/surface-registrations?surface=project_managers&status=visible&reviewStatus=pending&limit=5` returns `200` with an empty array
-- production `hearth-prototype.js` includes `project_scoped_cowork_packet`, `project_owner_packet`, `project-owner-control`, the source-processing surface registration fetch, `projectSuggestionReceiptLine`, and `whatValDidReceipt`
-- production `hearth-prototype.css` includes `.project-suggestion-receipt`
-- production `hearth-prototype.html/js/css` include `data-document-intake-scan`, `scanDocumentIntakeFromGmail`, `documentIntakeStatusLine`, and `.document-library-controls`
-- production `hearth-prototype.js/css` include `correspondenceAttachmentsFromSource`, `correspondence-thread-attachments`, `correspondenceCompactText(body,3600)`, and `align-content:start` for Executive Inbox thread cards
-- unauthenticated production POST to `/api/val/source-processing/relationship-document-email` returns `Authentication required`
-- production `hearth-prototype.html` serves `hearth-prototype.css?v=cowork-open-20260712` and `hearth-prototype.js?v=cowork-open-20260712`
-- production browser smoke confirmed main Co-Work and Project Managers drawer Co-Work open at `z-index:1800` above drawer `z-index:1300`, with no browser console errors
-
-Still future work:
-
-- browser-visible/authenticated re-check of Executive Inbox against the Aric MOU is still needed: the body should be immediately readable and an attachment chip should appear if Gmail returned attachment metadata
-- browser-visible/authenticated click of Documents `Scan Gmail` against the Aric MOU Gmail attachment and a real Drive share/link case, including the Documents drawer row and visible source-only or `VAL handled:` receipt line, is still needed
-- if `Scan Gmail` reports zero document emails, inspect Gmail query/window/labels before changing Documents UI
-- if the MOU appears in Documents but not Project Managers, inspect the saved source-processing relationship admission metadata before changing UI
-- broader source types beyond relationship-sent email documents are still future work
-
-## Absolute Baseline
-
-The current live Railway deployment is THE TRUTH.
-
-Use this as the recovery baseline for all future work:
-
-- Production URL: `https://jessaval-production.up.railway.app`
-- Branch: `codex/stewardship-person-packets`
-- Baseline commit: `6d88b98`
-- Baseline commit message: `Make Executive Inbox thread readable`
-- Railway deployment: `e97b8555-3127-4b34-9a93-294023aa2824`
+- Repository: `/Users/jessagrace/Documents/Val-Alison/jessa_VAL-clean-baseline`
+- Branch: `codex/clean-baseline`
+- Production: `https://jessaval-production.up.railway.app`
 - Railway project: `a0402328-e877-406d-8f89-32bd6acdfd19`
 - Railway service: `df0839e1-880b-4aa6-8def-56170f4cc980`
-- Railway environment: `production`
+- Verified live deployment: `01f42fec-81f1-488a-8fa7-57939a86453b`
+- Production verification on 2026-07-17: root returned HTTP `200`; Railway
+  reported the service online.
 
-Anything not included in this live deployed commit is trash until the user explicitly re-approves it.
+Read these documents before touching code:
 
-Do not preserve, merge, deploy, cherry-pick, or "finish" any waiting work from another branch, worktree, uncommitted state, older deployment, or abandoned chat unless it is first checked against this live baseline and the user explicitly confirms it belongs.
+1. `docs/CODEX_CURRENT_STATE.md`
+2. `docs/NEXT_TASK.md`
+3. `docs/HEARTH_CLICK_CONTRACTS.md`
+4. `docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md`
+5. `docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md`
 
-## End-Of-Day Branch Handoff
+The current deployed Railway state is the behavioral truth. This handoff
+supersedes the old July 10-12 handoff language in this repository.
 
-The user asked to keep every inch of the day safe for morning handoff.
+## What Is Live And Must Survive
 
-Current handoff branch:
+### Drawer model
 
-```text
-Branch: codex/stewardship-person-packets
-Latest live code promotion commit: 6d88b98
-Latest live code promotion message: Make Executive Inbox thread readable
-```
+The user-facing drawers are ordered:
 
-Important distinction:
+1. Executive Inbox
+2. Project Managers
+3. Stewardship
+4. Transcripts
+5. Lead Intelligence
+6. VAL
 
-```text
-Production remains the behavioral truth.
-The branch contains today's approved documentation stack, Co-Work bug fix, live Project Managers/source-processing slice, shared source-processing receipt slice, Drive-share document evidence hardening, the Aric MOU validation fixes, source-only document preservation for unmatched senders, Documents Gmail intake scan, and Executive Inbox readable-thread fix.
-Product-code branch changes through 6d88b98 are deployed to Railway production deployment e97b8555-3127-4b34-9a93-294023aa2824.
-```
+Documents and Commitments are internal evidence/action domains, not drawers to
+restore as independent top-level workspaces. Existing markup or routes are not
+permission to reintroduce them into navigation.
 
-Key pushed commits, in newest-first order:
+### Current working baseline
 
-```text
-6d88b98 Make Executive Inbox thread readable
-c820004 Add Documents Gmail intake scan
-13c8943 Preserve document evidence for unmatched senders
-be66920 Recognize project owners in document email intake
-8c058b2 Show source-processing documents in Documents drawer
-46fa1c6 Record Drive document evidence promotion
-e98449a Treat Google Drive shares as document evidence
-35f0f97 Record source-processing receipt live promotion
-fb8a7bb Add source-processing what VAL did receipts
-486d8d5 Sync handoff docs to Co-Work live baseline
-5aecdde Fix Co-Work open timing and drawer layering
-da00a9b Clarify live promotion handoff wording
-fd3b0af Record Project Managers live promotion
-a731181 Guard source processing public test writes
-59d62dd Add Project Managers source processing slice
-0f27230 Update end-of-day handoff docs
-980d245 Document Co-Work V1 workspace spec
-6bbe31f Fix Hearth Co-Work submit response
-1acd722 Add Project Manager V1 build spec
-27d861e Document board of observers watching flow
-63a9f1e Document project reset flow
-f3fa716 Document project execution adjustment flow
-d11928c Document project movement open loop flow
-9178196 Document project reprioritization flow
-8e30457 Document project prepared work flow
-e2b5955 Document project judgment decision flow
-11455b5 Document critical project issue handling
-40cd192 Document dynamic Project Manager focus modules
-d58c650 Document full page Project Manager experience
-b4dcb79 Document payment issue alignment priority
-5869ae0 Document project finance summary visibility
-cd00aa8 Document path completeness and project finance receipts
-023cc32 Document quiet notices project assignment flow
-77f69f1 Document operational notice email routing
-```
+- The VAL Witnessing Session and First Look now produce a reviewable proposal
+  map before creating relationship or project packets.
+- The First Look is packetized so one oversized OpenAI response does not block
+  all of the work. It scans approved Gmail, Calendar, Drive/Docs, and Krisp
+  sources, then prepares bounded relationship/project proposals.
+- Stewardship's Network can be refreshed from sent mail, manually populated,
+  and populated from CSV. Admission requires an email address; sent-mail
+  candidates require more than three sent messages.
+- Stewardship supports stored public-context enrichment per relationship,
+  individual enrichment, bulk opt-in enrichment, immediate saved Co-Work card
+  updates, and visible enrichment progress.
+- Relationship-card Co-Work is scoped to exactly one person and one card. A
+  user-confirmed internal update is applied immediately; it must not touch
+  other people, cards, or external systems.
+- Transcript material is a source receipt. Krisp's words, Action Items, and
+  Key Points must not be rewritten as though VAL authored them.
+- Project Managers is deliberately not the next implementation target. Do not
+  reactivate or broaden it while rebuilding Executive Inbox. The user asked
+  for a clearly unavailable/Coming Soon experience until its later dedicated
+  pass.
+- Lead Intelligence functions for now. It does not need a Co-Work control in
+  this phase.
 
-Read these first tomorrow:
+### Latest implementation commits
 
 ```text
-docs/CODEX_HANDOFF.md
-docs/CODEX_CURRENT_STATE.md
-docs/NEXT_TASK.md
-docs/CODEX_DOCUMENTATION_FIRST_RULE.md
-docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
-docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
-docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
-docs/HEARTH_CLICK_CONTRACTS.md
+44006e9 Clarify relationship context enrichment copy
+f4c5251 Version Stewardship live assets
+f023e20 Make Stewardship updates and enrichment progress immediate
+e3fb577 Fix sent-mail Network refresh list handling
+60069cd Refresh Hearth relationship card assets
 ```
 
-The Project Manager V1 spec is approved consolidation and is the build target.
-
-The Co-Work V1 workspace spec is a draft for user approval before implementation.
-
-The Co-Work submit bug fix is implemented:
-
-```text
-Commit: 6bbe31f
-What changed: home Co-Work now has a Send button and submit calls runCowork('think') instead of only echoing the user input into context.
-Verified with: node --check hearth-prototype.js; node --test test/hearthLeadIntelligence.test.js
-```
-
-## Current Strategic Pause
-
-On 2026-07-11, the user paused Stewardship-specific iteration.
-
-Do not keep polishing Stewardship until the larger source-routing problem is addressed.
-
-The new governing architecture document is:
-
-```text
-docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
-```
-
-The next architecture pass must create a strict system-wide map where every email, transcript, calendar event, document, user correction, and external action receipt goes through the same source-processing spine before any drawer, packet, prompt, or click can use it.
-
-The user wants a system that can do this reliably:
-
-- A transcript from a conversation with Terrie should be available to every relevant observer. Stewardship should have flagged the explicit Terrie/Kareemah introduction.
-- An email from Anthony with documents should route to Documents and Project Managers, and should suggest a new project if no project exists.
-- Spam, newsletters, unsubscribe/bulk/no-reply/system senders must never leak into relationships.
-
-The next implementation should start from the shared source-processing spine, not from visible drawer tweaks.
-
-The user confirmed this sequence because it moves the needle for all of VAL, not only Project Managers.
-
-## Why This Baseline Exists
-
-On July 10, the product had regressed into stale drawer states, muddy colors, fake/demo records, overexposed architecture language, generic "canonical index" filler, and diagnostic surfaces in places where the user needed a calm executive product.
-
-The recovery work brought the app back to an acceptable live stance. That current stance is now the foundation. Future work starts from here only.
-
-## What Must Stay True
-
-### Documentation-First Rule
-
-Going forward, documentation comes before implementation.
-
-Before Codex makes non-trivial product, architecture, prompt, drawer, packet, or executive-surface changes, it must draft or update the relevant documentation and wait for user feedback.
-
-Read and follow:
-
-```text
-docs/CODEX_DOCUMENTATION_FIRST_RULE.md
-```
-
-Do not treat a conversation as permission to implement. If the user gives product feedback that changes direction, document the new direction first and show it to the user.
-
-Implementation may begin only after explicit approval such as:
-
-```text
-Approved. Implement this documentation.
-This product definition is correct. Proceed to code.
-Build exactly what is documented here.
-```
-
-### Visual Standard
-
-The Hearth drawers must keep the clean frosted-white/translucent standard.
-
-Never regress to:
-
-- muddy brown
-- heavy tan
-- clay/espresso palette
-- dark clunky panels
-- opaque gray/black drawer surfaces
-- juvenile oversized card styling
-
-The user explicitly approved the current white-glass direction and said to hold these colors so they never change.
-
-### Home Standard
-
-Home is not a dashboard and not an inbox.
-
-The three Home cards remain:
-
-- Velocity: what changed.
-- Alignment: the open-loop command center.
-- Leverage: drafts/prepared work VAL shaped while the user was away.
-
-Do not reintroduce prototype state controls, canned explanation panels, generic KPI cards, or static architecture filler.
-
-Important 2026-07-11 correction:
-
-```text
-The alignment card is all about open loops.
-```
-
-Alignment is not a general priority list. It shows the open loop that most needs executive attention now.
-
-### Transcripts Standard
-
-The drawer is called `Transcripts`.
-
-The user-facing surface is the Meeting Notes workbench:
-
-- left transcript list
-- transcript count
-- import controls
-- selected transcript detail
-- Action Items first
-- Meeting Overview after Action Items
-- Decisions when present
-- People and Projects when present
-- Co-Work scoped to the selected transcript
-- View full transcript as a secondary path
-
-VAL should treat imported transcript action items, notes, summaries, and titles as source truth. Do not reinterpret them into fabricated titles or generic AI summaries.
-
-Do not return to the diagnostic cards:
-
-- `Transcript Review Workflow`
-- `Ready to Extract`
-- `Proposed Notes`
-- `Proposed Tasks`
-- `Useful Note`
-- `Useful Task`
-
-### Executive Inbox Standard
-
-Executive Inbox must show only real connected email conversations that qualify for judgment.
-
-Do not show:
-
-- demo email data
-- Railway/system emails as executive conversations
-- calendar invites as draft-reply email threads
-- spam/newsletters/bank notices
-- read/replied-to emails as current inbox items
-- contacts who have emailed repeatedly while the user never replied, unless the user changes the rule
-
-Executive Inbox context may use read emails from the last 30 days to understand a person, but read emails do not belong in the active Executive Inbox queue.
-
-Preserve:
-
-- saved rules review
-- rule learning
-- `Type New Rule Here`
-- VAL-suggested rules with accept/dismiss
-- thread-scoped discussion with VAL
-- scan 30/90 day controls
-
-### Stewardship Standard
-
-The drawer is called `Stewardship`, not Relationships.
-
-The prior broad philosophy was:
-
-> Your network is one of your greatest assets. Stewardship is how you care for it. Rather than simply storing contacts, VAL continuously looks for ways to create value, strengthen relationships, prepare meaningful follow-ups, and connect people who can genuinely help one another.
-
-On 2026-07-11, the user narrowed Stewardship V1 because the broader drawer became noisy and non-actionable.
-
-The current V1 source of truth is:
-
-```text
-docs/VAL_STEWARDSHIP_INTRODUCTION_ENGINE_V1.md
-docs/VAL_STEWARDSHIP_INTRODUCTION_UI_V1.md
-```
-
-V1 purpose:
-
-```text
-Stewardship helps the executive make valuable introductions.
-```
-
-Stewardship V1 is not a CRM profile, not a project management dossier, not relationship management, and not a generalized next-move engine.
-
-The visible drawer should reduce to:
-
-1. Suggested Introductions
-2. Create an Introduction
-3. Network
-
-Packets remain infrastructure only. The executive should not browse packet machinery.
-
-The packet sections for V1 are:
-
-1. Needs
-2. Offers
-3. Relationship to user
-4. Internal constraints / missing pieces
-5. Evidence
-
-The primary question is:
-
-```text
-Who needs to meet whom, and why?
-```
-
-Urgent identity/admission correction:
-
-```text
-Recent sent-mail recipients are the strongest automatic admission signal, but not the only definition of a relationship.
-Inbound-only senders the user never replied to or emailed must not appear as relationships unless another trusted relationship signal admits them.
-Emails with unsubscribe links or bulk-mail/list headers are spam or marketing, not contacts.
-```
-
-Reject spam, newsletters, unsubscribe-link senders, bulk-mail/list senders, no-reply/system senders, generic mailboxes, receipts, notifications, scraped addresses, and company/mailbox records that are not real people.
-
-Calendar attendees are trusted contacts for Stewardship admission unless they are owner/self, private calendar blocks, resource rooms, system/no-reply addresses, or generic mailboxes.
-
-Do not reintroduce visible sections like:
-
-- `What VAL wants you to remember`
-- `Executive Judgment`
-- `Collaboration`
-- `Story`
-- `Temperature Review`
-- `People To Watch`
-- `Active Stewardship`
-- relationship score
-- relationship temperature
-- dossiers
-- generic action piles
-- raw round-table/debug/packet language
-- generic canonical relationship index filler
-
-Round Table and packet logic may exist behind the scenes. The executive surface should show the distilled stewardship recommendation, not the machinery.
-
-### Project Managers Standard
-
-The drawer is called `Project Managers`.
-
-Project Managers must remain actionable project dossiers, not generic project management cards.
-
-Preserve the idea that Projects are grounded by:
-
-- intake
-- source review
-- SOP/operating context
-- linked people
-- linked transcripts
-- linked documents
-- next narrow move
-
-Do not flatten Projects into vague summaries or task-board theater.
-
-2026-07-11 Project Manager V1 direction:
-
-```text
-docs/VAL_PROJECT_MANAGER_V1_BUILD_SPEC.md
-```
-
-Project Managers should open to a full Project Manager page.
-
-Implementation decisions now approved:
-
-- suggest projects only when an admitted relationship sends documents
-- minimum evidence is documents, especially agreements, scopes, decks, proposals, spreadsheets, SOWs, and similar project material
-- show simple project-suggestion choices: `Yes, create this project and assign it a manager` and `No, this is not a project`
-- documents remain visible in both the Documents drawer and the Project Manager page
-- V1 has one project owner
-- the executive can reassign ownership by choosing a relationship or creating a new one
-- keep `Put a pin in it` persisted and reminder-wired; due pins should surface in Project Managers and Alignment as newly reopened loops until the reminder is handled
-- keep scoped Co-Work actions in the first Project Managers slice; the visible entry should stay subtle, and the held context must not leak beyond the selected project/action packet
-- assign color-named Project Managers and use the color subtly in each Project Manager page header
-
-Core trust promise:
-
-```text
-This page is how the user knows things are being handled.
-```
-
-Dynamic top modules:
-
-1. Critical Project Issue
-2. Needs Your Judgment
-3. Prepared For You
-4. Today's Reprioritization
-5. Project Movement
-6. Execution Adjustment
-7. Project Reset
-8. Quietly Watching
-
-Board of Observers should become the primary Quietly Watching surface, with project-by-project watch summaries at the top and existing observer details below.
-
-### Co-Work With VAL Standard
-
-Co-Work must not remain a tiny, cramped widget.
-
-The user explicitly said:
-
-```text
-We need the co-work with VAL to be bigger, clearer... exactly like ChatGPT with the previous conversations on the left - open space -- clean and clear and functional the way an executive needs it to look and feel whether on mobile or desktop. Also the voice options needs to be obvious.
-```
-
-The governing draft spec is:
-
-```text
-docs/VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md
-```
-
-Do not implement this larger redesign until the user approves the documentation.
-
-The current Hearth Co-Work widget is only an entry point into the future full workspace.
-
-### Lead Intelligence Standard
-
-Lead Intelligence opens into the three-level sourcing board:
-
-- Level 1 Discovery
-- Level 2 Decision Maker
-- Level 3 Confirm / Dedupe
-
-Primary controls:
-
-- run organization scraper
-- run partner scraper
-- train this scraper
-
-Users must be able to define scraper parameters. Every future VAL dashboard will have its own scrapers, so this pattern must scale without hardcoding Jessa-only assumptions.
-
-Preview does not equal import. Import still requires explicit approval and final dedupe/validation.
-
-## Architectural Rule
-
-This applies everywhere:
-
-```text
-Round Table decides.
-Packet stores.
-Custom fields persist.
-Drawer displays.
-User approves action.
-```
-
-The UI must not expose VAL's intelligence as raw machinery. The UI should show the executive-ready conclusion, the source-backed next move, and the approval path.
-
-## Language Rules
-
-Do not say `GHL` in user-facing copy. Say `CRM`.
-
-Do not say `Krisp`, `Outscraper`, `RocketReach`, or provider names in user-facing copy unless the user explicitly asks to inspect integrations. Say `VAL` or use plain source language.
-
-Do not use fake certainty. Do not invent people, emails, transcripts, tasks, or context.
-
-## Current Verification
-
-The baseline commit was deployed to Railway and live-verified.
-
-Post-deploy live checks confirmed:
-
-- live app includes the simplified Stewardship network map
-- live app includes `Who needs to meet whom, and why`
-- live app includes `peopleWhoNeedThem` and `peopleTheyShouldMeet`
-- old visible Stewardship sections are absent from live HTML
-
-Focused local checks passed:
+## Product Principles That Are Not Optional
+
+- VAL should feel calm, useful, and executive-ready. Do not expose packet,
+  round-table, or diagnostic machinery in user-facing drawers.
+- A source receipt is not a new fact. Preserve exact source material and keep
+  it distinct from VAL's judgment.
+- No external action happens without a visible, explicit approval path.
+- Co-Work means a real, scoped conversation that saves a bounded result to the
+  exact surface the user opened. It is not a generic chat, a dead end, or a
+  text echo.
+- Do not recreate fake/demo contacts, placeholder emails, legacy local preview
+  data, or stale fallback screens in production.
+- An email excluded from the active Executive Inbox can still be valid
+  relationship, project, onboarding, or evidence context. Queue exclusion is
+  not deletion.
+- `invite.ics` and other calendar invitations never become documents.
+- Preserve the approved white-glass drawer visual language. Do not reintroduce
+  muddy, heavy, brown, or opaque card treatments.
+
+## Immediate Assignment: Executive Inbox
+
+The user wants Executive Inbox rebuilt cleanly rather than patched around its
+old, overlapping workflows. Work inch by inch. Before implementing the visual
+design, establish a single canonical queue and verify it with real email data.
+
+Ask this first question after reading the code:
+
+> Please show me one real conversation that absolutely belongs in Executive
+> Inbox and one that absolutely does not. I will use those as the first
+> admission and exclusion acceptance cases.
+
+Then make the smallest correct implementation step. Do not use generic fake
+emails to demonstrate progress.
+
+## Current Executive Inbox Architecture
+
+### Surface
+
+- Drawer markup: `hearth-prototype.html`, `#correspondence-detail` around line
+  526.
+- Main client behavior: `hearth-prototype.js`, `correspondence*` functions
+  around lines 7983-9454.
+- Existing visible pieces: queue, selected readable thread, editable private
+  draft, relationship/project context, and rules.
+
+### Competing inputs to remove or unify
+
+`hydrateCorrespondenceDrawer()` currently fetches and merges three different
+lists in the browser:
+
+1. `/api/val/ready-for-you/build?limit=5`
+2. `/api/val/email/review-drafts?limit=20`
+3. `/api/email/intelligence?days=30&limit=75`
+
+There is also a non-API local fallback (`localCorrespondenceItems`). This is
+the primary source of competing paths and shifting states. The rebuild must
+choose one server-side canonical Executive Inbox queue or make the other two
+strict, traceable views of that same record. Do not keep a client-side merge as
+the source of truth.
+
+### Gmail intake and admission
+
+- Gmail refresh: `POST /api/email/gmail/refresh` in `server.js` around line
+  9512.
+- Inbox data: `GET /api/email/intelligence` around line 9505.
+- Admission logic: `classifyExecutiveEmail()` in `server.js` around line
+  10996.
+- Existing guardrails exclude read inbound messages, calendar notices,
+  automated/system/bulk mail, and repeated inbound-only senders without
+  relationship evidence.
+- `test/gmailFreshness.test.js` already asserts that read/CC history can still
+  inform relationship context without admitting an email into Executive Inbox.
+
+Keep that separation: the active queue is judgment-only; the broader evidence
+model remains intact.
+
+### Scoped Co-Work contract
+
+- Client opener: `openCorrespondenceThreadCowork()` around line 9291.
+- Entry point: `email.thread` in `services/valCowork.js` around line 2704.
+- Open behavior loads the selected durable message/thread and refuses to
+  substitute another conversation or draft from a summary alone.
+- Reply behavior creates one internal review-only draft, then sends it to
+  Leverage for review. It does not send email, create a provider draft, update
+  CRM, create a task, alter the email, or mutate an external system.
+- Contract coverage: `test/valCowork.test.js`, especially the Executive Inbox
+  tests around lines 910 and 1133.
+
+Retain this scope and approval boundary. Improve reliability and return-to-
+drawer behavior before adding more Co-Work options.
+
+## Executive Inbox Acceptance Criteria
+
+The finished drawer should satisfy all of these with real account data:
+
+1. It opens quickly into one stable judgment-only queue. Loading state is
+   explicit and quiet; it never flashes old, local, or unrelated records first.
+2. Selecting a conversation shows the actual readable message/thread at the
+   top of the working area, including sender, date, full available text, and
+   attachment names. Do not present a label saying an email exists without the
+   email itself.
+3. The active queue contains only unresolved executive judgments. Read/replied,
+   calendar, system, bulk, promotional, and unsupported noise stay out, while
+   remaining available as evidence where appropriate.
+4. Relationship and project context is attached only when supported by the
+   selected source. It must be understandable, not a dump of backend fields.
+5. Documents/attachments stay linked to their source and route to the correct
+   existing or proposed project. Calendar invite attachments are excluded.
+6. Drafting is private preparation. The user can edit and clearly approve the
+   exact external send. No ambiguous direct mutation or phantom completion.
+7. Co-Work is limited to the selected thread and produces a saved, visible
+   private draft/next state. Closing it returns to that thread in Executive
+   Inbox, not Home.
+8. Rules, if retained, are plain-language behavior the user can understand and
+   verify. Do not preserve the existing Rule Learning controls by default;
+   validate their value with the user first.
+
+## First Engineering Pass
+
+1. Use the real authenticated browser and the two user-provided acceptance
+   emails. Record the exact API responses and rendering path for each.
+2. Inventory all writers of Executive Inbox records, drafts, and Ready For You
+   registrations. Identify duplicates by durable provider/message/thread ID.
+3. Document the chosen canonical record and lifecycle before editing UI:
+   source received -> classified -> admitted or excluded -> private draft ->
+   user review -> explicit external approval -> receipt.
+4. Remove or quarantine the noncanonical fallback path. Do not merely sort the
+   three arrays more carefully.
+5. Build one narrow vertical slice, test it in the browser, then ask for the
+   next user decision before expanding the surface.
+
+## Required Verification
+
+At minimum, after each Inbox slice:
 
 ```bash
-node --check hearth-prototype.js
-node --check services/valRelationshipDossier.js
-node --test test/hearthLeadIntelligence.test.js test/valRelationshipDossier.test.js
+node --check hearth-prototype.js server.js services/valCowork.js services/valExecutiveInbox.js
+node --test test/gmailFreshness.test.js test/valExecutiveInbox.test.js test/valCowork.test.js test/valReadyForYou.test.js test/valDocuments.test.js
 git diff --check
 ```
 
-Result:
+Also test in the authenticated production browser:
 
-```text
-62/62 tests passing
-```
+- one admitted message is readable in full;
+- one excluded message stays out of the queue but remains evidence-safe;
+- one attached document appears correctly and no `.ics` appears as a document;
+- one scoped Co-Work turn persists and returns to the same selected thread;
+- no external send occurs without the explicit approval action.
 
-## Before Any Future Deployment
+## Do Not Do
 
-Start from `6d88b98` or a descendant of it unless the user explicitly resets the baseline again.
-
-Before deploying, confirm:
-
-1. The work is based on the current live baseline.
-2. No older drawer implementation is being resurrected.
-3. No queued work from another chat is being treated as valid just because it exists.
-4. The drawer/Home regression tests pass.
-5. The user has approved any intentional change to the baseline stance.
-
-If there is a conflict between a pending change and this handoff, this handoff wins.
-
-## Next Product Work
-
-The user paused Stewardship-specific iteration and wants the next session to pick up from the system-wide source map.
-
-Start with:
-
-```text
-docs/VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md
-```
-
-The user is auditing the Stewardship drawer and wants the next session to dig into the user's inbox as a context source for:
-
-- VAL onboarding / updating
-- Stewardship
-- relationship context
-- project context
-- relationship stewardship logic
-
-Important distinction:
-
-- Executive Inbox should not show read/replied-to emails as active inbox items.
-- VAL as a whole should still use read emails, sent emails, and CC'd emails as context when understanding a person, project, onboarding preference, stewardship opportunity, or follow-up.
-
-For context gathering, inspect the user's inbox and sent history carefully, especially the last 30 days, and use those emails as evidence for VAL understanding. Do not confuse "not active Executive Inbox material" with "not useful VAL context."
-
-## Next Drawer Order
-
-After the current Stewardship pass, the next drawers to work through are:
-
-1. Project Managers
-2. Commitments / task list
-3. Documents
-4. Lead Intelligence
-5. VAL onboarding / updating
-
-Each drawer must inherit the same architecture discipline:
-
-```text
-Round Table decides.
-Packet stores.
-Custom fields persist.
-Drawer displays.
-User approves action.
-```
-
-Do not rebuild these drawers from generic UI intuition. Carry forward the documents and source-of-truth architecture around Round Table, packets, custom fields, and AI prompt layering.
-
-At minimum, read and preserve the intent of:
-
-- `docs/VAL_EXECUTIVE_REASONING_ARCHITECTURE.md`
-- `docs/VAL_ROUND_TABLE_INSTRUMENTATION.md`
-- `docs/VAL_ROUND_TABLE_MEMORY_AND_RECOGNITION.md`
-- `docs/VAL_PROJECT_MANAGER_ROUND_TABLE_AND_PACKETS.md`
-- `docs/VAL_STEWARDSHIP_ROUND_TABLE_AND_PACKETS.md`
-- `docs/VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md`
-- `docs/VAL_PROMPT_ARCHITECTURE.md`
-- `docs/VAL_TRANSCRIPT_INTAKE_PROMPTS.md`
-- `docs/VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md`
-- `docs/VAL_CALENDAR_AND_MEETING_PREP_PROMPTS.md`
-- `docs/VAL_EMAIL_DRAFT_PROMPTS.md`
-- `docs/VAL_ONBOARDING_FIRST_UNDERSTANDING_PROMPTS.md`
-- `docs/VAL_TEACH_VAL_PROMPTS.md`
-- `docs/VAL_CONTEXT_REGISTRY.md`
-- `docs/VAL_DO_NOT_REGRESS.md`
-
-The point is not to expose these documents in the UI. The point is to preserve their reasoning structure behind the UI so the user sees calm, useful, source-backed conclusions instead of raw machinery.
-
-## Frustrations To Avoid
-
-The user spent too much time recovering from regressions that should not have happened. Avoid these specifically:
-
-- Do not make the user repeat the same product philosophy every session.
-- Do not resurrect old drawers just because stale code or queued deployment work exists.
-- Do not show fake/demo/hallucinated records as if they are real.
-- Do not show stale "canonical index" filler that creates cognitive load without action.
-- Do not expose Round Table, packet, observer, prompt, provider, or debug language in the executive surface.
-- Do not replace working source-grounded surfaces with diagnostic cards.
-- Do not make buttons clickable but functionless.
-- Do not allow close/back buttons to strand the user or close the whole drawer when they should return to the previous view.
-- Do not make the user hunt through raw snippets to infer the open loop.
-- Do not show redundant cards saying the same vague thing in several ways.
-- Do not use muddy colors or regress from the frosted-white baseline.
-- Do not deploy or preserve anything outside the live truth baseline without explicit user approval.
-- Do not say `GHL` in user-facing copy; say `CRM`.
-- Do not mention provider names such as Krisp, Outscraper, or RocketReach in normal user copy unless the user asks for integration/debug detail.
-- Do not assume "empty Executive Inbox" means VAL has no email context.
-- Do not confuse read email exclusion from Executive Inbox with excluding read email from VAL's understanding.
-
-If the next chat gets uncertain, stop and compare the proposal against this handoff before coding.
-
-## Current Stewardship Direction
-
-The current approved direction is:
-
-- keep Stewardship simple
-- focus on thoughtful relationship moves
-- use person packets as the relationship memory layer
-- support introductions as one move type, alongside follow-ups, resources, check-ins, congratulations, questions, reminders, and waiting
-- prepare drafts or review artifacts only after source-backed context is clear
-- surface prepared work in Leverage for approval
-
-Do not rebuild the removed relationship dossier sections unless the user explicitly asks for a new version of them.
+- Do not start another broad data purge. The user has now created real
+  Witnessing/First Look/Stewardship data that is the current test baseline.
+- Do not re-enable Project Managers while rebuilding Inbox.
+- Do not alter First Look, Krisp intake, or relationship enrichment just because
+  Inbox uses the same evidence. Make a targeted interface/service change and
+  prove it.
+- Do not change production based only on static tests. Browser-visible behavior
+  is required for this drawer.
