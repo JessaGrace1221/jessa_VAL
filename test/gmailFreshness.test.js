@@ -73,6 +73,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/senderMetrics:emailSenderMetrics\(email,scanCorpus\)/);
   assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/queue'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/resolve-thread'/);
+  assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/safe-contact'/);
+  assert.match(server,/function executiveInboxSafeListed/);
+  assert.match(server,/This is here because you told VAL this sender belongs in Executive Inbox/);
   assert.match(server,/function canonicalExecutiveInboxQueue/);
   assert.match(server,/fetchGmailMessages\(\{query:`in:sent to:\$\{sender\}`/);
   assert.match(server,/waitingOnResponseFromSent\(sentGmail\.emails\|\|\[\],Array\.from\(gmailMap\.values\(\)\),0\)/);

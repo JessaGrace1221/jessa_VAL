@@ -87,6 +87,7 @@ const correspondenceDraftBody = document.querySelector('[data-correspondence-dra
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
 const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
+const correspondenceSafeEmail = document.querySelector('[data-correspondence-safe-email]');
 const correspondenceRulesPanel = document.querySelector('[data-correspondence-rules-panel]');
 const correspondenceRulesList = document.querySelector('[data-correspondence-rules-list]');
 const correspondenceRelationships = document.querySelector('[data-correspondence-relationships]');
@@ -132,6 +133,7 @@ let dismissedCorrespondenceRuleSuggestions = new Set();
 let currentCorrespondenceScanDays = 14;
 let currentCorrespondenceScanStatus = '';
 let correspondenceScanInFlight = false;
+let correspondenceLoading = false;
 let currentCommitmentItems = [];
 let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
@@ -8707,14 +8709,15 @@ function correspondenceItemsFromReady(result = {}){
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   correspondenceList.innerHTML = '';
-  correspondenceCount.textContent = currentCorrespondenceItems.length ? String(currentCorrespondenceItems.length) : '0';
-  correspondenceCount.setAttribute('aria-label', currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' waiting' : 'No conversations waiting');
+  const isChecking = correspondenceScanInFlight || correspondenceLoading;
+  correspondenceCount.textContent = currentCorrespondenceItems.length ? String(currentCorrespondenceItems.length) : (isChecking ? 'Checking' : '0');
+  correspondenceCount.setAttribute('aria-label', currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' waiting' : (isChecking ? 'Checking Executive Inbox' : 'No conversations waiting'));
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty';
-    empty.innerHTML = '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
+    empty.innerHTML = '<span>' + (isChecking ? 'Checking Executive Inbox' : 'No admitted items') + '</span><p>' + (isChecking ? 'Checking Gmail and relationship history before showing the queue.' : 'No Gmail conversation has been classified into Executive Inbox yet.') + '</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
     const status = empty.querySelector('[data-correspondence-scan-status]');
-    if(status) status.textContent = currentCorrespondenceScanStatus || 'Only unread, unresolved executive conversations appear here.';
+    if(status) status.textContent = currentCorrespondenceScanStatus || (isChecking ? 'This can take a few seconds when VAL checks sent history and known contacts.' : 'Only unresolved executive conversations appear here.');
     empty.querySelectorAll('[data-correspondence-scan-days]').forEach((button) => {
       button.disabled = correspondenceScanInFlight;
       button.setAttribute('aria-busy', String(correspondenceScanInFlight));
@@ -8730,7 +8733,7 @@ function renderCorrespondenceList(){
     button.classList.toggle('active', isActive);
     button.setAttribute('aria-pressed', String(isActive));
     const label = document.createElement('span');
-    label.textContent = item.status === 'needs_context' ? 'Needs Context' : 'Ready';
+    label.textContent = item.status === 'waiting_for_response' ? 'Waiting for response' : (item.status === 'needs_context' ? 'Needs Context' : 'Ready');
     const title = document.createElement('strong');
     title.textContent = item.title;
     const summary = document.createElement('p');
@@ -8745,7 +8748,7 @@ function renderCorrespondenceList(){
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   const ruleActions = ['show_rules', 'save_forward_rule', 'suggest_rules'];
   if(!item) return ruleActions;
-  const actions = ['cowork_correspondence', 'resolve_thread', 'not_executive_contact'].concat(ruleActions);
+  const actions = ['cowork_correspondence', 'resolve_thread', 'safe_contact', 'not_executive_contact'].concat(ruleActions);
   if(String(item.draftBody || '').trim()) actions.unshift('send');
   return actions;
 }
@@ -9042,6 +9045,18 @@ function correspondenceSuppressionContact(item = activeCorrespondenceItem){
   };
 }
 
+function correspondenceSafeContact(item = activeCorrespondenceItem){
+  const contact = correspondenceSuppressionContact(item);
+  return {
+    email: contact.email || item?.senderEmail || item?.recipientEmail || '',
+    name: contact.name || item?.senderName || item?.title || '',
+    sourceItemId: item?.id || '',
+    threadId: item?.threadId || '',
+    messageId: item?.messageId || '',
+    reason: 'User marked this sender as an Executive Inbox contact from Hearth.'
+  };
+}
+
 function correspondenceExecutionMessage(result = {}){
   if(result.executed){
     return result.packet?.providerResponseSummary || result.receipt?.providerResponseSummary || 'Sent.';
@@ -9175,6 +9190,22 @@ async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
   if(saved && correspondenceForwardTo) correspondenceForwardTo.value = '';
 }
 
+async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
+  const typedEmail = String(correspondenceSafeEmail?.value || '').trim();
+  const contact = typedEmail ? {email:typedEmail, name:typedEmail, reason:'User manually added this sender as an Executive Inbox contact from Hearth.'} : correspondenceSafeContact(item);
+  if(!contact.email){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type an email address or select a thread before saving an Executive contact.';
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to save Executive contacts.';
+    return;
+  }
+  const result = await postJson('/api/val/executive-inbox/safe-contact', contact);
+  if(result.ok !== false && correspondenceSafeEmail) correspondenceSafeEmail.value = '';
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
+}
+
 async function analyzeCorrespondenceRuleSuggestions(){
   if(!canUseApi){
     if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to analyze rule suggestions.';
@@ -9207,6 +9238,8 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
+  correspondenceLoading = true;
+  currentCorrespondenceScanStatus = 'Checking Gmail and relationship history...';
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
@@ -9223,10 +9256,13 @@ async function hydrateCorrespondenceDrawer(){
     });
     currentCorrespondenceItems = Array.from(byId.values());
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
+    correspondenceLoading = false;
+    currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No unresolved conversations crossed the Executive Inbox judgment gate.';
     renderCorrespondenceBrief(activeCorrespondenceItem);
     await hydrateCorrespondenceRules();
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
+    correspondenceLoading = false;
     currentCorrespondenceItems = [];
     activeCorrespondenceItem = null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
@@ -9244,6 +9280,7 @@ async function scanCorrespondenceWindow(days = 30){
     return;
   }
   currentCorrespondenceScanDays = scanDays;
+  correspondenceLoading = true;
   correspondenceScanInFlight = true;
   currentCorrespondenceScanStatus = 'Scanning the last ' + scanDays + ' days of connected Gmail. Low-priority mail will stay out of Executive Inbox.';
   renderCorrespondenceList();
@@ -9256,12 +9293,14 @@ async function scanCorrespondenceWindow(days = 30){
       ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
       : 'Scanned the last ' + scanDays + ' days. No unresolved Gmail threads crossed the Executive Inbox judgment gate.';
     correspondenceScanInFlight = false;
+    correspondenceLoading = false;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety){
       correspondenceSafety.textContent = currentCorrespondenceScanStatus;
     }
   }catch(error){
     correspondenceScanInFlight = false;
+    correspondenceLoading = false;
     currentCorrespondenceScanStatus = 'Gmail scan failed: ' + error.message;
     renderCorrespondenceList();
     if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
@@ -9353,6 +9392,10 @@ async function handleCorrespondenceAction(action){
     await saveCorrespondenceForwardRule(item);
     return;
   }
+  if(action === 'save_safe_contact'){
+    await saveCorrespondenceSafeContact(item);
+    return;
+  }
   if(action === 'suggest_rules'){
     await analyzeCorrespondenceRuleSuggestions();
     return;
@@ -9371,6 +9414,18 @@ async function handleCorrespondenceAction(action){
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact.';
+    return;
+  }
+  if(action === 'safe_contact'){
+    const contact = correspondenceSafeContact(item);
+    if(!contact.email){
+      if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs an email address before it can remember this Executive contact.';
+      return;
+    }
+    if(canUseApi){
+      await postJson('/api/val/executive-inbox/safe-contact', contact);
+    }
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
     return;
   }
   if(action === 'resolve_thread'){
@@ -9461,12 +9516,12 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const drawerUtilityAction = ['show_rules', 'save_forward_rule', 'suggest_rules'].includes(correspondenceActionId);
+  const drawerUtilityAction = ['show_rules', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
   if(drawerUtilityAction && !activeCorrespondenceItem){
     await handleCorrespondenceAction(correspondenceActionId);
     return true;
   }
-  const inspectOnlyAction = ['cowork_correspondence', 'resolve_thread', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'suggest_rules'].includes(correspondenceActionId);
+  const inspectOnlyAction = ['cowork_correspondence', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);

@@ -538,6 +538,10 @@
             <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
           </div>
           <div class="correspondence-rule-create">
+            <input type="email" data-correspondence-safe-email placeholder="Add Executive Contact Email" autocomplete="off">
+            <button type="button" data-correspondence-action="save_safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Save Contact</button>
+          </div>
+          <div class="correspondence-rule-create">
             <input type="text" data-correspondence-forward-to placeholder="Type New Rule Here" autocomplete="off">
             <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save Rule</button>
             <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Ask VAL</button>
@@ -582,6 +586,7 @@
             <div class="correspondence-actions" aria-label="Correspondence review actions">
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
               <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
+              <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
               <button type="button" data-correspondence-action="not_executive_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Not executive contact</button>
             </div>
             <div class="correspondence-draft-preview" data-correspondence-draft-preview>

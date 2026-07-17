@@ -9528,11 +9528,18 @@ function executiveInboxResolutionRows(){
 function executiveInboxSuppressionRows(){
   return (valStore().suppressedExecutiveContacts||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId());
 }
+function executiveInboxSafeContactRows(){
+  return (valStore().executiveInboxSafeContacts||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId());
+}
 function executiveInboxSuppressed(email={},suppressions=executiveInboxSuppressionRows()){
   const sender=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
   const domain=executiveInboxSenderDomain(email);
   const keys=new Set((suppressions||[]).map(row=>row.key).filter(Boolean));
   return (sender&&keys.has(`email:${sender}`)) || (domain&&keys.has(`domain:${domain}`));
+}
+function executiveInboxSafeListed(email={},safeContacts=executiveInboxSafeContactRows()){
+  const sender=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
+  return !!sender && (safeContacts||[]).some(row=>row.email===sender||row.key===`email:${sender}`);
 }
 function executiveInboxResolved(email={},resolutions=executiveInboxResolutionRows()){
   const key=executiveInboxThreadKey(email);
@@ -9562,8 +9569,10 @@ async function executiveInboxHasAnySentMailTo(senderEmail='',sentCache=new Map()
   sentCache.set(sender,has);
   return has;
 }
-function executiveInboxHumanReason({email={},kind='',known=false,hasSent=false,ask=false}={}){
+function executiveInboxHumanReason({email={},kind='',known=false,hasSent=false,ask=false,safeListed=false}={}){
   if(kind==='waiting_for_response')return 'This is here because you sent a question or request, and VAL has not seen the thread resolved yet.';
+  if(safeListed&&ask)return 'This is here because you told VAL this sender belongs in Executive Inbox, and this thread asks you to respond or decide.';
+  if(safeListed)return 'This is here because you told VAL this sender belongs in Executive Inbox.';
   if(known&&ask)return 'This is here because this person is in your trusted relationship context, and the thread asks you to respond or decide.';
   if(hasSent&&ask)return 'This is here because you have written to this person before, and their latest note asks you for a response or decision.';
   if(known)return 'This is here because this sender is already part of your relationship context.';
@@ -9574,6 +9583,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
   const data=await emailIntelligencePayload(queryReq,{force});
   if(data.ok===false)return {...data,items:[],queue:[]};
   const suppressions=executiveInboxSuppressionRows();
+  const safeContacts=executiveInboxSafeContactRows();
   const resolutions=executiveInboxResolutionRows();
   const profilesPromise=listRelationshipProfiles({limit:800}).catch(()=>[]);
   const sentCache=new Map();
@@ -9587,7 +9597,8 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
     if(executiveInboxResolved(email,resolutions))return null;
     if(executiveInboxSuppressed(email,suppressions))return null;
     const senderEmail=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
-    const known=await executiveInboxKnownContact(email,profilesPromise);
+    const safeListed=executiveInboxSafeListed(email,safeContacts);
+    const known=safeListed || await executiveInboxKnownContact(email,profilesPromise);
     const metrics=email.senderMetrics||{};
     const hasSent=Number(metrics.outboundToSenderCount||0)>0 || await executiveInboxHasAnySentMailTo(senderEmail,sentCache);
     const oneSided=Number(metrics.inboundFromSenderCount||0)>=3&&!hasSent&&!known;
@@ -9598,7 +9609,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
     if(!waiting&&!known&&!hasSent)return null;
     if(!waiting&&!known&&!ask)return null;
     const kind=waiting?'waiting_for_response':'needs_judgment';
-    const reason=executiveInboxHumanReason({email,kind,known,hasSent,ask});
+    const reason=executiveInboxHumanReason({email,kind,known,hasSent,ask,safeListed});
     const status=waiting?'waiting_for_response':'ready_for_review';
     return {
       ...email,
@@ -9611,6 +9622,7 @@ async function canonicalExecutiveInboxQueue(req,{force=false}={}){
       executiveInboxAdmission:{
         kind,
         knownContact:known,
+        safeListed,
         hasSentHistory:hasSent,
         clearAsk:ask,
         manualResolutionRequired:true,
@@ -9639,6 +9651,25 @@ app.get('/api/val/executive-inbox/queue',async(req,res)=>{
     await auditLog({req,action:'executive_inbox_queue_loaded',resourceType:'executive_inbox',metadata:{count:result.items?.length||0,source:'canonical'},success:result.ok!==false}).catch(()=>{});
     res.status(result.ok===false?400:200).json(result);
   }catch(e){res.status(500).json({ok:false,error:e.message,items:[],queue:[]});}
+});
+app.post('/api/val/executive-inbox/safe-contact',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const sender=body.sender||body.contact||body.from||{};
+    const email=normalizeExecutiveEmailAddress(body.email||sender.email||'');
+    const name=String(body.name||sender.name||sender.displayName||email||'').trim().slice(0,180);
+    if(!email)return res.status(400).json({ok:false,error:'email is required.'});
+    const store=valStore();
+    store.executiveInboxSafeContacts=store.executiveInboxSafeContacts||[];
+    store.suppressedExecutiveContacts=(store.suppressedExecutiveContacts||[]).filter(row=>!(row.tenantId===tenantId()&&row.userId===currentUserId()&&row.key===`email:${email}`));
+    const existing=store.executiveInboxSafeContacts.find(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&row.email===email);
+    const row={id:existing?.id||uuid('einbox_safe'),tenantId:tenantId(),userId:currentUserId(),key:`email:${email}`,email,name,reason:String(body.reason||'User marked this sender as an Executive Inbox contact.').slice(0,400),sourceItemId:body.sourceItemId||'',createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    if(existing)Object.assign(existing,row);
+    else store.executiveInboxSafeContacts.unshift(row);
+    saveValStore(store);
+    await auditLog({req,action:'executive_inbox_safe_contact_marked',resourceType:'executive_inbox_safe_contact',resourceId:email,metadata:{email,name},success:true}).catch(()=>{});
+    res.json({ok:true,safeContact:existing||row});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/executive-inbox/resolve-thread',async(req,res)=>{
   try{
