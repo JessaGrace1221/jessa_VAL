@@ -8,6 +8,7 @@ const hearthJs = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8')
 const hearthHtml = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
 const hearthCss = fs.readFileSync(path.join(root, 'hearth-prototype.css'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const meetingPrepService = fs.readFileSync(path.join(root, 'services', 'valMeetingPrep.js'), 'utf8');
 const relationshipActionService = fs.readFileSync(path.join(root, 'services', 'valRelationshipActionIntelligence.js'), 'utf8');
 const reviewRoutes = fs.readFileSync(path.join(root, 'services', 'valReviewUpdatesRoutes.js'), 'utf8');
 const hearthClickContracts = fs.readFileSync(path.join(root, 'docs', 'HEARTH_CLICK_CONTRACTS.md'), 'utf8');
@@ -76,6 +77,21 @@ test('Hearth Lead Intelligence keeps preview and import endpoints separate', () 
   assert.match(hearthJs, /workflowPacket === 'lead_intelligence_packet'/);
   assert.match(hearthJs, /source:activeLeadIntelligenceSource/);
   assert.match(hearthJs, /renderHearthPacketReceiptStrip\(workflowPreflight\.packet \|\| lastHearthPacketReceipt\)/);
+});
+
+test('Network renders every admitted relationship and enriches context only when the user asks', () => {
+  assert.match(hearthCss, /relationship-detail\.show-index \.stewardship-network-layout \.relationship-rolodex\{[\s\S]*overflow-y:scroll/);
+  assert.match(hearthCss, /drawer-tray\.relationship-open \.relationship-detail\.show-index\{[\s\S]*display:block/);
+  assert.match(hearthJs, /data-stewardship-enrich-person/);
+  assert.match(hearthJs, /Enrich this relationship\\'s context/);
+  assert.match(hearthJs, /\/api\/relationships\/network\/enrich/);
+  assert.match(server, /async function enrichStewardshipNetworkRelationship/);
+  assert.match(server, /async function fetchOutscraperRelationshipContext/);
+  assert.match(server, /app\.post\('\/api\/relationships\/network\/enrich'/);
+  assert.match(server, /relationshipEnrichment/);
+  assert.match(meetingPrepService, /function savedRelationshipPublicContext/);
+  assert.match(meetingPrepService, /saved_relationship_context:savedPublicContext/);
+  assert.match(meetingPrepService, /Saved public relationship context/);
 });
 
 test('Hearth scraper preview requires approve or hold before import', () => {

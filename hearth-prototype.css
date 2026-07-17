@@ -6881,8 +6881,23 @@ button.timeline-overview-receipt:focus-visible{
 }
 .relationship-detail.show-index .stewardship-network-layout .relationship-rolodex{
   display:grid;
-  max-height:none;
+  max-height:min(58vh,640px);
+  overflow-y:scroll;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.drawer-tray.relationship-open .relationship-detail.show-index{
+  display:block;
+  min-height:0;
   overflow:visible;
+}
+.drawer-tray.relationship-open .relationship-detail.show-index > * + *{
+  margin-top:12px;
+}
+.relationship-detail.show-index .relationship-v1-panel.active,
+.relationship-detail.show-index .stewardship-network-map,
+.relationship-detail.show-index .stewardship-network-layout{
+  min-height:0;
 }
 .stewardship-network-detail{
   display:grid;
@@ -6903,6 +6918,30 @@ button.timeline-overview-receipt:focus-visible{
 .relationship-rolodex-row{
   display:grid;
   gap:5px;
+}
+.relationship-rolodex-row-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+.relationship-rolodex-row-actions button{
+  min-height:30px;
+  border:1px solid rgba(91,105,79,.22);
+  border-radius:999px;
+  background:rgba(255,255,250,.76);
+  color:rgba(43,61,40,.94);
+  padding:0 11px;
+  font:800 .68rem var(--body);
+}
+.relationship-rolodex-row-actions button:disabled{
+  cursor:wait;
+  opacity:.62;
+}
+.relationship-enrichment-receipt{
+  color:rgba(64,86,61,.76);
+  font-size:.67rem;
+  font-weight:800;
+  line-height:1.28;
 }
 .relationship-rolodex button[data-relationship-open-profile]{
   display:grid;
@@ -7495,8 +7534,9 @@ button.timeline-overview-receipt:focus-visible{
   min-height:0;
 }
 .drawer-tray.relationship-open .relationship-detail.show-index{
-  display:grid;
-  grid-template-rows:auto auto minmax(220px,1fr);
+  display:block;
+  min-height:0;
+  overflow:visible;
 }
 .drawer-tray.relationship-open .relationship-rolodex{
   max-height:none;

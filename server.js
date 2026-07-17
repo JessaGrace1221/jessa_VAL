@@ -11920,13 +11920,16 @@ function compactContactCandidate(c,source='unknown'){
   const name=collapseRepeatedName(base.contactName||base.name||[base.firstName,base.lastName].filter(Boolean).join(' ')||base.companyName||base.email||base.phone||'');
   const email=normalizeContextEmail(base.email||base.contactEmail);
   const phone=normalizeContextPhone(base.phone||base.contactPhone);
+  const relationshipEnrichment=base.relationshipEnrichment||base.relationship_enrichment||base.metadata?.relationshipEnrichment||base.metadata?.relationship_enrichment||null;
   return {
     id:String(base.id||base.contactId||contactCandidateId({name,email,phone})),
     contactId:String(base.id||base.contactId||''),
     name,email,phone,
-    company:base.companyName||base.company||base.businessName||base.organizationName||'',
+    company:base.companyName||base.company||base.businessName||base.organizationName||relationshipEnrichment?.organization||'',
     tags:base.tags||base.tag||[],
     source,
+    relationshipProfileId:String(base.relationshipProfileId||base.relationship_profile_id||base.relationshipProfile?.id||''),
+    relationshipEnrichment,
     raw:base
   };
 }
@@ -11969,6 +11972,22 @@ async function collectContextContactCandidates(input={}){
       }
     }
   }catch(e){}
+  (await listRelationshipProfiles({limit:600}).catch(()=>[]))
+    .filter(profile=>profile.profileType==='person'&&stewardshipNetworkNamedEmailAdmission(profile))
+    .forEach(profile=>{
+      const metadata=profile.metadata||{};
+      const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
+      addCandidate({
+        id:`relationship-profile:${profile.id}`,
+        relationshipProfileId:profile.id,
+        name:profile.displayName||profile.name||'',
+        email:relationshipProfilePrimaryEmail(profile),
+        company:metadata.company||metadata.organization||relationshipEnrichment?.organization||'',
+        summary:profile.summary||'',
+        relationshipProfile:profile,
+        relationshipEnrichment
+      },'relationship_profile');
+    });
   (await loadTasks().catch(()=>[])).filter(t=>t.contactName).slice(0,120).forEach(t=>addCandidate({name:t.contactName,id:'task-contact:'+normalizeContextName(t.contactName)},'task'));
   (await recentTranscripts(180).catch(()=>[])).slice(0,120).forEach(t=>{
     const meta=t.metadata||{};
@@ -11999,8 +12018,15 @@ async function resolveContactFromContext(input={}){
     if([input.transcript,input.emailThread].some(text=>itemMentionsContact({rawText:text},c))){score+=0.2;reasons.push('mentioned in supplied context');}
     return {...c,confidence:Math.min(1,Number(score.toFixed(2))),matchReasons:[...new Set(reasons)]};
   }).filter(c=>c.confidence>0).sort((a,b)=>b.confidence-a.confidence);
-  const best=scored[0]||null;
-  return {ok:true,status:best?(best.confidence>=0.75?'matched':'possible_match'):'not_found',confidence:best?.confidence||0,contact:best,matches:scored.slice(0,8),sourcesChecked:['GHL contacts','tasks','transcripts','memory','calendar attendees'],reason:best?best.matchReasons.join(', '):'No contact matched by email, phone, name, company, attendees, transcripts, tasks, or memory.'};
+  const initialBest=scored[0]||null;
+  const savedContextCandidate=scored.find(candidate=>{
+    const enrichment=candidate.relationshipEnrichment||candidate.raw?.relationshipEnrichment||candidate.raw?.metadata?.relationshipEnrichment;
+    return !!(enrichment?.status==='complete'&&((target.email&&candidate.email===target.email)||(!target.email&&target.name&&looseNameScore(target.name,candidate.name)>=0.85)));
+  })||null;
+  const best=initialBest&&savedContextCandidate&&initialBest.id!==savedContextCandidate.id
+    ? {...initialBest,relationshipEnrichment:savedContextCandidate.relationshipEnrichment||savedContextCandidate.raw?.relationshipEnrichment||savedContextCandidate.raw?.metadata?.relationshipEnrichment||null,relationshipProfileId:savedContextCandidate.relationshipProfileId||'',raw:{...(initialBest.raw||{}),relationshipEnrichment:savedContextCandidate.relationshipEnrichment||savedContextCandidate.raw?.relationshipEnrichment||savedContextCandidate.raw?.metadata?.relationshipEnrichment||null,relationshipProfileId:savedContextCandidate.relationshipProfileId||''}}
+    : initialBest;
+  return {ok:true,status:best?(best.confidence>=0.75?'matched':'possible_match'):'not_found',confidence:best?.confidence||0,contact:best,matches:scored.slice(0,8),sourcesChecked:['GHL contacts','Network saved context','tasks','transcripts','memory','calendar attendees'],reason:best?best.matchReasons.join(', '):'No contact matched by email, phone, name, company, attendees, transcripts, tasks, or memory.'};
 }
 function resolvedCrmContactId(contact={}){
   contact = contact || {};
@@ -19226,6 +19252,7 @@ function relationshipEvidenceMapFromRows(rows=[],target={},buckets={}){
 function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   const metadata={...(target.metadataJson||target.metadata||{})};
   if((target.profileType||target.profile_type)!=='person')return metadata;
+  const enrichment=relationshipSavedPublicEnrichment(metadata);
   const contentList=(items=[])=>Array.isArray(items)?items.map(item=>typeof item==='string'?item:(item.content||item.summary||item.text||item.exactQuote||'')).filter(Boolean):[];
   const profileKey=target.profileKey||target.profile_key||relationshipProfileKeyForTarget(target);
   const email=target.email||(String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'');
@@ -19238,7 +19265,7 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     knownIdentity:!!alias,
     name:alias?.name||target.displayName||target.display_name||target.name||email||'Unknown',
     email,
-    company:metadata.company||metadata.organization||'',
+    company:metadata.company||metadata.organization||enrichment?.organization||'',
     role:metadata.role||metadata.title||'',
     relationshipStatus:alias?.relationshipStatus||target.relationshipStatus||target.relationship_status||'observed',
     summary:target.summary||'',
@@ -19250,13 +19277,14 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     firstMeaningfulSignal:target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
     openLoops:contentList(buckets.openLoops||target.openLoops||target.open_loops),
     risks:contentList(buckets.risks||target.risks),
-    opportunities:contentList(buckets.opportunities||target.opportunities),
+    opportunities:[...contentList(buckets.opportunities||target.opportunities),...safeArray(enrichment?.offers)],
     tags:contentList(buckets.relationshipSignals||target.relationshipSignals||target.relationship_signals),
     evidence:[
       ...contentList(buckets.openLoops).map(summary=>({type:'relationship_open_loop',summary})),
       ...contentList(buckets.risks).map(summary=>({type:'relationship_risk',summary})),
       ...contentList(buckets.opportunities).map(summary=>({type:'relationship_opportunity',summary})),
       ...contentList(buckets.relationshipSignals).map(summary=>({type:'relationship_signal',summary}))
+      ,...safeArray(enrichment?.sourceRefs)
     ]
   });
   return {
@@ -19264,6 +19292,7 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     email:metadata.email||email,
     knownAlias:metadata.knownAlias||alias||null,
     relationshipEvidenceMap,
+    relationshipEnrichment:enrichment||null,
     personPacket:packet,
     personPacketUpdatedAt:new Date().toISOString(),
     personPacketSource:'relationship_profile'
@@ -20213,6 +20242,142 @@ async function refreshStewardshipNetworkFromSentMail(){
   }
   return {reviewedMessages:messages.length,qualifiedRecipients:candidates.length,added,updated};
 }
+function relationshipSavedPublicEnrichment(metadata={}){
+  const enrichment=metadata.relationshipEnrichment||metadata.relationship_enrichment||null;
+  if(!enrichment||typeof enrichment!=='object'||enrichment.status!=='complete')return null;
+  return {
+    version:String(enrichment.version||'relationship_public_context_v1'),
+    provider:String(enrichment.provider||'outscraper'),
+    status:'complete',
+    query:String(enrichment.query||''),
+    organization:String(enrichment.organization||''),
+    category:String(enrichment.category||''),
+    location:String(enrichment.location||''),
+    website:String(enrichment.website||''),
+    summary:String(enrichment.summary||''),
+    offers:safeArray(enrichment.offers).map(value=>String(value||'').trim()).filter(Boolean).slice(0,4),
+    sourceRefs:safeArray(enrichment.sourceRefs||enrichment.source_refs).slice(0,4),
+    completedAt:enrichment.completedAt||enrichment.completed_at||'',
+    rawResultCount:Math.max(0,Number(enrichment.rawResultCount||enrichment.raw_result_count||0))
+  };
+}
+function relationshipOutscraperSearchQuery(profile={}){
+  const metadata=profile.metadata||{};
+  const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
+  const company=firstLookCandidateCleanName(metadata.company||metadata.organization||'');
+  const email=relationshipProfilePrimaryEmail(profile);
+  const domain=String(email.split('@')[1]||'').trim().toLowerCase();
+  const usableDomain=domain&&!/(gmail|yahoo|outlook|hotmail|icloud|aol|protonmail)\./i.test(domain)?domain:'';
+  return [name,company||usableDomain].filter(Boolean).join(' ').trim();
+}
+function publicListingText(value='',limit=520){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+function outscraperRelationshipContextFromRows(rows=[],profile={},query=''){
+  const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
+  const metadata=profile.metadata||{};
+  const expectedCompany=firstLookCandidateCleanName(metadata.company||metadata.organization||'').toLowerCase();
+  const normalized=safeArray(rows).map((row)=>({row,place:normalizeOutscraperPlace(row,'relationship context',0,'')})).filter((entry)=>entry.place.organizationName||entry.place.website||entry.place.googleReviewsSnippet);
+  const preferred=normalized.find((entry)=>{
+    const text=[entry.place.organizationName,entry.place.website,entry.place.googleReviewsSnippet].filter(Boolean).join(' ').toLowerCase();
+    return !!(expectedCompany&&text.includes(expectedCompany));
+  })||normalized.find((entry)=>{
+    const text=[entry.place.organizationName,entry.place.googleReviewsSnippet].filter(Boolean).join(' ').toLowerCase();
+    return !!(name&&text.includes(name.toLowerCase()));
+  })||normalized[0]||null;
+  if(!preferred){
+    return {status:'no_public_match',query,rawResultCount:normalized.length,summary:'Outscraper did not return a reliable public listing for this relationship.'};
+  }
+  const place=preferred.place;
+  const organization=publicListingText(place.organizationName||metadata.company||'',180);
+  const category=publicListingText(place.operationalIndicators||'',180);
+  const location=publicListingText(place.location||'',180);
+  const description=publicListingText(preferred.row.description||place.googleReviewsSnippet||'',520);
+  const sourceSummary=description||[organization,category,location].filter(Boolean).join(' · ');
+  const offer=category
+    ? `${organization||name||'This organization'} is publicly listed in ${category}.`
+    : (description?`Public listing context: ${description}`:'');
+  const sourceId=place.googlePlaceId||place.website||place.googleMapsUrl||stableKey(query||organization||name);
+  return {
+    status:'complete',
+    provider:'outscraper',
+    query,
+    organization,
+    category,
+    location,
+    website:publicListingText(place.website||'',320),
+    summary:sourceSummary||'Outscraper returned public context for this relationship.',
+    offers:offer?[offer]:[],
+    sourceRefs:[{
+      type:'outscraper_public_context',
+      sourceType:'outscraper_public_context',
+      sourceId,
+      title:organization||name||'Public relationship context',
+      summary:sourceSummary||'Outscraper returned public context for this relationship.',
+      confidence:'public_source'
+    }],
+    rawResultCount:normalized.length
+  };
+}
+async function fetchOutscraperRelationshipContext(profile={}){
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey)throw new Error('Connect Outscraper before enriching relationship context.');
+  const query=relationshipOutscraperSearchQuery(profile);
+  if(!query)throw new Error('VAL needs a named person and either an organization or a work email before it can enrich this relationship.');
+  const url=new URL(OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL);
+  url.searchParams.set('query',query);
+  url.searchParams.set('limit','5');
+  url.searchParams.set('async','true');
+  const submitted=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'relationship context submit');
+  const submittedData=await readJsonResponse(submitted);
+  if(!submitted.ok)throw new Error(submittedData.errorMessage||submittedData.message||`Outscraper ${submitted.status}`);
+  let data=submittedData;
+  if(!Array.isArray(submittedData.data)||!submittedData.data.length){
+    const requestId=submittedData.id||submittedData.request_id;
+    if(!requestId)throw new Error('Outscraper did not return a request for this relationship.');
+    const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey);
+    if(!polled.ok)throw new Error(polled.error||'Outscraper did not finish relationship context.');
+    data=polled.data;
+  }
+  const rows=(Array.isArray(data.data)?data.data:[data]).flat(4).filter((row)=>row&&typeof row==='object');
+  return outscraperRelationshipContextFromRows(rows,profile,query);
+}
+function relationshipProfileMatchesNetworkIdentifier(profile={},identifier=''){
+  const target=String(identifier||'').trim().toLowerCase();
+  if(!target)return false;
+  return [profile.id,profile.profileKey,profile.profile_key,relationshipProfilePrimaryEmail(profile),profile.displayName,profile.display_name,profile.name]
+    .filter(Boolean)
+    .some((value)=>String(value).trim().toLowerCase()===target);
+}
+async function enrichStewardshipNetworkRelationship({relationshipId='',force=false}={}){
+  const profile=(await listRelationshipProfiles({limit:600})).find((row)=>row.profileType==='person'&&relationshipProfileMatchesNetworkIdentifier(row,relationshipId));
+  if(!profile)throw new Error('VAL could not find that Network relationship. Refresh Network and try again.');
+  if(!stewardshipNetworkNamedEmailAdmission(profile))throw new Error('Only named people with a real email address can be enriched for Network.');
+  const cached=relationshipSavedPublicEnrichment(profile.metadata||{});
+  if(cached&&!force){
+    return {cached:true,enrichment:cached,profile,relationship:relationshipIndexItemFromProfile(profile)};
+  }
+  const context=await fetchOutscraperRelationshipContext(profile);
+  const completedAt=new Date().toISOString();
+  const enrichment={
+    version:'relationship_public_context_v1',
+    provider:'outscraper',
+    ...context,
+    completedAt
+  };
+  const saved=await saveRelationshipProfile({
+    ...profile,
+    profileType:'person',
+    email:relationshipProfilePrimaryEmail(profile),
+    metadataJson:{
+      ...(profile.metadata||{}),
+      relationshipEnrichment:enrichment,
+      noExternalAction:true
+    }
+  });
+  const publicProfile=publicRelationshipProfile(saved);
+  return {cached:false,enrichment:relationshipSavedPublicEnrichment(publicProfile.metadata||{})||enrichment,profile:publicProfile,relationship:relationshipIndexItemFromProfile(publicProfile)};
+}
 function parseNetworkCsv(text=''){
   const rows=[];
   let row=[];
@@ -20544,6 +20709,9 @@ function relationshipIndexItemFromProfile(profile={}){
   const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   const packetItem=relationshipPersonPacketItemFromProfile(profile);
+  const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
+  const packetNeeds=safeArray(packetItem.packet?.what_this_person_needs).map((item)=>item?.need||item?.summary||'').filter(Boolean);
+  const packetOffers=safeArray(packetItem.packet?.what_this_person_offers).map((item)=>item?.offer||item?.summary||'').filter(Boolean);
   const executiveUi=stewardshipExecutiveVisibilityForIndex(packetItem,profile);
   const relationshipEvidenceMap=packetItem.relationshipEvidenceMap||metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||packetItem.packet?.relationship_evidence_map||{};
   const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
@@ -20580,6 +20748,9 @@ function relationshipIndexItemFromProfile(profile={}){
     linkedinSignal:'LinkedIn context will appear when an observer has current evidence.',
     sourceReceipts:'Canonical relationship index · GHL identity gate required before dossier attachment',
     personPacket:packetItem.packet||metadata.personPacket||null,
+    packetNeeds,
+    packetOffers,
+    relationshipEnrichment:relationshipEnrichment||null,
     packetMaturity:packetItem.packetMaturity||null,
     evidenceBindings:packetItem.evidenceBindings||[],
     executiveVisibility:packetItem.executiveVisibility||null,
@@ -20603,6 +20774,7 @@ function relationshipIndexItemFromProfile(profile={}){
 }
 function relationshipPersonPacketItemFromProfile(profile={}){
   const metadata=profile.metadata||{};
+  const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const email=admission.email||metadata.email||'';
@@ -20614,7 +20786,7 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     knownIdentity:!!alias,
     name:alias?.name||profile.displayName||profile.display_name||profile.name||'Relationship',
     email,
-    company:metadata.company||profile.organizationId||'',
+    company:metadata.company||profile.organizationId||relationshipEnrichment?.organization||'',
     role:metadata.role||'',
     relationshipStatus:alias?.relationshipStatus||profile.relationshipStatus||profile.relationship_status||'observed',
     summary:profile.summary||'',
@@ -20624,10 +20796,14 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     relationshipEvidenceMap,
     openLoops:(profile.openLoops||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     risks:(profile.risks||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
-    opportunities:(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+    opportunities:[
+      ...(profile.opportunities||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
+      ...safeArray(relationshipEnrichment?.offers)
+    ],
     tags:(profile.relationshipSignals||[]).map(item=>item.content||item.summary||item.text||String(item)).filter(Boolean),
     evidence:[
       profile.summary&&{type:'relationship_profile',summary:profile.summary},
+      ...safeArray(relationshipEnrichment?.sourceRefs),
       ...(Array.isArray(profile.evidence)?profile.evidence:[])
     ].filter(Boolean)
   });
@@ -20662,6 +20838,7 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     relationshipEvidenceMap:packet.relationship_evidence_map||relationshipEvidenceMap,
     freshForSuggestedIntroductions:packet.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt),
     relationshipAdmission:admission,
+    relationshipEnrichment:relationshipEnrichment||null,
     noExternalAction:true
   };
 }
@@ -29983,6 +30160,21 @@ app.post('/api/relationships/network/refresh-sent-mail',async(req,res)=>{
     res.json({ok:true,...result,message,noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/network/enrich',async(req,res)=>{
+  try{
+    const result=await enrichStewardshipNetworkRelationship({
+      relationshipId:req.body.relationshipId||req.body.id||req.body.email||'',
+      force:req.body.force===true
+    });
+    const name=result.profile?.displayName||result.relationship?.name||'This relationship';
+    const message=result.cached
+      ? `${name}'s saved public context is ready for meeting preparation. VAL did not run Outscraper again.`
+      : `${name}'s public context was saved for future meeting preparation. VAL did not send a message, change CRM, or create work.`;
+    res.json({ok:true,...result,message,noExternalAction:true});
+  }catch(e){
+    res.status(/Connect Outscraper|named person|could not find/i.test(e.message)?400:500).json({ok:false,error:e.message});
   }
 });
 app.post('/api/relationships/network/manual',async(req,res)=>{

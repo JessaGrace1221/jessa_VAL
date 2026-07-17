@@ -2590,6 +2590,25 @@ function appendRelationshipRolodexRow(item){
   evidence.textContent = 'Evidence: ' + stewardshipEvidence(item.profile)[0];
   button.append(name, status, why, open, next, evidence);
   row.insertBefore(button, row.firstChild);
+  const enrichment = item.profile.relationshipEnrichment || item.profile.relationship_enrichment || {};
+  const actions = document.createElement('div');
+  actions.className = 'relationship-rolodex-row-actions';
+  const enrich = document.createElement('button');
+  enrich.type = 'button';
+  enrich.dataset.stewardshipEnrichPerson = item.id;
+  enrich.textContent = enrichment.status === 'complete' ? 'Refresh saved context' : "Enrich this relationship's context";
+  enrich.setAttribute('title', enrichment.status === 'complete'
+    ? 'Run Outscraper again only if you want to refresh the saved public context for ' + item.name + '.'
+    : 'Use Outscraper once to save public context for ' + item.name + ' and reuse it in meeting preparation.');
+  actions.appendChild(enrich);
+  if(enrichment.status === 'complete' && enrichment.completedAt){
+    const receipt = document.createElement('span');
+    receipt.className = 'relationship-enrichment-receipt';
+    const date = new Date(enrichment.completedAt);
+    receipt.textContent = 'Context saved ' + (Number.isNaN(date.getTime()) ? 'for meeting prep.' : date.toLocaleDateString());
+    actions.appendChild(receipt);
+  }
+  row.appendChild(actions);
   relationshipRolodex.appendChild(row);
 }
 
@@ -2600,6 +2619,17 @@ function renderStewardshipNetworkDetail(profile = null){
     return;
   }
   const matches = stewardshipBestMatches(profile, 3);
+  const enrichment = profile.relationshipEnrichment || profile.relationship_enrichment || {};
+  const enrichmentLines = stewardshipCleanList([
+    enrichment.summary,
+    enrichment.organization ? 'Organization: ' + enrichment.organization : '',
+    enrichment.category ? 'Public focus: ' + enrichment.category : '',
+    enrichment.location ? 'Location: ' + enrichment.location : '',
+    enrichment.website ? 'Website: ' + enrichment.website : ''
+  ], '');
+  const enrichmentMarkup = enrichment.status === 'complete'
+    ? '<section class="stewardship-enrichment-context"><strong>Saved public context</strong><ul>' + enrichmentLines.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul><button type="button" data-stewardship-enrich-person="' + escapeHtml(stewardshipSelectedNetworkId) + '">Refresh saved context</button></section>'
+    : '<section class="stewardship-enrichment-context"><strong>Relationship context</strong><p>Use Outscraper when you want VAL to save public context for this person and reuse it in meeting preparation.</p><button type="button" data-stewardship-enrich-person="' + escapeHtml(stewardshipSelectedNetworkId) + '">Enrich this relationship\'s context</button></section>';
   const matchMarkup = matches.length
     ? '<ol>' + matches.map((match) => '<li><strong>' + escapeHtml(match.item.name) + '</strong><p>' + escapeHtml(match.fit.because) + '</p><button type="button" data-stewardship-create-with="' + escapeHtml(match.item.id) + '">Use In Introduction</button></li>').join('') + '</ol>'
     : '<p>I do not see a strong reason to introduce ' + escapeHtml(profile.name || 'this person') + ' yet.</p><button type="button" data-stewardship-who-should-meet="' + escapeHtml(stewardshipSelectedNetworkId) + '">Who Should ' + escapeHtml(relationshipFirstName(profile)) + ' Meet?</button>';
@@ -2613,6 +2643,7 @@ function renderStewardshipNetworkDetail(profile = null){
     stewardshipMiniList('Relationship', [stewardshipRelationshipLine(profile)]),
     stewardshipMiniList('Evidence', stewardshipEvidence(profile)),
     '</div>',
+    enrichmentMarkup,
     '<div class="stewardship-best-matches"><strong>Best Matches</strong>' + matchMarkup + '</div>'
   ].join('');
 }
@@ -2812,6 +2843,24 @@ async function refreshStewardshipNetworkFromSentMail(button){
     setStewardshipNetworkStatus((result.message || 'Network refreshed from sent mail.') + (total ? ` Network now has ${total} ${total === 1 ? 'person' : 'people'}.` : ''));
   }catch(error){
     setStewardshipNetworkStatus(error.message || 'VAL could not refresh Network from sent mail.','error');
+  }finally{
+    if(button) button.disabled = false;
+  }
+}
+
+async function enrichStewardshipRelationshipContext(personId = '', button = null){
+  if(!canUseApi || !personId) return;
+  const profile = stewardshipPersonById(personId);
+  const hasSavedContext = profile?.relationshipEnrichment?.status === 'complete' || profile?.relationship_enrichment?.status === 'complete';
+  if(button) button.disabled = true;
+  setStewardshipNetworkStatus((hasSavedContext ? 'Refreshing' : 'Gathering') + ' public relationship context for ' + (profile?.name || 'this person') + '. VAL will save the result and reuse it in meeting preparation.');
+  try{
+    const result = await postJson('/api/relationships/network/enrich', {relationshipId:personId, force:hasSavedContext}, {timeoutMs:120000,timeoutMessage:'Relationship context took longer than expected. Your saved context was not changed.'});
+    stewardshipSelectedNetworkId = personId;
+    await hydrateRelationshipIndex({force:true});
+    setStewardshipNetworkStatus(result.message || 'Relationship context was saved for future meeting preparation.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not enrich this relationship right now.','error');
   }finally{
     if(button) button.disabled = false;
   }
@@ -20874,6 +20923,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.stopPropagation();
     stewardshipSelectedNetworkId = whoShouldMeet.dataset.stewardshipWhoShouldMeet || stewardshipSelectedNetworkId;
     renderStewardshipNetworkDetail(stewardshipPersonById(stewardshipSelectedNetworkId));
+    return;
+  }
+  const enrichNetworkPerson = event.target.closest('[data-stewardship-enrich-person]');
+  if(enrichNetworkPerson){
+    event.preventDefault();
+    event.stopPropagation();
+    await enrichStewardshipRelationshipContext(enrichNetworkPerson.dataset.stewardshipEnrichPerson, enrichNetworkPerson);
     return;
   }
   const pendingTemperatureReview = event.target.closest('[data-relationship-pending-temperature-review]');
