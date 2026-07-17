@@ -138,6 +138,9 @@ test('executive inbox hard-excludes one-sided senders and manual not-executive c
   });
   assert.equal(manual.admitted,false);
   assert.equal(manual.rule,'manual_not_executive_contact');
+  const domainSuppression=await service.markNotExecutiveContact({email:'info@vendor.example',name:'Vendor',domain:'vendor.example',suppressDomain:true});
+  assert.equal(domainSuppression.ok,true);
+  assert.equal(domainSuppression.domainSuppression.key,'domain:vendor.example');
 });
 
 test('intelligence spine reads high-signal classifications and draft candidates',()=>{

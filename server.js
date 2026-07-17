@@ -9437,7 +9437,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     ]);
     const gmailMap=new Map();
     [...(recentGmail.emails||[]),...(unreadGmail.emails||[])].forEach(e=>gmailMap.set(e.messageId,e));
-    const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),3);
+    const sentWaiting=waitingOnResponseFromSent(sentGmail.emails||[],Array.from(gmailMap.values()),0);
     const scanCorpus=[...Array.from(gmailMap.values()),...(sentGmail.emails||[]),...(outlook.emails||[])];
     const emails=sortEmailsNewestFirst([...Array.from(gmailMap.values()),...sentWaiting,...(outlook.emails||[])]).map(email=>{
       if(email.classification==='waiting_on_response') return email;
@@ -9515,6 +9515,149 @@ app.post('/api/email/gmail/refresh',async(req,res)=>{
     await auditLog({req,action:'email_sync_refreshed',resourceType:'gmail',metadata:{count:data.summary?.total||0,days:data.summary?.activeDays||req.body?.days||14},success:data.ok!==false}).catch(()=>{});
     res.status(data.ok===false?400:200).json({...data,refreshed:true});
   }catch(e){res.status(500).json({ok:false,refreshed:false,error:e.message,providers:{gmail:{status:'error',error:e.message,lastAttemptAt:gmailSyncStatus.lastAttemptAt,lastSuccessfulSyncAt:gmailSyncStatus.lastSuccessfulSyncAt,lastSyncAt:gmailSyncStatus.lastSuccessfulSyncAt}}});}
+});
+function executiveInboxThreadKey(email={}){
+  return [email.provider||'email',email.threadId||email.messageId||email.id||''].join(':');
+}
+function executiveInboxSenderDomain(email={}){
+  return normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'').split('@')[1]||'';
+}
+function executiveInboxResolutionRows(){
+  return (valStore().executiveInboxResolutions||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId());
+}
+function executiveInboxSuppressionRows(){
+  return (valStore().suppressedExecutiveContacts||[]).filter(row=>row.tenantId===tenantId()&&row.userId===currentUserId());
+}
+function executiveInboxSuppressed(email={},suppressions=executiveInboxSuppressionRows()){
+  const sender=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
+  const domain=executiveInboxSenderDomain(email);
+  const keys=new Set((suppressions||[]).map(row=>row.key).filter(Boolean));
+  return (sender&&keys.has(`email:${sender}`)) || (domain&&keys.has(`domain:${domain}`));
+}
+function executiveInboxResolved(email={},resolutions=executiveInboxResolutionRows()){
+  const key=executiveInboxThreadKey(email);
+  return !!key&&resolutions.some(row=>row.threadKey===key||((row.threadId||'')&&(row.threadId===email.threadId))||((row.messageId||'')&&(row.messageId===email.messageId)));
+}
+function executiveInboxSentRequestText(email={}){
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
+  return /\?|(\b(can you|could you|will you|would you|please|let me know|confirm|review|send|share|thoughts|feedback|available|availability|when can|do you have|are you able)\b)/i.test(text);
+}
+function executiveInboxInboundAskText(email={}){
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
+  return /\?|(\b(can you|could you|will you|would you|please|let me know|confirm|review|send|share|thoughts|feedback|available|availability|schedule|booking|appointment|decision|approve|approval|quote|estimate|proposal|next step)\b)/i.test(text);
+}
+async function executiveInboxKnownContact(email={},profilesPromise=null){
+  const sender=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
+  if(!sender)return false;
+  if(knownRelationshipEmailAlias(sender))return true;
+  const profiles=profilesPromise ? await profilesPromise : await listRelationshipProfiles({limit:800}).catch(()=>[]);
+  return (profiles||[]).some(profile=>profile.profileType==='person'&&relationshipProfileMatchesEmail(profile,sender));
+}
+async function executiveInboxHasAnySentMailTo(senderEmail='',sentCache=new Map()){
+  const sender=normalizeExecutiveEmailAddress(senderEmail);
+  if(!sender)return false;
+  if(sentCache.has(sender))return sentCache.get(sender);
+  const result=await fetchGmailMessages({query:`in:sent to:${sender}`,maxResults:1,includeBody:false}).catch(()=>({emails:[]}));
+  const has=(result.emails||[]).length>0;
+  sentCache.set(sender,has);
+  return has;
+}
+function executiveInboxHumanReason({email={},kind='',known=false,hasSent=false,ask=false}={}){
+  if(kind==='waiting_for_response')return 'This is here because you sent a question or request, and VAL has not seen the thread resolved yet.';
+  if(known&&ask)return 'This is here because this person is in your trusted relationship context, and the thread asks you to respond or decide.';
+  if(hasSent&&ask)return 'This is here because you have written to this person before, and their latest note asks you for a response or decision.';
+  if(known)return 'This is here because this sender is already part of your relationship context.';
+  return email.reason||'This thread appears to need your judgment.';
+}
+async function canonicalExecutiveInboxQueue(req,{force=false}={}){
+  const queryReq={...req,query:{...(req.query||{}),days:req.query?.days||90,limit:req.query?.limit||150}};
+  const data=await emailIntelligencePayload(queryReq,{force});
+  if(data.ok===false)return {...data,items:[],queue:[]};
+  const suppressions=executiveInboxSuppressionRows();
+  const resolutions=executiveInboxResolutionRows();
+  const profilesPromise=listRelationshipProfiles({limit:800}).catch(()=>[]);
+  const sentCache=new Map();
+  const rows=sortEmailsNewestFirst(data.emails||[]);
+  const byThread=new Map();
+  rows.forEach(email=>{
+    const key=executiveInboxThreadKey(email);
+    if(key&&!byThread.has(key))byThread.set(key,email);
+  });
+  const candidates=await mapWithConcurrency(Array.from(byThread.values()),5,async(email)=>{
+    if(executiveInboxResolved(email,resolutions))return null;
+    if(executiveInboxSuppressed(email,suppressions))return null;
+    const senderEmail=normalizeExecutiveEmailAddress(email.from?.email||email.senderEmail||'');
+    const known=await executiveInboxKnownContact(email,profilesPromise);
+    const metrics=email.senderMetrics||{};
+    const hasSent=Number(metrics.outboundToSenderCount||0)>0 || await executiveInboxHasAnySentMailTo(senderEmail,sentCache);
+    const oneSided=Number(metrics.inboundFromSenderCount||0)>=3&&!hasSent&&!known;
+    if(oneSided)return null;
+    const sentByOwner=emailWasSentByOwner(email);
+    const waiting=sentByOwner&&executiveInboxSentRequestText(email);
+    const ask=executiveInboxInboundAskText(email);
+    if(!waiting&&!known&&!hasSent)return null;
+    if(!waiting&&!known&&!ask)return null;
+    const kind=waiting?'waiting_for_response':'needs_judgment';
+    const reason=executiveInboxHumanReason({email,kind,known,hasSent,ask});
+    const status=waiting?'waiting_for_response':'ready_for_review';
+    return {
+      ...email,
+      id:'executive-inbox-' + (email.threadId||email.messageId||email.id||Math.random().toString(36).slice(2)),
+      queueKind:kind,
+      status,
+      classification:waiting?'waiting_for_response':'needs_reply',
+      reason,
+      recommendedAction:waiting?'Waiting for response':'Review and respond if needed',
+      executiveInboxAdmission:{
+        kind,
+        knownContact:known,
+        hasSentHistory:hasSent,
+        clearAsk:ask,
+        manualResolutionRequired:true,
+        reason
+      }
+    };
+  });
+  const items=candidates.filter(Boolean);
+  return {
+    ...data,
+    source:'canonical_executive_inbox',
+    items,
+    queue:items,
+    emails:items,
+    needsReply:items.filter(item=>item.queueKind==='needs_judgment'),
+    needsAttention:items.filter(item=>item.queueKind==='needs_judgment'),
+    waitingOnResponse:items.filter(item=>item.queueKind==='waiting_for_response'),
+    draftSuggestions:[],
+    lowPriority:[],
+    summary:{...(data.summary||{}),total:items.length,buckets:items.reduce((acc,item)=>{acc[item.queueKind]=(acc[item.queueKind]||0)+1;return acc;},{})}
+  };
+}
+app.get('/api/val/executive-inbox/queue',async(req,res)=>{
+  try{
+    const result=await canonicalExecutiveInboxQueue(req,{force:req.query.force==='1'||req.query.refresh==='1'});
+    await auditLog({req,action:'executive_inbox_queue_loaded',resourceType:'executive_inbox',metadata:{count:result.items?.length||0,source:'canonical'},success:result.ok!==false}).catch(()=>{});
+    res.status(result.ok===false?400:200).json(result);
+  }catch(e){res.status(500).json({ok:false,error:e.message,items:[],queue:[]});}
+});
+app.post('/api/val/executive-inbox/resolve-thread',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const provider=body.provider||'email';
+    const threadId=String(body.threadId||'').trim();
+    const messageId=String(body.messageId||'').trim();
+    const threadKey=[provider,threadId||messageId].join(':');
+    if(!threadId&&!messageId)return res.status(400).json({ok:false,error:'threadId or messageId is required.'});
+    const store=valStore();
+    store.executiveInboxResolutions=store.executiveInboxResolutions||[];
+    const existing=store.executiveInboxResolutions.find(row=>row.tenantId===tenantId()&&row.userId===currentUserId()&&(row.threadKey===threadKey||(threadId&&row.threadId===threadId)||(messageId&&row.messageId===messageId)));
+    const row={id:existing?.id||uuid('einbox_resolved'),tenantId:tenantId(),userId:currentUserId(),provider,threadId,messageId,threadKey,reason:String(body.reason||'User marked this Executive Inbox thread resolved.').slice(0,400),sourceItemId:body.sourceItemId||'',createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
+    if(existing)Object.assign(existing,row);
+    else store.executiveInboxResolutions.unshift(row);
+    saveValStore(store);
+    await auditLog({req,action:'executive_inbox_thread_resolved',resourceType:'executive_inbox_thread',resourceId:threadKey,metadata:{threadId,messageId},success:true}).catch(()=>{});
+    res.json({ok:true,resolution:existing||row});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/email/inbox-command',async(req,res)=>{
   try{
@@ -10757,12 +10900,36 @@ function decodeBase64Url(value){
   try{return Buffer.from(String(value).replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8');}
   catch(e){return '';}
 }
+function htmlToReadableEmailText(value=''){
+  return String(value||'')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi,'\n')
+    .replace(/<[^>]+>/g,' ')
+    .replace(/&nbsp;/gi,' ')
+    .replace(/&amp;/gi,'&')
+    .replace(/&quot;/gi,'"')
+    .replace(/&#39;|&apos;/gi,"'")
+    .replace(/&lt;/gi,'<')
+    .replace(/&gt;/gi,'>')
+    .replace(/[ \t]+\n/g,'\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .replace(/[ \t]{2,}/g,' ')
+    .trim();
+}
 function extractGmailBody(payload){
   if(!payload)return '';
-  if(payload.body?.data)return decodeBase64Url(payload.body.data);
+  if(payload.body?.data){
+    const decoded=decodeBase64Url(payload.body.data);
+    return String(payload.mimeType||'').toLowerCase().includes('html') ? htmlToReadableEmailText(decoded) : decoded;
+  }
   const parts=payload.parts||[];
   const plain=parts.find(p=>p.mimeType==='text/plain')||parts.find(p=>p.body?.data);
-  if(plain?.body?.data)return decodeBase64Url(plain.body.data);
+  if(plain?.body?.data){
+    const decoded=decodeBase64Url(plain.body.data);
+    return String(plain.mimeType||'').toLowerCase().includes('html') ? htmlToReadableEmailText(decoded) : decoded;
+  }
   for(const part of parts){
     const nested=extractGmailBody(part);
     if(nested)return nested;
@@ -10986,7 +11153,13 @@ function emailHasRelationshipEvidence(email={}){
 }
 function emailHasExecutiveConsequence(email={}){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
-  return /\b(proposal|contract|agreement|pricing|client|customer|partner|partnership|intro|introduction|referral|scope|approval|approve|deadline|decision|complaint|escalat|blocked|risk)\b/i.test(text);
+  return /\b(proposal|contract|agreement|pricing|client|customer|partner|partnership|intro|introduction|referral|scope|approval|approve|deadline|decision|complaint|escalat|blocked|risk|booking|schedule|class calendar|appointment|available|availability)\b/i.test(text);
+}
+function emailIsRelationshipSchedulingRequest(email={}){
+  if(!emailHasRelationshipEvidence(email))return false;
+  const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText].join(' ');
+  return /\b(class calendar booking|booking|schedule|scheduling|appointment|availability|available|calendar|meeting|call|session)\b/i.test(text)
+    && /\b(hi|hello|hope you're doing well|wanted to reach out|reach out|can you|could you|please|let me know|book|schedule|confirm|available|availability)\b/i.test(text);
 }
 function classifyExecutiveEmail(email,rules=[]){
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.from?.email].join(' ').toLowerCase();
@@ -11031,6 +11204,9 @@ function classifyExecutiveEmail(email,rules=[]){
   }
   if(emailLooksTransactionalOrBulk(email)){
     return {classification:'solicitation',reason:'Bulk, transactional, notification, or promotional mail does not need executive judgment.',recommendedAction:'Keep out of Executive Inbox.',confidence:'high',requiresApproval:false,senderMetrics:metrics};
+  }
+  if(emailIsRelationshipSchedulingRequest(email)){
+    return {classification:'needs_reply',reason:'Scheduling or booking request from a relationship-backed sender.',recommendedAction:'Review the thread and prepare a reply for approval.',confidence:'high',requiresApproval:true,senderMetrics:metrics};
   }
   if(/\b(unsubscribe|special offer|limited time|book a call|seo|cold email|quick question|sponsor|advertis|newsletter)\b/.test(text)){
     return {classification:'solicitation',reason:'Looks promotional or unsolicited.',recommendedAction:'Move to low priority review.',confidence:'medium',requiresApproval:true};
@@ -11501,7 +11677,7 @@ function businessDaysSince(value){
   }
   return days;
 }
-function waitingOnResponseFromSent(sentEmails=[],allEmails=[],threshold=3){
+function waitingOnResponseFromSent(sentEmails=[],allEmails=[],threshold=0){
   const seenThreads=new Set();
   const inboundThreads=new Set(allEmails.filter(e=>!String(e.labels||[]).includes('SENT')).map(e=>e.threadId).filter(Boolean));
   return sentEmails.filter(email=>{

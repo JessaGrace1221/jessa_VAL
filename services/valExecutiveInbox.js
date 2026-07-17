@@ -50,6 +50,8 @@ function senderEmailFromContext(context={}){
   return normalizeEmail(context.sender_email||context.senderEmail||context.current_message?.from?.email||context.latest_inbound?.from?.email||context.latest_inbound?.sender?.email||context.from?.email);
 }
 function executiveContactSuppressionKey(sender={}){
+  const domain=normalizeEmail('x@' + String(sender.domain||sender.fromDomain||'').replace(/^@/,'')).split('@')[1]||'';
+  if(domain)return `domain:${domain}`;
   const email=normalizeEmail(sender.email||sender.senderEmail||sender.from?.email||sender);
   if(email)return `email:${email}`;
   const name=compactText(sender.name||sender.displayName||sender.senderName||'',120).toLowerCase();
@@ -470,6 +472,7 @@ function createValExecutiveInboxService({
     const sender=input.sender||input.contact||input.from||{};
     const email=normalizeEmail(input.email||sender.email);
     const name=compactText(input.name||sender.name||sender.displayName||'',180);
+    const domain=String(input.domain||sender.domain||'').replace(/^@/,'').trim().toLowerCase();
     const key=executiveContactSuppressionKey({email,name});
     if(!key)throw new Error('email or name is required to suppress an executive contact.');
     const row={
@@ -485,13 +488,28 @@ function createValExecutiveInboxService({
       createdAt:new Date().toISOString(),
       updatedAt:new Date().toISOString()
     };
+    const domainRow=domain&&input.suppressDomain ? {
+      ...row,
+      id:input.domainId||uuid('notexec_domain'),
+      key:`domain:${domain}`,
+      email:'',
+      name:domain,
+      domain,
+      reason:compactText(input.domainReason||`User marked ${domain} as not an executive contact domain.`,400),
+      rule:'manual_not_executive_domain'
+    } : null;
     if(typeof saveSuppressedExecutiveContact==='function')return {ok:true,suppression:await saveSuppressedExecutiveContact(row)};
     const s=store();
-    const existing=s.suppressedExecutiveContacts.find(item=>item.tenantId===tenantId()&&item.userId===userId()&&item.key===key);
-    if(existing)Object.assign(existing,row,{id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString()});
-    else s.suppressedExecutiveContacts.unshift(row);
+    const upsert=(candidate)=>{
+      const existing=s.suppressedExecutiveContacts.find(item=>item.tenantId===tenantId()&&item.userId===userId()&&item.key===candidate.key);
+      if(existing)Object.assign(existing,candidate,{id:existing.id,createdAt:existing.createdAt,updatedAt:new Date().toISOString()});
+      else s.suppressedExecutiveContacts.unshift(candidate);
+      return existing||candidate;
+    };
+    const saved=upsert(row);
+    if(domainRow)upsert(domainRow);
     saveStore(s);
-    return {ok:true,suppression:existing||row};
+    return {ok:true,suppression:saved,domainSuppression:domainRow};
   }
   async function saveClassification(context,classification){
     const id=uuid('cclass');

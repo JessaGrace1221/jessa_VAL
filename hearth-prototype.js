@@ -8133,7 +8133,9 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   const sender = email.from || {};
   const body = email.bodyText || email.bodyPreview || email.snippet || '';
   const classification = String(email.classification || '').toLowerCase();
-  const needsContext = ['needs_attention', 'forward_to_team', 'waiting_on_response'].includes(classification);
+  const needsContext = ['needs_attention', 'forward_to_team'].includes(classification);
+  const waitingForResponse = email.queueKind === 'waiting_for_response' || classification === 'waiting_on_response';
+  const admission = email.executiveInboxAdmission || {};
   return {
     id: 'gmail-scan-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
@@ -8146,9 +8148,9 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     senderName: sender.name || sender.email || 'Gmail sender',
     receivedAt: email.date || email.receivedAt || email.internalDate || '',
     title: email.subject || draft.subject || 'Gmail conversation',
-    status: needsContext ? 'needs_context' : 'ready_for_review',
+    status: waitingForResponse ? 'waiting_for_response' : (needsContext ? 'needs_context' : 'ready_for_review'),
     summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
-    whyNow: email.recommendedAction || email.reason || 'This thread matched the Executive Inbox scan window.',
+    whyNow: admission.reason || email.recommendedAction || email.reason || 'This thread matched the Executive Inbox rule gate.',
     context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
     prepared: draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.',
     needs: draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.',
@@ -8158,7 +8160,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     relationships: correspondenceContextLines(email, ['matchedContact','relationshipName','relationshipTemperature']),
     projects: correspondenceContextLines(email, ['projectName','project']),
     ruleSuggestions: correspondenceRuleHints(email, {}, draft),
-    evidence: [email.reason, email.snippet || email.bodyPreview].filter(Boolean),
+    evidence: [admission.reason, email.reason, email.snippet || email.bodyPreview].filter(Boolean),
     representationRisk: 'medium',
     source: 'gmail_scan',
     noExternalAction: true,
@@ -8169,9 +8171,11 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
 function correspondenceItemsFromEmailIntelligence(result = {}){
   const actionable = ['needs_reply','needs_attention','forward_to_team','appointment_recap_needed'];
   const rows = []
+    .concat(result.items || result.queue || [])
     .concat(result.draftSuggestions || [])
     .concat(result.needsReply || [])
     .concat(result.needsAttention || [])
+    .concat(result.waitingOnResponse || [])
     .concat((result.emails || []).filter((email) => actionable.includes(String(email.classification || '').toLowerCase())));
   const byId = new Map();
   rows.forEach((email, index) => {
@@ -8741,7 +8745,7 @@ function renderCorrespondenceList(){
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
   const ruleActions = ['show_rules', 'save_forward_rule', 'suggest_rules'];
   if(!item) return ruleActions;
-  const actions = ['cowork_correspondence', 'not_executive_contact'].concat(ruleActions);
+  const actions = ['cowork_correspondence', 'resolve_thread', 'not_executive_contact'].concat(ruleActions);
   if(String(item.draftBody || '').trim()) actions.unshift('send');
   return actions;
 }
@@ -8937,7 +8941,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   activeCorrespondenceItem = item || currentCorrespondenceItems[0] || null;
   renderCorrespondenceList();
   const selected = activeCorrespondenceItem;
-  setCorrespondenceField('status', selected ? (selected.status === 'needs_context' ? 'Needs context' : 'Ready') : 'Clear');
+  setCorrespondenceField('status', selected ? (selected.status === 'waiting_for_response' ? 'Waiting for response' : (selected.status === 'needs_context' ? 'Needs context' : 'Ready')) : 'Clear');
   setCorrespondenceField('title', selected?.title || 'No Executive Inbox conversations');
   setCorrespondenceField('summary', selected?.summary || 'VAL has not found a connected Gmail thread that needs executive judgment yet.');
   const hasDraft = !!String(selected?.draftBody || '').trim();
@@ -9023,9 +9027,14 @@ function correspondenceSuppressionContact(item = activeCorrespondenceItem){
   const from = latestInbound.from || latestInbound.sender || {};
   const senderEmail = from.email || source.from?.email || source.senderEmail || source.classification?.from?.email || '';
   const senderName = from.name || source.from?.name || source.senderName || source.classification?.from?.name || '';
+  const domain = String(senderEmail || '').split('@')[1] || '';
+  const local = String(senderEmail || '').split('@')[0] || '';
+  const genericSender = /^(info|support|hello|sales|admin|team|contact|office|newsletter|marketing|events?|webinars?|community|billing|invoice|payments?|orders?|receipts?|security|alerts?|updates?|notifications?|notify|no.?reply|donotreply|do.?not.?reply)$/i.test(local) || (!senderName && !!domain);
   return {
     email: senderEmail || item.recipientEmail || source.recipientEmail || '',
     name: senderName || item.recipientName || source.recipientName || '',
+    domain,
+    suppressDomain: genericSender,
     reason: 'User marked this sender as not an executive contact from the Hearth Executive Inbox.',
     conversationId: item.conversationId || source.conversationId || '',
     threadId: item.threadId || source.threadId || '',
@@ -9198,7 +9207,7 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
-  currentCorrespondenceItems = canUseApi ? [] : localCorrespondenceItems.slice();
+  currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
   if(!canUseApi){
@@ -9206,14 +9215,8 @@ async function hydrateCorrespondenceDrawer(){
     return;
   }
   try{
-    const [ready, drafts, intelligence] = await Promise.all([
-      postJson('/api/val/ready-for-you/build', {limit:5}).catch(() => ({items:[]})),
-      getJson('/api/val/email/review-drafts?limit=20').catch(() => ({drafts:[]})),
-      getJson('/api/email/intelligence?days=30&limit=75').catch(() => ({emails:[]}))
-    ]);
-    const merged = correspondenceItemsFromReady(ready)
-      .concat((drafts.drafts || []).map(normalizeCorrespondenceDraft))
-      .concat(correspondenceItemsFromEmailIntelligence(intelligence));
+    const inbox = await getJson('/api/val/executive-inbox/queue?days=90&limit=150');
+    const merged = correspondenceItemsFromEmailIntelligence(inbox);
     const byId = new Map();
     merged.forEach((item) => {
       if(item?.id && !byId.has(item.id)) byId.set(item.id, item);
@@ -9246,12 +9249,12 @@ async function scanCorrespondenceWindow(days = 30){
   renderCorrespondenceList();
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   try{
-    const result = await postJson('/api/email/gmail/refresh', {days:scanDays, limit:scanDays >= 90 ? 120 : 75}, {timeoutMs:45000, timeoutMessage:'Gmail scan is taking longer than expected.'});
+    const result = await getJson('/api/val/executive-inbox/queue?refresh=1&days=' + encodeURIComponent(scanDays) + '&limit=' + encodeURIComponent(scanDays >= 90 ? 150 : 90), {timeoutMs:45000, timeoutMessage:'Gmail scan is taking longer than expected.'});
     currentCorrespondenceItems = correspondenceItemsFromEmailIntelligence(result);
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length
       ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
-      : 'Scanned the last ' + scanDays + ' days. No unread Gmail threads crossed the Executive Inbox judgment gate.';
+      : 'Scanned the last ' + scanDays + ' days. No unresolved Gmail threads crossed the Executive Inbox judgment gate.';
     correspondenceScanInFlight = false;
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety){
@@ -9370,6 +9373,22 @@ async function handleCorrespondenceAction(action){
     if(correspondenceSafety) correspondenceSafety.textContent = 'Marked ' + (contact.name || contact.email) + ' as not an executive contact.';
     return;
   }
+  if(action === 'resolve_thread'){
+    if(canUseApi){
+      await postJson('/api/val/executive-inbox/resolve-thread', {
+        provider:item.provider || 'email',
+        threadId:item.threadId || '',
+        messageId:item.messageId || '',
+        sourceItemId:item.id || '',
+        reason:'User marked this Executive Inbox thread resolved from Hearth.'
+      });
+    }
+    currentCorrespondenceItems = currentCorrespondenceItems.filter((row) => row.id !== item.id);
+    activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
+    renderCorrespondenceBrief(activeCorrespondenceItem);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Marked resolved. VAL will keep the thread as evidence, but remove it from the active Executive Inbox.';
+    return;
+  }
   if(action === 'cowork_correspondence'){
     await openCorrespondenceThreadCowork(item);
     return;
@@ -9447,7 +9466,7 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     await handleCorrespondenceAction(correspondenceActionId);
     return true;
   }
-  const inspectOnlyAction = ['cowork_correspondence', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'suggest_rules'].includes(correspondenceActionId);
+  const inspectOnlyAction = ['cowork_correspondence', 'resolve_thread', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'suggest_rules'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
