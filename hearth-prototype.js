@@ -173,6 +173,7 @@ const stewardshipNetworkDetail = document.querySelector('[data-stewardship-netwo
 const stewardshipNetworkStatus = document.querySelector('[data-stewardship-network-status]');
 const stewardshipNetworkAddForm = document.querySelector('[data-stewardship-network-add-form]');
 const stewardshipNetworkImportInput = document.querySelector('[data-stewardship-network-import]');
+const stewardshipNetworkTotal = document.querySelector('[data-stewardship-network-total]');
 const relationshipProjectPanel = document.querySelector('[data-relationship-project-panel]');
 const relationshipProjectCount = document.querySelector('[data-relationship-project-count]');
 const relationshipDocumentPanel = document.querySelector('[data-relationship-document-panel]');
@@ -1074,6 +1075,7 @@ let relationshipIndexSearch = '';
 let relationshipStateFilter = 'all';
 let relationshipSortMode = 'attention';
 let relationshipIndexProfiles = {};
+let relationshipIndexNetworkCount = 0;
 let relationshipIndexLoaded = false;
 let relationshipIndexRequest = null;
 let relationshipIndexSourceLabel = 'Local preview';
@@ -2406,6 +2408,7 @@ async function hydrateRelationshipIndex({force=false}={}){
           return profiles;
         }, {});
         relationshipIndexProfiles = dedupeRelationshipProfiles(rawProfiles);
+        relationshipIndexNetworkCount = Math.max(0, Number(data.count || data.relationships.length || 0));
         const onboarding = await getJson('/api/teach-val/onboarding').catch(() => ({}));
         const added = mergeOnboardingSupportProfiles(onboardingImportItems(onboarding, 'support_circle'));
         relationshipIndexLoaded = true;
@@ -2755,6 +2758,13 @@ function renderStewardshipNetworkList(){
   relationshipRolodex.innerHTML = '';
   const query = relationshipIndexSearch.trim().toLowerCase();
   const items = stewardshipPeople().filter((item) => relationshipItemMatchesSearch(item, query));
+  if(stewardshipNetworkTotal){
+    const total = relationshipIndexNetworkCount || stewardshipPeople().length;
+    stewardshipNetworkTotal.hidden = false;
+    stewardshipNetworkTotal.textContent = query
+      ? `Showing ${items.length} of ${total} people in Network.`
+      : `${total} ${total === 1 ? 'person' : 'people'} in Network.`;
+  }
   relationshipRolodex.dataset.relationshipDensity = items.length >= 12 ? 'compact' : 'comfortable';
   if(!items.length){
     const empty = document.createElement('p');
@@ -2796,8 +2806,10 @@ async function refreshStewardshipNetworkFromSentMail(button){
     const result = await postJson('/api/relationships/network/refresh-sent-mail', {}, {timeoutMs:60000,timeoutMessage:'Network refresh took longer than expected. Please try again.'});
     relationshipIndexSearch = '';
     if(relationshipSearchInput) relationshipSearchInput.value = '';
+    setStewardshipNetworkAddFormVisible(false);
     await hydrateRelationshipIndex({force:true});
-    setStewardshipNetworkStatus(result.message || 'Network refreshed from sent mail.');
+    const total = relationshipIndexNetworkCount || stewardshipPeople().length;
+    setStewardshipNetworkStatus((result.message || 'Network refreshed from sent mail.') + (total ? ` Network now has ${total} ${total === 1 ? 'person' : 'people'}.` : ''));
   }catch(error){
     setStewardshipNetworkStatus(error.message || 'VAL could not refresh Network from sent mail.','error');
   }finally{

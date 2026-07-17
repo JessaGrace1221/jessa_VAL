@@ -6830,6 +6830,12 @@ button.timeline-overview-receipt:focus-visible{
   font-size:.76rem;
   line-height:1.42;
 }
+.stewardship-network-total{
+  margin:4px 0 0;
+  color:rgba(45,27,22,.64);
+  font-size:.76rem;
+  line-height:1.35;
+}
 .stewardship-network-status[data-tone="error"]{
   color:#8a4638;
 }
@@ -6875,6 +6881,8 @@ button.timeline-overview-receipt:focus-visible{
 }
 .relationship-detail.show-index .stewardship-network-layout .relationship-rolodex{
   display:grid;
+  max-height:none;
+  overflow:visible;
 }
 .stewardship-network-detail{
   display:grid;

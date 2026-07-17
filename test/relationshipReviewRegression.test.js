@@ -45,9 +45,11 @@ test('Network offers a sent-mail refresh and an explicit manual person path',()=
   assert.match(hearth,/data-stewardship-refresh-network/);
   assert.match(hearth,/data-stewardship-network-add-form/);
   assert.match(hearth,/data-stewardship-import-network/);
+  assert.match(hearth,/data-stewardship-network-total/);
   assert.match(hearthJs,/refreshStewardshipNetworkFromSentMail/);
   assert.match(hearthJs,/api\/relationships\/network\/manual/);
   assert.match(hearthJs,/api\/relationships\/network\/import-csv/);
+  assert.match(hearthJs,/relationshipIndexNetworkCount/);
 });
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{
