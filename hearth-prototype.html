@@ -532,19 +532,23 @@
           </div>
           <button type="button" class="close-correspondence-detail">Close</button>
         </div>
-        <div class="correspondence-rulebar" aria-label="Executive Inbox rules">
+        <div class="correspondence-rulebar" aria-label="Executive Inbox controls">
           <div>
-            <span>Rule Learning</span>
+            <span>Executive Inbox Controls</span>
             <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
+          </div>
+          <div class="correspondence-rule-create">
+            <input type="search" data-correspondence-search placeholder="Search inbox by context" autocomplete="off">
+            <button type="button" data-correspondence-action="search_inbox" onclick="runCorrespondenceActionClick(this,event);return false;">Search Inbox</button>
           </div>
           <div class="correspondence-rule-create">
             <input type="email" data-correspondence-safe-email placeholder="Add Executive Contact Email" autocomplete="off">
             <button type="button" data-correspondence-action="save_safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Save Contact</button>
           </div>
           <div class="correspondence-rule-create">
-            <input type="text" data-correspondence-forward-to placeholder="Type New Rule Here" autocomplete="off">
+            <input type="text" data-correspondence-forward-to placeholder="Forward rule or instruction" autocomplete="off">
             <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save Rule</button>
-            <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Ask VAL</button>
+            <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Suggest Rules</button>
           </div>
         </div>
         <section class="correspondence-rules-panel" data-correspondence-rules-panel hidden aria-hidden="true" aria-label="Saved Executive Inbox rules">
@@ -584,6 +588,8 @@
               <p data-correspondence-field="draft-note">Private draft. Nothing sends until approved.</p>
             </div>
             <div class="correspondence-actions" aria-label="Correspondence review actions">
+              <button type="button" data-correspondence-action="generate" onclick="runCorrespondenceActionClick(this,event);return false;">Draft reply</button>
+              <button type="button" data-correspondence-action="forward" onclick="runCorrespondenceActionClick(this,event);return false;">Forward</button>
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
               <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
               <button type="button" data-correspondence-action="safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Executive contact</button>
@@ -598,10 +604,25 @@
           <aside class="correspondence-intelligence" aria-label="Relationship and project context">
             <section>
               <span>Relationships</span>
+              <div class="correspondence-rule-create">
+                <select data-correspondence-relationship-select aria-label="Choose relationship for this email">
+                  <option value="">Choose relationship</option>
+                </select>
+                <button type="button" data-correspondence-action="link_relationship" onclick="runCorrespondenceActionClick(this,event);return false;">Link</button>
+                <button type="button" data-correspondence-action="create_relationship" onclick="runCorrespondenceActionClick(this,event);return false;">Create</button>
+              </div>
               <div data-correspondence-relationships></div>
             </section>
             <section>
               <span>Projects</span>
+              <div class="correspondence-rule-create">
+                <select data-correspondence-project-select aria-label="Choose project for this email">
+                  <option value="">Choose project</option>
+                </select>
+                <input type="text" data-correspondence-project-name placeholder="New project name" autocomplete="off">
+                <button type="button" data-correspondence-action="link_project" onclick="runCorrespondenceActionClick(this,event);return false;">Link</button>
+                <button type="button" data-correspondence-action="create_project" onclick="runCorrespondenceActionClick(this,event);return false;">Create</button>
+              </div>
               <div data-correspondence-projects></div>
             </section>
             <section>

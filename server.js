@@ -9671,6 +9671,49 @@ app.post('/api/val/executive-inbox/safe-contact',async(req,res)=>{
     res.json({ok:true,safeContact:existing||row});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+app.post('/api/val/executive-inbox/link-context',async(req,res)=>{
+  try{
+    const body=req.body||{};
+    const kind=String(body.kind||body.targetType||'').trim().toLowerCase();
+    const targetId=String(body.targetId||body.relationshipId||body.projectId||'').trim();
+    const targetName=String(body.targetName||body.relationshipName||body.projectName||targetId||'').trim();
+    const email=body.email||{};
+    const messageId=String(body.messageId||email.messageId||'').trim();
+    const threadId=String(body.threadId||email.threadId||'').trim();
+    const conversationId=String(body.conversationId||email.conversationId||'').trim();
+    const sourceId=messageId||threadId||conversationId||String(body.sourceItemId||'').trim();
+    if(!['relationship','project'].includes(kind))return res.status(400).json({ok:false,error:'kind must be relationship or project.'});
+    if(!targetId)return res.status(400).json({ok:false,error:'targetId is required.'});
+    if(!sourceId)return res.status(400).json({ok:false,error:'messageId, threadId, or conversationId is required.'});
+    const sourceType=messageId?'email_message':'email_thread';
+    const targetType=kind==='project'?'project_profile':'relationship_profile';
+    const relationship=kind==='project'?'email_context_for_project':'email_context_for_relationship';
+    const existing=(await listEvidenceLinks({sourceType,sourceId,targetType,targetId,relationship,limit:1}).catch(()=>[]))[0];
+    const link=existing||await saveEvidenceLink({
+      sourceType,
+      sourceId,
+      sourceLabel:email.subject||body.summary||'Executive Inbox email',
+      targetType,
+      targetId,
+      relationship,
+      summary:body.summary||`Executive Inbox email linked to ${targetName||targetId}.`,
+      confidence:0.86,
+      metadata:{
+        source:'executive_inbox_context_link',
+        kind,
+        targetName,
+        provider:email.provider||body.provider||'email',
+        messageId,
+        threadId,
+        conversationId,
+        from:email.from||{},
+        noExternalAction:true
+      }
+    });
+    await auditLog({req,action:'executive_inbox_context_linked',resourceType:'evidence_link',resourceId:link.id||sourceId,metadata:{kind,targetId,targetName,messageId,threadId,conversationId},success:true}).catch(()=>{});
+    res.json({ok:true,link,message:`Linked this email to ${targetName||targetId}. VAL saved a local evidence receipt; no external system changed.`,noExternalAction:true});
+  }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
 app.post('/api/val/executive-inbox/resolve-thread',async(req,res)=>{
   try{
     const body=req.body||{};

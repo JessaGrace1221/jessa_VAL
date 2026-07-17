@@ -74,6 +74,8 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/app\.get\('\/api\/val\/executive-inbox\/queue'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/resolve-thread'/);
   assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/safe-contact'/);
+  assert.match(server,/app\.post\('\/api\/val\/executive-inbox\/link-context'/);
+  assert.match(server,/executive_inbox_context_link/);
   assert.match(server,/function executiveInboxSafeListed/);
   assert.match(server,/This is here because you told VAL this sender belongs in Executive Inbox/);
   assert.match(server,/function canonicalExecutiveInboxQueue/);

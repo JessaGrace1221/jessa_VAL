@@ -87,7 +87,11 @@ const correspondenceDraftBody = document.querySelector('[data-correspondence-dra
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
 const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
+const correspondenceSearchInput = document.querySelector('[data-correspondence-search]');
 const correspondenceSafeEmail = document.querySelector('[data-correspondence-safe-email]');
+const correspondenceRelationshipSelect = document.querySelector('[data-correspondence-relationship-select]');
+const correspondenceProjectSelect = document.querySelector('[data-correspondence-project-select]');
+const correspondenceProjectName = document.querySelector('[data-correspondence-project-name]');
 const correspondenceRulesPanel = document.querySelector('[data-correspondence-rules-panel]');
 const correspondenceRulesList = document.querySelector('[data-correspondence-rules-list]');
 const correspondenceRelationships = document.querySelector('[data-correspondence-relationships]');
@@ -8746,9 +8750,9 @@ function renderCorrespondenceList(){
 }
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
-  const ruleActions = ['show_rules', 'save_forward_rule', 'suggest_rules'];
+  const ruleActions = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'];
   if(!item) return ruleActions;
-  const actions = ['cowork_correspondence', 'resolve_thread', 'safe_contact', 'not_executive_contact'].concat(ruleActions);
+  const actions = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project'].concat(ruleActions);
   if(String(item.draftBody || '').trim()) actions.unshift('send');
   return actions;
 }
@@ -8844,6 +8848,29 @@ function renderCorrespondenceSideList(node, lines, emptyText){
   });
 }
 
+function correspondenceOptionLabel(item = {}, fallback = 'Untitled'){
+  return item.name || item.displayName || item.display_name || item.title || item.email || item.id || fallback;
+}
+
+function correspondencePopulateSelect(select, items = [], emptyLabel = 'Choose'){
+  if(!select) return;
+  const selected = select.value;
+  const options = items
+    .map((item) => ({
+      id: item.id || item.profileKey || item.profile_key || item.projectId || item.project_id || item.email || '',
+      label: correspondenceOptionLabel(item)
+    }))
+    .filter((item) => item.id && item.label)
+    .sort((a, b) => a.label.localeCompare(b.label));
+  select.innerHTML = '<option value="">' + escapeHtml(emptyLabel) + '</option>' + options.map((item) => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.label) + '</option>').join('');
+  if(options.some((item) => item.id === selected)) select.value = selected;
+}
+
+function renderCorrespondenceContextControls(){
+  correspondencePopulateSelect(correspondenceRelationshipSelect, Object.values(relationshipIndexProfiles || {}), 'Choose relationship');
+  correspondencePopulateSelect(correspondenceProjectSelect, Object.values(projectIndexProfiles || {}), 'Choose project');
+}
+
 function correspondenceRuleLabel(rule = {}){
   return correspondenceCompactText(rule.ruleName || rule.rule_name || rule.plainEnglish || rule.confirmationQuestion || 'Email rule', 140);
 }
@@ -8930,6 +8957,7 @@ function renderCorrespondenceRuleSuggestions(item = activeCorrespondenceItem){
 }
 
 function renderCorrespondenceIntelligence(item = activeCorrespondenceItem){
+  renderCorrespondenceContextControls();
   renderCorrespondenceSideList(correspondenceRelationships, item?.relationships || [], 'No relationship match yet.');
   renderCorrespondenceSideList(correspondenceProjects, item?.projects || [], 'No project match yet.');
   renderCorrespondenceRuleSuggestions(item);
@@ -9206,6 +9234,183 @@ async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
   if(correspondenceSafety) correspondenceSafety.textContent = 'Saved ' + (contact.name || contact.email) + ' as an Executive Inbox contact.';
 }
 
+function correspondenceEmailForAction(item = activeCorrespondenceItem){
+  if(!item) return {};
+  const raw = item.raw || {};
+  return {
+    ...raw,
+    provider:item.provider || raw.provider || 'gmail',
+    messageId:item.messageId || raw.messageId || '',
+    threadId:item.threadId || raw.threadId || '',
+    subject:item.title || raw.subject || '',
+    from:raw.from || {name:item.senderName || '', email:item.senderEmail || item.recipientEmail || ''},
+    snippet:raw.snippet || item.summary || '',
+    bodyPreview:raw.bodyPreview || raw.body_preview || item.threadMessages?.[0]?.body || item.summary || '',
+    webLink:raw.webLink || ''
+  };
+}
+
+async function searchCorrespondenceInbox(){
+  const query = String(correspondenceSearchInput?.value || '').trim();
+  if(!query){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type what you remember about the email before searching.';
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to search the connected inbox.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Searching connected inboxes for: ' + query;
+  const result = await postJson('/api/email/inbox-command', {query, maxResults:8}, {timeoutMs:45000, timeoutMessage:'Inbox search took longer than expected.'});
+  const rows = (result.emails || result.results || []).map((email, index) => normalizeCorrespondenceEmailItem({...email, classification:'needs_attention', reason:'Found by inbox search: ' + query, recommendedAction:'Review this search result in Executive Inbox.'}, index));
+  const byId = new Map(rows.concat(currentCorrespondenceItems).map((item) => [item.id, item]));
+  currentCorrespondenceItems = Array.from(byId.values());
+  activeCorrespondenceItem = rows[0] || activeCorrespondenceItem || currentCorrespondenceItems[0] || null;
+  renderCorrespondenceBrief(activeCorrespondenceItem);
+  if(correspondenceSafety) correspondenceSafety.textContent = result.answer || (rows.length ? 'Found ' + rows.length + ' inbox result' + (rows.length === 1 ? '' : 's') + '.' : 'No matching inbox messages found.');
+}
+
+async function draftCorrespondenceReply(item = activeCorrespondenceItem){
+  if(!item) return;
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to prepare a reply draft.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private reply draft. Nothing will be sent.';
+  let result = null;
+  if(item.conversationId){
+    try{
+      result = await postJson('/api/val/email/generate-draft', {conversationId:item.conversationId});
+    }catch(error){
+      result = null;
+    }
+  }
+  if(!result?.draft){
+    result = await postJson('/api/email/actions', {action:'draft_reply', email:correspondenceEmailForAction(item)});
+  }
+  const draft = result.draft || result.internalDraft || {};
+  const updated = {
+    ...item,
+    draftId:draft.id || item.draftId || '',
+    draftBody:draft.body || result.draft?.body || item.draftBody || '',
+    title:draft.subject || item.title,
+    status:'ready_for_review',
+    source:item.source || 'executive_inbox_draft'
+  };
+  currentCorrespondenceItems = [updated].concat(currentCorrespondenceItems.filter((row) => row.id !== item.id));
+  activeCorrespondenceItem = updated;
+  renderCorrespondenceBrief(updated);
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Private reply draft prepared for review. Nothing was sent.';
+}
+
+async function forwardCorrespondenceDraft(item = activeCorrespondenceItem){
+  if(!item) return;
+  const recipient = String(correspondenceForwardTo?.value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
+  if(!recipient){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type the forwarding recipient email in the rule/instruction field before forwarding.';
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to create a forward draft.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Creating a private forward draft. Nothing is forwarded automatically.';
+  const result = await postJson('/api/email/inbox-command/action', {action:'forward_draft', to:recipient, email:correspondenceEmailForAction(item)});
+  const draft = result.draft || {};
+  const updated = {
+    ...item,
+    draftId:draft.id || item.draftId || '',
+    draftBody:draft.body || item.draftBody || '',
+    title:draft.subject || item.title,
+    status:'ready_for_review',
+    recipientEmail:recipient
+  };
+  currentCorrespondenceItems = [updated].concat(currentCorrespondenceItems.filter((row) => row.id !== item.id));
+  activeCorrespondenceItem = updated;
+  renderCorrespondenceBrief(updated);
+  if(correspondenceSafety) correspondenceSafety.textContent = result.warning || 'Private forward draft prepared for ' + recipient + '. Nothing was forwarded.';
+}
+
+async function linkCorrespondenceContext(kind = 'relationship', item = activeCorrespondenceItem, target = {}){
+  if(!item || !target.id){
+    if(correspondenceSafety) correspondenceSafety.textContent = kind === 'project' ? 'Choose or create a project before linking this email.' : 'Choose or create a relationship before linking this email.';
+    return null;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to save email context links.';
+    return null;
+  }
+  const payload = {
+    kind,
+    targetId:target.id,
+    targetName:target.name || '',
+    email:correspondenceEmailForAction(item),
+    sourceItemId:item.id || '',
+    threadId:item.threadId || '',
+    messageId:item.messageId || '',
+    conversationId:item.conversationId || '',
+    summary:item.summary || item.title || ''
+  };
+  const result = await postJson('/api/val/executive-inbox/link-context', payload);
+  const label = target.name || target.id;
+  if(kind === 'project'){
+    item.projects = Array.from(new Set([...(item.projects || []), label]));
+  }else{
+    item.relationships = Array.from(new Set([...(item.relationships || []), label]));
+  }
+  renderCorrespondenceBrief(item);
+  if(correspondenceSafety) correspondenceSafety.textContent = result.message || 'Linked this email to ' + label + '.';
+  return result;
+}
+
+function selectedCorrespondenceRelationship(){
+  const id = String(correspondenceRelationshipSelect?.value || '').trim();
+  const profile = id ? relationshipIndexProfiles[id] || relationshipIndexSourceProfiles()[id] : null;
+  return profile ? {id, name:correspondenceOptionLabel(profile), email:profile.email || profile.primaryEmail || ''} : null;
+}
+
+function selectedCorrespondenceProject(){
+  const id = String(correspondenceProjectSelect?.value || '').trim();
+  const profile = id ? projectIndexProfiles[id] || projectProfiles[id] : null;
+  return profile ? {id, name:correspondenceOptionLabel(profile)} : null;
+}
+
+async function createCorrespondenceRelationship(item = activeCorrespondenceItem){
+  if(!item) return;
+  const contact = correspondenceSafeContact(item);
+  const name = contact.name || contact.email || item.senderName || '';
+  const email = contact.email || item.senderEmail || '';
+  if(!name && !email){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL needs a sender name or email before creating a relationship.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Creating a local relationship from this email. No external system changes.';
+  const result = await postJson('/api/relationships/network/manual', {name, email, summary:'Created from Executive Inbox thread: ' + (item.title || '')});
+  await hydrateRelationshipIndex({force:true}).catch(() => null);
+  const relationship = result.relationship || {};
+  await linkCorrespondenceContext('relationship', item, {id:relationship.id || relationship.profileId || relationship.email || email, name:relationship.name || name, email});
+}
+
+async function createCorrespondenceProject(item = activeCorrespondenceItem){
+  if(!item) return;
+  const name = String(correspondenceProjectName?.value || '').trim();
+  if(!name){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type a project name before creating it from this email.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Creating a local project shell from this email. No external system changes.';
+  const payload = new FormData();
+  payload.append('name', name);
+  payload.append('summary', 'Created from Executive Inbox thread: ' + (item.title || ''));
+  payload.append('rawContext', [item.summary, item.threadMessages?.[0]?.body].filter(Boolean).join('\n\n'));
+  payload.append('createdFrom', 'executive_inbox_context_link');
+  const result = await postFormData('/api/projects/create', payload);
+  await hydrateProjectIndex().catch(() => null);
+  const project = result.project || {};
+  if(correspondenceProjectName) correspondenceProjectName.value = '';
+  await linkCorrespondenceContext('project', item, {id:project.id || project.projectId || name, name:project.name || name});
+}
+
 async function analyzeCorrespondenceRuleSuggestions(){
   if(!canUseApi){
     if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to analyze rule suggestions.';
@@ -9243,6 +9448,11 @@ async function hydrateCorrespondenceDrawer(){
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
+  await Promise.all([
+    hydrateRelationshipIndex({force:false}).catch(() => null),
+    hydrateProjectIndex().catch(() => null)
+  ]);
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
   if(!canUseApi){
     hydrateCorrespondenceRules();
     return;
@@ -9388,6 +9598,10 @@ async function handleCorrespondenceAction(action){
     return;
   }
   const item = activeCorrespondenceItem;
+  if(action === 'search_inbox'){
+    await searchCorrespondenceInbox();
+    return;
+  }
   if(action === 'save_forward_rule'){
     await saveCorrespondenceForwardRule(item);
     return;
@@ -9401,6 +9615,30 @@ async function handleCorrespondenceAction(action){
     return;
   }
   if(!item) return;
+  if(action === 'generate'){
+    await draftCorrespondenceReply(item);
+    return;
+  }
+  if(action === 'forward'){
+    await forwardCorrespondenceDraft(item);
+    return;
+  }
+  if(action === 'link_relationship'){
+    await linkCorrespondenceContext('relationship', item, selectedCorrespondenceRelationship() || {});
+    return;
+  }
+  if(action === 'create_relationship'){
+    await createCorrespondenceRelationship(item);
+    return;
+  }
+  if(action === 'link_project'){
+    await linkCorrespondenceContext('project', item, selectedCorrespondenceProject() || {});
+    return;
+  }
+  if(action === 'create_project'){
+    await createCorrespondenceProject(item);
+    return;
+  }
   if(action === 'not_executive_contact'){
     const contact = correspondenceSuppressionContact(item);
     if(!contact.email && !contact.name){
@@ -9516,12 +9754,12 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const drawerUtilityAction = ['show_rules', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
+  const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
   if(drawerUtilityAction && !activeCorrespondenceItem){
     await handleCorrespondenceAction(correspondenceActionId);
     return true;
   }
-  const inspectOnlyAction = ['cowork_correspondence', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'show_rules', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
+  const inspectOnlyAction = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project', 'show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
