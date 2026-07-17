@@ -170,6 +170,8 @@ const stewardshipPersonASelect = document.querySelector('[data-stewardship-perso
 const stewardshipPersonBSelect = document.querySelector('[data-stewardship-person-b]');
 const stewardshipComparison = document.querySelector('[data-stewardship-comparison]');
 const stewardshipNetworkDetail = document.querySelector('[data-stewardship-network-detail]');
+const stewardshipNetworkStatus = document.querySelector('[data-stewardship-network-status]');
+const stewardshipNetworkAddForm = document.querySelector('[data-stewardship-network-add-form]');
 const relationshipProjectPanel = document.querySelector('[data-relationship-project-panel]');
 const relationshipProjectCount = document.querySelector('[data-relationship-project-count]');
 const relationshipDocumentPanel = document.querySelector('[data-relationship-document-panel]');
@@ -2388,9 +2390,10 @@ function mergeOnboardingSupportProfiles(items = []){
   return added;
 }
 
-async function hydrateRelationshipIndex(){
-  if(!canUseApi || relationshipIndexLoaded) return;
+async function hydrateRelationshipIndex({force=false}={}){
+  if(!canUseApi || (relationshipIndexLoaded&&!force)) return;
   if(relationshipIndexRequest) return relationshipIndexRequest;
+  if(force) relationshipIndexLoaded = false;
   relationshipIndexRequest = getJson('/api/relationships/index?limit=120')
     .then(async(data) => {
       if(Array.isArray(data?.relationships)){
@@ -2755,7 +2758,7 @@ function renderStewardshipNetworkList(){
   if(!items.length){
     const empty = document.createElement('p');
     empty.className = 'relationship-rolodex-empty';
-    empty.textContent = query ? 'No Network matches this search.' : 'No admitted Network people are ready yet.';
+    empty.textContent = query ? 'No Network matches this search.' : 'No people are in Network yet. Refresh from sent mail or add a person yourself.';
     relationshipRolodex.appendChild(empty);
     renderStewardshipNetworkDetail(null);
     return;
@@ -2765,6 +2768,40 @@ function renderStewardshipNetworkList(){
   });
   if(!stewardshipSelectedNetworkId || !items.some((item) => item.id === stewardshipSelectedNetworkId)) stewardshipSelectedNetworkId = items[0].id;
   renderStewardshipNetworkDetail(stewardshipPersonById(stewardshipSelectedNetworkId));
+}
+
+function setStewardshipNetworkStatus(message='',tone=''){
+  if(!stewardshipNetworkStatus) return;
+  stewardshipNetworkStatus.hidden = !message;
+  stewardshipNetworkStatus.textContent = message;
+  if(tone) stewardshipNetworkStatus.dataset.tone = tone;
+  else delete stewardshipNetworkStatus.dataset.tone;
+}
+
+function setStewardshipNetworkAddFormVisible(visible){
+  if(!stewardshipNetworkAddForm) return;
+  stewardshipNetworkAddForm.hidden = !visible;
+  if(visible) window.setTimeout(() => stewardshipNetworkAddForm.querySelector('[name="name"]')?.focus(), 0);
+}
+
+async function refreshStewardshipNetworkFromSentMail(button){
+  if(!canUseApi){
+    setStewardshipNetworkStatus('Network refresh is unavailable in this preview.','error');
+    return;
+  }
+  if(button) button.disabled = true;
+  setStewardshipNetworkStatus('Reviewing sent mail from the last 90 days. VAL will add only named people with more than three sent emails.');
+  try{
+    const result = await postJson('/api/relationships/network/refresh-sent-mail', {}, {timeoutMs:60000,timeoutMessage:'Network refresh took longer than expected. Please try again.'});
+    relationshipIndexSearch = '';
+    if(relationshipSearchInput) relationshipSearchInput.value = '';
+    await hydrateRelationshipIndex({force:true});
+    setStewardshipNetworkStatus(result.message || 'Network refreshed from sent mail.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not refresh Network from sent mail.','error');
+  }finally{
+    if(button) button.disabled = false;
+  }
 }
 
 function setRelationshipDetailMode(mode = 'brief'){
@@ -20453,6 +20490,38 @@ relationshipSearchInput?.addEventListener('input', () => {
   renderRelationshipRolodex();
 });
 
+stewardshipNetworkAddForm?.addEventListener('submit', async(event) => {
+  event.preventDefault();
+  if(!canUseApi){
+    setStewardshipNetworkStatus('Adding people is unavailable in this preview.','error');
+    return;
+  }
+  const form = event.currentTarget;
+  const submit = form.querySelector('button[type="submit"]');
+  const values = new FormData(form);
+  if(submit) submit.disabled = true;
+  setStewardshipNetworkStatus('Adding this person to your Network.');
+  try{
+    const result = await postJson('/api/relationships/network/manual', {
+      name:values.get('name') || '',
+      email:values.get('email') || '',
+      organization:values.get('organization') || '',
+      summary:values.get('summary') || ''
+    }, {timeoutMs:30000,timeoutMessage:'Adding this person took longer than expected. Please try again.'});
+    stewardshipSelectedNetworkId = result.relationship?.id || stewardshipSelectedNetworkId;
+    form.reset();
+    setStewardshipNetworkAddFormVisible(false);
+    relationshipIndexSearch = '';
+    if(relationshipSearchInput) relationshipSearchInput.value = '';
+    await hydrateRelationshipIndex({force:true});
+    setStewardshipNetworkStatus(result.message || 'Person added to Network.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not add this person to Network.','error');
+  }finally{
+    if(submit) submit.disabled = false;
+  }
+});
+
 relationshipSortSelect?.addEventListener('change', () => {
   relationshipSortMode = relationshipSortSelect.value || 'attention';
   renderRelationshipRolodex();
@@ -20705,6 +20774,28 @@ drawerTray.addEventListener('click', async (event) => {
     event.stopPropagation();
     relationshipPeopleToWatchExpanded = !relationshipPeopleToWatchExpanded;
     renderRelationshipRolodex();
+    return;
+  }
+  const refreshNetwork = event.target.closest('[data-stewardship-refresh-network]');
+  if(refreshNetwork){
+    event.preventDefault();
+    event.stopPropagation();
+    await refreshStewardshipNetworkFromSentMail(refreshNetwork);
+    return;
+  }
+  const addNetworkPerson = event.target.closest('[data-stewardship-add-person]');
+  if(addNetworkPerson){
+    event.preventDefault();
+    event.stopPropagation();
+    setStewardshipNetworkAddFormVisible(true);
+    return;
+  }
+  const cancelNetworkPerson = event.target.closest('[data-stewardship-cancel-add]');
+  if(cancelNetworkPerson){
+    event.preventDefault();
+    event.stopPropagation();
+    stewardshipNetworkAddForm?.reset();
+    setStewardshipNetworkAddFormVisible(false);
     return;
   }
   const suggestedDraft = event.target.closest('[data-stewardship-draft-pair]');

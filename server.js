@@ -20087,14 +20087,89 @@ function relationshipProfilePrimaryEmail(profile={}){
   const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
   return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
 }
+function stewardshipNetworkNamedEmailAdmission(profile={}){
+  const email=relationshipProfilePrimaryEmail(profile);
+  const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
+  if(!email||!name||name.includes('@')||firstLookCandidateLooksLikePhone(name))return false;
+  return /[a-z]/i.test(name)&&!isOwnerRelationship({name,email});
+}
+function stewardshipNetworkManualAdmission(profile={}){
+  const metadata=profile.metadata||{};
+  return metadata.networkAdmission==='manual'&&stewardshipNetworkNamedEmailAdmission(profile);
+}
+function stewardshipNetworkStoredSentMailAdmission(profile={}){
+  const metadata=profile.metadata||{};
+  const sentCount=Math.max(0,Number(metadata.sentMailCount||0));
+  return metadata.networkAdmission==='sent_mail'&&sentCount>3&&stewardshipNetworkNamedEmailAdmission(profile);
+}
 function stewardshipNetworkSentMailQualification(profile={},candidateAnalysis=null){
   const email=relationshipProfilePrimaryEmail(profile);
   const name=String(profile.displayName||profile.display_name||profile.name||'').trim();
   if(!email||!name)return {accepted:false,email:'',sentCount:0,emailCount:0,emails:[]};
+  if(stewardshipNetworkManualAdmission(profile)){
+    return {accepted:true,email,sentCount:0,emailCount:1,emails:[email],admission:'manual'};
+  }
+  if(stewardshipNetworkStoredSentMailAdmission(profile)){
+    return {accepted:true,email,sentCount:Math.max(0,Number(profile.metadata?.sentMailCount||0)),emailCount:1,emails:[email],admission:'sent_mail_refresh'};
+  }
   const analysis=candidateAnalysis?.sourceReceipt||candidateAnalysis||{};
   const data=firstLookCandidatePromptReceipt({sources:analysis.sources||[],witnessing:analysis.witnessing||[]});
   const qualification=firstLookCandidateRelationshipEmailQualification(data.signals,name);
   return {...qualification,accepted:qualification.accepted&&qualification.emails.includes(email)};
+}
+async function refreshStewardshipNetworkFromSentMail(){
+  const sent=await fetchGmailMessages({query:'in:sent newer_than:90d',maxResults:100,includeBody:false});
+  if(sent.needsAuth)throw new Error(sent.error||'Reconnect Google before refreshing Network from sent mail.');
+  if(sent.error)throw new Error(sent.error);
+  const messages=(sent.emails||[]).filter(isMeaningfulRelationshipEmail);
+  const receipt=firstLookCandidatePromptReceipt({
+    sources:[{
+      id:'gmail',
+      records:messages.flatMap((email)=>firstLookCandidateGmailSourceRecords(email,'sent'))
+    }]
+  });
+  const owner=relationshipOwnerIdentity();
+  const candidates=receipt.signals
+    .filter((signal)=>signal?.kind==='email_correspondent')
+    .map((signal)=>{
+      const name=firstLookCandidateCleanName(signal.name||'');
+      const email=(signal.emailAddresses||[]).map(firstLookCandidateSafeEmail).find(Boolean)||'';
+      return {name,email,sentCount:Math.max(0,Number(signal.sentCount||0))};
+    })
+    .filter((candidate)=>candidate.sentCount>3&&candidate.email&&firstLookCandidateIdentityLooksSafe(candidate.name,'person'))
+    .filter((candidate)=>!isOwnerRelationship(candidate,owner));
+  const existingProfiles=await listRelationshipProfiles({limit:400});
+  const existingByEmail=new Map(existingProfiles
+    .map((profile)=>[relationshipProfilePrimaryEmail(profile),profile])
+    .filter(([email])=>!!email));
+  let added=0;
+  let updated=0;
+  for(const candidate of candidates){
+    const existing=existingByEmail.get(candidate.email);
+    const metadata={
+      ...(existing?.metadata||{}),
+      source:'network_sent_mail_refresh',
+      networkAdmission:existing?.metadata?.networkAdmission==='manual'?'manual':'sent_mail',
+      email:candidate.email,
+      sentMailCount:candidate.sentCount,
+      relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'sent_mail_threshold'])),
+      sourceWindowDays:90,
+      noExternalAction:true
+    };
+    await saveRelationshipProfile({
+      ...(existing||{}),
+      profileType:'person',
+      displayName:existing?.displayName||candidate.name,
+      email:candidate.email,
+      summary:existing?.summary||`You sent ${candidate.sentCount} emails to ${candidate.name} in the last 90 days.`,
+      relationshipStatus:existing?.relationshipStatus||'sent-mail relationship',
+      confidence:Math.max(Number(existing?.confidence||0),0.72),
+      metadataJson:metadata
+    });
+    if(existing)updated+=1;
+    else added+=1;
+  }
+  return {reviewedMessages:messages.length,qualifiedRecipients:candidates.length,added,updated};
 }
 function relationshipProfileKnownAlias(profile={}){
   return knownRelationshipEmailAlias(relationshipProfilePrimaryEmail(profile));
@@ -29727,7 +29802,10 @@ app.get('/api/relationships/index',async(req,res)=>{
   try{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
     if(await cleanStartSourceIntakeLocked()){
-      return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:0,relationships:[],message:'VAL is starting fresh. Relationship source intake begins at First Look after Witnessing.'});
+      const directProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)}))
+        .filter((profile)=>profile.profileType==='person'&&(stewardshipNetworkManualAdmission(profile)||stewardshipNetworkStoredSentMailAdmission(profile)))
+        .slice(0,limit);
+      return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:directProfiles.length,relationships:directProfiles.map(relationshipIndexItemFromProfile),message:directProfiles.length?'Showing people you added directly or admitted from sent mail.':'VAL is starting fresh. Add a person directly or refresh from sent mail to populate Network.'});
     }
     if(DEMO_MODE){
       const profiles=dedupeStewardshipProfiles((await Promise.all((await listRelationshipProfiles({limit:Math.max(limit,120)})).filter(profile=>profile.profileType==='person').map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)})))).filter(profile=>profile.relationshipAdmission.admitted)).slice(0,limit);
@@ -29770,6 +29848,50 @@ app.post('/api/relationships/create',async(req,res)=>{
     });
     const relationship=relationshipIndexItemFromProfile(publicRelationshipProfile(row));
     res.json({ok:true,relationship,message:'Relationship created locally for project ownership. No CRM update, message, task, calendar change, or external action happened.',noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/network/refresh-sent-mail',async(req,res)=>{
+  try{
+    const result=await refreshStewardshipNetworkFromSentMail();
+    const message=result.qualifiedRecipients
+      ? `Reviewed ${result.reviewedMessages} sent messages from the last 90 days. Added ${result.added} people and refreshed ${result.updated} existing Network profiles.`
+      : `Reviewed ${result.reviewedMessages} sent messages from the last 90 days. No new people met the more-than-three-sent-emails rule.`;
+    res.json({ok:true,...result,message,noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/relationships/network/manual',async(req,res)=>{
+  try{
+    const name=firstLookCandidateCleanName(req.body.name||req.body.displayName||'');
+    const email=normalizeExecutiveEmailAddress(req.body.email||'');
+    const organization=firstLookCandidateCleanName(req.body.organization||'');
+    const summary=String(req.body.summary||req.body.detail||'').replace(/\s+/g,' ').trim().slice(0,800);
+    if(!name||!email)return res.status(400).json({ok:false,error:'A name and real email address are required to add someone to Network.'});
+    if(!stewardshipNetworkNamedEmailAdmission({displayName:name,email}))return res.status(400).json({ok:false,error:'Use a real person name and email address. Your own email address cannot be added to Network.'});
+    const existing=(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===email)||null;
+    const row=await saveRelationshipProfile({
+      ...(existing||{}),
+      profileType:'person',
+      displayName:name,
+      email,
+      summary:summary||existing?.summary||'Added directly by the user to Network.',
+      relationshipStatus:existing?.relationshipStatus||'manually added',
+      confidence:Math.max(Number(existing?.confidence||0),0.7),
+      metadataJson:{
+        ...(existing?.metadata||{}),
+        source:'network_manual_add',
+        networkAdmission:'manual',
+        email,
+        company:organization||existing?.metadata?.company||'',
+        relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'manual_network'])),
+        noExternalAction:true
+      }
+    });
+    const relationship=relationshipIndexItemFromProfile(publicRelationshipProfile(row));
+    res.json({ok:true,relationship,message:`${name} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }

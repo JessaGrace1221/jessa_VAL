@@ -6,6 +6,8 @@ const path=require('node:path');
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 
 test('relationship ingestion establishes and enforces owner identity',()=>{
   assert.match(server,/function relationshipOwnerIdentity/);
@@ -30,6 +32,18 @@ test('Stewardship admits Network people only from qualifying sent mail',()=>{
   assert.match(server,/\.filter\(profile=>stewardshipNetworkSentMailQualification\(profile,candidateAnalysis\)\.accepted\)/);
   assert.doesNotMatch(server,/function calendarRelationshipProfiles/);
   assert.doesNotMatch(server,/function calendarAttendeeProfileFromEvent/);
+});
+
+test('Network offers a sent-mail refresh and an explicit manual person path',()=>{
+  assert.match(server,/app\.post\('\/api\/relationships\/network\/refresh-sent-mail'/);
+  assert.match(server,/query:'in:sent newer_than:90d'/);
+  assert.match(server,/sentCount>3/);
+  assert.match(server,/app\.post\('\/api\/relationships\/network\/manual'/);
+  assert.match(server,/networkAdmission:'manual'/);
+  assert.match(hearth,/data-stewardship-refresh-network/);
+  assert.match(hearth,/data-stewardship-network-add-form/);
+  assert.match(hearthJs,/refreshStewardshipNetworkFromSentMail/);
+  assert.match(hearthJs,/api\/relationships\/network\/manual/);
 });
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{

@@ -359,6 +359,23 @@
               <span>Network</span>
               <h4>Search, select, and see best matches</h4>
             </div>
+            <div class="stewardship-network-actions" aria-label="Keep Network current">
+              <button type="button" data-stewardship-refresh-network>Refresh from sent mail</button>
+              <button type="button" data-stewardship-add-person>Add person</button>
+            </div>
+            <p class="stewardship-network-status" data-stewardship-network-status aria-live="polite" hidden></p>
+            <form class="stewardship-network-add-form" data-stewardship-network-add-form hidden>
+              <div class="stewardship-network-add-grid">
+                <label><span>Name</span><input type="text" name="name" autocomplete="name" required></label>
+                <label><span>Email</span><input type="email" name="email" autocomplete="email" required></label>
+                <label><span>Organization</span><input type="text" name="organization" autocomplete="organization"></label>
+                <label><span>What should VAL know?</span><textarea name="summary" rows="2" placeholder="Optional context for this relationship"></textarea></label>
+              </div>
+              <div class="stewardship-network-form-actions">
+                <button type="submit">Add to Network</button>
+                <button type="button" data-stewardship-cancel-add>Cancel</button>
+              </div>
+            </form>
             <label class="stewardship-network-search">
               <span>Search Network</span>
               <input type="search" data-relationship-search placeholder="Name, organization, need, offer" autocomplete="off">

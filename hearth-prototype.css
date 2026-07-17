@@ -6797,6 +6797,82 @@ button.timeline-overview-receipt:focus-visible{
   gap:14px;
   min-height:0;
 }
+.stewardship-network-actions,
+.stewardship-network-form-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.stewardship-network-actions button,
+.stewardship-network-form-actions button{
+  min-height:34px;
+  border:1px solid rgba(91,105,79,.22);
+  border-radius:999px;
+  background:var(--frost-open-card);
+  color:rgba(43,61,40,.92);
+  padding:0 13px;
+  font:850 .72rem var(--body);
+}
+.stewardship-network-actions button:first-child,
+.stewardship-network-form-actions button[type="submit"]{
+  background:rgba(91,105,79,.92);
+  color:var(--paper);
+}
+.stewardship-network-actions button:disabled,
+.stewardship-network-form-actions button:disabled{
+  cursor:wait;
+  opacity:.62;
+}
+.stewardship-network-status{
+  margin:0;
+  color:rgba(45,27,22,.72);
+  font-size:.76rem;
+  line-height:1.42;
+}
+.stewardship-network-status[data-tone="error"]{
+  color:#8a4638;
+}
+.stewardship-network-add-form{
+  display:grid;
+  gap:10px;
+  border-top:1px solid rgba(79,48,38,.12);
+  border-bottom:1px solid rgba(79,48,38,.12);
+  padding:12px 0;
+}
+.stewardship-network-add-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px 12px;
+}
+.stewardship-network-add-grid label{
+  display:grid;
+  gap:6px;
+}
+.stewardship-network-add-grid label:last-child{
+  grid-column:1 / -1;
+}
+.stewardship-network-add-grid span{
+  color:rgba(45,27,22,.62);
+  font-size:.66rem;
+  font-weight:850;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.stewardship-network-add-grid input,
+.stewardship-network-add-grid textarea{
+  width:100%;
+  border:1px solid rgba(79,48,38,.16);
+  border-radius:7px;
+  background:rgba(255,249,239,.62);
+  color:rgba(34,19,15,.92);
+  padding:9px 11px;
+  font:750 .78rem/1.35 var(--body);
+}
+.stewardship-network-add-grid textarea{
+  min-height:68px;
+  resize:vertical;
+}
 .relationship-detail.show-index .stewardship-network-layout .relationship-rolodex{
   display:grid;
 }
@@ -8100,6 +8176,8 @@ button.timeline-overview-receipt:focus-visible{
       .correspondence-queue,.correspondence-thread,.correspondence-brief,.correspondence-intelligence{min-height:auto;border-right:0;border-bottom:1px solid rgba(34,19,15,.18)}
       .correspondence-draft-preview,.correspondence-draft-preview textarea{min-height:260px}
       .relationship-identity{grid-template-columns:1fr}
+      .stewardship-network-layout,.stewardship-network-add-grid{grid-template-columns:1fr}
+      .stewardship-network-add-grid label:last-child{grid-column:auto}
       .project-identity,.project-manager-hero{grid-template-columns:1fr}
       .relationship-folder-rail{display:grid;grid-template-columns:1fr}
       .relationship-detail.show-index .relationship-index-tools{grid-template-columns:1fr}
