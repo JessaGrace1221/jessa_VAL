@@ -2641,7 +2641,7 @@ function renderStewardshipNetworkDetail(profile = null){
   ], '');
   const enrichmentMarkup = enrichment.status === 'complete'
     ? '<section class="stewardship-enrichment-context"><strong>Saved public context</strong><ul>' + enrichmentLines.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul><button type="button" data-stewardship-enrich-person="' + escapeHtml(stewardshipSelectedNetworkId) + '">Refresh saved context</button></section>'
-    : '<section class="stewardship-enrichment-context"><strong>Relationship context</strong><p>Use Outscraper when you want VAL to save public context for this person and reuse it in meeting preparation.</p><button type="button" data-stewardship-enrich-person="' + escapeHtml(stewardshipSelectedNetworkId) + '">Enrich this relationship\'s context</button></section>';
+    : '<section class="stewardship-enrichment-context"><strong>Relationship context</strong><p>Enrich to find and save the most recent public context for this person.</p><button type="button" data-stewardship-enrich-person="' + escapeHtml(stewardshipSelectedNetworkId) + '">Enrich this relationship\'s context</button></section>';
   const matchMarkup = matches.length
     ? '<ol>' + matches.map((match) => '<li><strong>' + escapeHtml(match.item.name) + '</strong><p>' + escapeHtml(match.fit.because) + '</p><button type="button" data-stewardship-create-with="' + escapeHtml(match.item.id) + '">Use In Introduction</button></li>').join('') + '</ol>'
     : '<p>I do not see a strong reason to introduce ' + escapeHtml(profile.name || 'this person') + ' yet.</p><button type="button" data-stewardship-who-should-meet="' + escapeHtml(stewardshipSelectedNetworkId) + '">Who Should ' + escapeHtml(relationshipFirstName(profile)) + ' Meet?</button>';
