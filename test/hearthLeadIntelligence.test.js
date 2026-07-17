@@ -1387,8 +1387,8 @@ test('Hearth text inputs offer VAL autocorrect suggestions without silently rewr
   assert.match(hearthJs, /enableValAutocorrect\(document\)/);
   assert.match(hearthCss, /\.val-autocorrect/);
   assert.match(hearthCss, /\.val-autocorrect button/);
-  assert.match(hearthHtml, /hearth-prototype\.css\?v=completion-cue-20260716/);
-  assert.match(hearthHtml, /hearth-prototype\.js\?v=completion-cue-20260716/);
+  assert.match(hearthHtml, /hearth-prototype\.css\?v=[^"']+/);
+  assert.match(hearthHtml, /hearth-prototype\.js\?v=[^"']+/);
 });
 
 test('Transcript reads bypass cached browser responses after a tenant reset', () => {

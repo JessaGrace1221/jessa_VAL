@@ -35,6 +35,7 @@ test('Stewardship admits Network people only from qualifying sent mail',()=>{
 });
 
 test('Network offers a sent-mail refresh and an explicit manual person path',()=>{
+  assert.match(server,/function safeArray\(value\)\{\s*return Array\.isArray\(value\) \? value : \[\];\s*\}/);
   assert.match(server,/app\.post\('\/api\/relationships\/network\/refresh-sent-mail'/);
   assert.match(server,/function fetchGmailSentNetworkMessages/);
   assert.match(server,/maxResults=500/);
