@@ -100,6 +100,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
   const appliedPreparedWork=[];
   const appliedNextMoves=[];
   const appliedRelationshipOverviews=[];
+  const appliedRelationshipSections=[];
   const preparedTranscriptOverviews=[];
   const createdTranscriptActionItems=[];
   const preparedEmailThreadDrafts=[];
@@ -188,6 +189,11 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       const current=loadedRelationships.find((relationship)=>String(relationship.id)===String(payload.relationshipId)) || {};
       return {...current,name:current.displayName||current.name||'',relationshipCoworkFocus:payload.relationshipOverview,nextStewardshipMove:payload.relationshipOverview.nextMove};
     },
+    applyRelationshipSection:async payload=>{
+      appliedRelationshipSections.push(payload);
+      const current=loadedRelationships.find((relationship)=>String(relationship.id)===String(payload.relationshipId)) || {};
+      return {...current,name:current.displayName||current.name||'',relationshipManualContext:{[payload.relationshipSectionUpdate.sectionId]:{values:payload.relationshipSectionUpdate.values}}};
+    },
     loadTranscript:async id=>id===loadedTranscript?.id ? loadedTranscript : null,
     prepareTranscriptMeetingOverview:async payload=>{
       preparedTranscriptOverviews.push(payload);
@@ -207,7 +213,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
       return {draft:{id:'draft_email_mou',subject:'Re: MOU for Forever Freedom',body:'Hi Aric,\n\nI would like to confirm the final MOU changes so we can keep the partnership moving.\n\nBest,\nJessa',status:'ready_for_review'},noExternalAction:true};
     }
   });
-  return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,appliedRelationshipOverviews,preparedTranscriptOverviews,createdTranscriptActionItems,preparedEmailThreadDrafts,get store(){return store;}};
+  return {service,applied,appliedIdentities,appliedOnboarding,appliedPeople,appliedDocuments,appliedMilestones,appliedMonitoring,appliedRelationshipNurture,appliedImportance,appliedRisks,appliedNarratives,appliedNeedsNext,appliedOperatingSystems,appliedPhases,appliedOverviewFocuses,appliedPreparedWork,appliedNextMoves,appliedRelationshipOverviews,appliedRelationshipSections,preparedTranscriptOverviews,createdTranscriptActionItems,preparedEmailThreadDrafts,get store(){return store;}};
 }
 
 function postgresCoworkDb(){
@@ -255,7 +261,7 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview','relationship.section']);
 });
 
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
@@ -966,6 +972,46 @@ test('Relationship Co-Work rejects a missing selected relationship instead of bo
   );
 });
 
+test('Relationship card Co-Work updates only the selected field for the selected person after review',async()=>{
+  const {service,appliedRelationshipSections}=serviceFor();
+  const opened=await service.openEntry({
+    entrypointId:'relationship.section',
+    scope:{entityType:'relationship_section',entityId:'rel_aric',sectionId:'needs'}
+  });
+  assert.equal(opened.session.scope.entityId,'rel_aric');
+  assert.equal(opened.session.scope.sectionId,'needs');
+  assert.equal(opened.question.targetField,'relationship_person_packet.what_this_person_needs[]');
+  assert.match(opened.question.question,/What does Aric need/i);
+  await assert.rejects(service.applyWorkItem(opened.workItem.id),/must be reviewed/i);
+
+  const ready=await service.respond(opened.session.id,{answer:'A clear decision on the remaining MOU changes.\nA confirmed partnership timeline.'});
+  assert.equal(ready.workItem.type,'relationship_section_update');
+  assert.equal(ready.workItem.status,'needs_review');
+  assert.equal(ready.workItem.payload.relationshipSectionUpdate.sectionId,'needs');
+  assert.equal(ready.workItem.payload.relationshipSectionUpdate.targetField,'relationship_person_packet.what_this_person_needs[]');
+  assert.equal(ready.workItem.payload.relationshipSectionUpdate.userConfirmed,true);
+  assert.equal(ready.workItem.payload.relationshipSectionUpdate.sourceType,'user_confirmed_relationship_context');
+  assert.deepEqual(ready.workItem.payload.relationshipSectionUpdate.values,['A clear decision on the remaining MOU changes.','A confirmed partnership timeline.']);
+
+  const applied=await service.applyWorkItem(ready.workItem.id);
+  assert.equal(applied.workItem.status,'applied');
+  assert.equal(applied.receipt.action,'apply_relationship_section_update');
+  assert.equal(applied.receipt.payloadJson.noExternalAction,true);
+  assert.equal(appliedRelationshipSections.length,1);
+  assert.equal(appliedRelationshipSections[0].relationshipId,'rel_aric');
+  assert.equal(appliedRelationshipSections[0].relationshipSectionUpdate.sectionId,'needs');
+  assert.deepEqual(appliedRelationshipSections[0].relationshipSectionUpdate.values,['A clear decision on the remaining MOU changes.','A confirmed partnership timeline.']);
+  assert.equal(applied.relationship.relationshipManualContext.needs.values[0],'A clear decision on the remaining MOU changes.');
+});
+
+test('Relationship card Co-Work rejects an unknown card instead of opening a generic relationship chat',async()=>{
+  const {service}=serviceFor();
+  await assert.rejects(
+    service.openEntry({entrypointId:'relationship.section',scope:{entityType:'relationship_section',entityId:'rel_aric',sectionId:'unknown'}}),
+    /does not have a registered Co-Work contract/i
+  );
+});
+
 test('Relationships Co-Work opens the canonical overview route instead of the legacy generic chat',()=>{
   const handler=hearth.slice(hearth.indexOf('async function handleRelationshipAction(actionId)'),hearth.indexOf('function relationshipUsefulText'));
   assert.match(handler,/await openRelationshipOverviewCowork\(profile\)/);
@@ -974,6 +1020,10 @@ test('Relationships Co-Work opens the canonical overview route instead of the le
   assert.match(hearth,/data-cowork-apply-relationship-overview/);
   assert.match(server,/applyCoworkRelationshipOverview/);
   assert.match(server,/loadRelationshipForCowork/);
+  assert.match(hearth,/data-stewardship-cowork-field/);
+  assert.match(hearth,/entrypointId:'relationship\.section'/);
+  assert.match(hearth,/data-cowork-apply-relationship-section/);
+  assert.match(server,/applyCoworkRelationshipSection/);
 });
 
 test('Project Managers canonical entries bypass generic Co-Work and use registered routes',()=>{

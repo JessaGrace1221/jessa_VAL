@@ -6905,6 +6905,53 @@ button.timeline-overview-receipt:focus-visible{
   align-content:start;
   min-width:0;
 }
+.stewardship-network-detail .stewardship-context-card{
+  width:100%;
+  min-height:174px;
+  display:grid;
+  gap:10px;
+  align-content:start;
+  justify-items:start;
+  border:1px solid rgba(79,48,38,.13);
+  border-radius:8px;
+  background:rgba(255,252,247,.76);
+  color:rgba(45,27,22,.78);
+  padding:16px 18px;
+  text-align:left;
+  box-shadow:none;
+  cursor:pointer;
+  transition:border-color .16s ease,background .16s ease,transform .16s ease;
+}
+.stewardship-network-detail .stewardship-context-card:hover,
+.stewardship-network-detail .stewardship-context-card:focus-visible{
+  border-color:rgba(91,105,79,.58);
+  background:rgba(249,253,244,.9);
+  outline:none;
+  transform:translateY(-1px);
+}
+.stewardship-context-card-title,
+.stewardship-context-card-action{
+  color:rgba(45,27,22,.9);
+  font:850 .72rem var(--mono);
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.stewardship-context-card-lines{
+  display:grid;
+  gap:7px;
+  color:rgba(45,27,22,.67);
+  font:700 .82rem/1.35 var(--body);
+}
+.stewardship-context-card-lines span::before{
+  content:'-';
+  margin-right:8px;
+  color:rgba(91,105,79,.78);
+}
+.stewardship-context-card-action{
+  margin-top:auto;
+  color:rgba(91,105,79,.9);
+  letter-spacing:.08em;
+}
 .stewardship-best-matches{
   display:grid;
   gap:8px;

@@ -1987,7 +1987,9 @@ function stewardshipEvidence(profile = {}){
 }
 
 function stewardshipRelationshipLine(profile = {}){
-  return relationshipCleanSourceText(profile.stewardshipAbout || profile.identity || profile.contact || profile.company || profile.role || 'Known through current VAL relationship evidence.', 220);
+  const manual = profile.relationshipManualContext || profile.relationship_manual_context || {};
+  const manualRelationship = manual.relationship?.value || manual.relationship?.values?.[0] || '';
+  return relationshipCleanSourceText(manualRelationship || profile.personPacket?.who_this_person_is?.current_context || profile.stewardshipAbout || profile.summary || profile.identity || profile.contact || profile.company || profile.role || 'Known through current VAL relationship evidence.', 220);
 }
 
 function stewardshipTextForMatch(profile = {}){
@@ -2638,10 +2640,10 @@ function renderStewardshipNetworkDetail(profile = null){
     '<h5>' + escapeHtml(profile.name || 'Relationship') + '</h5>',
     '<p>' + escapeHtml(stewardshipRelationshipLine(profile)) + '</p>',
     '<div class="stewardship-four-grid">',
-    stewardshipMiniList('Needs', stewardshipNeeds(profile)),
-    stewardshipMiniList('Offers', stewardshipOffers(profile)),
-    stewardshipMiniList('Relationship', [stewardshipRelationshipLine(profile)]),
-    stewardshipMiniList('Evidence', stewardshipEvidence(profile)),
+    stewardshipCoworkCard('needs', 'Needs', stewardshipNeeds(profile), profile),
+    stewardshipCoworkCard('offers', 'Offers', stewardshipOffers(profile), profile),
+    stewardshipCoworkCard('relationship', 'Relationship', [stewardshipRelationshipLine(profile)], profile),
+    stewardshipCoworkCard('evidence', 'Evidence', stewardshipEvidence(profile), profile),
     '</div>',
     enrichmentMarkup,
     '<div class="stewardship-best-matches"><strong>Best Matches</strong>' + matchMarkup + '</div>'
@@ -2782,6 +2784,13 @@ function renderStewardshipComparison(){
 function stewardshipMiniList(title = '', rows = []){
   const cleanRows = stewardshipCleanList(rows, 'Not enough evidence yet.');
   return '<section><strong>' + escapeHtml(title) + '</strong><ul>' + cleanRows.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul></section>';
+}
+
+function stewardshipCoworkCard(sectionId = '', title = '', rows = [], profile = {}){
+  const cleanRows = stewardshipCleanList(rows, 'Not enough evidence yet.');
+  const relationshipId = profile.id || profile.profileId || profile.profileKey || profile.query?.targetId || '';
+  const relationshipName = profile.name || 'this relationship';
+  return '<button type="button" class="stewardship-context-card" data-stewardship-cowork-field="' + escapeHtml(sectionId) + '" data-stewardship-cowork-person="' + escapeHtml(relationshipId) + '" title="Update ' + escapeHtml(title.toLowerCase()) + ' for ' + escapeHtml(relationshipName) + ' with VAL"><span class="stewardship-context-card-title">' + escapeHtml(title) + '</span><span class="stewardship-context-card-lines">' + cleanRows.map((line) => '<span>' + escapeHtml(line) + '</span>').join('') + '</span><span class="stewardship-context-card-action">Co-Work with VAL</span></button>';
 }
 
 function renderStewardshipNetworkList(){
@@ -5018,6 +5027,23 @@ function renderCoworkDocumentItem(workItem = {}){
   ].join('');
 }
 
+function renderCoworkRelationshipSectionItem(workItem = {}){
+  const payload = workItem.payload || {};
+  const update = payload.relationshipSectionUpdate || {};
+  const values = Array.isArray(update.values) ? update.values.filter(Boolean) : [];
+  if(!update.sectionLabel || !values.length) return '';
+  const ready = workItem.status === 'needs_review';
+  const applied = workItem.status === 'applied';
+  const status = applied ? 'Applied to Stewardship' : (ready ? 'Ready for review' : 'Preparing card update');
+  return [
+    '<section class="cowork-work-item" data-cowork-work-item data-cowork-work-item-id="' + escapeHtml(workItem.id || '') + '">',
+      '<div class="cowork-work-item-heading"><span>Prepared relationship card update</span><strong>' + escapeHtml(update.sectionLabel + ' for ' + (payload.relationshipName || 'selected relationship')) + '</strong><small>' + escapeHtml(status) + '</small></div>',
+      '<div class="cowork-workstream-list"><article><strong>' + escapeHtml(update.sectionLabel) + '</strong><div class="cowork-workstream-fields">' + values.map((value) => coworkWorkstreamField('User-confirmed context', value)).join('') + coworkWorkstreamField('Destination', 'Stewardship > Network > ' + update.sectionLabel) + coworkWorkstreamField('Approval', 'Internal relationship packet only. No outreach or external change.') + '</div></article></div>',
+      ready ? '<button type="button" data-cowork-apply-relationship-section="' + escapeHtml(workItem.id || '') + '">Apply ' + escapeHtml(update.sectionLabel.toLowerCase()) + ' update</button>' : '',
+    '</section>'
+  ].join('');
+}
+
 function renderCoworkTranscriptOverviewItem(workItem = {}){
   const payload = workItem.payload || {};
   const artifact = payload.preparedArtifact || {};
@@ -5104,7 +5130,7 @@ function updateCoworkEntryContext(result = {}){
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
   const isTranscript = entrypointId.startsWith('transcript.');
   const isEmailThread = entrypointId === 'email.thread';
-  const isRelationship = entrypointId === 'relationship.overview';
+  const isRelationship = entrypointId === 'relationship.overview' || entrypointId === 'relationship.section';
   const sectionLabel = entrypointId === 'project.overview' ? 'Round Table focus' : entrypointId === 'project.documents' ? 'documents and sources' : entrypointId === 'project.people' ? 'people involved' : entrypointId === 'project.identity' ? 'project foundation' : entrypointId === 'project.milestones' ? 'milestones' : entrypointId === 'project.monitoring' ? 'monitoring after launch' : entrypointId === 'project.relationship_nurture' ? 'relationship nurture' : entrypointId === 'project.why_it_matters' ? 'why it matters' : entrypointId === 'project.risk' ? 'risk or blocker' : entrypointId === 'project.narrative' ? 'working narrative' : entrypointId === 'project.needs_next' ? 'what VAL needs next' : entrypointId === 'project.sop' ? 'operating system' : entrypointId === 'project.phase' ? 'current phase' : entrypointId === 'project.prepared_work' ? 'prepared work' : entrypointId === 'project.next_move' ? 'next move' : 'workstreams';
   const fallbackObjective = isTranscript
     ? 'Prepare one reviewable result from the selected transcript.'
@@ -5142,11 +5168,12 @@ function updateCoworkEntryContext(result = {}){
   const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
   if(!context) return;
   if(isRelationship){
+    const sectionLabel = entrypointId === 'relationship.section' ? (brief.sectionLabel || 'selected card') : 'next relationship move';
     context.innerHTML = [
       '<span>Relationships</span>',
-      '<strong>' + escapeHtml(brief.relationshipName || 'Selected relationship') + '</strong>',
-      '<p>' + escapeHtml(brief.objective || 'Prepare one source-aware next stewardship move for this relationship.') + '</p>',
-      '<small>Selected relationship source receipt: ' + escapeHtml((brief.sourceLines || []).length) + ' item(s). Nothing external happens here.</small>'
+      '<strong>' + escapeHtml((brief.relationshipName || 'Selected relationship') + ' > ' + sectionLabel) + '</strong>',
+      '<p>' + escapeHtml(brief.objective || 'Prepare one reviewable update for this selected relationship card.') + '</p>',
+      '<small>Selected relationship only. Nothing external happens here.</small>'
     ].join('');
     return;
   }
@@ -5194,7 +5221,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
       projectId:session.scope?.entityType === 'project_section' ? (session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || '') : '',
       transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : '',
       emailThreadId:session.scope?.entityType === 'email_thread' ? session.scope?.entityId || '' : '',
-      relationshipId:session.scope?.entityType === 'relationship' ? session.scope?.entityId || '' : ''
+      relationshipId:(session.scope?.entityType === 'relationship' || session.scope?.entityType === 'relationship_section') ? session.scope?.entityId || '' : ''
     };
   }
   updateCoworkEntryContext(result);
@@ -5233,6 +5260,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
       ? renderCoworkProjectOverviewFocusItem(workItem)
       : workItem.type === 'relationship_overview_focus'
       ? renderCoworkRelationshipOverviewItem(workItem)
+      : workItem.type === 'relationship_section_update'
+      ? renderCoworkRelationshipSectionItem(workItem)
       : workItem.type === 'project_prepared_work'
       ? renderCoworkProjectPreparedWorkItem(workItem)
       : workItem.type === 'project_next_move'
@@ -5249,7 +5278,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = workItem.status === 'applied' || session.status === 'completed';
-  const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview') && workItem.status === 'needs_review';
+  const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
   if(textarea){
     const completeLabel = session.entrypointId === 'transcript.working_brief'
       ? 'Meeting overview draft created.'
@@ -5259,6 +5288,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
         ? 'Private email draft ready in Leverage.'
       : session.entrypointId === 'relationship.overview'
         ? 'Relationship move applied.'
+      : session.entrypointId === 'relationship.section'
+        ? 'Relationship card update applied.'
       : session.entrypointId === 'project.documents'
         ? 'Project document links applied.'
       : session.entrypointId === 'project.people'
@@ -5292,7 +5323,7 @@ function renderCoworkEntryResult(result = {}, options = {}){
       : session.entrypointId === 'project.next_move'
         ? 'Next move applied.'
         : 'Workstreams applied.';
-    const returnSurface = session.entrypointId === 'email.thread' ? ' Executive Inbox' : (session.entrypointId.startsWith('transcript.') ? ' Transcripts' : (session.entrypointId === 'relationship.overview' ? ' Relationships' : ' Project Managers'));
+    const returnSurface = session.entrypointId === 'email.thread' ? ' Executive Inbox' : (session.entrypointId.startsWith('transcript.') ? ' Transcripts' : (session.entrypointId.startsWith('relationship.') ? ' Stewardship' : ' Project Managers'));
     textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : isReadyForReview ? (session.entrypointId === 'email.thread' ? 'Review the private draft in Leverage.' : 'Review the source-backed result above, then use Apply.') : coworkEntryPlaceholder(result.question || {});
     textarea.disabled = isComplete || isReadyForReview;
   }
@@ -5837,7 +5868,8 @@ function coworkScopeForEntry(entry = {}){
     'transcript.working_brief':'working_brief',
     'transcript.action_item':'action_item',
     'email.thread':'reply_draft',
-    'relationship.overview':'overview'
+    'relationship.overview':'overview',
+    'relationship.section':entry.sectionId || ''
   };
   const scope = {sectionId:entry.sectionId || sectionByEntrypoint[entrypointId] || ''};
   if(entrypointId.startsWith('project.')){
@@ -5850,8 +5882,8 @@ function coworkScopeForEntry(entry = {}){
   }else if(entrypointId === 'email.thread'){
     scope.entityType = 'email_thread';
     scope.entityId = entry.emailThreadId || '';
-  }else if(entrypointId === 'relationship.overview'){
-    scope.entityType = 'relationship';
+  }else if(entrypointId.startsWith('relationship.')){
+    scope.entityType = entrypointId === 'relationship.section' ? 'relationship_section' : 'relationship';
     scope.entityId = entry.relationshipId || '';
   }
   return scope;
@@ -5923,6 +5955,28 @@ async function applyActiveCoworkRelationshipOverview(workItemId = '', button = n
     renderCoworkEntryResult(result);
   }catch(error){
     appendHomeCoworkMessage('val','VAL could not apply this relationship move. Nothing external was changed. ' + error.message);
+    if(button) button.disabled = false;
+  }
+}
+
+async function applyActiveCoworkRelationshipSection(workItemId = '', button = null){
+  const entry = activeCoworkEntry;
+  if(!entry?.workItemId || entry.workItemId !== workItemId) return;
+  if(button) button.disabled = true;
+  try{
+    const result = await postJson('/api/val/cowork/work-items/' + encodeURIComponent(workItemId) + '/apply',{}, {timeoutMs:15000,timeoutMessage:'VAL could not apply this relationship card update yet.'});
+    if(result.relationship){
+      const refreshed = relationshipProfileWithPersonPacket(relationshipProfileFromIndexItem(result.relationship));
+      relationshipIndexProfiles[refreshed.id] = refreshed;
+      activeRelationshipProfile = refreshed;
+      stewardshipSelectedNetworkId = refreshed.id || stewardshipSelectedNetworkId;
+      renderRelationshipProfile(refreshed.id, refreshed);
+      renderStewardshipNetworkDetail(refreshed);
+      renderRelationshipRolodex();
+    }
+    renderCoworkEntryResult(result);
+  }catch(error){
+    appendHomeCoworkMessage('val','VAL could not apply this relationship card update. Nothing was changed. ' + error.message);
     if(button) button.disabled = false;
   }
 }
@@ -10938,6 +10992,61 @@ async function openRelationshipOverviewCowork(profile = activeRelationshipProfil
   }catch(error){
     activeCoworkEntry = null;
     appendHomeCoworkMessage('val','VAL could not open this selected relationship packet. Nothing was changed. ' + error.message,{replace:true});
+  }
+}
+
+const stewardshipRelationshipSectionLabels = Object.freeze({
+  needs:'Needs',
+  offers:'Offers',
+  relationship:'Relationship',
+  evidence:'Evidence'
+});
+
+function stewardshipRelationshipSectionValues(profile = {}, sectionId = ''){
+  const section = String(sectionId || '').toLowerCase();
+  if(section === 'needs') return stewardshipNeeds(profile);
+  if(section === 'offers') return stewardshipOffers(profile);
+  if(section === 'relationship') return [stewardshipRelationshipLine(profile)];
+  if(section === 'evidence') return stewardshipEvidence(profile);
+  return [];
+}
+
+async function openStewardshipRelationshipSectionCowork(sectionId = '', relationshipId = ''){
+  const section = String(sectionId || '').trim().toLowerCase();
+  const sectionLabel = stewardshipRelationshipSectionLabels[section];
+  const selected = stewardshipPersonById(relationshipId) || activeRelationshipProfile || null;
+  const durableId = selected?.id || selected?.profileId || selected?.profileKey || selected?.query?.targetId || relationshipId || '';
+  if(!sectionLabel || !selected || !durableId || !canUseApi) return;
+  const relationshipName = selected.name || selected.displayName || 'this relationship';
+  const currentValues = stewardshipRelationshipSectionValues(selected, section).slice(0, 5);
+  activeRelationshipProfile = selected;
+  activeCoworkEntry = {entrypointId:'relationship.section',sessionId:'',workItemId:'',relationshipId:durableId,sectionId:section,status:'opening'};
+  openContextualCoworkSession({
+    returnTarget:'relationship',
+    title:'Update ' + sectionLabel.toLowerCase() + ' with VAL',
+    meaning:'Holding only ' + relationshipName + ' and the ' + sectionLabel + ' card.',
+    context:[
+      'Relationship: ' + relationshipName,
+      'Card: ' + sectionLabel,
+      currentValues.length ? 'Current card value: ' + currentValues.join(' | ') : 'Current card value: No confirmed context yet.',
+      'No other relationship, project, task, email, calendar, CRM record, or external system is in scope.'
+    ],
+    recommendation:'VAL will ask only for the context needed to update this card, then show the exact internal update for your review before applying it.',
+    placeholder:'Preparing ' + relationshipName + '\'s ' + sectionLabel.toLowerCase() + ' card...',
+    heading:'Preparing ' + relationshipName + '\'s ' + sectionLabel.toLowerCase() + ' card',
+    detail:'This conversation is scoped to one person and one Stewardship card.',
+    publicDetail:'Scoped to Stewardship: ' + relationshipName + ' > ' + sectionLabel + '.',
+    lockContext:true
+  });
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId:'relationship.section',
+      scope:{entityType:'relationship_section',entityId:durableId,sectionId:section}
+    },{timeoutMs:10000,timeoutMessage:'VAL could not prepare this selected relationship card yet.'});
+    renderCoworkEntryResult(result,{replaceMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    appendHomeCoworkMessage('val','VAL could not open ' + relationshipName + '\'s ' + sectionLabel.toLowerCase() + ' card. Nothing was changed. ' + error.message,{replace:true});
   }
 }
 
@@ -20917,6 +21026,15 @@ drawerTray.addEventListener('click', async (event) => {
     setStewardshipView('create');
     return;
   }
+  const stewardshipCoworkField = event.target.closest('[data-stewardship-cowork-field]');
+  if(stewardshipCoworkField){
+    event.preventDefault();
+    event.stopPropagation();
+    const relationshipId = stewardshipCoworkField.dataset.stewardshipCoworkPerson || stewardshipSelectedNetworkId;
+    stewardshipSelectedNetworkId = relationshipId || stewardshipSelectedNetworkId;
+    await openStewardshipRelationshipSectionCowork(stewardshipCoworkField.dataset.stewardshipCoworkField, relationshipId);
+    return;
+  }
   const whoShouldMeet = event.target.closest('[data-stewardship-who-should-meet]');
   if(whoShouldMeet){
     event.preventDefault();
@@ -21164,11 +21282,12 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   const projectPhaseApply = event.target.closest('[data-cowork-apply-project-phase]');
   const projectOverviewApply = event.target.closest('[data-cowork-apply-project-overview]');
   const relationshipOverviewApply = event.target.closest('[data-cowork-apply-relationship-overview]');
+  const relationshipSectionApply = event.target.closest('[data-cowork-apply-relationship-section]');
   const projectPreparedWorkApply = event.target.closest('[data-cowork-apply-project-prepared-work]');
   const nextMoveApply = event.target.closest('[data-cowork-apply-next-move]');
   const transcriptOverviewApply = event.target.closest('[data-cowork-apply-transcript-overview]');
   const transcriptActionItemApply = event.target.closest('[data-cowork-apply-transcript-action-item]');
-  if(!workstreamsApply && !projectOnboardingApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !relationshipOverviewApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply && !transcriptActionItemApply) return;
+  if(!workstreamsApply && !projectOnboardingApply && !projectIdentityApply && !projectPeopleApply && !projectDocumentsApply && !projectMilestonesApply && !projectMonitoringApply && !projectRelationshipNurtureApply && !projectImportanceApply && !projectRiskApply && !projectNarrativeApply && !projectNeedsNextApply && !projectOperatingSystemApply && !projectPhaseApply && !projectOverviewApply && !relationshipOverviewApply && !relationshipSectionApply && !projectPreparedWorkApply && !nextMoveApply && !transcriptOverviewApply && !transcriptActionItemApply) return;
   event.preventDefault();
   event.stopPropagation();
   if(workstreamsApply) await applyActiveCoworkWorkstreams(workstreamsApply.dataset.coworkApplyWorkstreams, workstreamsApply);
@@ -21187,6 +21306,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(projectPhaseApply) await applyActiveCoworkProjectPhase(projectPhaseApply.dataset.coworkApplyProjectPhase, projectPhaseApply);
   if(projectOverviewApply) await applyActiveCoworkProjectOverview(projectOverviewApply.dataset.coworkApplyProjectOverview, projectOverviewApply);
   if(relationshipOverviewApply) await applyActiveCoworkRelationshipOverview(relationshipOverviewApply.dataset.coworkApplyRelationshipOverview, relationshipOverviewApply);
+  if(relationshipSectionApply) await applyActiveCoworkRelationshipSection(relationshipSectionApply.dataset.coworkApplyRelationshipSection, relationshipSectionApply);
   if(projectPreparedWorkApply) await applyActiveCoworkProjectPreparedWork(projectPreparedWorkApply.dataset.coworkApplyProjectPreparedWork, projectPreparedWorkApply);
   if(nextMoveApply) await applyActiveCoworkNextMove(nextMoveApply.dataset.coworkApplyNextMove, nextMoveApply);
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);

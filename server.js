@@ -19253,12 +19253,22 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
   const metadata={...(target.metadataJson||target.metadata||{})};
   if((target.profileType||target.profile_type)!=='person')return metadata;
   const enrichment=relationshipSavedPublicEnrichment(metadata);
+  const manualContext=relationshipSavedManualContext(metadata);
   const contentList=(items=[])=>Array.isArray(items)?items.map(item=>typeof item==='string'?item:(item.content||item.summary||item.text||item.exactQuote||'')).filter(Boolean):[];
   const profileKey=target.profileKey||target.profile_key||relationshipProfileKeyForTarget(target);
   const email=target.email||(String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'');
   const alias=knownRelationshipEmailAlias(email);
   const contactId=realRelationshipContactId(target.personId||target.person_id||metadata.contactId||metadata.crmContactId||'');
   const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||relationshipEvidenceMapFromRows([],target,buckets);
+  const manualNeeds=safeArray(manualContext?.needs?.values);
+  const manualOffers=safeArray(manualContext?.offers?.values);
+  const manualRelationship=String(manualContext?.relationship?.value||'').trim();
+  const manualEvidence=[
+    ...safeArray(manualContext?.evidence?.values).map(summary=>({type:'user_confirmed_relationship_evidence',summary})),
+    ...manualNeeds.map(summary=>({type:'user_confirmed_relationship_need',summary})),
+    ...manualOffers.map(summary=>({type:'user_confirmed_relationship_offer',summary})),
+    ...(manualRelationship?[{type:'user_confirmed_relationship_context',summary:manualRelationship}]:[])
+  ];
   const packet=personPacketFromContact({
     contactId,
     crmContactId:realRelationshipContactId(metadata.crmContactId)||contactId,
@@ -19268,18 +19278,25 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     company:metadata.company||metadata.organization||enrichment?.organization||'',
     role:metadata.role||metadata.title||'',
     relationshipStatus:alias?.relationshipStatus||target.relationshipStatus||target.relationship_status||'observed',
-    summary:target.summary||'',
+    summary:manualRelationship||target.summary||'',
     firstSeenAt:target.createdAt||target.created_at||target.lastObservedAt||target.last_observed_at||'',
     lastMeaningfulSignalAt:target.lastObservedAt||target.last_observed_at||target.updatedAt||target.updated_at||'',
     lastDirectCommunicationAt:relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'',
     lastDirectCommunicationSource:relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'',
     relationshipEvidenceMap,
-    firstMeaningfulSignal:target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
+    firstMeaningfulSignal:manualRelationship||target.summary||contentList(buckets.relationshipSignals)[0]||contentList(buckets.openLoops)[0]||'',
     openLoops:contentList(buckets.openLoops||target.openLoops||target.open_loops),
     risks:contentList(buckets.risks||target.risks),
-    opportunities:[...contentList(buckets.opportunities||target.opportunities),...safeArray(enrichment?.offers)],
+    needs:[
+      ...manualNeeds,
+      ...contentList(buckets.preferences||target.preferences),
+      ...contentList(buckets.openLoops||target.openLoops||target.open_loops)
+    ],
+    offers:[...manualOffers,...contentList(buckets.opportunities||target.opportunities),...safeArray(enrichment?.offers)],
+    currentContext:manualRelationship||target.summary||'',
     tags:contentList(buckets.relationshipSignals||target.relationshipSignals||target.relationship_signals),
     evidence:[
+      ...manualEvidence,
       ...contentList(buckets.openLoops).map(summary=>({type:'relationship_open_loop',summary})),
       ...contentList(buckets.risks).map(summary=>({type:'relationship_risk',summary})),
       ...contentList(buckets.opportunities).map(summary=>({type:'relationship_opportunity',summary})),
@@ -19293,6 +19310,7 @@ function relationshipProfilePersonPacketMetadata(target={},buckets={}){
     knownAlias:metadata.knownAlias||alias||null,
     relationshipEvidenceMap,
     relationshipEnrichment:enrichment||null,
+    relationshipManualContext:manualContext||null,
     personPacket:packet,
     personPacketUpdatedAt:new Date().toISOString(),
     personPacketSource:'relationship_profile'
@@ -20261,6 +20279,30 @@ function relationshipSavedPublicEnrichment(metadata={}){
     rawResultCount:Math.max(0,Number(enrichment.rawResultCount||enrichment.raw_result_count||0))
   };
 }
+function relationshipSavedManualContext(metadata={}){
+  const context=metadata.relationshipManualContext||metadata.relationship_manual_context||null;
+  if(!context||typeof context!=='object')return null;
+  const normalizedSection=(section,{narrative=false}={})=>{
+    const raw=context[section]&&typeof context[section]==='object'?context[section]:{};
+    const values=safeArray(raw.values).map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).slice(0,12);
+    const value=narrative?String(raw.value||values[0]||'').trim():'';
+    if(!values.length&&!value)return null;
+    return {
+      values:narrative?(value?[value]:values):values,
+      value,
+      sourceType:'user_confirmed_relationship_context',
+      updatedAt:raw.updatedAt||raw.updated_at||'',
+      sessionId:raw.sessionId||raw.session_id||'',
+      workItemId:raw.workItemId||raw.work_item_id||''
+    };
+  };
+  const needs=normalizedSection('needs');
+  const offers=normalizedSection('offers');
+  const relationship=normalizedSection('relationship',{narrative:true});
+  const evidence=normalizedSection('evidence');
+  if(!needs&&!offers&&!relationship&&!evidence)return null;
+  return {version:String(context.version||'relationship_manual_context_v1'),needs,offers,relationship,evidence,updatedAt:context.updatedAt||context.updated_at||''};
+}
 function relationshipOutscraperSearchQuery(profile={}){
   const metadata=profile.metadata||{};
   const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
@@ -20710,6 +20752,7 @@ function relationshipIndexItemFromProfile(profile={}){
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   const packetItem=relationshipPersonPacketItemFromProfile(profile);
   const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
+  const relationshipManualContext=relationshipSavedManualContext(metadata);
   const packetNeeds=safeArray(packetItem.packet?.what_this_person_needs).map((item)=>item?.need||item?.summary||'').filter(Boolean);
   const packetOffers=safeArray(packetItem.packet?.what_this_person_offers).map((item)=>item?.offer||item?.summary||'').filter(Boolean);
   const executiveUi=stewardshipExecutiveVisibilityForIndex(packetItem,profile);
@@ -20751,6 +20794,7 @@ function relationshipIndexItemFromProfile(profile={}){
     packetNeeds,
     packetOffers,
     relationshipEnrichment:relationshipEnrichment||null,
+    relationshipManualContext:relationshipManualContext||null,
     packetMaturity:packetItem.packetMaturity||null,
     evidenceBindings:packetItem.evidenceBindings||[],
     executiveVisibility:packetItem.executiveVisibility||null,
@@ -20775,6 +20819,7 @@ function relationshipIndexItemFromProfile(profile={}){
 function relationshipPersonPacketItemFromProfile(profile={}){
   const metadata=profile.metadata||{};
   const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
+  const relationshipManualContext=relationshipSavedManualContext(metadata);
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const email=admission.email||metadata.email||'';
@@ -20839,6 +20884,7 @@ function relationshipPersonPacketItemFromProfile(profile={}){
     freshForSuggestedIntroductions:packet.packet_state?.fresh_for_suggested_introductions===true||relationshipEvidenceMap.freshForSuggestedIntroductions===true||relationshipDateWithinDays(packet.relationship_state?.last_direct_communication_at||lastDirectCommunicationAt),
     relationshipAdmission:admission,
     relationshipEnrichment:relationshipEnrichment||null,
+    relationshipManualContext:relationshipManualContext||null,
     noExternalAction:true
   };
 }
@@ -29066,6 +29112,40 @@ async function applyCoworkRelationshipOverview({relationshipId,relationshipName=
   });
   return saved ? relationshipIndexItemFromProfile(publicRelationshipProfile(saved)) : null;
 }
+async function applyCoworkRelationshipSection({relationshipId,relationshipName='',relationshipSectionUpdate={},sourceRefs=[],sessionId='',workItemId=''}={}){
+  const profiles=(await listRelationshipProfiles({limit:240})).filter((profile)=>profile.profileType==='person');
+  const found=profiles.find((profile)=>relationshipProfileMatchesCoworkIdentifier(profile,relationshipId));
+  if(!found) return null;
+  const sectionId=String(relationshipSectionUpdate.sectionId||'').trim().toLowerCase();
+  if(!['needs','offers','relationship','evidence'].includes(sectionId)) return null;
+  const values=safeArray(relationshipSectionUpdate.values).map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).slice(0,12);
+  if(!values.length) return null;
+  const now=new Date().toISOString();
+  const existing=relationshipSavedManualContext(found.metadata||{})||{};
+  const existingSection=existing[sectionId]&&typeof existing[sectionId]==='object'?existing[sectionId]:{};
+  const section={
+    ...existingSection,
+    values,
+    ...(sectionId==='relationship'?{value:values[0]}:{}),
+    sourceType:'user_confirmed_relationship_context',
+    sourceRefs:safeArray(sourceRefs).slice(0,8),
+    updatedAt:now,
+    sessionId,
+    workItemId
+  };
+  const relationshipManualContext={
+    version:'relationship_manual_context_v1',
+    ...existing,
+    [sectionId]:section,
+    updatedAt:now
+  };
+  const saved=await saveRelationshipProfile({
+    ...found,
+    displayName:found.displayName || relationshipName || 'Relationship',
+    metadataJson:{...(found.metadata||{}),relationshipManualContext,noExternalAction:true}
+  });
+  return saved ? relationshipIndexItemFromProfile(publicRelationshipProfile(saved)) : null;
+}
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -29101,6 +29181,7 @@ const valCowork = registerValCoworkRoutes(app,{
   prepareEmailThreadDraft:prepareCoworkEmailThreadDraft,
   loadRelationship:loadRelationshipForCowork,
   applyRelationshipOverview:applyCoworkRelationshipOverview,
+  applyRelationshipSection:applyCoworkRelationshipSection,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console

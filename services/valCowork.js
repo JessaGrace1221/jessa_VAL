@@ -2353,6 +2353,112 @@ function relationshipOverviewQuestion(state={},brief={}){
     detail:'Feeds Relationships > Next stewardship move. Your answer becomes one review-gated internal focus, grounded in the selected relationship evidence. Nothing external happens here.'
   };
 }
+
+const RELATIONSHIP_SECTION_CONTRACTS=Object.freeze({
+  needs:{
+    label:'Needs',
+    targetField:'relationship_person_packet.what_this_person_needs[]',
+    question:(name)=>`What does ${name || 'this person'} need from this relationship right now? List only needs they have explicitly expressed or you personally confirm, one per line.`,
+    detail:'Feeds Stewardship > Network > Needs for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
+  },
+  offers:{
+    label:'Offers',
+    targetField:'relationship_person_packet.what_this_person_offers[]',
+    question:(name)=>`What does ${name || 'this person'} reliably offer in this relationship? List the concrete value, capability, access, or support you personally confirm, one per line.`,
+    detail:'Feeds Stewardship > Network > Offers for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
+  },
+  relationship:{
+    label:'Relationship',
+    targetField:'relationship_person_packet.relationship_context',
+    question:(name)=>`What should VAL understand about your relationship with ${name || 'this person'}? Describe the current context, boundaries, or history you want VAL to carry forward.`,
+    detail:'Feeds Stewardship > Network > Relationship for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
+  },
+  evidence:{
+    label:'Evidence',
+    targetField:'relationship_person_packet.user_confirmed_evidence[]',
+    question:(name)=>`What user-confirmed evidence should VAL retain about ${name || 'this person'}? List only observations you can stand behind, one per line.`,
+    detail:'Feeds Stewardship > Network > Evidence for this person only. VAL labels it as user-confirmed context; it does not rewrite or replace the original source evidence.'
+  }
+});
+
+function relationshipSectionContract(sectionId=''){
+  return RELATIONSHIP_SECTION_CONTRACTS[String(sectionId || '').trim().toLowerCase()] || null;
+}
+
+function relationshipSectionAnswerLines(answer=''){
+  const clean=multilineText(answer,2400);
+  return clean
+    .split(/\n+/)
+    .map(line=>compactText(line.replace(/^\s*(?:[-*]|\d+[.)])\s*/,''),420))
+    .filter(Boolean)
+    .filter((line,index,rows)=>rows.findIndex(candidate=>candidate.toLowerCase()===line.toLowerCase())===index)
+    .slice(0,12);
+}
+
+function relationshipSectionCurrentValues(relationship={},sectionId=''){
+  const section=String(sectionId || '').trim().toLowerCase();
+  if(section==='needs') return safeArray(relationship.packetNeeds || relationship.personPacket?.what_this_person_needs).map(item=>compactText(item?.need || item?.summary || item,420)).filter(Boolean).slice(0,8);
+  if(section==='offers') return safeArray(relationship.packetOffers || relationship.personPacket?.what_this_person_offers).map(item=>compactText(item?.offer || item?.summary || item,420)).filter(Boolean).slice(0,8);
+  if(section==='relationship') return [compactText(relationship.stewardshipAbout || relationship.summary || relationship.evidence || relationship.sourceEvidence || '',1200)].filter(Boolean);
+  if(section==='evidence') return relationshipSourceLines(relationship).map(line=>compactText(`${line.label}: ${line.text}`,700)).slice(0,8);
+  return [];
+}
+
+function buildRelationshipSectionBrief(relationship={},input={}){
+  const scopeInput=input.scope || {};
+  const sectionId=String(scopeInput.sectionId || scopeInput.section_id || input.sectionId || '').trim().toLowerCase();
+  const contract=relationshipSectionContract(sectionId);
+  if(!contract) throw new Error('This relationship card does not have a registered Co-Work contract.');
+  const base=buildRelationshipOverviewBrief(relationship,input);
+  return {
+    ...base,
+    id:stableKey(`working_brief_relationship_section_${base.entityId || base.relationshipName}_${sectionId}`),
+    entrypointId:'relationship.section',
+    sectionId,
+    sectionLabel:contract.label,
+    targetField:contract.targetField,
+    currentValues:relationshipSectionCurrentValues(relationship,sectionId),
+    objective:`Improve only ${base.relationshipName || 'this relationship'}'s ${contract.label} card with user-confirmed context.`,
+    completionCondition:`A reviewable ${contract.label} update for ${base.relationshipName || 'this relationship'} is visible and can be applied to that person’s internal packet.`,
+    approvalBoundary:'Applying updates only the selected relationship’s named internal card and durable person packet. It does not send outreach, create a task, update CRM, schedule time, create an introduction, or alter an external system.'
+  };
+}
+
+function relationshipSectionUpdateFromAnswer(answer='',brief={}){
+  const sectionId=String(brief.sectionId || '').trim().toLowerCase();
+  const contract=relationshipSectionContract(sectionId);
+  if(!contract) return null;
+  const raw=multilineText(answer,2400);
+  const values=relationshipSectionAnswerLines(raw);
+  if(!raw || !values.length) return null;
+  return {
+    sectionId,
+    sectionLabel:contract.label,
+    targetField:contract.targetField,
+    values:sectionId==='relationship'?[raw]:values,
+    userConfirmed:true,
+    sourceType:'user_confirmed_relationship_context',
+    sourceSummary:`Executive-confirmed ${contract.label.toLowerCase()} context for ${brief.relationshipName || 'this relationship'}.`
+  };
+}
+
+function relationshipSectionQuestion(state={},brief={}){
+  const contract=relationshipSectionContract(brief.sectionId);
+  if(!contract) return {targetField:'relationship_person_packet',question:'This relationship card needs a registered contract before VAL can update it.',detail:'Nothing was changed.'};
+  if(state.stage==='ready_to_apply'){
+    return {
+      targetField:contract.targetField,
+      question:`Review the prepared ${contract.label} update for ${brief.relationshipName || 'this relationship'}, then apply it internally.`,
+      detail:`Applying updates only Stewardship > Network > ${contract.label} for ${brief.relationshipName || 'this relationship'} and the durable person packet that other VAL surfaces use. Nothing external happens here.`
+    };
+  }
+  return {
+    targetField:contract.targetField,
+    question:contract.question(brief.relationshipName),
+    detail:contract.detail
+  };
+}
+
 const PROJECT_ONBOARDING_STAGE_CONTRACTS=Object.freeze({
   first_question:{
     question:'What should this project be called, and what outcome should it create?',
@@ -2612,6 +2718,15 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['relationship_packet','relationship_stewardship_packet'],
     objective:'Prepare one source-aware next stewardship move for one selected relationship.',
     completionCondition:'The selected relationship, executive direction, supporting source receipt, and review-gated internal next move are visible.'
+  },
+  'relationship.section':{
+    id:'relationship.section',
+    surface:'relationships',
+    scopeType:'relationship_section',
+    sectionId:'section',
+    requiredPackets:['relationship_packet','relationship_person_packet'],
+    objective:'Improve one selected relationship card without changing any other person or card.',
+    completionCondition:'The selected relationship card has one review-gated, user-confirmed internal update.'
   }
 });
 
@@ -2649,7 +2764,8 @@ function createValCoworkService({
   loadEmailThread=async()=>null,
   prepareEmailThreadDraft=async()=>null,
   loadRelationship=async()=>null,
-  applyRelationshipOverview=async()=>null
+  applyRelationshipOverview=async()=>null,
+  applyRelationshipSection=async()=>null
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -3603,6 +3719,60 @@ function createValCoworkService({
     const question=relationshipOverviewQuestion(state,brief);
     return publicResult(session,workItem,`VAL prepared one internal next relationship move for ${brief.relationshipName || 'this relationship'} to review.`,question);
   }
+  async function openRelationshipSectionEntry(input={}){
+    const entry=COWORK_ENTRYPOINTS['relationship.section'];
+    const scopeInput=input.scope || {};
+    const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.relationshipId || '',220);
+    const sectionId=compactText(scopeInput.sectionId || scopeInput.section_id || input.sectionId || '',80).toLowerCase();
+    const contract=relationshipSectionContract(sectionId);
+    if(!entityId) throw new Error('Relationships needs the selected person before VAL can open this card.');
+    if(!contract) throw new Error('This relationship card does not have a registered Co-Work contract.');
+    const relationship=await loadRelationship(entityId);
+    if(!relationship) throw new Error('VAL could not load the selected relationship. It did not substitute another person or relationship.');
+    const brief=buildRelationshipSectionBrief(relationship,{...input,scope:{...scopeInput,entityId,sectionId}});
+    if(!brief.entityId) throw new Error('The selected relationship has no durable identifier yet.');
+    const state={stage:'section_update',draftRelationshipSectionUpdate:null,answers:[]};
+    const question=relationshipSectionQuestion(state,brief);
+    const now=new Date().toISOString();
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId:entry.id,scopeType:entry.scopeType,scopeId:brief.entityId,scopeSectionId:sectionId,status:'needs_input',workingBriefJson:brief,questionPlanJson:[question],stateJson:state,createdAt:now,updatedAt:now
+    });
+    const workItem=await saveWorkItem({
+      id:uuid('workitem'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workType:'relationship_section_update',title:`${brief.sectionLabel} for ${brief.relationshipName}`,status:'needs_input',
+      payloadJson:{relationshipId:brief.entityId,relationshipName:brief.relationshipName,sectionId,sectionLabel:brief.sectionLabel,relationshipSectionUpdate:null,objective:brief.objective,completionCondition:brief.completionCondition},sourceRefsJson:brief.sourceRefs,createdAt:now,updatedAt:now
+    });
+    return publicResult(session,workItem,question.question,question);
+  }
+  async function respondRelationshipSection(session,workItem,answer){
+    const brief=session.workingBriefJson || {};
+    const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
+    const relationshipSectionUpdate=relationshipSectionUpdateFromAnswer(answer,brief);
+    if(!relationshipSectionUpdate) throw new Error(`VAL needs clear ${brief.sectionLabel || 'relationship'} context before it can prepare this update.`);
+    state.answers.push({text:answer,at:new Date().toISOString()});
+    state.stage='ready_to_apply';
+    state.draftRelationshipSectionUpdate=relationshipSectionUpdate;
+    session.status='needs_review';
+    session.stateJson=state;
+    session.questionPlanJson=[...(session.questionPlanJson || []),relationshipSectionQuestion(state,brief)];
+    session.updatedAt=new Date().toISOString();
+    workItem.status='needs_review';
+    workItem.payloadJson={
+      ...(workItem.payloadJson || {}),
+      relationshipId:brief.entityId || session.scopeId,
+      relationshipName:brief.relationshipName || '',
+      sectionId:brief.sectionId || '',
+      sectionLabel:brief.sectionLabel || '',
+      relationshipSectionUpdate,
+      objective:brief.objective,
+      completionCondition:brief.completionCondition
+    };
+    workItem.updatedAt=new Date().toISOString();
+    await saveSession(session);
+    await saveWorkItem(workItem);
+    const question=relationshipSectionQuestion(state,brief);
+    return publicResult(session,workItem,`VAL prepared the ${brief.sectionLabel || 'selected'} update for ${brief.relationshipName || 'this relationship'} to review.`,question);
+  }
   async function openEntry(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
@@ -3627,6 +3797,7 @@ function createValCoworkService({
     if(entrypointId === 'transcript.action_item') return openTranscriptActionItemEntry(input);
     if(entrypointId === 'email.thread') return openEmailThreadEntry(input);
     if(entrypointId === 'relationship.overview') return openRelationshipOverviewEntry(input);
+    if(entrypointId === 'relationship.section') return openRelationshipSectionEntry(input);
     const scopeInput=input.scope || {};
     const entityId=compactText(scopeInput.entityId || scopeInput.entity_id || input.projectId || '',220);
     if(!entityId) throw new Error('Project Managers needs the selected project before it can build workstreams.');
@@ -3698,6 +3869,7 @@ function createValCoworkService({
     if(session.entrypointId === 'transcript.action_item') return respondTranscriptActionItem(session,workItem,answer);
     if(session.entrypointId === 'email.thread') return respondEmailThread(session,workItem,answer);
     if(session.entrypointId === 'relationship.overview') return respondRelationshipOverview(session,workItem,answer);
+    if(session.entrypointId === 'relationship.section') return respondRelationshipSection(session,workItem,answer);
     if(session.entrypointId !== 'project.workstreams') throw new Error('This session does not use a registered Project Managers interview.');
     const brief=session.workingBriefJson || {};
     const state={...(session.stateJson || {}),answers:safeArray(session.stateJson?.answers)};
@@ -3763,6 +3935,39 @@ function createValCoworkService({
   async function applyWorkItem(workItemId){
     const workItem=await getWorkItem(workItemId);
     if(!workItem) throw new Error('Prepared work item not found.');
+    if(workItem.workType === 'relationship_section_update'){
+      if(workItem.status !== 'needs_review') throw new Error('The relationship card update must be reviewed before it can be applied.');
+      const session=await getSession(workItem.sessionId);
+      if(!session) throw new Error('The Co-Work session for this relationship card is missing.');
+      const payload=workItem.payloadJson || {};
+      const relationshipSectionUpdate=payload.relationshipSectionUpdate || {};
+      const contract=relationshipSectionContract(relationshipSectionUpdate.sectionId || payload.sectionId);
+      if(!contract || !safeArray(relationshipSectionUpdate.values).length) throw new Error('The relationship card update is incomplete and cannot be applied yet.');
+      const relationship=await applyRelationshipSection({
+        relationshipId:payload.relationshipId || session.scopeId,
+        relationshipName:payload.relationshipName || session.workingBriefJson?.relationshipName || 'Relationship',
+        relationshipSectionUpdate,
+        sourceRefs:workItem.sourceRefsJson || [],
+        sessionId:session.id,
+        workItemId:workItem.id
+      });
+      if(!relationship) throw new Error('VAL could not save the selected card to the relationship packet.');
+      const now=new Date().toISOString();
+      workItem.status='applied';
+      workItem.updatedAt=now;
+      session.status='completed';
+      session.updatedAt=now;
+      session.stateJson={...(session.stateJson || {}),stage:'completed',appliedAt:now};
+      const sc=scope();
+      const receipt=await saveReceipt({
+        id:uuid('coworkreceipt'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,workItemId:workItem.id,action:'apply_relationship_section_update',status:'completed',
+        summary:`Applied the ${contract.label} update to ${payload.relationshipName || 'the selected relationship'}.`,
+        payloadJson:{relationshipId:payload.relationshipId || session.scopeId,relationshipName:payload.relationshipName || '',sectionId:relationshipSectionUpdate.sectionId,relationshipSectionUpdate,noExternalAction:true},createdAt:now
+      });
+      await saveSession(session);
+      await saveWorkItem(workItem);
+      return {...publicResult(session,workItem,receipt.summary,null,receipt),relationship};
+    }
     if(workItem.workType === 'relationship_overview_focus'){
       if(workItem.status !== 'needs_review') throw new Error('The relationship next move must be reviewed before it can be applied.');
       const session=await getSession(workItem.sessionId);

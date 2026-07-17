@@ -73,7 +73,7 @@ test('builds meeting prep with source labels, attendee resolution, project links
     userId:()=>'user',
     loadContextCalendarEvents:async()=>({events:[event],errors:[]}),
     resolveContactFromContext:async(input)=>input.email==='aric@example.com'
-      ? {status:'matched',confidence:0.91,contact:{id:'crm_aric',contactId:'crm_aric',name:'Aric Soyring',email:'aric@example.com',company:'Frisson'},reason:'exact email'}
+      ? {status:'matched',confidence:0.91,contact:{id:'crm_aric',contactId:'crm_aric',name:'Aric Soyring',email:'aric@example.com',company:'Frisson',relationshipManualContext:{relationship:{value:'Aric is a high-trust partner for the Forever Freedom work.'},needs:{values:['A clear MOU decision.']},offers:{values:['Partnership strategy and introductions.']},evidence:{values:['Jessa confirmed this relationship context in Stewardship.']}}},reason:'exact email'}
       : {status:'not_found',confidence:0,contact:null,reason:'No match'},
     resolveMeetingContext:async()=>({
       meeting:event,
@@ -97,6 +97,10 @@ test('builds meeting prep with source labels, attendee resolution, project links
   assert.equal(aricIntel.relationship_dossier.relationshipCardVersion,'VAL_PHASE_13C_RELATIONSHIP_DOSSIER_V1');
   assert.equal(aricIntel.relationship_dossier.identity.name,'Aric Soyring');
   assert.equal(aricIntel.relationship_dossier.identity.crmContactId,'crm_aric');
+  assert.match(aricIntel.why_this_person_matters,/User-confirmed relationship context/i);
+  assert.match(aricIntel.relationship_context,/A clear MOU decision/i);
+  assert.deepEqual(aricIntel.possible_opportunities,['Partnership strategy and introductions.']);
+  assert.equal(aricIntel.user_confirmed_relationship_context.relationship,'Aric is a high-trust partner for the Forever Freedom work.');
   assert.equal(aricIntel.relationship_dossier.identityResolution.status,'resolved');
   assert.match(aricIntel.relationship_dossier.wisdom.oneThingToRemember,/Follow up|relationship|invisible/i);
   const fredIntel=result.brief.attendeeIntelligenceJson.find(a=>a.email==='fred@example.com');

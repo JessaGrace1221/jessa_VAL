@@ -117,6 +117,33 @@ function savedRelationshipPublicEvidence(context={}){
     confidence:'public_source'
   })).slice(0,4);
 }
+function savedRelationshipManualContext(contact={}){
+  const context=contact.relationshipManualContext||contact.raw?.relationshipManualContext||contact.raw?.relationship_manual_context||contact.raw?.metadata?.relationshipManualContext||null;
+  if(!context||typeof context!=='object')return null;
+  const values=(section)=>safeArray(context[section]?.values).map(item=>compactText(item,360)).filter(Boolean).slice(0,8);
+  const relationship=compactText(context.relationship?.value||values('relationship')[0]||'',700);
+  const needs=values('needs');
+  const offers=values('offers');
+  const evidence=values('evidence');
+  if(!relationship&&!needs.length&&!offers.length&&!evidence.length)return null;
+  return {relationship,needs,offers,evidence,updatedAt:context.updatedAt||context.updated_at||''};
+}
+function savedRelationshipManualEvidence(context={},contact={}){
+  const relationshipName=compactText(contact.name||contact.displayName||'Relationship',180);
+  return [
+    ...safeArray(context.evidence),
+    ...safeArray(context.needs),
+    ...safeArray(context.offers),
+    ...(context.relationship?[context.relationship]:[])
+  ].map((summary,index)=>({
+    type:'user_confirmed_relationship_context',
+    title:`User-confirmed context for ${relationshipName}`,
+    summary,
+    date:context.updatedAt||'',
+    id:`user_confirmed_relationship_context_${index}`,
+    confidence:'internal_evidence'
+  })).slice(0,12);
+}
 function contactCreationCandidateFromAttendee({attendee={},event={},resolution={}}={}){
   const name=compactText(attendee.name||attendee.email||'Calendar attendee',120);
   const email=String(attendee.email||'').trim().toLowerCase();
@@ -334,20 +361,23 @@ function createValMeetingPrepService({
       const contact=resolution.contact||{};
       const crmContactId=crmContactIdFromContact(contact);
       const savedPublicContext=savedRelationshipPublicContext(contact);
+      const savedManualContext=savedRelationshipManualContext(contact);
       const publicEvidence=savedPublicContext?savedRelationshipPublicEvidence(savedPublicContext):[];
+      const manualEvidence=savedManualContext?savedRelationshipManualEvidence(savedManualContext,contact):[];
       const confidence=Number(resolution.confidence||contact.confidence||0);
-      const label=crmContactId&&confidence>=0.75?'internal_evidence':(savedPublicContext?'public_source':(confidence>0?'val_inference':'unknown'));
+      const label=(crmContactId&&confidence>=0.75)||savedManualContext?'internal_evidence':(savedPublicContext?'public_source':(confidence>0?'val_inference':'unknown'));
       if(!crmContactId)unknowns.push('crm_contact_id_unresolved');
-      const relationshipDossier=(crmContactId||savedPublicContext)?buildRelationshipDossier({
+      const relationshipDossier=(crmContactId||savedPublicContext||savedManualContext)?buildRelationshipDossier({
         contactId:crmContactId||contact.relationshipProfileId||contact.raw?.relationshipProfileId||'',
         contact:{...contact,name:contact.name||attendee.name,email:contact.email||attendee.email,company:contact.company||savedPublicContext?.organization||''},
         attendee,
         openLoops:internal.openLoops,
         evidence:safeArray(internal.transcripts).map(t=>({type:'transcript',title:t.title,summary:t.summary||t.rawText,date:t.createdAt,id:t.id}))
           .concat(safeArray(internal.tasks).map(t=>({type:'task',title:t.title,summary:t.notes||t.title,date:t.createdAt||t.dueDate,id:t.id})))
-          .concat(publicEvidence),
-        opportunities:savedPublicContext?.offers||[],
-        summary:savedPublicContext?.summary||contact.summary||resolution.reason,
+          .concat(publicEvidence)
+          .concat(manualEvidence),
+        opportunities:[...safeArray(savedManualContext?.offers),...safeArray(savedPublicContext?.offers)],
+        summary:savedManualContext?.relationship||savedPublicContext?.summary||contact.summary||resolution.reason,
         confidence:confidence||0.45,
         recommendedAction:contact.recommendedAction||''
       }):null;
@@ -360,13 +390,17 @@ function createValMeetingPrepService({
         source_confidence_label:sourceLabel(label),
         confidence,
         who_they_are:compactText((contact.company||savedPublicContext?.organization)?[`${contact.name||attendee.name} at ${contact.company||savedPublicContext?.organization}`].join(''):(contact.name||attendee.name||attendee.email),220),
-        why_this_person_matters:savedPublicContext?.summary?`Saved public relationship context: ${savedPublicContext.summary}`:(contact.name?'Matched against internal relationship/contact evidence.':'Attendee is present on the calendar event; no deeper internal match is confirmed.'),
+        why_this_person_matters:savedManualContext?.relationship?`User-confirmed relationship context: ${savedManualContext.relationship}`:(savedPublicContext?.summary?`Saved public relationship context: ${savedPublicContext.summary}`:(contact.name?'Matched against internal relationship/contact evidence.':'Attendee is present on the calendar event; no deeper internal match is confirmed.')),
         relationship_context:compactText([
+          savedManualContext?.relationship||'',
+          safeArray(savedManualContext?.needs).length?'Needs: ' + safeArray(savedManualContext.needs).join('; '):'',
+          safeArray(savedManualContext?.offers).length?'Offers: ' + safeArray(savedManualContext.offers).join('; '):'',
           savedPublicContext?.summary||'',
           safeArray(internal.openLoops).filter(o=>JSON.stringify(o).toLowerCase().includes(String(attendee.name||attendee.email).toLowerCase())).map(o=>o.text||o.title||o.summary||o).join(' | ')
         ].filter(Boolean).join(' | '),500),
         relationship_dossier:relationshipDossier,
         saved_relationship_context:savedPublicContext,
+        user_confirmed_relationship_context:savedManualContext,
         unresolved_relationship_context:crmContactId?null:{
           reason:savedPublicContext?'Saved public relationship context is available, but this attendee has not resolved to a CRM contact ID.':'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM contact ID.',
           attendee_key:attendeeKey(attendee),
@@ -377,8 +411,8 @@ function createValMeetingPrepService({
           candidates:safeArray(resolution.matches).slice(0,3).map(c=>({name:c.name,email:c.email,source:c.source,confidence:c.confidence,has_crm_contact_id:!!crmContactIdFromContact(c)}))
         },
         recent_changes:[],
-        possible_opportunities:safeArray(savedPublicContext?.offers),
-        source_refs:[normalizeSourceRef({sourceType:'calendar_attendee',sourceId:attendeeKey(attendee),quoteOrSummary:`${attendee.name||''} ${attendee.email||''}`.trim(),confidence:0.7})].concat(publicEvidence.map(normalizeSourceRef)),
+        possible_opportunities:[...safeArray(savedManualContext?.offers),...safeArray(savedPublicContext?.offers)],
+        source_refs:[normalizeSourceRef({sourceType:'calendar_attendee',sourceId:attendeeKey(attendee),quoteOrSummary:`${attendee.name||''} ${attendee.email||''}`.trim(),confidence:0.7})].concat(publicEvidence.map(normalizeSourceRef)).concat(manualEvidence.map(normalizeSourceRef)),
         unknowns
       });
     }
