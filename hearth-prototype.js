@@ -12934,6 +12934,8 @@ function timelineSelectedRelationshipOption(value = ''){
 function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft = null){
   const invitees = timelineTranscriptInvitees(transcript);
   const suggestedProject = timelineSuggestedProjectOption(transcript);
+  const suggestedRelationship = invitees.find((person) => person.relationshipId) || invitees[0] || null;
+  const calendarInviteMismatch = transcript.calendarInviteMismatch || null;
   const projectOptions = projectIndexItems().slice(0, 80).map((project) => '<option value="' + escapeHtml(project.name || project.displayName || project.id || '') + '"></option>').join('');
   const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
@@ -12945,6 +12947,7 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     person.relationshipId ? '<em class="timeline-link-confirmation" aria-label="Relationship matched">✓</em>' : '',
     '</article>'
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
+  const calendarMismatchNote = calendarInviteMismatch ? '<small class="timeline-map-suggestion timeline-map-warning">VAL found a calendar invite, but it did not match this transcript closely enough to trust its attendees: ' + escapeHtml(calendarInviteMismatch.title || calendarInviteMismatch.id || 'calendar invite') + '.</small>' : '';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
   const actionCount = (overviewDraft || timelineMeetingOverviewDraft(transcript)).actionItems.length;
   return [
@@ -12957,6 +12960,16 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
     '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
     '<p>If VAL missed a relationship or project, link it here so the Round Table packets and future prepared work have the right context.</p>',
+    '<div class="timeline-project-link-row timeline-relationship-link-row">',
+    '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(suggestedRelationship?.relationshipName || suggestedRelationship?.label || suggestedRelationship?.email || '') + '" data-transcript-relationship-main-search aria-label="Search relationship for this transcript">',
+    '<button type="button" data-transcript-action="link_transcript_relationship" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to relationship</button>',
+    '</div>',
+    suggestedRelationship?.relationshipId ? '<small class="timeline-map-suggestion">✓ VAL matched relationship: ' + escapeHtml(suggestedRelationship.relationshipName || suggestedRelationship.label || suggestedRelationship.relationshipId) + '.</small>' : '',
+    '<div class="timeline-project-link-row timeline-relationship-create-row">',
+    '<input type="text" placeholder="New relationship name..." value="' + escapeHtml(suggestedRelationship && !suggestedRelationship.relationshipId ? (suggestedRelationship.label || suggestedRelationship.name || '') : '') + '" data-transcript-relationship-create-name aria-label="New relationship name for this transcript">',
+    '<input type="email" placeholder="Email address..." value="' + escapeHtml(suggestedRelationship && !suggestedRelationship.relationshipId ? (suggestedRelationship.email || '') : '') + '" data-transcript-relationship-create-email aria-label="New relationship email for this transcript">',
+    '<button type="button" data-transcript-action="create_transcript_relationship" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Create relationship</button>',
+    '</div>',
     '<div class="timeline-project-link-row">',
     '<input type="search" list="timeline-project-options" placeholder="Search project..." value="' + escapeHtml(suggestedProject?.name || '') + '" data-transcript-project-search aria-label="Search project for this transcript">',
     '<button type="button" data-transcript-action="link_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to project</button>',
@@ -12968,6 +12981,7 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     '</div>',
     '<datalist id="timeline-project-options">' + projectOptions + '</datalist>',
     '<datalist id="timeline-relationship-options">' + relationshipOptions + '</datalist>',
+    calendarMismatchNote,
     '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-map-status></p>',
     '</section>'
@@ -13413,6 +13427,54 @@ async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeInd
     }
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not save the attendee mapping.', 'danger');
+  }
+}
+
+async function linkTimelineTranscriptStandaloneRelationship(transcriptId = '', mode = 'link'){
+  const search = drawerTray?.querySelector?.('[data-transcript-relationship-main-search]');
+  const nameInput = drawerTray?.querySelector?.('[data-transcript-relationship-create-name]');
+  const emailInput = drawerTray?.querySelector?.('[data-transcript-relationship-create-email]');
+  const selected = mode === 'create' ? null : timelineSelectedRelationshipOption(search?.value || '');
+  const name = String(nameInput?.value || selected?.name || search?.value || '').trim();
+  const email = normalizeTimelineEmail(emailInput?.value || selected?.email || '');
+  const project = timelineSelectedProjectOption();
+  if(mode !== 'create' && !selected?.id){
+    setTimelineTranscriptActionStatus('Choose a relationship before linking this transcript.', 'danger');
+    return;
+  }
+  if(mode === 'create' && !name && !email){
+    setTimelineTranscriptActionStatus('Name the relationship or add an email before creating it.', 'danger');
+    return;
+  }
+  setTimelineTranscriptActionStatus(mode === 'create' ? 'Creating relationship and linking this transcript...' : 'Linking this transcript to the relationship...', 'working');
+  try{
+    const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/link-relationship', {
+      name,
+      email,
+      relationshipId:mode === 'create' ? '' : (selected?.id || ''),
+      relationshipName:mode === 'create' ? name : (selected?.name || name),
+      projectId:project?.id || '',
+      projectName:project?.name || '',
+      transcriptTitle:timelineTranscriptTitle(currentTimelineTranscript || {})
+    });
+    if(result.relationship?.id && currentTimelineTranscript){
+      const current = Array.isArray(currentTimelineTranscript.attendees) ? currentTimelineTranscript.attendees : [];
+      const already = current.some((person) => String(person.relationshipId || person.contactId || person.crmContactId || '') === String(result.relationship.id) || (result.relationship.email && normalizeTimelineEmail(person.email || '') === normalizeTimelineEmail(result.relationship.email)));
+      if(!already){
+        currentTimelineTranscript.attendees = [{
+          label:result.relationship.name || name || result.relationship.email || 'Relationship',
+          name:result.relationship.name || name || '',
+          email:result.relationship.email || email || '',
+          relationshipId:result.relationship.id,
+          relationshipName:result.relationship.name || name || '',
+          matchReason:mode === 'create' ? 'User created in transcript drawer' : 'User linked in transcript drawer'
+        }, ...current];
+      }
+      renderTimelineTranscriptDetail(currentTimelineTranscript);
+    }
+    setTimelineTranscriptActionStatus(result.message || 'Relationship mapping saved locally.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not save the relationship mapping.', 'danger');
   }
 }
 
@@ -22246,6 +22308,8 @@ drawerTray.addEventListener('click', async (event) => {
     if(transcriptAction.dataset.transcriptAction === 'send_action_items') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'create_project') await createTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'link_transcript_relationship') await linkTimelineTranscriptStandaloneRelationship(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'create_transcript_relationship') await linkTimelineTranscriptStandaloneRelationship(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '', 'create');
     if(transcriptAction.dataset.transcriptAction === 'link_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'));
     if(transcriptAction.dataset.transcriptAction === 'create_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'), 'create');
     return;

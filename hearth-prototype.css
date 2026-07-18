@@ -5272,6 +5272,9 @@ button.timeline-overview-receipt:focus-visible{
   grid-template-columns:minmax(260px,1fr) minmax(180px,auto);
   gap:10px;
 }
+.drawer-tray.timeline-open .timeline-relationship-create-row{
+  grid-template-columns:minmax(220px,1fr) minmax(220px,1fr) minmax(180px,auto);
+}
 .drawer-tray.timeline-open .timeline-overview-receipt{
   min-width:0;
 }
@@ -5311,6 +5314,7 @@ button.timeline-overview-receipt:focus-visible{
   animation:timelineLinkConfirmPop .42s ease-out both;
 }
 .drawer-tray.timeline-open .timeline-attendee-row button[data-transcript-action="create_relationship"],
+.drawer-tray.timeline-open .timeline-relationship-create-row button,
 .drawer-tray.timeline-open .timeline-project-create-row button{
   border-color:rgba(138,47,55,.22);
   background:rgba(255,255,252,.9);
@@ -5357,6 +5361,9 @@ button.timeline-overview-receipt:focus-visible{
 .drawer-tray.timeline-open .timeline-attendee-row .timeline-attendee-email-missing{
   color:#8a2f37;
   font-weight:740;
+}
+.drawer-tray.timeline-open .timeline-map-warning{
+  color:#8a2f37;
 }
 .drawer-tray.timeline-open .timeline-project-link-row input,
 .drawer-tray.timeline-open .timeline-attendee-row input{

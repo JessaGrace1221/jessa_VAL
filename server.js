@@ -23084,6 +23084,30 @@ async function transcriptCalendarEventForOverview(transcript={}){
   }
   return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
 }
+function transcriptCalendarEventCompatible(transcript={},event={}){
+  if(!event||!Object.keys(event).length)return false;
+  const transcriptTitle=String(transcript.title||transcript.meetingTitle||'').toLowerCase();
+  const eventText=[
+    event.title,event.summary,event.name,
+    ...(Array.isArray(event.attendees)?event.attendees:[]).flatMap(attendee=>[attendee?.name,attendee?.email])
+  ].filter(Boolean).join(' ').toLowerCase();
+  if(!transcriptTitle.trim()||!eventText.trim())return true;
+  const strongTokens=[...new Set(transcriptTitle.replace(/\b(jul|july|jan|feb|mar|apr|may|jun|aug|sep|oct|nov|dec|transcript|meeting|call|krisp|zoom|with|jessa|grace|download|link|person|email)\b/g,' ').match(/[a-z0-9]{4,}/g)||[])].slice(0,8);
+  if(!strongTokens.length)return true;
+  return strongTokens.some(token=>eventText.includes(token));
+}
+async function transcriptWithCalendarInvitees(transcript={}){
+  const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
+  const compatible=transcriptCalendarEventCompatible(transcript,calendarEvent);
+  const attendees=transcriptOverviewInvitees(transcript,compatible?calendarEvent||{}:{});
+  return {
+    ...transcript,
+    calendarEvent:compatible&&calendarEvent&&Object.keys(calendarEvent).length?calendarEvent:transcript.calendarEvent,
+    calendarEventId:transcript.calendarEventId||calendarEvent?.id||'',
+    calendarInviteMismatch:calendarEvent&&Object.keys(calendarEvent).length&&!compatible?{title:calendarEvent.title||calendarEvent.summary||'',id:calendarEvent.id||''}:null,
+    attendees
+  };
+}
 function transcriptOverviewEmailBody(transcript={},overview={}){
   return String(overview.body||transcriptSourceReceipt(transcript).body||'').trim();
 }
@@ -23761,6 +23785,7 @@ function scoreTranscriptMeetingMatch(transcript,event){
   const tText=[transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ').toLowerCase();
   const eTitle=String(event.title||event.summary||'').toLowerCase();
   if(transcriptTitleConflictsWithContent(eTitle,tText,transcript))return {confidence:0,reason:'calendar title contradicts transcript content'};
+  if(!transcriptCalendarEventCompatible(transcript,event))return {confidence:0,reason:'calendar invite does not match transcript title or attendees'};
   let score=0,reasons=[];
   if(eTitle&&tText.includes(eTitle.slice(0,80))){score+=0.45;reasons.push('title');}
   const attendees=inferAttendeesFromEvent(event);
@@ -28265,11 +28290,11 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
     const data=await transcriptIndexData(id);if(data.transcripts[0]){
-      const transcript=transcriptDetailFromIndex(data,data.transcripts[0]);
+      const transcript=await transcriptWithCalendarInvitees(transcriptDetailFromIndex(data,data.transcripts[0]));
       transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
     const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
-    const transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
+    let transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript=await transcriptWithCalendarInvitees(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req,res)=>{
@@ -28282,6 +28307,7 @@ app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req
       if(record)transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));
     }
     if(!transcript)return res.status(404).json({ok:false,error:'Transcript not found'});
+    transcript=await transcriptWithCalendarInvitees(transcript);
     transcript.sourceReceipt=transcript.sourceReceipt||transcriptSourceReceipt(transcript);
     const tasks=transcript.sourceReceipt?.actionItems?.length
       ? transcript.sourceReceipt.actionItems.map(item=>({taskTitle:item,sourceQuote:item,status:'source receipt'}))
