@@ -696,11 +696,11 @@ function createKrispMcpService({
       probes.push({label:'Krisp meetings',state:'unavailable',returned:0,error:'Krisp did not expose a meeting search.'});
     }else{
       await runMeetingSearch('Meetings available to this Krisp account');
-      if(documents.length<safeLimit) await runMeetingSearch('Meetings you own in Krisp',{isOwner:true});
-      if(documents.length<safeLimit) await runMeetingSearch('Meetings shared with you in Krisp',{sharedWithMe:true});
+      if(!documents.length) await runMeetingSearch('Meetings you own in Krisp',{isOwner:true});
+      if(!documents.length) await runMeetingSearch('Meetings shared with you in Krisp',{sharedWithMe:true});
     }
 
-    if(documents.length<safeLimit&&found.listActionItems?.name){
+    if(!documents.length&&found.listActionItems?.name){
       try{
         const data=await callTool(found.listActionItems.name,{limit:safeLimit});
         const actionItems=safeArray(data.actionItems||data.action_items||data.items||data.results||data);
@@ -716,7 +716,7 @@ function createKrispMcpService({
       }
     }
 
-    if(documents.length<safeLimit&&found.searchMeetingContent?.name){
+    if(!documents.length&&found.searchMeetingContent?.name){
       const args={
         search:'the',limit:safeLimit,after:startDate,before:endDate,
         fields:['document_id','title','content','chunk_type','date']
@@ -730,7 +730,7 @@ function createKrispMcpService({
       }
     }
 
-    if(documents.length<safeLimit&&found.listActivities?.name){
+    if(!documents.length&&found.listActivities?.name){
       try{
         const data=await callTool(found.listActivities.name,{limit:safeLimit});
         const rows=safeArray(data.activities||data.items||data.results||data);

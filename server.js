@@ -16521,6 +16521,11 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
         result.records.push({id:transcriptId,title,status:'no_transcript_text'});
         continue;
       }
+      if(!isUsableKrispTranscriptRecord({source:'krisp_mcp',title:payload.title||title,rawText:payload.transcript,metadata:payload.metadata||{}})){
+        result.withoutTranscriptText++;
+        result.records.push({id:transcriptId,title,status:'not_full_transcript_receipt'});
+        continue;
+      }
       const meetingMatch=await linkTranscriptToBestMeeting({id:payload.id,title:payload.title,rawText:payload.transcript,metadata:payload.metadata,createdAt:payload.timestamp}).catch(()=>null);
       const saved=await saveKrispTranscriptSourceReceipt({payload,meetingMatch});
       result.imported++;
@@ -19393,6 +19398,16 @@ function transcriptTopicTitleFromText(rawText=''){
   const unique=[...new Set(words)].slice(0,4);
   return unique.length>=2?unique.join(' '):'';
 }
+function krispReceiptHeadingTitle(rawText=''){
+  const lines=String(rawText||'').split(/\r?\n/).slice(0,12);
+  for(const line of lines){
+    const match=line.match(/^\s*#{1,3}\s+(.+?)\s*$/);
+    if(!match)continue;
+    const candidate=valTitleCandidate(match[1].replace(/\s*\|\s*$/,'').replace(/\s{2,}/g,' '));
+    if(candidate&&!/^(Download|Transcript|Action Items?|Key Points?|Meeting Notes?)$/i.test(candidate))return candidate;
+  }
+  return '';
+}
 function transcriptDateLabel(value){
   const d=value?new Date(value):null;
   if(!d||isNaN(d.getTime()))return '';
@@ -19405,12 +19420,17 @@ function eventTitleFromContext(ctx={}){
 }
 function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
+  const isKrisp=/krisp/i.test(String(payload.source||payload.provider||meta.source||meta.provider||sourceMeta.source||''))||meta.krispDetected||meta.provider==='krisp';
+  const rawHeadingTitle=isKrisp?krispReceiptHeadingTitle(rawText||payload.transcript||''):'';
+  const rawPayloadTitle=payload.title||payload.meetingTitle||payload.meeting_title||payload.name||meta.title||sourceMeta.title;
+  if(rawHeadingTitle&&(/^\s*Krisp\s+/i.test(String(rawPayloadTitle||''))||/\bDownload Link\b/i.test(String(rawPayloadTitle||''))))return rawHeadingTitle;
   const exactKrispTitle=valTitleCandidate(
-    (/krisp/i.test(String(payload.source||payload.provider||meta.source||meta.provider||sourceMeta.source||''))||meta.krispDetected||meta.provider==='krisp')
-      ? (payload.title||payload.meetingTitle||payload.meeting_title||payload.name||meta.title||sourceMeta.title)
+    isKrisp
+      ? rawPayloadTitle
       : ''
   );
   if(exactKrispTitle)return exactKrispTitle;
+  if(rawHeadingTitle)return rawHeadingTitle;
   const knownContentTitle=transcriptKnownContentTitle(rawText,payload);
   const calendarTitle=eventTitleFromContext(payload);
   if(calendarTitle&&!transcriptTitleConflictsWithContent(calendarTitle,rawText,payload))return calendarTitle;
@@ -22845,7 +22865,8 @@ function transcriptSourceReceipt(transcript={}){
     rawDocument.notes
   ].find(value=>typeof value==='string'&&value.trim())||'';
   const rawTranscriptText=[transcript.transcriptText,transcript.rawTranscript,transcript.rawText].find(value=>typeof value==='string'&&value.trim())||'';
-  const sourceText=structuredSourceText||(/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i.test(rawTranscriptText)?rawTranscriptText:'');
+  const rawSectionText=/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i.test(rawTranscriptText)?rawTranscriptText:'';
+  const sourceText=rawSectionText||structuredSourceText;
   const actionSection=transcriptSourceSectionText(sourceText,['Action Items?']);
   const rawKeyPointsSection=transcriptSourceSectionText(sourceText,['Key Points','Meeting Overview']);
   const keyPointsSection=rawKeyPointsSection&&!transcriptSourceLooksLikeFullTranscript(rawKeyPointsSection.lines)?rawKeyPointsSection:null;
@@ -23372,7 +23393,22 @@ function isUsableTranscriptArchiveRecord(record={}){
 function isUsableTranscriptIndexRow(row={}){
   const raw=String(row.rawTranscript||row.raw_transcript||'').trim();
   if(!raw) return false;
+  if(!isUsableKrispTranscriptRecord({source:row.source||'',title:row.meetingTitle||row.meeting_title||'',rawText:raw,metadata:{source:row.source||''}})) return false;
   return isUsableTranscriptArchiveRecord({type:'transcript',title:row.meetingTitle||row.meeting_title||'',rawText:raw,metadata:{source:row.source||''}});
+}
+function isUsableKrispTranscriptRecord(record={}){
+  const metadata=record.metadata||{};
+  const source=String(record.source||metadata.source||metadata.provider||metadata.importedVia||'').toLowerCase();
+  if(!/krisp/.test(source))return true;
+  const title=String(record.title||record.meetingTitle||record.meeting_title||'').trim();
+  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
+  if(/\bDownload Link\b/i.test(title)&&!krispReceiptHeadingTitle(raw))return false;
+  if(/^\[?Download\b/i.test(raw)&&raw.length<1000)return false;
+  const speakerTurns=(raw.match(/(?:^|\n)\s*(?:\*\*)?(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|[A-Z][A-Za-z .'-]{1,70}|Speaker[_\s-]?\d+)\s*(?:\||:)\s*\d{1,2}:\d{2}/ig)||[]).length;
+  const transcriptMarkers=(raw.match(/\b(Transcript\s*\d*|Valid for:|Download Recording|Action Items?|Key Points)\b/ig)||[]).length;
+  if(/\bRecording Download Link\b/i.test(raw)&&!/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i.test(raw)&&speakerTurns<2)return false;
+  if(raw&&raw.length<320&&!speakerTurns&&!transcriptMarkers)return false;
+  return true;
 }
 function isTranscriptMemoryRecord(item={}){
   const kind=String(item.kind||item.type||'').toLowerCase();
@@ -28071,7 +28107,7 @@ async function transcriptDrawerListPayload({days=90,limit=50}={}){
   const data=await transcriptIndexData();
   const indexedRecords=transcriptMigrationRecordsFromIndex(data);
   const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
-  const mapped=dedupeTranscriptDrawerRecords(records.map(transcriptIndexUiRecord))
+  const mapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
     .filter(transcript=>{
       const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
       return !Number.isFinite(time)||time>=cutoff;

@@ -301,9 +301,20 @@ function currentContactFromLinkage(linkage={}){
     source:person.source||'transcript_linkage'
   };
 }
+function transcriptIntroNeeds(record={}){
+  const text=transcriptText(record);
+  const needs=[];
+  for(const sentence of sentences(text)){
+    const match=sentence.match(/\b(?:we|i|they|this person|the client)\s+(?:need|needs|want|wants|are looking for|is looking for)\s+([^.!?]{4,180})/i);
+    if(match)needs.push(compactText(match[1].replace(/\b(and|or)\s+(?:strategic\s+)?(?:partnership|partner|connection|intro|introduction)\s+paths?\b/i,'$&'),180));
+    if(/\bmission aligned organizations\b/i.test(sentence))needs.push('mission aligned organizations');
+    if(/\bstrategic partnership paths?\b/i.test(sentence))needs.push('strategic partnership');
+  }
+  return [...new Set(needs.map(item=>item.replace(/\s+/g,' ').trim()).filter(Boolean))].slice(0,6);
+}
 function introCandidatesFromMatches({record={},linkage={},crmContacts=[],evidenceRefs=[]}={}){
   const id=record.id||record.transcriptId||record.transcript_id||'';
-  const currentContact={...currentContactFromLinkage(linkage),summary:transcriptText(record),evidence:evidenceRefs.map(ref=>({summary:ref.quote_or_summary||ref.quoteOrSummary||''}))};
+  const currentContact={...currentContactFromLinkage(linkage),summary:transcriptText(record),needs:transcriptIntroNeeds(record),evidence:evidenceRefs.map(ref=>({summary:ref.quote_or_summary||ref.quoteOrSummary||''}))};
   const intro=relationshipIntroCandidates({currentContact,crmContacts,limit:3});
   return safeArray(intro.candidates).map((candidate,i)=>({
     id:`intro_match_${id}_${i+1}`,

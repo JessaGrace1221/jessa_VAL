@@ -250,12 +250,21 @@ test('transcript attendees and titles stay source-exact instead of guessed',()=>
   assert.match(server,/transcript\.summary\?\.executiveSummary/);
 });
 
-test('Krisp transcript refresh keeps looking beyond the first partial result set',()=>{
-  assert.match(krispService,/if\(documents\.length<safeLimit\) await runMeetingSearch\('Meetings you own in Krisp'/);
-  assert.match(krispService,/if\(documents\.length<safeLimit\) await runMeetingSearch\('Meetings shared with you in Krisp'/);
-  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.listActionItems\?\.name\)/);
-  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.searchMeetingContent\?\.name\)/);
-  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.listActivities\?\.name\)/);
+test('Krisp transcript refresh does not promote content fragments into transcripts',()=>{
+  assert.match(krispService,/if\(!documents\.length\) await runMeetingSearch\('Meetings you own in Krisp'/);
+  assert.match(krispService,/if\(!documents\.length\) await runMeetingSearch\('Meetings shared with you in Krisp'/);
+  assert.match(krispService,/if\(!documents\.length&&found\.listActionItems\?\.name\)/);
+  assert.match(krispService,/if\(!documents\.length&&found\.searchMeetingContent\?\.name\)/);
+  assert.match(krispService,/if\(!documents\.length&&found\.listActivities\?\.name\)/);
+  assert.match(server,/function isUsableKrispTranscriptRecord/);
+  assert.match(server,/function krispReceiptHeadingTitle/);
+  assert.match(server,/rawHeadingTitle/);
+  assert.match(server,/const rawSectionText=/);
+  assert.match(server,/const sourceText=rawSectionText\|\|structuredSourceText/);
+  assert.match(server,/Download Link/);
+  assert.match(server,/Recording Download Link/);
+  assert.match(server,/records\.filter\(isUsableKrispTranscriptRecord\)\.map\(transcriptIndexUiRecord\)/);
+  assert.match(server,/status:'not_full_transcript_receipt'/);
   assert.match(server,/alreadyPresent\+\+;/);
   assert.match(server,/updateTranscriptIndexStatus\(transcriptId,\{meetingTitle:title/);
 });
