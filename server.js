@@ -11405,6 +11405,15 @@ function emailHasReadableDraftSource(email={}){
   if(body.length>=40)return true;
   return /\?/.test(body) && body.length>=18;
 }
+function executiveInboxDraftLooksGeneric(draft={}){
+  const body=String(draft.body||draft.writerOutput?.body||draft.sourceContext?.writerOutput?.body||'').replace(/\s+/g,' ').trim().toLowerCase();
+  if(!body)return false;
+  const hasOldOpening=/thank you for your note[. ]+i wanted to respond thoughtfully/i.test(body);
+  const exposesRules=/writing rules val used/i.test(body);
+  const onlyClassifierReason=/saw this needs attention because asks for a response or decision/i.test(body);
+  const onlyClassifierAction=/here is what i recommend as the next step[.: ]+draft a reply for approval/i.test(body);
+  return exposesRules || hasOldOpening || onlyClassifierReason || onlyClassifierAction;
+}
 function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
   return 'draft_email_'+crypto.createHash('sha1').update(raw).digest('hex').slice(0,24);
@@ -11462,6 +11471,7 @@ async function existingExecutiveInboxDraftForEmail(email={}){
   const draftId=emailDraftStableId(email);
   const drafts=await listDrafts().catch(()=>[]);
   return drafts.find(draft=>{
+    if(executiveInboxDraftLooksGeneric(draft))return false;
     const source=draft.sourceContext||{};
     if(String(draft.id||'')===draftId)return true;
     if(String(source.source||'')!=='executive_inbox_review_only')return false;
@@ -11474,7 +11484,7 @@ async function existingExecutiveInboxDraftForEmail(email={}){
 async function prepareEmailDraftIfNeeded(email,rules=[]){
   if(!emailShouldPrepareDraft(email))return null;
   const existing=await existingExecutiveInboxDraftForEmail(email);
-  if(existing&&String(existing.body||'').trim())return existing;
+  if(existing&&String(existing.body||'').trim()&&!executiveInboxDraftLooksGeneric(existing))return existing;
   const writingRules=executiveInboxWritingRuleText(rules);
   const draft=buildEmailReplyDraft(email,{writingRules});
   const sender=email.from||{};
@@ -28891,6 +28901,7 @@ const valExecutiveInbox = registerValExecutiveInboxRoutes(app,{
     const drafts=await listDrafts(status||'');
     return drafts
       .filter(d=>String(d.sourceContext?.source||'')===source)
+      .filter(d=>!executiveInboxDraftLooksGeneric(d))
       .slice(0,Math.max(1,Math.min(Number(limit)||50,100)));
   },
   valDbReady:()=>valDbReady,

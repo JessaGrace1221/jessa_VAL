@@ -86,6 +86,7 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/waitingOnResponseFromSent\(sentGmail\.emails\|\|\[\],Array\.from\(gmailMap\.values\(\)\),0\)/);
   assert.match(server,/function emailShouldPrepareDraft/);
   assert.match(server,/function emailHasReadableDraftSource/);
+  assert.match(server,/function executiveInboxDraftLooksGeneric/);
   assert.match(server,/function buildEmailReplyDraft/);
   assert.match(server,/function emailDraftStableId/);
   assert.match(server,/prepareEmailDraftIfNeeded/);
@@ -99,6 +100,7 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.doesNotMatch(server,/Writing rules VAL used:/);
   assert.match(server,/needsThreadContent:true/);
   assert.match(server,/No generic draft was created/);
+  assert.match(server,/filter\(d=>!executiveInboxDraftLooksGeneric\(d\)\)/);
   assert.match(server,/if\(draft\)email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);
   assert.match(dashboard,/Review Prepared Draft/);

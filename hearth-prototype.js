@@ -8131,6 +8131,15 @@ function correspondenceRuleHints(source = {}, readiness = {}, writer = {}){
   return hints;
 }
 
+function correspondenceDraftLooksGeneric(body = ''){
+  const text = String(body || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if(!text) return false;
+  return /thank you for your note[. ]+i wanted to respond thoughtfully/i.test(text)
+    || /writing rules val used/i.test(text)
+    || /saw this needs attention because asks for a response or decision/i.test(text)
+    || /here is what i recommend as the next step[.: ]+draft a reply for approval/i.test(text);
+}
+
 function normalizeCorrespondenceDraft(draft = {}){
   const source = draft.sourceContext || {};
   const writer = source.writerOutput || {};
@@ -8140,6 +8149,8 @@ function normalizeCorrespondenceDraft(draft = {}){
   const conversation = source.conversationContext || source.conversation_context || {};
   const latestInbound = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
   const sender = latestInbound.from || source.classification?.from || {};
+  const draftBody = draft.body || writer.body || '';
+  const staleDraft = correspondenceDraftLooksGeneric(draftBody);
   return {
     id: draft.id || writer.id || source.conversationId || 'draft',
     draftId: draft.id || '',
@@ -8156,9 +8167,10 @@ function normalizeCorrespondenceDraft(draft = {}){
     summary: writer.why_this_draft_exists || brief.single_purpose || draft.body || 'Review-only draft prepared locally.',
     whyNow: brief.why_now || source.classification?.why_now || 'This conversation appears to be waiting on judgment.',
     context: [source.classification?.executive_meaning, source.classification?.relationship_temperature, source.conversationId && 'Conversation ' + source.conversationId].filter(Boolean).join(' · ') || 'Conversation context attached when available.',
-    prepared: draft.body || writer.body || 'VAL prepared draft readiness and brief context.',
-    needs: readiness.status === 'needs_context' ? 'Provide missing context: ' + (readiness.missing_context || writer.missing_context || []).join(', ') : 'Review whether this represents your voice, intent, and relationship.',
-    draftBody: draft.body || writer.body || '',
+    prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (draft.body || writer.body || 'VAL prepared draft readiness and brief context.'),
+    needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (readiness.status === 'needs_context' ? 'Provide missing context: ' + (readiness.missing_context || writer.missing_context || []).join(', ') : 'Review whether this represents your voice, intent, and relationship.'),
+    draftBody: staleDraft ? '' : draftBody,
+    draftFailureMessage: staleDraft ? 'VAL found an older generic draft for this thread and hid it. Use Draft reply to prepare a source-backed version.' : '',
     threadMessages: correspondenceThreadMessagesFromSource(source, draft),
     attachments: correspondenceAttachmentsFromSource(source),
     relationships: correspondenceContextLines(source, ['relationshipName','relationship','relationshipTemperature','executiveMeaning']),
@@ -8180,6 +8192,8 @@ function normalizeCorrespondenceReadyItem(item = {}){
   const latestInbound = metadata.latestInbound || metadata.latest_inbound || metadata.conversationContext?.latest_inbound || metadata.conversationContext?.latestInbound || {};
   const sender = latestInbound.from || metadata.from || {};
   const draftId = metadata.draftId || item.draftId || '';
+  const draftBody = draft.body || item.whatValPrepared || '';
+  const staleDraft = correspondenceDraftLooksGeneric(draftBody);
   return {
     id: item.id || draftId || item.conversationId || 'ready-correspondence',
     readyForYouId: item.id || '',
@@ -8197,9 +8211,10 @@ function normalizeCorrespondenceReadyItem(item = {}){
     summary: item.summary || item.whyUserIsSeeingThis || 'VAL prepared correspondence context for review.',
     whyNow: item.whyNow || item.why_now || 'This thread appears to need human judgment.',
     context: [metadata.projectName, metadata.contactName, metadata.conversationId && 'Conversation ' + metadata.conversationId].filter(Boolean).join(' · ') || 'Relationship and project context appear when resolved.',
-    prepared: item.whatValPrepared || item.whatValDid || draft.body || 'VAL prepared draft/readiness context only.',
-    needs: item.whatOnlyUserCanDo || item.whatUserNeedsToDo || 'Review, edit, approve, reject, or provide missing context.',
-    draftBody: draft.body || item.whatValPrepared || '',
+    prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (item.whatValPrepared || item.whatValDid || draft.body || 'VAL prepared draft/readiness context only.'),
+    needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (item.whatOnlyUserCanDo || item.whatUserNeedsToDo || 'Review, edit, approve, reject, or provide missing context.'),
+    draftBody: staleDraft ? '' : draftBody,
+    draftFailureMessage: staleDraft ? 'VAL found an older generic draft for this thread and hid it. Use Draft reply to prepare a source-backed version.' : '',
     threadMessages: correspondenceThreadMessagesFromSource(metadata, item),
     attachments: correspondenceAttachmentsFromSource(metadata),
     relationships: correspondenceContextLines(metadata, ['contactName','relationshipName','relationshipTemperature','executiveMeaning']),
@@ -8223,6 +8238,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   const needsContext = ['needs_attention', 'forward_to_team'].includes(classification);
   const waitingForResponse = email.queueKind === 'waiting_for_response' || classification === 'waiting_on_response';
   const admission = email.executiveInboxAdmission || {};
+  const staleDraft = correspondenceDraftLooksGeneric(draft.body || '');
   return {
     id: 'gmail-scan-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
@@ -8239,9 +8255,10 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     summary: email.reason || email.recommendedAction || email.snippet || 'VAL classified this Gmail thread as needing judgment.',
     whyNow: admission.reason || email.recommendedAction || email.reason || 'This thread matched the Executive Inbox rule gate.',
     context: [sender.name || sender.email, email.classification && String(email.classification).replace(/_/g, ' ')].filter(Boolean).join(' · ') || 'Gmail conversation',
-    prepared: draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.',
-    needs: draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.',
-    draftBody: draft.body || '',
+    prepared: staleDraft ? 'VAL found an older generic draft and will not use it.' : (draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.'),
+    needs: staleDraft ? 'Prepare a new source-backed draft from the readable thread.' : (draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.'),
+    draftBody: staleDraft ? '' : (draft.body || ''),
+    draftFailureMessage: staleDraft ? 'VAL found an older generic draft for this thread and hid it. Use Draft reply to prepare a source-backed version.' : '',
     threadMessages: (body || bodyHtml) ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,3600),bodyHtml}] : [],
     attachments: correspondenceAttachmentsFromSource(email),
     relationships: correspondenceContextLines(email, ['matchedContact','relationshipName','relationshipTemperature']),

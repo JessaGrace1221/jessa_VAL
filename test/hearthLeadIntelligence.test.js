@@ -930,6 +930,8 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /function searchCorrespondenceInbox/);
   assert.match(hearthJs, /function draftCorrespondenceReply/);
   assert.match(hearthJs, /function prepareSelectedCorrespondenceDraft/);
+  assert.match(hearthJs, /function correspondenceDraftLooksGeneric/);
+  assert.match(hearthJs, /VAL found an older generic draft for this thread and hid it/);
   assert.match(hearthJs, /Preparing a private reply draft with your saved Writing Rules/);
   assert.match(hearthJs, /VAL could not load previous emails for this thread yet/);
   assert.match(hearthJs, /prepareSelectedCorrespondenceDraft\(updated\)/);
