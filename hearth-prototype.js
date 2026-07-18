@@ -22325,12 +22325,7 @@ closeTimelineDetail?.addEventListener('click', () => {
 });
 
 function closeCorrespondenceDrawer(){
-  drawerTray.classList.remove('correspondence-open');
-  if(retrievalSystem?.dataset.activeDrawer === 'correspondence') retrievalSystem.removeAttribute('data-active-drawer');
-  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
-  renderDrawerPacketReceiptStrip(null);
-  updateCloseAllDrawersButton();
+  closeDrawer();
 }
 
 closeCorrespondenceDetail?.addEventListener('click', (event) => {

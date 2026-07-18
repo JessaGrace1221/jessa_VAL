@@ -8820,6 +8820,8 @@ button.timeline-overview-receipt:focus-visible{
   overflow:visible;
 }
 .drawer-tray.correspondence-open .source-detail-header{
+  position:relative;
+  z-index:20;
   padding:22px 40px 18px;
   border-bottom:1px solid rgba(42,45,39,.09);
   background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.66));
@@ -8837,10 +8839,16 @@ button.timeline-overview-receipt:focus-visible{
   line-height:1.45;
 }
 .drawer-tray.correspondence-open .close-correspondence-detail{
+  position:relative;
+  z-index:30;
+  min-width:78px;
+  min-height:40px;
+  border:1px solid rgba(125,141,111,.22);
   border-radius:999px;
-  background:rgba(255,255,252,.88);
+  background:linear-gradient(180deg,rgba(255,255,252,.98),rgba(248,251,244,.88));
   color:#24231f;
-  box-shadow:0 8px 22px rgba(40,42,38,.08);
+  font-size:.74rem;
+  box-shadow:0 10px 24px rgba(40,42,38,.1),inset 0 1px 0 rgba(255,255,255,.9);
 }
 .drawer-tray.correspondence-open .correspondence-filterbar,
 .drawer-tray.correspondence-open .correspondence-rulebar{
@@ -9305,6 +9313,7 @@ button.timeline-overview-receipt:focus-visible{
 @keyframes correspondenceSearchPulse{50%{transform:scale(1.45);opacity:.32}}
 @keyframes correspondenceSearchSweep{0%{background-position:120% 0}100%{background-position:-120% 0}}
 .drawer-tray.correspondence-open .correspondence-thread{
+  position:relative;
   display:grid;
   gap:24px;
   padding:34px 40px 38px;
