@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-draft-rules-20260717">
+<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-controls-20260718">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -556,16 +556,18 @@
             <button type="button" data-correspondence-filter="all">All <span data-correspondence-filter-count="all">0</span></button>
           </div>
           <div class="correspondence-filter-actions">
-            <button type="button" data-correspondence-action="search_inbox" onclick="runCorrespondenceActionClick(this,event);return false;">Smart Filters</button>
-            <button type="button" data-correspondence-sort>Sort: Priority</button>
-            <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create a Rule</button>
-            <button type="button" data-correspondence-action="show_writing_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Writing Rules</button>
+            <button type="button" data-correspondence-tools-toggle aria-expanded="false" aria-controls="correspondence-tools-panel">Controls</button>
+            <button type="button" data-correspondence-sort data-correspondence-sort-mode="priority">Sort: Priority</button>
           </div>
         </div>
-        <div class="correspondence-rulebar" aria-label="Executive Inbox controls">
+        <div class="correspondence-rulebar" id="correspondence-tools-panel" aria-label="Executive Inbox controls" hidden>
           <div>
             <span>Executive Inbox Controls</span>
             <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
+            <div class="correspondence-tools-actions">
+              <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create a Rule</button>
+              <button type="button" data-correspondence-action="show_writing_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Writing Rules</button>
+            </div>
           </div>
           <div class="correspondence-rule-create">
             <span>Search the Inbox</span>
@@ -867,6 +869,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=executive-inbox-draft-rules-20260717"></script>
+  <script src="./hearth-prototype.js?v=executive-inbox-controls-20260718"></script>
 </body>
 </html>

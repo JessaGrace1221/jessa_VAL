@@ -97,6 +97,9 @@ const correspondenceLoadingVeil = document.querySelector('[data-correspondence-l
 const correspondenceLoadingStatus = document.querySelector('[data-correspondence-loading-status]');
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
+const correspondenceToolsToggle = document.querySelector('[data-correspondence-tools-toggle]');
+const correspondenceToolsPanel = document.querySelector('#correspondence-tools-panel');
+const correspondenceSortButton = document.querySelector('[data-correspondence-sort]');
 const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
 const correspondenceSearchInput = document.querySelector('[data-correspondence-search]');
 const correspondenceSafeEmail = document.querySelector('[data-correspondence-safe-email]');
@@ -153,6 +156,9 @@ let activeCorrespondenceItem = null;
 let currentCorrespondenceRules = [];
 let currentCorrespondenceRuleSuggestions = [];
 let dismissedCorrespondenceRuleSuggestions = new Set();
+let currentCorrespondenceFilter = 'requires_reply';
+let currentCorrespondenceSort = 'priority';
+let correspondenceToolsOpen = false;
 let currentCorrespondenceScanDays = 14;
 let currentCorrespondenceScanStatus = '';
 let correspondenceScanInFlight = false;
@@ -8808,12 +8814,70 @@ function correspondenceItemsFromReady(result = {}){
     .map(normalizeCorrespondenceReadyItem);
 }
 
+function correspondenceItemMatchesFilter(item, filter = currentCorrespondenceFilter){
+  if(filter === 'all') return true;
+  if(filter === 'tracking') return item.status === 'needs_context';
+  if(filter === 'waiting') return item.status === 'waiting_for_response';
+  return item.status !== 'waiting_for_response' && item.status !== 'needs_context';
+}
+
+function updateCorrespondenceFilterTabs(){
+  document.querySelectorAll('[data-correspondence-filter]').forEach((button) => {
+    const isActive = button.dataset.correspondenceFilter === currentCorrespondenceFilter;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-selected', String(isActive));
+    button.setAttribute('tabindex', isActive ? '0' : '-1');
+  });
+}
+
+function setCorrespondenceToolsOpen(open = false){
+  correspondenceToolsOpen = Boolean(open);
+  if(correspondenceToolsPanel) correspondenceToolsPanel.hidden = !correspondenceToolsOpen;
+  if(correspondenceToolsToggle){
+    correspondenceToolsToggle.setAttribute('aria-expanded', String(correspondenceToolsOpen));
+    correspondenceToolsToggle.textContent = correspondenceToolsOpen ? 'Hide Controls' : 'Controls';
+  }
+}
+
+function updateCorrespondenceSortButton(){
+  if(!correspondenceSortButton) return;
+  const label = currentCorrespondenceSort === 'recent' ? 'Recent' : currentCorrespondenceSort === 'sender' ? 'Sender' : 'Priority';
+  correspondenceSortButton.textContent = 'Sort: ' + label;
+  correspondenceSortButton.dataset.correspondenceSortMode = currentCorrespondenceSort;
+}
+
+function correspondencePriorityRank(item = {}){
+  if(item.status === 'waiting_for_response') return 2;
+  if(item.status === 'needs_context') return 3;
+  return 1;
+}
+
+function correspondenceSortValue(item = {}){
+  const raw = item.latestAt || item.lastContact || item.timestamp || item.raw?.internalDate || item.raw?.date || '';
+  const time = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortedCorrespondenceItems(items = []){
+  const copy = [...items];
+  if(currentCorrespondenceSort === 'recent'){
+    return copy.sort((a, b) => correspondenceSortValue(b) - correspondenceSortValue(a));
+  }
+  if(currentCorrespondenceSort === 'sender'){
+    return copy.sort((a, b) => String(a.senderName || a.senderEmail || a.title || '').localeCompare(String(b.senderName || b.senderEmail || b.title || '')));
+  }
+  return copy.sort((a, b) => correspondencePriorityRank(a) - correspondencePriorityRank(b) || correspondenceSortValue(b) - correspondenceSortValue(a));
+}
+
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
+  updateCorrespondenceFilterTabs();
+  updateCorrespondenceSortButton();
   correspondenceList.innerHTML = '';
+  const visibleItems = sortedCorrespondenceItems(currentCorrespondenceItems.filter((item) => correspondenceItemMatchesFilter(item)));
   const isChecking = correspondenceScanInFlight || correspondenceLoading || (!currentCorrespondenceItems.length && /\b(checking|searching|scanning)\b/i.test(currentCorrespondenceScanStatus || ''));
-  correspondenceCount.textContent = currentCorrespondenceItems.length ? String(currentCorrespondenceItems.length) : (isChecking ? 'Checking' : '0');
-  correspondenceCount.setAttribute('aria-label', currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' waiting' : (isChecking ? 'Checking Executive Inbox' : 'No conversations waiting'));
+  correspondenceCount.textContent = visibleItems.length ? String(visibleItems.length) : (isChecking ? 'Checking' : '0');
+  correspondenceCount.setAttribute('aria-label', visibleItems.length ? visibleItems.length + ' conversation' + (visibleItems.length === 1 ? '' : 's') + ' in this view' : (isChecking ? 'Checking Executive Inbox' : 'No conversations in this view'));
   document.querySelectorAll('[data-correspondence-filter-count]').forEach((node) => {
     const filter = node.dataset.correspondenceFilterCount;
     const count = filter === 'all'
@@ -8825,12 +8889,12 @@ function renderCorrespondenceList(){
           : currentCorrespondenceItems.filter((item) => item.status !== 'waiting_for_response' && item.status !== 'needs_context').length;
     node.textContent = String(count);
   });
-  if(!currentCorrespondenceItems.length){
+  if(!visibleItems.length){
     const empty = document.createElement('article');
     empty.className = 'empty' + (isChecking ? ' correspondence-checking-state' : '');
     empty.innerHTML = isChecking
       ? '<div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div><span>Checking Executive Inbox</span><p>VAL is searching Gmail, sent history, saved contacts, and relationship context before showing the queue.</p><div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>'
-      : '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
+      : '<span>No items in this view</span><p>' + (currentCorrespondenceItems.length ? 'This filter is clear. Choose another view to see the rest of the Executive Inbox.' : 'No Gmail conversation has been classified into Executive Inbox yet.') + '</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
     const status = empty.querySelector('[data-correspondence-scan-status]');
     if(status) status.textContent = currentCorrespondenceScanStatus || (isChecking ? 'This can take a few seconds when VAL checks sent history and known contacts.' : 'Only unresolved executive conversations appear here.');
     empty.querySelectorAll('[data-correspondence-scan-days]').forEach((button) => {
@@ -8840,7 +8904,7 @@ function renderCorrespondenceList(){
     correspondenceList.appendChild(empty);
     return;
   }
-  currentCorrespondenceItems.forEach((item) => {
+  visibleItems.forEach((item) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.correspondenceItem = item.id;
@@ -22387,6 +22451,33 @@ drawerTray.addEventListener('click', async (event) => {
     if(!preflight.ok) return;
     const update = findProjectSourceReviewUpdate(projectReviewButton.dataset.projectReviewUpdate);
     await openProjectSourceReview(update);
+    return;
+  }
+  const correspondenceFilter = event.target.closest('[data-correspondence-filter]');
+  if(correspondenceFilter){
+    event.preventDefault();
+    event.stopPropagation();
+    currentCorrespondenceFilter = correspondenceFilter.dataset.correspondenceFilter || 'requires_reply';
+    renderCorrespondenceList();
+    const visibleItems = sortedCorrespondenceItems(currentCorrespondenceItems.filter((item) => correspondenceItemMatchesFilter(item)));
+    if(visibleItems.length && !visibleItems.some((item) => item.id === activeCorrespondenceItem?.id)){
+      renderCorrespondenceBrief(visibleItems[0]);
+    }
+    return;
+  }
+  const correspondenceTools = event.target.closest('[data-correspondence-tools-toggle]');
+  if(correspondenceTools){
+    event.preventDefault();
+    event.stopPropagation();
+    setCorrespondenceToolsOpen(!correspondenceToolsOpen);
+    return;
+  }
+  const correspondenceSort = event.target.closest('[data-correspondence-sort]');
+  if(correspondenceSort){
+    event.preventDefault();
+    event.stopPropagation();
+    currentCorrespondenceSort = currentCorrespondenceSort === 'priority' ? 'recent' : currentCorrespondenceSort === 'recent' ? 'sender' : 'priority';
+    renderCorrespondenceList();
     return;
   }
   const correspondenceAction = event.target.closest('[data-correspondence-action]');
