@@ -2205,9 +2205,12 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
+  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,180}bottom:15vh/);
+  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:104px/);
   assert.doesNotMatch(hearthHtml, /Prototype states/);
   assert.doesNotMatch(hearthHtml, /data-state-option/);
-  assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:24\}/);
+  assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:90\}/);
+  assert.match(hearthCss, /\.drawer-tray\{[\s\S]{0,120}border-radius:18px/);
   assert.match(hearthCss, /\.drawer-tray\{position:absolute;left:0;right:0;bottom:46px;margin-top:0;max-height:0;padding:0 18px;overflow:hidden\}/);
   assert.match(hearthCss, /\.retrieval-system\.open \.drawer-tray\{max-height:min\(70vh,640px\);padding:18px;margin-top:0;overflow:auto\}/);
 });
