@@ -21593,7 +21593,9 @@ function closeWorkspace(){
 
 function hideWorkspaceForDrawerNavigation(){
   hideCoworkContextGathering();
-  if(hearth.dataset.distance !== 'judgment') return;
+  const workspaceVisible = deskWorkspace?.getAttribute('aria-hidden') !== 'true';
+  const hasCoworkShell = Boolean(deskWorkspace?.classList.contains('home-cowork-mode'));
+  if(hearth.dataset.distance !== 'judgment' && !workspaceVisible && !hasCoworkShell) return;
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
@@ -21644,6 +21646,10 @@ drawerPull.addEventListener('click', () => {
   hearth.classList.toggle('drawer-open', isOpen);
   drawerPull.setAttribute('aria-expanded', String(isOpen));
   drawerTray.setAttribute('aria-hidden', String(!isOpen));
+  if(isOpen){
+    drawerTray.scrollTo?.({top:0, left:0});
+    window.requestAnimationFrame(() => drawerTray.scrollIntoView?.({block:'nearest', inline:'nearest'}));
+  }
   updateCloseAllDrawersButton();
 });
 

@@ -1339,6 +1339,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function showCoworkContextGathering/);
   assert.match(hearthJs, /coworkContextGatheringTimeoutId/);
   assert.match(hearthJs, /VAL could not finish gathering this context in time/);
+  assert.match(hearthJs, /const workspaceVisible = deskWorkspace\?\.getAttribute\('aria-hidden'\) !== 'true'/);
   assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*hideCoworkContextGathering\(\);/);
   assert.match(hearthJs, /Gathering Context/);
   assert.match(hearthJs, /data-cowork-context-gathering/);
@@ -2196,6 +2197,7 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /const closeAllDrawersButton/);
   assert.match(hearthJs, /function updateCloseAllDrawersButton/);
   assert.match(hearthJs, /drawerPull\.addEventListener\('click', \(\) => \{\s*hideWorkspaceForDrawerNavigation\(\);/);
+  assert.match(hearthJs, /drawerTray\.scrollIntoView\?\.\(\{block:'nearest', inline:'nearest'\}\)/);
   assert.match(hearthJs, /closeAllDrawersButton\?\.addEventListener\('click', closeDrawer\)/);
   assert.match(hearthJs, /document\.addEventListener\('click', \(event\) => \{/);
   assert.match(hearthJs, /hearth\.classList\.contains\('calendar-open'\) && !event\.target\.closest\('\.full-calendar-panel'\)/);
