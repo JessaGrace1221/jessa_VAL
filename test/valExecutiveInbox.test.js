@@ -50,6 +50,8 @@ test('executive inbox routes are backend-only and mounted',()=>{
   assert.match(server,/loadEmailThreadForCowork/);
   assert.match(executiveInboxService,/writingRules/);
   assert.match(executiveInboxService,/tone_requirements/);
+  assert.match(executiveInboxService,/writing_rules:compactText\(brief\.writingRules/);
+  assert.match(executiveInboxService,/Do not append, label, quote, or explain the writing rules in the email body/);
   assert.match(server,/writingRules:req\.body\.writingRules/);
   assert.match(server,/linkedContexts/);
   assert.match(coworkService,/linkedContexts/);
@@ -336,6 +338,8 @@ test('generates review-only email drafts, revises once after QA, and stores loca
   assert.equal(modelCalls,2);
   assert.equal(result.status,'ready_for_review');
   assert.equal(result.writer_output.subject,'Re: Partner workflow');
+  assert.doesNotMatch(result.writer_output.body,/Writing rules VAL used/i);
+  assert.doesNotMatch(result.writer_output.body,/Warm but direct\. Sign off with Jessa\./);
   for(const field of ['why_this_draft_exists','what_it_answers','what_it_does_not_answer','missing_context','tone_notes','representation_risk','approval_policy','confidence']){
     assert.ok(Object.hasOwn(result.writer_output,field),`missing writer field ${field}`);
   }
@@ -351,4 +355,44 @@ test('generates review-only email drafts, revises once after QA, and stores loca
   const candidates=await service.listReadyForYouDraftCandidates();
   assert.equal(candidates[0].source,'executive_inbox_review_only');
   assert.equal(candidates[0].generatedDraft.id,'draft_1');
+});
+
+test('does not create a generic Executive Inbox draft when readable thread content is missing',async()=>{
+  let store={};
+  let saved=false;
+  const service=createValExecutiveInboxService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_missing_source`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    conversationService:{
+      buildConversationContext:async()=>({
+        conversationId:'uc_missing',
+        threadId:'thread_missing',
+        current_message:{id:'em_missing',messageId:'m_missing',direction:'inbound',from:{name:'Client',email:'client@example.com'},subject:'Question',bodyPreview:''},
+        latest_inbound:{messageId:'m_missing',direction:'inbound',from:{name:'Client',email:'client@example.com'},subject:'Question',bodyPreview:''},
+        thread_summary:'',
+        waiting_on_user:true,
+        waiting_on_other:false,
+        open_questions:[],
+        commitments:[],
+        conversation_state:'waiting_on_user',
+        relationship_temperature:'unknown',
+        unknowns:[],
+        source_refs:[]
+      }),
+      resolveIdentity:async()=>({ok:true,match_status:'matched',unknowns:[]})
+    },
+    listTeachValCoreMemory:async()=>[],
+    generateDraftWithModel:async()=>{ throw new Error('model should not be called without source content'); },
+    saveReviewDraft:async()=>{ saved=true; },
+    logger:{log(){}}
+  });
+  const result=await service.generateDraft({conversationId:'uc_missing',writingRules:'Warm but direct.'});
+  assert.equal(result.ok,false);
+  assert.equal(result.needsThreadContent,true);
+  assert.equal(result.status,'needs_source_content');
+  assert.equal(saved,false);
 });

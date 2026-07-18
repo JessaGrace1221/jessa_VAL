@@ -11394,10 +11394,16 @@ function classifyExecutiveEmail(email,rules=[]){
 }
 function emailShouldPrepareDraft(email){
   if(email.classification==='calendar_notice')return false;
+  if(!emailHasReadableDraftSource(email))return false;
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.recommendedAction,email.reason].join(' ');
   if(['needs_reply','appointment_recap_needed'].includes(email.classification))return true;
   if(/\bdraft\b/i.test(email.recommendedAction||''))return true;
   return /\b(intro|introduction|referral|connect you|warm intro|send me|tight version|one paragraph|reply|respond|let me know)\b/i.test(text)&&!['ignored','low_priority','solicitation','spam_like'].includes(email.classification);
+}
+function emailHasReadableDraftSource(email={}){
+  const body=String(email.bodyText||email.bodyPreview||email.snippet||'').replace(/\s+/g,' ').trim();
+  if(body.length>=40)return true;
+  return /\?/.test(body) && body.length>=18;
 }
 function emailDraftStableId(email){
   const raw=[tenantId(),currentUserId(),email.provider||'email',email.messageId||email.threadId||email.subject||'unknown'].join(':');
@@ -11416,9 +11422,6 @@ function buildEmailReplyDraft(email,{writingRules=''}={}){
   const subject=`Re: ${email.subject||''}`.trim();
   const name=(email.from?.name||'').split(/\s+/)[0]||'';
   const text=[email.subject,email.snippet,email.bodyPreview,email.bodyText,email.reason,email.recommendedAction].join(' ');
-  const ruleLines=String(writingRules||'').trim()
-    ? ['','Writing rules VAL used:',String(writingRules).trim()]
-    : [];
   const intro=/\b(intro|introduction|referral|connect you|warm intro|warm introduction|tight version|one paragraph)\b/i.test(text);
   if(intro){
     return {
@@ -11434,8 +11437,7 @@ function buildEmailReplyDraft(email,{writingRules=''}={}){
         '',
         'Grateful for you making the connection.',
         '',
-        'Best,',
-        ...ruleLines
+        'Best,'
       ].join('\n')
     };
   }
@@ -11444,16 +11446,15 @@ function buildEmailReplyDraft(email,{writingRules=''}={}){
     body:[
       `Hi ${name},`.replace(/\s+,/,','),
       '',
-      'Thank you for your note. I wanted to respond thoughtfully.',
+      'Thank you for sending this over.',
       '',
-      email.reason?`I saw this needs attention because ${email.reason.charAt(0).toLowerCase()+email.reason.slice(1)}`:'I saw this needs a clear reply.',
+      email.bodyPreview||email.snippet
+        ? `I saw your note about ${String(email.subject||'this').replace(/^re:\s*/i,'').trim() || 'this'}, and I want to make sure I answer it clearly.`
+        : 'I want to make sure I answer this clearly.',
       '',
-      'Here is what I recommend as the next step:',
+      email.recommendedAction&&email.recommendedAction!=='Draft a reply for approval.' ? email.recommendedAction : 'I’ll review the details and come back with the clean next step.',
       '',
-      email.recommendedAction||'Let me take a closer look and follow up with the right next step.',
-      '',
-      'Best,',
-      ...ruleLines
+      'Best,'
     ].join('\n')
   };
 }
@@ -12209,7 +12210,9 @@ async function inboxCommandAction(body={},userId=currentUserId()){
   const email=body.email||body.message||{};
   if(!email.messageId&&!email.subject)return {ok:false,error:'Choose an email first.'};
   if(action==='draft_reply'){
-    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:'Re: '+(email.subject||''),body:body.body||`Hi ${email.from?.name||''},\n\nThank you for your note. I wanted to respond thoughtfully.\n\n[VAL draft: review before sending.]\n\nBest,`,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
+    const draftBody=String(body.body||'').trim();
+    if(!draftBody)return {ok:false,action,needsThreadContent:true,status:'needs_source_content',error:'VAL needs readable email content before it can prepare a reply. No generic draft was created.'};
+    const draft=await saveInternalDraft({draftType:'email_reply',provider:'internal',subject:'Re: '+(email.subject||''),body:draftBody,sourceContext:{source:'inbox_command',provider:email.provider,messageId:email.messageId,threadId:email.threadId,to:email.from?.email||''}});
     return {ok:true,action,draft,requiresApproval:true};
   }
   if(action==='forward_draft'||action==='forward'){

@@ -246,6 +246,12 @@ function firstText(...values){
   }
   return '';
 }
+function hasReadableDraftSource(context={},brief={}){
+  const facts=extractConversationFacts(context,brief);
+  const sourceText=facts.map(f=>f.text).join(' ').replace(/\s+/g,' ').trim();
+  if(sourceText.length>=50)return true;
+  return /\?/.test(sourceText) && sourceText.length>=24;
+}
 function extractConversationFacts(context={},brief={}){
   const facts=[];
   const push=(value,source='context')=>{
@@ -355,11 +361,13 @@ function buildDraftWriterPrompt({context={},classification={},readiness={},brief
       },
       user_style:{
         communication_style:style.communication_style,
+        writing_rules:compactText(brief.writingRules||brief.writing_rules||'',1200),
         do_not_sound_like:style.do_not_sound_like
       },
       hard_rules:[
         'No external actions.',
         'No Gmail or Outlook draft creation.',
+        'Use writing_rules as style guidance only. Do not append, label, quote, or explain the writing rules in the email body.',
         'No invented dates, pricing, promises, links, attachments, or availability.',
         'High representation risk must have approval_policy approval_required.',
         'If missing_context is not empty, draft_type must be holding or clarification.'
@@ -651,6 +659,23 @@ function createValExecutiveInboxService({
       ].filter(Boolean)
     };
     const base={context:briefed.context,classification:briefed.classification,readiness:briefed.readiness,brief,teachVal};
+    if(!hasReadableDraftSource(base.context,base.brief)){
+      return {
+        ok:false,
+        status:'needs_source_content',
+        needsThreadContent:true,
+        message:'VAL could not load enough readable email content to prepare a source-backed draft. No generic reply was created.',
+        readiness:{
+          ...base.readiness,
+          status:'needs_context',
+          missing_context:Array.from(new Set([...(base.readiness?.missing_context||[]),'readable_email_thread_content']))
+        },
+        draft_brief:base.brief,
+        context:base.context,
+        classification:base.classification,
+        no_external_action:true
+      };
+    }
     let draft=await callDraftWriter(base);
     let qa=qaCheckGeneratedDraft({...base,draft});
     let revised=false;

@@ -933,10 +933,10 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthJs, /Preparing a private reply draft with your saved Writing Rules/);
   assert.match(hearthJs, /VAL could not load previous emails for this thread yet/);
   assert.match(hearthJs, /prepareSelectedCorrespondenceDraft\(updated\)/);
-  assert.match(hearthJs, /fallbackReason:'selected_thread_history_unavailable'/);
-  assert.match(hearthJs, /source:'executive_inbox_review_only'/);
-  assert.match(hearthJs, /\/api\/val\/drafts/);
-  assert.match(hearthJs, /\/api\/email\/inbox-command\/action/);
+  assert.match(hearthJs, /needs_source_content/);
+  assert.match(hearthJs, /No generic reply was created/);
+  assert.match(hearthJs, /source:\s*'executive_inbox_review_only'/);
+  assert.doesNotMatch(hearthJs, /fallbackReason:'selected_thread_history_unavailable'/);
   assert.match(hearthJs, /messageId:item\.messageId/);
   assert.match(hearthJs, /threadId:item\.threadId/);
   assert.match(hearthJs, /function forwardCorrespondenceDraft/);

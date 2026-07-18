@@ -8227,7 +8227,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     id: 'gmail-scan-' + (email.messageId || email.threadId || index),
     draftId: draft.id || '',
     messageId: email.messageId || '',
-    conversationId: email.threadId || email.messageId || '',
+    conversationId: email.conversationId || email.unifiedConversationId || email.unified_conversation_id || source.conversationId || '',
     threadId: email.threadId || '',
     recipientEmail: sender.email || source.to || '',
     provider: email.provider || 'gmail',
@@ -9509,13 +9509,13 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('decision-summary', selected?.whyNow || selected?.summary || 'When VAL admits a conversation, this card will show the reason, the next best action, and the source thread.');
   const hasDraft = !!String(selected?.draftBody || '').trim();
   setCorrespondenceField('draft-title', selected && hasDraft ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
-  setCorrespondenceField('draft-note', selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.');
+  setCorrespondenceField('draft-note', selected?.draftFailureMessage || (selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.'));
   renderCorrespondenceThread(selected);
   renderCorrespondenceIntelligence(selected);
   if(correspondenceDraftBody){
     correspondenceDraftBody.value = selected?.draftBody || '';
     correspondenceDraftBody.disabled = !selected;
-    correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : 'No draft has been prepared for this conversation yet.') : 'Select a conversation to edit the draft.';
+    correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : (selected.draftFailureMessage || 'No draft has been prepared for this conversation yet.')) : 'Select a conversation to edit the draft.';
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
@@ -9855,58 +9855,26 @@ async function draftCorrespondenceReply(item = activeCorrespondenceItem, options
         writingRules:correspondenceActiveDraftRuleText()
       });
     }catch(error){
-      result = null;
+      result = {ok:false, error:error.message};
     }
   }
   const primaryDraft = result?.draft || {};
   const primaryBody = String(primaryDraft.body || result?.writer_output?.body || '').trim();
   if(!primaryBody){
-    const fallback = await postJson('/api/email/inbox-command/action', {
-      action:'draft_reply',
-      email:correspondenceEmailForAction(item),
-      writingRules:correspondenceActiveDraftRuleText()
-    });
-    const fallbackDraft = fallback.draft || fallback.internalDraft || {};
-    const savedFallback = await postJson('/api/val/drafts', {
-      draftType:'email_reply',
-      provider:'internal',
-      subject:fallbackDraft.subject || ('Re: ' + (item.title || '')),
-      body:fallbackDraft.body || item.draftBody || '',
-      status:'ready_for_review',
-      sourceContext:{
-        source:'executive_inbox_review_only',
-        noExternalAction:true,
-        noProviderDraftCreated:true,
-        fallbackReason:'selected_thread_history_unavailable',
-        writingRules:correspondenceActiveDraftRuleText(),
-        provider:item.provider || 'email',
-        conversationId:item.conversationId || '',
-        threadId:item.threadId || '',
-        messageId:item.messageId || '',
-        currentMessageId:item.messageId || '',
-        to:item.senderEmail || item.recipientEmail || item.from?.email || '',
-        from:item.from || {name:item.senderName || '', email:item.senderEmail || ''},
-        conversationContext:{
-          conversationId:item.conversationId || '',
-          threadId:item.threadId || '',
-          provider:item.provider || 'email',
-          latest_inbound:{
-            subject:item.title || '',
-            date:item.receivedAt || item.lastContact || item.date || '',
-            bodyPreview:item.bodyPreview || item.snippet || item.summary || '',
-            from:item.from || {name:item.senderName || '', email:item.senderEmail || ''}
-          },
-          messages:correspondenceThreadMessagesFromSource(item.raw || {}, item)
-        }
-      }
-    });
-    result = {
-      ok:true,
-      draft:savedFallback.draft || fallbackDraft,
-      status:'ready_for_review',
-      no_external_action:true,
-      fallback:true
+    const message = result?.message || result?.error || 'VAL could not load enough readable thread content to prepare a source-backed draft. Open this thread with VAL or refresh Gmail, then try Draft reply again.';
+    const updated = {
+      ...item,
+      autoDraftAttempted:true,
+      autoDraftFailed:true,
+      draftStatus:result?.status || 'needs_source_content',
+      draftFailureMessage:message,
+      status:item.status || 'needs_context'
     };
+    currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? updated : row);
+    activeCorrespondenceItem = updated;
+    renderCorrespondenceBrief(updated);
+    if(correspondenceSafety) correspondenceSafety.textContent = message + ' No generic reply was created.';
+    return;
   }
   const draft = result.draft || result.internalDraft || {};
   const updated = {
@@ -10341,6 +10309,14 @@ async function handleCorrespondenceAction(action){
       }
       if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private draft for review. Nothing will be sent from this click.';
       const result = await postJson('/api/val/email/generate-draft', {conversationId:item.conversationId, writingRules:correspondenceActiveDraftRuleText()});
+      if(!String(result?.draft?.body || result?.writer_output?.body || '').trim()){
+        const message = result?.message || result?.error || 'VAL could not load enough readable thread content to prepare a source-backed draft. No generic reply was created.';
+        activeCorrespondenceItem = {...item, autoDraftAttempted:true, autoDraftFailed:true, draftStatus:result?.status || 'needs_source_content', draftFailureMessage:message, status:item.status || 'needs_context'};
+        currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? activeCorrespondenceItem : row);
+        renderCorrespondenceBrief(activeCorrespondenceItem);
+        if(correspondenceSafety) correspondenceSafety.textContent = message;
+        return;
+      }
       const generated = normalizeCorrespondenceDraft(result.draft || {});
       currentCorrespondenceItems = [generated].concat(currentCorrespondenceItems.filter((row) => row.id !== generated.id));
       activeCorrespondenceItem = generated;
