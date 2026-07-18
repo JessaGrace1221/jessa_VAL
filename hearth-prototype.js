@@ -12540,23 +12540,39 @@ function timelineSourceReceipt(transcript = {}){
   const actionItems = Array.isArray(receipt.actionItems) ? receipt.actionItems.filter(Boolean).map(String) : [];
   const sourceLineLooksLikeTranscript = (line) => {
     const text = String(line || '').trim();
+    const clean = text.replace(/^\*{1,2}/, '').replace(/\*{1,2}$/, '').trim();
     return text.length > 260
+      || /^(File|Valid for|Recording|Transcript\s*\d*|Download Recording)\b/i.test(clean)
+      || /\[Download Recording\]\(<https?:\/\//i.test(text)
       || /\b\d{1,2}:\d{2}\b/.test(text)
-      || /^[A-Z][A-Za-z .'-]{1,40}\s*[:|]\s*\d{1,2}:\d{2}/.test(text)
+      || /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\s*[:|]\s*\d{1,2}:\d{2}/i.test(clean)
+      || /^[A-Z][A-Za-z .'-]{1,70}\s*[:|]\s*\d{1,2}:\d{2}/.test(clean)
       || /(?:Speaker[_\s-]?\d+|Jessa Grace|Doug|Greg|Michele|Daniel)\s*[:|]\s+.{40,}/i.test(text);
   };
   const keyPoints = (Array.isArray(receipt.keyPoints) ? receipt.keyPoints.filter(Boolean).map(String) : [])
     .map((item) => item.replace(/^\s*#{1,6}\s*/, '').trim())
     .filter((item) => !sourceLineLooksLikeTranscript(item))
     .slice(0, 12);
-  const safeSections = sections.filter((section) => {
+  const safeSections = sections.map((section) => {
+    const lines = [];
+    for(const line of (Array.isArray(section.lines) ? section.lines.map(String) : [])){
+      if(sourceLineLooksLikeTranscript(line)) break;
+      lines.push(line);
+    }
+    return {...section, lines};
+  }).filter((section) => {
     if(section?.kind !== 'key_points') return true;
     const lines = Array.isArray(section.lines) ? section.lines : [];
     if(lines.length > 12) return false;
     return !lines.some(sourceLineLooksLikeTranscript);
   });
+  const safeBody = safeSections.map((section) => [
+    String(section.heading || '').replace(/^\s*#{1,6}\s*/, '').trim(),
+    ...(Array.isArray(section.lines) ? section.lines.map(String).filter((line) => !sourceLineLooksLikeTranscript(line)) : [])
+  ].filter(Boolean).join('\n')).join('\n\n').trim();
+  const receiptBody = String(receipt.body || '').trim();
   return {
-    body:String(receipt.body || '').trim(),
+    body:sourceLineLooksLikeTranscript(receiptBody) ? safeBody : (safeBody || receiptBody),
     sections:safeSections,
     actionItems,
     keyPoints,
@@ -12758,7 +12774,7 @@ function timelineTranscriptInvitees(transcript = {}){
     transcript.sourcePayloadMetadata?.calendar_event?.attendees
   ];
   const seen = new Set();
-  return buckets.flatMap((bucket) => Array.isArray(bucket) ? bucket : [])
+  const structured = buckets.flatMap((bucket) => Array.isArray(bucket) ? bucket : [])
     .map((person) => {
       if(typeof person === 'string'){
         const emailMatch = person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
@@ -12779,6 +12795,35 @@ function timelineTranscriptInvitees(transcript = {}){
       seen.add(person.key);
       return true;
     });
+  return structured.concat(timelineTranscriptInviteesFromSource(transcript, seen));
+}
+
+function timelineTranscriptInviteesFromSource(transcript = {}, seen = new Set()){
+  const text = [
+    timelineFullTranscriptText(transcript),
+    transcript.sourceReceipt?.body,
+    transcript.summaryPreview,
+    transcript.nativeSummary
+  ].filter(Boolean).join('\n');
+  const people = [];
+  const push = ({name = '', email = '', label = ''} = {}) => {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanName = String(name || label || '').replace(/\*+/g, '').trim();
+    if(!cleanEmail || selfCalendarEmails.includes(cleanEmail)) return;
+    const key = cleanEmail || cleanName.toLowerCase();
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    people.push({label:cleanName || cleanEmail, name:cleanName || cleanEmail.split('@')[0], email:cleanEmail, key, relationshipId:'', projectId:'', matchReason:'Found in transcript speaker labels'});
+  };
+  (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || []).forEach((email) => push({email}));
+  text.split(/\r?\n/).forEach((line) => {
+    const match = String(line || '').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
+    if(!match) return;
+    const label = String(match[1] || '').trim();
+    const email = (label.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
+    if(email) push({name:label.replace(email, '').trim(), email});
+  });
+  return people;
 }
 
 function timelineTranscriptCalendarEventId(transcript = {}){
@@ -12794,6 +12839,29 @@ function timelineSelectedProjectOption(root = drawerTray){
   return project ? {id:project.id || project.projectId || project.profileKey || raw, name:project.name || project.displayName || raw} : {id:raw, name:raw};
 }
 
+function timelineSuggestedProjectOption(transcript = {}){
+  const text = [
+    transcript.title,
+    transcript.meetingTitle,
+    transcript.summaryPreview,
+    timelineSourceReceipt(transcript).body,
+    timelineFullTranscriptText(transcript).slice(0, 1400)
+  ].filter(Boolean).join(' ').toLowerCase();
+  if(!text.trim()) return null;
+  const projects = projectIndexItems();
+  const exact = projects.find((project) => {
+    const names = [project.name, project.displayName, project.id, project.projectId, project.profileKey].filter(Boolean).map((value) => String(value).toLowerCase());
+    return names.some((name) => name && text.includes(name));
+  });
+  if(exact) return {id:exact.id || exact.projectId || exact.profileKey || exact.name || exact.displayName, name:exact.name || exact.displayName || exact.id || exact.projectId || 'Project', reason:'VAL saw this project name in the transcript.'};
+  if(/\bgoall\b|goallprogram|goal agency|goall agency/i.test(text)){
+    const goall = projects.find((project) => /goall|goal agency|goallprogram/i.test([project.name, project.displayName, project.id, project.projectId, project.profileKey].filter(Boolean).join(' ')));
+    if(goall) return {id:goall.id || goall.projectId || goall.profileKey || goall.name || 'GOALL', name:goall.name || goall.displayName || 'GOALL', reason:'VAL saw GOALL in the transcript title/source.'};
+    return {id:'GOALL', name:'GOALL', reason:'VAL saw GOALL in the transcript title/source.'};
+  }
+  return null;
+}
+
 function timelineSelectedRelationshipOption(value = ''){
   const raw = String(value || '').trim();
   if(!raw) return null;
@@ -12804,6 +12872,7 @@ function timelineSelectedRelationshipOption(value = ''){
 
 function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft = null){
   const invitees = timelineTranscriptInvitees(transcript);
+  const suggestedProject = timelineSuggestedProjectOption(transcript);
   const projectOptions = projectIndexItems().slice(0, 80).map((project) => '<option value="' + escapeHtml(project.name || project.displayName || project.id || '') + '"></option>').join('');
   const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
@@ -12813,25 +12882,27 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm link' : 'Add/link relationship') + '</button>',
     '</article>'
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
-  const attendeeCount = invitees.length;
+  const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
   const actionCount = (overviewDraft || timelineMeetingOverviewDraft(transcript)).actionItems.length;
   return [
     '<section class="timeline-transcript-section timeline-transcript-send-panel" data-transcript-section="send-action-items">',
     '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Send Action Items to Attendees</strong></div>',
     '<p>Uses the Action Items exactly as shown in this transcript. VAL prepares the email for review before anything leaves your account.</p>',
     '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Send Action Items to Attendees</button>',
-    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
+    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee email' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
     '</section>',
     '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
     '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
     '<p>If VAL missed a relationship or project, link it here so the Round Table packets and future prepared work have the right context.</p>',
     '<div class="timeline-project-link-row">',
-    '<input type="search" list="timeline-project-options" placeholder="Search project..." data-transcript-project-search aria-label="Search project for this transcript">',
+    '<input type="search" list="timeline-project-options" placeholder="Search project..." value="' + escapeHtml(suggestedProject?.name || '') + '" data-transcript-project-search aria-label="Search project for this transcript">',
     '<button type="button" data-transcript-action="link_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to project</button>',
     '</div>',
+    suggestedProject ? '<small class="timeline-map-suggestion">' + escapeHtml(suggestedProject.reason || 'VAL suggested this project from the transcript.') + '</small>' : '',
     '<datalist id="timeline-project-options">' + projectOptions + '</datalist>',
     '<datalist id="timeline-relationship-options">' + relationshipOptions + '</datalist>',
     '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
+    '<p class="timeline-transcript-receipt" data-transcript-map-status></p>',
     '</section>'
   ].join('');
 }
@@ -12842,7 +12913,7 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
   const actionItems = receipt.actionItems.length ? receipt.actionItems : taskLines;
   const sourceSections = receipt.sections.filter((section) => section.kind !== 'key_points' || receipt.keyPoints.length);
   const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
-  const body = receipt.body || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
+  const body = receipt.body || sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n') || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
   const invitees = timelineTranscriptInvitees(transcript);
   return {
     ...receipt,
@@ -13128,10 +13199,14 @@ async function openTranscriptLeverage(){
 }
 
 function setTimelineTranscriptActionStatus(message = '', tone = ''){
-  const status = drawerTray?.querySelector?.('[data-transcript-action-status]');
-  if(!status) return;
-  status.textContent = message || '';
-  status.dataset.tone = tone || '';
+  const statuses = [
+    drawerTray?.querySelector?.('[data-transcript-action-status]'),
+    drawerTray?.querySelector?.('[data-transcript-map-status]')
+  ].filter(Boolean);
+  statuses.forEach((status) => {
+    status.textContent = message || '';
+    status.dataset.tone = tone || '';
+  });
 }
 
 async function prepareTranscriptActionItemsEmail(transcriptId = ''){
@@ -13167,6 +13242,10 @@ async function linkTimelineTranscriptProject(transcriptId = ''){
       calendarEventId:timelineTranscriptCalendarEventId(currentTimelineTranscript || {})
     });
     setTimelineTranscriptActionStatus(result.message || 'Transcript linked to project locally.', 'success');
+    if(currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId)){
+      currentTimelineTranscript.projectId = project.id;
+      currentTimelineTranscript.projectName = project.name;
+    }
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not link this transcript to the project.', 'danger');
   }

@@ -22747,9 +22747,20 @@ function transcriptSourceLooksLikeFullTranscript(lines=[]){
   const list=(Array.isArray(lines)?lines:[]).map(line=>String(line||'')).filter(Boolean);
   if(list.length>16)return true;
   if(list.some(line=>line.length>900))return true;
-  const speakerTurnCount=list.filter(line=>/\b\d{1,2}:\d{2}\b|^[A-Z][A-Za-z .'-]{1,40}\s*\|\s*\d{1,2}:\d{2}/.test(line)).length;
+  const speakerTurnCount=list.filter(line=>transcriptSourceLineLooksLikeTranscript(line)).length;
   const longLineCount=list.filter(line=>line.length>360).length;
   return speakerTurnCount>=3||longLineCount>=2;
+}
+function transcriptSourceLineLooksLikeTranscript(line=''){
+  const text=String(line||'').trim();
+  const clean=text.replace(/^\*{1,2}/,'').replace(/\*{1,2}$/,'').trim();
+  if(!clean)return false;
+  if(/^(File|Valid for|Recording|Transcript\s*\d*|Download Recording)\b/i.test(clean))return true;
+  if(/\[Download Recording\]\(<https?:\/\//i.test(text)||/^https?:\/\/files\./i.test(clean))return true;
+  if(/\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(clean)&&/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\s*[|:]/i.test(clean))return true;
+  if(/\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(clean)&&/^[A-Z][A-Za-z .'-]{1,70}\s*[|:]/.test(clean))return true;
+  if(/^(Speaker[_\s-]?\d+|Jessa Grace|Doug|Greg|Michele|Daniel)\s*[|:]\s+.{20,}/i.test(clean))return true;
+  return false;
 }
 function transcriptSourceSectionText(text='',names=[]){
   const source=String(text||'');
@@ -22783,7 +22794,13 @@ function transcriptSourceSectionText(text='',names=[]){
   const end=next?next.start:source.length;
   const raw=source.slice(section.start,end).replace(/^\s*#{1,6}\s*/gm,'').trim();
   const content=source.slice(section.contentStart,end).trim();
-  const lines=transcriptSourceLines(content).filter(line=>!transcriptSourceLooksLikeFullTranscript([line]));
+  const sourceLines=transcriptSourceLines(content);
+  const clippedLines=[];
+  for(const line of sourceLines){
+    if(transcriptSourceLineLooksLikeTranscript(line))break;
+    clippedLines.push(line);
+  }
+  const lines=clippedLines.filter(line=>!transcriptSourceLooksLikeFullTranscript([line]));
   return {heading:section.heading,raw,lines};
 }
 function transcriptSourceDownloadUrl(record={}){
@@ -22830,7 +22847,10 @@ function transcriptSourceReceipt(transcript={}){
   if(keyPointsSection)sections.push({kind:'key_points',...keyPointsSection});
   else if(keyPoints.length&&!transcriptSourceLooksLikeFullTranscript(keyPoints))sections.push({kind:'key_points',heading:'Key Points',raw:['Key Points',...keyPoints].join('\n'),lines:keyPoints});
   const firstHeading=sourceText.search(/(?:^|\n)\s*(?:#{1,3}\s*)?(?:Action Items?|Key Points|Meeting Overview)\s*:?/i);
-  const body=(firstHeading>=0?sourceText.slice(firstHeading).trim():sections.map(section=>section.raw).join('\n\n').trim()).replace(/^\s*#{1,6}\s*/gm,'');
+  const body=sections.map(section=>[
+    transcriptCleanDisplayLine(section.heading||''),
+    ...(Array.isArray(section.lines)?section.lines:[])
+  ].filter(Boolean).join('\n')).join('\n\n').trim();
   return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
 }
 function transcriptDrawerRecordTime(record={}){
@@ -22926,7 +22946,7 @@ function transcriptOverviewInvitees(transcript={},calendarEvent={}){
     transcript.sourcePayloadMetadata?.meetingMatch?.attendees
   ];
   const seen=new Set();
-  return buckets.flatMap(bucket=>Array.isArray(bucket)?bucket:[])
+  const structured=buckets.flatMap(bucket=>Array.isArray(bucket)?bucket:[])
     .map(person=>{
       if(typeof person==='string'){
         const match=person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
@@ -22943,6 +22963,54 @@ function transcriptOverviewInvitees(transcript={},calendarEvent={}){
       seen.add(person.email);
       return true;
     });
+  return structured.concat(transcriptOverviewInviteesFromSource(transcript,seen));
+}
+function transcriptOverviewInviteesSourceText(transcript={}){
+  const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
+  const payload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:metadata;
+  return [
+    transcript.transcriptText,
+    transcript.rawTranscript,
+    transcript.rawText,
+    transcript.raw_transcript,
+    payload.transcript,
+    payload.rawTranscript,
+    payload.rawText,
+    payload.raw_text,
+    payload.transcriptText,
+    payload.transcript_text,
+    payload.data?.transcript,
+    payload.data?.rawTranscript,
+    payload.data?.rawText,
+    metadata.rawText,
+    metadata.rawTranscript
+  ].filter(value=>typeof value==='string'&&value.trim()).join('\n');
+}
+function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
+  const text=transcriptOverviewInviteesSourceText(transcript);
+  if(!text.trim())return [];
+  const people=[];
+  const push=(person={})=>{
+    const email=normalizeEmailAddress(person.email||'');
+    const name=String(person.name||person.label||'').replace(/\*+/g,'').trim();
+    if(!validEmail(email)||OWNER_EMAILS.has(email)||seen.has(email))return;
+    seen.add(email);
+    people.push({name:name||email,email,matchReason:'Found in transcript speaker labels'});
+  };
+  for(const email of text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[]){
+    push({email});
+  }
+  for(const line of text.split(/\r?\n/)){
+    const match=String(line||'').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
+    if(match){
+      const label=String(match[1]||'').trim();
+      const email=label.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]||'';
+      if(email)push({name:label.replace(email,'').trim(),email});
+      const alias=KNOWN_RELATIONSHIP_EMAIL_ALIASES[normalizeEmailAddress(email)];
+      if(alias?.email)push(alias);
+    }
+  }
+  return people;
 }
 async function transcriptCalendarEventForOverview(transcript={}){
   const nested=[transcript.calendarEvent,transcript.calendar_event,transcript.event,transcript.metadata?.calendarEvent,transcript.metadata?.calendar_event,transcript.metadata?.meetingMatch,transcript.sourcePayloadMetadata?.calendarEvent,transcript.sourcePayloadMetadata?.calendar_event,transcript.sourcePayloadMetadata?.meetingMatch].find(event=>event&&typeof event==='object'&&Array.isArray(event.attendees));
@@ -27781,6 +27849,7 @@ function transcriptUiRecord(record,{includeText=false}={}){
   const createdAt=record.createdAt||metadata.created_at||metadata.timestamp||'';
   const receivedAt=metadata.receivedAt||metadata.received_at||createdAt;
   const title=transcriptDisplayTitleFromPayload({...metadata,...record,title:record.title||metadata.title,metadata},rawText);
+  const attendees=transcriptOverviewInvitees({...record,metadata,sourcePayloadMetadata:metadata,rawText,transcriptText:rawText},{});
   return {
     id:record.id,type:record.type||'transcript',title,
     createdAt,receivedAt,source,status:reviewStatus,reviewStatus,
@@ -27790,7 +27859,7 @@ function transcriptUiRecord(record,{includeText=false}={}){
     keyDiscussionPoints:metadata.keyDiscussionPoints||metadata.discussionPoints||[],actionItems,nativeActionItems:native.nativeActionItems,nativeSummary:native.nativeSummary,krispNative:native.krispNative,sourceTruthLabel:native.krispNative?'Krisp':'VAL',
     openActionCount:openActions.length,promisedFollowUps:metadata.promisedFollowUps||metadata.followups||actionItems,
     sourceUrl,downloadUrl:sourceUrl,
-    people,sourcePayloadMetadata:metadata,metadata,...(includeText?{transcriptText:rawText}:{})
+    people,attendees,sourcePayloadMetadata:metadata,metadata,...(includeText?{transcriptText:rawText}:{})
   };
 }
 function transcriptIndexContextMetadata(metadata={}){
@@ -27859,6 +27928,7 @@ function transcriptIndexUiRecord(record){
     summary:{executiveSummary:summaryText},
     sourceUrl,
     downloadUrl:sourceUrl,
+    attendees:transcriptOverviewInvitees(transcript,metadata.calendarEvent||{}),
     actionItems:sourceActions,
     taskCount:sourceActions.length,
     openActionCount:sourceActions.length,
