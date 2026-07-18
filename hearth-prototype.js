@@ -254,6 +254,11 @@ let workspaceReturnTarget = 'home';
 
 const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
 
+function normalizeTimelineEmail(value = ''){
+  const email = String(value || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
+}
+
 function calendarEventAttendees(event = {}){
   return Array.isArray(event.attendees) ? event.attendees.filter(Boolean) : [];
 }
@@ -1925,11 +1930,15 @@ function relationshipStewardshipUi(profile = {}){
 function relationshipIndexItems(){
   return Object.entries(dedupeRelationshipProfiles(relationshipIndexSourceProfiles())).map(([id, profile]) => {
     const stewardship = relationshipStewardshipUi(profile);
+    const metadata = profile.metadata || {};
+    const profileKeyEmail = String(profile.profileKey || profile.profile_key || id || '').includes('@') ? String(profile.profileKey || profile.profile_key || id || '').replace(/^(person:)?email:/, '') : '';
+    const email = normalizeTimelineEmail(profile.email || metadata.email || profile.contactEmail || profile.contact_email || profile.personPacket?.person?.email_addresses?.[0] || metadata.personPacket?.person?.email_addresses?.[0] || profileKeyEmail || '');
     return {
       id,
       profile,
       stewardship,
-      name: profile.name || 'Unnamed relationship',
+      name: profile.name || profile.displayName || 'Unnamed relationship',
+      email,
       company: profile.company || String(profile.contact || '').split('·')[0]?.trim() || 'Relationship',
       temperature: profile.temperature || 'Unknown',
       temperatureScore: Math.max(0, Math.min(100, Number(profile.temperatureScore || 50))),
@@ -12543,7 +12552,9 @@ function timelineSourceReceipt(transcript = {}){
   const sections = Array.isArray(receipt.sections) ? receipt.sections : [];
   const actionSection = sections.find((section) => section?.kind === 'action_items') || {};
   const keyPointsSection = sections.find((section) => section?.kind === 'key_points') || {};
-  const actionItems = Array.isArray(receipt.actionItems) ? receipt.actionItems.filter(Boolean).map(String) : [];
+  const actionItems = (Array.isArray(receipt.actionItems) && receipt.actionItems.length ? receipt.actionItems : (Array.isArray(actionSection.lines) ? actionSection.lines : []))
+    .filter(Boolean)
+    .map(String);
   const sourceLineLooksLikeTranscript = (line) => {
     const text = String(line || '').trim();
     const clean = text.replace(/^\*{1,2}/, '').replace(/\*{1,2}$/, '').trim();
@@ -12555,7 +12566,10 @@ function timelineSourceReceipt(transcript = {}){
       || /^[A-Z][A-Za-z .'-]{1,70}\s*[:|]\s*\d{1,2}:\d{2}/.test(clean)
       || /(?:Speaker[_\s-]?\d+|Jessa Grace|Doug|Greg|Michele|Daniel)\s*[:|]\s+.{40,}/i.test(text);
   };
-  const keyPoints = (Array.isArray(receipt.keyPoints) ? receipt.keyPoints.filter(Boolean).map(String) : [])
+  const keyPointsSource = Array.isArray(receipt.keyPoints) && receipt.keyPoints.length ? receipt.keyPoints : (Array.isArray(keyPointsSection.lines) ? keyPointsSection.lines : []);
+  const keyPoints = keyPointsSource
+    .filter(Boolean)
+    .map(String)
     .map((item) => item.replace(/^\s*#{1,6}\s*/, '').trim())
     .filter((item) => !sourceLineLooksLikeTranscript(item))
     .slice(0, 12);
@@ -12793,7 +12807,7 @@ function timelineTranscriptInvitees(transcript = {}){
       const key = String(email || label || '').trim().toLowerCase();
       const relationshipId = person?.relationshipId || person?.matchedContactId || person?.contactId || person?.crmContactId || person?.profileKey || '';
       const projectId = person?.projectId || person?.matchedProjectId || person?.projectProfileId || '';
-      return label ? {label, name, email, key, relationshipId, projectId, matchReason:person?.matchReason || person?.relationshipStatus || ''} : null;
+      return label ? {label, name, email, key, relationshipId, relationshipName:person?.relationshipName || person?.matchedRelationshipName || '', projectId, matchReason:person?.matchReason || person?.relationshipStatus || ''} : null;
     })
     .filter(Boolean)
     .filter((person) => {
@@ -12801,25 +12815,43 @@ function timelineTranscriptInvitees(transcript = {}){
       seen.add(person.key);
       return true;
     });
-  return structured.concat(timelineTranscriptInviteesFromSource(transcript, seen));
+  return structured.concat(timelineTranscriptInviteesFromSource(transcript, seen)).map(timelineTranscriptInviteeWithRelationshipMatch);
 }
 
 function timelineTranscriptInviteesFromSource(transcript = {}, seen = new Set()){
   const text = [
+    transcript.title,
+    transcript.meetingTitle,
+    transcript.calendarEventTitle,
     timelineFullTranscriptText(transcript),
     transcript.sourceReceipt?.body,
     transcript.summaryPreview,
-    transcript.nativeSummary
+    transcript.nativeSummary,
+    transcript.sourcePayloadMetadata?.title,
+    transcript.sourcePayloadMetadata?.meetingTitle,
+    transcript.sourcePayloadMetadata?.data?.title,
+    transcript.sourcePayloadMetadata?.data?.meetingTitle
   ].filter(Boolean).join('\n');
   const people = [];
-  const push = ({name = '', email = '', label = ''} = {}) => {
+  const titleText = [transcript.title, transcript.meetingTitle, transcript.calendarEventTitle, transcript.summaryPreview].filter(Boolean).join(' ');
+  const nameNearEmail = (email = '') => {
+    if(!email || !titleText) return '';
+    const escaped = String(email).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = titleText.match(new RegExp('([A-Z][A-Za-z.\'-]+(?:\\s+[A-Z][A-Za-z.\'-]+){0,4})\\s+<?' + escaped + '>?'));
+    const clean = String(match?.[1] || '')
+      .replace(/\b(VAL|Krisp|Zoom|Meet|Meeting|Call|With|Jessa|Grace|Download|Link|Recording|Transcript|Person|July|Jul)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3}$/.test(clean) ? clean : '';
+  };
+  const push = ({name = '', email = '', label = '', matchReason = 'Found in transcript speaker labels'} = {}) => {
     const cleanEmail = String(email || '').trim().toLowerCase();
-    const cleanName = String(name || label || '').replace(/\*+/g, '').trim();
+    const cleanName = String(name || label || nameNearEmail(cleanEmail) || '').replace(/\*+/g, '').trim();
     if(!cleanEmail || selfCalendarEmails.includes(cleanEmail)) return;
     const key = cleanEmail || cleanName.toLowerCase();
     if(!key || seen.has(key)) return;
     seen.add(key);
-    people.push({label:cleanName || cleanEmail, name:cleanName || cleanEmail.split('@')[0], email:cleanEmail, key, relationshipId:'', projectId:'', matchReason:'Found in transcript speaker labels'});
+    people.push({label:cleanName || cleanEmail, name:cleanName || cleanEmail.split('@')[0], email:cleanEmail, key, relationshipId:'', relationshipName:'', projectId:'', matchReason});
   };
   text.split(/\r?\n/).forEach((line) => {
     const match = String(line || '').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
@@ -12828,7 +12860,31 @@ function timelineTranscriptInviteesFromSource(transcript = {}, seen = new Set())
     const email = (label.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
     if(email) push({name:label.replace(email, '').trim(), email});
   });
+  (titleText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || []).forEach((email) => {
+    push({email, name:nameNearEmail(email), matchReason:'Found in the Krisp transcript title'});
+  });
   return people;
+}
+
+function timelineRelationshipMatchForPerson(person = {}){
+  const email = normalizeTimelineEmail(person.email || '');
+  const name = String(person.name || person.label || '').trim().toLowerCase();
+  const items = relationshipIndexItems();
+  return items.find((item) => email && normalizeTimelineEmail(item.email || item.profile?.email || item.profile?.metadata?.email || '') === email)
+    || items.find((item) => name && [item.name,item.displayName,item.profile?.displayName,item.profile?.name].filter(Boolean).some((value) => String(value).trim().toLowerCase() === name))
+    || null;
+}
+
+function timelineTranscriptInviteeWithRelationshipMatch(person = {}){
+  if(person.relationshipId) return person;
+  const match = timelineRelationshipMatchForPerson(person);
+  if(!match) return person;
+  return {
+    ...person,
+    relationshipId:match.id || match.profileKey || '',
+    relationshipName:match.name || match.displayName || person.name || person.label || '',
+    matchReason:person.matchReason || 'VAL matched this attendee to an existing relationship.'
+  };
 }
 
 function timelineTranscriptCalendarEventId(transcript = {}){
@@ -12882,10 +12938,11 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
     '<article class="timeline-attendee-row' + (person.relationshipId ? ' relationship-linked' : '') + '" data-transcript-attendee-row="' + index + '">',
-    '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span class="' + escapeHtml(person.email ? 'timeline-attendee-email-found' : 'timeline-attendee-email-missing') + '">' + escapeHtml(person.email ? 'Email found: ' + person.email : 'No email captured') + '</span>' + (person.matchReason ? '<small>' + escapeHtml(person.matchReason) + '</small>' : '') + '</div>',
-    '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(person.relationshipId || '') + '" data-transcript-relationship-search aria-label="Search relationship for ' + escapeHtml(person.label || 'attendee') + '">',
-    '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm link' : 'Add/link relationship') + '</button>',
-    person.relationshipId ? '<em class="timeline-link-confirmation" aria-label="Relationship linked">✓</em>' : '',
+    '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span class="' + escapeHtml(person.email ? 'timeline-attendee-email-found' : 'timeline-attendee-email-missing') + '">' + escapeHtml(person.email ? 'Email found: ' + person.email : 'No email captured') + '</span>' + (person.relationshipId ? '<small class="timeline-map-suggestion">VAL matched relationship: ' + escapeHtml(person.relationshipName || person.label || person.relationshipId) + '</small>' : (person.matchReason ? '<small>' + escapeHtml(person.matchReason) + '</small>' : '')) + '</div>',
+    '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(person.relationshipName || person.email || '') + '" data-transcript-relationship-search aria-label="Search relationship for ' + escapeHtml(person.label || 'attendee') + '">',
+    '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm relationship' : 'Link relationship') + '</button>',
+    '<button type="button" data-transcript-action="create_relationship" data-transcript-attendee-index="' + index + '">Create relationship</button>',
+    person.relationshipId ? '<em class="timeline-link-confirmation" aria-label="Relationship matched">✓</em>' : '',
     '</article>'
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
@@ -12904,7 +12961,11 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     '<input type="search" list="timeline-project-options" placeholder="Search project..." value="' + escapeHtml(suggestedProject?.name || '') + '" data-transcript-project-search aria-label="Search project for this transcript">',
     '<button type="button" data-transcript-action="link_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to project</button>',
     '</div>',
-    suggestedProject ? '<small class="timeline-map-suggestion">' + escapeHtml(suggestedProject.reason || 'VAL suggested this project from the transcript.') + '</small>' : '',
+    suggestedProject ? '<small class="timeline-map-suggestion">✓ VAL matched project: ' + escapeHtml(suggestedProject.name || 'Project') + '. ' + escapeHtml(suggestedProject.reason || 'VAL suggested this project from the transcript.') + '</small>' : '',
+    '<div class="timeline-project-link-row timeline-project-create-row">',
+    '<input type="text" placeholder="New project name..." value="' + escapeHtml(suggestedProject?.name || '') + '" data-transcript-project-create-name aria-label="New project name for this transcript">',
+    '<button type="button" data-transcript-action="create_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Create project</button>',
+    '</div>',
     '<datalist id="timeline-project-options">' + projectOptions + '</datalist>',
     '<datalist id="timeline-relationship-options">' + relationshipOptions + '</datalist>',
     '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
@@ -12918,6 +12979,12 @@ function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = nul
   const taskLines = (Array.isArray(tasks) ? tasks : []).map((task) => String(task?.taskTitle || task?.title || task?.text || task?.sourceQuote || '').trim()).filter(Boolean);
   const actionItems = receipt.actionItems.length ? receipt.actionItems : taskLines;
   const sourceSections = receipt.sections.filter((section) => section.kind !== 'key_points' || receipt.keyPoints.length);
+  if(receipt.keyPoints.length && !sourceSections.some((section) => section.kind === 'key_points')){
+    sourceSections.push({kind:'key_points', heading:'Key Points', raw:['Key Points', ...receipt.keyPoints].join('\n'), lines:receipt.keyPoints});
+  }
+  if(actionItems.length && !sourceSections.some((section) => section.kind === 'action_items')){
+    sourceSections.unshift({kind:'action_items', heading:'Action Items', raw:['Action Items', ...actionItems].join('\n'), lines:actionItems});
+  }
   const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
   const body = receipt.body || sections.map((section) => [section.heading, ...(section.lines || [])].filter(Boolean).join('\n')).join('\n\n') || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
   const invitees = timelineTranscriptInvitees(transcript);
@@ -13291,17 +13358,49 @@ async function linkTimelineTranscriptProject(transcriptId = ''){
   }
 }
 
-async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeIndex = 0, row = null){
+async function createTimelineTranscriptProject(transcriptId = ''){
+  const input = drawerTray?.querySelector?.('[data-transcript-project-create-name]');
+  const name = String(input?.value || timelineSuggestedProjectOption(currentTimelineTranscript || {})?.name || '').trim();
+  if(!transcriptId || !name){
+    setTimelineTranscriptActionStatus('Name the project before creating it.', 'danger');
+    return;
+  }
+  setTimelineTranscriptActionStatus('Creating project and linking this transcript...', 'working');
+  try{
+    const payload = new FormData();
+    payload.append('name', name);
+    payload.append('summary', 'Created from transcript: ' + timelineTranscriptTitle(currentTimelineTranscript || {}));
+    payload.append('createdFrom', 'hearth_transcript_drawer');
+    payload.append('rawContext', timelineSourceReceipt(currentTimelineTranscript || {}).body || timelineCompactText(timelineFullTranscriptText(currentTimelineTranscript || {}), 1200));
+    const result = await postFormData('/api/projects/create', payload);
+    const project = result.project || {};
+    const projectId = project.id || project.projectId || project.profileKey || name;
+    projectIndexProfiles[projectId] = projectProfileFromIndexItem(project);
+    projectIndexLoaded = true;
+    const search = drawerTray?.querySelector?.('[data-transcript-project-search]');
+    if(search) search.value = project.name || name;
+    await linkTimelineTranscriptProject(transcriptId);
+    setTimelineTranscriptActionStatus(result.message ? 'Project created and transcript linked. ' + result.message : 'Project created and transcript linked locally.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not create the project.', 'danger');
+  }
+}
+
+async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeIndex = 0, row = null, mode = 'link'){
   const invitees = timelineTranscriptInvitees(currentTimelineTranscript || {});
   const attendee = invitees[Number(attendeeIndex)] || {};
-  const selected = timelineSelectedRelationshipOption(row?.querySelector?.('[data-transcript-relationship-search]')?.value || attendee.relationshipId || '');
+  const selected = mode === 'create' ? null : timelineSelectedRelationshipOption(row?.querySelector?.('[data-transcript-relationship-search]')?.value || attendee.relationshipName || attendee.relationshipId || attendee.email || '');
   const project = timelineSelectedProjectOption();
-  setTimelineTranscriptActionStatus('Saving attendee mapping...', 'working');
+  if(mode !== 'create' && !selected?.id && !attendee.relationshipId){
+    setTimelineTranscriptActionStatus('Choose a relationship or use Create relationship for this attendee.', 'danger');
+    return;
+  }
+  setTimelineTranscriptActionStatus(mode === 'create' ? 'Creating attendee relationship...' : 'Saving attendee mapping...', 'working');
   try{
     const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/link-relationship', {
       name:attendee.name || attendee.label || selected?.name || '',
       email:attendee.email || selected?.email || '',
-      relationshipId:selected?.id || attendee.relationshipId || '',
+      relationshipId:mode === 'create' ? '' : (selected?.id || attendee.relationshipId || ''),
       relationshipName:selected?.name || attendee.label || '',
       projectId:project?.id || '',
       projectName:project?.name || '',
@@ -13309,7 +13408,7 @@ async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeInd
     });
     setTimelineTranscriptActionStatus(result.message || 'Attendee mapping saved locally.', 'success');
     if(result.relationship?.id && currentTimelineTranscript){
-      currentTimelineTranscript.attendees = timelineTranscriptInvitees(currentTimelineTranscript).map((person, index) => index === Number(attendeeIndex) ? {...person, relationshipId:result.relationship.id, matchReason:'User linked in transcript drawer'} : person);
+      currentTimelineTranscript.attendees = timelineTranscriptInvitees(currentTimelineTranscript).map((person, index) => index === Number(attendeeIndex) ? {...person, relationshipId:result.relationship.id, relationshipName:result.relationship.name || person.label || '', matchReason:mode === 'create' ? 'User created in transcript drawer' : 'User linked in transcript drawer'} : person);
       renderTimelineTranscriptDetail(currentTimelineTranscript);
     }
   }catch(error){
@@ -22146,7 +22245,9 @@ drawerTray.addEventListener('click', async (event) => {
     if(transcriptAction.dataset.transcriptAction === 'open_leverage') await openTranscriptLeverage();
     if(transcriptAction.dataset.transcriptAction === 'send_action_items') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'create_project') await createTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'link_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'));
+    if(transcriptAction.dataset.transcriptAction === 'create_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'), 'create');
     return;
   }
   const transcriptTaskCreate = event.target.closest('[data-transcript-task-create]');

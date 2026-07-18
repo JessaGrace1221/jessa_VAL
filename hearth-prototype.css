@@ -5286,10 +5286,10 @@ button.timeline-overview-receipt:focus-visible{
 }
 .drawer-tray.timeline-open .timeline-attendee-row{
   display:grid;
-  grid-template-columns:minmax(190px,.85fr) minmax(220px,1fr) minmax(150px,auto) auto;
+  grid-template-columns:minmax(220px,1fr) minmax(240px,1fr) minmax(150px,auto) minmax(150px,auto) auto;
   align-items:center;
   gap:10px;
-  padding:12px;
+  padding:14px;
   border:1px solid rgba(42,45,39,.09);
   border-radius:8px;
   background:rgba(255,255,255,.72);
@@ -5309,6 +5309,13 @@ button.timeline-overview-receipt:focus-visible{
   font:820 .86rem/1 var(--body);
   font-style:normal;
   animation:timelineLinkConfirmPop .42s ease-out both;
+}
+.drawer-tray.timeline-open .timeline-attendee-row button[data-transcript-action="create_relationship"],
+.drawer-tray.timeline-open .timeline-project-create-row button{
+  border-color:rgba(138,47,55,.22);
+  background:rgba(255,255,252,.9);
+  color:#8a2f37;
+  box-shadow:0 8px 18px rgba(138,47,55,.08);
 }
 @keyframes timelineLinkConfirmPop{
   0%{transform:translateY(4px) scale(.72);opacity:0}

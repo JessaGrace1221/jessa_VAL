@@ -850,6 +850,7 @@ function isBookEditorProject(){
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
+  .concat(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
   .map(e=>e.trim().toLowerCase())
   .filter(Boolean));
 const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
@@ -20143,13 +20144,18 @@ async function listAgencyMoves({limit=80}={}){
 function publicRelationshipProfile(row={}){
   if(!row)return null;
   const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
+  const profileKey=row.profileKey||row.profile_key||'';
+  const profileKeyEmail=String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'';
+  const packetEmail=metadata.personPacket?.person?.email_addresses?.[0]||'';
+  const email=normalizeContextEmail(metadata.email||row.email||row.contactEmail||row.contact_email||packetEmail||profileKeyEmail||'');
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
-    profileKey:row.profileKey||row.profile_key||'',
+    profileKey,
     personId:row.personId||row.person_id||'',
     organizationId:row.organizationId||row.organization_id||'',
     projectId:row.projectId||row.project_id||'',
+    email,
     displayName:row.displayName||row.display_name||'Unknown',
     summary:row.summary||'',
     relationshipStatus:row.relationshipStatus||row.relationship_status||'observed',
@@ -23002,6 +23008,11 @@ function transcriptOverviewInviteesSourceText(transcript={}){
   const metadata=transcript.sourcePayloadMetadata||transcript.metadata||{};
   const payload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:metadata;
   return [
+    transcript.title,
+    transcript.meetingTitle,
+    transcript.calendarEventTitle,
+    transcript.summaryPreview,
+    transcript.nativeSummary,
     transcript.transcriptText,
     transcript.rawTranscript,
     transcript.rawText,
@@ -23016,19 +23027,33 @@ function transcriptOverviewInviteesSourceText(transcript={}){
     payload.data?.rawTranscript,
     payload.data?.rawText,
     metadata.rawText,
-    metadata.rawTranscript
+    metadata.rawTranscript,
+    metadata.title,
+    metadata.meetingTitle,
+    payload.title,
+    payload.meetingTitle,
+    payload.data?.title,
+    payload.data?.meetingTitle
   ].filter(value=>typeof value==='string'&&value.trim()).join('\n');
 }
 function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
   const text=transcriptOverviewInviteesSourceText(transcript);
   if(!text.trim())return [];
   const people=[];
-  const push=(person={})=>{
+  const sourceTitleText=[transcript.title,transcript.meetingTitle,transcript.calendarEventTitle,transcript.summaryPreview].filter(Boolean).join(' ');
+  const nameNearEmail=(email='')=>{
+    if(!email)return '';
+    const escaped=email.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    const match=sourceTitleText.match(new RegExp(`([A-Z][A-Za-z.'-]+(?:\\s+[A-Z][A-Za-z.'-]+){0,4})\\s+<?${escaped}>?`));
+    const raw=String(match?.[1]||'').replace(/\b(VAL|Krisp|Zoom|Meet|Meeting|Call|With|Jessa|Grace|Download|Link|Recording|Transcript|Person|July|Jul)\b/gi,' ').replace(/\s+/g,' ').trim();
+    return /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3}$/.test(raw)?raw:'';
+  };
+  const push=(person={},reason='Found in transcript speaker labels')=>{
     const email=normalizeEmailAddress(person.email||'');
-    const name=String(person.name||person.label||'').replace(/\*+/g,'').trim();
+    const name=String(person.name||person.label||nameNearEmail(email)||'').replace(/\*+/g,'').trim();
     if(!validEmail(email)||OWNER_EMAILS.has(email)||seen.has(email))return;
     seen.add(email);
-    people.push({name:name||email,email,matchReason:'Found in transcript speaker labels'});
+    people.push({name:name||email,email,matchReason:reason});
   };
   for(const line of text.split(/\r?\n/)){
     const match=String(line||'').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
@@ -23039,6 +23064,10 @@ function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
       const alias=KNOWN_RELATIONSHIP_EMAIL_ALIASES[normalizeEmailAddress(email)];
       if(alias?.email)push(alias);
     }
+  }
+  const emailMatches=sourceTitleText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[];
+  for(const email of emailMatches){
+    push({email,name:nameNearEmail(email)},'Found in the Krisp transcript title');
   }
   return people;
 }
