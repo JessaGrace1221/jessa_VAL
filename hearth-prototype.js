@@ -89,6 +89,9 @@ const correspondenceDraftRuleFields = Array.from(document.querySelectorAll('[dat
 const correspondenceWritingRuleMap = document.querySelector('[data-correspondence-writing-map]');
 const correspondenceWritingRulesSummary = document.querySelector('[data-correspondence-writing-rules-summary]');
 const correspondenceWritingRulesPanel = document.querySelector('[data-correspondence-writing-rules-panel]');
+const correspondenceRuleComposerPanel = document.querySelector('[data-correspondence-rule-composer-panel]');
+const correspondenceRuleFunction = document.querySelector('[data-correspondence-rule-function]');
+const correspondenceRuleInstruction = document.querySelector('[data-correspondence-rule-instruction]');
 const correspondenceAttachmentPanel = document.querySelector('[data-correspondence-attachment-panel]');
 const correspondenceAttachmentTitle = document.querySelector('[data-correspondence-attachment-title]');
 const correspondenceAttachmentMeta = document.querySelector('[data-correspondence-attachment-meta]');
@@ -8945,7 +8948,7 @@ function setCorrespondenceLoadingState(isLoading, message = ''){
 }
 
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
-  const ruleActions = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'];
+  const ruleActions = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules', 'save_composed_rule'];
   if(!item) return ruleActions;
   const actions = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project'].concat(ruleActions);
   if(String(item.draftBody || '').trim()) actions.unshift('send');
@@ -9088,7 +9091,7 @@ async function prepareSelectedCorrespondenceDraft(item = activeCorrespondenceIte
   const preparedItem = {...item, autoDraftAttempted:true};
   currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? preparedItem : row);
   activeCorrespondenceItem = preparedItem;
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private reply draft with your saved Writing Rules. Nothing is sent or created in Gmail.';
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private reply draft with your saved Tone Rules. Nothing is sent or created in Gmail.';
   try{
     await draftCorrespondenceReply(preparedItem, {automatic:true});
   }catch(error){
@@ -9451,7 +9454,7 @@ function correspondenceActiveDraftRuleText(){
 function renderCorrespondenceWritingRuleSummary(){
   if(!correspondenceWritingRulesSummary) return;
   const text = correspondenceActiveDraftRuleText();
-  correspondenceWritingRulesSummary.textContent = text || 'No saved Executive Inbox writing rules yet.';
+  correspondenceWritingRulesSummary.textContent = text || 'No saved Executive Inbox tone rules yet.';
 }
 
 function renderCorrespondenceRulesPanel(){
@@ -9478,12 +9481,26 @@ function renderCorrespondenceRulesPanel(){
       meta.textContent = 'Applies to private Executive Inbox reply drafts and Discuss with VAL on selected email threads.';
       const detail = document.createElement('pre');
       detail.textContent = actions.draft_style || correspondenceRuleLabel(rule);
-      article.append(title, meta, detail);
+      const rowActions = document.createElement('div');
+      rowActions.className = 'correspondence-rule-row-actions';
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.textContent = 'Delete rule';
+      deleteButton.dataset.correspondenceRuleDelete = rule.id || '';
+      rowActions.append(deleteButton);
+      article.append(title, meta, detail, rowActions);
       correspondenceRulesList.appendChild(article);
       return;
     }
     meta.textContent = [String(action).replace(/_/g, ' '), condition].filter(Boolean).join(' · ');
-    article.append(title, meta);
+    const rowActions = document.createElement('div');
+    rowActions.className = 'correspondence-rule-row-actions';
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Delete rule';
+    deleteButton.dataset.correspondenceRuleDelete = rule.id || '';
+    rowActions.append(deleteButton);
+    article.append(title, meta, rowActions);
     correspondenceRulesList.appendChild(article);
   });
 }
@@ -9492,7 +9509,11 @@ function setCorrespondenceRulesPanel(open){
   if(!correspondenceRulesPanel) return;
   correspondenceRulesPanel.hidden = !open;
   correspondenceRulesPanel.setAttribute('aria-hidden', String(!open));
-  if(open) renderCorrespondenceRulesPanel();
+  if(open){
+    setCorrespondenceRuleComposerPanel(false);
+    setCorrespondenceWritingRulesPanel(false);
+    renderCorrespondenceRulesPanel();
+  }
 }
 
 function toggleCorrespondenceRulesPanel(){
@@ -9500,11 +9521,28 @@ function toggleCorrespondenceRulesPanel(){
   setCorrespondenceRulesPanel(correspondenceRulesPanel.hidden);
 }
 
+function setCorrespondenceRuleComposerPanel(open){
+  if(!correspondenceRuleComposerPanel) return;
+  correspondenceRuleComposerPanel.hidden = !open;
+  correspondenceRuleComposerPanel.setAttribute('aria-hidden', String(!open));
+  if(open){
+    setCorrespondenceRulesPanel(false);
+    setCorrespondenceWritingRulesPanel(false);
+    if(correspondenceRuleInstruction && activeCorrespondenceItem){
+      const sender = activeCorrespondenceItem.senderName || activeCorrespondenceItem.senderEmail || 'this sender';
+      correspondenceRuleInstruction.placeholder = 'Example: When ' + sender + ' emails about scheduling, prepare a concise review-only reply with the next step.';
+    }
+    window.requestAnimationFrame(() => correspondenceRuleInstruction?.focus());
+  }
+}
+
 function setCorrespondenceWritingRulesPanel(open){
   if(!correspondenceWritingRulesPanel) return;
   correspondenceWritingRulesPanel.hidden = !open;
   correspondenceWritingRulesPanel.setAttribute('aria-hidden', String(!open));
   if(open){
+    setCorrespondenceRuleComposerPanel(false);
+    setCorrespondenceRulesPanel(false);
     populateCorrespondenceDraftRuleFields();
     window.requestAnimationFrame(() => (correspondenceDraftRuleFields[0] || correspondenceDraftRules)?.focus());
   }
@@ -9599,7 +9637,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
     correspondenceDraftBody.placeholder = selected ? (hasDraft ? 'Write or edit the reply here.' : (selected.draftFailureMessage || 'No draft has been prepared for this conversation yet.')) : 'Select a conversation to edit the draft.';
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
-  document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
+  document.querySelectorAll('.correspondence-actions [data-correspondence-action], .correspondence-intelligence [data-correspondence-action]').forEach((button) => {
     const action = button.dataset.correspondenceAction;
     const isDraftSend = action === 'send' && button.closest('.correspondence-actions');
     const allowed = correspondenceSuggestedActions(selected).includes(action) || isDraftSend;
@@ -9823,6 +9861,25 @@ async function saveCorrespondenceRulePayload(payload, successText){
   return result.rule || payload;
 }
 
+async function deleteCorrespondenceRule(ruleId){
+  const id = String(ruleId || '').trim();
+  if(!id){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL could not identify that rule.';
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to delete rules. Nothing was changed.';
+    return;
+  }
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Deleting rule. Past evidence stays intact.';
+  const result = await patchJson('/api/email/rules/' + encodeURIComponent(id), {isActive:false});
+  if(result.ok === false) throw new Error(result.error || 'Rule delete failed.');
+  currentCorrespondenceRules = currentCorrespondenceRules.map((rule) => rule.id === id ? {...rule,isActive:false,is_active:false} : rule);
+  renderCorrespondenceRulesPanel();
+  renderCorrespondenceIntelligence(activeCorrespondenceItem);
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Rule deleted. VAL will stop applying it going forward.';
+}
+
 async function saveCorrespondenceDraftRules(){
   const categories = correspondenceDraftRuleCategories();
   const notes = String(correspondenceDraftRules?.value || '').trim();
@@ -9839,14 +9896,14 @@ async function saveCorrespondenceDraftRules(){
   const saved = await saveCorrespondenceRulePayload({
     id: existing?.id || '',
     provider:'any',
-    ruleName:'Executive Inbox writing rules',
+    ruleName:'Executive Inbox tone rules',
     ruleType:'draft_style',
     conditions:{surface:'executive_inbox'},
     actions:{action:'apply_draft_style', draft_style:text, draft_style_categories:categories, draft_style_notes:notes},
     approvalMode:'review_only',
     confidenceThreshold:'high',
     createdFrom:'executive_inbox_writing_rules'
-  }, 'Saved Executive Inbox writing rules. VAL will use them when preparing review drafts.');
+  }, 'Saved Executive Inbox tone rules. VAL will use them when preparing review drafts.');
   if(saved){
     renderCorrespondenceWritingRuleSummary();
     setCorrespondenceWritingRulesPanel(false);
@@ -9864,6 +9921,35 @@ async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
   const payload = correspondenceRulePayloadFromText(ruleText, item);
   const saved = await saveCorrespondenceRulePayload(payload, 'Saved rule: ' + ruleText + '.');
   if(saved && correspondenceForwardTo) correspondenceForwardTo.value = '';
+}
+
+async function saveCorrespondenceComposedRule(item = activeCorrespondenceItem){
+  const ruleText = String(correspondenceRuleInstruction?.value || '').trim();
+  const appliesTo = String(correspondenceRuleFunction?.value || 'replies').trim();
+  if(!ruleText){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Type the rule VAL should remember before saving.';
+    return null;
+  }
+  const labels = {
+    replies:'Replies',
+    scheduling:'Scheduling',
+    introductions:'Introductions',
+    forwarding:'Forwarding',
+    executive_inbox:'Executive Inbox admission'
+  };
+  const payload = correspondenceRulePayloadFromText(ruleText, item);
+  payload.ruleName = (labels[appliesTo] || 'Executive Inbox') + ': ' + correspondenceCompactText(ruleText, 120);
+  payload.ruleType = appliesTo;
+  payload.conditions = {...(payload.conditions || {}), function:appliesTo};
+  payload.actions = {...(payload.actions || {}), action:payload.actions?.action || 'manual_instruction', function:appliesTo, instruction:ruleText};
+  payload.createdFrom = 'executive_inbox_rule_composer';
+  const saved = await saveCorrespondenceRulePayload(payload, 'Saved ' + (labels[appliesTo] || 'Executive Inbox') + ' rule. VAL will show it under View rules and apply it inside review boundaries.');
+  if(saved){
+    if(correspondenceRuleInstruction) correspondenceRuleInstruction.value = '';
+    setCorrespondenceRuleComposerPanel(false);
+    setCorrespondenceRulesPanel(true);
+  }
+  return saved;
 }
 
 async function saveCorrespondenceSafeContact(item = activeCorrespondenceItem){
@@ -9924,7 +10010,7 @@ async function draftCorrespondenceReply(item = activeCorrespondenceItem, options
     if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to prepare a reply draft.';
     return;
   }
-  if(correspondenceSafety) correspondenceSafety.textContent = options.automatic ? 'Preparing a private reply draft with your saved Writing Rules. Nothing will be sent.' : 'Preparing a private reply draft. Nothing will be sent.';
+  if(correspondenceSafety) correspondenceSafety.textContent = options.automatic ? 'Preparing a private reply draft with your saved Tone Rules. Nothing will be sent.' : 'Preparing a private reply draft. Nothing will be sent.';
   let result = null;
   if(item.conversationId || item.messageId || item.threadId){
     try{
@@ -9970,7 +10056,7 @@ async function draftCorrespondenceReply(item = activeCorrespondenceItem, options
   currentCorrespondenceItems = [updated].concat(currentCorrespondenceItems.filter((row) => row.id !== item.id));
   activeCorrespondenceItem = updated;
   renderCorrespondenceBrief(updated);
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Private reply draft prepared for review using current Writing Rules. Nothing was sent.';
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Private reply draft prepared for review using current Tone Rules. Nothing was sent.';
 }
 
 async function forwardCorrespondenceDraft(item = activeCorrespondenceItem){
@@ -10294,8 +10380,12 @@ async function handleCorrespondenceAction(action){
     return;
   }
   if(action === 'create_rule'){
-    await analyzeCorrespondenceRuleSuggestions();
-    setCorrespondenceRulesPanel(false);
+    setCorrespondenceRuleComposerPanel(true);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Create a review-only Executive Inbox rule. Nothing will run automatically from this screen.';
+    return;
+  }
+  if(action === 'save_composed_rule'){
+    await saveCorrespondenceComposedRule(item);
     return;
   }
   if(action === 'save_draft_rules'){
@@ -10450,12 +10540,12 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'].includes(correspondenceActionId);
+  const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules', 'save_composed_rule'].includes(correspondenceActionId);
   if(drawerUtilityAction){
     await handleCorrespondenceAction(correspondenceActionId);
     return true;
   }
-  const inspectOnlyAction = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project', 'show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'].includes(correspondenceActionId);
+  const inspectOnlyAction = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project', 'show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules', 'save_composed_rule'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
@@ -15585,6 +15675,26 @@ async function postFormData(url, payload, options = {}){
     throw error;
   }
   playValCompletionCue({cue:completionCue,requestStartedAt});
+  return data;
+}
+
+async function patchJson(url, payload){
+  const response = await fetch(url, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload || {})
+  });
+  const text = await response.text();
+  let data = {};
+  try{ data = text ? JSON.parse(text) : {}; }
+  catch(e){ data = {content: text}; }
+  if(!response.ok || data.ok === false){
+    const error = new Error(data.error || data.message || 'Request failed.');
+    error.data = data;
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -22480,6 +22590,18 @@ drawerTray.addEventListener('click', async (event) => {
     renderCorrespondenceList();
     return;
   }
+  const correspondenceRuleDelete = event.target.closest('[data-correspondence-rule-delete]');
+  if(correspondenceRuleDelete){
+    event.preventDefault();
+    event.stopPropagation();
+    if(window.confirm && !window.confirm('Delete this Executive Inbox rule? VAL will stop applying it going forward.')) return;
+    try{
+      await deleteCorrespondenceRule(correspondenceRuleDelete.dataset.correspondenceRuleDelete);
+    }catch(error){
+      if(correspondenceSafety) correspondenceSafety.textContent = 'Rule delete failed: ' + error.message;
+    }
+    return;
+  }
   const correspondenceAction = event.target.closest('[data-correspondence-action]');
   if(correspondenceAction){
     await runCorrespondenceActionClick(correspondenceAction, event);
@@ -22497,6 +22619,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     setCorrespondenceRulesPanel(false);
+    return;
+  }
+  const correspondenceRuleComposerClose = event.target.closest('[data-correspondence-rule-composer-close]');
+  if(correspondenceRuleComposerClose || event.target === correspondenceRuleComposerPanel){
+    event.preventDefault();
+    event.stopPropagation();
+    setCorrespondenceRuleComposerPanel(false);
     return;
   }
   const correspondenceWritingRulesClose = event.target.closest('[data-correspondence-writing-rules-close]');
@@ -23235,6 +23364,12 @@ document.addEventListener('keydown', (event) => {
   }
   if(correspondenceRulesPanel && !correspondenceRulesPanel.hidden){
     setCorrespondenceRulesPanel(false);
+  }
+  if(correspondenceRuleComposerPanel && !correspondenceRuleComposerPanel.hidden){
+    setCorrespondenceRuleComposerPanel(false);
+  }
+  if(correspondenceWritingRulesPanel && !correspondenceWritingRulesPanel.hidden){
+    setCorrespondenceWritingRulesPanel(false);
   }
 });
 

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-controls-20260718">
+<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-polish-20260718">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -566,7 +566,7 @@
             <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
             <div class="correspondence-tools-actions">
               <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create a Rule</button>
-              <button type="button" data-correspondence-action="show_writing_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Writing Rules</button>
+              <button type="button" data-correspondence-action="show_writing_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Tone Rules</button>
             </div>
           </div>
           <div class="correspondence-rule-create">
@@ -597,6 +597,38 @@
               <button type="button" data-correspondence-rules-close aria-label="Close saved rules">Close</button>
             </div>
             <div class="correspondence-rules-list" data-correspondence-rules-list></div>
+          </div>
+        </section>
+        <section class="correspondence-rule-composer-panel" data-correspondence-rule-composer-panel hidden aria-hidden="true" aria-label="Create Executive Inbox rule">
+          <div class="correspondence-rule-composer" role="dialog" aria-modal="true" aria-labelledby="correspondence-rule-composer-title">
+            <div class="correspondence-rules-head">
+              <div>
+                <span>Rule Learning</span>
+                <h4 id="correspondence-rule-composer-title">Create a Rule</h4>
+                <p>Tell VAL what should happen when future email matches this kind of situation. Nothing runs without the existing review boundaries.</p>
+              </div>
+              <button type="button" data-correspondence-rule-composer-close aria-label="Close rule creator">Close</button>
+            </div>
+            <div class="correspondence-rule-composer-grid">
+              <label>
+                <span>Applies To</span>
+                <select data-correspondence-rule-function aria-label="Choose what this rule applies to">
+                  <option value="replies">Replies</option>
+                  <option value="scheduling">Scheduling</option>
+                  <option value="introductions">Introductions</option>
+                  <option value="forwarding">Forwarding</option>
+                  <option value="executive_inbox">Executive Inbox admission</option>
+                </select>
+              </label>
+              <label>
+                <span>Rule</span>
+                <textarea data-correspondence-rule-instruction placeholder="Example: When Aric sends a scheduling email, draft a brief reply confirming availability and keep it review-only."></textarea>
+              </label>
+            </div>
+            <div class="correspondence-writing-rule-actions">
+              <button type="button" data-correspondence-action="save_composed_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save Rule</button>
+              <button type="button" data-correspondence-rule-composer-close>Cancel</button>
+            </div>
           </div>
         </section>
         <section class="correspondence-attachment-panel" data-correspondence-attachment-panel hidden aria-hidden="true" aria-label="Email attachment viewer">
@@ -708,21 +740,13 @@
               </div>
               <div data-correspondence-projects></div>
             </section>
-            <section>
-              <span>Rules and Automation</span>
-              <div class="correspondence-rule-actions" aria-label="Rule actions for this email">
-                <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create rule</button>
-                <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">View rules</button>
-                <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Suggest</button>
-              </div>
-              <div data-correspondence-rule-suggestions></div>
-            </section>
+            <div data-correspondence-rule-suggestions hidden></div>
           </aside>
         </div>
-        <section class="correspondence-writing-rules-panel" data-correspondence-writing-rules-panel hidden aria-hidden="true" aria-label="Executive Inbox writing rules">
+        <section class="correspondence-writing-rules-panel" data-correspondence-writing-rules-panel hidden aria-hidden="true" aria-label="Executive Inbox tone rules">
           <div class="correspondence-writing-rules">
             <div>
-              <span>Writing Rules</span>
+              <span>Tone Rules</span>
               <h4>How VAL should write for you</h4>
               <p>These rules shape private reply drafts in Executive Inbox. They do not send email or create Gmail drafts by themselves.</p>
             </div>
@@ -763,13 +787,13 @@
                 <textarea data-correspondence-draft-rules placeholder="Anything else VAL should remember when preparing Executive Inbox drafts."></textarea>
               </label>
             </div>
-            <section class="correspondence-writing-rule-current" aria-label="Current saved writing rules">
+            <section class="correspondence-writing-rule-current" aria-label="Current saved tone rules">
               <span>What VAL Will Apply</span>
-              <pre data-correspondence-writing-rules-summary>No saved Executive Inbox writing rules yet.</pre>
+              <pre data-correspondence-writing-rules-summary>No saved Executive Inbox tone rules yet.</pre>
             </section>
             <p class="correspondence-writing-rule-note">VAL applies these rules only when preparing private Executive Inbox reply drafts or discussing the selected email thread. They are saved rules, so you can view them again here or under View rules.</p>
             <div class="correspondence-writing-rule-actions">
-              <button type="button" data-correspondence-action="save_draft_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Save Writing Rules</button>
+              <button type="button" data-correspondence-action="save_draft_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Save Tone Rules</button>
               <button type="button" data-correspondence-writing-rules-close>Close</button>
             </div>
           </div>
@@ -869,6 +893,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=executive-inbox-controls-20260718"></script>
+  <script src="./hearth-prototype.js?v=executive-inbox-polish-20260718"></script>
 </body>
 </html>
