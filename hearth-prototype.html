@@ -462,9 +462,25 @@
             <h3>Transcripts</h3>
             <p>Meeting evidence, attendee context, source Action Items, and clean review-ready follow-up.</p>
           </div>
-          <button type="button" class="close-timeline-detail">Close</button>
+          <div class="timeline-header-actions">
+            <label>
+              <span>Refresh window</span>
+              <select data-transcript-refresh-window aria-label="Transcript refresh window">
+                <option value="30">Last 30 days</option>
+                <option value="90" selected>Last 90 days</option>
+              </select>
+            </label>
+            <button type="button" data-transcript-refresh>Refresh Transcripts</button>
+            <button type="button" class="close-timeline-detail">Close</button>
+          </div>
         </div>
         <div class="transcript-workbench" aria-label="Transcripts">
+          <div class="timeline-loading-veil" data-transcript-loading-veil hidden aria-hidden="true">
+            <div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span>Refreshing Transcripts</span>
+            <p data-transcript-loading-status>VAL is checking transcript receipts, preserving the source, and rebuilding the drawer.</p>
+            <div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div>
+          </div>
           <section class="transcript-index" aria-label="Transcript list">
             <div class="timeline-status-header">
               <span>Conversations</span>

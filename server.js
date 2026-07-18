@@ -28055,19 +28055,46 @@ function normalizedTranscriptWebhookPayload(body={}){
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
+async function transcriptDrawerListPayload({days=90,limit=50}={}){
+  const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
+  const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
+  const cutoff=Date.now()-safeDays*24*60*60*1000;
+  const data=await transcriptIndexData();
+  const indexedRecords=transcriptMigrationRecordsFromIndex(data);
+  const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
+  const mapped=dedupeTranscriptDrawerRecords(records.map(transcriptIndexUiRecord))
+    .filter(transcript=>{
+      const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
+      return !Number.isFinite(time)||time>=cutoff;
+    })
+    .slice(0,safeLimit);
+  return {transcripts:mapped,counts:{total:mapped.length,needsReview:mapped.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:mapped.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:mapped.filter(isHardTranscriptProcessingFailure).length}};
+}
 app.get('/api/val/transcripts',async(req,res)=>{
   try{
     res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
-    const limit=Math.max(1,Math.min(250,Number(req.query.limit)||100));
-    const days=Math.max(1,Math.min(3650,Number(req.query.days)||365));
-    const data=await transcriptIndexData();
-    const indexedRecords=transcriptMigrationRecordsFromIndex(data);
-    const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(days,limit);
-    const transcripts=dedupeTranscriptDrawerRecords(records.map(transcriptIndexUiRecord)).slice(0,limit);
-    res.json({ok:true,transcripts,counts:{total:transcripts.length,needsReview:transcripts.filter(t=>Number(t.reviewCount||0)>0||['new','unreviewed','needs_review'].includes(t.reviewStatus)).length,withOpenActions:transcripts.filter(t=>Number(t.openActionCount||t.taskCount||0)>0).length,failedProcessing:transcripts.filter(isHardTranscriptProcessingFailure).length}});
+    const payload=await transcriptDrawerListPayload({days:req.query.days||90,limit:req.query.limit||50});
+    res.json({ok:true,...payload});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/val/transcripts/refresh',async(req,res)=>{
+  try{
+    res.set('Cache-Control','no-store, max-age=0');
+    const days=[30,90].includes(Number(req.body?.days))?Number(req.body.days):90;
+    const limit=Math.max(1,Math.min(50,Number(req.body?.limit)||50));
+    let refresh={attempted:true,days,message:'Transcript refresh checked the local transcript archive.',warning:''};
+    try{
+      const intake=await syncKrispTranscriptsForLastThirtyDays({days,limit});
+      refresh={attempted:true,days,intake,message:`Transcript refresh complete: ${intake.imported||0} saved, ${intake.alreadyPresent||0} already present, ${intake.found||0} found in the last ${days} days.`};
+    }catch(error){
+      refresh={attempted:true,days,message:'Transcript archive refreshed from saved records.',warning:error.message||'Live transcript refresh is unavailable right now.'};
+    }
+    const payload=await transcriptDrawerListPayload({days,limit});
+    await auditLog({req,action:'transcript_drawer_refreshed',resourceType:'transcript',metadata:{days,limit,refresh},success:!refresh.warning}).catch(()=>{});
+    res.json({ok:true,...payload,refresh});
+  }catch(e){console.error('[transcripts] refresh failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
   try{

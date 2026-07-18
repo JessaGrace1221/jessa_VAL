@@ -8,6 +8,8 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const ui=fs.readFileSync(path.join(root,'command-center.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -228,6 +230,26 @@ test('transcript detail can map attendees/projects and prepare reviewed Action I
   assert.match(hearthJs,/correspondenceActiveDraftRuleText/);
   assert.match(hearthJs,/hydrateRelationshipIndex\(\)/);
   assert.match(hearthJs,/hydrateProjectIndex\(\)/);
+  assert.match(hearthJs,/Email found: /);
+  assert.match(hearthJs,/timeline-attendee-email-found/);
+});
+
+test('transcripts drawer can refresh 30 or 90 days with the active frosted loading state',()=>{
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/refresh'/);
+  assert.match(server,/syncKrispTranscriptsForLastThirtyDays\(\{days,limit\}\)/);
+  assert.match(server,/transcriptDrawerListPayload\(\{days,limit\}\)/);
+  assert.match(server,/transcript_drawer_refreshed/);
+  assert.match(hearthHtml,/data-transcript-refresh-window/);
+  assert.match(hearthHtml,/value="30"/);
+  assert.match(hearthHtml,/value="90" selected/);
+  assert.match(hearthHtml,/data-transcript-refresh/);
+  assert.match(hearthHtml,/data-transcript-loading-veil/);
+  assert.match(hearthJs,/function transcriptSelectedRefreshDays/);
+  assert.match(hearthJs,/function setTimelineTranscriptsLoading/);
+  assert.match(hearthJs,/postJson\('\/api\/val\/transcripts\/refresh'/);
+  assert.match(hearthJs,/getJson\('\/api\/val\/transcripts\?days='/);
+  assert.match(hearthCss,/\.timeline-loading-veil/);
+  assert.match(hearthCss,/backdrop-filter:blur\(18px\)/);
 });
 
 test('Hearth transcript index stays lightweight while the detail route retains the source transcript',()=>{

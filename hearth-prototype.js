@@ -126,6 +126,10 @@ const timelineEventList = document.querySelector('[data-timeline-event-list]') |
 const timelineEventCount = document.querySelector('[data-timeline-event-count]') || transcriptCount;
 const timelineReviewCards = transcriptDetail || document.querySelector('[data-timeline-review-cards]');
 const timelineReviewCount = document.querySelector('[data-timeline-review-count]') || document.querySelector('[data-transcript-field="title"]');
+const transcriptRefreshWindow = document.querySelector('[data-transcript-refresh-window]');
+const transcriptRefreshButton = document.querySelector('[data-transcript-refresh]');
+const transcriptLoadingVeil = document.querySelector('[data-transcript-loading-veil]');
+const transcriptLoadingStatus = document.querySelector('[data-transcript-loading-status]');
 const documentDrawerLink = document.querySelector('.document-drawer-link');
 const closeDocumentDetail = document.querySelector('.close-document-detail');
 const documentList = document.querySelector('[data-document-list]');
@@ -140,6 +144,8 @@ let currentTimelineReviewItems = [];
 let currentTimelineTranscriptItems = [];
 let currentTimelineTranscript = null;
 let timelineTranscriptOpenRequest = 0;
+let timelineTranscriptRefreshDays = 90;
+let timelineTranscriptsLoading = false;
 const timelineReviewDecisions = {};
 const timelineMatchReviewOpen = {};
 let currentCorrespondenceItems = [];
@@ -12877,7 +12883,7 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
     '<article class="timeline-attendee-row" data-transcript-attendee-row="' + index + '">',
-    '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span>' + escapeHtml(person.email || 'No email captured') + '</span></div>',
+    '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span class="' + escapeHtml(person.email ? 'timeline-attendee-email-found' : 'timeline-attendee-email-missing') + '">' + escapeHtml(person.email ? 'Email found: ' + person.email : 'No email captured') + '</span>' + (person.matchReason ? '<small>' + escapeHtml(person.matchReason) + '</small>' : '') + '</div>',
     '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(person.relationshipId || '') + '" data-transcript-relationship-search aria-label="Search relationship for ' + escapeHtml(person.label || 'attendee') + '">',
     '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm link' : 'Add/link relationship') + '</button>',
     '</article>'
@@ -13047,6 +13053,25 @@ function renderTimelineTranscriptEmpty(){
   timelineReviewCards.innerHTML = '';
 }
 
+function transcriptSelectedRefreshDays(){
+  const days = Number(transcriptRefreshWindow?.value || timelineTranscriptRefreshDays || 90);
+  return days === 30 ? 30 : 90;
+}
+
+function setTimelineTranscriptsLoading(isLoading, message = ''){
+  timelineTranscriptsLoading = Boolean(isLoading);
+  if(transcriptRefreshButton){
+    transcriptRefreshButton.disabled = timelineTranscriptsLoading;
+    transcriptRefreshButton.setAttribute('aria-busy', String(timelineTranscriptsLoading));
+  }
+  if(transcriptRefreshWindow) transcriptRefreshWindow.disabled = timelineTranscriptsLoading;
+  if(transcriptLoadingVeil){
+    transcriptLoadingVeil.hidden = !timelineTranscriptsLoading;
+    transcriptLoadingVeil.setAttribute('aria-hidden', String(!timelineTranscriptsLoading));
+  }
+  if(transcriptLoadingStatus) transcriptLoadingStatus.textContent = message || 'VAL is checking transcript receipts, preserving the source, and rebuilding the drawer.';
+}
+
 function renderTimelineActionIndex(){
   if(!timelineReviewCards || !timelineReviewCount) return;
   if(transcriptEmpty) transcriptEmpty.hidden = true;
@@ -13165,26 +13190,41 @@ async function openTimelineTranscript(transcriptId){
   }
 }
 
-async function loadTimelineTranscripts({openFirst = true} = {}){
+async function loadTimelineTranscripts({openFirst = true, days = transcriptSelectedRefreshDays(), refresh = false} = {}){
+  timelineTranscriptRefreshDays = days === 30 ? 30 : 90;
+  if(transcriptRefreshWindow) transcriptRefreshWindow.value = String(timelineTranscriptRefreshDays);
+  const loadingMessage = refresh
+    ? 'VAL is checking transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days and rebuilding the drawer.'
+    : 'VAL is reading transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days.';
+  setTimelineTranscriptsLoading(true, loadingMessage);
   renderTimelineTranscriptStats({counts:{}});
-  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Loading transcripts</span><p>VAL is reading the durable transcript archive.</p></article>';
+  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p><div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div></article>';
   renderTimelineTranscriptEmpty();
-  if(!canUseApi) return;
+  if(!canUseApi){
+    setTimelineTranscriptsLoading(false);
+    return;
+  }
   try{
     await Promise.all([
       hydrateRelationshipIndex().catch(() => null),
       hydrateProjectIndex().catch(() => null)
     ]);
-    const data = await getJson('/api/val/transcripts?days=3650&limit=30', {cache: 'no-store'});
+    const data = refresh
+      ? await postJson('/api/val/transcripts/refresh', {days:timelineTranscriptRefreshDays, limit:50})
+      : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=50', {cache: 'no-store'});
     currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
     renderTimelineTranscriptStats(data);
     renderTimelineTranscriptList(currentTimelineTranscript?.id || '');
     resetTimelineTranscriptDetailScroll();
     if(openFirst && currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
+    const message = data.refresh?.message || data.refresh?.warning || '';
+    if(message) setTimelineTranscriptActionStatus(message, data.refresh?.warning ? 'danger' : 'success');
   }catch(error){
     if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript archive unavailable';
     if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Unable to load transcripts</span><p>' + escapeHtml(error.message || 'Transcript archive unavailable.') + '</p></article>';
     renderTimelineTranscriptEmpty();
+  }finally{
+    setTimelineTranscriptsLoading(false);
   }
 }
 
@@ -22050,6 +22090,13 @@ stewardshipPersonBSelect?.addEventListener('change', () => {
 });
 
 drawerTray.addEventListener('click', async (event) => {
+  const transcriptRefresh = event.target.closest('[data-transcript-refresh]');
+  if(transcriptRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    await loadTimelineTranscripts({openFirst:true, days:transcriptSelectedRefreshDays(), refresh:true});
+    return;
+  }
   const transcriptActionIndex = event.target.closest('[data-transcript-action-index]');
   if(transcriptActionIndex){
     event.preventDefault();

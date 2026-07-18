@@ -585,7 +585,11 @@ test('Transcripts drawer opens the live transcript archive and selected transcri
   assert.match(hearthJs, /const timelineDrawerLink/);
   assert.match(hearthJs, /function hydrateTimelineStatus/);
   assert.match(hearthJs, /function loadTimelineTranscripts/);
-  assert.match(hearthJs, /\/api\/val\/transcripts\?days=3650&limit=30/);
+  assert.match(hearthHtml, /data-transcript-refresh-window/);
+  assert.match(hearthHtml, /data-transcript-refresh/);
+  assert.match(hearthJs, /transcriptSelectedRefreshDays/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\?days='/);
+  assert.match(hearthJs, /\/api\/val\/transcripts\/refresh/);
   assert.match(hearthJs, /function openTimelineTranscript/);
   assert.match(hearthJs, /\/api\/val\/transcripts\/'\s*\+\s*encodeURIComponent\(transcriptId\)/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
@@ -1546,7 +1550,8 @@ test('Transcript reads bypass cached browser responses after a tenant reset', ()
   assert.match(detailRoute, /Cache-Control','no-store, max-age=0/);
   assert.match(hearthJs, /async function getJson\(url, \{cache = 'default'\} = \{\}\)/);
   assert.match(openTranscriptBody, /\{cache: 'no-store'\}/);
-  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days=3650&limit=30', \{cache: 'no-store'\}\)/);
+  assert.match(hearthJs, /getJson\('\/api\/val\/transcripts\?days='\s*\+\s*encodeURIComponent\(timelineTranscriptRefreshDays\)\s*\+\s*'&limit=50', \{cache: 'no-store'\}\)/);
+  assert.match(hearthJs, /postJson\('\/api\/val\/transcripts\/refresh', \{days:timelineTranscriptRefreshDays, limit:50\}\)/);
 });
 
 test('Hearth click surfaces have prompt and variable packet contracts', () => {
