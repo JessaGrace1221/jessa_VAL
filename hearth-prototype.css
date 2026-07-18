@@ -5285,13 +5285,34 @@ button.timeline-overview-receipt:focus-visible{
 }
 .drawer-tray.timeline-open .timeline-attendee-row{
   display:grid;
-  grid-template-columns:minmax(190px,.85fr) minmax(220px,1fr) minmax(150px,auto);
+  grid-template-columns:minmax(190px,.85fr) minmax(220px,1fr) minmax(150px,auto) auto;
   align-items:center;
   gap:10px;
   padding:12px;
   border:1px solid rgba(42,45,39,.09);
   border-radius:8px;
   background:rgba(255,255,255,.72);
+}
+.drawer-tray.timeline-open .timeline-attendee-row.relationship-linked{
+  border-color:rgba(23,60,47,.18);
+  background:linear-gradient(90deg,rgba(248,251,244,.9),rgba(255,255,252,.74));
+}
+.drawer-tray.timeline-open .timeline-link-confirmation{
+  display:grid;
+  place-items:center;
+  width:26px;
+  height:26px;
+  border-radius:50%;
+  background:#173c2f;
+  color:#fffefa;
+  font:820 .86rem/1 var(--body);
+  font-style:normal;
+  animation:timelineLinkConfirmPop .42s ease-out both;
+}
+@keyframes timelineLinkConfirmPop{
+  0%{transform:translateY(4px) scale(.72);opacity:0}
+  70%{transform:translateY(-1px) scale(1.08);opacity:1}
+  100%{transform:translateY(0) scale(1);opacity:1}
 }
 .drawer-tray.timeline-open .timeline-attendee-row div{
   display:grid;

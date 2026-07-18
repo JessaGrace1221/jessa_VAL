@@ -10,6 +10,7 @@ const css=fs.readFileSync(path.join(root,'command-center.css'),'utf8');
 const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
+const krispService=fs.readFileSync(path.join(root,'services/krispMcpService.js'),'utf8');
 
 test('webhook accepts common transcript payload shapes and accepts note-only events',()=>{
   assert.match(server,/function normalizedTranscriptWebhookPayload/);
@@ -232,6 +233,31 @@ test('transcript detail can map attendees/projects and prepare reviewed Action I
   assert.match(hearthJs,/hydrateProjectIndex\(\)/);
   assert.match(hearthJs,/Email found: /);
   assert.match(hearthJs,/timeline-attendee-email-found/);
+  assert.match(hearthJs,/timeline-link-confirmation/);
+  assert.match(hearthCss,/timelineLinkConfirmPop/);
+});
+
+test('transcript attendees and titles stay source-exact instead of guessed',()=>{
+  const serverInviteeSource=server.match(/function transcriptOverviewInviteesFromSource[\s\S]*?return people;\n}/)?.[0]||'';
+  const clientInviteeSource=hearthJs.match(/function timelineTranscriptInviteesFromSource[\s\S]*?return people;\n}/)?.[0]||'';
+  assert.ok(serverInviteeSource);
+  assert.ok(clientInviteeSource);
+  assert.doesNotMatch(serverInviteeSource,/text\.match\(\[A-Z0-9/);
+  assert.doesNotMatch(clientInviteeSource,/text\.match\(\[A-Z0-9/);
+  assert.match(server,/exactKrispTitle/);
+  assert.match(server,/meetingTitle:title,calendarEventTitle:title/);
+  assert.match(server,/const id=String\(record\.id\|\|record\.transcriptId/);
+  assert.match(server,/transcript\.summary\?\.executiveSummary/);
+});
+
+test('Krisp transcript refresh keeps looking beyond the first partial result set',()=>{
+  assert.match(krispService,/if\(documents\.length<safeLimit\) await runMeetingSearch\('Meetings you own in Krisp'/);
+  assert.match(krispService,/if\(documents\.length<safeLimit\) await runMeetingSearch\('Meetings shared with you in Krisp'/);
+  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.listActionItems\?\.name\)/);
+  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.searchMeetingContent\?\.name\)/);
+  assert.match(krispService,/if\(documents\.length<safeLimit&&found\.listActivities\?\.name\)/);
+  assert.match(server,/alreadyPresent\+\+;/);
+  assert.match(server,/updateTranscriptIndexStatus\(transcriptId,\{meetingTitle:title/);
 });
 
 test('transcripts drawer can refresh 30 or 90 days with the active frosted loading state',()=>{

@@ -16451,14 +16451,14 @@ async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={
   const transcriptId=String(payload.id||'').trim();
   const transcript=String(payload.transcript||payload.rawText||'').trim();
   if(!transcriptId||!transcript)throw new Error('Krisp did not provide readable transcript text.');
-  const title=transcriptDisplayTitleFromPayload(payload,transcript);
+  const title=valTitleCandidate(payload.title||payload.meetingTitle||payload.meeting_title)||transcriptDisplayTitleFromPayload(payload,transcript);
   const metadata=payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{};
   const nativeSummary=String(metadata.krispSummary||'').trim();
   const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:[];
   const participants=Array.isArray(payload.attendees)?payload.attendees:[];
   const saved=await saveTranscript({...payload,title});
   if(meetingMatch){
-    await updateTranscriptIndexStatus(saved.id,{meetingTitle:meetingMatch.meetingTitle||meetingMatch.calendarEventTitle||title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:meetingMatch.startTime||payload.timestamp||null}).catch(()=>{});
+    await updateTranscriptIndexStatus(saved.id,{meetingTitle:title,calendarEventTitle:title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:payload.timestamp||meetingMatch.startTime||null}).catch(()=>{});
   }
   await updateTranscriptMetadata(saved.id,{
     source:'krisp_mcp',provider:'krisp',reviewStatus:'ready_for_review',processingStatus:'source_captured',summaryStatus:'krisp_exact',
@@ -16507,6 +16507,7 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
     }
     const transcriptId='krisp_'+documentId.replace(/-/g,'').toLowerCase();
     if(await krispTranscriptAlreadyStored(transcriptId)){
+      await updateTranscriptIndexStatus(transcriptId,{meetingTitle:title,calendarEventTitle:title,meetingDatetime:receipt.startedAt||receipt.startTime||receipt.date||receipt.createdAt||null}).catch(()=>{});
       result.alreadyPresent++;
       result.records.push({id:transcriptId,title,status:'already_present'});
       continue;
@@ -19404,6 +19405,12 @@ function eventTitleFromContext(ctx={}){
 }
 function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
+  const exactKrispTitle=valTitleCandidate(
+    (/krisp/i.test(String(payload.source||payload.provider||meta.source||meta.provider||sourceMeta.source||''))||meta.krispDetected||meta.provider==='krisp')
+      ? (payload.title||payload.meetingTitle||payload.meeting_title||payload.name||meta.title||sourceMeta.title)
+      : ''
+  );
+  if(exactKrispTitle)return exactKrispTitle;
   const knownContentTitle=transcriptKnownContentTitle(rawText,payload);
   const calendarTitle=eventTitleFromContext(payload);
   if(calendarTitle&&!transcriptTitleConflictsWithContent(calendarTitle,rawText,payload))return calendarTitle;
@@ -22830,6 +22837,9 @@ function transcriptSourceReceipt(transcript={}){
     metadata.data?.meetingOverview,
     metadata.data?.summary,
     transcript.nativeSummary,
+    transcript.summary?.executiveSummary,
+    transcript.summary?.clientSummary,
+    transcript.summary?.internalNotes,
     rawDocument.meetingOverview,
     rawDocument.summary,
     rawDocument.notes
@@ -22840,7 +22850,7 @@ function transcriptSourceReceipt(transcript={}){
   const rawKeyPointsSection=transcriptSourceSectionText(sourceText,['Key Points','Meeting Overview']);
   const keyPointsSection=rawKeyPointsSection&&!transcriptSourceLooksLikeFullTranscript(rawKeyPointsSection.lines)?rawKeyPointsSection:null;
   const actionItems=actionSection?.lines?.length?actionSection.lines:transcriptSourceLines(actionSource);
-  const keyPoints=keyPointsSection?.lines?.length?keyPointsSection.lines:transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'');
+  const keyPoints=keyPointsSection?.lines?.length?keyPointsSection.lines:transcriptSourceLines(keyPointSource||metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||transcript.nativeSummary||transcript.summary?.executiveSummary||transcript.summary?.clientSummary||'');
   const sections=[];
   if(actionSection)sections.push({kind:'action_items',...actionSection});
   else if(actionItems.length)sections.push({kind:'action_items',heading:'Action Items',raw:['Action Items',...actionItems].join('\n'),lines:actionItems});
@@ -22859,6 +22869,8 @@ function transcriptDrawerRecordTime(record={}){
   return Number.isFinite(parsed)?parsed:0;
 }
 function transcriptDrawerRecordSignature(record={}){
+  const id=String(record.id||record.transcriptId||record.transcript_id||'').trim();
+  if(id)return 'id|'+id;
   const source=String(record.source||record.metadata?.source||'unknown').trim().toLowerCase();
   const title=String(record.title||record.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   return source+'|'+title;
@@ -22997,9 +23009,6 @@ function transcriptOverviewInviteesFromSource(transcript={},seen=new Set()){
     seen.add(email);
     people.push({name:name||email,email,matchReason:'Found in transcript speaker labels'});
   };
-  for(const email of text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig)||[]){
-    push({email});
-  }
   for(const line of text.split(/\r?\n/)){
     const match=String(line||'').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
     if(match){

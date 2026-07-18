@@ -12821,7 +12821,6 @@ function timelineTranscriptInviteesFromSource(transcript = {}, seen = new Set())
     seen.add(key);
     people.push({label:cleanName || cleanEmail, name:cleanName || cleanEmail.split('@')[0], email:cleanEmail, key, relationshipId:'', projectId:'', matchReason:'Found in transcript speaker labels'});
   };
-  (text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || []).forEach((email) => push({email}));
   text.split(/\r?\n/).forEach((line) => {
     const match = String(line || '').trim().match(/^\*{0,2}\s*([^*|\n<>]{2,90}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\s*[|:]\s*\d{1,2}:\d{2}(?::\d{2})?/i);
     if(!match) return;
@@ -12882,10 +12881,11 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   const projectOptions = projectIndexItems().slice(0, 80).map((project) => '<option value="' + escapeHtml(project.name || project.displayName || project.id || '') + '"></option>').join('');
   const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
-    '<article class="timeline-attendee-row" data-transcript-attendee-row="' + index + '">',
+    '<article class="timeline-attendee-row' + (person.relationshipId ? ' relationship-linked' : '') + '" data-transcript-attendee-row="' + index + '">',
     '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span class="' + escapeHtml(person.email ? 'timeline-attendee-email-found' : 'timeline-attendee-email-missing') + '">' + escapeHtml(person.email ? 'Email found: ' + person.email : 'No email captured') + '</span>' + (person.matchReason ? '<small>' + escapeHtml(person.matchReason) + '</small>' : '') + '</div>',
     '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(person.relationshipId || '') + '" data-transcript-relationship-search aria-label="Search relationship for ' + escapeHtml(person.label || 'attendee') + '">',
     '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm link' : 'Add/link relationship') + '</button>',
+    person.relationshipId ? '<em class="timeline-link-confirmation" aria-label="Relationship linked">✓</em>' : '',
     '</article>'
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
