@@ -1337,6 +1337,9 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /<textarea data-workspace-input="cowork"/);
   assert.match(hearthJs, /function appendHomeCoworkMessage/);
   assert.match(hearthJs, /function showCoworkContextGathering/);
+  assert.match(hearthJs, /coworkContextGatheringTimeoutId/);
+  assert.match(hearthJs, /VAL could not finish gathering this context in time/);
+  assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*hideCoworkContextGathering\(\);/);
   assert.match(hearthJs, /Gathering Context/);
   assert.match(hearthJs, /data-cowork-context-gathering/);
   assert.match(hearthJs, /function coworkScopeForEntry/);

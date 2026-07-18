@@ -21390,15 +21390,28 @@ function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
   return response;
 }
 
+let coworkContextGatheringTimeoutId = null;
+
 function showCoworkContextGathering(detail = ''){
   const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
   if(!panel) return;
+  if(coworkContextGatheringTimeoutId) window.clearTimeout(coworkContextGatheringTimeoutId);
   const detailNode = panel.querySelector('[data-cowork-context-gathering-detail]');
   if(detailNode && detail) detailNode.textContent = detail;
   panel.hidden = false;
+  coworkContextGatheringTimeoutId = window.setTimeout(() => {
+    const currentPanel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
+    if(!currentPanel || currentPanel.hidden) return;
+    hideCoworkContextGathering();
+    appendHomeCoworkMessage('val', 'VAL could not finish gathering this context in time. Nothing was changed. Try opening the source again when you are ready.');
+  }, 18000);
 }
 
 function hideCoworkContextGathering(){
+  if(coworkContextGatheringTimeoutId){
+    window.clearTimeout(coworkContextGatheringTimeoutId);
+    coworkContextGatheringTimeoutId = null;
+  }
   const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
   if(panel) panel.hidden = true;
 }
@@ -21552,6 +21565,7 @@ function closeWorkspace(){
   const projectReturnId = workspaceReturnTarget === 'project'
     ? (activeProjectCoworkTarget?.projectId || activeCoworkEntry?.projectId || '')
     : '';
+  hideCoworkContextGathering();
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
@@ -21578,6 +21592,7 @@ function closeWorkspace(){
 }
 
 function hideWorkspaceForDrawerNavigation(){
+  hideCoworkContextGathering();
   if(hearth.dataset.distance !== 'judgment') return;
   activeHomeWorkspace = null;
   activeCoworkHeldContext = '';
