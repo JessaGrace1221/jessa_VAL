@@ -9017,6 +9017,96 @@ function correspondenceFallbackSender(item = activeCorrespondenceItem){
   return from.name || from.email || item.senderName || item.senderEmail || 'Email';
 }
 
+function correspondenceReadableTextFromHtml(value = ''){
+  if(!value) return '';
+  const template = document.createElement('template');
+  template.innerHTML = String(value || '');
+  return correspondenceCompactText(template.content.textContent || '', 2400);
+}
+
+function correspondenceCalendarInviteDetails(message = {}){
+  const text = correspondenceReadableTextFromHtml(message.bodyHtml) || correspondenceCompactText(message.body || '', 2400);
+  if(!/this event has been updated|zoom link|view all guest info|changed:\s*description|guests/i.test(text)) return null;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const zoom = normalized.match(/https?:\/\/[^\s<>"']+/i)?.[0] || '';
+  const changed = normalized.match(/changed:\s*([A-Z ]+?)(?:\s+zoom link:|\s+description|\s+when\b|$)/i)?.[1] || 'Description';
+  const when = normalized.match(/((?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+[a-z]{3,9}\s+\d{1,2},\s+\d{4}\s+.+?(?:new york|edt|est|pst|cst|mst))/i)?.[1] || '';
+  const guestsPart = normalized.match(/guests\s+(.+?)(?:\s+view all guest info|$)/i)?.[1] || '';
+  const guests = guestsPart
+    .split(/\s+(?=[A-Z][a-z]+ [A-Z][a-z]+ - |[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)
+    .map((guest) => correspondenceCompactText(guest.replace(/\s+-\s+/g, ' - '), 90))
+    .filter(Boolean)
+    .slice(0, 4);
+  return {changed:correspondenceCompactText(changed, 80), zoom, when:correspondenceCompactText(when, 140), guests};
+}
+
+function renderCorrespondenceCalendarInvite(message = {}){
+  const details = correspondenceCalendarInviteDetails(message);
+  if(!details) return null;
+  const card = document.createElement('div');
+  card.className = 'correspondence-calendar-email';
+  const eyebrow = document.createElement('span');
+  eyebrow.textContent = 'Calendar Update';
+  const title = document.createElement('strong');
+  title.textContent = 'This event was updated';
+  const grid = document.createElement('dl');
+  const rows = [
+    ['Changed', details.changed],
+    ['When', details.when],
+    ['Guests', details.guests.join(' · ')]
+  ].filter((row) => row[1]);
+  rows.forEach(([label, value]) => {
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    grid.append(dt, dd);
+  });
+  card.append(eyebrow, title, grid);
+  if(details.zoom){
+    const link = document.createElement('a');
+    link.href = details.zoom;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Open Zoom link';
+    card.appendChild(link);
+  }
+  return card;
+}
+
+function correspondenceMeaningfulSentences(value = '', limit = 2){
+  const cleaned = String(value || '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\b(view all guest info|zoom link|when|guests|description|changed)\b\s*:*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(!cleaned) return '';
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 24 && !/^(this event has been updated|changed description)$/i.test(sentence));
+  const chosen = (sentences.length ? sentences : [cleaned]).slice(0, limit).join(' ');
+  return correspondenceCompactText(chosen, 360);
+}
+
+function correspondenceConversationSummary(item = activeCorrespondenceItem){
+  if(!item) return 'Select a conversation to see what the latest email says and why it needs judgment.';
+  const messages = Array.isArray(item.threadMessages) ? item.threadMessages.filter((message) => message?.body || message?.bodyHtml) : [];
+  const latest = messages[0] || {};
+  const sender = latest.from || correspondenceFallbackSender(item);
+  const title = correspondenceCompactText(item.title || item.subject || 'this conversation', 140);
+  const latestText = correspondenceMeaningfulSentences(latest.body || correspondenceReadableTextFromHtml(latest.bodyHtml) || correspondenceFallbackMessage(item), 2);
+  if(/^updated invitation|^invitation:/i.test(title)){
+    return latestText
+      ? sender + ' sent a calendar update for "' + title + '". The visible change is: ' + latestText
+      : sender + ' sent a calendar update for "' + title + '". Review the invite details before deciding the next response.';
+  }
+  if(latestText){
+    return sender + ' wrote about "' + title + '": ' + latestText;
+  }
+  return item.summary || item.whyNow || 'VAL found this conversation needs judgment, but the readable message body is limited.';
+}
+
 function correspondenceHumanContactTime(value = ''){
   if(!value) return '';
   const date = new Date(value);
@@ -9104,7 +9194,7 @@ async function prepareSelectedCorrespondenceDraft(item = activeCorrespondenceIte
 function renderCorrespondenceThread(item = activeCorrespondenceItem){
   if(!correspondenceThreadBody) return;
   correspondenceThreadBody.innerHTML = '';
-  const messages = Array.isArray(item?.threadMessages) ? item.threadMessages.filter((message) => message?.body) : [];
+  const messages = Array.isArray(item?.threadMessages) ? item.threadMessages.filter((message) => message?.body || message?.bodyHtml) : [];
   if(!item){
     return;
   }
@@ -9151,7 +9241,10 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
     const span = document.createElement('span');
     span.textContent = [index === 0 ? 'Latest email' : 'Earlier email', message.from, correspondenceHumanContactTime(message.date)].filter(Boolean).join(' · ');
     article.appendChild(span);
-    if(message.bodyHtml){
+    const calendarInvite = renderCorrespondenceCalendarInvite(message);
+    if(calendarInvite){
+      article.appendChild(calendarInvite);
+    }else if(message.bodyHtml){
       const html = document.createElement('div');
       html.className = 'correspondence-email-html';
       html.innerHTML = message.bodyHtml;
@@ -9625,7 +9718,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('last-contact', correspondenceHumanContactTime(lastContact) || '—');
   setCorrespondenceField('source', sourceLabel);
   setCorrespondenceField('relationship-state', relationshipState);
-  setCorrespondenceField('decision-summary', selected?.whyNow || selected?.summary || 'When VAL admits a conversation, this card will show the reason, the next best action, and the source thread.');
+  setCorrespondenceField('decision-summary', correspondenceConversationSummary(selected));
   const hasDraft = !!String(selected?.draftBody || '').trim();
   setCorrespondenceField('draft-title', selected && hasDraft ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
   setCorrespondenceField('draft-note', selected?.draftFailureMessage || (selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.'));
@@ -22231,10 +22324,19 @@ closeTimelineDetail?.addEventListener('click', () => {
   document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
 });
 
-closeCorrespondenceDetail?.addEventListener('click', () => {
+function closeCorrespondenceDrawer(){
   drawerTray.classList.remove('correspondence-open');
+  if(retrievalSystem?.dataset.activeDrawer === 'correspondence') retrievalSystem.removeAttribute('data-active-drawer');
   correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
   document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
+  renderDrawerPacketReceiptStrip(null);
+  updateCloseAllDrawersButton();
+}
+
+closeCorrespondenceDetail?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  closeCorrespondenceDrawer();
 });
 
 closeValDetail?.addEventListener('click', () => {
@@ -22439,6 +22541,13 @@ stewardshipPersonBSelect?.addEventListener('change', () => {
 });
 
 drawerTray.addEventListener('click', async (event) => {
+  const correspondenceClose = event.target.closest('.close-correspondence-detail');
+  if(correspondenceClose){
+    event.preventDefault();
+    event.stopPropagation();
+    closeCorrespondenceDrawer();
+    return;
+  }
   const transcriptRefresh = event.target.closest('[data-transcript-refresh]');
   if(transcriptRefresh){
     event.preventDefault();
