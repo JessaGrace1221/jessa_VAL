@@ -8,6 +8,8 @@ const {VAL_CONVERSATION_IDENTITY_SQL}=require('../services/valConversationIdenti
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valExecutiveInboxRoutes.js'),'utf8');
+const executiveInboxService=fs.readFileSync(path.join(root,'services','valExecutiveInbox.js'),'utf8');
+const coworkService=fs.readFileSync(path.join(root,'services','valCowork.js'),'utf8');
 const spine=fs.readFileSync(path.join(root,'services','valIntelligenceSpine.js'),'utf8');
 const roundTableDoc=fs.readFileSync(path.join(root,'docs','VAL_EXECUTIVE_INBOX_ROUND_TABLE_AND_RULES.md'),'utf8');
 const lineageDoc=fs.readFileSync(path.join(root,'docs','HEARTH_TRUTH_LINEAGE_MAP.md'),'utf8');
@@ -34,6 +36,24 @@ test('executive inbox routes are backend-only and mounted',()=>{
   assert.match(routes,/\/api\/val\/email\/generate-draft/);
   assert.match(routes,/\/api\/val\/email\/revise-draft/);
   assert.match(routes,/\/api\/val\/email\/review-drafts/);
+  assert.match(server,/\/api\/val\/executive-inbox\/thread/);
+  assert.match(server,/\/api\/val\/executive-inbox\/attachment/);
+  assert.match(server,/Gmail email attachment/);
+  assert.match(server,/function extractGmailBodyHtml/);
+  assert.match(server,/bodyHtml/);
+  assert.match(server,/Gmail thread message body/);
+  assert.match(server,/function executiveInboxWritingRuleText/);
+  assert.match(server,/async function prepareEmailDraftIfNeeded\(email,rules=\[\]\)/);
+  assert.match(server,/saveInternalDraft\(\{[\s\S]*source:'executive_inbox_review_only'/);
+  assert.doesNotMatch(server,/async function prepareEmailDraftIfNeeded\(email\)\{\s*if\(!emailShouldPrepareDraft\(email\)\)return null;\s*return null;\s*\}/);
+  assert.match(server,/noExternalAction:true/);
+  assert.match(server,/loadEmailThreadForCowork/);
+  assert.match(executiveInboxService,/writingRules/);
+  assert.match(executiveInboxService,/tone_requirements/);
+  assert.match(server,/writingRules:req\.body\.writingRules/);
+  assert.match(server,/linkedContexts/);
+  assert.match(coworkService,/linkedContexts/);
+  assert.match(coworkService,/Attached context:/);
 });
 
 test('executive inbox round table doc defines packets rules and downstream feeds',()=>{
@@ -309,7 +329,7 @@ test('generates review-only email drafts, revises once after QA, and stores loca
     listReviewDrafts:async()=>savedDrafts,
     logger:{log(){}}
   });
-  const result=await service.generateDraft({conversationId:'uc_phase4'});
+  const result=await service.generateDraft({conversationId:'uc_phase4',writingRules:'Warm but direct. Sign off with Jessa.'});
   assert.equal(result.ok,true);
   assert.equal(result.no_external_action,true);
   assert.equal(result.revised_once,true);
@@ -324,6 +344,8 @@ test('generates review-only email drafts, revises once after QA, and stores loca
   assert.equal(savedDrafts[0].provider,'internal');
   assert.equal(savedDrafts[0].sourceContext.source,'executive_inbox_review_only');
   assert.equal(savedDrafts[0].sourceContext.noProviderDraftCreated,true);
+  assert.equal(savedDrafts[0].sourceContext.writingRules,'Warm but direct. Sign off with Jessa.');
+  assert.equal(savedDrafts[0].sourceContext.draftBrief.writingRules,'Warm but direct. Sign off with Jessa.');
   const review=await service.reviewDrafts();
   assert.equal(review.drafts.length,1);
   const candidates=await service.listReadyForYouDraftCandidates();

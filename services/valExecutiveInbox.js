@@ -615,6 +615,7 @@ function createValExecutiveInboxService({
       relationshipTemperature:classification.relationship_temperature||context.relationship_temperature||'unknown',
       draftReadiness:readiness,
       draftBrief:brief,
+      writingRules:brief.writingRules||brief.writing_rules||'',
       conversationContext:context,
       classification,
       writerOutput:draft,
@@ -639,7 +640,17 @@ function createValExecutiveInboxService({
   async function generateDraft(input={}){
     const briefed=input.brief&&input.context?input:await draftBrief(input);
     const teachVal=await listTeachValCoreMemory({limit:30}).catch(()=>[]);
-    const base={context:briefed.context,classification:briefed.classification,readiness:briefed.readiness,brief:briefed.brief||briefed.draft_brief,teachVal};
+    const writingRules=compactText(input.writingRules || input.writing_rules || '',1200);
+    const brief={
+      ...(briefed.brief||briefed.draft_brief||{}),
+      writingRules,
+      writing_rules:writingRules,
+      tone_requirements:[
+        ...safeArray((briefed.brief||briefed.draft_brief||{}).tone_requirements),
+        writingRules
+      ].filter(Boolean)
+    };
+    const base={context:briefed.context,classification:briefed.classification,readiness:briefed.readiness,brief,teachVal};
     let draft=await callDraftWriter(base);
     let qa=qaCheckGeneratedDraft({...base,draft});
     let revised=false;

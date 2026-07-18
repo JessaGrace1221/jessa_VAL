@@ -7,9 +7,12 @@ const root=path.resolve(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 
-test('gmail fetch uses a 14-day active inbox window and sorts newest first',()=>{
+test('gmail fetch uses the bounded 90-day executive window and sorts newest first',()=>{
   assert.match(server,/query='in:inbox newer_than:14d'/);
-  assert.match(server,/const recentQuery=`in:inbox newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const activeDays=Math\.max\(1,Math\.min\(90,Number\.isFinite\(requestedDays\)\?requestedDays:14\)\)/);
+  assert.match(server,/const recentQuery=`in:anywhere -in:sent newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/const unreadQuery=`in:anywhere -in:sent is:unread newer_than:\$\{activeDays\}d`/);
+  assert.match(server,/fetchGmailMessages\(\{query:`in:sent newer_than:\$\{activeDays\}d`/);
   assert.match(server,/sortEmailsNewestFirst/);
   assert.match(server,/internalDate/);
 });
@@ -87,7 +90,9 @@ test('executive inbox scan gates reply-worthy mail without canned auto drafts',(
   assert.match(server,/prepareEmailDraftIfNeeded/);
   assert.match(server,/Warm introduction opportunity asks for reply language/);
   assert.match(server,/intro\|introduction\|referral\|connect you/);
-  assert.match(server,/async function prepareEmailDraftIfNeeded\(email\)\{\s*if\(!emailShouldPrepareDraft\(email\)\)return null;\s*return null;\s*\}/);
+  assert.match(server,/async function prepareEmailDraftIfNeeded\(email,rules=\[\]\)/);
+  assert.match(server,/source:'executive_inbox_review_only'/);
+  assert.match(server,/noProviderDraftCreated:true/);
   assert.doesNotMatch(server,/source:'executive_inbox_auto_draft'/);
   assert.match(server,/if\(draft\)email\.preparedDraft=draft/);
   assert.match(dashboard,/Draft waiting for approval/);

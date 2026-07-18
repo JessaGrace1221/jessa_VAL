@@ -53,14 +53,16 @@ function pgRow(row={}){
 }
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function rowToMessage(row={}){
+  const raw=jsonValue(row.raw_json||row.rawJson,{});
   return {
     id:row.id,messageId:row.message_id||row.messageId,threadId:row.thread_id||row.threadId,provider:row.provider,
     unifiedConversationId:row.unified_conversation_id||row.unifiedConversationId,direction:row.direction,
     from:jsonValue(row.sender_json||row.senderJson,{}),to:jsonValue(row.recipients_json||row.recipientsJson,[]),
     cc:jsonValue(row.cc_json||row.ccJson,[]),bcc:jsonValue(row.bcc_json||row.bccJson,[]),
-    subject:row.subject,bodyPreview:row.body_preview||row.bodyPreview||'',bodyText:row.body_text||row.bodyText||'',
+    subject:row.subject,bodyPreview:row.body_preview||row.bodyPreview||'',bodyText:row.body_text||row.bodyText||'',bodyHtml:raw.bodyHtml||raw.body_html||'',
     snippet:row.snippet||'',labels:jsonValue(row.labels_json||row.labelsJson,[]),hasAttachments:!!(row.has_attachments??row.hasAttachments),
     webLink:row.web_link||row.webLink||'',receivedAt:row.received_at||row.receivedAt||'',sentAt:row.sent_at||row.sentAt||'',
+    raw,
     createdAt:row.created_at||row.createdAt||'',updatedAt:row.updated_at||row.updatedAt||''
   };
 }

@@ -84,12 +84,25 @@ const correspondenceCount = document.querySelector('[data-correspondence-count]'
 const correspondenceThreadBody = document.querySelector('[data-correspondence-thread-body]');
 const correspondenceDraftPreview = document.querySelector('[data-correspondence-draft-preview]');
 const correspondenceDraftBody = document.querySelector('[data-correspondence-draft-body]');
+const correspondenceDraftRules = document.querySelector('[data-correspondence-draft-rules]');
+const correspondenceDraftRuleFields = Array.from(document.querySelectorAll('[data-correspondence-writing-rule]'));
+const correspondenceWritingRuleMap = document.querySelector('[data-correspondence-writing-map]');
+const correspondenceWritingRulesSummary = document.querySelector('[data-correspondence-writing-rules-summary]');
+const correspondenceWritingRulesPanel = document.querySelector('[data-correspondence-writing-rules-panel]');
+const correspondenceAttachmentPanel = document.querySelector('[data-correspondence-attachment-panel]');
+const correspondenceAttachmentTitle = document.querySelector('[data-correspondence-attachment-title]');
+const correspondenceAttachmentMeta = document.querySelector('[data-correspondence-attachment-meta]');
+const correspondenceAttachmentView = document.querySelector('[data-correspondence-attachment-view]');
+const correspondenceLoadingVeil = document.querySelector('[data-correspondence-loading-veil]');
+const correspondenceLoadingStatus = document.querySelector('[data-correspondence-loading-status]');
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
 const correspondenceForwardTo = document.querySelector('[data-correspondence-forward-to]');
 const correspondenceSearchInput = document.querySelector('[data-correspondence-search]');
 const correspondenceSafeEmail = document.querySelector('[data-correspondence-safe-email]');
 const correspondenceRelationshipSelect = document.querySelector('[data-correspondence-relationship-select]');
+const correspondenceRelationshipSearch = document.querySelector('[data-correspondence-relationship-search]');
+const correspondenceRelationshipResults = document.querySelector('[data-correspondence-relationship-results]');
 const correspondenceProjectSelect = document.querySelector('[data-correspondence-project-select]');
 const correspondenceProjectName = document.querySelector('[data-correspondence-project-name]');
 const correspondenceRulesPanel = document.querySelector('[data-correspondence-rules-panel]');
@@ -138,6 +151,7 @@ let currentCorrespondenceScanDays = 14;
 let currentCorrespondenceScanStatus = '';
 let correspondenceScanInFlight = false;
 let correspondenceLoading = false;
+let correspondenceThreadHydrationToken = 0;
 let currentCommitmentItems = [];
 let activeCommitmentItem = null;
 let activeCommitmentFilter = 'all';
@@ -7990,6 +8004,46 @@ function correspondenceCompactText(value = '', limit = 420){
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, limit);
 }
 
+function sanitizeCorrespondenceEmailHtml(value = ''){
+  if(!value) return '';
+  const template = document.createElement('template');
+  template.innerHTML = String(value || '');
+  const allowedTags = new Set(['A','B','BR','BLOCKQUOTE','DIV','EM','I','LI','OL','P','PRE','SPAN','STRONG','TABLE','TBODY','TD','TH','THEAD','TR','UL','HR','H1','H2','H3','H4']);
+  const allowedAttrs = new Set(['href','title','colspan','rowspan','width','align','style']);
+  Array.from(template.content.querySelectorAll('*')).forEach((node) => {
+    if(!allowedTags.has(node.tagName)){
+      node.replaceWith(...Array.from(node.childNodes));
+      return;
+    }
+    Array.from(node.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      const valueText = String(attr.value || '');
+      if(!allowedAttrs.has(name)){
+        node.removeAttribute(attr.name);
+        return;
+      }
+      if(name === 'href' && !/^(https?:|mailto:)/i.test(valueText)){
+        node.removeAttribute(attr.name);
+        return;
+      }
+      if(name === 'style'){
+        const cleanStyle = valueText
+          .split(';')
+          .map((part) => part.trim())
+          .filter((part) => part && !/expression|url\s*\(|position\s*:|behavior\s*:|javascript:/i.test(part))
+          .join('; ');
+        if(cleanStyle) node.setAttribute('style', cleanStyle);
+        else node.removeAttribute('style');
+      }
+    });
+    if(node.tagName === 'A'){
+      node.setAttribute('target','_blank');
+      node.setAttribute('rel','noopener noreferrer');
+    }
+  });
+  return template.innerHTML.trim();
+}
+
 function correspondenceThreadMessagesFromSource(source = {}, fallback = {}){
   const conversation = source.conversationContext || source.conversation_context || source.thread || source.conversation || {};
   const messages = conversation.messages || source.messages || source.threadMessages || source.thread_messages || [];
@@ -7997,30 +8051,41 @@ function correspondenceThreadMessagesFromSource(source = {}, fallback = {}){
     return messages.slice(0, 8).map((message) => ({
       from: message.from?.name || message.fromName || message.from_name || message.senderName || message.sender_name || message.sender || message.author || message.from?.email || 'Email',
       date: message.date || message.receivedAt || message.received_at || message.createdAt || message.created_at || '',
-      body: correspondenceCompactText(message.bodyText || message.body_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 3600)
-    })).filter((message) => message.body);
+      bodyHtml: sanitizeCorrespondenceEmailHtml(message.bodyHtml || message.body_html || message.htmlBody || message.html_body || message.raw?.bodyHtml || ''),
+      body: correspondenceCompactText(message.body || message.bodyText || message.body_text || message.rawText || message.raw_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 3600)
+    })).filter((message) => message.body || message.bodyHtml);
   }
   const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
-  const body = latest.body || latest.bodyText || latest.body_text || latest.snippet || source.bodyPreview || fallback.summary || fallback.draftBody || '';
+  const body = latest.body || latest.bodyText || latest.body_text || latest.rawText || latest.raw_text || latest.snippet || source.bodyPreview || fallback.summary || fallback.draftBody || '';
+  const bodyHtml = sanitizeCorrespondenceEmailHtml(latest.bodyHtml || latest.body_html || source.bodyHtml || source.body_html || fallback.bodyHtml || '');
   const from = latest.from?.name || latest.from_name || latest.senderName || source.classification?.from?.name || fallback.senderName || fallback.recipientEmail || 'Thread';
-  return body ? [{from,date:latest.date || latest.receivedAt || fallback.createdAt || '',body:correspondenceCompactText(body,3600)}] : [];
+  return (body || bodyHtml) ? [{from,date:latest.date || latest.receivedAt || fallback.createdAt || '',body:correspondenceCompactText(body,3600),bodyHtml}] : [];
 }
 
 function correspondenceAttachmentsFromSource(source = {}){
+  const sourceMessageId = source.messageId || source.message_id || source.id || source.raw?.messageId || source.raw?.message_id || '';
+  const sourceThreadId = source.threadId || source.thread_id || source.raw?.threadId || source.raw?.thread_id || '';
   const rows = []
     .concat(Array.isArray(source.attachments) ? source.attachments : [])
     .concat(Array.isArray(source.attachmentsJson) ? source.attachmentsJson : [])
     .concat(Array.isArray(source.attachments_json) ? source.attachments_json : []);
   const seen = new Set();
   return rows.map((attachment) => {
-    if(typeof attachment === 'string') return {name:attachment, type:'email_attachment'};
+    if(typeof attachment === 'string') return {name:attachment, type:'email_attachment', messageId:sourceMessageId, threadId:sourceThreadId};
     return {
+      id: attachment.id || attachment.attachmentId || attachment.attachment_id || attachment.filename || attachment.name || '',
+      attachmentId: attachment.attachmentId || attachment.attachment_id || attachment.id || '',
       name: attachment.filename || attachment.fileName || attachment.name || attachment.title || 'Attachment',
+      filename: attachment.filename || attachment.fileName || attachment.name || attachment.title || 'Attachment',
       type: attachment.mimeType || attachment.contentType || attachment.type || 'email_attachment',
-      size: attachment.size || attachment.fileSize || 0
+      mimeType: attachment.mimeType || attachment.contentType || attachment.type || '',
+      size: attachment.size || attachment.fileSize || 0,
+      messageId: attachment.messageId || attachment.message_id || sourceMessageId,
+      threadId: attachment.threadId || attachment.thread_id || sourceThreadId,
+      url: attachment.url || attachment.sourceUrl || attachment.webLink || ''
     };
   }).filter((attachment) => {
-    const key = [attachment.name, attachment.type, attachment.size].join(':').toLowerCase();
+    const key = [attachment.messageId, attachment.attachmentId || attachment.id, attachment.name, attachment.type, attachment.size].join(':').toLowerCase();
     if(!attachment.name || seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -8138,6 +8203,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
   const source = draft.sourceContext || draft.source_context || {};
   const sender = email.from || {};
   const body = email.bodyText || email.bodyPreview || email.snippet || '';
+  const bodyHtml = sanitizeCorrespondenceEmailHtml(email.bodyHtml || email.body_html || email.raw?.bodyHtml || '');
   const classification = String(email.classification || '').toLowerCase();
   const needsContext = ['needs_attention', 'forward_to_team'].includes(classification);
   const waitingForResponse = email.queueKind === 'waiting_for_response' || classification === 'waiting_on_response';
@@ -8161,7 +8227,7 @@ function normalizeCorrespondenceEmailItem(email = {}, index = 0){
     prepared: draft.body ? 'VAL prepared private draft language for review.' : email.recommendedAction || 'VAL classified the thread and kept it review-only.',
     needs: draft.body ? 'Review whether this reply represents your voice and intent.' : 'Review the thread before VAL prepares or sends anything.',
     draftBody: draft.body || '',
-    threadMessages: body ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,3600)}] : [],
+    threadMessages: (body || bodyHtml) ? [{from:sender.name || sender.email || 'Gmail',date:email.date || email.receivedAt || '',body:correspondenceCompactText(body,3600),bodyHtml}] : [],
     attachments: correspondenceAttachmentsFromSource(email),
     relationships: correspondenceContextLines(email, ['matchedContact','relationshipName','relationshipTemperature']),
     projects: correspondenceContextLines(email, ['projectName','project']),
@@ -8713,13 +8779,26 @@ function correspondenceItemsFromReady(result = {}){
 function renderCorrespondenceList(){
   if(!correspondenceList || !correspondenceCount) return;
   correspondenceList.innerHTML = '';
-  const isChecking = correspondenceScanInFlight || correspondenceLoading;
+  const isChecking = correspondenceScanInFlight || correspondenceLoading || (!currentCorrespondenceItems.length && /\b(checking|searching|scanning)\b/i.test(currentCorrespondenceScanStatus || ''));
   correspondenceCount.textContent = currentCorrespondenceItems.length ? String(currentCorrespondenceItems.length) : (isChecking ? 'Checking' : '0');
   correspondenceCount.setAttribute('aria-label', currentCorrespondenceItems.length ? currentCorrespondenceItems.length + ' conversation' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' waiting' : (isChecking ? 'Checking Executive Inbox' : 'No conversations waiting'));
+  document.querySelectorAll('[data-correspondence-filter-count]').forEach((node) => {
+    const filter = node.dataset.correspondenceFilterCount;
+    const count = filter === 'all'
+      ? currentCorrespondenceItems.length
+      : filter === 'tracking'
+        ? currentCorrespondenceItems.filter((item) => item.status === 'needs_context').length
+        : filter === 'waiting'
+          ? currentCorrespondenceItems.filter((item) => item.status === 'waiting_for_response').length
+          : currentCorrespondenceItems.filter((item) => item.status !== 'waiting_for_response' && item.status !== 'needs_context').length;
+    node.textContent = String(count);
+  });
   if(!currentCorrespondenceItems.length){
     const empty = document.createElement('article');
-    empty.className = 'empty';
-    empty.innerHTML = '<span>' + (isChecking ? 'Checking Executive Inbox' : 'No admitted items') + '</span><p>' + (isChecking ? 'Checking Gmail and relationship history before showing the queue.' : 'No Gmail conversation has been classified into Executive Inbox yet.') + '</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
+    empty.className = 'empty' + (isChecking ? ' correspondence-checking-state' : '');
+    empty.innerHTML = isChecking
+      ? '<div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div><span>Checking Executive Inbox</span><p>VAL is searching Gmail, sent history, saved contacts, and relationship context before showing the queue.</p><div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>'
+      : '<span>No admitted items</span><p>No Gmail conversation has been classified into Executive Inbox yet.</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
     const status = empty.querySelector('[data-correspondence-scan-status]');
     if(status) status.textContent = currentCorrespondenceScanStatus || (isChecking ? 'This can take a few seconds when VAL checks sent history and known contacts.' : 'Only unresolved executive conversations appear here.');
     empty.querySelectorAll('[data-correspondence-scan-days]').forEach((button) => {
@@ -8736,6 +8815,10 @@ function renderCorrespondenceList(){
     const isActive = activeCorrespondenceItem?.id === item.id;
     button.classList.toggle('active', isActive);
     button.setAttribute('aria-pressed', String(isActive));
+    const avatar = document.createElement('i');
+    avatar.setAttribute('aria-hidden', 'true');
+    const initials = (item.senderName || item.title || item.senderEmail || 'EI').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+    avatar.textContent = initials || 'EI';
     const label = document.createElement('span');
     label.textContent = item.status === 'waiting_for_response' ? 'Waiting for response' : (item.status === 'needs_context' ? 'Needs Context' : 'Ready');
     const title = document.createElement('strong');
@@ -8744,13 +8827,29 @@ function renderCorrespondenceList(){
     summary.textContent = item.summary;
     const small = document.createElement('small');
     small.textContent = item.context || item.source || '';
-    button.append(label, title, summary, small);
+    const priority = document.createElement('em');
+    priority.textContent = item.status === 'waiting_for_response' ? 'Waiting' : (item.status === 'needs_context' ? 'Review' : 'High');
+    button.append(avatar, label, priority, title, summary, small);
     correspondenceList.appendChild(button);
   });
 }
 
+function setCorrespondenceLoadingState(isLoading, message = ''){
+  const active = Boolean(isLoading);
+  correspondenceLoading = active;
+  if(message) currentCorrespondenceScanStatus = message;
+  if(correspondenceLoadingVeil){
+    correspondenceLoadingVeil.hidden = !active;
+    correspondenceLoadingVeil.setAttribute('aria-hidden', String(!active));
+  }
+  const status = message || currentCorrespondenceScanStatus || 'VAL is reviewing Gmail, sent history, saved contacts, relationship context, and unresolved threads. The Executive Inbox will appear when the queue is ready.';
+  if(correspondenceLoadingStatus) correspondenceLoadingStatus.textContent = status;
+  const detail = document.querySelector('#correspondence-detail');
+  if(detail) detail.classList.toggle('correspondence-is-loading', active);
+}
+
 function correspondenceSuggestedActions(item = activeCorrespondenceItem){
-  const ruleActions = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'];
+  const ruleActions = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'];
   if(!item) return ruleActions;
   const actions = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project'].concat(ruleActions);
   if(String(item.draftBody || '').trim()) actions.unshift('send');
@@ -8775,19 +8874,139 @@ function setCorrespondenceField(field, value){
   if(node) node.textContent = value || '';
 }
 
+function correspondenceFallbackMessage(item = activeCorrespondenceItem){
+  if(!item) return '';
+  const raw = item.raw || {};
+  const source = raw.sourceContext || raw.source_context || raw.metadataJson || raw.metadata || {};
+  const conversation = source.conversationContext || source.conversation_context || source.thread || source.conversation || {};
+  const current = conversation.current_message || conversation.currentMessage || {};
+  const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
+  return [
+    raw.bodyText,
+    raw.body_text,
+    raw.bodyPreview,
+    raw.body_preview,
+    raw.snippet,
+    source.bodyText,
+    source.body_text,
+    source.bodyPreview,
+    source.body_preview,
+    current.bodyText,
+    current.body_text,
+    current.bodyPreview,
+    current.body_preview,
+    current.snippet,
+    latest.bodyText,
+    latest.body_text,
+    latest.bodyPreview,
+    latest.body_preview,
+    latest.snippet,
+    item.threadMessages?.[0]?.body,
+    item.evidence?.[0],
+    item.summary
+  ].map((value) => correspondenceCompactText(value, 3600)).find(Boolean) || '';
+}
+
+function correspondenceFallbackSender(item = activeCorrespondenceItem){
+  if(!item) return 'Email';
+  const raw = item.raw || {};
+  const source = raw.sourceContext || raw.source_context || raw.metadataJson || raw.metadata || {};
+  const conversation = source.conversationContext || source.conversation_context || {};
+  const current = conversation.current_message || conversation.currentMessage || {};
+  const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
+  const from = raw.from || source.from || current.from || latest.from || {};
+  return from.name || from.email || item.senderName || item.senderEmail || 'Email';
+}
+
+function correspondenceHumanContactTime(value = ''){
+  if(!value) return '';
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return correspondenceCompactText(value, 42);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const sameDay = date.toDateString() === now.toDateString();
+  const priorDay = date.toDateString() === yesterday.toDateString();
+  const time = date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', hourCycle:'h23'});
+  if(sameDay) return 'Today, ' + time;
+  if(priorDay) return 'Yesterday, ' + time;
+  const dateLabel = date.toLocaleDateString([], date.getFullYear() === now.getFullYear()
+    ? {month:'short', day:'numeric'}
+    : {month:'short', day:'numeric', year:'numeric'});
+  return dateLabel + ', ' + time;
+}
+
+function correspondenceThreadIdentity(item = activeCorrespondenceItem){
+  if(!item) return '';
+  return [item.provider || 'email', item.messageId || '', item.threadId || '', item.conversationId || item.id || ''].join(':');
+}
+
+async function hydrateSelectedCorrespondenceThread(item = activeCorrespondenceItem){
+  if(!item || !canUseApi || item.threadHydrated) return;
+  const messageId = item.messageId || '';
+  const threadId = item.threadId || '';
+  const conversationId = item.conversationId || '';
+  if(!messageId && !threadId && !conversationId) return;
+  const token = ++correspondenceThreadHydrationToken;
+  const identity = correspondenceThreadIdentity(item);
+  try{
+    const params = new URLSearchParams();
+    if(messageId) params.set('messageId', messageId);
+    if(threadId) params.set('threadId', threadId);
+    if(conversationId) params.set('conversationId', conversationId);
+    if(item.provider) params.set('provider', item.provider);
+    const result = await getJson('/api/val/executive-inbox/thread?' + params.toString(), {timeoutMs:16000, timeoutMessage:'Selected email thread took longer than expected.'});
+    if(token !== correspondenceThreadHydrationToken || correspondenceThreadIdentity(activeCorrespondenceItem) !== identity) return;
+    const thread = result.thread || {};
+    const messages = correspondenceThreadMessagesFromSource({messages:thread.messages || [], conversationContext:{messages:thread.messages || []}}, item);
+    const existingDraft = thread.existingDraft || thread.existing_draft || {};
+    const updated = {
+      ...item,
+      threadHydrated:true,
+      threadMessages:messages.length ? messages : item.threadMessages,
+      draftBody:item.draftBody || existingDraft.body || '',
+      draftId:item.draftId || existingDraft.id || '',
+      raw:{...(item.raw || {}), selectedThread:thread}
+    };
+    currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? updated : row);
+    activeCorrespondenceItem = updated;
+    renderCorrespondenceBrief(updated);
+    if(updated && !String(updated.draftBody || '').trim() && !updated.autoDraftAttempted){
+      prepareSelectedCorrespondenceDraft(updated);
+    }
+  }catch(error){
+    if(token !== correspondenceThreadHydrationToken) return;
+    const updated = {...item, threadHydrated:true};
+    currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? updated : row);
+    activeCorrespondenceItem = updated;
+    renderCorrespondenceThread(updated);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL could not load previous emails for this thread yet. Showing the readable message currently attached.';
+    if(updated && !String(updated.draftBody || '').trim() && !updated.autoDraftAttempted){
+      prepareSelectedCorrespondenceDraft(updated);
+    }
+  }
+}
+
+async function prepareSelectedCorrespondenceDraft(item = activeCorrespondenceItem){
+  if(!item || !canUseApi || item.autoDraftAttempted || String(item.draftBody || '').trim()) return;
+  const preparedItem = {...item, autoDraftAttempted:true};
+  currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? preparedItem : row);
+  activeCorrespondenceItem = preparedItem;
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private reply draft with your saved Writing Rules. Nothing is sent or created in Gmail.';
+  try{
+    await draftCorrespondenceReply(preparedItem, {automatic:true});
+  }catch(error){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL could not prepare a private draft yet: ' + error.message;
+    activeCorrespondenceItem = {...preparedItem, autoDraftFailed:true};
+    currentCorrespondenceItems = currentCorrespondenceItems.map((row) => row.id === item.id ? activeCorrespondenceItem : row);
+  }
+}
+
 function renderCorrespondenceThread(item = activeCorrespondenceItem){
   if(!correspondenceThreadBody) return;
   correspondenceThreadBody.innerHTML = '';
   const messages = Array.isArray(item?.threadMessages) ? item.threadMessages.filter((message) => message?.body) : [];
   if(!item){
-    const empty = document.createElement('article');
-    empty.className = 'correspondence-thread-message';
-    const span = document.createElement('span');
-    span.textContent = 'No thread selected';
-    const p = document.createElement('p');
-    p.textContent = 'Choose a conversation to read the email thread.';
-    empty.append(span, p);
-    correspondenceThreadBody.appendChild(empty);
     return;
   }
   const attachments = Array.isArray(item.attachments) ? item.attachments : correspondenceAttachmentsFromSource(item.raw || {});
@@ -8798,10 +9017,13 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
     span.textContent = 'Attachments';
     const wrap = document.createElement('div');
     attachments.slice(0, 6).forEach((attachment) => {
-      const chip = document.createElement('p');
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.dataset.correspondenceAttachmentIndex = String(attachments.indexOf(attachment));
       const size = Number(attachment.size || 0);
       const sizeLabel = size ? ' · ' + Math.round(size / 1024) + ' KB' : '';
       chip.textContent = [attachment.name, attachment.type].filter(Boolean).join(' · ') + sizeLabel;
+      chip.title = attachment.attachmentId || attachment.url ? 'View attachment source' : 'Attachment source id is not available yet';
       wrap.appendChild(chip);
     });
     attachmentBlock.append(span, wrap);
@@ -8809,25 +9031,116 @@ function renderCorrespondenceThread(item = activeCorrespondenceItem){
   }
   if(!messages.length){
     const empty = document.createElement('article');
-    empty.className = 'correspondence-thread-message';
+    empty.className = 'correspondence-thread-message newest';
     const span = document.createElement('span');
-    span.textContent = 'Thread';
+    span.textContent = ['Latest email', correspondenceFallbackSender(item), correspondenceHumanContactTime(item.receivedAt)].filter(Boolean).join(' · ');
     const p = document.createElement('p');
-    p.textContent = item.summary || 'No thread text is attached yet.';
+    p.textContent = correspondenceFallbackMessage(item) || 'No readable email body is attached yet. VAL should not ask you to act on this thread until the source message is visible.';
     empty.append(span, p);
     correspondenceThreadBody.appendChild(empty);
     return;
   }
   messages.forEach((message, index) => {
+    if(index === 1){
+      const history = document.createElement('div');
+      history.className = 'correspondence-thread-history-label';
+      history.textContent = 'Previous emails in this thread';
+      correspondenceThreadBody.appendChild(history);
+    }
     const article = document.createElement('article');
     article.className = 'correspondence-thread-message' + (index === 0 ? ' newest' : '');
     const span = document.createElement('span');
-    span.textContent = [index === 0 ? 'Newest' : 'Earlier', message.from, message.date].filter(Boolean).join(' · ');
-    const p = document.createElement('p');
-    p.textContent = message.body;
-    article.append(span, p);
+    span.textContent = [index === 0 ? 'Latest email' : 'Earlier email', message.from, correspondenceHumanContactTime(message.date)].filter(Boolean).join(' · ');
+    article.appendChild(span);
+    if(message.bodyHtml){
+      const html = document.createElement('div');
+      html.className = 'correspondence-email-html';
+      html.innerHTML = message.bodyHtml;
+      article.appendChild(html);
+    }else{
+      const p = document.createElement('p');
+      p.textContent = message.body;
+      article.appendChild(p);
+    }
     correspondenceThreadBody.appendChild(article);
   });
+}
+
+function selectedCorrespondenceAttachments(item = activeCorrespondenceItem){
+  if(!item) return [];
+  return Array.isArray(item.attachments) ? item.attachments : correspondenceAttachmentsFromSource(item.raw || {});
+}
+
+function setCorrespondenceAttachmentPanel(open){
+  if(!correspondenceAttachmentPanel) return;
+  correspondenceAttachmentPanel.hidden = !open;
+  correspondenceAttachmentPanel.setAttribute('aria-hidden', String(!open));
+}
+
+function renderCorrespondenceAttachmentView(result = {}, attachment = {}){
+  if(correspondenceAttachmentTitle) correspondenceAttachmentTitle.textContent = result.filename || attachment.name || 'Email attachment';
+  if(correspondenceAttachmentMeta){
+    correspondenceAttachmentMeta.textContent = [
+      result.mimeType || attachment.mimeType || attachment.type || 'Attachment',
+      result.size ? Math.round(Number(result.size) / 1024) + ' KB' : '',
+      'Read-only source view. Nothing is sent, downloaded, moved, or changed.'
+    ].filter(Boolean).join(' · ');
+  }
+  if(!correspondenceAttachmentView) return;
+  correspondenceAttachmentView.innerHTML = '';
+  if(result.dataUrl && String(result.mimeType || '').startsWith('image/')){
+    const img = document.createElement('img');
+    img.src = result.dataUrl;
+    img.alt = result.filename || attachment.name || 'Email attachment';
+    correspondenceAttachmentView.appendChild(img);
+    return;
+  }
+  if(result.dataUrl && String(result.mimeType || '').includes('pdf')){
+    const frame = document.createElement('iframe');
+    frame.src = result.dataUrl;
+    frame.title = result.filename || attachment.name || 'Email attachment';
+    correspondenceAttachmentView.appendChild(frame);
+    return;
+  }
+  const pre = document.createElement('pre');
+  pre.textContent = result.text || result.message || 'VAL could not produce a readable preview for this attachment yet.';
+  correspondenceAttachmentView.appendChild(pre);
+}
+
+async function openCorrespondenceAttachment(index = 0){
+  const attachment = selectedCorrespondenceAttachments()[index];
+  if(!attachment){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Attachment source was not found on the selected thread.';
+    return;
+  }
+  if(attachment.url){
+    window.open(attachment.url, '_blank', 'noopener');
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Opened the attachment source link. No VAL data was changed.';
+    return;
+  }
+  const messageId = attachment.messageId || activeCorrespondenceItem?.messageId || activeCorrespondenceItem?.raw?.messageId || '';
+  const attachmentId = attachment.attachmentId || attachment.id || '';
+  if(!messageId || !attachmentId){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'VAL has the attachment name, but not the Gmail source id needed to open it yet.';
+    setCorrespondenceAttachmentPanel(true);
+    renderCorrespondenceAttachmentView({filename:attachment.name, mimeType:attachment.mimeType || attachment.type, size:attachment.size, message:'Attachment listed on the email, but the source id is missing. Re-scan Gmail or open the original message in Gmail to view it.'}, attachment);
+    return;
+  }
+  if(!canUseApi){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'The live VAL server is needed to open Gmail attachment sources.';
+    return;
+  }
+  setCorrespondenceAttachmentPanel(true);
+  renderCorrespondenceAttachmentView({filename:attachment.name, mimeType:attachment.mimeType || attachment.type, size:attachment.size, message:'Loading attachment source...'}, attachment);
+  try{
+    const params = new URLSearchParams({messageId, attachmentId, filename:attachment.filename || attachment.name || '', mimeType:attachment.mimeType || attachment.type || ''});
+    const result = await getJson('/api/val/executive-inbox/attachment?' + params.toString(), {timeoutMs:22000, timeoutMessage:'Attachment source took longer than expected.'});
+    renderCorrespondenceAttachmentView(result, attachment);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Opened attachment source in read-only preview.';
+  }catch(error){
+    renderCorrespondenceAttachmentView({filename:attachment.name, mimeType:attachment.mimeType || attachment.type, size:attachment.size, message:'Attachment preview failed: ' + error.message}, attachment);
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Attachment preview failed: ' + error.message;
+  }
 }
 
 function renderCorrespondenceSideList(node, lines, emptyText){
@@ -8866,13 +9179,183 @@ function correspondencePopulateSelect(select, items = [], emptyLabel = 'Choose')
   if(options.some((item) => item.id === selected)) select.value = selected;
 }
 
+function correspondenceRelationshipOptions(){
+  return Object.values(relationshipIndexProfiles || {})
+    .map((item) => ({
+      id: item.id || item.profileKey || item.profile_key || item.email || '',
+      label: correspondenceOptionLabel(item),
+      email: item.email || item.primaryEmail || item.primary_email || '',
+      summary: item.role || item.relationship || item.summary || item.context || ''
+    }))
+    .filter((item) => item.id && item.label)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function correspondenceSetRelationshipSearch(open = false){
+  if(!correspondenceRelationshipResults || !correspondenceRelationshipSearch) return;
+  const query = correspondenceRelationshipSearch.value.trim().toLowerCase();
+  const selectedId = String(correspondenceRelationshipSelect?.value || '').trim();
+  const matches = correspondenceRelationshipOptions()
+    .filter((item) => {
+      if(!query) return true;
+      return [item.label, item.email, item.summary].some((value) => String(value || '').toLowerCase().includes(query));
+    })
+    .slice(0, 8);
+  correspondenceRelationshipResults.innerHTML = '';
+  if(!open || !matches.length){
+    correspondenceRelationshipResults.hidden = true;
+    correspondenceRelationshipSearch.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  matches.forEach((item) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.relationshipResultId = item.id;
+    button.setAttribute('aria-pressed', String(item.id === selectedId));
+    const label = document.createElement('strong');
+    label.textContent = item.label;
+    const meta = document.createElement('small');
+    meta.textContent = [item.email, item.summary].filter(Boolean).join(' · ');
+    button.append(label, meta);
+    correspondenceRelationshipResults.appendChild(button);
+  });
+  correspondenceRelationshipResults.hidden = false;
+  correspondenceRelationshipSearch.setAttribute('aria-expanded', 'true');
+}
+
+function correspondenceChooseRelationship(id = ''){
+  const option = correspondenceRelationshipOptions().find((item) => item.id === id);
+  if(!option) return;
+  if(correspondenceRelationshipSelect) correspondenceRelationshipSelect.value = option.id;
+  if(correspondenceRelationshipSearch) correspondenceRelationshipSearch.value = option.label;
+  if(correspondenceRelationshipResults) correspondenceRelationshipResults.hidden = true;
+  correspondenceRelationshipSearch?.setAttribute('aria-expanded', 'false');
+}
+
 function renderCorrespondenceContextControls(){
-  correspondencePopulateSelect(correspondenceRelationshipSelect, Object.values(relationshipIndexProfiles || {}), 'Choose relationship');
+  if(correspondenceRelationshipSelect && correspondenceRelationshipSearch){
+    const selected = correspondenceRelationshipOptions().find((item) => item.id === correspondenceRelationshipSelect.value);
+    if(selected && !correspondenceRelationshipSearch.value.trim()) correspondenceRelationshipSearch.value = selected.label;
+    correspondenceSetRelationshipSearch(false);
+  }else{
+    correspondencePopulateSelect(correspondenceRelationshipSelect, Object.values(relationshipIndexProfiles || {}), 'Choose relationship');
+  }
   correspondencePopulateSelect(correspondenceProjectSelect, Object.values(projectIndexProfiles || {}), 'Choose project');
 }
 
 function correspondenceRuleLabel(rule = {}){
   return correspondenceCompactText(rule.ruleName || rule.rule_name || rule.plainEnglish || rule.confirmationQuestion || 'Email rule', 140);
+}
+
+function correspondenceDraftRuleText(){
+  const draftRule = currentCorrespondenceRules.find((rule) => {
+    const type = String(rule.ruleType || rule.rule_type || '').toLowerCase();
+    const action = String(rule.actions?.action || rule.actions_json?.action || '').toLowerCase();
+    return rule.isActive !== false && (type === 'draft_style' || action === 'apply_draft_style');
+  });
+  return draftRule?.actions?.draft_style || draftRule?.actions_json?.draft_style || draftRule?.ruleName || draftRule?.rule_name || '';
+}
+
+function correspondenceDraftRuleCategories(){
+  return correspondenceDraftRuleFields.reduce((categories, field) => {
+    const key = field.dataset.correspondenceWritingRule || '';
+    if(key) categories[key] = field.value.trim();
+    return categories;
+  }, {});
+}
+
+const CORRESPONDENCE_WRITING_RULE_MAPS = {
+  warm_direct:{
+    tone:'Warm, direct, calm, and human.',
+    signoff:'Jessa',
+    use:'Clear next steps, plain language, and a gracious but efficient opening.',
+    avoid:'Corporate polish, over-apologizing, vague enthusiasm, and filler.',
+    length:'Short unless the email needs context.'
+  },
+  brief_executive:{
+    tone:'Concise, decisive, and respectful.',
+    signoff:'Jessa',
+    use:'One clear answer, one next step, and only the necessary context.',
+    avoid:'Long explanations, hedging, and repeating the sender back to themselves.',
+    length:'Very brief by default.'
+  },
+  relationship_care:{
+    tone:'Warm, thoughtful, and relationship-aware.',
+    signoff:'Jessa',
+    use:'Acknowledgment, appreciation, and a clear next step that protects the relationship.',
+    avoid:'Cold efficiency, transactional phrasing, and sounding rushed.',
+    length:'Moderate, with enough context to feel cared for.'
+  },
+  firm_boundary:{
+    tone:'Kind, firm, and clean.',
+    signoff:'Jessa',
+    use:'A clear boundary, what is possible, and the next practical step.',
+    avoid:'Over-explaining, softening the answer until it becomes unclear, and defensive language.',
+    length:'Short and definitive.'
+  },
+  detail_when_needed:{
+    tone:'Clear, organized, and grounded.',
+    signoff:'Jessa',
+    use:'Bullet-like structure, specific facts from the thread, and explicit decisions or questions.',
+    avoid:'Inventing facts, burying the ask, and generic summary.',
+    length:'Detailed only when the thread requires it.'
+  }
+};
+
+function applyCorrespondenceWritingRuleMap(mapId = ''){
+  const map = CORRESPONDENCE_WRITING_RULE_MAPS[mapId];
+  if(!map) return;
+  correspondenceDraftRuleFields.forEach((field) => {
+    const key = field.dataset.correspondenceWritingRule || '';
+    if(key && map[key]) field.value = map[key];
+  });
+  renderCorrespondenceWritingRuleSummary();
+}
+
+function correspondenceDraftRuleSummary(categories = correspondenceDraftRuleCategories(), notes = String(correspondenceDraftRules?.value || '').trim()){
+  return [
+    categories.tone && 'Tone: ' + categories.tone,
+    categories.signoff && 'Sign-off: ' + categories.signoff,
+    categories.use && 'Use: ' + categories.use,
+    categories.avoid && 'Avoid: ' + categories.avoid,
+    categories.length && 'Length: ' + categories.length,
+    notes && 'Other rules: ' + notes
+  ].filter(Boolean).join('\n');
+}
+
+function correspondenceStoredDraftRule(){
+  return currentCorrespondenceRules.find((rule) => {
+    const type = String(rule.ruleType || rule.rule_type || '').toLowerCase();
+    const action = String(rule.actions?.action || rule.actions_json?.action || '').toLowerCase();
+    return rule.isActive !== false && (type === 'draft_style' || action === 'apply_draft_style');
+  }) || null;
+}
+
+function populateCorrespondenceDraftRuleFields(){
+  const rule = correspondenceStoredDraftRule();
+  const actions = rule?.actions || rule?.actions_json || {};
+  const categories = actions.draft_style_categories || actions.draftStyleCategories || {};
+  if(correspondenceWritingRuleMap) correspondenceWritingRuleMap.value = '';
+  correspondenceDraftRuleFields.forEach((field) => {
+    const key = field.dataset.correspondenceWritingRule || '';
+    field.value = categories?.[key] || '';
+  });
+  if(correspondenceDraftRules){
+    const hasCategories = Object.values(categories || {}).some(Boolean);
+    correspondenceDraftRules.value = actions.draft_style_notes || actions.draftStyleNotes || (hasCategories ? '' : (actions.draft_style || correspondenceDraftRuleText() || ''));
+  }
+  renderCorrespondenceWritingRuleSummary();
+}
+
+function correspondenceActiveDraftRuleText(){
+  const fieldsText = correspondenceDraftRuleSummary();
+  return fieldsText || correspondenceDraftRuleText();
+}
+
+function renderCorrespondenceWritingRuleSummary(){
+  if(!correspondenceWritingRulesSummary) return;
+  const text = correspondenceActiveDraftRuleText();
+  correspondenceWritingRulesSummary.textContent = text || 'No saved Executive Inbox writing rules yet.';
 }
 
 function renderCorrespondenceRulesPanel(){
@@ -8893,6 +9376,16 @@ function renderCorrespondenceRulesPanel(){
     const meta = document.createElement('p');
     const action = rule.actions?.action || rule.actions_json?.action || rule.ruleType || rule.rule_type || 'review';
     const condition = rule.conditions?.from_email || rule.conditions_json?.from_email || rule.conditions?.from_domain || rule.conditions_json?.from_domain || rule.conditions?.subject_contains || rule.conditions_json?.subject_contains || 'Executive Inbox';
+    const type = String(rule.ruleType || rule.rule_type || '').toLowerCase();
+    if(type === 'draft_style' || String(action).toLowerCase() === 'apply_draft_style'){
+      const actions = rule.actions || rule.actions_json || {};
+      meta.textContent = 'Applies to private Executive Inbox reply drafts and Discuss with VAL on selected email threads.';
+      const detail = document.createElement('pre');
+      detail.textContent = actions.draft_style || correspondenceRuleLabel(rule);
+      article.append(title, meta, detail);
+      correspondenceRulesList.appendChild(article);
+      return;
+    }
     meta.textContent = [String(action).replace(/_/g, ' '), condition].filter(Boolean).join(' · ');
     article.append(title, meta);
     correspondenceRulesList.appendChild(article);
@@ -8909,6 +9402,21 @@ function setCorrespondenceRulesPanel(open){
 function toggleCorrespondenceRulesPanel(){
   if(!correspondenceRulesPanel) return;
   setCorrespondenceRulesPanel(correspondenceRulesPanel.hidden);
+}
+
+function setCorrespondenceWritingRulesPanel(open){
+  if(!correspondenceWritingRulesPanel) return;
+  correspondenceWritingRulesPanel.hidden = !open;
+  correspondenceWritingRulesPanel.setAttribute('aria-hidden', String(!open));
+  if(open){
+    populateCorrespondenceDraftRuleFields();
+    window.requestAnimationFrame(() => (correspondenceDraftRuleFields[0] || correspondenceDraftRules)?.focus());
+  }
+}
+
+function toggleCorrespondenceWritingRulesPanel(){
+  if(!correspondenceWritingRulesPanel) return;
+  setCorrespondenceWritingRulesPanel(correspondenceWritingRulesPanel.hidden);
 }
 
 function normalizeCorrespondenceRuleSuggestion(suggestion, source = 'val'){
@@ -8974,7 +9482,16 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   const selected = activeCorrespondenceItem;
   setCorrespondenceField('status', selected ? (selected.status === 'waiting_for_response' ? 'Waiting for response' : (selected.status === 'needs_context' ? 'Needs context' : 'Ready')) : 'Clear');
   setCorrespondenceField('title', selected?.title || 'No Executive Inbox conversations');
-  setCorrespondenceField('summary', selected?.summary || 'VAL has not found a connected Gmail thread that needs executive judgment yet.');
+  setCorrespondenceField('summary', selected?.summary || 'Nothing needs your attention right now.');
+  const selectedPriority = selected?.priority || (selected?.status === 'needs_context' ? 'Medium' : selected ? 'High' : 'Clear');
+  const lastContact = selected?.receivedAt || selected?.lastContact || selected?.date || '—';
+  const sourceLabel = selected?.provider === 'gmail' || selected?.source === 'gmail' || selected?.source === 'local_preview' ? 'Gmail' : (selected?.provider || selected?.source || 'Gmail');
+  const relationshipState = (selected?.relationships || []).length ? 'Active' : 'Unlinked';
+  setCorrespondenceField('priority', selectedPriority.charAt(0).toUpperCase() + selectedPriority.slice(1));
+  setCorrespondenceField('last-contact', correspondenceHumanContactTime(lastContact) || '—');
+  setCorrespondenceField('source', sourceLabel);
+  setCorrespondenceField('relationship-state', relationshipState);
+  setCorrespondenceField('decision-summary', selected?.whyNow || selected?.summary || 'When VAL admits a conversation, this card will show the reason, the next best action, and the source thread.');
   const hasDraft = !!String(selected?.draftBody || '').trim();
   setCorrespondenceField('draft-title', selected && hasDraft ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
   setCorrespondenceField('draft-note', selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.');
@@ -8987,12 +9504,14 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   }
   if(correspondenceSafety) correspondenceSafety.textContent = '';
   document.querySelectorAll('[data-correspondence-action]').forEach((button) => {
-    const allowed = correspondenceSuggestedActions(selected).includes(button.dataset.correspondenceAction);
+    const action = button.dataset.correspondenceAction;
+    const isDraftSend = action === 'send' && button.closest('.correspondence-actions');
+    const allowed = correspondenceSuggestedActions(selected).includes(action) || isDraftSend;
     button.hidden = !allowed;
-    button.disabled = !allowed;
+    button.disabled = !allowed || (isDraftSend && !hasDraft);
     button.setAttribute('aria-hidden', String(!allowed));
   });
-  scrollCorrespondenceActionsIntoView();
+  if(selected && !selected.threadHydrated) hydrateSelectedCorrespondenceThread(selected);
 }
 
 function showCorrespondenceLocalBoundary(action, item = activeCorrespondenceItem){
@@ -9118,6 +9637,7 @@ async function hydrateCorrespondenceRules(){
   try{
     const data = await getJson('/api/email/rules');
     currentCorrespondenceRules = Array.isArray(data.rules) ? data.rules : [];
+    if(correspondenceWritingRulesPanel && !correspondenceWritingRulesPanel.hidden) populateCorrespondenceDraftRuleFields();
   }catch(error){
     currentCorrespondenceRules = [];
     if(correspondenceRuleStatus) correspondenceRuleStatus.textContent = 'Rules unavailable';
@@ -9207,6 +9727,38 @@ async function saveCorrespondenceRulePayload(payload, successText){
   return result.rule || payload;
 }
 
+async function saveCorrespondenceDraftRules(){
+  const categories = correspondenceDraftRuleCategories();
+  const notes = String(correspondenceDraftRules?.value || '').trim();
+  const text = correspondenceDraftRuleSummary(categories, notes);
+  if(!text){
+    if(correspondenceSafety) correspondenceSafety.textContent = 'Add the writing guidance you want VAL to remember before saving.';
+    return null;
+  }
+  const existing = currentCorrespondenceRules.find((rule) => {
+    const type = String(rule.ruleType || rule.rule_type || '').toLowerCase();
+    const action = String(rule.actions?.action || rule.actions_json?.action || '').toLowerCase();
+    return type === 'draft_style' || action === 'apply_draft_style';
+  });
+  const saved = await saveCorrespondenceRulePayload({
+    id: existing?.id || '',
+    provider:'any',
+    ruleName:'Executive Inbox writing rules',
+    ruleType:'draft_style',
+    conditions:{surface:'executive_inbox'},
+    actions:{action:'apply_draft_style', draft_style:text, draft_style_categories:categories, draft_style_notes:notes},
+    approvalMode:'review_only',
+    confidenceThreshold:'high',
+    createdFrom:'executive_inbox_writing_rules'
+  }, 'Saved Executive Inbox writing rules. VAL will use them when preparing review drafts.');
+  if(saved){
+    renderCorrespondenceWritingRuleSummary();
+    setCorrespondenceWritingRulesPanel(false);
+    setCorrespondenceRulesPanel(true);
+  }
+  return saved;
+}
+
 async function saveCorrespondenceForwardRule(item = activeCorrespondenceItem){
   const ruleText = String(correspondenceForwardTo?.value || '').trim();
   if(!ruleText){
@@ -9270,27 +9822,81 @@ async function searchCorrespondenceInbox(){
   if(correspondenceSafety) correspondenceSafety.textContent = result.answer || (rows.length ? 'Found ' + rows.length + ' inbox result' + (rows.length === 1 ? '' : 's') + '.' : 'No matching inbox messages found.');
 }
 
-async function draftCorrespondenceReply(item = activeCorrespondenceItem){
+async function draftCorrespondenceReply(item = activeCorrespondenceItem, options = {}){
   if(!item) return;
   if(!canUseApi){
     if(correspondenceSafety) correspondenceSafety.textContent = 'The local VAL server is needed to prepare a reply draft.';
     return;
   }
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private reply draft. Nothing will be sent.';
+  if(correspondenceSafety) correspondenceSafety.textContent = options.automatic ? 'Preparing a private reply draft with your saved Writing Rules. Nothing will be sent.' : 'Preparing a private reply draft. Nothing will be sent.';
   let result = null;
-  if(item.conversationId){
+  if(item.conversationId || item.messageId || item.threadId){
     try{
-      result = await postJson('/api/val/email/generate-draft', {conversationId:item.conversationId});
+      result = await postJson('/api/val/email/generate-draft', {
+        conversationId:item.conversationId || '',
+        messageId:item.messageId || '',
+        threadId:item.threadId || '',
+        provider:item.provider || '',
+        writingRules:correspondenceActiveDraftRuleText()
+      });
     }catch(error){
       result = null;
     }
   }
-  if(!result?.draft){
-    result = await postJson('/api/email/actions', {action:'draft_reply', email:correspondenceEmailForAction(item)});
+  const primaryDraft = result?.draft || {};
+  const primaryBody = String(primaryDraft.body || result?.writer_output?.body || '').trim();
+  if(!primaryBody){
+    const fallback = await postJson('/api/email/inbox-command/action', {
+      action:'draft_reply',
+      email:correspondenceEmailForAction(item),
+      writingRules:correspondenceActiveDraftRuleText()
+    });
+    const fallbackDraft = fallback.draft || fallback.internalDraft || {};
+    const savedFallback = await postJson('/api/val/drafts', {
+      draftType:'email_reply',
+      provider:'internal',
+      subject:fallbackDraft.subject || ('Re: ' + (item.title || '')),
+      body:fallbackDraft.body || item.draftBody || '',
+      status:'ready_for_review',
+      sourceContext:{
+        source:'executive_inbox_review_only',
+        noExternalAction:true,
+        noProviderDraftCreated:true,
+        fallbackReason:'selected_thread_history_unavailable',
+        writingRules:correspondenceActiveDraftRuleText(),
+        provider:item.provider || 'email',
+        conversationId:item.conversationId || '',
+        threadId:item.threadId || '',
+        messageId:item.messageId || '',
+        currentMessageId:item.messageId || '',
+        to:item.senderEmail || item.recipientEmail || item.from?.email || '',
+        from:item.from || {name:item.senderName || '', email:item.senderEmail || ''},
+        conversationContext:{
+          conversationId:item.conversationId || '',
+          threadId:item.threadId || '',
+          provider:item.provider || 'email',
+          latest_inbound:{
+            subject:item.title || '',
+            date:item.receivedAt || item.lastContact || item.date || '',
+            bodyPreview:item.bodyPreview || item.snippet || item.summary || '',
+            from:item.from || {name:item.senderName || '', email:item.senderEmail || ''}
+          },
+          messages:correspondenceThreadMessagesFromSource(item.raw || {}, item)
+        }
+      }
+    });
+    result = {
+      ok:true,
+      draft:savedFallback.draft || fallbackDraft,
+      status:'ready_for_review',
+      no_external_action:true,
+      fallback:true
+    };
   }
   const draft = result.draft || result.internalDraft || {};
   const updated = {
     ...item,
+    autoDraftAttempted:true,
     draftId:draft.id || item.draftId || '',
     draftBody:draft.body || result.draft?.body || item.draftBody || '',
     title:draft.subject || item.title,
@@ -9300,7 +9906,7 @@ async function draftCorrespondenceReply(item = activeCorrespondenceItem){
   currentCorrespondenceItems = [updated].concat(currentCorrespondenceItems.filter((row) => row.id !== item.id));
   activeCorrespondenceItem = updated;
   renderCorrespondenceBrief(updated);
-  if(correspondenceSafety) correspondenceSafety.textContent = 'Private reply draft prepared for review. Nothing was sent.';
+  if(correspondenceSafety) correspondenceSafety.textContent = 'Private reply draft prepared for review using current Writing Rules. Nothing was sent.';
 }
 
 async function forwardCorrespondenceDraft(item = activeCorrespondenceItem){
@@ -9364,9 +9970,15 @@ async function linkCorrespondenceContext(kind = 'relationship', item = activeCor
 }
 
 function selectedCorrespondenceRelationship(){
-  const id = String(correspondenceRelationshipSelect?.value || '').trim();
+  let id = String(correspondenceRelationshipSelect?.value || '').trim();
+  if(!id && correspondenceRelationshipSearch){
+    const query = correspondenceRelationshipSearch.value.trim().toLowerCase();
+    const exact = query ? correspondenceRelationshipOptions().find((item) => item.label.toLowerCase() === query || String(item.email || '').toLowerCase() === query) : null;
+    if(exact) id = exact.id;
+  }
+  const option = id ? correspondenceRelationshipOptions().find((item) => item.id === id) : null;
   const profile = id ? relationshipIndexProfiles[id] || relationshipIndexSourceProfiles()[id] : null;
-  return profile ? {id, name:correspondenceOptionLabel(profile), email:profile.email || profile.primaryEmail || ''} : null;
+  return option || profile ? {id, name:option?.label || correspondenceOptionLabel(profile), email:option?.email || profile?.email || profile?.primaryEmail || ''} : null;
 }
 
 function selectedCorrespondenceProject(){
@@ -9443,8 +10055,7 @@ function dismissCorrespondenceRuleSuggestion(index){
 }
 
 async function hydrateCorrespondenceDrawer(){
-  correspondenceLoading = true;
-  currentCorrespondenceScanStatus = 'Checking Gmail and relationship history...';
+  setCorrespondenceLoadingState(true, 'Checking Gmail, sent history, saved contacts, and relationship context before showing the inbox.');
   currentCorrespondenceItems = [];
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
@@ -9454,6 +10065,7 @@ async function hydrateCorrespondenceDrawer(){
   ]);
   renderCorrespondenceIntelligence(activeCorrespondenceItem);
   if(!canUseApi){
+    setCorrespondenceLoadingState(false, 'The live VAL server is needed to load Executive Inbox.');
     hydrateCorrespondenceRules();
     return;
   }
@@ -9466,15 +10078,15 @@ async function hydrateCorrespondenceDrawer(){
     });
     currentCorrespondenceItems = Array.from(byId.values());
     activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
-    correspondenceLoading = false;
     currentCorrespondenceScanStatus = currentCorrespondenceItems.length ? '' : 'No unresolved conversations crossed the Executive Inbox judgment gate.';
+    setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
     renderCorrespondenceBrief(activeCorrespondenceItem);
     await hydrateCorrespondenceRules();
   }catch(error){
     console.warn('[hearth] correspondence drawer unavailable', error.message);
-    correspondenceLoading = false;
     currentCorrespondenceItems = [];
     activeCorrespondenceItem = null;
+    setCorrespondenceLoadingState(false, 'Executive Inbox could not load live Gmail-classified conversations.');
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety) correspondenceSafety.textContent = 'Executive Inbox could not load live Gmail-classified conversations. No demo emails are being shown.';
     await hydrateCorrespondenceRules();
@@ -9490,9 +10102,8 @@ async function scanCorrespondenceWindow(days = 30){
     return;
   }
   currentCorrespondenceScanDays = scanDays;
-  correspondenceLoading = true;
   correspondenceScanInFlight = true;
-  currentCorrespondenceScanStatus = 'Scanning the last ' + scanDays + ' days of connected Gmail. Low-priority mail will stay out of Executive Inbox.';
+  setCorrespondenceLoadingState(true, 'Scanning the last ' + scanDays + ' days of connected Gmail. Low-priority mail will stay out of Executive Inbox.');
   renderCorrespondenceList();
   if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   try{
@@ -9503,15 +10114,15 @@ async function scanCorrespondenceWindow(days = 30){
       ? 'Found ' + currentCorrespondenceItems.length + ' Executive Inbox item' + (currentCorrespondenceItems.length === 1 ? '' : 's') + ' in the last ' + scanDays + ' days.'
       : 'Scanned the last ' + scanDays + ' days. No unresolved Gmail threads crossed the Executive Inbox judgment gate.';
     correspondenceScanInFlight = false;
-    correspondenceLoading = false;
+    setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
     renderCorrespondenceBrief(activeCorrespondenceItem);
     if(correspondenceSafety){
       correspondenceSafety.textContent = currentCorrespondenceScanStatus;
     }
   }catch(error){
     correspondenceScanInFlight = false;
-    correspondenceLoading = false;
     currentCorrespondenceScanStatus = 'Gmail scan failed: ' + error.message;
+    setCorrespondenceLoadingState(false, currentCorrespondenceScanStatus);
     renderCorrespondenceList();
     if(correspondenceSafety) correspondenceSafety.textContent = currentCorrespondenceScanStatus;
   }
@@ -9597,6 +10208,10 @@ async function handleCorrespondenceAction(action){
     toggleCorrespondenceRulesPanel();
     return;
   }
+  if(action === 'show_writing_rules'){
+    toggleCorrespondenceWritingRulesPanel();
+    return;
+  }
   const item = activeCorrespondenceItem;
   if(action === 'search_inbox'){
     await searchCorrespondenceInbox();
@@ -9612,6 +10227,15 @@ async function handleCorrespondenceAction(action){
   }
   if(action === 'suggest_rules'){
     await analyzeCorrespondenceRuleSuggestions();
+    return;
+  }
+  if(action === 'create_rule'){
+    await analyzeCorrespondenceRuleSuggestions();
+    setCorrespondenceRulesPanel(false);
+    return;
+  }
+  if(action === 'save_draft_rules'){
+    await saveCorrespondenceDraftRules();
     return;
   }
   if(!item) return;
@@ -9701,7 +10325,7 @@ async function handleCorrespondenceAction(action){
         return;
       }
       if(correspondenceSafety) correspondenceSafety.textContent = 'Preparing a private draft for review. Nothing will be sent from this click.';
-      const result = await postJson('/api/val/email/generate-draft', {conversationId:item.conversationId});
+      const result = await postJson('/api/val/email/generate-draft', {conversationId:item.conversationId, writingRules:correspondenceActiveDraftRuleText()});
       const generated = normalizeCorrespondenceDraft(result.draft || {});
       currentCorrespondenceItems = [generated].concat(currentCorrespondenceItems.filter((row) => row.id !== generated.id));
       activeCorrespondenceItem = generated;
@@ -9754,12 +10378,12 @@ async function runCorrespondenceActionClick(correspondenceAction, event){
     if(typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
   }
   const correspondenceActionId = correspondenceAction.dataset.correspondenceAction;
-  const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
-  if(drawerUtilityAction && !activeCorrespondenceItem){
+  const drawerUtilityAction = ['show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'].includes(correspondenceActionId);
+  if(drawerUtilityAction){
     await handleCorrespondenceAction(correspondenceActionId);
     return true;
   }
-  const inspectOnlyAction = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project', 'show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules'].includes(correspondenceActionId);
+  const inspectOnlyAction = ['cowork_correspondence', 'generate', 'forward', 'resolve_thread', 'safe_contact', 'not_executive_contact', 'link_relationship', 'create_relationship', 'link_project', 'create_project', 'show_rules', 'search_inbox', 'save_forward_rule', 'save_safe_contact', 'suggest_rules', 'create_rule', 'show_writing_rules', 'save_draft_rules'].includes(correspondenceActionId);
   const preflight = await ensureHearthClickPacket({node:correspondenceAction, packetName:'email_packet', action:correspondenceActionId, allowBlockedForInspection:inspectOnlyAction, source:{email:activeCorrespondenceItem || null, sourceId:activeCorrespondenceItem?.id || '', sourceType:'executive_inbox_item', sourceLabel:activeCorrespondenceItem?.title || 'Executive Inbox action', sourceItem:activeCorrespondenceItem || null}});
   if(!preflight.ok) return true;
   await handleCorrespondenceAction(correspondenceActionId);
@@ -11885,17 +12509,18 @@ function bringDrawerTargetIntoView(target){
 }
 
 function timelineNativeLineItems(value = ''){
+  const cleanLine = (item) => String(item || '').replace(/^\s*#{1,6}\s*/, '').replace(/^[-*]\s*/, '').replace(/^\[[ x]\]\s*/i, '').replace(/^\d+[.)]\s*/, '').trim();
   if(Array.isArray(value)){
     return value.map((item) => {
       if(typeof item === 'string') return item;
       if(!item || typeof item !== 'object') return '';
       return item.title || item.text || item.summary || item.point || item.name || '';
-    }).map((item) => String(item || '').replace(/^[-*]\s*/, '').replace(/^\[[ x]\]\s*/i, '').replace(/^\d+[.)]\s*/, '').trim()).filter(Boolean);
+    }).map(cleanLine).filter(Boolean);
   }
   const text = String(value || '').trim();
   if(!text) return [];
   return text.split(/\n+/)
-    .map((item) => item.replace(/^[-*]\s*/, '').replace(/^\[[ x]\]\s*/i, '').replace(/^\d+[.)]\s*/, '').trim())
+    .map(cleanLine)
     .filter(Boolean)
     .filter((item) => !/^(Action Items?|Key Points|Meeting Overview|Summary|Overview)\s*:?\s*$/i.test(item));
 }
@@ -11913,10 +12538,26 @@ function timelineSourceReceipt(transcript = {}){
   const actionSection = sections.find((section) => section?.kind === 'action_items') || {};
   const keyPointsSection = sections.find((section) => section?.kind === 'key_points') || {};
   const actionItems = Array.isArray(receipt.actionItems) ? receipt.actionItems.filter(Boolean).map(String) : [];
-  const keyPoints = Array.isArray(receipt.keyPoints) ? receipt.keyPoints.filter(Boolean).map(String) : [];
+  const sourceLineLooksLikeTranscript = (line) => {
+    const text = String(line || '').trim();
+    return text.length > 260
+      || /\b\d{1,2}:\d{2}\b/.test(text)
+      || /^[A-Z][A-Za-z .'-]{1,40}\s*[:|]\s*\d{1,2}:\d{2}/.test(text)
+      || /(?:Speaker[_\s-]?\d+|Jessa Grace|Doug|Greg|Michele|Daniel)\s*[:|]\s+.{40,}/i.test(text);
+  };
+  const keyPoints = (Array.isArray(receipt.keyPoints) ? receipt.keyPoints.filter(Boolean).map(String) : [])
+    .map((item) => item.replace(/^\s*#{1,6}\s*/, '').trim())
+    .filter((item) => !sourceLineLooksLikeTranscript(item))
+    .slice(0, 12);
+  const safeSections = sections.filter((section) => {
+    if(section?.kind !== 'key_points') return true;
+    const lines = Array.isArray(section.lines) ? section.lines : [];
+    if(lines.length > 12) return false;
+    return !lines.some(sourceLineLooksLikeTranscript);
+  });
   return {
     body:String(receipt.body || '').trim(),
-    sections,
+    sections:safeSections,
     actionItems,
     keyPoints,
     actionHeading:String(actionSection.heading || 'Action Items'),
@@ -11942,7 +12583,7 @@ function timelineKrispSections(transcript = {}){
     || text.match(/Action Items?\s*:?\s*([\s\S]*?)(?:\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*|$)/i);
   const overviewMatch = text.match(/(?:^|\n)\s*#{0,3}\s*(?:Key Points|Meeting Overview|Summary|Overview)\s*:?\s*([\s\S]*)$/i)
     || text.match(/\b(?:Key Points|Meeting Overview|Summary|Overview)\b\s*:?\s*([\s\S]*)$/i);
-  const overview = overviewMatch ? overviewMatch[1].trim() : '';
+  const overview = overviewMatch ? overviewMatch[1].replace(/^\s*#{1,6}\s*/gm, '').trim() : '';
   const structuredActionItems = timelineNativeLineItems(sourceSections.action_items || sourceSections.actionItems || sourceSections.actions);
   const structuredKeyPoints = timelineNativeLineItems(sourceSections.key_points || sourceSections.keyPoints || sourceSections.points || sourceSections.summary_points);
   const actionItems = actionMatch
@@ -11950,7 +12591,7 @@ function timelineKrispSections(transcript = {}){
     : [];
   return {
     actionItems: structuredActionItems.length ? structuredActionItems : actionItems,
-    keyPoints: structuredKeyPoints.length ? structuredKeyPoints : timelineNativeLineItems(overview),
+    keyPoints: (structuredKeyPoints.length ? structuredKeyPoints : timelineNativeLineItems(overview)).filter((item) => item.length <= 260 && !/\b\d{1,2}:\d{2}\b/.test(item)),
     overview
   };
 }
@@ -12084,7 +12725,7 @@ function timelineListItems(value){
         if(parsed && typeof parsed === 'object') return Object.values(parsed).filter(Boolean);
       }catch(_){}
     }
-    return trimmed.split(/\n+|;\s*/).map((item) => item.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+    return trimmed.split(/\n+|;\s*/).map((item) => item.replace(/^\s*#{1,6}\s*/, '').replace(/^[-*]\s*/, '').trim()).filter(Boolean);
   }
   return [];
 }
@@ -12106,6 +12747,7 @@ function timelineTranscriptInvitees(transcript = {}){
   const buckets = [
     transcript.attendees,
     transcript.invitees,
+    transcript.participants,
     transcript.calendarEvent?.attendees,
     transcript.calendar_event?.attendees,
     transcript.event?.attendees,
@@ -12118,12 +12760,18 @@ function timelineTranscriptInvitees(transcript = {}){
   const seen = new Set();
   return buckets.flatMap((bucket) => Array.isArray(bucket) ? bucket : [])
     .map((person) => {
-      if(typeof person === 'string') return {label:person, key:person.toLowerCase()};
-      const email = person?.email || person?.address || person?.emailAddress?.address || person?.mail || '';
-      const name = person?.name || person?.displayName || person?.emailAddress?.name || person?.speakerNameRaw || '';
+      if(typeof person === 'string'){
+        const emailMatch = person.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        const email = emailMatch ? emailMatch[0].toLowerCase() : '';
+        return {label:person.replace(/<.*?>/g, '').trim(), name:person.replace(/<.*?>/g, '').replace(email, '').trim(), email, key:(email || person).toLowerCase(), relationshipId:'', projectId:''};
+      }
+      const email = person?.email || person?.address || person?.emailAddress?.address || person?.mail || person?.matchedEmail || '';
+      const name = person?.name || person?.displayName || person?.emailAddress?.name || person?.speakerNameRaw || person?.matchedContactName || '';
       const label = String(name || email || '').trim();
       const key = String(email || label || '').trim().toLowerCase();
-      return label ? {label, key} : null;
+      const relationshipId = person?.relationshipId || person?.matchedContactId || person?.contactId || person?.crmContactId || person?.profileKey || '';
+      const projectId = person?.projectId || person?.matchedProjectId || person?.projectProfileId || '';
+      return label ? {label, name, email, key, relationshipId, projectId, matchReason:person?.matchReason || person?.relationshipStatus || ''} : null;
     })
     .filter(Boolean)
     .filter((person) => {
@@ -12133,13 +12781,76 @@ function timelineTranscriptInvitees(transcript = {}){
     });
 }
 
+function timelineTranscriptCalendarEventId(transcript = {}){
+  return String(transcript.calendarEventId || transcript.calendar_event_id || transcript.meetingId || transcript.meeting_id || transcript.calendarEvent?.id || transcript.calendar_event?.id || transcript.event?.id || transcript.metadata?.calendarEventId || transcript.sourcePayloadMetadata?.calendarEventId || '').trim();
+}
+
+function timelineSelectedProjectOption(root = drawerTray){
+  const input = root?.querySelector?.('[data-transcript-project-search]');
+  const raw = String(input?.value || '').trim();
+  if(!raw) return null;
+  const lower = raw.toLowerCase();
+  const project = projectIndexItems().find((item) => [item.name,item.displayName,item.id,item.projectId,item.profileKey].filter(Boolean).some((value) => String(value).toLowerCase() === lower)) || projectIndexProfiles[raw] || projectProfiles[raw] || null;
+  return project ? {id:project.id || project.projectId || project.profileKey || raw, name:project.name || project.displayName || raw} : {id:raw, name:raw};
+}
+
+function timelineSelectedRelationshipOption(value = ''){
+  const raw = String(value || '').trim();
+  if(!raw) return null;
+  const lower = raw.toLowerCase();
+  const relationship = relationshipIndexItems().find((item) => [item.name,item.displayName,item.email,item.id,item.profileKey,item.contactId].filter(Boolean).some((candidate) => String(candidate).toLowerCase() === lower)) || relationshipIndexProfiles[raw] || relationshipProfiles[raw] || null;
+  return relationship ? {id:relationship.id || relationship.profileKey || relationship.contactId || raw, name:relationship.name || relationship.displayName || raw, email:relationship.email || relationship.query?.email || ''} : {id:raw, name:raw, email:''};
+}
+
+function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft = null){
+  const invitees = timelineTranscriptInvitees(transcript);
+  const projectOptions = projectIndexItems().slice(0, 80).map((project) => '<option value="' + escapeHtml(project.name || project.displayName || project.id || '') + '"></option>').join('');
+  const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
+  const attendeeRows = invitees.length ? invitees.map((person, index) => [
+    '<article class="timeline-attendee-row" data-transcript-attendee-row="' + index + '">',
+    '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span>' + escapeHtml(person.email || 'No email captured') + '</span></div>',
+    '<input type="search" list="timeline-relationship-options" placeholder="Search relationship..." value="' + escapeHtml(person.relationshipId || '') + '" data-transcript-relationship-search aria-label="Search relationship for ' + escapeHtml(person.label || 'attendee') + '">',
+    '<button type="button" data-transcript-action="link_relationship" data-transcript-attendee-index="' + index + '">' + escapeHtml(person.relationshipId ? 'Confirm link' : 'Add/link relationship') + '</button>',
+    '</article>'
+  ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
+  const attendeeCount = invitees.length;
+  const actionCount = (overviewDraft || timelineMeetingOverviewDraft(transcript)).actionItems.length;
+  return [
+    '<section class="timeline-transcript-section timeline-transcript-send-panel" data-transcript-section="send-action-items">',
+    '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Send Action Items to Attendees</strong></div>',
+    '<p>Uses the Action Items exactly as shown in this transcript. VAL prepares the email for review before anything leaves your account.</p>',
+    '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Send Action Items to Attendees</button>',
+    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
+    '</section>',
+    '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
+    '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
+    '<p>If VAL missed a relationship or project, link it here so the Round Table packets and future prepared work have the right context.</p>',
+    '<div class="timeline-project-link-row">',
+    '<input type="search" list="timeline-project-options" placeholder="Search project..." data-transcript-project-search aria-label="Search project for this transcript">',
+    '<button type="button" data-transcript-action="link_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Link transcript to project</button>',
+    '</div>',
+    '<datalist id="timeline-project-options">' + projectOptions + '</datalist>',
+    '<datalist id="timeline-relationship-options">' + relationshipOptions + '</datalist>',
+    '<div class="timeline-attendee-list">' + attendeeRows + '</div>',
+    '</section>'
+  ].join('');
+}
+
 function timelineMeetingOverviewDraft(transcript = {}, tasks = [], summary = null){
   const receipt = timelineSourceReceipt(transcript);
+  const taskLines = (Array.isArray(tasks) ? tasks : []).map((task) => String(task?.taskTitle || task?.title || task?.text || task?.sourceQuote || '').trim()).filter(Boolean);
+  const actionItems = receipt.actionItems.length ? receipt.actionItems : taskLines;
+  const sourceSections = receipt.sections.filter((section) => section.kind !== 'key_points' || receipt.keyPoints.length);
+  const sections = sourceSections.length ? sourceSections : (taskLines.length ? [{kind:'action_items', heading:'Action Items', lines:taskLines}] : []);
+  const body = receipt.body || (taskLines.length ? ['Action Items', ...taskLines.map((line, index) => (index + 1) + '. ' + line)].join('\n') : '');
   const invitees = timelineTranscriptInvitees(transcript);
   return {
     ...receipt,
+    body,
+    sections,
+    actionItems,
     invitees,
-    ready:receipt.ready
+    ready:Boolean(receipt.ready || actionItems.length)
   };
 }
 
@@ -12172,7 +12883,7 @@ function renderTimelineTranscriptSourceSections(transcript = {}, overviewDraft =
   return [
     sourceSections.map((section) => {
       const actionSection = section.kind === 'action_items';
-      const lines = Array.isArray(section.lines) ? section.lines : [];
+	      const lines = (Array.isArray(section.lines) ? section.lines : []).map((line) => String(line || '').replace(/^\s*#{1,6}\s*/, '').trim()).filter(Boolean);
       const sectionName = actionSection ? 'action-items' : 'key-points';
       return [
         '<section class="timeline-transcript-section timeline-source-receipt" data-transcript-section="' + sectionName + '">',
@@ -12305,7 +13016,21 @@ function timelineFullTranscriptText(transcript = {}){
     payload.data?.rawTranscript,
     payload.data?.rawText
   ];
-  return candidates.find((value) => typeof value === 'string' && value.trim()) || '';
+  const text = candidates.find((value) => typeof value === 'string' && value.trim()) || '';
+  return String(text || '').replace(/^\s*#{1,6}\s*/gm, '');
+}
+
+function timelineTranscriptDownloadUrl(transcript = {}){
+  const metadata = transcript.metadata || {};
+  const payload = transcript.sourcePayloadMetadata || metadata.sourcePayloadMetadata || metadata;
+  const candidates = [
+    transcript.downloadUrl, transcript.download_url, transcript.sourceUrl, transcript.source_url, transcript.url,
+    metadata.downloadUrl, metadata.download_url, metadata.sourceUrl, metadata.source_url, metadata.url,
+    metadata.documentUrl, metadata.document_url, metadata.krispDownloadUrl, metadata.krisp_download_url,
+    payload.downloadUrl, payload.download_url, payload.sourceUrl, payload.source_url, payload.url,
+    payload.documentUrl, payload.document_url, payload.data?.downloadUrl, payload.data?.sourceUrl, payload.data?.url
+  ];
+  return String(candidates.find((value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim())) || '').trim();
 }
 
 function renderTimelineTranscriptDetail(transcript = {}){
@@ -12316,6 +13041,7 @@ function renderTimelineTranscriptDetail(transcript = {}){
   const tasks = timelineTranscriptTasks(transcript);
   const rawTitle = transcript.title || transcript.meetingTitle || '';
   const sourceText = timelineFullTranscriptText(transcript);
+  const downloadUrl = timelineTranscriptDownloadUrl(transcript);
   const overviewDraft = timelineMeetingOverviewDraft(transcript, tasks);
   timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
   timelineReviewCards.innerHTML = [
@@ -12325,9 +13051,13 @@ function renderTimelineTranscriptDetail(transcript = {}){
     '</div>',
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
+    renderTimelineTranscriptMappingControls(transcript, overviewDraft),
     renderTimelineMeetingOverviewDraft(transcript, tasks, overviewDraft),
     '<section class="timeline-transcript-section timeline-transcript-cowork"><h4>Co-Work on This Transcript</h4><p>VAL will use this selected meeting\'s exact Krisp receipt to prepare a reviewable internal result.</p><button type="button" data-transcript-cowork="' + escapeHtml(transcript.id || '') + '">Open Transcript Working Brief</button></section>',
+    '<div class="timeline-transcript-source-actions">',
     '<button type="button" class="transcript-view-full" data-transcript-full-toggle>View full transcript</button>',
+    downloadUrl ? '<a class="transcript-download-link" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener">Download transcript</a>' : '',
+    '</div>',
     '<div class="transcript-full-text" data-transcript-full hidden>' + escapeHtml(sourceText || 'The full transcript source text was not supplied with this record.') + '</div>',
     '<p class="timeline-transcript-receipt" data-transcript-action-status></p>',
     '</article>'
@@ -12370,6 +13100,10 @@ async function loadTimelineTranscripts({openFirst = true} = {}){
   renderTimelineTranscriptEmpty();
   if(!canUseApi) return;
   try{
+    await Promise.all([
+      hydrateRelationshipIndex().catch(() => null),
+      hydrateProjectIndex().catch(() => null)
+    ]);
     const data = await getJson('/api/val/transcripts?days=3650&limit=30', {cache: 'no-store'});
     currentTimelineTranscriptItems = Array.isArray(data.transcripts) ? data.transcripts : [];
     renderTimelineTranscriptStats(data);
@@ -12391,6 +13125,77 @@ function focusTimelineTranscriptSection(section){
 async function openTranscriptLeverage(){
   await hydratePreparedWorkQueue();
   openLeverageApprovalWorkspace();
+}
+
+function setTimelineTranscriptActionStatus(message = '', tone = ''){
+  const status = drawerTray?.querySelector?.('[data-transcript-action-status]');
+  if(!status) return;
+  status.textContent = message || '';
+  status.dataset.tone = tone || '';
+}
+
+async function prepareTranscriptActionItemsEmail(transcriptId = ''){
+  if(!transcriptId) return;
+  setTimelineTranscriptActionStatus('Preparing the attendee Action Items email...', 'working');
+  try{
+    const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/action-items-email-draft', {
+      writingRules: typeof correspondenceActiveDraftRuleText === 'function' ? correspondenceActiveDraftRuleText() : ''
+    });
+    if(currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId)){
+      const drafts = Array.isArray(currentTimelineTranscript.drafts) ? currentTimelineTranscript.drafts.filter((draft) => draft.id !== result.draft?.id) : [];
+      currentTimelineTranscript.drafts = result.draft ? [result.draft, ...drafts] : drafts;
+      renderTimelineTranscriptDetail(currentTimelineTranscript);
+    }
+    setTimelineTranscriptActionStatus(result.message || 'Action Items email is ready for review. No email was sent yet.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not prepare the Action Items email.', 'danger');
+  }
+}
+
+async function linkTimelineTranscriptProject(transcriptId = ''){
+  const project = timelineSelectedProjectOption();
+  if(!transcriptId || !project?.id){
+    setTimelineTranscriptActionStatus('Choose a project before linking this transcript.', 'danger');
+    return;
+  }
+  setTimelineTranscriptActionStatus('Linking this transcript to ' + project.name + '...', 'working');
+  try{
+    const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/link-project', {
+      projectId:project.id,
+      projectName:project.name,
+      transcriptTitle:timelineTranscriptTitle(currentTimelineTranscript || {}),
+      calendarEventId:timelineTranscriptCalendarEventId(currentTimelineTranscript || {})
+    });
+    setTimelineTranscriptActionStatus(result.message || 'Transcript linked to project locally.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not link this transcript to the project.', 'danger');
+  }
+}
+
+async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeIndex = 0, row = null){
+  const invitees = timelineTranscriptInvitees(currentTimelineTranscript || {});
+  const attendee = invitees[Number(attendeeIndex)] || {};
+  const selected = timelineSelectedRelationshipOption(row?.querySelector?.('[data-transcript-relationship-search]')?.value || attendee.relationshipId || '');
+  const project = timelineSelectedProjectOption();
+  setTimelineTranscriptActionStatus('Saving attendee mapping...', 'working');
+  try{
+    const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/link-relationship', {
+      name:attendee.name || attendee.label || selected?.name || '',
+      email:attendee.email || selected?.email || '',
+      relationshipId:selected?.id || attendee.relationshipId || '',
+      relationshipName:selected?.name || attendee.label || '',
+      projectId:project?.id || '',
+      projectName:project?.name || '',
+      transcriptTitle:timelineTranscriptTitle(currentTimelineTranscript || {})
+    });
+    setTimelineTranscriptActionStatus(result.message || 'Attendee mapping saved locally.', 'success');
+    if(result.relationship?.id && currentTimelineTranscript){
+      currentTimelineTranscript.attendees = timelineTranscriptInvitees(currentTimelineTranscript).map((person, index) => index === Number(attendeeIndex) ? {...person, relationshipId:result.relationship.id, matchReason:'User linked in transcript drawer'} : person);
+      renderTimelineTranscriptDetail(currentTimelineTranscript);
+    }
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not save the attendee mapping.', 'danger');
+  }
 }
 
 function renderTimelineStatus(data = null){
@@ -16483,6 +17288,7 @@ function restoreProjectWindow(projectId = ''){
 
 function restoreTimelineWindow(){
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'timeline';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
   drawerTray.setAttribute('aria-hidden', 'false');
@@ -20887,6 +21693,8 @@ timelineDrawerLink?.addEventListener('click', () => {
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
   const isOpen = drawerTray.classList.toggle('timeline-open');
+  if(isOpen) retrievalSystem.dataset.activeDrawer = 'timeline';
+  else retrievalSystem.removeAttribute('data-active-drawer');
   timelineDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
@@ -21189,6 +21997,9 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     if(transcriptAction.dataset.transcriptAction === 'open_leverage') await openTranscriptLeverage();
+    if(transcriptAction.dataset.transcriptAction === 'send_action_items') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'link_relationship') await linkTimelineTranscriptRelationship(currentTimelineTranscript?.id || '', transcriptAction.dataset.transcriptAttendeeIndex || 0, transcriptAction.closest('[data-transcript-attendee-row]'));
     return;
   }
   const transcriptTaskCreate = event.target.closest('[data-transcript-task-create]');
@@ -21290,6 +22101,27 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     setCorrespondenceRulesPanel(false);
+    return;
+  }
+  const correspondenceWritingRulesClose = event.target.closest('[data-correspondence-writing-rules-close]');
+  if(correspondenceWritingRulesClose || event.target === correspondenceWritingRulesPanel){
+    event.preventDefault();
+    event.stopPropagation();
+    setCorrespondenceWritingRulesPanel(false);
+    return;
+  }
+  const correspondenceAttachmentClose = event.target.closest('[data-correspondence-attachment-close]');
+  if(correspondenceAttachmentClose || event.target === correspondenceAttachmentPanel){
+    event.preventDefault();
+    event.stopPropagation();
+    setCorrespondenceAttachmentPanel(false);
+    return;
+  }
+  const correspondenceAttachment = event.target.closest('[data-correspondence-attachment-index]');
+  if(correspondenceAttachment){
+    event.preventDefault();
+    event.stopPropagation();
+    await openCorrespondenceAttachment(Number(correspondenceAttachment.dataset.correspondenceAttachmentIndex || 0));
     return;
   }
   const correspondenceSuggestionAccept = event.target.closest('[data-correspondence-suggestion-accept]');
@@ -22001,6 +22833,10 @@ Array.from(new Set([scraperPreviewList, leadDrawerPreviewList].filter(Boolean)))
 
 document.addEventListener('keydown', (event) => {
   if(event.key !== 'Escape') return;
+  if(correspondenceRelationshipResults && !correspondenceRelationshipResults.hidden){
+    correspondenceRelationshipResults.hidden = true;
+    correspondenceRelationshipSearch?.setAttribute('aria-expanded', 'false');
+  }
   if(correspondenceRulesPanel && !correspondenceRulesPanel.hidden){
     setCorrespondenceRulesPanel(false);
   }
@@ -22021,6 +22857,46 @@ document.querySelectorAll('#correspondence-detail [data-correspondence-action]')
 correspondenceDraftBody?.addEventListener('input', () => {
   if(!activeCorrespondenceItem) return;
   activeCorrespondenceItem.draftBody = correspondenceDraftBody.value;
+});
+
+correspondenceRelationshipSearch?.addEventListener('input', () => {
+  if(correspondenceRelationshipSelect) correspondenceRelationshipSelect.value = '';
+  correspondenceSetRelationshipSearch(true);
+});
+
+correspondenceRelationshipSearch?.addEventListener('focus', () => {
+  correspondenceSetRelationshipSearch(true);
+});
+
+correspondenceRelationshipSearch?.addEventListener('keydown', (event) => {
+  if(event.key !== 'Enter') return;
+  const first = correspondenceRelationshipResults?.querySelector('[data-relationship-result-id]');
+  if(!first) return;
+  event.preventDefault();
+  correspondenceChooseRelationship(first.dataset.relationshipResultId || '');
+});
+
+correspondenceRelationshipResults?.addEventListener('click', (event) => {
+  const result = event.target.closest('[data-relationship-result-id]');
+  if(!result) return;
+  correspondenceChooseRelationship(result.dataset.relationshipResultId || '');
+});
+
+correspondenceWritingRuleMap?.addEventListener('change', () => {
+  applyCorrespondenceWritingRuleMap(correspondenceWritingRuleMap.value || '');
+});
+
+correspondenceDraftRuleFields.forEach((field) => {
+  field.addEventListener('input', renderCorrespondenceWritingRuleSummary);
+});
+
+correspondenceDraftRules?.addEventListener('input', renderCorrespondenceWritingRuleSummary);
+
+document.addEventListener('click', (event) => {
+  if(!correspondenceRelationshipResults || correspondenceRelationshipResults.hidden) return;
+  if(event.target.closest('[data-correspondence-relationship-search], [data-correspondence-relationship-results]')) return;
+  correspondenceRelationshipResults.hidden = true;
+  correspondenceRelationshipSearch?.setAttribute('aria-expanded', 'false');
 });
 
 switches.forEach((button) => {

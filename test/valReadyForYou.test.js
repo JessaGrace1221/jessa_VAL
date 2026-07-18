@@ -42,6 +42,7 @@ test('builds a judgment-only review queue and limits visible items to three',asy
         writerOutput:{why_this_draft_exists:'Aric asked for the workflow.',confidence:0.84,representation_risk:'medium',approval_policy:'approval_required'},
         draftReadiness:{status:'ready_for_review',approval_policy:'approval_required',representation_risk:'medium'},
         draftBrief:{single_purpose:'Answer Aric about the workflow.',why_now:'Aric is waiting.'},
+        writingRules:'Warm but direct. Sign off with Jessa.',
         qa:{passes:true,confidence:0.82},
         noProviderDraftCreated:true
       },
@@ -82,6 +83,8 @@ test('builds a judgment-only review queue and limits visible items to three',asy
   assert.ok(built.allBuilt.length<=5);
   assert.ok(built.allBuilt.every(item=>item.requiresApproval));
   assert.ok(built.allBuilt.every(item=>item.metadataJson.noExternalAction||item.metadataJson.source));
+  const draftItem=built.allBuilt.find(item=>item.metadataJson.draftId==='draft_1');
+  assert.equal(draftItem.metadataJson.writingRules,'Warm but direct. Sign off with Jessa.');
   const listed=await service.listItems();
   assert.equal(listed.items.length,3);
   assert.notEqual(listed.message,"I'm caught up.");

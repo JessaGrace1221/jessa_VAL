@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=stewardship-live-update-20260717">
+<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-draft-rules-20260717">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -460,7 +460,7 @@
           <div>
             <p class="drawer-kicker">Transcripts</p>
             <h3>Transcripts</h3>
-            <p>Recent VAL transcripts, source action items, and clean meeting overviews.</p>
+            <p>Meeting evidence, attendee context, source Action Items, and clean review-ready follow-up.</p>
           </div>
           <button type="button" class="close-timeline-detail">Close</button>
         </div>
@@ -532,20 +532,37 @@
           </div>
           <button type="button" class="close-correspondence-detail">Close</button>
         </div>
+        <div class="correspondence-filterbar" aria-label="Executive Inbox filters">
+          <div class="correspondence-tabs" role="tablist" aria-label="Conversation state">
+            <button type="button" class="active" data-correspondence-filter="requires_reply">Requires Reply <span data-correspondence-filter-count="requires_reply">0</span></button>
+            <button type="button" data-correspondence-filter="waiting">Waiting on You <span data-correspondence-filter-count="waiting">0</span></button>
+            <button type="button" data-correspondence-filter="tracking">FYI / Tracking <span data-correspondence-filter-count="tracking">0</span></button>
+            <button type="button" data-correspondence-filter="all">All <span data-correspondence-filter-count="all">0</span></button>
+          </div>
+          <div class="correspondence-filter-actions">
+            <button type="button" data-correspondence-action="search_inbox" onclick="runCorrespondenceActionClick(this,event);return false;">Smart Filters</button>
+            <button type="button" data-correspondence-sort>Sort: Priority</button>
+            <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create a Rule</button>
+            <button type="button" data-correspondence-action="show_writing_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Writing Rules</button>
+          </div>
+        </div>
         <div class="correspondence-rulebar" aria-label="Executive Inbox controls">
           <div>
             <span>Executive Inbox Controls</span>
             <button type="button" class="correspondence-rule-status" data-correspondence-action="show_rules" data-correspondence-rule-status onclick="runCorrespondenceActionClick(this,event);return false;">Loading saved rules</button>
           </div>
           <div class="correspondence-rule-create">
+            <span>Search the Inbox</span>
             <input type="search" data-correspondence-search placeholder="Search inbox by context" autocomplete="off">
             <button type="button" data-correspondence-action="search_inbox" onclick="runCorrespondenceActionClick(this,event);return false;">Search Inbox</button>
           </div>
           <div class="correspondence-rule-create">
+            <span>Safe List</span>
             <input type="email" data-correspondence-safe-email placeholder="Add Executive Contact Email" autocomplete="off">
             <button type="button" data-correspondence-action="save_safe_contact" onclick="runCorrespondenceActionClick(this,event);return false;">Save Contact</button>
           </div>
           <div class="correspondence-rule-create">
+            <span>Forwarding Rules</span>
             <input type="text" data-correspondence-forward-to placeholder="Forward rule or instruction" autocomplete="off">
             <button type="button" data-correspondence-action="save_forward_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Save Rule</button>
             <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Suggest Rules</button>
@@ -564,31 +581,79 @@
             <div class="correspondence-rules-list" data-correspondence-rules-list></div>
           </div>
         </section>
+        <section class="correspondence-attachment-panel" data-correspondence-attachment-panel hidden aria-hidden="true" aria-label="Email attachment viewer">
+          <div class="correspondence-attachment-modal" role="dialog" aria-modal="true" aria-labelledby="correspondence-attachment-title">
+            <div class="correspondence-rules-head">
+              <div>
+                <span>Attachment Source</span>
+                <h4 id="correspondence-attachment-title" data-correspondence-attachment-title>Email attachment</h4>
+                <p data-correspondence-attachment-meta>Read-only source view. Nothing is sent, downloaded, moved, or changed.</p>
+              </div>
+              <button type="button" data-correspondence-attachment-close aria-label="Close attachment viewer">Close</button>
+            </div>
+            <div class="correspondence-attachment-view" data-correspondence-attachment-view>
+              <p>Select an attachment from the thread.</p>
+            </div>
+          </div>
+        </section>
+        <section class="correspondence-loading-veil" data-correspondence-loading-veil hidden aria-hidden="true" aria-live="polite" aria-label="Executive Inbox loading">
+          <div class="correspondence-loading-card">
+            <div class="correspondence-loading-orbit" aria-hidden="true">
+              <i></i><i></i><i></i><i></i>
+            </div>
+            <div>
+              <span>Loading Executive Inbox</span>
+              <h4>Checking before the inbox appears.</h4>
+              <p data-correspondence-loading-status>VAL is reviewing Gmail, sent history, saved contacts, relationship context, and unresolved threads. The Executive Inbox will appear when the queue is ready.</p>
+            </div>
+            <div class="correspondence-loading-bars" aria-hidden="true">
+              <b></b><b></b><b></b>
+            </div>
+          </div>
+        </section>
         <div class="correspondence-workbench" aria-label="Executive Inbox workbench">
           <section class="correspondence-queue" aria-label="Prepared Executive Inbox queue">
             <div class="timeline-status-header">
-              <span>Conversations</span>
+              <span>Priority Queue</span>
               <strong data-correspondence-count>Checking Executive Inbox</strong>
             </div>
             <div class="correspondence-list" data-correspondence-list></div>
           </section>
           <section class="correspondence-thread" aria-label="Email thread">
+            <div class="correspondence-detail-icons" aria-label="Conversation utilities">
+              <button type="button" aria-label="Star conversation">☆</button>
+              <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;" aria-label="Mark resolved">○</button>
+              <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;" aria-label="More options">⋮</button>
+            </div>
             <div class="correspondence-brief-head">
               <span data-correspondence-field="status">Ready</span>
               <h4 data-correspondence-field="title">Select a prepared reply</h4>
               <p data-correspondence-field="summary">Edit the draft, send it, or work with VAL on this conversation.</p>
             </div>
-            <button type="button" class="correspondence-discuss" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Discuss this thread with VAL</button>
-            <div class="correspondence-thread-body" data-correspondence-thread-body></div>
+            <div class="correspondence-meta-strip" aria-label="Selected conversation facts">
+              <div><span>Priority</span><strong data-correspondence-field="priority">Clear</strong></div>
+              <div><span>Last Contact</span><strong data-correspondence-field="last-contact">—</strong></div>
+              <div><span>Source</span><strong data-correspondence-field="source">Gmail</strong></div>
+              <div><span>Relationship</span><strong data-correspondence-field="relationship-state">Unlinked</strong></div>
+            </div>
+            <section class="correspondence-summary-card" aria-label="Conversation summary">
+              <span>Conversation Summary</span>
+              <p data-correspondence-field="decision-summary">Select a conversation to see why VAL put it here.</p>
+            </section>
+            <section class="correspondence-email-content" aria-label="Actual email content">
+              <span>Recent Thread</span>
+              <div class="correspondence-thread-body" data-correspondence-thread-body></div>
+            </section>
           </section>
           <section class="correspondence-brief" aria-label="Drafted editable reply">
             <div class="correspondence-brief-head">
-              <span>Drafted Editable Reply</span>
+              <span>Your Next Best Action</span>
               <h4 data-correspondence-field="draft-title">Reply for review</h4>
               <p data-correspondence-field="draft-note">Private draft. Nothing sends until approved.</p>
             </div>
             <div class="correspondence-actions" aria-label="Correspondence review actions">
               <button type="button" data-correspondence-action="generate" onclick="runCorrespondenceActionClick(this,event);return false;">Draft reply</button>
+              <button type="button" class="correspondence-discuss" data-correspondence-action="cowork_correspondence" onclick="runCorrespondenceActionClick(this,event);return false;">Discuss with VAL</button>
               <button type="button" data-correspondence-action="forward" onclick="runCorrespondenceActionClick(this,event);return false;">Forward</button>
               <button type="button" data-correspondence-action="send" onclick="runCorrespondenceActionClick(this,event);return false;">Send</button>
               <button type="button" data-correspondence-action="resolve_thread" onclick="runCorrespondenceActionClick(this,event);return false;">Resolved</button>
@@ -603,18 +668,18 @@
           </section>
           <aside class="correspondence-intelligence" aria-label="Relationship and project context">
             <section>
-              <span>Relationships</span>
+              <span>Attach Relationship</span>
               <div class="correspondence-rule-create">
-                <select data-correspondence-relationship-select aria-label="Choose relationship for this email">
-                  <option value="">Choose relationship</option>
-                </select>
+                <input type="search" data-correspondence-relationship-search placeholder="Search relationships" autocomplete="off" aria-label="Search relationships for this email" aria-expanded="false" aria-controls="correspondence-relationship-results">
+                <input type="hidden" data-correspondence-relationship-select>
+                <div class="correspondence-typeahead-results" id="correspondence-relationship-results" data-correspondence-relationship-results hidden></div>
                 <button type="button" data-correspondence-action="link_relationship" onclick="runCorrespondenceActionClick(this,event);return false;">Link</button>
                 <button type="button" data-correspondence-action="create_relationship" onclick="runCorrespondenceActionClick(this,event);return false;">Create</button>
               </div>
               <div data-correspondence-relationships></div>
             </section>
             <section>
-              <span>Projects</span>
+              <span>Attach Project</span>
               <div class="correspondence-rule-create">
                 <select data-correspondence-project-select aria-label="Choose project for this email">
                   <option value="">Choose project</option>
@@ -626,11 +691,71 @@
               <div data-correspondence-projects></div>
             </section>
             <section>
-              <span>Rules VAL Suggests</span>
+              <span>Rules and Automation</span>
+              <div class="correspondence-rule-actions" aria-label="Rule actions for this email">
+                <button type="button" data-correspondence-action="create_rule" onclick="runCorrespondenceActionClick(this,event);return false;">Create rule</button>
+                <button type="button" data-correspondence-action="show_rules" onclick="runCorrespondenceActionClick(this,event);return false;">View rules</button>
+                <button type="button" data-correspondence-action="suggest_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Suggest</button>
+              </div>
               <div data-correspondence-rule-suggestions></div>
             </section>
           </aside>
         </div>
+        <section class="correspondence-writing-rules-panel" data-correspondence-writing-rules-panel hidden aria-hidden="true" aria-label="Executive Inbox writing rules">
+          <div class="correspondence-writing-rules">
+            <div>
+              <span>Writing Rules</span>
+              <h4>How VAL should write for you</h4>
+              <p>These rules shape private reply drafts in Executive Inbox. They do not send email or create Gmail drafts by themselves.</p>
+            </div>
+            <label class="correspondence-writing-rule-map">
+              <span>Start From A Writing Map</span>
+              <select data-correspondence-writing-map aria-label="Choose a writing rules map">
+                <option value="">Custom / keep current</option>
+                <option value="warm_direct">Warm and direct</option>
+                <option value="brief_executive">Brief executive</option>
+                <option value="relationship_care">Relationship care</option>
+                <option value="firm_boundary">Firm boundary</option>
+                <option value="detail_when_needed">Detailed when needed</option>
+              </select>
+            </label>
+            <div class="correspondence-writing-rule-grid">
+              <label>
+                <span>Tone</span>
+                <input type="text" data-correspondence-writing-rule="tone" placeholder="Warm, direct, no corporate polish">
+              </label>
+              <label>
+                <span>Sign-off</span>
+                <input type="text" data-correspondence-writing-rule="signoff" placeholder="Jessa">
+              </label>
+              <label>
+                <span>Use These Patterns</span>
+                <input type="text" data-correspondence-writing-rule="use" placeholder="Clear next steps, human wording">
+              </label>
+              <label>
+                <span>Avoid</span>
+                <input type="text" data-correspondence-writing-rule="avoid" placeholder="Corporate polish, over-explaining">
+              </label>
+              <label>
+                <span>Length</span>
+                <input type="text" data-correspondence-writing-rule="length" placeholder="Short unless the situation needs detail">
+              </label>
+              <label class="wide">
+                <span>Other Rules</span>
+                <textarea data-correspondence-draft-rules placeholder="Anything else VAL should remember when preparing Executive Inbox drafts."></textarea>
+              </label>
+            </div>
+            <section class="correspondence-writing-rule-current" aria-label="Current saved writing rules">
+              <span>What VAL Will Apply</span>
+              <pre data-correspondence-writing-rules-summary>No saved Executive Inbox writing rules yet.</pre>
+            </section>
+            <p class="correspondence-writing-rule-note">VAL applies these rules only when preparing private Executive Inbox reply drafts or discussing the selected email thread. They are saved rules, so you can view them again here or under View rules.</p>
+            <div class="correspondence-writing-rule-actions">
+              <button type="button" data-correspondence-action="save_draft_rules" onclick="runCorrespondenceActionClick(this,event);return false;">Save Writing Rules</button>
+              <button type="button" data-correspondence-writing-rules-close>Close</button>
+            </div>
+          </div>
+        </section>
       </div>
       <div class="source-detail commitment-detail" id="commitment-detail" aria-hidden="true" hidden data-internal-surface="commitments">
         <div class="source-detail-header">
@@ -726,6 +851,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=stewardship-enrichment-copy-20260717"></script>
+  <script src="./hearth-prototype.js?v=executive-inbox-draft-rules-20260717"></script>
 </body>
 </html>

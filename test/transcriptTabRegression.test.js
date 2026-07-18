@@ -206,6 +206,30 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.doesNotMatch(hearthJs,/Ready - send to invitees/);
 });
 
+test('transcript detail can map attendees/projects and prepare reviewed Action Items emails',()=>{
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/action-items-email-draft'/);
+  assert.match(server,/prepareTranscriptActionItemsAttendeeEmailDraft/);
+  assert.match(server,/transcript_action_items_attendee_email/);
+  assert.match(server,/exactActionItemsFromSystem:true/);
+  assert.match(server,/writingRules/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/link-relationship'/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/link-project'/);
+  assert.match(server,/saveEvidenceLink\(\{/);
+  assert.match(server,/attendee_in_transcript/);
+  assert.match(server,/transcript_context_for_project/);
+  assert.match(server,/review_then_send_email/);
+  assert.match(hearthJs,/function renderTimelineTranscriptMappingControls/);
+  assert.match(hearthJs,/Send Action Items to Attendees/);
+  assert.match(hearthJs,/data-transcript-action="send_action_items"/);
+  assert.match(hearthJs,/data-transcript-action="link_relationship"/);
+  assert.match(hearthJs,/data-transcript-action="link_project"/);
+  assert.match(hearthJs,/data-transcript-project-search/);
+  assert.match(hearthJs,/data-transcript-relationship-search/);
+  assert.match(hearthJs,/correspondenceActiveDraftRuleText/);
+  assert.match(hearthJs,/hydrateRelationshipIndex\(\)/);
+  assert.match(hearthJs,/hydrateProjectIndex\(\)/);
+});
+
 test('Hearth transcript index stays lightweight while the detail route retains the source transcript',()=>{
   assert.match(server,/function transcriptIndexUiRecord/);
   assert.match(server,/const sourceActions=/);
@@ -215,9 +239,17 @@ test('Hearth transcript index stays lightweight while the detail route retains t
   assert.match(server,/const indexedRecords=transcriptMigrationRecordsFromIndex\(data\)/);
   assert.match(server,/const records=indexedRecords\.length\?indexedRecords:await transcriptArchiveRecords/);
   assert.match(server,/sourceReceipt:transcriptSourceReceipt\(detail\)/);
+  assert.match(server,/function transcriptSourceDownloadUrl/);
+  assert.match(server,/downloadUrl:sourceUrl/);
+  assert.match(server,/function transcriptCleanDisplayLine/);
+  assert.match(server,/replace\(\/\^\\s\*#\{1,6\}\\s\*\//);
+  assert.match(server,/line\.length>900/);
   assert.match(server,/const transcript=transcriptDetailFromIndex\(data,data\.transcripts\[0\]\)/);
   assert.match(hearthJs,/drawerTray\?\.scrollTo\?\.\(\{top:0, left:0\}\)/);
   assert.match(hearthJs,/let timelineTranscriptOpenRequest = 0/);
+  assert.match(hearthJs,/function timelineTranscriptDownloadUrl/);
+  assert.match(hearthJs,/class="transcript-download-link"/);
+  assert.match(hearthJs,/sourceLineLooksLikeTranscript/);
   assert.doesNotMatch(hearthJs,/renderTimelineTranscriptDetail\(\{\.\.\.cached/);
   assert.doesNotMatch(hearthJs,/timelineCompactText\(sourceText/);
 });

@@ -99,7 +99,7 @@ function draftToCandidate(draft,uuid,scope){
     approvalPolicy,
     representationRisk,
     actionsJson:[],
-    metadataJson:{source:'executive_inbox_review_only',draftId:draft.id,conversationId:source.conversationId||'',threadId:source.threadId||'',noExternalAction:true,noProviderDraftCreated:true},
+    metadataJson:{source:'executive_inbox_review_only',draftId:draft.id,conversationId:source.conversationId||'',threadId:source.threadId||'',writingRules:source.writingRules||source.writing_rules||'',noExternalAction:true,noProviderDraftCreated:true},
     decisionJson:{},
     createdAt:draft.createdAt||new Date().toISOString(),
     updatedAt:new Date().toISOString(),

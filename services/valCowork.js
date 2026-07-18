@@ -2225,10 +2225,18 @@ function buildEmailThreadBrief(thread={},input={}){
   const classification=thread.classification || {};
   const readiness=thread.readiness || {};
   const draftBrief=thread.draftBrief || thread.draft_brief || {};
+  const linkedContexts=safeArray(thread.linkedContexts || thread.linked_contexts).map((link)=>({
+    kind:String(link.targetType || link.target_type || '').includes('project') ? 'project' : 'relationship',
+    name:compactText(link.metadata?.targetName || link.targetName || link.target_name || link.summary || link.targetId || link.target_id || '',220),
+    summary:compactText(link.summary || '',500),
+    sourceId:compactText(link.sourceId || link.source_id || '',220),
+    targetId:compactText(link.targetId || link.target_id || '',220)
+  })).filter((link)=>link.name || link.targetId);
   const currentText=multilineText(current.bodyText || current.bodyPreview || current.snippet || messages[messages.length-1]?.body || '',12000);
   const sourceRefs=[
     ...safeArray(classification.source_refs || classification.sourceRefs).map(sourceRef),
-    ...messages.slice(-8).map((message)=>sourceRef({sourceType:'email_message',sourceId:message.messageId || message.id,quoteOrSummary:[message.subject,message.body].filter(Boolean).join(': ')}))
+    ...messages.slice(-8).map((message)=>sourceRef({sourceType:'email_message',sourceId:message.messageId || message.id,quoteOrSummary:[message.subject,message.body].filter(Boolean).join(': ')})),
+    ...linkedContexts.map((link)=>sourceRef({sourceType:link.kind === 'project' ? 'project_profile' : 'relationship_profile',sourceId:link.targetId,quoteOrSummary:`Attached ${link.kind}: ${link.name || link.targetId}${link.summary ? ' - ' + link.summary : ''}`,confidence:0.86}))
   ].filter((ref)=>ref.source_id || ref.quote_or_summary);
   return {
     id:stableKey(`working_brief_email_thread_${entityId || conversationId || threadId || subject}`),
@@ -2257,6 +2265,7 @@ function buildEmailThreadBrief(thread={},input={}){
       representationRisk:compactText(readiness.representation_risk || readiness.representationRisk || '',100)
     },
     existingDraft:emailThreadDraft(thread.existingDraft || thread.existing_draft || {}),
+    linkedContexts,
     sourceRefs,
     objective:'Prepare one review-only reply from the selected Executive Inbox thread.',
     completionCondition:'The selected durable thread, one executive reply outcome, and one linked private draft are visible for Leverage review.',
@@ -2264,17 +2273,19 @@ function buildEmailThreadBrief(thread={},input={}){
   };
 }
 function emailThreadQuestion(state={},brief={}){
+  const attached=safeArray(brief.linkedContexts).map((item)=>item.name || item.targetId).filter(Boolean).slice(0,4).join(', ');
+  const contextLine=attached ? ` Attached context: ${attached}.` : '';
   if(state.stage === 'ready_to_review'){
     return {
       targetField:'prepared_artifact.email_draft',
       question:'Review the private email draft in Leverage before any external approval.',
-      detail:'This route prepared only an internal draft from the selected thread. Nothing has been sent or created in the email provider.'
+      detail:'This route prepared only an internal draft from the selected thread.' + contextLine + ' Nothing has been sent or created in the email provider.'
     };
   }
   return {
     targetField:'email_judgment_packet.reply_outcome',
     question:`What outcome should this reply to ${brief.subject || 'this thread'} create?`,
-    detail:'This single direction prepares one private reply draft from the selected readable thread. It does not send, create a provider draft, or change any external system.'
+    detail:'This single direction prepares one private reply draft from the selected readable thread.' + contextLine + ' It does not send, create a provider draft, or change any external system.'
   };
 }
 
