@@ -15095,9 +15095,13 @@ function meetingPrepExecutiveBrief(result = {}){
   const suggestedQuestions = isFrisson
     ? ['What part of this excites you most?', 'Where do you still feel uncertainty?', 'What would make this partnership feel effortless?', 'If we had our first five nonprofits, what would success look like?']
     : meetingPrepBulletList(packetList('questions').length ? packetList('questions') : questionTexts, firstFive.early_question || 'What would make this meeting a good use of your time today?');
-  const followUpItems = followUp.likely_follow_up_needed || isFrisson
-    ? (packetList('likely_follow_up').length ? packetList('likely_follow_up') : ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline'])
-    : ['Capture what changed after the meeting before creating tasks or drafts.'];
+  const followUpItems = isFrisson
+    ? ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline']
+    : (packetList('likely_follow_up').length
+      ? packetList('likely_follow_up')
+      : (followUp.notes
+        ? meetingPrepBulletList([followUp.notes])
+        : ['Send a clean recap with decisions, owners, and dates only after the meeting confirms them.']));
   const publicContextLines = meetingPrepPublicContextLines(brief);
   const calendarAttendeeLines = meetingPrepCalendarAttendeeLines(brief);
   const attendeeRelationshipLines = meetingPrepAttendeeRelationshipLines(brief);
@@ -15441,6 +15445,27 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
   updateDrawerCoworkIcon();
 }
 
+function meetingPrepDelay(ms = 1000){
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchSavedMeetingPrepResult(eventId = '', options = {}){
+  const id = String(eventId || '').trim();
+  if(!id) return null;
+  const attempts = Math.max(1, Number(options.attempts || 10));
+  const delayMs = Math.max(250, Number(options.delayMs || 3000));
+  for(let attempt = 0; attempt < attempts; attempt += 1){
+    try{
+      const result = await getJson('/api/val/calendar/meeting-prep/' + encodeURIComponent(id), {cache:'no-store'});
+      if(result?.brief) return result;
+    }catch(error){
+      if(error.status && error.status !== 404) throw error;
+    }
+    if(attempt < attempts - 1) await meetingPrepDelay(delayMs);
+  }
+  return null;
+}
+
 async function runMeetingPrep(){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   if(mockScrapers || !canUseApi){
@@ -15454,7 +15479,15 @@ async function runMeetingPrep(){
     });
     renderMeetingPrepResult(result);
   }catch(error){
-    if(calendarEventIsMeeting(event)) renderMeetingPrepResult(meetingPrepFallbackResultFromEvent(event, error));
+    if(calendarEventIsMeeting(event)){
+      showCoworkContextGathering('VAL is still finishing the real meeting packet. I will not replace it with a calendar-only fallback.', {noTimeout:true});
+      const savedResult = await fetchSavedMeetingPrepResult(meetingPrepCalendarEventId(), {attempts:12, delayMs:5000}).catch(() => null);
+      if(savedResult){
+        renderMeetingPrepResult(savedResult);
+        return;
+      }
+      appendHomeCoworkMessage('val', 'The real meeting packet did not finish cleanly yet. I am keeping this in loading/retry mode instead of giving you a fake calendar-only brief.', {meetingPrep:true, replace:true});
+    }
     else{
       setWorkspaceContent({
         lens: 'Meeting Prep',

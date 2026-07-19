@@ -387,11 +387,17 @@ function meetingPrepBriefPacket({event={},attendees=[],attendeeIntel=[],internal
       linkedin_url:compactText(profile.latest_linkedin_url||'',260)
     };
   }).slice(0,10);
-  const topJudgment=firstMeeting
+  const hasManyOpenLoops=openLoops.length>=3;
+  const hasSomeHistory=transcriptChanges.length||emailChanges.length||relationshipContext.length;
+  const topJudgment=hasManyOpenLoops
+    ? `This meeting needs direction more than discovery. There are multiple open loops in the packet, so enter by naming ambiguity, choosing owners, and leaving with fewer unresolved threads.`
+    : firstMeeting
     ? `This looks like a first meeting with ${attendeeNames.join(', ')||'the attendee'}. Lead with orientation, useful questions, and current public context, not assumptions.`
     : knownAttendees.length
       ? `This is not a first meeting. Treat it as alignment and follow-through with ${attendeeNames.join(', ')||'known attendees'}: use the relationship history, name open loops, and leave with clear ownership.`
-      : `This is not fully mapped yet. Use the calendar context and any recent transcripts, then ask clean questions instead of pretending the packet knows more than it does.`;
+      : hasSomeHistory
+        ? `This meeting has internal context, but the relationship mapping is incomplete. Use the recent history and open questions without pretending the attendee packet is fully resolved.`
+        : `This is not fully mapped yet. Use the calendar context and any recent transcripts, then ask clean questions instead of pretending the packet knows more than it does.`;
   return {
     version:'meeting_prep_brief_packet_v1',
     meeting_title:eventTitle(event),
