@@ -2485,6 +2485,55 @@ button,a{font:inherit}
   display:grid;
   gap:10px;
 }
+.meeting-prep-external-status{
+  display:grid;
+  gap:9px;
+  padding:14px;
+  border:1px solid rgba(91,105,79,.16);
+  border-radius:10px;
+  background:linear-gradient(135deg,rgba(250,255,248,.94),rgba(255,246,245,.84));
+  box-shadow:0 14px 32px rgba(40,42,38,.08);
+}
+.meeting-prep-external-status div{
+  display:flex;
+  align-items:center;
+  gap:9px;
+}
+.meeting-prep-external-status div span{
+  width:9px;
+  height:9px;
+  border-radius:999px;
+  background:#b85b66;
+  box-shadow:0 0 0 5px rgba(184,91,102,.12);
+}
+.meeting-prep-external-status[data-state="working"] div span{
+  animation:context-gathering-pulse 1.2s ease-in-out infinite;
+}
+.meeting-prep-external-status strong{
+  color:#33482f;
+  font:850 .62rem/1.1 var(--mono);
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+.meeting-prep-external-status p,
+.meeting-prep-external-status li{
+  margin:0;
+  color:rgba(45,27,22,.66);
+  font:.74rem/1.45 var(--sans);
+}
+.meeting-prep-external-status ul{
+  display:grid;
+  gap:5px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+.meeting-prep-external-status a{
+  color:#164d43;
+  font-weight:800;
+  text-decoration:underline;
+  text-underline-offset:3px;
+}
 .home-cowork-sidebar .meeting-prep-cowork-rail .meeting-prep-section{
   margin:0;
   padding:14px;

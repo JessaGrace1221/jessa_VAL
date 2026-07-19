@@ -1321,7 +1321,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(meetingPrepService, /query:enriched\.enrichment\?\.query/);
   assert.match(hearthJs, /function renderMeetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function renderMeetingPrepLoading/);
-  assert.match(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,160}await runMeetingPrep\(\)/);
+  assert.match(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false\}\);[\s\S]{0,240}await runMeetingPrep\(\)/);
   assert.match(hearthJs, /Meeting Prep loading workspace/);
   assert.match(hearthJs, /Opening the brief as soon as internal context is ready/);
   assert.match(hearthJs, /meeting-prep-loading-steps/);
@@ -1387,9 +1387,12 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function renderHomeCoworkMeetingPrepText/);
   assert.match(hearthJs, /home-cowork-top-judgment/);
   assert.match(hearthJs, /renderMeetingPrepCoworkEvidenceRail/);
+  assert.match(hearthJs, /renderMeetingPrepExternalStatus/);
+  assert.match(hearthJs, /External review running/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
-  assert.doesNotMatch(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
+  assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
+  assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:false\}\)/);
   assert.match(hearthJs, /meetingPrepDomainProjectCandidate/);
   assert.match(hearthJs, /showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.', \{noTimeout: mode === 'meeting_prep'\}\)/);
   assert.match(hearthJs, /Prepare my executive meeting brief from this packet/);
@@ -1398,6 +1401,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /First 30 minutes \/ before the meeting/);
   assert.match(hearthJs, /Operating rule today/);
   assert.match(hearthCss, /\.meeting-prep-cowork-rail/);
+  assert.match(hearthCss, /\.meeting-prep-external-status/);
   assert.match(hearthCss, /grid-template-columns:minmax\(260px,320px\) minmax\(0,1fr\)/);
   assert.match(hearthCss, /\.meeting-prep-attendee-drawer summary/);
   assert.match(hearthCss, /\.home-cowork-top-judgment/);

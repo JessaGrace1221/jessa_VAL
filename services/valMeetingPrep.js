@@ -174,6 +174,25 @@ function meetingPrepUrlDomain(value=''){
     return raw.replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'').toLowerCase();
   }
 }
+function meetingPrepKnownLinkedInUrl(attendee={},contact={}){
+  const enrichmentRefs=safeArray(contact.relationshipEnrichment?.sourceRefs||contact.relationshipEnrichment?.source_refs||contact.raw?.relationshipEnrichment?.sourceRefs||contact.raw?.relationshipEnrichment?.source_refs);
+  const linkedinRef=enrichmentRefs.find(ref=>/linkedin/i.test(String(ref.sourceId||ref.url||ref.source_url||ref.summary||'')));
+  return compactText(
+    attendee.linkedinUrl||attendee.linkedin_url||
+    contact.linkedinUrl||contact.linkedin_url||
+    contact.raw?.linkedinUrl||contact.raw?.linkedin_url||
+    contact.raw?.metadata?.linkedinUrl||contact.raw?.metadata?.linkedin_url||
+    linkedinRef?.sourceId||linkedinRef?.url||linkedinRef?.source_url||
+    '',
+    260
+  );
+}
+function meetingPrepLinkedInActivityUrl(profileUrl=''){
+  const clean=String(profileUrl||'').replace(/[#?].*$/,'').replace(/\/$/,'').trim();
+  if(!clean)return '';
+  if(/linkedin\.com\/in\//i.test(clean))return `${clean}/recent-activity/all/`;
+  return clean;
+}
 function meetingPrepWords(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9@.]+/g,' ').split(/\s+/).filter(Boolean);
 }
@@ -683,6 +702,10 @@ function createValMeetingPrepService({
       const savedManualContext=savedRelationshipManualContext(contact);
       const publicEvidence=savedPublicContext?savedRelationshipPublicEvidence(savedPublicContext):[];
       const manualEvidence=savedManualContext?savedRelationshipManualEvidence(savedManualContext,contact):[];
+      const knownLinkedInActivityUrl=meetingPrepLinkedInActivityUrl(meetingPrepKnownLinkedInUrl(attendee,contact));
+      if(knownLinkedInActivityUrl&&!publicContextStatus.latest_linkedin_url){
+        publicContextStatus={...publicContextStatus,latest_linkedin_url:knownLinkedInActivityUrl,recent_activity_status:publicContextStatus.recent_activity_status||'activity_link_prepared'};
+      }
       const confidence=Number(resolution.confidence||contact.confidence||0);
       const label=(crmContactId&&confidence>=0.75)||savedManualContext?'internal_evidence':(savedPublicContext?'public_source':(confidence>0?'val_inference':'unknown'));
       if(!crmContactId)unknowns.push('crm_contact_id_unresolved');
@@ -716,7 +739,7 @@ function createValMeetingPrepService({
           website:savedPublicContext?.website||contact.website||contact.raw?.website||'',
           summary:savedPublicContext?.summary||'',
           latest_linkedin_post:savedPublicContext?.latestLinkedInPost||publicContextStatus.latest_linkedin_post||'',
-          latest_linkedin_url:savedPublicContext?.latestLinkedInUrl||publicContextStatus.latest_linkedin_url||'',
+          latest_linkedin_url:savedPublicContext?.latestLinkedInUrl||publicContextStatus.latest_linkedin_url||knownLinkedInActivityUrl||'',
           query:savedPublicContext?.query||publicContextStatus.query||'',
           provider:publicContextStatus.provider||savedPublicContext?.provider||'outscraper',
           status:publicContextStatus.status||'unknown',

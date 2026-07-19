@@ -378,6 +378,7 @@ test('meeting prep refreshes external evidence even when saved public context al
         name:'Greg Zlevor',
         email:input.email,
         company:'Westwood International Inc',
+        linkedinUrl:'https://www.linkedin.com/in/gregzlevor',
         relationshipEnrichment:{
           status:'complete',
           provider:'outscraper',
@@ -450,6 +451,7 @@ test('meeting prep reuses recent general web context while requesting fresh acti
   assert.equal(result.brief.attendeeIntelligenceJson[0].public_context_status.general_web_status,'cached');
   assert.equal(result.brief.attendeeIntelligenceJson[0].public_profile.general_web_status,'cached');
   assert.equal(result.brief.attendeeIntelligenceJson[0].public_context_status.recent_activity_status,'ran');
+  assert.equal(result.brief.attendeeIntelligenceJson[0].public_profile.latest_linkedin_url,'https://www.linkedin.com/in/gregzlevor/recent-activity/all/');
 });
 
 test('meeting prep enriches admitted attendee context and matches saved projects',async()=>{

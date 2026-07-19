@@ -11013,10 +11013,24 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
 function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefing || {}){
   const sidebar = scraperPreviewList?.querySelector?.('.home-cowork-sidebar');
   if(!sidebar) return;
+  sidebar.querySelectorAll('[data-meeting-prep-cowork-rail]').forEach((node) => node.remove());
   const mapping = renderMeetingPrepAttendeeMapping(briefing, {compact:true});
-  if(!mapping) return;
-  sidebar.insertAdjacentHTML('beforeend', '<div class="meeting-prep-cowork-rail">' + mapping + '</div>');
+  const externalStatus = renderMeetingPrepExternalStatus(briefing);
+  if(!mapping && !externalStatus) return;
+  sidebar.insertAdjacentHTML('beforeend', '<div class="meeting-prep-cowork-rail" data-meeting-prep-cowork-rail>' + externalStatus + mapping + '</div>');
   applyHearthClickContracts(deskWorkspace);
+}
+
+function renderMeetingPrepExternalStatus(briefing = {}){
+  const lines = Array.isArray(briefing.externalEvidence) ? briefing.externalEvidence.filter(Boolean).slice(0,3) : [];
+  const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
+  const links = signals.map((signal) => signal.latestLinkedInUrl).filter(Boolean).slice(0,3);
+  const waiting = !lines.length || lines.some((line) => /still running|not returned|not checked|did not finish|not verified/i.test(String(line)));
+  return '<section class="meeting-prep-external-status" data-state="' + (waiting ? 'working' : 'ready') + '">' +
+    '<div><span></span><strong>' + (waiting ? 'External review running' : 'External review ready') + '</strong></div>' +
+    '<p>' + escapeHtml(waiting ? 'Internal prep is available now. Web and LinkedIn context will not block this chat.' : compactSentence(lines[0], 'Current public context is attached.')) + '</p>' +
+    (links.length ? '<ul>' + links.map((url) => '<li><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Open LinkedIn activity</a></li>').join('') + '</ul>' : '') +
+  '</section>';
 }
 
 async function handleProjectAction(action){
@@ -15179,7 +15193,8 @@ function renderMeetingPrepExecutiveBrief(briefing = {}){
 }
 
 function renderMeetingPrepResult(result){
-  renderMeetingPrepExecutiveBrief(meetingPrepExecutiveBrief(result));
+  activeMeetingPrepBriefing = meetingPrepExecutiveBrief(result);
+  openMeetingPrepCoworkSession({autoRun:true});
   requestAnimationFrame(() => scrollMeetingPrepToTop());
 }
 
@@ -22599,6 +22614,11 @@ async function openMeetingPrep(){
     room.classList.remove('active-room');
   });
   renderMeetingPrepLoading(activeMeetingPrepEvent || meetingPrep.event);
+  activeMeetingPrepBriefing = meetingPrepExecutiveBrief(meetingPrepFallbackResultFromEvent(activeMeetingPrepEvent || meetingPrep.event, {
+    message:'Internal meeting context is loading now. External web and LinkedIn review will not block the chat.'
+  }));
+  openMeetingPrepCoworkSession({autoRun:false});
+  showCoworkContextGathering('VAL is loading internal meeting context first. External web and LinkedIn review is running separately.', {noTimeout:true});
   scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
   await runMeetingPrep();
