@@ -1993,8 +1993,30 @@ function stewardshipPeople(){
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function stewardshipNetworkPeople(){
+  return Object.entries(dedupeRelationshipProfiles(relationshipIndexSourceProfiles())).map(([id, profile]) => {
+    const existing = relationshipIndexItems().find((item) => item.id === id);
+    const fallback = {
+      id,
+      profile,
+      stewardship: relationshipStewardshipUi(profile),
+      name: profile.name || profile.displayName || 'Unnamed relationship',
+      email: profile.email || profile.query?.email || '',
+      company: profile.company || profile.role || 'Relationship',
+      state: 'people_to_watch',
+      stateLabel: 'Network contact',
+      sourceEvidence: profile.sourceEvidence || profile.summary || 'Added to Network.',
+      confidence: Number(profile.confidence || 0.6),
+      lastChangedAt: profile.lastChangedAt || profile.updatedAt || '',
+      signal: profile.signal || profile.summary || 'Added to Network.'
+    };
+    return existing || fallback;
+  }).filter((item) => item?.profile && stewardshipLooksLikePerson(item.profile))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function stewardshipPersonById(id = ''){
-  return stewardshipPeople().find((item) => item.id === id)?.profile || relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id] || null;
+  return stewardshipNetworkPeople().find((item) => item.id === id)?.profile || relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id] || null;
 }
 
 function stewardshipCleanList(values = [], fallback = ''){
@@ -2703,6 +2725,7 @@ function renderStewardshipNetworkDetail(profile = null){
   const matches = stewardshipBestMatches(profile, 3);
   const enrichment = profile.relationshipEnrichment || profile.relationship_enrichment || {};
   const linkedinUrl = profile.linkedinUrl || profile.linkedin_url || profile.metadata?.linkedinUrl || profile.metadata?.linkedin_url || '';
+  const linkedinActivityUrl = linkedinUrl ? linkedinUrl.replace(/[#?].*$/, '').replace(/\/$/, '') + (/linkedin\.com\/in\//i.test(linkedinUrl) ? '/recent-activity/all/' : '') : '';
   const enrichmentLines = stewardshipCleanList([
     linkedinUrl ? 'LinkedIn: ' + linkedinUrl : '',
     enrichment.summary,
@@ -2722,7 +2745,8 @@ function renderStewardshipNetworkDetail(profile = null){
     '<button type="button" class="stewardship-network-back" data-stewardship-return-network>Return to Stewardship</button>',
     '<h5>' + escapeHtml(profile.name || 'Relationship') + '</h5>',
     '<p>' + escapeHtml(stewardshipRelationshipLine(profile)) + '</p>',
-    '<div class="stewardship-profile-links">' + (linkedinUrl ? '<a href="' + escapeHtml(linkedinUrl) + '" target="_blank" rel="noopener">Open LinkedIn profile</a>' : '<span>LinkedIn URL has not been added yet.</span>') + '</div>',
+    '<div class="stewardship-profile-links">' + (linkedinUrl ? '<a href="' + escapeHtml(linkedinUrl) + '" target="_blank" rel="noopener">Open LinkedIn profile</a><a href="' + escapeHtml(linkedinActivityUrl) + '" target="_blank" rel="noopener">Open recent activity</a><span>Used by Meeting Prep and LinkedIn commenting.</span>' : '<span>LinkedIn URL has not been added yet. Add it here so Meeting Prep and LinkedIn commenting can use it.</span>') + '</div>',
+    '<div class="stewardship-linkedin-editor"><input type="url" data-stewardship-linkedin-url value="' + escapeHtml(linkedinUrl) + '" placeholder="https://www.linkedin.com/in/name" aria-label="LinkedIn URL for ' + escapeHtml(profile.name || 'this relationship') + '"><button type="button" data-stewardship-save-linkedin="' + escapeHtml(stewardshipSelectedNetworkId) + '">Save LinkedIn</button></div>',
     '<div class="stewardship-four-grid">',
     stewardshipCoworkCard('needs', 'Needs', stewardshipNeeds(profile), profile),
     stewardshipCoworkCard('offers', 'Offers', stewardshipOffers(profile), profile),
@@ -2830,7 +2854,7 @@ function renderStewardshipSuggestions(){
 
 function renderStewardshipCreateControls(){
   if(!stewardshipPersonASelect || !stewardshipPersonBSelect) return;
-  const people = stewardshipPeople();
+  const people = stewardshipNetworkPeople();
   const options = '<option value="">Choose a person</option>' + people.map((item) => '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.name) + '</option>').join('');
   if(stewardshipPersonASelect.innerHTML !== options) stewardshipPersonASelect.innerHTML = options;
   if(stewardshipPersonBSelect.innerHTML !== options) stewardshipPersonBSelect.innerHTML = options;
@@ -2881,9 +2905,9 @@ function renderStewardshipNetworkList(){
   if(!relationshipRolodex) return;
   relationshipRolodex.innerHTML = '';
   const query = relationshipIndexSearch.trim().toLowerCase();
-  const items = stewardshipPeople().filter((item) => relationshipItemMatchesSearch(item, query));
+  const items = stewardshipNetworkPeople().filter((item) => relationshipItemMatchesSearch(item, query));
   if(stewardshipNetworkTotal){
-    const total = relationshipIndexNetworkCount || stewardshipPeople().length;
+    const total = relationshipIndexNetworkCount || stewardshipNetworkPeople().length;
     stewardshipNetworkTotal.hidden = false;
     stewardshipNetworkTotal.textContent = query
       ? `Showing ${items.length} of ${total} people in Network.`
@@ -2991,9 +3015,42 @@ async function enrichStewardshipRelationshipContext(personId = '', button = null
   }
 }
 
+async function saveStewardshipLinkedInUrl(personId = '', button = null){
+  if(!canUseApi || !personId) return;
+  const profile = stewardshipPersonById(personId);
+  const input = stewardshipNetworkDetail?.querySelector('[data-stewardship-linkedin-url]');
+  const linkedinUrl = String(input?.value || '').trim();
+  if(!profile){
+    setStewardshipNetworkStatus('Choose a Network contact before saving a LinkedIn URL.','error');
+    return;
+  }
+  if(!linkedinUrl){
+    setStewardshipNetworkStatus('Paste the LinkedIn profile URL before saving.','error');
+    return;
+  }
+  setStewardshipNetworkButtonWorking(button, true, 'Saving...');
+  try{
+    const result = await postJson('/api/relationships/network/manual', {
+      name:profile.name || profile.displayName || '',
+      email:profile.email || profile.query?.email || '',
+      organization:profile.company || profile.metadata?.company || '',
+      linkedinUrl,
+      summary:profile.summary || profile.signal || ''
+    }, {timeoutMs:30000,timeoutMessage:'Saving the LinkedIn URL took longer than expected. Please try again.'});
+    stewardshipSelectedNetworkId = result.relationship?.id || personId;
+    if(result.relationship) applyStewardshipRelationshipRefresh(result.relationship);
+    await hydrateRelationshipIndex({force:true});
+    setStewardshipNetworkStatus('LinkedIn URL saved. Meeting Prep and LinkedIn commenting can use it now.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not save that LinkedIn URL.','error');
+  }finally{
+    setStewardshipNetworkButtonWorking(button, false);
+  }
+}
+
 async function enrichAllStewardshipRelationshipContext(button = null){
   if(!canUseApi) return;
-  const people = stewardshipPeople().filter((item) => item?.id && item?.profile?.query?.email);
+  const people = stewardshipNetworkPeople().filter((item) => item?.id && (item?.profile?.query?.email || item?.profile?.email));
   if(!people.length){
     setStewardshipNetworkStatus('There are no named email contacts in Network to enrich yet.','error');
     return;
@@ -23870,6 +23927,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await enrichStewardshipRelationshipContext(enrichNetworkPerson.dataset.stewardshipEnrichPerson, enrichNetworkPerson);
+    return;
+  }
+  const saveStewardshipLinkedIn = event.target.closest('[data-stewardship-save-linkedin]');
+  if(saveStewardshipLinkedIn){
+    event.preventDefault();
+    event.stopPropagation();
+    await saveStewardshipLinkedInUrl(saveStewardshipLinkedIn.dataset.stewardshipSaveLinkedin, saveStewardshipLinkedIn);
     return;
   }
   const pendingTemperatureReview = event.target.closest('[data-relationship-pending-temperature-review]');

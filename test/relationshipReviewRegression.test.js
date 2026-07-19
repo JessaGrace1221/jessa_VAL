@@ -25,11 +25,14 @@ test('emails and meetings attribute evidence to external participants',()=>{
   assert.match(server,/if\(isOwnerRelationship\(\{name:cleanName,email:cleanEmail\},owner\)/);
 });
 
-test('Stewardship admits Network people only from qualifying sent mail',()=>{
+test('Stewardship admits Network people from explicit user action, calendar attendees, or qualifying sent mail',()=>{
   assert.match(server,/function firstLookCandidateRelationshipEmailQualification/);
   assert.match(server,/sentCount>3/);
   assert.match(server,/function stewardshipNetworkSentMailQualification/);
-  assert.match(server,/\.filter\(profile=>stewardshipNetworkSentMailQualification\(profile,candidateAnalysis\)\.accepted\)/);
+  assert.match(server,/function stewardshipNetworkManualAdmission/);
+  assert.match(server,/function stewardshipNetworkCalendarAttendeeAdmission/);
+  assert.match(server,/function stewardshipNetworkStoredSentMailAdmission/);
+  assert.match(server,/\.filter\(profile=>stewardshipNetworkManualAdmission\(profile\)\|\|stewardshipNetworkCalendarAttendeeAdmission\(profile\)\|\|stewardshipNetworkStoredSentMailAdmission\(profile\)\|\|stewardshipNetworkSentMailQualification\(profile,candidateAnalysis\)\.accepted\)/);
   assert.doesNotMatch(server,/function calendarRelationshipProfiles/);
   assert.doesNotMatch(server,/function calendarAttendeeProfileFromEvent/);
 });
@@ -51,6 +54,10 @@ test('Network offers a sent-mail refresh and an explicit manual person path',()=
   assert.match(hearthJs,/api\/relationships\/network\/manual/);
   assert.match(hearthJs,/api\/relationships\/network\/import-csv/);
   assert.match(hearthJs,/relationshipIndexNetworkCount/);
+  assert.match(hearthJs,/function stewardshipNetworkPeople/);
+  assert.match(hearthJs,/data-stewardship-save-linkedin/);
+  assert.match(hearthJs,/Open recent activity/);
+  assert.match(hearthJs,/Meeting Prep and LinkedIn commenting/);
 });
 
 test('tracking notifications and preference memory are not relationship evidence',()=>{

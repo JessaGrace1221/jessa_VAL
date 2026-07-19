@@ -170,7 +170,7 @@ test('First Look preserves explicit project, relationship, and protected-context
   assert.ok(projects.includes('Court'));
 });
 
-test('First Look and Stewardship admit Network contacts only from sent mail evidence', () => {
+test('First Look admits from sent mail while Stewardship preserves explicit Network admissions', () => {
   const helper = server.match(/function firstLookCandidateCleanName[\s\S]*?(?=function firstLookCandidatePromptReceipt)/)?.[0] || '';
   assert.ok(helper, 'First Look relationship admission helpers should be available.');
   const context = {
@@ -203,5 +203,8 @@ test('First Look and Stewardship admit Network contacts only from sent mail evid
   assert.doesNotMatch(relationshipIndexRoute, /calendarRelationshipProfiles/);
   assert.doesNotMatch(personPacketRoute, /calendarRelationshipProfiles/);
   assert.match(relationshipIndexRoute, /stewardshipNetworkSentMailQualification/);
+  assert.match(relationshipIndexRoute, /stewardshipNetworkManualAdmission/);
+  assert.match(relationshipIndexRoute, /stewardshipNetworkCalendarAttendeeAdmission/);
+  assert.match(relationshipIndexRoute, /stewardshipNetworkStoredSentMailAdmission/);
   assert.match(personPacketRoute, /stewardshipNetworkSentMailQualification/);
 });

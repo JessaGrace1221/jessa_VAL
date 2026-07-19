@@ -7979,6 +7979,30 @@ button.timeline-overview-receipt:focus-visible{
   outline:none;
   border-bottom-color:rgba(126,43,53,.38);
 }
+.stewardship-linkedin-editor{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+  border:1px solid rgba(91,105,79,.14);
+  border-radius:8px;
+  background:rgba(255,255,252,.72);
+  padding:10px;
+}
+.stewardship-linkedin-editor input{
+  min-width:0;
+  height:38px;
+  border:1px solid rgba(79,48,38,.14);
+  border-radius:7px;
+  background:rgba(255,255,255,.84);
+  color:rgba(34,19,15,.9);
+  padding:0 11px;
+  font:750 .78rem var(--body);
+}
+.stewardship-linkedin-editor button{
+  min-width:122px;
+  border-radius:7px;
+}
 .stewardship-best-matches{
   display:grid;
   gap:8px;

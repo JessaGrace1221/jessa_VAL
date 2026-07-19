@@ -31737,7 +31737,7 @@ app.get('/api/relationships/index',async(req,res)=>{
     const storedProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)})).filter(profile=>profile.profileType==='person');
     const profiles=dedupeStewardshipProfiles((await Promise.all(storedProfiles
       .filter(profile=>profile.profileType==='person')
-      .filter(profile=>stewardshipNetworkSentMailQualification(profile,candidateAnalysis).accepted)
+      .filter(profile=>stewardshipNetworkManualAdmission(profile)||stewardshipNetworkCalendarAttendeeAdmission(profile)||stewardshipNetworkStoredSentMailAdmission(profile)||stewardshipNetworkSentMailQualification(profile,candidateAnalysis).accepted)
       .map(async(profile)=>({...profile,relationshipAdmission:await stewardshipRelationshipAdmissionForProfile(profile)}))))
       .filter(profile=>profile.relationshipAdmission.admitted))
       .slice(0,limit);
