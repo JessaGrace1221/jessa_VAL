@@ -1395,6 +1395,10 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /This could take a minute or two while VAL checks public web and LinkedIn context/);
   assert.match(hearthJs, /Checking public web and LinkedIn context\. This could take a minute or two/);
   assert.match(hearthJs, /LinkedIn activity and recent post check/);
+  assert.match(hearthJs, /did not run cleanly\|taking longer than expected\|safe brief\|investigated/);
+  assert.match(hearthJs, /External review is still checking public web and LinkedIn context\. Do not use public assumptions yet/);
+  assert.doesNotMatch(hearthJs, /if\(keepHomeCoworkOpen\)\{\\n\\s*showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'/);
+  assert.match(hearthJs, /if\(keepHomeCoworkOpen && mode !== 'meeting_prep'\)/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);

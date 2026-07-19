@@ -11087,7 +11087,7 @@ function renderMeetingPrepExternalStatus(briefing = {}){
   const lines = Array.isArray(briefing.externalEvidence) ? briefing.externalEvidence.filter(Boolean).slice(0,3) : [];
   const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
   const links = signals.map((signal) => signal.latestLinkedInUrl).filter(Boolean).slice(0,3);
-  const waiting = !lines.length || lines.some((line) => /still running|not returned|not checked|did not finish|not verified/i.test(String(line)));
+  const waiting = !lines.length || lines.some((line) => /still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated/i.test(String(line)));
   return '<section class="meeting-prep-external-status" data-state="' + (waiting ? 'working' : 'ready') + '">' +
     '<div><span></span><strong>' + (waiting ? 'External review running' : 'External review ready') + '</strong></div>' +
     '<p>' + escapeHtml(waiting ? 'Internal prep is available now. This could take a minute or two while VAL checks public web and LinkedIn context.' : compactSentence(lines[0], 'Current public context is attached.')) + '</p>' +
@@ -14774,7 +14774,7 @@ function meetingPrepPublicContextLines(brief = {}){
     }
     if(status.status === 'ran') return meetingPrepCleanIntelligenceLine(name + ': public context checked. ' + compactSentence(status.summary || profile.summary || '') + website + linkedin + query);
     if(status.status === 'reused_saved' || status.status === 'reused_saved_refresh_failed') return meetingPrepCleanIntelligenceLine(name + ': saved public context reused. ' + compactSentence(status.summary || profile.summary || '') + website + linkedin + query);
-    if(status.status === 'failed') return meetingPrepCleanIntelligenceLine(name + ': ' + provider + ' did not run cleanly. ' + compactSentence(status.summary || '') + query);
+    if(status.status === 'failed') return '';
     if(status.status === 'not_checked') return name + ': ' + provider + ' was not checked.';
     return '';
   }).filter(Boolean).slice(0,5);
@@ -15158,6 +15158,7 @@ function renderMeetingPrepList(items = []){
 }
 
 function meetingPrepCoworkSeed(briefing = {}){
+  const verifiedExternalEvidence = (briefing.externalEvidence || []).filter((item) => !/still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated/i.test(String(item)));
   return [
     'Prepare my executive meeting brief from this packet.',
     '',
@@ -15188,7 +15189,7 @@ function meetingPrepCoworkSeed(briefing = {}){
     ...(briefing.people || []).map((item) => '- ' + item),
     '',
     'Current external evidence:',
-    ...(briefing.externalEvidence || []).map((item) => '- ' + item),
+    ...(verifiedExternalEvidence.length ? verifiedExternalEvidence.map((item) => '- ' + item) : ['- External review is still checking public web and LinkedIn context. Do not use public assumptions yet.']),
     '',
     'What changed since we last talked:',
     ...(briefing.changed || []).map((item) => '- ' + item),
@@ -18227,7 +18228,7 @@ async function runCowork(mode){
     });
     return;
   }
-  if(keepHomeCoworkOpen){
+  if(keepHomeCoworkOpen && mode !== 'meeting_prep'){
     showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.', {noTimeout: mode === 'meeting_prep'});
   }else{
   setWorkspaceContent({
