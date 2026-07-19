@@ -330,6 +330,11 @@ function calendarEventIsMeeting(event = {}){
   return calendarEventExternalAttendees(event).length > 0 && !calendarEventLooksPrivateBlock(event);
 }
 
+function calendarEventLooksMeetingLike(event = {}){
+  const text = [event.title, event.summary, event.description, event.location, event.meetingLink].filter(Boolean).join(' ').toLowerCase();
+  return /\b(meet|meeting|zoom|call|session|prep|check[ -]?in|follow[ -]?up|planning|review|sync)\b/.test(text) && !calendarEventLooksPrivateBlock(event);
+}
+
 function calendarEventIsFutureMeeting(event = {}){
   return calendarEventIsMeeting(event) && !calendarEventIsPast(event);
 }
@@ -21787,7 +21792,7 @@ async function openMeetingPrepWithPacket(node = nextMeetingCard, eventIndex = 0)
   const event = isAgendaNode
     ? (currentCalendarEvents[eventIndex] || {})
     : (currentMeetingEvents[eventIndex] || currentMeetingEvents[0] || {});
-  if(!calendarEventIsMeeting(event)){
+  if(!calendarEventIsMeeting(event) && !calendarEventLooksMeetingLike(event)){
     openCalendarPanelWithPacket(calendarTab);
     return;
   }
@@ -24113,7 +24118,7 @@ agendaItems.forEach((item) => {
   item.addEventListener('click', () => {
     const eventRecord = currentCalendarEvents[Number(item.dataset.calendarEventIndex || 0)] || {};
     if(calendarEventIsPast(eventRecord)) openCalendarTranscriptFromEvent(eventRecord, item);
-    else if(calendarEventIsFutureMeeting(eventRecord)) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
+    else if(calendarEventIsFutureMeeting(eventRecord) || (!calendarEventIsPast(eventRecord) && calendarEventLooksMeetingLike(eventRecord))) openMeetingPrepWithPacket(item, Number(item.dataset.calendarEventIndex || 0));
   });
 });
 observerBoardButton?.addEventListener('click', openObserverBoard);
@@ -24221,7 +24226,7 @@ fullCalendarPanel?.addEventListener('click', (event) => {
     const eventRecord = currentCalendarEvents[eventIndex] || {};
     if(calendarEventIsPast(eventRecord)){
       openCalendarTranscriptFromEvent(eventRecord, agendaButton);
-    }else if(calendarEventIsFutureMeeting(eventRecord)){
+    }else if(calendarEventIsFutureMeeting(eventRecord) || (!calendarEventIsPast(eventRecord) && calendarEventLooksMeetingLike(eventRecord))){
       openMeetingPrepWithPacket(agendaButton, eventIndex);
     }
     return;

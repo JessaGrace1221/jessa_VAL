@@ -13611,10 +13611,7 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
   const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
   const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
-  const endpointLooksCompany=/linkedin-posts/i.test(OUTSCRAPER_LINKEDIN_POSTS_URL);
-  const query = endpointLooksCompany
-    ? (companyLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || organization || usableDomain || name || email)
-    : (personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || email);
+  const query = personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || companyLinkedIn || organization || usableDomain || email;
   if(query) url.searchParams.set('query', query);
   url.searchParams.set('async','false');
   const response = await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper LinkedIn posts');
@@ -13743,11 +13740,11 @@ function meetingPrepLinkedInRecentQueries(attendee={}, contact={}, profile={}){
   const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
   const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'');
   return [
-    name&&organization ? `${name} LinkedIn ${organization}` : '',
-    name ? `${name} LinkedIn posts` : '',
     name ? `site:linkedin.com/posts "${name}"` : '',
     name ? `site:linkedin.com/feed/update "${name}"` : '',
-    name&&organization ? `site:linkedin.com/posts "${name}" "${organization}"` : ''
+    name&&organization ? `site:linkedin.com/posts "${name}" "${organization}"` : '',
+    name&&organization ? `${name} LinkedIn ${organization}` : '',
+    name ? `${name} LinkedIn posts` : ''
   ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
 }
 
@@ -13791,7 +13788,7 @@ async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, pr
   const queries=meetingPrepLinkedInRecentQueries(attendee,contact,profile);
   const attempts=[];
   const selected=[];
-  for(const query of queries.slice(0,1)){
+  for(const query of queries.slice(0,2)){
     const search=await lookupOutscraperGoogleSearch(query).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
     attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
     const matches=safeArray(search.results)
@@ -13870,7 +13867,7 @@ async function lookupOutscraperGoogleSearch(query){
   if(submittedStatus==='pending'||!flattenOutscraperSearchResults(submittedData).length){
     const requestId=submittedData.id||submittedData.request_id;
     if(requestId){
-      const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey);
+      const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey,{timeoutMs:OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS,label:'Meeting Prep public search'});
       if(polled.ok)data=polled.data;
       else return {configured:true,query,error:polled.error||'Outscraper Google Search did not finish'};
     }
@@ -21363,7 +21360,9 @@ async function enrichMeetingPrepAttendeePublicContext(input={}){
     const profile=result.profile||{};
     const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||input.email||'');
     const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
-    const linkedIn={configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'deferred_to_recent_signal',postsLastWeek:[],rawCount:0};
+    const linkedIn=input.refreshRecentActivity===false
+      ? {configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'refresh_not_requested',postsLastWeek:[],rawCount:0}
+      : await lookupOutscraperLinkedIn({name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl({name,email},contact,profile)},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,postsLastWeek:[],rawCount:0}));
     if(!linkedIn?.skipped&&(linkedIn?.configured||linkedIn?.error)){
       const posts=safeArray(linkedIn?.postsLastWeek).slice(0,3);
       const postRefs=posts.map((post,index)=>({
@@ -21455,7 +21454,9 @@ async function enrichMeetingPrepAttendeePublicContext(input={}){
       });
       if(context?.summary) publicSignals.push(context.summary);
     }
-    const linkedIn={configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'deferred_to_recent_signal',postsLastWeek:[],rawCount:0};
+    const linkedIn=input.refreshRecentActivity===false
+      ? {configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'refresh_not_requested',postsLastWeek:[],rawCount:0}
+      : await lookupOutscraperLinkedIn({name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl({name,email},contact,profile)},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,postsLastWeek:[],rawCount:0}));
     if(!linkedIn?.skipped&&linkedIn?.configured){
       if(linkedIn.postsLastWeek?.length){
         const latestPost=linkedIn.postsLastWeek[0]||{};
@@ -26780,6 +26781,7 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
 
 const OUTSCRAPER_POLL_INTERVAL_MS = Number(process.env.OUTSCRAPER_POLL_INTERVAL_MS) || 3000;
 const OUTSCRAPER_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_POLL_TIMEOUT_MS) || 90000;
+const OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS) || 9000;
 const OUTSCRAPER_SUBMIT_TIMEOUT_MS = Number(process.env.OUTSCRAPER_SUBMIT_TIMEOUT_MS) || 14000;
 
 function sleep(ms){
@@ -26790,12 +26792,12 @@ function sleep(ms){
 // poll budget runs out. Outscraper's own guidance is to submit async and poll
 // rather than holding a single connection open, since Maps searches can take
 // well over the old 14s synchronous timeout depending on result volume.
-async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey){
+async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey,{timeoutMs=OUTSCRAPER_POLL_TIMEOUT_MS,label='Level 1 map/business search'}={}){
   const pollUrl=resultsLocation||`https://api.outscraper.com/requests/${encodeURIComponent(requestId)}`;
-  const deadline=Date.now()+OUTSCRAPER_POLL_TIMEOUT_MS;
+  const deadline=Date.now()+timeoutMs;
   while(Date.now()<deadline){
     await sleep(OUTSCRAPER_POLL_INTERVAL_MS);
-    const response=await fetchWithTimeout(pollUrl,{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Level 1 map/business search poll').catch(e=>null);
+    const response=await fetchWithTimeout(pollUrl,{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,`${label} poll`).catch(e=>null);
     if(!response) continue;
     const data=await readJsonResponse(response);
     const status=String(data.status||'').toLowerCase();
@@ -26803,7 +26805,7 @@ async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey){
     if(status==='error' || status==='failed' || status==='failure') return {ok:false,error:data.errorMessage||data.message||'Outscraper request failed'};
     // status is Pending or unrecognized - keep polling until deadline
   }
-  return {ok:false,error:'Level 1 map/business search timed out waiting for async results'};
+  return {ok:false,error:`${label} timed out waiting for async results`};
 }
 
 async function discoverOutscraperProspects({organizationType,employeeMinimum,market,limit,leadProfile}){

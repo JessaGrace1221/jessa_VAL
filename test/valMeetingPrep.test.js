@@ -82,11 +82,13 @@ test('meeting prep resolves context from attendee transcripts without cross-atte
 
 test('meeting prep Outscraper LinkedIn lookup uses name and organization instead of raw email only',()=>{
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
-  assert.match(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
-  assert.match(server,/companyLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\)/);
+  assert.doesNotMatch(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
+  assert.match(server,/const query = personalLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| companyLinkedIn \|\| organization \|\| usableDomain \|\| email/);
   assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
   assert.doesNotMatch(server,/const weekAgo = Date\.now\(\) - 7\*24\*60\*60\*1000/);
   assert.match(server,/return \{configured:true, query, postsLastWeek:recentPosts, rawCount:posts\.length\}/);
+  assert.match(server,/await lookupOutscraperLinkedIn\(\{name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl/);
+  assert.doesNotMatch(server,/cacheStatus:'deferred_to_recent_signal'/);
 });
 
 test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
@@ -108,7 +110,9 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/\$\{name\} LinkedIn \$\{organization\}/);
   assert.match(server,/\$\{name\} LinkedIn posts/);
   assert.match(server,/async function lookupMeetingPrepLinkedInRecentSignal/);
-  assert.match(server,/queries\.slice\(0,1\)/);
+  assert.match(server,/queries\.slice\(0,2\)/);
+  assert.match(server,/OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS/);
+  assert.match(server,/Meeting Prep public search/);
   assert.match(server,/type:'linkedin_recent_signal'/);
   assert.match(server,/Open post:/);
   assert.match(server,/async function lookupMeetingPrepWebEvidence/);

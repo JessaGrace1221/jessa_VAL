@@ -1333,6 +1333,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /if\(mode === 'meeting_prep'\)\{[\s\S]{0,140}openMeetingPrepCoworkSession\(\)/);
   assert.match(hearthJs, /function meetingPrepHasUsefulContext/);
   assert.match(hearthJs, /function calendarEventIsMeeting/);
+  assert.match(hearthJs, /function calendarEventLooksMeetingLike/);
   assert.match(hearthJs, /function calendarEventIsFutureMeeting/);
   assert.match(hearthJs, /function calendarAttendeeLabel/);
   assert.match(hearthJs, /function calendarEventAttendeeSummary/);
@@ -1357,9 +1358,11 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(server, /lookupMeetingPrepLinkedInRecentSignal/);
   assert.match(server, /known_linkedin_profile_activity/);
   assert.match(server, /activity_link_prepared/);
-  assert.match(server, /deferred_to_recent_signal/);
+  assert.doesNotMatch(server, /deferred_to_recent_signal/);
   assert.doesNotMatch(server, /Outscraper was not run because VAL has a personal email and no company or work domain/);
   assert.match(server, /enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext/);
+  assert.match(hearthJs, /!calendarEventIsMeeting\(event\) && !calendarEventLooksMeetingLike\(event\)/);
+  assert.match(hearthJs, /calendarEventIsFutureMeeting\(eventRecord\) \|\| \(!calendarEventIsPast\(eventRecord\) && calendarEventLooksMeetingLike\(eventRecord\)\)/);
   assert.match(hearthJs, /function renderMeetingPrepAttendeeMapping/);
   assert.match(hearthJs, /Attendee Mapping/);
   assert.match(hearthJs, /meetingAttendeeAttachRelationship/);
