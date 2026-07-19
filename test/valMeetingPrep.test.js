@@ -365,6 +365,10 @@ test('meeting prep does not treat recurring meet-with known contacts as first me
   assert.doesNotMatch(result.brief.briefJson.likely_purpose,/first meeting|introduction/i);
   assert.equal(enrichPayload.force,true);
   assert.match(result.brief.attendeeIntelligenceJson[0].public_profile.latest_linkedin_post,/leadership momentum/i);
+  assert.equal(result.brief.briefJson.brief_packet.version,'meeting_prep_brief_packet_v1');
+  assert.match(result.brief.briefJson.brief_packet.top_judgment,/not a first meeting|alignment and follow-through/i);
+  assert.match(result.brief.briefJson.brief_packet.what_changed_since_last_spoke.join(' '),/reviewed LinkedIn strategy and next steps/i);
+  assert.match(result.brief.briefJson.brief_packet.open_loops.join(' '),/continue research and share/i);
 });
 
 test('meeting prep refreshes external evidence even when saved public context already has LinkedIn',async()=>{
@@ -508,6 +512,8 @@ test('meeting prep enriches admitted attendee context and matches saved projects
   assert.equal(result.brief.internalContextJson.transcripts[0].id,'tr_recent_doug');
   assert.equal(result.brief.internalContextJson.project_context_links[0].project_id,'goall-project');
   assert.equal(result.brief.internalContextJson.project_context_links[0].source,'saved_project_profile_match');
+  assert.match(result.brief.briefJson.brief_packet.project_context.join(' '),/GOALL project/i);
+  assert.match(result.brief.briefJson.brief_packet.what_changed_since_last_spoke.join(' '),/GOALL website and speaker page/i);
   assert.equal(savedProjectLinks[0].projectId,'goall-project');
 });
 

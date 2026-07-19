@@ -331,6 +331,89 @@ function firstFiveMinutes({event={},role={},stakes={},attendees=[]}={}){
     confidence:0.62
   };
 }
+function meetingPrepEvidenceLine(value,limit=420){
+  if(!value)return '';
+  if(typeof value==='string')return compactText(value,limit);
+  return compactText(value.summary||value.text||value.notes||value.title||value.subject||value.name||'',limit);
+}
+function meetingPrepBriefPacket({event={},attendees=[],attendeeIntel=[],internal={},stakes={},role={},firstFive={},questions=[],followUp={},projectLinks=[],meetingType={}}={}){
+  const attendeeNames=attendees.map(a=>a.name||a.email).filter(Boolean).slice(0,6);
+  const firstMeeting=meetingType.type==='first_meeting';
+  const knownAttendees=attendeeIntel.filter(a=>a.crm_contact_id||a.user_confirmed_relationship_context||a.relationship_dossier||a.relationship_context);
+  const transcriptChanges=safeArray(internal.transcripts)
+    .map(t=>meetingPrepEvidenceLine(t.summary||t.rawText||t.title,520))
+    .filter(Boolean)
+    .slice(0,6);
+  const emailChanges=safeArray(internal.relationshipContext?.emailContext||internal.emailContext)
+    .map(item=>meetingPrepEvidenceLine(item.summary||item.subject||item.text,360))
+    .filter(Boolean)
+    .slice(0,4);
+  const openLoops=safeArray(internal.openLoops)
+    .map(item=>meetingPrepEvidenceLine(item.text||item.summary||item.title||item,360))
+    .filter(Boolean)
+    .slice(0,6);
+  const relationshipContext=attendeeIntel
+    .map(a=>meetingPrepEvidenceLine(a.relationship_context||a.why_this_person_matters||a.relationship_dossier?.summary,520))
+    .filter(Boolean)
+    .slice(0,8);
+  const publicContext=attendeeIntel.map(a=>{
+    const profile=a.public_profile||{};
+    const status=a.public_context_status||{};
+    const name=a.name||a.email||'Attendee';
+    const pieces=[
+      profile.website?`${name} website: ${profile.website}`:'',
+      profile.latest_linkedin_post?`${name} latest LinkedIn signal: ${profile.latest_linkedin_post}`:'',
+      profile.latest_linkedin_url&&!profile.latest_linkedin_post?`${name} LinkedIn activity: ${profile.latest_linkedin_url}`:'',
+      profile.summary?`${name} public context: ${profile.summary}`:'',
+      !profile.summary&&status.summary?`${name} public status: ${status.summary}`:''
+    ].filter(Boolean);
+    return pieces.join(' ');
+  }).filter(Boolean).slice(0,8);
+  const projectContext=safeArray(projectLinks)
+    .map(link=>compactText([link.project_name||link.projectName||link.project_id,link.summary].filter(Boolean).join(': '),520))
+    .filter(Boolean)
+    .slice(0,6);
+  const attendeesPacket=attendeeIntel.map(a=>{
+    const profile=a.public_profile||{};
+    return {
+      name:compactText(a.name||a.email||'Attendee',160),
+      email:compactText(a.email||'',180),
+      match_status:compactText(String(a.match_status||'needs review').replace(/_/g,' '),120),
+      relationship_attached:!!a.crm_contact_id,
+      relationship_summary:meetingPrepEvidenceLine(a.relationship_context||a.why_this_person_matters||a.user_confirmed_relationship_context?.relationship,520),
+      what_changed:transcriptChanges.filter(line=>line.toLowerCase().includes(String(a.name||a.email||'').split(' ')[0].toLowerCase())).slice(0,3),
+      public_summary:meetingPrepEvidenceLine(profile.latest_linkedin_post||profile.summary||a.public_context_status?.summary,520),
+      website:compactText(profile.website||'',260),
+      linkedin_url:compactText(profile.latest_linkedin_url||'',260)
+    };
+  }).slice(0,10);
+  const topJudgment=firstMeeting
+    ? `This looks like a first meeting with ${attendeeNames.join(', ')||'the attendee'}. Lead with orientation, useful questions, and current public context, not assumptions.`
+    : knownAttendees.length
+      ? `This is not a first meeting. Treat it as alignment and follow-through with ${attendeeNames.join(', ')||'known attendees'}: use the relationship history, name open loops, and leave with clear ownership.`
+      : `This is not fully mapped yet. Use the calendar context and any recent transcripts, then ask clean questions instead of pretending the packet knows more than it does.`;
+  return {
+    version:'meeting_prep_brief_packet_v1',
+    meeting_title:eventTitle(event),
+    meeting_type:meetingType.type||'unknown',
+    meeting_type_label:meetingType.label||'Meeting prep',
+    meeting_type_focus:meetingType.focus||'',
+    top_judgment:compactText(topJudgment,520),
+    attendees:attendeesPacket,
+    relationship_context:relationshipContext,
+    project_context:projectContext,
+    what_changed_since_last_spoke:[...transcriptChanges,...emailChanges].slice(0,8),
+    open_loops:openLoops,
+    public_context:publicContext,
+    how_to_enter:compactText(firstFive.first_sentence_option||firstFive.early_question||'',360),
+    questions:safeArray(questions).map(q=>meetingPrepEvidenceLine(q.text||q,260)).filter(Boolean).slice(0,6),
+    risks:safeArray(openLoops.length?[`Open loops may need acknowledgment: ${openLoops.slice(0,2).join('; ')}`]:[]).concat(safeArray(stakes.why?[stakes.why]:[])).filter(Boolean).slice(0,5),
+    likely_follow_up:safeArray(followUp.notes?[followUp.notes]:[]).concat(safeArray(followUp.possible_recipients).map(r=>`Follow up recipient: ${[r.name,r.email].filter(Boolean).join(' ')}`)).filter(Boolean).slice(0,6),
+    evidence_summary:safeArray(internal.sourcesChecked).map(item=>compactText(item,180)).filter(Boolean).slice(0,8),
+    source_confidence_label:'internal_evidence',
+    no_external_action:true
+  };
+}
 function buildBrief({event={},attendees=[],attendeeIntel=[],internal={},stakes={},role={}}={}){
   const title=eventTitle(event);
   const names=attendees.map(a=>a.name||a.email).filter(Boolean).slice(0,5);
@@ -349,7 +432,7 @@ function buildBrief({event={},attendees=[],attendeeIntel=[],internal={},stakes={
     likely_purpose:compactText(firstMeeting?'Learn who this person is, what matters to them, and whether there is a useful next step without over-assuming context.':knownMeetingPurpose,400),
     attendees:names,
     relationship_context:relationshipLines,
-    recent_changes:safeArray(internal.transcripts).map(t=>t.title||t.summary).filter(Boolean).slice(0,4),
+    recent_changes:safeArray(internal.transcripts).map(t=>t.summary||t.rawText||t.title).filter(Boolean).slice(0,4),
     possible_opportunities:attendeeIntel.flatMap(a=>safeArray(a.possible_opportunities)).slice(0,5),
     risks_or_sensitivities:openLoops.length?[`Open loops may need acknowledgment: ${openLoops.slice(0,2).join('; ')}`]:[],
     what_val_recommends_preparing:firstMeeting
@@ -863,13 +946,15 @@ function createValMeetingPrepService({
     const brief=buildBrief({event,attendees,attendeeIntel,internal,stakes,role});
     const questions=suggestedQuestions({role,stakes});
     const followUp=followUpPreparation({event,attendees,internal});
+    const briefPacket=meetingPrepBriefPacket({event,attendees,attendeeIntel,internal,stakes,role,firstFive,questions,followUp,projectLinks,meetingType});
+    brief.brief_packet=briefPacket;
     const capture=postCapturePrompt(event);
     const overviewApproval=meetingOverviewApprovalSetting(event);
     const needsJudgment=gate.quality!=='unusable'&&(attendees.length>0||stakes.relationship_stakes!=='unknown'||stakes.opportunity_stakes!=='unknown');
     const handoff={ready_for_you_candidate:needsJudgment,status:needsJudgment?'ready_for_review':'not_ready',category:'meeting',type:'meeting_prep_brief',why_user_is_seeing_this:'This meeting brief is ready enough that your judgment is now the bottleneck.',why_now:'Reviewing it before the meeting may improve relationship context, questions, and follow-up quality.',what_val_did:'Prepared meeting context, attendee resolution, stakes, first-five-minutes guidance, questions, and follow-up preparation. No calendar invite was sent.',what_only_user_can_do:'Decide how you want to enter the meeting and what matters most to protect.',estimated_review_minutes:3,requires_approval:true,approval_policy:'approval_required',meeting_overview_approval:overviewApproval,representation_risk:'medium'};
     const sourceRefs=[normalizeSourceRef({sourceType:'calendar_event',sourceId:eventId,quoteOrSummary:eventTitle(event),confidence:0.75}),...attendeeIntel.flatMap(a=>a.source_refs||[])].slice(0,12);
     const confidence=Math.min(0.92,Math.max(0.25,(gate.quality==='high'?0.75:gate.quality==='medium'?0.62:0.45)+(attendeeIntel.some(a=>a.crm_contact_id)?0.1:0)));
-    const row={id:input.id||uuid('meetprep'),tenantId:tenantId(),userId:userId(),calendarEventId:eventId,eventSource:event.source||'unknown',status:needsJudgment?'ready_for_review':'needs_context',qualityGateJson:gate,meetingContextJson:{id:eventId,title:eventTitle(event),startTime:eventStart(event),endTime:eventEnd(event),source:event.source||'unknown',attendees,meeting_type:meetingType,relationship_stage:meetingType.type,source_confidence_label:'internal_evidence',meeting_overview_approval:overviewApproval},attendeeIntelligenceJson:attendeeIntel,internalContextJson:{...internal,project_context_links:projectLinks,source_confidence_label:'internal_evidence'},meetingStakesJson:stakes,userRole:role.user_role,firstFiveMinutesJson:firstFive,briefJson:brief,suggestedQuestionsJson:questions,followUpPreparationJson:followUp,readyForYouHandoffJson:handoff,postMeetingCapturePrompt:capture,postMeetingCaptureJson:{},sourceRefsJson:sourceRefs,unknownsJson:unknowns,confidence,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const row={id:input.id||uuid('meetprep'),tenantId:tenantId(),userId:userId(),calendarEventId:eventId,eventSource:event.source||'unknown',status:needsJudgment?'ready_for_review':'needs_context',qualityGateJson:gate,meetingContextJson:{id:eventId,title:eventTitle(event),startTime:eventStart(event),endTime:eventEnd(event),source:event.source||'unknown',attendees,meeting_type:meetingType,relationship_stage:meetingType.type,source_confidence_label:'internal_evidence',meeting_overview_approval:overviewApproval},attendeeIntelligenceJson:attendeeIntel,internalContextJson:{...internal,project_context_links:projectLinks,brief_packet:briefPacket,source_confidence_label:'internal_evidence'},meetingStakesJson:stakes,userRole:role.user_role,firstFiveMinutesJson:firstFive,briefJson:brief,suggestedQuestionsJson:questions,followUpPreparationJson:followUp,readyForYouHandoffJson:handoff,postMeetingCapturePrompt:capture,postMeetingCaptureJson:{},sourceRefsJson:sourceRefs,unknownsJson:unknowns,confidence,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     const saved=await saveBrief(row);
     const savedBriefId=saved?.id||row.id;
     if(!savedBriefId)throw new Error('Meeting Prep brief saved without an id; attendee intelligence was not attached.');

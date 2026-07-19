@@ -15054,6 +15054,10 @@ function meetingPrepExecutiveBrief(result = {}){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = normalizeMeetingPrepBrief(result.brief || {}, event);
   const prep = brief.briefJson || {};
+  const briefPacket = prep.brief_packet || brief.internalContextJson?.brief_packet || {};
+  const packetList = (key) => Array.isArray(briefPacket?.[key])
+    ? briefPacket[key].map((item) => typeof item === 'string' ? item : compactSentence(item.summary || item.text || item.name || '')).filter(Boolean)
+    : [];
   const meetingType = meetingPrepType(brief);
   const firstFive = brief.firstFiveMinutesJson || {};
   const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
@@ -15065,13 +15069,13 @@ function meetingPrepExecutiveBrief(result = {}){
   const isFrisson = /frisson|aric|helpbyshopping/i.test([eventTitle, meetingPrepEventDescription(event), relationship?.name, project?.name].join(' '));
   const purpose = isFrisson
     ? 'Move Frisson from vision into execution by clarifying partnership structure, responsibilities, pilot path, and first implementation timeline.'
-    : compactSentence(prep.likely_purpose || prep.concise_brief || 'Clarify what this meeting needs to decide, protect, or move next.');
+    : compactSentence(briefPacket.top_judgment || prep.likely_purpose || prep.concise_brief || 'Clarify what this meeting needs to decide, protect, or move next.');
   const success = isFrisson
     ? ['Revenue model is clear', 'Ownership and responsibilities are named', 'Pilot nonprofit path is chosen', 'First implementation timeline is agreed']
     : meetingPrepBulletList(prep.what_val_recommends_preparing, 'Leave with a clear next step and no hidden follow-up.');
   const changed = isFrisson
     ? ['Frisson has become the primary brand direction.', 'The work has shifted from broad consulting toward an executive AI platform.', 'The operating philosophy is clearer: alignment, stewardship, and leverage.', 'The nonprofit launch path is a practical first market.']
-    : meetingPrepBulletList(prep.recent_changes || brief.internalContextJson?.openLoops?.map((item) => item.summary || item.title || item.text || item), 'No meaningful prior changes are attached yet.');
+    : meetingPrepBulletList(packetList('what_changed_since_last_spoke').length ? packetList('what_changed_since_last_spoke') : (prep.recent_changes || brief.internalContextJson?.openLoops?.map((item) => item.summary || item.title || item.text || item)), 'No meaningful prior changes are attached yet.');
   const decisions = isFrisson
     ? ['Revenue sharing model', 'Responsibilities after launch', 'Pilot nonprofit rollout', 'Client ownership', 'Technology roadmap']
     : meetingPrepBulletList(['What outcome matters most today?', 'Who owns the next step?', 'What should happen after the conversation?']);
@@ -15080,19 +15084,19 @@ function meetingPrepExecutiveBrief(result = {}){
     : 'Keep this simple: be warm, clear, and honest about what is known and unknown.';
   const risks = isFrisson
     ? ['Do not spend most of the meeting refining ideas that are already aligned.', 'Protect time for execution decisions.']
-    : meetingPrepBulletList(prep.risks_or_sensitivities, 'Do not over-use thin context. Ask clean questions instead.');
+    : meetingPrepBulletList(packetList('risks').length ? packetList('risks') : prep.risks_or_sensitivities, 'Do not over-use thin context. Ask clean questions instead.');
   const opportunities = isFrisson
     ? ['If pilot organizations are agreed, VAL can help prepare the partnership document, implementation session, and rollout timeline.']
     : meetingPrepBulletList(prep.possible_opportunities, 'If the next step becomes clear, VAL can help shape the follow-through after the meeting.');
   const opening = isFrisson
     ? 'I am excited because I think we have moved past whether Frisson is the right direction. Today I would love to leave with clarity on how we launch together.'
-    : (firstFive.first_sentence_option || 'I would love to start by naming what would make this conversation useful for you today.');
+    : (briefPacket.how_to_enter || firstFive.first_sentence_option || 'I would love to start by naming what would make this conversation useful for you today.');
   const questionTexts = questions.map((question) => question.text).filter(Boolean);
   const suggestedQuestions = isFrisson
     ? ['What part of this excites you most?', 'Where do you still feel uncertainty?', 'What would make this partnership feel effortless?', 'If we had our first five nonprofits, what would success look like?']
-    : meetingPrepBulletList(questionTexts, firstFive.early_question || 'What would make this meeting a good use of your time today?');
+    : meetingPrepBulletList(packetList('questions').length ? packetList('questions') : questionTexts, firstFive.early_question || 'What would make this meeting a good use of your time today?');
   const followUpItems = followUp.likely_follow_up_needed || isFrisson
-    ? ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline']
+    ? (packetList('likely_follow_up').length ? packetList('likely_follow_up') : ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline'])
     : ['Capture what changed after the meeting before creating tasks or drafts.'];
   const publicContextLines = meetingPrepPublicContextLines(brief);
   const calendarAttendeeLines = meetingPrepCalendarAttendeeLines(brief);
@@ -15101,6 +15105,16 @@ function meetingPrepExecutiveBrief(result = {}){
   const firstMeetingSignals = meetingPrepFirstMeetingSignals(brief);
   const hasRelationshipEvidence = attendeeRelationshipLines.length || (Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson.some((attendee) => attendee.crm_contact_id || attendee.relationship_dossier || attendee.user_confirmed_relationship_context));
   const relationshipName = relationship?.name || (Array.isArray(brief.attendeeIntelligenceJson) && (brief.attendeeIntelligenceJson[0]?.name || brief.attendeeIntelligenceJson[0]?.email)) || (calendarAttendeeLines.length ? '' : 'Attendee identity not resolved yet');
+  const packetAttendeeLines = Array.isArray(briefPacket.attendees) ? briefPacket.attendees.map((attendee) => {
+    const name = attendee.name || attendee.email || 'Attendee';
+    const email = attendee.email ? ' <' + attendee.email + '>' : '';
+    const status = attendee.relationship_attached ? 'relationship attached' : (attendee.match_status || 'needs review');
+    const context = attendee.relationship_summary || attendee.public_summary || '';
+    return compactSentence(name + email + ' - ' + status + (context ? '. ' + context : ''));
+  }).filter(Boolean) : [];
+  const packetRelationshipLines = packetList('relationship_context');
+  const packetProjectLines = packetList('project_context');
+  const packetPublicLines = packetList('public_context');
   return {
     eventTitle,
     time: meetingPrepEventTime(event),
@@ -15116,7 +15130,8 @@ function meetingPrepExecutiveBrief(result = {}){
     opening,
     questions: suggestedQuestions,
     followUpItems,
-    people: relationship ? [
+    briefPacket,
+    people: packetAttendeeLines.length ? packetAttendeeLines : (relationship ? [
       ...calendarAttendeeLines,
       relationship.name + ' - ' + (relationship.role || 'relationship context'),
       'Current relationship: ' + (relationship.relationshipStateLabel || relationship.temperature || 'known relationship'),
@@ -15127,8 +15142,11 @@ function meetingPrepExecutiveBrief(result = {}){
       relationshipName,
       hasRelationshipEvidence ? 'Relationship evidence is attached from attendee context.' : 'Relationship file has not been matched yet.',
       'Use Co-Work to add what VAL should know before the call.'
-    ].filter(Boolean),
-    relationshipIntelligence: relationship ? [
+    ].filter(Boolean)),
+    relationshipIntelligence: packetRelationshipLines.length || packetPublicLines.length ? [
+      ...packetRelationshipLines,
+      ...packetPublicLines
+    ] : (relationship ? [
       compactSentence(relationship.identity || relationship.role || ''),
       'What matters to them: ' + compactSentence(relationship.patterns || relationship.meaning || ''),
       'Recent signal: ' + compactSentence(relationship.signal || relationship.evidence || ''),
@@ -15138,15 +15156,15 @@ function meetingPrepExecutiveBrief(result = {}){
       ...(attendeeRelationshipLines.length ? [] : ['Public profile and recent activity are not verified yet.']),
       ...(publicContextLines.length ? [] : ['Outscraper should be used as relationship intelligence, not generic enrichment.']),
       ...publicContextLines
-    ],
-    project: project ? [
+    ]),
+    project: packetProjectLines.length ? packetProjectLines : (project ? [
       project.name + ': ' + compactSentence(project.status || project.reality || ''),
       'Current decision: ' + compactSentence(project.decision || project.nextMove || ''),
       'Why it matters: ' + compactSentence(project.decisionEvidence || project.nextMoveEvidence || '')
-    ].filter(Boolean) : [],
+    ].filter(Boolean) : []),
     missing: readiness.missing,
     sourceConfidence: meetingPrepSourceSummary(brief),
-    externalEvidence: publicContextLines.length ? publicContextLines : ['No verified current web evidence was returned yet.'],
+    externalEvidence: packetPublicLines.length ? packetPublicLines : (publicContextLines.length ? publicContextLines : ['No verified current web evidence was returned yet.']),
     attendeeMappings,
     firstMeetingSignals,
     coworkSeed: ''
