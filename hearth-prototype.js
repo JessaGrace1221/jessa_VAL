@@ -11048,7 +11048,7 @@ function openProjectCoworkSession(node = null){
   return openProjectOverviewCowork(node);
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true}){
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = ''}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   activeCoworkContextLocked = Boolean(lockContext);
@@ -11066,7 +11066,8 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
   renderHomeCoworkPreview({
     heading: heading || contextualCoworkHeading(safeTitle),
     detail: publicDetail || detail || coworkPublicDetail(returnTarget),
-    placeholder: placeholder || 'What should VAL help you think through here?'
+    placeholder: placeholder || 'What should VAL help you think through here?',
+    initialMessage
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
   if(showGathering) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
@@ -11087,10 +11088,18 @@ function renderMeetingPrepExternalStatus(briefing = {}){
   const lines = Array.isArray(briefing.externalEvidence) ? briefing.externalEvidence.filter(Boolean).slice(0,3) : [];
   const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
   const links = signals.map((signal) => signal.latestLinkedInUrl).filter(Boolean).slice(0,3);
-  const waiting = !lines.length || lines.some((line) => /still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated/i.test(String(line)));
-  return '<section class="meeting-prep-external-status" data-state="' + (waiting ? 'working' : 'ready') + '">' +
-    '<div><span></span><strong>' + (waiting ? 'External review running' : 'External review ready') + '</strong></div>' +
-    '<p>' + escapeHtml(waiting ? 'Internal prep is available now. This could take a minute or two while VAL checks public web and LinkedIn context.' : compactSentence(lines[0], 'Current public context is attached.')) + '</p>' +
+  const unverifiedPattern = /still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated|no verified current web evidence/i;
+  const verifiedLines = lines.filter((line) => !unverifiedPattern.test(String(line)));
+  const hasVerifiedEvidence = verifiedLines.length > 0;
+  const label = hasVerifiedEvidence ? 'External review ready' : 'External review running';
+  const detail = hasVerifiedEvidence
+    ? compactSentence(verifiedLines[0], 'Current public context is attached.')
+    : (links.length
+      ? 'Internal prep is available now. VAL is still checking public web and LinkedIn context; the activity link is available while it works.'
+      : 'Internal prep is available now. This could take a minute or two while VAL checks public web and LinkedIn context.');
+  return '<section class="meeting-prep-external-status" data-state="' + (hasVerifiedEvidence ? 'ready' : 'working') + '">' +
+    '<div><span></span><strong>' + label + '</strong></div>' +
+    '<p>' + escapeHtml(detail) + '</p>' +
     (links.length ? '<ul>' + links.map((url) => '<li><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Open LinkedIn activity</a></li>').join('') + '</ul>' : '') +
   '</section>';
 }
@@ -15216,6 +15225,29 @@ function meetingPrepCoworkSeed(briefing = {}){
   ].filter((line) => line !== '').join('\n');
 }
 
+function meetingPrepCoworkBriefAnswer(briefing = {}){
+  const verifiedExternalEvidence = (briefing.externalEvidence || [])
+    .filter((item) => !/still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated|no verified current web evidence/i.test(String(item)))
+    .slice(0, 3);
+  const attendeeLines = (briefing.people || []).slice(0, 5);
+  const relationshipLines = (briefing.relationshipIntelligence || []).slice(0, 4);
+  const questionLines = (briefing.questions || []).slice(0, 4);
+  const riskLines = (briefing.risks || []).slice(0, 4);
+  const followUpLines = (briefing.followUpItems || []).slice(0, 4);
+  const opening = compactSentence(briefing.opening || '');
+  const sections = [
+    'What matters most right now\n' + compactSentence(briefing.purpose || briefing.readiness?.label || 'Enter with one clear outcome and do not over-assume missing context.'),
+    'What I should know about each attendee\n' + (attendeeLines.length ? attendeeLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Attendee context is still thin. Use the calendar names and ask clean clarifying questions.'),
+    'Current web and LinkedIn context\n' + (verifiedExternalEvidence.length ? verifiedExternalEvidence.map((item) => '- ' + compactSentence(item)).join('\n') : '- Public web and LinkedIn review is still running or did not return verified evidence yet. Do not use public assumptions in the meeting.'),
+    relationshipLines.length ? 'Relationship and project context\n' + relationshipLines.map((item) => '- ' + compactSentence(item)).join('\n') : '',
+    'How to enter the meeting\n' + (opening ? '"' + opening + '"' : 'Open with alignment first: name the desired outcome before moving into details.'),
+    'Questions worth asking\n' + (questionLines.length ? questionLines.map((item, index) => (index + 1) + '. ' + compactSentence(item)).join('\n') : '1. What would make this meeting useful today?'),
+    'Risks or flags\n' + (riskLines.length ? riskLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Do not assume alignment just because the meeting is on the calendar.'),
+    'Likely follow-up\n' + (followUpLines.length ? followUpLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Capture what changed and create only the next confirmed action.')
+  ].filter(Boolean);
+  return sections.join('\n\n');
+}
+
 function renderMeetingPrepExecutiveBrief(briefing = {}){
   activeMeetingPrepBriefing = briefing;
   activeMeetingPrepBriefing.coworkSeed = meetingPrepCoworkSeed(briefing);
@@ -18159,6 +18191,7 @@ function openMeetingPrepCoworkSession(options = {}){
     followUpItems:['Capture what changed after the meeting.']
   };
   const seed = briefing.coworkSeed || meetingPrepCoworkSeed(briefing);
+  const loading = Boolean(options.loading);
   openContextualCoworkSession({
     returnTarget: 'meeting',
     title: 'Meeting Prep: ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting'),
@@ -18173,15 +18206,24 @@ function openMeetingPrepCoworkSession(options = {}){
     placeholder: 'Help me walk into this meeting prepared...',
     helper: 'VAL is holding the Meeting Prep packet privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
+    heading: loading ? 'VAL is preparing this meeting.' : '',
+    publicDetail: loading ? 'Internal context opens first. Public web and LinkedIn can take a minute or two.' : '',
+    initialMessage: loading
+      ? 'I am gathering calendar attendees, relationship and project packets, recent transcripts, and public web or LinkedIn context. This could take a minute or two.'
+      : '',
     backWorkflow: 'cancel:meeting',
-    showGathering: false
+    showGathering: loading
   });
   renderMeetingPrepCoworkEvidenceRail(briefing);
+  if(loading) showCoworkContextGathering('VAL is checking the calendar, packets, transcripts, public web, and LinkedIn. This could take a minute or two.', {noTimeout:true});
   if(options.autoRun){
     hideCoworkContextGathering();
+    appendHomeCoworkMessage('val', meetingPrepCoworkBriefAnswer(briefing), {meetingPrep:true, replace:true});
     const textarea = workspaceInputPanel?.querySelector?.('[data-workspace-input="cowork"]');
-    if(textarea) textarea.value = 'Prepare my executive meeting brief from this packet.';
-    window.setTimeout(() => runCowork('meeting_prep'), 120);
+    if(textarea){
+      textarea.value = '';
+      textarea.placeholder = 'Ask VAL to refine this prep, draft the opening, or pressure-test the meeting...';
+    }
   }
 }
 
@@ -22683,9 +22725,9 @@ async function openMeetingPrep(){
     room.classList.remove('active-room');
   });
   activeMeetingPrepBriefing = meetingPrepExecutiveBrief(meetingPrepFallbackResultFromEvent(activeMeetingPrepEvent || meetingPrep.event, {
-    message:'Internal meeting context is loading now. External web and LinkedIn review will not block the chat.'
+    message:'Internal meeting context is loading now. This could take a minute or two while VAL checks public web and LinkedIn context.'
   }));
-  openMeetingPrepCoworkSession({autoRun:false});
+  openMeetingPrepCoworkSession({autoRun:false, loading:true});
   renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
   scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
@@ -22719,6 +22761,7 @@ function renderHomeCoworkPreview(options = {}){
   const heading = options.heading || 'What shall we accomplish together?';
   const detail = options.detail || '';
   const placeholder = options.placeholder || 'Tell VAL what you want to accomplish';
+  const initialMessage = options.initialMessage || heading;
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
@@ -22748,7 +22791,7 @@ function renderHomeCoworkPreview(options = {}){
           '</div>',
         '</div>',
         '<div class="home-cowork-thread" data-home-cowork-response>',
-          '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(heading) + '</p></article>',
+          '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage) + '</p></article>',
         '</div>',
       '</section>',
       '<section class="home-cowork-context-gathering" data-cowork-context-gathering hidden aria-live="polite" aria-busy="true">',
@@ -22781,8 +22824,14 @@ function renderHomeCoworkMeetingPrepText(text = ''){
   const raw = String(text || '').trim();
   const parts = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';
-  const top = parts.shift();
-  return '<div class="home-cowork-top-judgment">' + escapeHtml(top) + '</div><p>' + escapeHtml(parts.join('\n\n')) + '</p>';
+  const renderBlock = (part, index) => {
+    const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
+    const heading = lines.shift() || '';
+    const body = lines.map((line) => escapeHtml(line)).join('<br>');
+    if(index === 0) return '<div class="home-cowork-top-judgment"><strong>' + escapeHtml(heading) + '</strong>' + (body ? '<p>' + body + '</p>' : '') + '</div>';
+    return '<section><strong>' + escapeHtml(heading) + '</strong>' + (body ? '<p>' + body + '</p>' : '') + '</section>';
+  };
+  return '<div class="home-cowork-meeting-prep-answer">' + parts.map(renderBlock).join('') + '</div>';
 }
 
 function renderHomeCoworkMessage(role = 'val', text = '', options = {}){

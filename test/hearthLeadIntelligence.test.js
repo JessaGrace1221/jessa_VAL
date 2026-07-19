@@ -1322,7 +1322,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function renderMeetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function renderMeetingPrepLoading/);
   assert.doesNotMatch(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,500}openMeetingPrepCoworkSession\(\{autoRun:false\}\)/);
-  assert.match(hearthJs, /activeMeetingPrepBriefing = meetingPrepExecutiveBrief\(meetingPrepFallbackResultFromEvent[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false\}\);[\s\S]{0,180}renderMeetingPrepCoworkEvidenceRail\(activeMeetingPrepBriefing\);[\s\S]{0,240}await runMeetingPrep\(\)/);
+  assert.match(hearthJs, /activeMeetingPrepBriefing = meetingPrepExecutiveBrief\(meetingPrepFallbackResultFromEvent[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\);[\s\S]{0,180}renderMeetingPrepCoworkEvidenceRail\(activeMeetingPrepBriefing\);[\s\S]{0,240}await runMeetingPrep\(\)/);
+  assert.match(hearthJs, /showCoworkContextGathering\('VAL is checking the calendar, packets, transcripts, public web, and LinkedIn\. This could take a minute or two\.', \{noTimeout:true\}\)/);
+  assert.match(hearthJs, /appendHomeCoworkMessage\('val', meetingPrepCoworkBriefAnswer\(briefing\), \{meetingPrep:true, replace:true\}\)/);
   assert.match(hearthJs, /Meeting Prep loading workspace/);
   assert.match(hearthJs, /Opening the brief as soon as internal context is ready/);
   assert.match(hearthJs, /meeting-prep-loading-steps/);
@@ -1404,12 +1406,12 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /did not run cleanly\|taking longer than expected\|safe brief\|investigated/);
   assert.match(hearthJs, /External review is still checking public web and LinkedIn context\. Do not use public assumptions yet/);
   assert.doesNotMatch(hearthJs, /if\(keepHomeCoworkOpen\)\{\\n\\s*showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'/);
-  assert.match(hearthJs, /appendHomeCoworkMessage\('val', 'I am preparing the meeting brief from the temporary packet\. This could take a minute or two/);
-  assert.match(hearthJs, /showGathering: false/);
+  assert.match(hearthJs, /appendHomeCoworkMessage\('val', meetingPrepCoworkBriefAnswer\(briefing\), \{meetingPrep:true, replace:true\}\)/);
+  assert.match(hearthJs, /showGathering: loading/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
-  assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:false\}\)/);
+  assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\)/);
   assert.match(hearthJs, /meetingPrepDomainProjectCandidate/);
   assert.doesNotMatch(hearthJs, /showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.', \{noTimeout: mode === 'meeting_prep'\}\)/);
   assert.match(hearthJs, /Prepare me for this upcoming meeting using attendee intelligence/);
