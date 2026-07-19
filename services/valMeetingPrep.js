@@ -658,7 +658,7 @@ function createValMeetingPrepService({
             attendee,
             event,
             contact
-          }), Number(process.env.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS)||22000, 'Public web and LinkedIn context is still running. VAL opened the brief with internal context first.').catch(e=>{
+          }), Number(process.env.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS)||60000, 'Public web and LinkedIn context is still running. VAL opened the brief with internal context first.').catch(e=>{
             unknowns.push(`public_context_enrichment_failed:${e.message}`);
             publicContextStatus=savedPublicContext
               ? {...publicContextStatus,status:'reused_saved_refresh_failed',summary:[savedPublicContext.summary, 'Fresh LinkedIn refresh failed: ' + e.message].filter(Boolean).join(' ')}

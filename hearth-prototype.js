@@ -11090,7 +11090,7 @@ function renderMeetingPrepExternalStatus(briefing = {}){
   const waiting = !lines.length || lines.some((line) => /still running|not returned|not checked|did not finish|not verified/i.test(String(line)));
   return '<section class="meeting-prep-external-status" data-state="' + (waiting ? 'working' : 'ready') + '">' +
     '<div><span></span><strong>' + (waiting ? 'External review running' : 'External review ready') + '</strong></div>' +
-    '<p>' + escapeHtml(waiting ? 'Internal prep is available now. Web and LinkedIn context will not block this chat.' : compactSentence(lines[0], 'Current public context is attached.')) + '</p>' +
+    '<p>' + escapeHtml(waiting ? 'Internal prep is available now. Web and LinkedIn context can take up to a minute, and will appear here when ready.' : compactSentence(lines[0], 'Current public context is attached.')) + '</p>' +
     (links.length ? '<ul>' + links.map((url) => '<li><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Open LinkedIn activity</a></li>').join('') + '</ul>' : '') +
   '</section>';
 }
@@ -15357,7 +15357,7 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
     understanding: [
       'Checking attendees and relationship files.',
       'Checking project context and the most recent relevant transcript.',
-      'Checking saved public context only for admitted relationships.'
+      'Checking public web and LinkedIn context. This can take up to a minute.'
     ],
     recommendation: 'Hold here for a moment. The prep brief will replace this working state as soon as the packet is ready.',
     actions: [],
@@ -15373,13 +15373,13 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
       '<div>',
         '<span>VAL is preparing</span>',
         '<h3>' + escapeHtml(title || 'This meeting') + '</h3>',
-        '<p>Opening the brief as soon as internal context is ready. Slow external research will never be treated as hidden certainty.</p>',
+        '<p>Opening the brief as soon as internal context is ready. Public web and LinkedIn context can take up to a minute and will appear when it is verified.</p>',
         '<ol class="meeting-prep-loading-steps">',
           '<li><b></b><span>Calendar and attendee context</span></li>',
           '<li><b></b><span>Relationship and Project packets</span></li>',
           '<li><b></b><span>Most recent transcript and open loops</span></li>',
-          '<li><b></b><span>Saved public web context receipt</span></li>',
-          '<li><b></b><span>LinkedIn activity link, post if available</span></li>',
+          '<li><b></b><span>Public web search</span></li>',
+          '<li><b></b><span>LinkedIn activity and recent post check</span></li>',
         '</ol>',
         '<div class="meeting-prep-loading-bars" aria-hidden="true"><b></b><b></b><b></b></div>',
       '</div>',

@@ -1325,7 +1325,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /Meeting Prep loading workspace/);
   assert.match(hearthJs, /Opening the brief as soon as internal context is ready/);
   assert.match(hearthJs, /meeting-prep-loading-steps/);
-  assert.match(hearthJs, /LinkedIn activity link, post if available/);
+  assert.match(hearthJs, /LinkedIn activity and recent post check/);
   assert.match(hearthJs, /function scrollMeetingPrepToTop/);
   assert.match(hearthJs, /function openMeetingPrepCoworkSession/);
   assert.match(hearthJs, /hearth\.classList\.contains\('calendar-prep-open'\) && workspaceOpen \? 'meeting_prep'/);
@@ -1392,6 +1392,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /renderMeetingPrepCoworkEvidenceRail/);
   assert.match(hearthJs, /renderMeetingPrepExternalStatus/);
   assert.match(hearthJs, /External review running/);
+  assert.match(hearthJs, /Web and LinkedIn context can take up to a minute/);
+  assert.match(hearthJs, /Public web and LinkedIn context can take up to a minute/);
+  assert.match(hearthJs, /LinkedIn activity and recent post check/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
