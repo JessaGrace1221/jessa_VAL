@@ -981,7 +981,7 @@ test('Relationship card Co-Work updates only the selected field for the selected
   assert.equal(opened.session.scope.entityId,'rel_aric');
   assert.equal(opened.session.scope.sectionId,'needs');
   assert.equal(opened.question.targetField,'relationship_person_packet.what_this_person_needs[]');
-  assert.match(opened.question.question,/What does Aric need/i);
+  assert.match(opened.question.question,/Tell VAL, in your own words, what Aric needs/i);
   await assert.rejects(service.applyWorkItem(opened.workItem.id),/must be reviewed/i);
 
   const ready=await service.respond(opened.session.id,{answer:'A clear decision on the remaining MOU changes.\nA confirmed partnership timeline.'});

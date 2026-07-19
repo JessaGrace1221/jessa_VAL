@@ -147,6 +147,7 @@ const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) 
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
+const OUTSCRAPER_GOOGLE_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_SEARCH_URL || 'https://api.app.outscraper.com/google-search-v3';
 const GHL_CALENDAR_ID = process.env.GHL_CALENDAR_ID || '';
 const GHL_CALENDAR_IDS = String(process.env.GHL_CALENDAR_IDS || GHL_CALENDAR_ID || '').split(',').map(v=>v.trim()).filter(Boolean);
 const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || process.env.GHL_PIPELINE_ID || '';
@@ -850,8 +851,8 @@ function isBookEditorProject(){
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
-  .concat(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
-  .map(e=>e.trim().toLowerCase())
+  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL,'jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
+  .map(e=>String(e||'').trim().toLowerCase())
   .filter(Boolean));
 const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
   'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
@@ -10798,7 +10799,7 @@ async function fetchOutlookCalendarEvents(start,end,maxResults=75){
 async function fetchGoogleCalendarEvents(start,end,maxResults=50){
   const token = await getGoogleToken();
   if(!token) throw new Error('Google auth required');
-  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=${maxResults}`;
+  const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${start.toISOString()}&timeMax=${end.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=${maxResults}&maxAttendees=50`;
   const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
   const d = await r.json();
   if(d.error) throw new Error(d.error.message || 'Google calendar error');
@@ -12256,6 +12257,10 @@ function normalizeAttendee(attendee){
   if(!email && !name) return null;
   return {name:name || (email ? email.split('@')[0] : ''), email};
 }
+function attendeeIsProtectedOwner(attendee={}){
+  const email=normalizeContextEmail(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'');
+  return !!(attendee.self||(email&&OWNER_EMAILS.has(email)));
+}
 
 function inferAttendeesFromEvent(event){
   const seen = new Set();
@@ -12263,7 +12268,7 @@ function inferAttendeesFromEvent(event){
   const push = (item)=>{
     const attendee = normalizeAttendee(item);
     if(!attendee) return;
-    if(attendee.email && OWNER_EMAILS.has(attendee.email)) return;
+    if(attendeeIsProtectedOwner(attendee)) return;
     const key = (attendee.email || attendee.name).toLowerCase();
     if(!key || seen.has(key)) return;
     seen.add(key);
@@ -12305,6 +12310,47 @@ async function matchingTranscriptContext(event,limit=5){
     .slice(0,Math.max(0,limit-linked.length))
     .map(t=>({id:t.id,title:t.title,type:t.type,createdAt:t.createdAt,confidence:t.match.confidence,reason:t.match.reason,summary:String(t.rawText||'').slice(0,900)}));
   return [...linked,...fuzzy].slice(0,limit);
+}
+function transcriptMentionsAttendee(transcript={},attendee={}){
+  const hay=[transcript.title,transcript.rawText,JSON.stringify(transcript.metadata||{})].join(' ').toLowerCase();
+  const email=normalizeContextEmail(attendee.email);
+  const name=normalizeContextName(attendee.name);
+  if(email&&hay.includes(email))return true;
+  if(name&&name.length>=3&&hay.includes(name))return true;
+  return false;
+}
+async function matchingTranscriptContextForAttendees(attendees=[],limit=8){
+  attendees=safeArray(attendees).filter(attendee=>!attendeeIsProtectedOwner(attendee));
+  const transcripts=await recentTranscripts(365);
+  const matches=[];
+  for(const transcript of transcripts){
+    const matched=attendees.filter(attendee=>transcriptMentionsAttendee(transcript,attendee));
+    if(!matched.length)continue;
+    const reason='attendee transcript match: ' + matched.map(attendee=>attendee.email||attendee.name).filter(Boolean).slice(0,3).join(', ');
+    matches.push({
+      id:transcript.id,
+      title:transcript.title,
+      type:transcript.type,
+      createdAt:transcript.createdAt,
+      confidence:0.82,
+      reason,
+      summary:String(transcript.rawText||'').slice(0,1200),
+      matchedAttendees:matched.map(attendee=>({name:attendee.name||'',email:attendee.email||''}))
+    });
+  }
+  return matches
+    .sort((a,b)=>interactionDate(b.createdAt)-interactionDate(a.createdAt))
+    .slice(0,limit);
+}
+function mergeMeetingTranscriptContexts(...groups){
+  const byId=new Map();
+  for(const transcript of groups.flat().filter(Boolean)){
+    const id=String(transcript.id||'');
+    if(!id)continue;
+    const current=byId.get(id);
+    if(!current||Number(transcript.confidence||0)>Number(current.confidence||0))byId.set(id,transcript);
+  }
+  return [...byId.values()].sort((a,b)=>Number(b.confidence||0)-Number(a.confidence||0)||interactionDate(b.createdAt)-interactionDate(a.createdAt));
 }
 async function matchingTaskContext(event,limit=10){
   const tasks=await loadTasks();
@@ -12449,6 +12495,7 @@ async function collectContextContactCandidates(input={}){
 }
 async function resolveContactFromContext(input={}){
   const target={name:input.name||input.contactName||'',email:normalizeContextEmail(input.email||input.contactEmail),phone:normalizeContextPhone(input.phone||input.contactPhone),company:input.company||input.companyName||''};
+  if(target.email&&OWNER_EMAILS.has(target.email)) return {ok:true,status:'protected_owner',confidence:1,contact:null,matches:[],sourcesChecked:['protected owner identity'],reason:'VAL does not resolve or enrich the account owner as a meeting attendee.'};
   const attendees=inferAttendeesFromEvent(input.calendarEvent||{attendees:input.attendees||[]});
   if(!target.email&&attendees.find(a=>a.email)) target.email=attendees.find(a=>a.email).email;
   if(!target.name&&attendees.find(a=>a.name)) target.name=attendees.find(a=>a.name).name;
@@ -12461,7 +12508,13 @@ async function resolveContactFromContext(input={}){
     if(ns>=0.5){score+=0.35*ns;reasons.push('name match');}
     const cs=looseNameScore(target.company,c.company);
     if(cs>=0.5){score+=0.18*cs;reasons.push('company match');}
-    if(attendees.some(a=>(a.email&&a.email===c.email)||(a.name&&looseNameScore(a.name,c.name)>=0.65))){score+=0.25;reasons.push('calendar attendee');}
+    const targetHasIdentity=Boolean(target.email||target.name);
+    const matchesTargetAttendee=attendees.some(a=>
+      (target.email&&a.email&&a.email===target.email&&c.email===target.email) ||
+      (target.name&&a.name&&looseNameScore(a.name,target.name)>=0.85&&looseNameScore(a.name,c.name)>=0.85)
+    );
+    const broadCalendarMatch=!targetHasIdentity&&attendees.some(a=>(a.email&&a.email===c.email)||(a.name&&looseNameScore(a.name,c.name)>=0.65));
+    if(matchesTargetAttendee||broadCalendarMatch){score+=0.25;reasons.push('calendar attendee');}
     if([input.transcript,input.emailThread].some(text=>itemMentionsContact({rawText:text},c))){score+=0.2;reasons.push('mentioned in supplied context');}
     return {...c,confidence:Math.min(1,Number(score.toFixed(2))),matchReasons:[...new Set(reasons)]};
   }).filter(c=>c.confidence>0).sort((a,b)=>b.confidence-a.confidence);
@@ -12505,14 +12558,16 @@ async function resolveMeetingContext(input={}){
   if(!meeting) meeting={id:id||'',title:input.title||input.summary||'',summary:input.title||input.summary||'',source:input.source||'unknown',startTime:input.date||input.startTime||input.start||'',attendees:input.attendees||[]};
   const attendees=inferAttendeesFromEvent({...meeting,attendees:input.attendees||meeting.attendees||[]});
   const contactResolution=await resolveContactFromContext({name:input.name,email:input.email,company:input.company,calendarEvent:{...meeting,attendees},transcript:input.transcript||''});
-  const [transcripts,tasks,memory,gmail,outlook,ghlContext]=await Promise.all([
+  const [eventTranscripts,attendeeTranscripts,tasks,memory,gmail,outlook,ghlContext]=await Promise.all([
     matchingTranscriptContext(meeting,8).catch(()=>[]),
+    matchingTranscriptContextForAttendees(attendees,8).catch(()=>[]),
     matchingTaskContext({...meeting,attendees},15).catch(()=>[]),
     recentMemoryItems(180,220).catch(()=>[]),
     fetchGmailMessages({query:gmailMeetingQuery({...meeting,attendees}),maxResults:12}).catch(e=>({emails:[],error:e.message})),
     fetchUnifiedOutlookEmails(12).catch(e=>({emails:[],error:e.message})),
     ghlPlatformContext([meeting.title,meeting.summary,...attendees.flatMap(a=>[a.name,a.email])].filter(Boolean).join(' '),{appointments:[meeting],contacts:[contactResolution.contact].filter(Boolean)},{limit:6,opportunityLimit:12,taskLimit:8}).catch(()=>'')
   ]);
+  const transcripts=mergeMeetingTranscriptContexts(eventTranscripts,attendeeTranscripts).slice(0,8);
   const contact=contactResolution.contact||{};
   const relatedMemory=memory.filter(m=>itemMentionsContact(m,contact)||itemMentionsContact(m,meeting)).slice(0,12);
   const emailContext=(gmail.emails||[]).concat(outlook.emails||[]).filter(e=>itemMentionsContact(e,contact)||attendees.some(a=>(a.email&&[e.from?.email,...(e.to||[]).map(t=>t.email),...(e.cc||[]).map(t=>t.email)].includes(a.email)))).slice(0,12);
@@ -12522,8 +12577,90 @@ async function resolveMeetingContext(input={}){
     ...relatedMemory.flatMap(m=>extractOpenLoopsFromText(m.rawText||m.summary,`memory:${m.id}`,m.createdAt,contact)),
     ...ghlContext.split('\n').flatMap(line=>extractOpenLoopsFromText(line,'ghl_platform','',contact))
   ].slice(0,16);
-  const sourcesChecked=[`Calendar events (${events.length})`,`Attendees (${attendees.length})`,`Linked/fuzzy transcripts (${transcripts.length})`,`Tasks (${tasks.length})`,`Memory items (${relatedMemory.length})`,`Gmail messages (${gmail.emails?.length||0})`,`Outlook messages (${outlook.emails?.length||0})`,`GHL platform context (${ghlContext?ghlContext.split('\n').filter(Boolean).length:0})`];
+  const sourcesChecked=[`Calendar events (${events.length})`,`Attendees (${attendees.length})`,`Linked/fuzzy transcripts (${eventTranscripts.length})`,`Attendee transcript search (${attendeeTranscripts.length})`,`Meeting transcripts used (${transcripts.length})`,`Tasks (${tasks.length})`,`Memory items (${relatedMemory.length})`,`Gmail messages (${gmail.emails?.length||0})`,`Outlook messages (${outlook.emails?.length||0})`,`GHL platform context (${ghlContext?ghlContext.split('\n').filter(Boolean).length:0})`];
   return {ok:true,meeting:{...meeting,attendees},contactResolution,relationshipContext:{contact,attendees,relatedMemory,emailContext,ghlNotes:ghlContext,ghlContext},transcripts,tasks,openLoops,sourcesChecked,errors};
+}
+async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={},contact={},resolution={}}={}){
+  const email=normalizeContextEmail(attendee.email||contact.email||contact.contactEmail||'');
+  if(!email||OWNER_EMAILS.has(email))return null;
+  if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(email))return null;
+  const name=cleanPersonName(attendee.name||contact.name||contact.contactName||'',email);
+  const title=String(event.title||event.summary||'Calendar meeting').trim()||'Calendar meeting';
+  const start=event.startTime||event.start||event.date||new Date().toISOString();
+  const eventId=String(event.id||event.eventId||event.calendarEventId||stableKey([title,start].join(' ')));
+  const profileKey=personKey(name,email);
+  const metadata={
+    source:'calendar_attendee_auto_packet',
+    email,
+    networkAdmission:'calendar_attendee',
+    calendarAttendeeAutoContact:true,
+    calendarAttendeeLastSeenAt:start,
+    calendarEventId:eventId,
+    calendarEventTitle:title,
+    resolverStatus:resolution.status||'unknown',
+    resolverReason:resolution.reason||'',
+    relationshipAdmissionSignals:['meeting_participant'],
+    contactId:realRelationshipContactId(contact.contactId||contact.crmContactId||contact.id)||''
+  };
+  const profile=await saveRelationshipProfile({
+    profileType:'person',
+    profileKey,
+    personId:realRelationshipContactId(contact.contactId||contact.crmContactId||contact.id)||'',
+    displayName:name||email,
+    summary:`Calendar attendee: ${name||email} appeared on ${title}.`,
+    relationshipStatus:contact.contactId||contact.source==='ghl_contact'?'observed':'provisional_calendar_contact',
+    confidence:contact.contactId||contact.source==='ghl_contact'?0.72:0.58,
+    lastObservedAt:start,
+    metadataJson:metadata
+  });
+  const evidence=await saveEvidenceItem({
+    sourceType:'calendar_event_attendee',
+    sourceId:`${eventId}:${email}`,
+    occurredAt:start,
+    capturedAt:new Date().toISOString(),
+    title:`${title} - ${name||email}`,
+    rawText:JSON.stringify({eventId,title,start,attendee:{name,email},source:event.source||'calendar'}),
+    summary:`${name||email} was listed as an attendee for "${title}".`,
+    participantsJson:[{name:name||email,email,role:'attendee',relationshipIntake:true}],
+    entitiesJson:{calendarEventId:eventId,calendarSource:event.source||'calendar'},
+    confidence:0.72,
+    status:'captured',
+    metadataJson:{source:'calendar_attendee_auto_packet',eventId,title,start,email,noExternalAction:true}
+  });
+  const observation=await saveEvidenceObservation({
+    evidenceItemId:evidence?.id||'',
+    observationType:'relationship_signal',
+    personId:profile?.personId||'',
+    content:`${name||email} appeared on the calendar for "${title}".`,
+    exactQuote:`${title} · ${start}`,
+    confidence:0.72,
+    status:'observed'
+  });
+  if(profile&&evidence&&observation){
+    await saveRelationshipTimelineEvent({
+      target:{profileType:'person',profileKey,personId:profile.personId||'',displayName:name||email,email,metadata},
+      evidenceItem:evidence,
+      observation
+    }).catch(()=>null);
+    await recalculateRelationshipProfile('person',profileKey).catch(()=>null);
+  }
+  return {
+    ok:true,
+    profile,
+    evidenceItem:evidence,
+    observation,
+    contact:{
+      id:`relationship-profile:${profile?.id||profileKey}`,
+      contactId:realRelationshipContactId(contact.contactId||contact.crmContactId||contact.id)||'',
+      relationshipProfileId:profile?.id||'',
+      source:'relationship_profile',
+      name:name||email,
+      email,
+      company:contact.company||contact.companyName||contact.organization||'',
+      relationshipEnrichment:contact.relationshipEnrichment||relationshipSavedPublicEnrichment(profile?.metadataJson||profile?.metadata||{})||null,
+      raw:{...(contact.raw||{}),relationshipProfileId:profile?.id||'',metadata:profile?.metadataJson||profile?.metadata||{},calendarAttendeeAutoContact:true}
+    }
+  };
 }
 async function buildContactTimeline(contactInput,limit=80){
   const contact=typeof contactInput==='object'?contactInput:(await resolveContactFromContext({name:contactInput,email:contactInput})).contact;
@@ -13467,24 +13604,320 @@ async function lookupOutscraperLinkedIn(attendee, profile){
   if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
   if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
   const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
-  const query = profile?.linkedinUrl || attendee.linkedinUrl || attendee.email || attendee.name;
+  const organization = profile?.company || profile?.organization || profile?.metadata?.company || profile?.metadata?.organization || '';
+  const email=normalizeContextEmail(attendee.email||relationshipProfilePrimaryEmail(profile)||'');
+  const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
+  const usableDomain=domain&&!/(gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|protonmail)\./i.test(domain)?domain:'';
+  const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
+  const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
+  const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
+  const endpointLooksCompany=/linkedin-posts/i.test(OUTSCRAPER_LINKEDIN_POSTS_URL);
+  const query = endpointLooksCompany
+    ? (companyLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || organization || usableDomain || name || email)
+    : (personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || email);
   if(query) url.searchParams.set('query', query);
   url.searchParams.set('async','false');
-  const response = await fetch(url.toString(),{headers:{'X-API-KEY':outscraperKey}});
+  const response = await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper LinkedIn posts');
   const data = await readJsonResponse(response);
   if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
   const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
-  const weekAgo = Date.now() - 7*24*60*60*1000;
-  const recentPosts = posts.filter(p=>{
-    const rawDate = p.date || p.posted_at || p.created_at || p.time || p.timestamp;
-    const time = rawDate ? new Date(rawDate).getTime() : NaN;
-    return !Number.isFinite(time) || time >= weekAgo;
-  }).slice(0,6).map(p=>({
+  const recentPosts = posts.slice(0,6).map(p=>({
     date:p.date || p.posted_at || p.created_at || '',
     text:String(p.text || p.post_text || p.content || p.description || p.title || '').slice(0,700),
     url:p.url || p.post_url || p.link || ''
   }));
-  return {configured:true, postsLastWeek:recentPosts, rawCount:posts.length};
+  return {configured:true, query, postsLastWeek:recentPosts, rawCount:posts.length};
+}
+
+function meetingPrepPublicSearchQueries(attendee={}, contact={}, profile={}){
+  const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
+  const organization=firstLookCandidateCleanName(
+    contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||''
+  );
+  const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
+  const usableDomain=domain&&!/(gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|protonmail)\./i.test(domain)?domain:'';
+  const website=String(contact.website||contact.raw?.website||profile.website||profile.metadata?.website||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'').trim();
+  return [
+    email || '',
+    email ? `"${email}"` : '',
+    name&&usableDomain ? `"${name}" ${usableDomain}` : '',
+    name&&organization ? `"${name}" "${organization}"` : '',
+    name&&website ? `"${name}" ${website}` : '',
+    name ? `"${name}" LinkedIn` : ''
+  ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
+}
+
+function normalizeOutscraperSearchResult(row={}){
+  const url=String(row.link||row.url||row.href||row.source_url||row.displayed_link||'').trim();
+  const rawTitle=String(row.title||row.name||row.heading||'').trim();
+  const snippet=dashboardShortText(meetingPrepPublicEvidenceText(row.snippet||row.description||row.text||row.content||row.summary||''), '', 520);
+  if(!rawTitle&&!snippet&&!url)return null;
+  const title=dashboardShortText(rawTitle||url,'Search result',180);
+  return {
+    title,
+    url,
+    displayedLink:String(row.displayed_link||row.displayedLink||'').trim(),
+    snippet
+  };
+}
+function meetingPrepPublicEvidenceText(value=''){
+  return String(value||'')
+    .replace(/\bAge\s+\d{1,3}\b/gi,'')
+    .replace(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function meetingPrepRejectedPublicResult(result={}){
+  const text=[result.title,result.url,result.displayedLink].filter(Boolean).join(' ').toLowerCase();
+  return /\b(truepeoplesearch|whitepages|beenverified|spokeo|mylife|intelius|peoplefinders|radaris|usphonebook|fastpeoplesearch|clustrmaps|truthfinder)\b/i.test(text);
+}
+
+function flattenOutscraperSearchResults(data={}){
+  const rows=(Array.isArray(data.data)?data.data:[data]).flat(5).filter(Boolean);
+  const candidates=[];
+  for(const row of rows){
+    if(!row||typeof row!=='object')continue;
+    const nested=[
+      row.organic_results,
+      row.organicResults,
+      row.results,
+      row.items,
+      row.serp_results,
+      row.search_results
+    ].filter(Boolean);
+    if(nested.length){
+      nested.flat(4).filter(Boolean).forEach(item=>candidates.push(item));
+    }else{
+      candidates.push(row);
+    }
+  }
+  return candidates.map(normalizeOutscraperSearchResult).filter(Boolean).filter(result=>!meetingPrepRejectedPublicResult(result));
+}
+
+function meetingPrepSearchResultMatchesAttendee(result={}, attendee={}, contact={}, profile={}){
+  const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'').toLowerCase();
+  const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
+  const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'').toLowerCase();
+  const text=[result.title,result.snippet,result.url,result.displayedLink].filter(Boolean).join(' ').toLowerCase();
+  if(email&&text.includes(email))return true;
+  if(name&&domain&&text.includes(name)&&text.includes(domain))return true;
+  if(name&&organization&&text.includes(name)&&text.includes(organization))return true;
+  if(name&&/linkedin\.com\/in\//i.test(result.url||'')&&text.includes(name))return true;
+  return false;
+}
+
+function meetingPrepSearchResultScore(result={}, attendee={}, contact={}, profile={}){
+  const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'').toLowerCase();
+  const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'').toLowerCase();
+  const text=[result.title,result.snippet,result.url,result.displayedLink].filter(Boolean).join(' ').toLowerCase();
+  let score=0;
+  if(/linkedin\.com\/in\//i.test(result.url||''))score+=120;
+  if(/forbes|westwoodintl\.com|hopemakers|hci\.org|hrtechoutlook/i.test(result.url||''))score+=35;
+  if(email&&text.includes(email))score+=30;
+  if(name&&text.includes(name))score+=24;
+  if(organization&&text.includes(organization))score+=20;
+  if(/\b(pdf|download)\b/i.test(result.url||result.title||''))score-=12;
+  return score;
+}
+
+function meetingPrepLinkedInKnownProfileUrl(attendee={}, contact={}, profile={}){
+  return String(
+    profile.linkedinUrl || profile.linkedin_url ||
+    attendee.linkedinUrl || attendee.linkedin_url ||
+    contact.linkedinUrl || contact.linkedin_url || contact.raw?.linkedinUrl ||
+    extractLinkedInUrl(profile) || extractLinkedInUrl(contact) || ''
+  ).trim();
+}
+
+function meetingPrepLinkedInActivityUrl(profileUrl=''){
+  const clean=String(profileUrl||'').replace(/[#?].*$/,'').replace(/\/$/,'').trim();
+  if(!clean)return '';
+  if(/linkedin\.com\/in\//i.test(clean))return `${clean}/recent-activity/all/`;
+  return clean;
+}
+
+function meetingPrepLinkedInRecentQueries(attendee={}, contact={}, profile={}){
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
+  const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'');
+  return [
+    name&&organization ? `${name} LinkedIn ${organization}` : '',
+    name ? `${name} LinkedIn posts` : '',
+    name ? `site:linkedin.com/posts "${name}"` : '',
+    name ? `site:linkedin.com/feed/update "${name}"` : '',
+    name&&organization ? `site:linkedin.com/posts "${name}" "${organization}"` : ''
+  ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
+}
+
+function meetingPrepLinkedInSignalScore(result={}, attendee={}, contact={}, profile={}){
+  const base=meetingPrepSearchResultScore(result,attendee,contact,profile);
+  const url=String(result.url||'');
+  let score=base;
+  if(/linkedin\.com\/posts\//i.test(url))score+=140;
+  if(/linkedin\.com\/feed\/update/i.test(url))score+=130;
+  if(/linkedin\.com\/pulse\//i.test(url))score+=45;
+  if(/linkedin\.com\/in\//i.test(url))score+=20;
+  return score;
+}
+
+async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, profile={}){
+  const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
+  const activityUrl=meetingPrepLinkedInActivityUrl(knownProfileUrl);
+  if(activityUrl){
+    const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'this attendee');
+    const fallbackSummary=`LinkedIn activity link prepared for ${name}. Open LinkedIn activity: ${activityUrl}`;
+    return {
+      configured:!!OUTSCRAPER_API_KEY,
+      status:'activity_link_prepared',
+      query:'',
+      title:`LinkedIn activity for ${name}`,
+      url:activityUrl,
+      summary:fallbackSummary,
+      sourceRefs:[{
+        type:'linkedin_activity_fallback',
+        sourceType:'known_linkedin_profile_activity',
+        sourceId:activityUrl,
+        title:`LinkedIn activity for ${name}`,
+        summary:fallbackSummary,
+        confidence:'public_source'
+      }],
+      attempts:[],
+      rawResultCount:0,
+      completedAt:new Date().toISOString()
+    };
+  }
+  const queries=meetingPrepLinkedInRecentQueries(attendee,contact,profile);
+  const attempts=[];
+  const selected=[];
+  for(const query of queries.slice(0,1)){
+    const search=await lookupOutscraperGoogleSearch(query).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
+    attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
+    const matches=safeArray(search.results)
+      .filter(result=>/linkedin\.com\/(posts|feed\/update|pulse|in)\//i.test(result.url||''))
+      .filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile)||/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''));
+    selected.push(...matches);
+    if(selected.some(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||'')))break;
+  }
+  const unique=selected.filter((result,index,array)=>{
+    const key=String(result.url||result.title||result.snippet||'').toLowerCase();
+    return key&&array.findIndex(item=>String(item.url||item.title||item.snippet||'').toLowerCase()===key)===index;
+  }).sort((a,b)=>meetingPrepLinkedInSignalScore(b,attendee,contact,profile)-meetingPrepLinkedInSignalScore(a,attendee,contact,profile));
+  const post=unique.find(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))||null;
+  const profileResult=unique.find(result=>/linkedin\.com\/in\//i.test(result.url||''))||null;
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'this attendee');
+  if(post){
+    const summary=dashboardShortText([post.title,post.snippet].filter(Boolean).join(': '),`VAL found a public LinkedIn post result for ${name}.`,700);
+    return {
+      configured:attempts.some(attempt=>attempt.configured),
+      status:'post_found',
+      query:attempts.map(attempt=>attempt.query).filter(Boolean).join(' | '),
+      title:post.title,
+      url:post.url,
+      summary:`Latest public LinkedIn signal VAL found for ${name}: ${summary} Open post: ${post.url}`,
+      sourceRefs:[{
+        type:'linkedin_recent_signal',
+        sourceType:'outscraper_google_linkedin_recent_signal',
+        sourceId:post.url,
+        title:post.title||`LinkedIn post for ${name}`,
+        summary,
+        confidence:'public_source'
+      }],
+      attempts,
+      rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
+      completedAt:new Date().toISOString()
+    };
+  }
+  const fallbackUrl=activityUrl||profileResult?.url||knownProfileUrl||'';
+  const fallbackTitle=profileResult?.title||`LinkedIn activity for ${name}`;
+  const fallbackSummary=fallbackUrl
+    ? `No readable recent LinkedIn post was returned for ${name}. Open LinkedIn activity/profile: ${fallbackUrl}`
+    : `No readable recent LinkedIn post was returned for ${name}, and VAL does not have a LinkedIn profile URL yet.`;
+  return {
+    configured:attempts.some(attempt=>attempt.configured)||!!OUTSCRAPER_API_KEY,
+    status:fallbackUrl?'profile_fallback':'not_found',
+    query:attempts.map(attempt=>attempt.query).filter(Boolean).join(' | '),
+    title:fallbackTitle,
+    url:fallbackUrl,
+    summary:fallbackSummary,
+    sourceRefs:fallbackUrl?[{
+      type:'linkedin_activity_fallback',
+      sourceType:'outscraper_google_linkedin_recent_signal',
+      sourceId:fallbackUrl,
+      title:fallbackTitle,
+      summary:fallbackSummary,
+      confidence:'public_source'
+    }]:[],
+    attempts,
+    rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
+    completedAt:new Date().toISOString()
+  };
+}
+
+async function lookupOutscraperGoogleSearch(query){
+  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
+  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
+  const url=new URL(OUTSCRAPER_GOOGLE_SEARCH_URL);
+  url.searchParams.set('query',query);
+  url.searchParams.set('limit','10');
+  url.searchParams.set('async','true');
+  const response=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper Google Search submit');
+  const submittedData=await readJsonResponse(response);
+  if(!response.ok)return {configured:true,query,error:submittedData.errorMessage||submittedData.message||`Outscraper ${response.status}`};
+  let data=submittedData;
+  const submittedStatus=String(submittedData.status||'').toLowerCase();
+  if(submittedStatus==='pending'||!flattenOutscraperSearchResults(submittedData).length){
+    const requestId=submittedData.id||submittedData.request_id;
+    if(requestId){
+      const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey);
+      if(polled.ok)data=polled.data;
+      else return {configured:true,query,error:polled.error||'Outscraper Google Search did not finish'};
+    }
+  }
+  const results=flattenOutscraperSearchResults(data);
+  return {configured:true,query,results,rawCount:results.length};
+}
+
+async function lookupMeetingPrepWebEvidence(attendee={}, contact={}, profile={}){
+  const queries=meetingPrepPublicSearchQueries(attendee,contact,profile);
+  if(!queries.length)return {configured:!!OUTSCRAPER_API_KEY,query:'',results:[],sourceRefs:[],summary:'',rawResultCount:0};
+  const attempts=[];
+  const selected=[];
+  for(const query of queries.slice(0,4)){
+    const search=await lookupOutscraperGoogleSearch(query).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
+    attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
+    const matches=safeArray(search.results).filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile));
+    selected.push(...matches);
+    if(selected.length>=3)break;
+  }
+  const unique=selected.filter((result,index,array)=>{
+    const key=String(result.url||result.title||result.snippet||'').toLowerCase();
+    return key&&array.findIndex(item=>String(item.url||item.title||item.snippet||'').toLowerCase()===key)===index;
+  }).sort((a,b)=>meetingPrepSearchResultScore(b,attendee,contact,profile)-meetingPrepSearchResultScore(a,attendee,contact,profile)).slice(0,5);
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'this attendee');
+  const sourceRefs=unique.map((result,index)=>({
+    type:'web_search_result',
+    sourceType:'outscraper_google_search_result',
+    sourceId:result.url||stableKey(`web:${name}:${index}`),
+    title:result.title||`Web result for ${name}`,
+    summary:dashboardShortText([result.title,result.snippet].filter(Boolean).join(': '),'Public web result found by Outscraper Google Search.',700),
+    confidence:'public_source'
+  }));
+  const summary=sourceRefs.length
+    ? `This is what VAL found on the web about ${name}: ${sourceRefs.map(ref=>ref.summary).filter(Boolean).slice(0,3).join(' ')}`
+    : '';
+  return {
+    configured:attempts.some(attempt=>attempt.configured),
+    query:attempts.map(attempt=>attempt.query).filter(Boolean).join(' | '),
+    attempts,
+    results:unique,
+    sourceRefs,
+    summary,
+    rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
+    cacheStatus:'ran',
+    completedAt:new Date().toISOString()
+  };
 }
 
 app.post('/api/val/meeting-intel',async(req,res)=>{
@@ -13496,12 +13929,15 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
       const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
       const profile = rocket.data || {};
       const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
-      enriched.push({attendee, rocketReach:rocket, outscraper});
+      const linkedInRecentSignal = await lookupMeetingPrepLinkedInRecentSignal(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}));
+      const webSearch = await lookupMeetingPrepWebEvidence(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}));
+      enriched.push({attendee, rocketReach:rocket, outscraper, linkedInRecentSignal, webSearch});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
       rocketReach:!ROCKETREACH_API_KEY
     }, optionalConfig:{
-      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL
+      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL,
+      outscraperGoogleSearchConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_GOOGLE_SEARCH_URL
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -20161,6 +20597,7 @@ function publicRelationshipProfile(row={}){
   const profileKeyEmail=String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'';
   const packetEmail=metadata.personPacket?.person?.email_addresses?.[0]||'';
   const email=normalizeContextEmail(metadata.email||row.email||row.contactEmail||row.contact_email||packetEmail||profileKeyEmail||'');
+  const linkedinUrl=String(metadata.linkedinUrl||metadata.linkedin_url||row.linkedinUrl||row.linkedin_url||'').trim();
   return {
     id:row.id,
     profileType:row.profileType||row.profile_type||'person',
@@ -20169,6 +20606,8 @@ function publicRelationshipProfile(row={}){
     organizationId:row.organizationId||row.organization_id||'',
     projectId:row.projectId||row.project_id||'',
     email,
+    linkedinUrl,
+    linkedin_url:linkedinUrl,
     displayName:row.displayName||row.display_name||'Unknown',
     summary:row.summary||'',
     relationshipStatus:row.relationshipStatus||row.relationship_status||'observed',
@@ -20647,6 +21086,10 @@ function stewardshipNetworkManualAdmission(profile={}){
   const metadata=profile.metadata||{};
   return metadata.networkAdmission==='manual'&&stewardshipNetworkNamedEmailAdmission(profile);
 }
+function stewardshipNetworkCalendarAttendeeAdmission(profile={}){
+  const metadata=profile.metadata||{};
+  return metadata.networkAdmission==='calendar_attendee'&&stewardshipNetworkNamedEmailAdmission(profile);
+}
 function stewardshipNetworkStoredSentMailAdmission(profile={}){
   const metadata=profile.metadata||{};
   const sentCount=Math.max(0,Number(metadata.sentMailCount||0));
@@ -20691,6 +21134,9 @@ function stewardshipNetworkSentMailQualification(profile={},candidateAnalysis=nu
   if(!email||!name)return {accepted:false,email:'',sentCount:0,emailCount:0,emails:[]};
   if(stewardshipNetworkManualAdmission(profile)){
     return {accepted:true,email,sentCount:0,emailCount:1,emails:[email],admission:'manual'};
+  }
+  if(stewardshipNetworkCalendarAttendeeAdmission(profile)){
+    return {accepted:true,email,sentCount:0,emailCount:1,emails:[email],admission:'calendar_attendee'};
   }
   if(stewardshipNetworkStoredSentMailAdmission(profile)){
     return {accepted:true,email,sentCount:Math.max(0,Number(profile.metadata?.sentMailCount||0)),emailCount:1,emails:[email],admission:'sent_mail_refresh'};
@@ -20752,6 +21198,8 @@ function relationshipSavedPublicEnrichment(metadata={}){
     location:String(enrichment.location||''),
     website:String(enrichment.website||''),
     summary:String(enrichment.summary||''),
+    latestLinkedInPost:String(enrichment.latestLinkedInPost||enrichment.latest_linkedin_post||''),
+    latestLinkedInUrl:String(enrichment.latestLinkedInUrl||enrichment.latest_linkedin_url||''),
     offers:safeArray(enrichment.offers).map(value=>String(value||'').trim()).filter(Boolean).slice(0,4),
     sourceRefs:safeArray(enrichment.sourceRefs||enrichment.source_refs).slice(0,4),
     completedAt:enrichment.completedAt||enrichment.completed_at||'',
@@ -20786,10 +21234,11 @@ function relationshipOutscraperSearchQuery(profile={}){
   const metadata=profile.metadata||{};
   const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
   const company=firstLookCandidateCleanName(metadata.company||metadata.organization||'');
+  const website=String(metadata.website||profile.website||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'').trim();
   const email=relationshipProfilePrimaryEmail(profile);
   const domain=String(email.split('@')[1]||'').trim().toLowerCase();
   const usableDomain=domain&&!/(gmail|yahoo|outlook|hotmail|icloud|aol|protonmail)\./i.test(domain)?domain:'';
-  return [name,company||usableDomain].filter(Boolean).join(' ').trim();
+  return [name,company||usableDomain||website].filter(Boolean).join(' ').trim();
 }
 function publicListingText(value='',limit=520){
   return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
@@ -20899,6 +21348,195 @@ async function enrichStewardshipNetworkRelationship({relationshipId='',force=fal
   const publicProfile=publicRelationshipProfile(saved);
   return {cached:false,enrichment:relationshipSavedPublicEnrichment(publicProfile.metadata||{})||enrichment,profile:publicProfile,relationship:relationshipIndexItemFromProfile(publicProfile)};
 }
+async function enrichMeetingPrepAttendeePublicContext(input={}){
+  const guardedEmail=normalizeContextEmail(input.attendee?.email||input.contact?.email||input.email||(/@/.test(String(input.relationshipId||''))?input.relationshipId:''));
+  if(guardedEmail&&OWNER_EMAILS.has(guardedEmail)){
+    return {cached:false,temporary:true,enrichment:{version:'relationship_public_context_v1',provider:'protected_owner_identity',status:'skipped_owner',summary:'VAL did not enrich the account owner.',completedAt:new Date().toISOString()},profile:null,relationship:null};
+  }
+  try{
+    const result = await enrichStewardshipNetworkRelationship({
+      relationshipId:input.relationshipId||input.id||input.email||'',
+      force:input.force===true
+    });
+    const attendee=input.attendee||{};
+    const contact=input.contact||{};
+    const profile=result.profile||{};
+    const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||input.email||'');
+    const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
+    const linkedIn={configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'deferred_to_recent_signal',postsLastWeek:[],rawCount:0};
+    if(!linkedIn?.skipped&&(linkedIn?.configured||linkedIn?.error)){
+      const posts=safeArray(linkedIn?.postsLastWeek).slice(0,3);
+      const postRefs=posts.map((post,index)=>({
+        type:'linkedin_post',
+        sourceType:'outscraper_linkedin_post',
+        sourceId:post.url||stableKey(`linkedin:${email||name}:${index}`),
+        title:`LinkedIn post for ${name||email||'attendee'}`,
+        summary:dashboardShortText(post.text||'', '', 700),
+        confidence:'public_source'
+      }));
+      const latestPost=posts[0]||{};
+      const latestText=dashboardShortText(latestPost.text||'', '', 520);
+      const linkedinSummary=latestText
+        ? `Latest LinkedIn post found by Outscraper${latestPost.date?` (${latestPost.date})`:''}: ${latestText}`
+        : linkedIn?.configured
+          ? `Outscraper LinkedIn checked ${name||email||'this attendee'} and returned ${linkedIn.rawCount||0} public post result${Number(linkedIn.rawCount||0)===1?'':'s'}.`
+          : `Outscraper LinkedIn could not run: ${linkedIn.error}`;
+      result.enrichment={
+        ...(result.enrichment||{}),
+        summary:[result.enrichment?.summary, linkedinSummary].filter(Boolean).join(' '),
+        latestLinkedInPost:latestText,
+        latestLinkedInUrl:latestPost.url||'',
+        linkedin:linkedIn,
+        sourceRefs:safeArray(result.enrichment?.sourceRefs||result.enrichment?.source_refs).concat(postRefs)
+      };
+    }
+    const recentLinkedInSignal=await lookupMeetingPrepLinkedInRecentSignal({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}));
+    if(recentLinkedInSignal?.configured||recentLinkedInSignal?.sourceRefs?.length||recentLinkedInSignal?.url){
+      const signalRefs=safeArray(recentLinkedInSignal.sourceRefs);
+      result.enrichment={
+        ...(result.enrichment||{}),
+        summary:[result.enrichment?.summary, recentLinkedInSignal.summary].filter(Boolean).join(' '),
+        latestLinkedInPost:recentLinkedInSignal.summary||result.enrichment?.latestLinkedInPost||'',
+        latestLinkedInUrl:recentLinkedInSignal.url||result.enrichment?.latestLinkedInUrl||'',
+        linkedinRecentSignal:recentLinkedInSignal,
+        sourceRefs:safeArray(result.enrichment?.sourceRefs||result.enrichment?.source_refs).concat(signalRefs)
+      };
+    }
+    const shouldRefreshGeneralWeb=input.refreshGeneralWeb===true || input.forceGeneralWeb===true || !result.cached;
+    const webEvidence=shouldRefreshGeneralWeb
+      ? await lookupMeetingPrepWebEvidence({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
+      : {
+        configured:!!OUTSCRAPER_API_KEY,
+        skipped:true,
+        cacheStatus:'cached',
+        completedAt:result.enrichment?.completedAt||result.enrichment?.completed_at||'',
+        query:result.enrichment?.query||'',
+        sourceRefs:[],
+        summary:'Saved general web context was reused for this meeting prep.'
+      };
+    if(webEvidence?.configured||webEvidence?.summary||webEvidence?.sourceRefs?.length||webEvidence?.skipped){
+      result.enrichment={
+        ...(result.enrichment||{}),
+        summary:[result.enrichment?.summary, webEvidence.skipped?'':webEvidence.summary].filter(Boolean).join(' '),
+        webSearch:webEvidence,
+        generalWebStatus:webEvidence.cacheStatus||'ran',
+        generalWebCheckedAt:webEvidence.completedAt||result.enrichment?.completedAt||'',
+        sourceRefs:safeArray(result.enrichment?.sourceRefs||result.enrichment?.source_refs).concat(safeArray(webEvidence.sourceRefs))
+      };
+      if(!result.enrichment.query&&webEvidence.query)result.enrichment.query=webEvidence.query;
+      result.enrichment.rawResultCount=Number(result.enrichment.rawResultCount||0)+Number(webEvidence.rawResultCount||0);
+    }
+    return result;
+  }catch(error){
+    const attendee=input.attendee||{};
+    const contact=input.contact||{};
+    const email=normalizeContextEmail(attendee.email||contact.email||input.email||'');
+    const name=firstLookCandidateCleanName(attendee.name||contact.name||contact.displayName||'');
+    const company=firstLookCandidateCleanName(contact.company||contact.organization||contact.raw?.company||contact.raw?.organization||'');
+    const knownWebsite=String(contact.website||contact.raw?.website||contact.raw?.companyWebsite||contact.raw?.websiteUrl||'').trim();
+    const domain=String(email.split('@')[1]||'').trim().toLowerCase();
+    const usableDomain=domain&&!/(gmail|yahoo|outlook|hotmail|icloud|aol|protonmail)\./i.test(domain)?domain:'';
+    if(!email||!name)throw error;
+    const profile={
+      id:`meeting-attendee:${email}`,
+      profileType:'person',
+      profileKey:`email:${email}`,
+      displayName:name,
+      email,
+      metadata:{email,company:company||usableDomain,organization:company||usableDomain,website:knownWebsite,noExternalAction:true}
+    };
+    const publicSignals=[];
+    let context=null;
+    let mapsError='';
+    if(company||usableDomain||knownWebsite){
+      context=await fetchOutscraperRelationshipContext(profile).catch(e=>{
+        mapsError=e.message;
+        return null;
+      });
+      if(context?.summary) publicSignals.push(context.summary);
+    }
+    const linkedIn={configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'deferred_to_recent_signal',postsLastWeek:[],rawCount:0};
+    if(!linkedIn?.skipped&&linkedIn?.configured){
+      if(linkedIn.postsLastWeek?.length){
+        const latestPost=linkedIn.postsLastWeek[0]||{};
+        const postText=dashboardShortText(latestPost.text||'', '', 320);
+        const postDate=latestPost.date?` (${latestPost.date})`:'';
+        publicSignals.push(postText
+          ? `Latest LinkedIn post found by Outscraper${postDate}: ${postText}`
+          : `Outscraper LinkedIn returned ${linkedIn.postsLastWeek.length} recent post${linkedIn.postsLastWeek.length===1?'':'s'} for this attendee, but the post text was not returned.`);
+      }else{
+        publicSignals.push(`Outscraper LinkedIn was checked for this attendee and returned ${linkedIn.rawCount||0} public post result${Number(linkedIn.rawCount||0)===1?'':'s'}.`);
+      }
+    }else if(!linkedIn?.skipped&&linkedIn?.error){
+      publicSignals.push(`Outscraper LinkedIn could not run: ${linkedIn.error}`);
+    }
+    const recentLinkedInSignal=await lookupMeetingPrepLinkedInRecentSignal({name,email},contact,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}));
+    if(recentLinkedInSignal?.summary)publicSignals.push(recentLinkedInSignal.summary);
+    const webEvidence=await lookupMeetingPrepWebEvidence({name,email},contact,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}));
+    if(webEvidence?.summary)publicSignals.push(webEvidence.summary);
+    if(!context){
+      context={
+        status:(linkedIn?.configured||webEvidence?.sourceRefs?.length)?'complete':'no_public_match',
+        provider:'outscraper',
+        query:webEvidence?.query || (company||usableDomain||knownWebsite ? `${name} ${company||usableDomain||knownWebsite}` : (email||name)),
+        organization:company||usableDomain||'',
+        category:'',
+        location:'',
+        website:knownWebsite,
+        summary:publicSignals.join(' ')||mapsError||'Outscraper was checked for this attendee but did not return usable public context.',
+        offers:[],
+        sourceRefs:[{
+          type:'outscraper_public_context',
+          sourceType:'outscraper_public_context',
+          sourceId:stableKey(`meeting-prep:${email||name}`),
+          title:`Outscraper check for ${name}`,
+          summary:publicSignals.join(' ')||mapsError||'Outscraper checked this meeting attendee.',
+          confidence:'public_source'
+        }].concat(safeArray(webEvidence?.sourceRefs)).concat(safeArray(recentLinkedInSignal?.sourceRefs)).concat(safeArray(linkedIn?.postsLastWeek).slice(0,3).map((post,index)=>({
+          type:'linkedin_post',
+          sourceType:'outscraper_linkedin_post',
+          sourceId:post.url||stableKey(`linkedin:${email||name}:${index}`),
+          title:`LinkedIn post for ${name}`,
+          summary:dashboardShortText(post.text||'', '', 700),
+          confidence:'public_source'
+        }))),
+        rawResultCount:Number(linkedIn?.rawCount||0)+Number(webEvidence?.rawResultCount||0),
+        linkedin:linkedIn,
+        linkedinRecentSignal:recentLinkedInSignal,
+        latestLinkedInPost:recentLinkedInSignal?.summary||'',
+        latestLinkedInUrl:recentLinkedInSignal?.url||'',
+        webSearch:webEvidence
+      };
+    }else{
+      context={
+        ...context,
+        summary:[context.summary, ...publicSignals].filter(Boolean).join(' '),
+        sourceRefs:safeArray(context.sourceRefs).concat(safeArray(webEvidence?.sourceRefs)).concat(safeArray(recentLinkedInSignal?.sourceRefs)).concat(safeArray(linkedIn?.postsLastWeek).slice(0,3).map((post,index)=>({
+          type:'linkedin_post',
+          sourceType:'outscraper_linkedin_post',
+          sourceId:post.url||stableKey(`linkedin:${email||name}:${index}`),
+          title:`LinkedIn post for ${name}`,
+          summary:dashboardShortText(post.text||'', '', 700),
+          confidence:'public_source'
+        }))),
+        linkedin:linkedIn,
+        linkedinRecentSignal:recentLinkedInSignal,
+        latestLinkedInPost:recentLinkedInSignal?.summary||context.latestLinkedInPost||'',
+        latestLinkedInUrl:recentLinkedInSignal?.url||context.latestLinkedInUrl||'',
+        webSearch:webEvidence,
+        rawResultCount:Number(context.rawResultCount||0)+Number(webEvidence?.rawResultCount||0),
+        mapsError
+      };
+    }
+    const enrichment={
+      version:'relationship_public_context_v1',
+      provider:'outscraper',
+      ...context,
+      completedAt:new Date().toISOString()
+    };
+    return {cached:false,temporary:true,enrichment,profile:{...profile,metadata:{...profile.metadata,relationshipEnrichment:enrichment}},relationship:null};
+  }
+}
 function parseNetworkCsv(text=''){
   const rows=[];
   let row=[];
@@ -20946,14 +21584,16 @@ function networkCsvPerson(record={}){
     name:networkCsvField(record,['name','full_name','fullname','contact_name','contact'])||[first,last].filter(Boolean).join(' '),
     email:networkCsvField(record,['email','email_address','e_mail']),
     organization:networkCsvField(record,['organization','company','company_name','business']),
+    linkedinUrl:networkCsvField(record,['linkedin','linkedin_url','linkedinurl','linkedin profile','linkedin_profile','profile_url']),
     summary:networkCsvField(record,['notes','note','summary','detail','details','context'])
   };
 }
-async function saveStewardshipNetworkManualPerson({name='',email='',organization='',summary='',source='network_manual_add',existingByEmail=null}={}){
+async function saveStewardshipNetworkManualPerson({name='',email='',organization='',summary='',linkedinUrl='',source='network_manual_add',existingByEmail=null}={}){
   const displayName=firstLookCandidateCleanName(name);
   const cleanEmail=normalizeExecutiveEmailAddress(email);
   const cleanOrganization=firstLookCandidateCleanName(organization);
   const cleanSummary=String(summary||'').replace(/\s+/g,' ').trim().slice(0,800);
+  const cleanLinkedInUrl=String(linkedinUrl||'').trim().slice(0,500);
   if(!displayName||!cleanEmail)throw new Error('A name and real email address are required to add someone to Network.');
   if(!stewardshipNetworkNamedEmailAdmission({displayName,email:cleanEmail}))throw new Error('Use a real person name and email address. Your own email address cannot be added to Network.');
   const existing=existingByEmail?.get(cleanEmail)||(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===cleanEmail)||null;
@@ -20970,6 +21610,8 @@ async function saveStewardshipNetworkManualPerson({name='',email='',organization
       source,
       networkAdmission:'manual',
       email:cleanEmail,
+      linkedinUrl:cleanLinkedInUrl||existing?.metadata?.linkedinUrl||existing?.linkedinUrl||'',
+      linkedin_url:cleanLinkedInUrl||existing?.metadata?.linkedin_url||existing?.linkedin_url||'',
       company:cleanOrganization||existing?.metadata?.company||'',
       relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'manual_network'])),
       noExternalAction:true
@@ -21246,6 +21888,8 @@ function relationshipIndexItemFromProfile(profile={}){
     initials:name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'R',
     role:profile.relationshipStatus||profile.profileType||'Relationship',
     company:metadata.company||profile.organizationId||'Relationship',
+    linkedinUrl:metadata.linkedinUrl||metadata.linkedin_url||profile.linkedinUrl||profile.linkedin_url||'',
+    linkedin_url:metadata.linkedinUrl||metadata.linkedin_url||profile.linkedinUrl||profile.linkedin_url||'',
     temperature:temperatureContract.temperature,
     temperatureScore:relationshipIndexTemperature(profile),
     trajectory:profile.relationshipStatus||state.replace('_',' '),
@@ -28332,6 +28976,31 @@ app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req
     res.status(e.statusCode||500).json({ok:false,error:e.message});
   }
 });
+app.post('/api/val/meeting-prep/attendee/link-relationship',async(req,res)=>{
+  try{
+    const calendarEventId=String(req.body?.calendarEventId||req.body?.eventId||req.body?.id||'').trim();
+    const name=String(req.body?.name||req.body?.relationshipName||req.body?.displayName||'').trim();
+    const email=normalizeEmailAddress(req.body?.email||req.body?.relationshipEmail||'');
+    const relationshipId=String(req.body?.relationshipId||req.body?.contactId||req.body?.personId||'').trim();
+    const relationshipName=String(req.body?.relationshipName||name||email||relationshipId).trim();
+    if(!calendarEventId)return res.status(400).json({ok:false,error:'calendarEventId is required before linking this meeting attendee.'});
+    if(!relationshipId)return res.status(400).json({ok:false,error:'Choose a relationship before linking this meeting attendee.'});
+    const link=await saveEvidenceLink({
+      sourceType:'calendar_event',
+      sourceId:calendarEventId,
+      sourceLabel:req.body?.title||req.body?.meetingTitle||'Meeting Prep attendee',
+      targetType:'relationship_profile',
+      targetId:relationshipId,
+      relationship:'attendee_in_meeting',
+      summary:req.body?.summary||`${relationshipName||relationshipId} attended ${req.body?.title||'this meeting'}.`,
+      confidence:0.78,
+      metadata:{source:'hearth_meeting_prep_attendee_mapping',name:relationshipName,email,noExternalAction:true}
+    });
+    res.json({ok:true,link,relationship:{id:relationshipId,name:relationshipName,email},message:'Meeting attendee linked to relationship locally. No CRM update, calendar write, message, task, or external action happened.',noExternalAction:true});
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.post('/api/val/transcripts/:transcriptId/link-relationship',async(req,res)=>{
   try{
     const transcriptId=decodeURIComponent(req.params.transcriptId);
@@ -28919,7 +29588,11 @@ const valMeetingPrep = registerValMeetingPrepRoutes(app,{
   loadContextCalendarEvents,
   resolveContactFromContext,
   resolveMeetingContext,
+  listProjectProfiles,
+  enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext,
+  ensureRelationshipPacketFromAttendee:ensureRelationshipPacketFromCalendarAttendee,
   saveCalendarProjectLink,
+  ownerEmails:Array.from(OWNER_EMAILS||[]),
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31051,7 +31724,7 @@ app.get('/api/relationships/index',async(req,res)=>{
     const limit=Math.max(1,Math.min(200,Number(req.query.limit)||80));
     if(await cleanStartSourceIntakeLocked()){
       const directProfiles=(await listRelationshipProfiles({limit:Math.max(limit,260)}))
-        .filter((profile)=>profile.profileType==='person'&&(stewardshipNetworkManualAdmission(profile)||stewardshipNetworkStoredSentMailAdmission(profile)))
+        .filter((profile)=>profile.profileType==='person'&&(stewardshipNetworkManualAdmission(profile)||stewardshipNetworkStoredSentMailAdmission(profile)||stewardshipNetworkCalendarAttendeeAdmission(profile)))
         .slice(0,limit);
       return res.json({ok:true,source:'clean_start',generatedAt:new Date().toISOString(),count:directProfiles.length,relationships:directProfiles.map(relationshipIndexItemFromProfile),message:directProfiles.length?'Showing people you added directly or admitted from sent mail.':'VAL is starting fresh. Add a person directly or refresh from sent mail to populate Network.'});
     }
@@ -31090,6 +31763,8 @@ app.post('/api/relationships/create',async(req,res)=>{
       metadataJson:{
         source:req.body.source||'project_owner_reassignment',
         email,
+        linkedinUrl:String(req.body.linkedinUrl||req.body.linkedin_url||'').trim(),
+        linkedin_url:String(req.body.linkedinUrl||req.body.linkedin_url||'').trim(),
         role:req.body.role||req.body.detail||'',
         noExternalAction:true
       }
@@ -31132,6 +31807,7 @@ app.post('/api/relationships/network/manual',async(req,res)=>{
       name:req.body.name||req.body.displayName||'',
       email:req.body.email||'',
       organization:req.body.organization||'',
+      linkedinUrl:req.body.linkedinUrl||req.body.linkedin_url||'',
       summary:req.body.summary||req.body.detail||''
     });
     res.json({ok:true,relationship:saved.relationship,message:`${saved.profile.displayName} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});

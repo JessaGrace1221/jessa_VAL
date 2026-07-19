@@ -57,7 +57,7 @@ test('Calendar baseline treats solo blocks as private rhythm, not meetings', () 
 
 test('Transcript drawer baseline stays source-grounded, not diagnostic workflow', () => {
   assert.match(html, /<h3>Transcripts<\/h3>/);
-  assert.match(html, /Recent VAL transcripts, source action items, and clean meeting overviews/);
+  assert.match(html, /Meeting evidence, attendee context, source Action Items, and clean review-ready follow-up/);
   assert.match(html, /data-transcript-list/);
   assert.match(html, /data-transcript-detail/);
   assert.doesNotMatch(html, /Select a transcript/);
@@ -126,8 +126,8 @@ test('Lead Intelligence baseline keeps two scrapers plus train control and three
   assert.match(html, /Run organization scraper/);
   assert.match(html, /Run partner scraper/);
   assert.match(html, /Train this scraper/);
-  assert.match(js, /<span>Level 1<\/span><h4>Discovery<\/h4>/);
-  assert.match(js, /<span>Level 2<\/span><h4>Decision Maker<\/h4>/);
-  assert.match(js, /<span>Level 3<\/span><h4>Confirm \/ Dedupe<\/h4>/);
+  assert.match(js, /<span>Step 1<\/span><h4>Find organizations<\/h4><small>Source discovery<\/small>/);
+  assert.match(js, /<span>Step 2<\/span><h4>Find decision makers<\/h4><small>Contact evidence<\/small>/);
+  assert.match(js, /<span>Step 3<\/span><h4>Confirm before CRM<\/h4><small>Dedupe and approval<\/small>/);
   assert.match(js, /Live preview - not imported/);
 });

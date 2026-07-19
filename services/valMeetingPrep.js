@@ -2,8 +2,19 @@ const {buildRelationshipDossier} = require('./valRelationshipDossier');
 
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=800){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+function meetingPrepTimeout(ms,message){
+  return new Promise((_,reject)=>setTimeout(()=>reject(new Error(message)),ms));
+}
+async function withMeetingPrepTimeout(promise,ms,message){
+  return Promise.race([promise,meetingPrepTimeout(ms,message)]);
+}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function toSnake(key){return key.replace(/[A-Z]/g,m=>'_'+m.toLowerCase());}
+const MEETING_PREP_JSON_FIELDS = new Set(['qualityGateJson','meetingContextJson','attendeeIntelligenceJson','internalContextJson','meetingStakesJson','firstFiveMinutesJson','briefJson','suggestedQuestionsJson','followUpPreparationJson','readyForYouHandoffJson','postMeetingCaptureJson','sourceRefsJson','unknownsJson']);
+function pgValueForMeetingPrepColumn(key,value){
+  if(MEETING_PREP_JSON_FIELDS.has(key)) return JSON.stringify(value ?? (/(refs|unknowns|questions|attendee)/i.test(key) ? [] : {}));
+  return value;
+}
 function toCamelRow(row={}){
   const out={};
   for(const [k,v] of Object.entries(row||{})){
@@ -52,7 +63,17 @@ function inferAttendees(event={}){
   const seen=new Set();
   return attendees.filter(a=>{const key=attendeeKey(a);if(seen.has(key))return false;seen.add(key);return true;}).slice(0,30);
 }
-const SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+function protectedOwnerEmails(extra=[]){
+  return new Set([
+    process.env.ADMIN_EMAIL,
+    process.env.VAL_OWNER_EMAIL,
+    process.env.GMAIL_USER_EMAIL,
+    process.env.OUTLOOK_USER_EMAIL,
+    ...(String(process.env.VAL_OWNER_EMAILS||'').split(',')),
+    ...safeArray(extra)
+  ].map(email=>String(email||'').trim().toLowerCase()).filter(Boolean));
+}
+let SELF_CALENDAR_EMAILS=protectedOwnerEmails(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
 function attendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SELF_CALENDAR_EMAILS.has(email)));
@@ -90,11 +111,19 @@ function sourceLabel(source){return ['internal_evidence','api_enriched','public_
 function crmContactIdFromContact(contact={}){
   if(contact.contactId)return String(contact.contactId);
   if(contact.source==='ghl_contact'&&contact.id)return String(contact.id);
+  if(contact.relationshipProfileId)return String(contact.relationshipProfileId);
+  if(contact.raw?.relationshipProfileId)return String(contact.raw.relationshipProfileId);
+  if(contact.source==='relationship_profile'&&contact.id)return String(contact.id).replace(/^relationship-profile:/,'');
   return '';
 }
 function savedRelationshipPublicContext(contact={}){
   const context=contact.relationshipEnrichment||contact.raw?.relationshipEnrichment||contact.raw?.relationship_enrichment||contact.raw?.metadata?.relationshipEnrichment||null;
   if(!context||context.status!=='complete')return null;
+  const sourceRefs=safeArray(context.sourceRefs||context.source_refs).slice(0,6);
+  const latestLinkedIn=sourceRefs.find(ref=>/linkedin_recent_signal/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))
+    || sourceRefs.find(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))
+    || safeArray(context.linkedin?.postsLastWeek).find(post=>post?.text)
+    || null;
   return {
     provider:String(context.provider||'outscraper'),
     organization:compactText(context.organization,180),
@@ -102,8 +131,11 @@ function savedRelationshipPublicContext(contact={}){
     location:compactText(context.location,180),
     website:compactText(context.website,260),
     summary:compactText(context.summary,520),
+    query:compactText(context.query,260),
+    latestLinkedInPost:compactText(context.latestLinkedInPost||context.latest_linkedin_post||latestLinkedIn?.summary||latestLinkedIn?.text||'',520),
+    latestLinkedInUrl:compactText(context.latestLinkedInUrl||context.latest_linkedin_url||latestLinkedIn?.sourceId||latestLinkedIn?.source_id||latestLinkedIn?.url||'',260),
     offers:safeArray(context.offers).map(item=>compactText(item,240)).filter(Boolean).slice(0,4),
-    sourceRefs:safeArray(context.sourceRefs||context.source_refs).slice(0,4),
+    sourceRefs,
     completedAt:context.completedAt||context.completed_at||''
   };
 }
@@ -116,6 +148,76 @@ function savedRelationshipPublicEvidence(context={}){
     id:ref.sourceId||ref.source_id||context.website||'',
     confidence:'public_source'
   })).slice(0,4);
+}
+function meetingPrepPublicContextAgeDays(context={}){
+  const raw=context.completedAt||context.completed_at||'';
+  const time=raw?new Date(raw).getTime():NaN;
+  if(!Number.isFinite(time))return Infinity;
+  return Math.max(0,(Date.now()-time)/(24*60*60*1000));
+}
+function meetingPrepShouldRefreshGeneralPublicContext(context=null){
+  if(!context)return true;
+  return meetingPrepPublicContextAgeDays(context)>30;
+}
+function meetingPrepEmailDomain(email=''){
+  return String(email||'').trim().toLowerCase().split('@')[1]||'';
+}
+function meetingPrepGenericEmailDomain(domain=''){
+  return /^(gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|protonmail)\./i.test(String(domain||'').trim());
+}
+function meetingPrepUrlDomain(value=''){
+  const raw=String(value||'').trim();
+  if(!raw)return '';
+  try{
+    return new URL(/^https?:\/\//i.test(raw)?raw:`https://${raw}`).hostname.replace(/^www\./i,'').toLowerCase();
+  }catch(_){
+    return raw.replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'').toLowerCase();
+  }
+}
+function meetingPrepWords(value=''){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9@.]+/g,' ').split(/\s+/).filter(Boolean);
+}
+function meetingPrepPublicContextHaystack(context={}){
+  const refs=safeArray(context.sourceRefs||context.source_refs).flatMap(ref=>[ref.title,ref.summary,ref.sourceId,ref.source_id,ref.url]);
+  return [
+    context.organization,context.category,context.location,context.website,context.summary,context.query,
+    context.latestLinkedInPost,context.latest_linkedin_post,context.latestLinkedInUrl,context.latest_linkedin_url,
+    ...refs
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function meetingPrepPublicContextTrust(context=null,attendee={},contact={}){
+  if(!context)return {trusted:false,reason:'no_public_context'};
+  if(context.status&&context.status!=='complete')return {trusted:false,reason:`public_status_${context.status}`};
+  const email=String(attendee.email||contact.email||'').trim().toLowerCase();
+  const domain=meetingPrepEmailDomain(email);
+  const usableDomain=domain&&!meetingPrepGenericEmailDomain(domain)?domain:'';
+  const attendeeName=compactText(attendee.name||contact.name||contact.displayName||'',140).toLowerCase();
+  const contactOrg=compactText(contact.company||contact.organization||contact.raw?.company||contact.raw?.organization||'',180).toLowerCase();
+  const websiteDomain=meetingPrepUrlDomain(context.website||context.latestLinkedInUrl||context.latest_linkedin_url||'');
+  const haystack=meetingPrepPublicContextHaystack(context);
+  if(email&&haystack.includes(email))return {trusted:true,reason:'matched_attendee_email'};
+  if(usableDomain&&(websiteDomain===usableDomain||websiteDomain.endsWith(`.${usableDomain}`)||haystack.includes(usableDomain)))return {trusted:true,reason:'matched_attendee_domain'};
+  if(contactOrg&&contactOrg.length>=4&&haystack.includes(contactOrg))return {trusted:true,reason:'matched_known_relationship_company'};
+  const linkedInUrl=String(attendee.linkedinUrl||attendee.linkedin_url||contact.linkedinUrl||contact.linkedin_url||contact.raw?.linkedinUrl||'').trim().toLowerCase();
+  if(linkedInUrl&&haystack.includes(linkedInUrl.replace(/^https?:\/\//,'')))return {trusted:true,reason:'matched_known_linkedin_url'};
+  const nameTokens=meetingPrepWords(attendeeName).filter(token=>token.length>2&&!['the','and','with','meet','meeting'].includes(token));
+  const fullNameSeen=nameTokens.length>=2&&nameTokens.every(token=>haystack.includes(token));
+  if(fullNameSeen&&(usableDomain||contactOrg))return {trusted:true,reason:'matched_name_plus_internal_anchor'};
+  return {trusted:false,reason:domain&&meetingPrepGenericEmailDomain(domain)?'generic_email_requires_stronger_public_match':'public_identity_not_verified'};
+}
+function unverifiedPublicContextStatus(context=null,trust={}){
+  return {
+    status:'unverified_match',
+    provider:context?.provider||'outscraper',
+    result_status:context?.status||'unverified',
+    query:context?.query||'',
+    summary:'Public match was not verified for this attendee, so VAL did not use scraped role, company, website, or LinkedIn details.',
+    website:'',
+    organization:'',
+    latest_linkedin_post:'',
+    latest_linkedin_url:'',
+    reason:trust?.reason||'public_identity_not_verified'
+  };
 }
 function savedRelationshipManualContext(contact={}){
   const context=contact.relationshipManualContext||contact.raw?.relationshipManualContext||contact.raw?.relationship_manual_context||contact.raw?.metadata?.relationshipManualContext||null;
@@ -176,7 +278,7 @@ function classifyRole(event={},attendees=[]){
   const title=eventTitle(event).toLowerCase();
   const organizer=String(event.organizer?.email||event.organizerEmail||event.creator?.email||'').toLowerCase();
   let role='unknown',why='Role is inferred only from calendar metadata and title.';
-  if(/\b(intro|introduction|meet)\b/.test(title)){role='introduced_party';why='Title suggests an introduction or first meeting.';}
+  if(/\b(intro|introduction)\b/.test(title)){role='introduced_party';why='Title suggests an introduction.';}
   if(/\b(discovery|demo|proposal|sales|pitch)\b/.test(title)){role='seller';why='Title suggests the user may be presenting or selling.';}
   if(/\b(review|decision|approve|finalize)\b/.test(title)){role='decision_maker';why='Title suggests a decision or review meeting.';}
   if(/\b(check.?in|sync|1:1|one on one)\b/.test(title)){role='partner';why='Title suggests a relationship or collaboration sync.';}
@@ -215,16 +317,25 @@ function buildBrief({event={},attendees=[],attendeeIntel=[],internal={},stakes={
   const names=attendees.map(a=>a.name||a.email).filter(Boolean).slice(0,5);
   const openLoops=safeArray(internal.openLoops).map(o=>o.text||o.title||o.summary||o).filter(Boolean).slice(0,5);
   const relationshipLines=attendeeIntel.map(a=>a.relationship_context||a.why_this_person_matters).filter(Boolean).slice(0,5);
+  const meetingType=internal.meeting_type||{};
+  const firstMeeting=meetingType.type==='first_meeting';
+  const knownMeetingPurpose=meetingType.focus || 'Review relationship context, project context, what changed, and the next useful move.';
   return {
     meeting_title:title,
-    concise_brief:compactText(`This meeting is not isolated. It sits inside ${names.length?'relationships with '+names.join(', '):'the user’s calendar context'}, active commitments, timing, and opportunity signals.`,500),
-    likely_purpose:compactText(role.why||'Clarify the purpose, relationship context, and next useful movement.',400),
+    meeting_type:meetingType.type||'unknown',
+    meeting_type_label:meetingType.label||'Meeting prep',
+    concise_brief:compactText(firstMeeting
+      ? `This looks like a first conversation with ${names.join(', ')||'the attendee'}. VAL should prioritize public context, website, LinkedIn signals, and trust-building questions before assuming relationship history.`
+      : `This meeting sits inside ${names.length?'relationships with '+names.join(', '):'the user’s calendar context'}, active commitments, timing, and opportunity signals.`,500),
+    likely_purpose:compactText(firstMeeting?'Learn who this person is, what matters to them, and whether there is a useful next step without over-assuming context.':knownMeetingPurpose,400),
     attendees:names,
     relationship_context:relationshipLines,
     recent_changes:safeArray(internal.transcripts).map(t=>t.title||t.summary).filter(Boolean).slice(0,4),
     possible_opportunities:attendeeIntel.flatMap(a=>safeArray(a.possible_opportunities)).slice(0,5),
     risks_or_sensitivities:openLoops.length?[`Open loops may need acknowledgment: ${openLoops.slice(0,2).join('; ')}`]:[],
-    what_val_recommends_preparing:['Review attendee context','Clarify the one useful outcome','Prepare one natural opening question'],
+    what_val_recommends_preparing:firstMeeting
+      ? ['Review public profile and website','Check the latest LinkedIn signal','Prepare a warm first-meeting opening question']
+      : ['Review attendee context','Clarify the one useful outcome','Prepare one natural opening question'],
     source_confidence_labels:['internal_evidence','val_inference','unknown']
   };
 }
@@ -289,6 +400,123 @@ function projectContextLinks(event={},internal={}){
   return links.slice(0,8);
 }
 
+function profileWords(value=''){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/)
+    .filter(word=>word.length>=4&&!['meeting','calendar','transcript','project','with','from','jessa','grace','google','zoom'].includes(word));
+}
+function projectProfileId(profile={}){
+  return String(profile.projectId||profile.project_id||profile.profileKey||profile.profile_key||profile.id||'').trim();
+}
+function projectProfileName(profile={}){
+  return compactText(profile.displayName||profile.display_name||profile.name||profile.projectName||projectProfileId(profile),160);
+}
+function matchSavedProjectProfiles(event={},internal={},projectProfiles=[]){
+  const text=[
+    eventTitle(event),
+    event.description,
+    event.notes,
+    event.location,
+    JSON.stringify(inferAttendees(event)),
+    JSON.stringify(safeArray(internal.transcripts).map(t=>({title:t.title,summary:t.summary||t.rawText}))),
+    JSON.stringify(safeArray(internal.tasks).map(t=>({title:t.title,summary:t.summary||t.notes}))),
+    JSON.stringify(internal.relationshipContext||{})
+  ].filter(Boolean).join(' ').toLowerCase();
+  if(!text.trim())return [];
+  return safeArray(projectProfiles).map(profile=>{
+    const metadata=profile.metadata||profile.metadataJson||profile.metadata_json||{};
+    const candidates=[
+      projectProfileName(profile),
+      projectProfileId(profile),
+      profile.profileKey,
+      profile.profile_key,
+      metadata.projectName,
+      metadata.project,
+      metadata.intake?.projectName,
+      metadata.intake?.projectId
+    ].filter(Boolean);
+    let score=0;
+    const matched=[];
+    for(const candidate of candidates){
+      const words=profileWords(candidate);
+      if(!words.length)continue;
+      const hits=words.filter(word=>text.includes(word));
+      if(hits.length){
+        score=Math.max(score,hits.length/words.length);
+        matched.push(...hits);
+      }
+    }
+    if(score<=0)return null;
+    return {
+      project_id:projectProfileId(profile),
+      project_name:projectProfileName(profile),
+      source:'saved_project_profile_match',
+      summary:`VAL matched this meeting to ${projectProfileName(profile)} from the calendar, attendee, transcript, task, or relationship context.`,
+      confidence:Math.min(0.88,Math.max(0.62,Number((0.55+score*0.28).toFixed(2)))),
+      review_required:true,
+      no_external_action:true,
+      matched_terms:Array.from(new Set(matched)).slice(0,8)
+    };
+  }).filter(Boolean)
+    .sort((a,b)=>b.confidence-a.confidence)
+    .slice(0,5);
+}
+
+function mergeProjectContextLinks(primary=[],extra=[]){
+  const byId=new Map();
+  for(const link of safeArray(primary).concat(safeArray(extra))){
+    const id=String(link.project_id||link.projectId||'').trim();
+    if(!id)continue;
+    const current=byId.get(id);
+    if(!current||Number(link.confidence||0)>Number(current.confidence||0))byId.set(id,link);
+  }
+  return Array.from(byId.values()).slice(0,8);
+}
+
+function classifyMeetingPrepType({attendees=[],attendeeIntel=[],internal={},projectLinks=[]}={}){
+  const transcriptCount=safeArray(internal.transcripts).length;
+  const emailContextCount=safeArray(internal.relationshipContext?.emailContext).length;
+  const openLoopCount=safeArray(internal.openLoops).length;
+  const taskCount=safeArray(internal.tasks).length;
+  const hasProject=safeArray(projectLinks).length>0;
+  const hasRelationship=attendeeIntel.some(attendee=>attendee.crm_contact_id||attendee.user_confirmed_relationship_context||attendee.saved_relationship_context||attendee.relationship_dossier||/^matched/i.test(String(attendee.match_status||'')));
+  const hasPriorEvidence=transcriptCount>0||emailContextCount>0||openLoopCount>0||taskCount>0;
+  const reasons=[];
+  if(hasRelationship)reasons.push('relationship_attached');
+  if(hasProject)reasons.push('project_linked');
+  if(transcriptCount)reasons.push(`${transcriptCount} prior transcript${transcriptCount===1?'':'s'}`);
+  if(emailContextCount)reasons.push(`${emailContextCount} email context item${emailContextCount===1?'':'s'}`);
+  if(openLoopCount)reasons.push(`${openLoopCount} open loop${openLoopCount===1?'':'s'}`);
+  if(taskCount)reasons.push(`${taskCount} task${taskCount===1?'':'s'}`);
+  let type='first_meeting';
+  let label='First meeting prep';
+  let focus='Prioritize public research, website, LinkedIn, identity, and trust-building questions.';
+  if(hasProject){
+    type='project_followup';
+    label='Project follow-up prep';
+    focus='Prioritize project status, decisions, owners, open loops, and follow-through.';
+  }else if(hasRelationship&&hasPriorEvidence){
+    type='known_relationship';
+    label='Known relationship prep';
+    focus='Prioritize what changed, open loops, relationship context, and the next useful move.';
+  }else if(hasRelationship){
+    type='known_relationship_light_context';
+    label='Known relationship, light context';
+    focus='Use the relationship file, but ask clean questions because recent evidence is thin.';
+  }else if(hasPriorEvidence){
+    type='new_contact_with_light_context';
+    label='New contact with light context';
+    focus='Blend public research with the limited prior evidence without over-assuming familiarity.';
+  }
+  return {
+    type,
+    label,
+    focus,
+    confidence:type==='first_meeting'&&!safeArray(attendees).length?0.35:(hasRelationship||hasProject||hasPriorEvidence?0.78:0.66),
+    evidence:reasons.length?reasons:['no prior relationship, project, email, task, or transcript evidence found'],
+    no_external_action:true
+  };
+}
+
 function createValMeetingPrepService({
   dbQuery,
   hasPg=()=>false,
@@ -300,9 +528,14 @@ function createValMeetingPrepService({
   loadContextCalendarEvents=null,
   resolveContactFromContext=null,
   resolveMeetingContext=null,
+  listProjectProfiles=null,
+  enrichRelationshipPublicContext=null,
+  ensureRelationshipPacketFromAttendee=null,
   saveCalendarProjectLink=null,
+  ownerEmails=[],
   logger=console
 }={}){
+  SELF_CALENDAR_EMAILS=protectedOwnerEmails(ownerEmails);
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
     const s=getStore()||{};
@@ -310,21 +543,25 @@ function createValMeetingPrepService({
     return s;
   }
   async function findEvent(input={}){
-    const id=String(input.eventId||input.calendarEventId||input.id||'');
-    if(input.event&&typeof input.event==='object')return input.event;
+    const suppliedEvent=input.event&&typeof input.event==='object'?input.event:null;
+    const id=String(input.eventId||input.calendarEventId||input.id||suppliedEvent?.id||suppliedEvent?.eventId||suppliedEvent?.calendarEventId||'');
+    const title=input.title||suppliedEvent?.title||suppliedEvent?.summary||'';
+    const date=input.date||input.startTime||input.start||suppliedEvent?.startTime||suppliedEvent?.start||suppliedEvent?.date||'';
+    if(suppliedEvent&&externalMeetingAttendees(suppliedEvent).length)return suppliedEvent;
     if(resolveMeetingContext){
-      const resolved=await resolveMeetingContext({eventId:id,title:input.title,date:input.date}).catch(e=>({errors:[e.message]}));
+      const resolved=await resolveMeetingContext({eventId:id,calendarEventId:id,title,date,startTime:date}).catch(e=>({errors:[e.message]}));
       if(resolved?.meeting)return resolved.meeting;
     }
     if(loadContextCalendarEvents){
-      const start=new Date(input.date||Date.now()-7*24*60*60*1000);
-      const end=new Date(input.date||Date.now()+14*24*60*60*1000);
-      if(input.date){start.setHours(0,0,0,0);end.setHours(23,59,59,999);}
+      const start=new Date(date||Date.now()-7*24*60*60*1000);
+      const end=new Date(date||Date.now()+14*24*60*60*1000);
+      if(date){start.setHours(0,0,0,0);end.setHours(23,59,59,999);}
       const loaded=await loadContextCalendarEvents(start,end).catch(e=>({events:[],errors:[e.message]}));
       const found=safeArray(loaded.events).find(e=>id&&(String(e.id)===id||String(e.eventId)===id));
       if(found)return found;
     }
-    return {id,title:input.title||'Meeting',startTime:input.startTime||input.date||'',endTime:input.endTime||'',attendees:input.attendees||[],source:input.source||'unknown'};
+    if(suppliedEvent)return suppliedEvent;
+    return {id,title:title||'Meeting',startTime:input.startTime||input.date||'',endTime:input.endTime||'',attendees:input.attendees||[],source:input.source||'unknown'};
   }
   async function gatherInternal(event){
     if(resolveMeetingContext){
@@ -350,7 +587,7 @@ function createValMeetingPrepService({
     return {contactResolution:{},relationshipContext:{},transcripts:[],tasks:[],openLoops:[],sourcesChecked:[],errors:['resolveMeetingContext unavailable']};
   }
   async function resolveAttendees(event,internal){
-    const attendees=inferAttendees(event);
+    const attendees=externalMeetingAttendees(event);
     const out=[];
     for(const attendee of attendees){
       const unknowns=[];
@@ -358,9 +595,91 @@ function createValMeetingPrepService({
       if(resolveContactFromContext){
         resolution=await resolveContactFromContext({name:attendee.name,email:attendee.email,calendarEvent:event}).catch(e=>({status:'unknown',confidence:0,contact:null,reason:e.message}));
       }else unknowns.push('Contact resolver unavailable.');
-      const contact=resolution.contact||{};
+      let contact=resolution.contact||{};
+      if(typeof ensureRelationshipPacketFromAttendee==='function'){
+        const ensured=await ensureRelationshipPacketFromAttendee({attendee,event,contact,resolution,internal}).catch(e=>{
+          unknowns.push(`calendar_attendee_packet_failed:${e.message}`);
+          return null;
+        });
+        if(ensured?.contact){
+          contact={
+            ...ensured.contact,
+            ...contact,
+            relationshipProfileId:contact.relationshipProfileId||contact.raw?.relationshipProfileId||ensured.contact.relationshipProfileId||ensured.profile?.id||'',
+            relationshipEnrichment:contact.relationshipEnrichment||ensured.contact.relationshipEnrichment||ensured.profile?.metadata?.relationshipEnrichment||null,
+            raw:{...(ensured.contact.raw||{}),...(contact.raw||{}),relationshipProfileId:contact.raw?.relationshipProfileId||ensured.contact.relationshipProfileId||ensured.profile?.id||''}
+          };
+          if(!resolution.contact){
+            resolution={...resolution,contact,status:'created_from_calendar_attendee',confidence:Math.max(Number(resolution.confidence||0),0.58),reason:'VAL created or updated the Relationship packet from the calendar attendee.'};
+          }
+        }
+      }
       const crmContactId=crmContactIdFromContact(contact);
-      const savedPublicContext=savedRelationshipPublicContext(contact);
+      let savedPublicContext=savedRelationshipPublicContext(contact);
+      let publicContextTrust=meetingPrepPublicContextTrust(savedPublicContext,attendee,contact);
+      if(savedPublicContext&&!publicContextTrust.trusted){
+        unknowns.push(`public_context_unverified:${publicContextTrust.reason}`);
+        savedPublicContext=null;
+      }
+      const savedPublicContextHasLinkedIn=Boolean(savedPublicContext?.latestLinkedInPost || savedPublicContext?.latestLinkedInUrl);
+      const refreshGeneralPublicContext=meetingPrepShouldRefreshGeneralPublicContext(savedPublicContext);
+      let publicContextStatus=savedPublicContext
+        ? {status:'reused_saved',provider:savedPublicContext.provider||'outscraper',summary:savedPublicContext.summary||'Saved public relationship context was reused for this meeting prep.',website:savedPublicContext.website||'',organization:savedPublicContext.organization||'',latest_linkedin_post:savedPublicContext.latestLinkedInPost||'',latest_linkedin_url:savedPublicContext.latestLinkedInUrl||'',query:savedPublicContext.query||'',general_web_status:refreshGeneralPublicContext?'stale_refresh_requested':'cached',general_web_checked_at:savedPublicContext.completedAt||'',recent_activity_status:'refresh_requested'}
+        : (publicContextTrust.reason==='no_public_context'
+          ? {status:'not_checked',provider:'outscraper',summary:'Public context has not been checked yet.',general_web_status:'not_checked',recent_activity_status:'refresh_requested'}
+          : unverifiedPublicContextStatus(savedRelationshipPublicContext(contact),publicContextTrust));
+      if(typeof enrichRelationshipPublicContext==='function'){
+        const relationshipId=contact.relationshipProfileId||contact.raw?.relationshipProfileId||contact.id||contact.contactId||attendee.email||attendee.name||'';
+        if(relationshipId){
+          const enriched=await withMeetingPrepTimeout(enrichRelationshipPublicContext({
+            relationshipId,
+            force:refreshGeneralPublicContext,
+            refreshGeneralWeb:refreshGeneralPublicContext,
+            refreshRecentActivity:true,
+            attendee,
+            event,
+            contact
+          }), Number(process.env.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS)||12000, 'Public web and LinkedIn context is still running. VAL opened the brief with internal context first.').catch(e=>{
+            unknowns.push(`public_context_enrichment_failed:${e.message}`);
+            publicContextStatus=savedPublicContext
+              ? {...publicContextStatus,status:'reused_saved_refresh_failed',summary:[savedPublicContext.summary, 'Fresh LinkedIn refresh failed: ' + e.message].filter(Boolean).join(' ')}
+              : {status:'failed',provider:'outscraper',summary:e.message};
+            return null;
+          });
+          if(enriched?.enrichment||enriched?.profile){
+            publicContextStatus={
+              status:enriched.cached?'reused_saved':'ran',
+              provider:enriched.enrichment?.provider||'Outscraper',
+              result_status:enriched.enrichment?.status||'complete',
+              query:enriched.enrichment?.query||'',
+              summary:enriched.enrichment?.summary||(enriched.cached?'Saved public context was already available.':'Public context was gathered for this meeting prep.'),
+              website:enriched.enrichment?.website||'',
+              organization:enriched.enrichment?.organization||'',
+              latest_linkedin_post:safeArray(enriched.enrichment?.sourceRefs||enriched.enrichment?.source_refs).find(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))?.summary||'',
+              latest_linkedin_url:safeArray(enriched.enrichment?.sourceRefs||enriched.enrichment?.source_refs).find(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))?.sourceId||'',
+              general_web_status:enriched.enrichment?.webSearch?.cacheStatus||enriched.enrichment?.generalWebStatus||(enriched.cached?'cached':'ran'),
+              general_web_checked_at:enriched.enrichment?.webSearch?.completedAt||enriched.enrichment?.completedAt||savedPublicContext?.completedAt||'',
+              recent_activity_status:enriched.enrichment?.linkedin?.cacheStatus||'ran'
+            };
+            contact={
+              ...contact,
+              ...(enriched.profile||{}),
+              relationshipProfileId:enriched.profile?.id||contact.relationshipProfileId||contact.raw?.relationshipProfileId||'',
+              relationshipEnrichment:enriched.enrichment||enriched.profile?.metadata?.relationshipEnrichment||contact.relationshipEnrichment,
+              raw:{...(contact.raw||{}),relationshipEnrichment:enriched.enrichment||enriched.profile?.metadata?.relationshipEnrichment||contact.raw?.relationshipEnrichment}
+            };
+            savedPublicContext=savedRelationshipPublicContext(contact);
+            publicContextTrust=meetingPrepPublicContextTrust(savedPublicContext,attendee,contact);
+            if(savedPublicContext&&!publicContextTrust.trusted){
+              unknowns.push(`public_context_unverified:${publicContextTrust.reason}`);
+              publicContextStatus=unverifiedPublicContextStatus(savedPublicContext,publicContextTrust);
+              savedPublicContext=null;
+            }else if(savedPublicContext){
+              publicContextStatus={...publicContextStatus,summary:savedPublicContext.summary||publicContextStatus.summary,website:savedPublicContext.website||publicContextStatus.website||'',organization:savedPublicContext.organization||publicContextStatus.organization||'',latest_linkedin_post:savedPublicContext.latestLinkedInPost||publicContextStatus.latest_linkedin_post||'',latest_linkedin_url:savedPublicContext.latestLinkedInUrl||publicContextStatus.latest_linkedin_url||'',query:savedPublicContext.query||publicContextStatus.query||'',verification_reason:publicContextTrust.reason};
+            }
+          }
+        }
+      }
       const savedManualContext=savedRelationshipManualContext(contact);
       const publicEvidence=savedPublicContext?savedRelationshipPublicEvidence(savedPublicContext):[];
       const manualEvidence=savedManualContext?savedRelationshipManualEvidence(savedManualContext,contact):[];
@@ -390,6 +709,21 @@ function createValMeetingPrepService({
         source_confidence_label:sourceLabel(label),
         confidence,
         who_they_are:compactText((contact.company||savedPublicContext?.organization)?[`${contact.name||attendee.name} at ${contact.company||savedPublicContext?.organization}`].join(''):(contact.name||attendee.name||attendee.email),220),
+        public_profile:{
+          organization:savedPublicContext?.organization||contact.company||contact.organization||'',
+          category:savedPublicContext?.category||'',
+          location:savedPublicContext?.location||'',
+          website:savedPublicContext?.website||contact.website||contact.raw?.website||'',
+          summary:savedPublicContext?.summary||'',
+          latest_linkedin_post:savedPublicContext?.latestLinkedInPost||publicContextStatus.latest_linkedin_post||'',
+          latest_linkedin_url:savedPublicContext?.latestLinkedInUrl||publicContextStatus.latest_linkedin_url||'',
+          query:savedPublicContext?.query||publicContextStatus.query||'',
+          provider:publicContextStatus.provider||savedPublicContext?.provider||'outscraper',
+          status:publicContextStatus.status||'unknown',
+          general_web_status:publicContextStatus.general_web_status||'unknown',
+          general_web_checked_at:publicContextStatus.general_web_checked_at||savedPublicContext?.completedAt||'',
+          recent_activity_status:publicContextStatus.recent_activity_status||'unknown'
+        },
         why_this_person_matters:savedManualContext?.relationship?`User-confirmed relationship context: ${savedManualContext.relationship}`:(savedPublicContext?.summary?`Saved public relationship context: ${savedPublicContext.summary}`:(contact.name?'Matched against internal relationship/contact evidence.':'Attendee is present on the calendar event; no deeper internal match is confirmed.')),
         relationship_context:compactText([
           savedManualContext?.relationship||'',
@@ -400,6 +734,7 @@ function createValMeetingPrepService({
         ].filter(Boolean).join(' | '),500),
         relationship_dossier:relationshipDossier,
         saved_relationship_context:savedPublicContext,
+        public_context_status:publicContextStatus,
         user_confirmed_relationship_context:savedManualContext,
         unresolved_relationship_context:crmContactId?null:{
           reason:savedPublicContext?'Saved public relationship context is available, but this attendee has not resolved to a CRM contact ID.':'No canonical Relationship Dossier was attached because this attendee has not resolved to a CRM contact ID.',
@@ -443,7 +778,7 @@ function createValMeetingPrepService({
   async function saveBrief(row){
     const columns=['id','tenantId','userId','calendarEventId','eventSource','status','qualityGateJson','meetingContextJson','attendeeIntelligenceJson','internalContextJson','meetingStakesJson','userRole','firstFiveMinutesJson','briefJson','suggestedQuestionsJson','followUpPreparationJson','readyForYouHandoffJson','postMeetingCapturePrompt','postMeetingCaptureJson','sourceRefsJson','unknownsJson','confidence','createdAt','updatedAt'];
     if(hasPg()){
-      const values=columns.map(c=>row[c]);
+      const values=columns.map(c=>pgValueForMeetingPrepColumn(c,row[c]));
       const names=columns.map(toSnake);
       const params=columns.map((_,i)=>`$${i+1}`).join(',');
       const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
@@ -458,7 +793,7 @@ function createValMeetingPrepService({
     const event=await findEvent(input);
     const eventId=eventIdOf(event)||uuid('event');
     const gate=qualityGate(event);
-    const attendees=inferAttendees(event);
+    const attendees=externalMeetingAttendees(event);
     const unknowns=[];
     if(!isMeetingEvent(event)){
       const privateBlock=privateCalendarBlockTitle(event);
@@ -477,7 +812,10 @@ function createValMeetingPrepService({
     const internal=await gatherInternal(event);
     safeArray(internal.errors).forEach(reason=>unknowns.push({source:'internal_context',reason}));
     const attendeeIntel=await resolveAttendees(event,internal);
-    const projectLinks=projectContextLinks(event,internal);
+    const savedProjects=typeof listProjectProfiles==='function' ? await listProjectProfiles({limit:120}).catch(e=>{unknowns.push({source:'project_profiles',reason:e.message});return [];}) : [];
+    const projectLinks=mergeProjectContextLinks(projectContextLinks(event,internal),matchSavedProjectProfiles(event,internal,savedProjects));
+    const meetingType=classifyMeetingPrepType({attendees,attendeeIntel,internal,projectLinks});
+    internal.meeting_type=meetingType;
     if(saveCalendarProjectLink){
       for(const link of projectLinks){
         await saveCalendarProjectLink({
@@ -505,9 +843,11 @@ function createValMeetingPrepService({
     const handoff={ready_for_you_candidate:needsJudgment,status:needsJudgment?'ready_for_review':'not_ready',category:'meeting',type:'meeting_prep_brief',why_user_is_seeing_this:'This meeting brief is ready enough that your judgment is now the bottleneck.',why_now:'Reviewing it before the meeting may improve relationship context, questions, and follow-up quality.',what_val_did:'Prepared meeting context, attendee resolution, stakes, first-five-minutes guidance, questions, and follow-up preparation. No calendar invite was sent.',what_only_user_can_do:'Decide how you want to enter the meeting and what matters most to protect.',estimated_review_minutes:3,requires_approval:true,approval_policy:'approval_required',meeting_overview_approval:overviewApproval,representation_risk:'medium'};
     const sourceRefs=[normalizeSourceRef({sourceType:'calendar_event',sourceId:eventId,quoteOrSummary:eventTitle(event),confidence:0.75}),...attendeeIntel.flatMap(a=>a.source_refs||[])].slice(0,12);
     const confidence=Math.min(0.92,Math.max(0.25,(gate.quality==='high'?0.75:gate.quality==='medium'?0.62:0.45)+(attendeeIntel.some(a=>a.crm_contact_id)?0.1:0)));
-    const row={id:input.id||uuid('meetprep'),tenantId:tenantId(),userId:userId(),calendarEventId:eventId,eventSource:event.source||'unknown',status:needsJudgment?'ready_for_review':'needs_context',qualityGateJson:gate,meetingContextJson:{id:eventId,title:eventTitle(event),startTime:eventStart(event),endTime:eventEnd(event),source:event.source||'unknown',attendees,source_confidence_label:'internal_evidence',meeting_overview_approval:overviewApproval},attendeeIntelligenceJson:attendeeIntel,internalContextJson:{...internal,project_context_links:projectLinks,source_confidence_label:'internal_evidence'},meetingStakesJson:stakes,userRole:role.user_role,firstFiveMinutesJson:firstFive,briefJson:brief,suggestedQuestionsJson:questions,followUpPreparationJson:followUp,readyForYouHandoffJson:handoff,postMeetingCapturePrompt:capture,postMeetingCaptureJson:{},sourceRefsJson:sourceRefs,unknownsJson:unknowns,confidence,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const row={id:input.id||uuid('meetprep'),tenantId:tenantId(),userId:userId(),calendarEventId:eventId,eventSource:event.source||'unknown',status:needsJudgment?'ready_for_review':'needs_context',qualityGateJson:gate,meetingContextJson:{id:eventId,title:eventTitle(event),startTime:eventStart(event),endTime:eventEnd(event),source:event.source||'unknown',attendees,meeting_type:meetingType,relationship_stage:meetingType.type,source_confidence_label:'internal_evidence',meeting_overview_approval:overviewApproval},attendeeIntelligenceJson:attendeeIntel,internalContextJson:{...internal,project_context_links:projectLinks,source_confidence_label:'internal_evidence'},meetingStakesJson:stakes,userRole:role.user_role,firstFiveMinutesJson:firstFive,briefJson:brief,suggestedQuestionsJson:questions,followUpPreparationJson:followUp,readyForYouHandoffJson:handoff,postMeetingCapturePrompt:capture,postMeetingCaptureJson:{},sourceRefsJson:sourceRefs,unknownsJson:unknowns,confidence,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     const saved=await saveBrief(row);
-    await saveAttendeeRows(saved.id||row.id,eventId,attendeeIntel);
+    const savedBriefId=saved?.id||row.id;
+    if(!savedBriefId)throw new Error('Meeting Prep brief saved without an id; attendee intelligence was not attached.');
+    await saveAttendeeRows(savedBriefId,eventId,attendeeIntel);
     logger.log?.(`[val-meeting-prep] prepared ${eventId}`);
     return {ok:true,brief:saved,ready_for_you_handoff:handoff,unknowns,source_confidence_labels:['internal_evidence','api_enriched','public_source','val_inference','unknown'],no_external_action:true};
   }

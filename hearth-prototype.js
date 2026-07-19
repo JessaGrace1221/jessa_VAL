@@ -276,6 +276,17 @@ function calendarAttendeeEmail(attendee = {}){
   return String(attendee.email || attendee.address || attendee.emailAddress?.address || attendee.mail || '').trim().toLowerCase();
 }
 
+function calendarAttendeeDisplayName(attendee = {}){
+  return String(attendee.name || attendee.displayName || attendee.emailAddress?.name || attendee.label || '').trim();
+}
+
+function calendarAttendeeLabel(attendee = {}){
+  const name = calendarAttendeeDisplayName(attendee);
+  const email = calendarAttendeeEmail(attendee);
+  if(name && email && name.toLowerCase() !== email) return name + ' <' + email + '>';
+  return name || email || 'Calendar attendee';
+}
+
 function calendarAttendeeLooksLikeSelf(attendee = {}){
   const email = calendarAttendeeEmail(attendee);
   if(attendee.self) return true;
@@ -284,6 +295,19 @@ function calendarAttendeeLooksLikeSelf(attendee = {}){
 
 function calendarEventExternalAttendees(event = {}){
   return calendarEventAttendees(event).filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee) && (attendee.name || calendarAttendeeEmail(attendee)));
+}
+
+function calendarEventAttendeeSummary(event = {}, limit = 3){
+  const attendees = calendarEventExternalAttendees(event).map(calendarAttendeeLabel).filter(Boolean);
+  if(!attendees.length) return '';
+  const shown = attendees.slice(0, limit);
+  const remaining = attendees.length - shown.length;
+  return shown.join(' · ') + (remaining > 0 ? ' · +' + remaining + ' more' : '');
+}
+
+function renderCalendarAttendeeList(event = {}){
+  const summary = calendarEventAttendeeSummary(event, 3);
+  return summary ? '<em class="calendar-attendee-list">' + escapeHtml(summary) + '</em>' : '';
 }
 
 function calendarEventLooksPrivateBlock(event = {}){
@@ -2221,6 +2245,8 @@ function relationshipProfileFromIndexItem(item = {}){
     initials: item.initials || String(item.name || item.displayName || 'R').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
     role: item.role || packetIdentity.role || item.relationshipStatus || 'Relationship',
     company: item.company || packetIdentity.company_or_context || 'Relationship',
+    linkedinUrl: item.linkedinUrl || item.linkedin_url || item.metadata?.linkedinUrl || item.metadata?.linkedin_url || '',
+    linkedin_url: item.linkedinUrl || item.linkedin_url || item.metadata?.linkedinUrl || item.metadata?.linkedin_url || '',
     temperature: item.temperature || 'Warm',
     temperatureScore: Math.max(0, Math.min(100, Number(item.temperatureScore || 55))),
     trajectory: item.trajectory || item.relationshipStatus || 'Watch',
@@ -2676,7 +2702,9 @@ function renderStewardshipNetworkDetail(profile = null){
   }
   const matches = stewardshipBestMatches(profile, 3);
   const enrichment = profile.relationshipEnrichment || profile.relationship_enrichment || {};
+  const linkedinUrl = profile.linkedinUrl || profile.linkedin_url || profile.metadata?.linkedinUrl || profile.metadata?.linkedin_url || '';
   const enrichmentLines = stewardshipCleanList([
+    linkedinUrl ? 'LinkedIn: ' + linkedinUrl : '',
     enrichment.summary,
     enrichment.organization ? 'Organization: ' + enrichment.organization : '',
     enrichment.category ? 'Public focus: ' + enrichment.category : '',
@@ -2691,8 +2719,10 @@ function renderStewardshipNetworkDetail(profile = null){
     : '<p>I do not see a strong reason to introduce ' + escapeHtml(profile.name || 'this person') + ' yet.</p><button type="button" data-stewardship-who-should-meet="' + escapeHtml(stewardshipSelectedNetworkId) + '">Who Should ' + escapeHtml(relationshipFirstName(profile)) + ' Meet?</button>';
   stewardshipNetworkDetail.innerHTML = [
     '<span>Network</span>',
+    '<button type="button" class="stewardship-network-back" data-stewardship-return-network>Return to Stewardship</button>',
     '<h5>' + escapeHtml(profile.name || 'Relationship') + '</h5>',
     '<p>' + escapeHtml(stewardshipRelationshipLine(profile)) + '</p>',
+    '<div class="stewardship-profile-links">' + (linkedinUrl ? '<a href="' + escapeHtml(linkedinUrl) + '" target="_blank" rel="noopener">Open LinkedIn profile</a>' : '<span>LinkedIn URL has not been added yet.</span>') + '</div>',
     '<div class="stewardship-four-grid">',
     stewardshipCoworkCard('needs', 'Needs', stewardshipNeeds(profile), profile),
     stewardshipCoworkCard('offers', 'Offers', stewardshipOffers(profile), profile),
@@ -10980,6 +11010,15 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
   showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
 }
 
+function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefing || {}){
+  const sidebar = scraperPreviewList?.querySelector?.('.home-cowork-sidebar');
+  if(!sidebar) return;
+  const mapping = renderMeetingPrepAttendeeMapping(briefing, {compact:true});
+  if(!mapping) return;
+  sidebar.insertAdjacentHTML('beforeend', '<div class="meeting-prep-cowork-rail">' + mapping + '</div>');
+  applyHearthClickContracts(deskWorkspace);
+}
+
 async function handleProjectAction(action){
   const project = activeProjectProfile || projectProfiles.frisson;
   if(action === 'cowork_project'){
@@ -14506,7 +14545,50 @@ function meetingPrepActionsFromBrief(brief = {}){
   return [{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}];
 }
 
+function meetingPrepJsonValue(value, fallback){
+  if(value == null || value === '') return fallback;
+  if(typeof value === 'string'){
+    try{return JSON.parse(value);}catch(_){return fallback;}
+  }
+  return value;
+}
+
+function normalizeMeetingPrepBrief(rawBrief = {}, event = activeMeetingPrepEvent || meetingPrep.event){
+  const brief = rawBrief || {};
+  const eventTitle = meetingPrepEventTitle(event);
+  const eventAttendees = calendarEventAttendees(event);
+  const meetingContextJson = meetingPrepJsonValue(brief.meetingContextJson ?? brief.meeting_context_json, {}) || {};
+  const internalContextJson = meetingPrepJsonValue(brief.internalContextJson ?? brief.internal_context_json, {}) || {};
+  return {
+    ...brief,
+    qualityGateJson: meetingPrepJsonValue(brief.qualityGateJson ?? brief.quality_gate_json, {}) || {},
+    meetingContextJson: {
+      ...meetingContextJson,
+      title: meetingContextJson.title || eventTitle || brief.meetingTitle || brief.meeting_title || '',
+      startTime: meetingContextJson.startTime || meetingContextJson.start_time || event?.startTime || event?.start || '',
+      endTime: meetingContextJson.endTime || meetingContextJson.end_time || event?.endTime || event?.end || '',
+      source: meetingContextJson.source || event?.source || '',
+      attendees: Array.isArray(meetingContextJson.attendees) && meetingContextJson.attendees.length ? meetingContextJson.attendees : eventAttendees
+    },
+    attendeeIntelligenceJson: meetingPrepJsonValue(brief.attendeeIntelligenceJson ?? brief.attendee_intelligence_json, []) || [],
+    internalContextJson: {
+      ...internalContextJson,
+      transcripts: Array.isArray(internalContextJson.transcripts) ? internalContextJson.transcripts : [],
+      openLoops: Array.isArray(internalContextJson.openLoops) ? internalContextJson.openLoops : (Array.isArray(internalContextJson.open_loops) ? internalContextJson.open_loops : []),
+      project_context_links: Array.isArray(internalContextJson.project_context_links) ? internalContextJson.project_context_links : (Array.isArray(internalContextJson.projectContextLinks) ? internalContextJson.projectContextLinks : [])
+    },
+    meetingStakesJson: meetingPrepJsonValue(brief.meetingStakesJson ?? brief.meeting_stakes_json, {}) || {},
+    firstFiveMinutesJson: meetingPrepJsonValue(brief.firstFiveMinutesJson ?? brief.first_five_minutes_json, {}) || {},
+    briefJson: meetingPrepJsonValue(brief.briefJson ?? brief.brief_json, {}) || {},
+    suggestedQuestionsJson: meetingPrepJsonValue(brief.suggestedQuestionsJson ?? brief.suggested_questions_json, []) || [],
+    followUpPreparationJson: meetingPrepJsonValue(brief.followUpPreparationJson ?? brief.follow_up_preparation_json, {}) || {},
+    sourceRefsJson: meetingPrepJsonValue(brief.sourceRefsJson ?? brief.source_refs_json, []) || [],
+    unknownsJson: meetingPrepJsonValue(brief.unknownsJson ?? brief.unknowns_json, []) || []
+  };
+}
+
 function meetingPrepHasUsefulContext(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
   const prep = brief.briefJson || {};
   const stakes = brief.meetingStakesJson || {};
   const firstFive = brief.firstFiveMinutesJson || {};
@@ -14529,7 +14611,28 @@ function meetingPrepBulletList(items = [], fallback = ''){
   return list;
 }
 
+function meetingPrepType(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const type = brief.meetingContextJson?.meeting_type || brief.meetingContextJson?.meetingType || {};
+  if(type && typeof type === 'object'){
+    return {
+      type: type.type || brief.briefJson?.meeting_type || 'unknown',
+      label: type.label || brief.briefJson?.meeting_type_label || 'Meeting prep',
+      focus: type.focus || '',
+      evidence: Array.isArray(type.evidence) ? type.evidence : []
+    };
+  }
+  return {
+    type: String(type || brief.briefJson?.meeting_type || 'unknown'),
+    label: brief.briefJson?.meeting_type_label || String(type || 'Meeting prep').replace(/_/g, ' '),
+    focus: '',
+    evidence: []
+  };
+}
+
 function meetingPrepLocalRelationshipContext(event = {}, brief = {}){
+  brief = normalizeMeetingPrepBrief(brief, event);
+  if(canUseApi) return null;
   const text = [meetingPrepEventTitle(event), meetingPrepEventDescription(event), JSON.stringify(brief.meetingContextJson || {})].join(' ').toLowerCase();
   if(/aric|frisson|helpbyshopping/.test(text)) return relationshipProfiles.aric;
   const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
@@ -14538,14 +14641,18 @@ function meetingPrepLocalRelationshipContext(event = {}, brief = {}){
 }
 
 function meetingPrepLocalProjectContext(event = {}, brief = {}){
-  const text = [meetingPrepEventTitle(event), meetingPrepEventDescription(event), JSON.stringify(brief.internalContextJson || {})].join(' ').toLowerCase();
-  if(/frisson|helpbyshopping|nonprofit/.test(text)) return projectProfiles.frisson;
+  brief = normalizeMeetingPrepBrief(brief, event);
   const links = Array.isArray(brief.internalContextJson?.project_context_links) ? brief.internalContextJson.project_context_links : [];
   const frisson = links.find((link) => /frisson/i.test(String(link.project_name || link.project_id || '')));
+  if(frisson) return projectProfiles.frisson;
+  if(canUseApi) return null;
+  const text = [meetingPrepEventTitle(event), meetingPrepEventDescription(event), JSON.stringify(brief.internalContextJson || {})].join(' ').toLowerCase();
+  if(/frisson|helpbyshopping|nonprofit/.test(text)) return projectProfiles.frisson;
   return frisson ? projectProfiles.frisson : null;
 }
 
 function meetingPrepReadiness(brief = {}, relationship = null, project = null){
+  brief = normalizeMeetingPrepBrief(brief);
   let score = 42;
   const prepared = [];
   const missing = [];
@@ -14571,10 +14678,298 @@ function meetingPrepReadiness(brief = {}, relationship = null, project = null){
   };
 }
 
+function meetingPrepPublicContextLines(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  return attendees.map((attendee) => {
+    const name = attendee.name || attendee.email || 'Attendee';
+    const status = attendee.public_context_status || {};
+    const profile = attendee.public_profile || {};
+    const provider = status.provider || 'Outscraper';
+    const query = status.query ? ' Search used: ' + status.query + '.' : '';
+    const website = profile.website || status.website ? ' Website: ' + (profile.website || status.website) + '.' : '';
+    const linkedinText = profile.latest_linkedin_post || status.latest_linkedin_post || '';
+    const linkedinUrl = profile.latest_linkedin_url || status.latest_linkedin_url || '';
+    const linkedin = linkedinText || linkedinUrl
+      ? ' LinkedIn: ' + compactSentence(linkedinText || 'Open the latest activity link for current public context.') + (linkedinUrl ? ' Open LinkedIn activity: ' + linkedinUrl + '.' : '')
+      : '';
+    if(status.status === 'unverified_match' || profile.status === 'unverified_match'){
+      return meetingPrepCleanIntelligenceLine(name + ': public match was not verified, so VAL is not using scraped role, company, website, or LinkedIn details.' + query);
+    }
+    if(status.status === 'ran') return meetingPrepCleanIntelligenceLine(name + ': public context checked. ' + compactSentence(status.summary || profile.summary || '') + website + linkedin + query);
+    if(status.status === 'reused_saved' || status.status === 'reused_saved_refresh_failed') return meetingPrepCleanIntelligenceLine(name + ': saved public context reused. ' + compactSentence(status.summary || profile.summary || '') + website + linkedin + query);
+    if(status.status === 'failed') return meetingPrepCleanIntelligenceLine(name + ': ' + provider + ' did not run cleanly. ' + compactSentence(status.summary || '') + query);
+    if(status.status === 'not_checked') return name + ': ' + provider + ' was not checked.';
+    return '';
+  }).filter(Boolean).slice(0,5);
+}
+
+function meetingPrepCleanIntelligenceLine(value = ''){
+  const text = String(value || '')
+    .replace(/#{1,6}\s*(Key Points|Action Items|Transcript)\b.*$/gi, '')
+    .replace(/\bTranscript\s+\d+\b.*$/gi, '')
+    .replace(/_[A-Za-z][^|]{0,80}_/g, '')
+    .replace(/\s*\|\s*/g, ' ')
+    .replace(/\s*;\s*/g, '; ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(!text || /compactText is not defined/i.test(text)) return '';
+  return compactSentence(text, '', 260);
+}
+
+function meetingPrepFirstMeetingSignals(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  return attendees
+    .filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee))
+    .map((attendee) => {
+      const profile = attendee.public_profile || {};
+      const status = attendee.public_context_status || {};
+      const name = attendee.name || attendee.email || 'Attendee';
+      const organization = profile.organization || status.organization || '';
+      const website = profile.website || status.website || '';
+      const latestLinkedIn = profile.latest_linkedin_post || status.latest_linkedin_post || '';
+      const latestLinkedInUrl = profile.latest_linkedin_url || status.latest_linkedin_url || '';
+      const unverified = status.status === 'unverified_match' || profile.status === 'unverified_match';
+      const summary = unverified ? 'Public match was not verified for this attendee.' : (profile.summary || status.summary || attendee.why_this_person_matters || '');
+      const query = profile.query || status.query || '';
+      return {
+        name,
+        email: attendee.email || '',
+        organization: unverified ? 'Not confirmed yet' : organization,
+        website: unverified ? '' : website,
+        latestLinkedIn: unverified ? 'No verified LinkedIn signal returned yet.' : latestLinkedIn,
+        latestLinkedInUrl: unverified ? '' : latestLinkedInUrl,
+        summary,
+        query,
+        status: status.status || profile.status || 'unknown',
+        provider: profile.provider || status.provider || 'Outscraper'
+      };
+    })
+    .slice(0,6);
+}
+
+function meetingPrepCalendarAttendeeLines(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const calendarAttendees = Array.isArray(brief.meetingContextJson?.attendees) ? brief.meetingContextJson.attendees : [];
+  const attendeeIntel = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const intelByEmail = new Map(attendeeIntel.map((attendee) => [calendarAttendeeEmail(attendee), attendee]).filter(([email]) => email));
+  return calendarAttendees
+    .filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee) && (calendarAttendeeEmail(attendee) || calendarAttendeeDisplayName(attendee)))
+    .map((attendee) => {
+      const email = calendarAttendeeEmail(attendee);
+      const intel = email ? intelByEmail.get(email) : null;
+      const status = intel?.crm_contact_id
+        ? 'matched to CRM contact ' + intel.crm_contact_id
+        : (intel?.match_status ? String(intel.match_status).replace(/_/g, ' ') : 'not matched to CRM yet');
+      return 'Calendar attendee VAL used: ' + calendarAttendeeLabel(attendee) + ' - ' + status + '.';
+    })
+    .slice(0, 6);
+}
+
+function meetingPrepAttendeeRelationshipLines(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const attendees = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  return attendees.flatMap((attendee) => [
+    attendee.relationship_context ? meetingPrepCleanIntelligenceLine((attendee.name || attendee.email || 'Attendee') + ': ' + attendee.relationship_context) : '',
+    attendee.why_this_person_matters ? meetingPrepCleanIntelligenceLine((attendee.name || attendee.email || 'Attendee') + ': ' + attendee.why_this_person_matters) : ''
+  ]).filter(Boolean).slice(0, 6);
+}
+
+function meetingPrepProjectLinks(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  return Array.isArray(brief.internalContextJson?.project_context_links) ? brief.internalContextJson.project_context_links : [];
+}
+
+function meetingPrepRelationshipOptions(){
+  return relationshipIndexItems()
+    .map((relationship) => ({
+      id: relationship.id || relationship.profile?.id || relationship.profile?.profileKey || relationship.email || relationship.name || '',
+      name: relationship.name || relationship.profile?.displayName || relationship.email || 'Relationship',
+      email: relationship.email || relationship.profile?.email || relationship.profile?.metadata?.email || ''
+    }))
+    .filter((relationship) => relationship.id || relationship.name || relationship.email)
+    .slice(0, 160);
+}
+
+function meetingPrepProjectOptions(){
+  return projectIndexItems()
+    .map((project) => ({
+      id: project.id || project.projectId || project.profileKey || project.name || '',
+      name: project.name || project.displayName || project.projectName || project.id || 'Project'
+    }))
+    .filter((project) => project.id || project.name)
+    .slice(0, 120);
+}
+
+function meetingPrepSelectedRelationship(index){
+  const input = drawerTray?.querySelector?.('[data-meeting-attendee-relationship="' + index + '"]');
+  const raw = String(input?.value || '').trim();
+  if(!raw) return null;
+  const lower = raw.toLowerCase();
+  return meetingPrepRelationshipOptions().find((relationship) => (
+    [relationship.id, relationship.name, relationship.email].filter(Boolean)
+      .some((value) => String(value).trim().toLowerCase() === lower)
+  )) || {id:raw, name:raw, email:''};
+}
+
+function meetingPrepSelectedProject(index){
+  const input = drawerTray?.querySelector?.('[data-meeting-attendee-project="' + index + '"]');
+  const raw = String(input?.value || '').trim();
+  if(!raw) return null;
+  const lower = raw.toLowerCase();
+  return meetingPrepProjectOptions().find((project) => (
+    [project.id, project.name].filter(Boolean)
+      .some((value) => String(value).trim().toLowerCase() === lower)
+  )) || {id:raw, name:raw};
+}
+
+function meetingPrepCalendarEventId(){
+  const event = activeMeetingPrepEvent || meetingPrep.event || {};
+  return String(
+    event.id ||
+    event.eventId ||
+    event.calendarEventId ||
+    event.googleEventId ||
+    activeMeetingPrepBriefing?.meetingContextJson?.eventId ||
+    activeMeetingPrepBriefing?.meetingContextJson?.calendarEventId ||
+    meetingPrepEventTitle(event)
+  ).trim();
+}
+
+function setMeetingPrepAttendeeInlineStatus(index, message = '', tone = 'success'){
+  const card = drawerTray?.querySelector?.('[data-meeting-attendee-card="' + index + '"]');
+  if(!card) return;
+  let status = card.querySelector('[data-meeting-attendee-status]');
+  if(!status){
+    status = document.createElement('p');
+    status.className = 'meeting-prep-attendee-status';
+    status.setAttribute('data-meeting-attendee-status', '');
+    card.appendChild(status);
+  }
+  status.dataset.tone = tone;
+  status.textContent = message || '';
+}
+
+function meetingPrepDomainProjectCandidate(email = ''){
+  const domain = String(email || '').split('@')[1] || '';
+  const clean = domain.replace(/^www\./i, '').trim();
+  if(!clean || /gmail\.com|googlemail\.com|icloud\.com|me\.com|mac\.com|outlook\.com|hotmail\.com|yahoo\.com|aol\.com/i.test(clean)) return '';
+  return clean;
+}
+
+function meetingPrepAttendeeMappingItems(brief = {}){
+  brief = normalizeMeetingPrepBrief(brief);
+  const attendeeIntel = Array.isArray(brief.attendeeIntelligenceJson) ? brief.attendeeIntelligenceJson : [];
+  const fallbackAttendees = Array.isArray(brief.meetingContextJson?.attendees) ? brief.meetingContextJson.attendees : [];
+  const seen = new Set();
+  return (attendeeIntel.length ? attendeeIntel : fallbackAttendees)
+    .filter((attendee) => !calendarAttendeeLooksLikeSelf(attendee))
+    .map((attendee, index) => {
+      const email = calendarAttendeeEmail(attendee);
+      const name = attendee.name || calendarAttendeeDisplayName(attendee) || email || 'Attendee';
+      const key = email || String(name).toLowerCase();
+      if(!key || seen.has(key)) return null;
+      seen.add(key);
+      const unresolved = attendee.unresolved_relationship_context || {};
+      const candidate = unresolved.contact_creation_candidate || {
+        endpoint:'/api/val/contacts/create',
+        payload:{
+          name,
+          email: email || undefined,
+          source:'Meeting Prep attendee mapping',
+          tags:['val_meeting_prep_attendee'],
+          note:'Created from Meeting Prep attendee mapping after VAL could not attach a canonical relationship.'
+        },
+        willNotDo:'VAL will not merge contacts, send messages, add opportunities, or attach relationship context until CRM returns a contact ID.'
+      };
+      const candidateKey = 'meeting_mapping_' + index;
+      activeMeetingContactCandidates[candidateKey] = {attendee, candidate};
+      return {
+        key:candidateKey,
+        name,
+        email,
+        crmContactId:attendee.crm_contact_id || attendee.crmContactId || '',
+        matchStatus:String(attendee.match_status || attendee.matchStatus || '').replace(/_/g, ' ') || 'not matched yet',
+        projectLinks:meetingPrepProjectLinks(brief),
+        projectCandidate:meetingPrepDomainProjectCandidate(email)
+      };
+    })
+    .filter(Boolean)
+    .slice(0,8);
+}
+
+function renderMeetingPrepAttendeeMapping(briefing = {}, options = {}){
+  const attendees = Array.isArray(briefing.attendeeMappings) ? briefing.attendeeMappings : [];
+  if(!attendees.length) return '';
+  const compact = options.compact === true;
+  const relationshipOptions = meetingPrepRelationshipOptions().map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.email || relationship.id) + '"></option>').join('');
+  const projectOptions = meetingPrepProjectOptions().map((project) => '<option value="' + escapeHtml(project.name || project.id) + '"></option>').join('');
+  return '<section class="meeting-prep-section meeting-prep-attendee-mapping' + (compact ? ' is-compact' : '') + '"><h3>Attendee Mapping</h3>' + (compact ? '<p class="meeting-prep-attendee-note">Confirm only what needs correction.</p>' : '') + '<div class="meeting-prep-attendee-grid">' + attendees.map((attendee, index) => {
+    const projectLabel = attendee.projectLinks?.[0]?.project_name || attendee.projectLinks?.[0]?.projectName || '';
+    const projectCandidate = projectLabel || attendee.projectCandidate || '';
+    const relationshipStatus = attendee.crmContactId ? 'Relationship attached' : attendee.matchStatus;
+    const projectStatus = projectCandidate ? 'Project suggested' : 'Project not attached';
+    const relationshipAction = attendee.crmContactId
+      ? '<button type="button" data-workflow-action="contactOpen:' + escapeHtml(attendee.crmContactId) + '">Open relationship</button>'
+      : '<button type="button" data-workflow-action="meetingAttendeeCreateRelationship:' + escapeHtml(attendee.key) + '">Create relationship</button>';
+    const body =
+      '<div><strong>' + escapeHtml(attendee.name) + '</strong>' +
+      (attendee.email ? '<span>' + escapeHtml(attendee.email) + '</span>' : '<span>No attendee email attached yet.</span>') +
+      '<em>' + escapeHtml(relationshipStatus) + '</em></div>' +
+      '<div class="meeting-prep-attendee-actions">' +
+        '<label><span>Relationship</span><input type="search" list="meeting-prep-relationship-options" data-meeting-attendee-relationship="' + index + '" placeholder="Search relationship..." value="' + escapeHtml(attendee.crmContactId ? attendee.name : '') + '"></label>' +
+        relationshipAction +
+        '<button type="button" data-workflow-action="meetingAttendeeAttachRelationship:' + escapeHtml(attendee.key) + '">Attach relationship</button>' +
+        '<label><span>Project</span><input type="search" list="meeting-prep-project-options" data-meeting-attendee-project="' + index + '" placeholder="Search project..." value="' + escapeHtml(projectCandidate) + '"></label>' +
+        '<button type="button" data-workflow-action="meetingAttendeeAttachProject:' + index + '">Attach project</button>' +
+        '<input type="text" data-meeting-attendee-project-name="' + index + '" placeholder="New project name..." value="' + escapeHtml(projectCandidate) + '">' +
+        '<button type="button" data-workflow-action="meetingAttendeeCreateProject:' + index + '">Create project</button>' +
+      '</div>';
+    if(compact){
+      return '<details class="meeting-prep-attendee-card meeting-prep-attendee-drawer" data-meeting-attendee-card="' + index + '"' + (index === 0 ? ' open' : '') + '>' +
+        '<summary>' +
+          '<span><strong>' + escapeHtml(attendee.name) + '</strong>' + (attendee.email ? '<small>' + escapeHtml(attendee.email) + '</small>' : '') + '</span>' +
+          '<em>' + escapeHtml(attendee.crmContactId ? 'Attached' : 'Needs review') + '</em>' +
+        '</summary>' +
+        '<div class="meeting-prep-attendee-drawer-body">' +
+          '<p><b>Relationship</b><span>' + escapeHtml(relationshipStatus) + '</span></p>' +
+          '<p><b>Project</b><span>' + escapeHtml(projectStatus) + '</span></p>' +
+          body +
+        '</div>' +
+      '</details>';
+    }
+    return '<article class="meeting-prep-attendee-card" data-meeting-attendee-card="' + index + '">' + body + '</article>';
+  }).join('') + '</div><datalist id="meeting-prep-relationship-options">' + relationshipOptions + '</datalist><datalist id="meeting-prep-project-options">' + projectOptions + '</datalist></section>';
+}
+
+function renderMeetingPrepFirstMeetingSignals(briefing = {}){
+  const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
+  if(!signals.length) return '';
+  const heading = briefing.meetingType?.type === 'first_meeting' ? 'First-Meeting Intelligence' : 'Current Public Signals';
+  return '<section class="meeting-prep-section meeting-prep-first-look"><h3>' + escapeHtml(heading) + '</h3><div class="meeting-prep-signal-grid">' + signals.map((signal) => {
+    const website = signal.website ? '<a href="' + escapeHtml(signal.website.match(/^https?:\/\//i) ? signal.website : 'https://' + signal.website) + '" target="_blank" rel="noopener">' + escapeHtml(signal.website) + '</a>' : '<span>Website not found yet</span>';
+    const linkedin = signal.latestLinkedIn ? compactSentence(signal.latestLinkedIn) : 'No specific LinkedIn post text returned yet.';
+    const linkedinUrl = signal.latestLinkedInUrl ? '<a href="' + escapeHtml(signal.latestLinkedInUrl) + '" target="_blank" rel="noopener">Open LinkedIn activity</a>' : '';
+    const summary = signal.summary ? compactSentence(signal.summary) : 'Public context is still thin; use the meeting opening to learn what matters most.';
+    return '<article class="meeting-prep-signal-card">' +
+      '<header><strong>' + escapeHtml(signal.name) + '</strong>' + (signal.email ? '<span>' + escapeHtml(signal.email) + '</span>' : '') + '</header>' +
+      '<dl>' +
+        '<div><dt>Organization</dt><dd>' + escapeHtml(signal.organization || 'Not confirmed yet') + '</dd></div>' +
+        '<div><dt>Website</dt><dd>' + website + '</dd></div>' +
+        '<div><dt>Latest LinkedIn Signal</dt><dd>' + escapeHtml(linkedin) + (linkedinUrl ? '<br>' + linkedinUrl : '') + '</dd></div>' +
+        '<div><dt>Why It Matters</dt><dd>' + escapeHtml(summary) + '</dd></div>' +
+      '</dl>' +
+      (signal.query ? '<p>Search used: ' + escapeHtml(signal.query) + '</p>' : '') +
+    '</article>';
+  }).join('') + '</div></section>';
+}
+
 function meetingPrepExecutiveBrief(result = {}){
   const event = activeMeetingPrepEvent || meetingPrep.event;
-  const brief = result.brief || {};
+  const brief = normalizeMeetingPrepBrief(result.brief || {}, event);
   const prep = brief.briefJson || {};
+  const meetingType = meetingPrepType(brief);
   const firstFive = brief.firstFiveMinutesJson || {};
   const questions = Array.isArray(brief.suggestedQuestionsJson) ? brief.suggestedQuestionsJson : [];
   const followUp = brief.followUpPreparationJson || {};
@@ -14614,10 +15009,17 @@ function meetingPrepExecutiveBrief(result = {}){
   const followUpItems = followUp.likely_follow_up_needed || isFrisson
     ? ['Draft partnership document', 'Schedule implementation session', 'Create rollout timeline']
     : ['Capture what changed after the meeting before creating tasks or drafts.'];
-  const relationshipName = relationship?.name || (Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson[0]?.name) || 'Attendee identity not resolved yet';
+  const publicContextLines = meetingPrepPublicContextLines(brief);
+  const calendarAttendeeLines = meetingPrepCalendarAttendeeLines(brief);
+  const attendeeRelationshipLines = meetingPrepAttendeeRelationshipLines(brief);
+  const attendeeMappings = meetingPrepAttendeeMappingItems(brief);
+  const firstMeetingSignals = meetingPrepFirstMeetingSignals(brief);
+  const hasRelationshipEvidence = attendeeRelationshipLines.length || (Array.isArray(brief.attendeeIntelligenceJson) && brief.attendeeIntelligenceJson.some((attendee) => attendee.crm_contact_id || attendee.relationship_dossier || attendee.user_confirmed_relationship_context));
+  const relationshipName = relationship?.name || (Array.isArray(brief.attendeeIntelligenceJson) && (brief.attendeeIntelligenceJson[0]?.name || brief.attendeeIntelligenceJson[0]?.email)) || (calendarAttendeeLines.length ? '' : 'Attendee identity not resolved yet');
   return {
     eventTitle,
     time: meetingPrepEventTime(event),
+    meetingType,
     readiness,
     purpose,
     success,
@@ -14630,23 +15032,27 @@ function meetingPrepExecutiveBrief(result = {}){
     questions: suggestedQuestions,
     followUpItems,
     people: relationship ? [
+      ...calendarAttendeeLines,
       relationship.name + ' - ' + (relationship.role || 'relationship context'),
       'Current relationship: ' + (relationship.relationshipStateLabel || relationship.temperature || 'known relationship'),
       'Trajectory: ' + (relationship.trajectory || 'watch thoughtfully'),
       'Stewardship: ' + compactSentence(relationship.wisdom || relationship.meaning || '')
     ].filter(Boolean) : [
+      ...calendarAttendeeLines,
       relationshipName,
-      'Relationship file has not been matched yet.',
+      hasRelationshipEvidence ? 'Relationship evidence is attached from attendee context.' : 'Relationship file has not been matched yet.',
       'Use Co-Work to add what VAL should know before the call.'
-    ],
+    ].filter(Boolean),
     relationshipIntelligence: relationship ? [
       compactSentence(relationship.identity || relationship.role || ''),
       'What matters to them: ' + compactSentence(relationship.patterns || relationship.meaning || ''),
       'Recent signal: ' + compactSentence(relationship.signal || relationship.evidence || ''),
       'Public context: ' + compactSentence(relationship.linkedinSignal || 'LinkedIn and Outscraper signals should be refreshed only if useful for the relationship.')
-    ].filter(Boolean) : [
-      'Public profile and recent activity are not verified yet.',
-      'Outscraper should be used as relationship intelligence, not generic enrichment.'
+    ].concat(publicContextLines).filter(Boolean) : [
+      ...attendeeRelationshipLines,
+      ...(attendeeRelationshipLines.length ? [] : ['Public profile and recent activity are not verified yet.']),
+      ...(publicContextLines.length ? [] : ['Outscraper should be used as relationship intelligence, not generic enrichment.']),
+      ...publicContextLines
     ],
     project: project ? [
       project.name + ': ' + compactSentence(project.status || project.reality || ''),
@@ -14655,21 +15061,47 @@ function meetingPrepExecutiveBrief(result = {}){
     ].filter(Boolean) : [],
     missing: readiness.missing,
     sourceConfidence: meetingPrepSourceSummary(brief),
+    externalEvidence: publicContextLines.length ? publicContextLines : ['No verified current web evidence was returned yet.'],
+    attendeeMappings,
+    firstMeetingSignals,
     coworkSeed: ''
   };
 }
 
+function renderMeetingPrepTextWithLinks(value = ''){
+  const escaped = escapeHtml(value);
+  return escaped.replace(/https?:\/\/[^\s<]+/g, (url) => {
+    const clean = url.replace(/[.,;:!?)]$/g, '');
+    const suffix = url.slice(clean.length);
+    return '<a href="' + clean + '" target="_blank" rel="noopener">' + clean + '</a>' + suffix;
+  });
+}
+
 function renderMeetingPrepList(items = []){
-  return '<ul>' + items.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul>';
+  return '<ul>' + items.map((item) => '<li>' + renderMeetingPrepTextWithLinks(item) + '</li>').join('') + '</ul>';
 }
 
 function meetingPrepCoworkSeed(briefing = {}){
   return [
-    'Co-work with me before this meeting.',
+    'Prepare my executive meeting brief from this packet.',
+    '',
+    'Use the May 26 Meeting Mode style: useful judgment first, evidence second. Do not make this a static attendee profile card. Do not dump raw transcript text, source receipts, CRM ids, scraper diagnostics, or internal variable names. Do not use hashtags.',
+    '',
+    'Return the brief in this shape:',
+    '1. What matters most right now',
+    '2. First 30 minutes / before the meeting',
+    '3. How to enter the meeting',
+    '4. Flags that could derail the meeting or the day',
+    '5. Operating rule today',
+    '6. Likely follow-up after the meeting',
+    '',
+    'Always include current external evidence for each attendee when it is verified. Use plain language like "This is what I found on the web about Greg..." before naming any public signal. For a true first meeting, include website, public context, and the most recent LinkedIn signal if present. For a recurring or known relationship, still mention what is new externally, then prioritize relationship history, recent transcript context, open loops, boundaries, and the next useful move.',
+    'Treat any public context marked unverified_match or public match not verified as unusable. Do not infer occupation, title, company, credentials, website, or LinkedIn activity from it.',
     '',
     'Meeting: ' + compactSentence(briefing.eventTitle, 'Meeting'),
     briefing.time ? 'Time: ' + briefing.time : '',
     'Readiness: ' + briefing.readiness?.score + '% - ' + (briefing.readiness?.label || ''),
+    'Meeting type: ' + (briefing.meetingType?.label || 'Meeting prep') + (briefing.meetingType?.focus ? ' - ' + briefing.meetingType.focus : ''),
     '',
     'Purpose: ' + briefing.purpose,
     '',
@@ -14678,6 +15110,9 @@ function meetingPrepCoworkSeed(briefing = {}){
     '',
     'People:',
     ...(briefing.people || []).map((item) => '- ' + item),
+    '',
+    'Current external evidence:',
+    ...(briefing.externalEvidence || []).map((item) => '- ' + item),
     '',
     'What changed since we last talked:',
     ...(briefing.changed || []).map((item) => '- ' + item),
@@ -14721,11 +15156,13 @@ function renderMeetingPrepExecutiveBrief(briefing = {}){
   scraperPreviewList.classList.add('meeting-prep-brief');
   scraperPreviewList.innerHTML = [
     '<section class="meeting-prep-readiness">',
-      '<div><span>Executive Readiness</span><strong>' + escapeHtml(String(briefing.readiness.score)) + '%</strong><p>' + escapeHtml(briefing.readiness.label) + '</p></div>',
+      '<div><span>Executive Readiness</span><strong>' + escapeHtml(String(briefing.readiness.score)) + '%</strong><p>' + escapeHtml(briefing.readiness.label) + '</p><div class="meeting-prep-type"><b>' + escapeHtml(briefing.meetingType?.label || 'Meeting prep') + '</b>' + (briefing.meetingType?.focus ? '<small>' + escapeHtml(briefing.meetingType.focus) + '</small>' : '') + '</div></div>',
       '<div class="meeting-prep-meter" aria-label="Executive readiness ' + escapeHtml(String(briefing.readiness.score)) + ' percent"><i style="width:' + escapeHtml(String(briefing.readiness.score)) + '%"></i></div>',
     '</section>',
     '<section class="meeting-prep-section"><h3>The Purpose</h3><p>' + escapeHtml(briefing.purpose) + '</p><h4>Success today</h4>' + renderMeetingPrepList(briefing.success) + '</section>',
     '<section class="meeting-prep-section"><h3>Who You Are Meeting</h3>' + renderMeetingPrepList(briefing.people) + '</section>',
+    renderMeetingPrepFirstMeetingSignals(briefing),
+    renderMeetingPrepAttendeeMapping(briefing),
     '<section class="meeting-prep-section"><h3>What Changed Since You Last Spoke</h3>' + renderMeetingPrepList(briefing.changed) + '</section>',
     '<section class="meeting-prep-section"><h3>Relationship Intelligence</h3>' + renderMeetingPrepList(briefing.relationshipIntelligence) + '</section>',
     briefing.project.length ? '<section class="meeting-prep-section"><h3>Project Context</h3>' + renderMeetingPrepList(briefing.project) + '</section>' : '',
@@ -14743,6 +15180,136 @@ function renderMeetingPrepExecutiveBrief(briefing = {}){
 
 function renderMeetingPrepResult(result){
   renderMeetingPrepExecutiveBrief(meetingPrepExecutiveBrief(result));
+  requestAnimationFrame(() => scrollMeetingPrepToTop());
+}
+
+function meetingPrepFallbackResultFromEvent(event = {}, error = null){
+  const title = meetingPrepEventTitle(event) || 'Meeting Prep';
+  const attendees = calendarEventExternalAttendees(event);
+  const issue = compactSentence(error?.message || 'VAL could not finish the live prep request.', 'VAL could not finish the live prep request.');
+  const attendeeIntel = attendees.map((attendee) => {
+    const email = calendarAttendeeEmail(attendee);
+    const name = calendarAttendeeDisplayName(attendee) || email || 'Attendee';
+    return {
+      attendee_key: email || name,
+      name,
+      email,
+      match_status: 'needs review',
+      source_confidence_label: 'calendar_event',
+      confidence: 0.35,
+      who_they_are: name,
+      public_profile: {
+        status: 'not_checked',
+        provider: 'Outscraper',
+        summary: 'Public web and LinkedIn context did not finish before the brief opened.'
+      },
+      public_context_status: {
+        status: 'failed',
+        provider: 'Outscraper',
+        summary: issue,
+        recent_activity_status: 'not_finished'
+      },
+      why_this_person_matters: 'This attendee is on the calendar event. VAL needs relationship/project mapping or a completed context refresh before using more than that.',
+      relationship_context: '',
+      source_refs: [],
+      unknowns: ['Live Meeting Prep request did not complete cleanly.']
+    };
+  });
+  return {
+    ok:true,
+    brief:{
+      calendarEventId: meetingPrepCalendarEventId(),
+      status:'needs_context',
+      qualityGateJson:{quality:attendees.length ? 'low' : 'unusable'},
+      meetingContextJson:{
+        title,
+        startTime:event?.startTime || event?.start || '',
+        endTime:event?.endTime || event?.end || '',
+        source:event?.source || '',
+        attendees,
+        meeting_type:{
+          type:'needs_context',
+          label:'Prep interrupted',
+          focus:'Open the meeting with what is known, then use Co-Work or attendee mapping to fill the missing context.'
+        }
+      },
+      attendeeIntelligenceJson: attendeeIntel,
+      internalContextJson:{transcripts:[],openLoops:[],project_context_links:[]},
+      meetingStakesJson:{why:'The live prep request did not complete, so VAL is showing only calendar-safe context.'},
+      firstFiveMinutesJson:{
+        first_sentence_option:'Before we jump in, I want to make sure I understand what matters most from your side today.',
+        early_question:'What would make this meeting most useful today?'
+      },
+      briefJson:{
+        meeting_title:title,
+        meeting_type:'needs_context',
+        meeting_type_label:'Prep interrupted',
+        concise_brief:issue,
+        likely_purpose:'Use the visible calendar context and map attendees before relying on deeper relationship or public evidence.',
+        what_val_recommends_preparing:['Review attendee mapping','Use Co-Work with the visible calendar context','Retry prep if current public evidence is needed'],
+        recent_changes:[],
+        possible_opportunities:[],
+        risks_or_sensitivities:['Do not assume relationship history or public context when the prep request did not finish.']
+      },
+      suggestedQuestionsJson:[
+        {text:'What would make this meeting most useful today?', source_confidence_label:'val_inference'},
+        {text:'Is there any context I should understand before we decide the next step?', source_confidence_label:'val_inference'}
+      ],
+      followUpPreparationJson:{likely_follow_up_needed:attendees.length>0, possible_recipients:attendees.filter((attendee) => calendarAttendeeEmail(attendee))},
+      sourceRefsJson:[],
+      unknownsJson:[issue]
+    },
+    unknowns:[issue],
+    no_external_action:true
+  };
+}
+
+function scrollMeetingPrepToTop(){
+  [deskWorkspace, scraperPreviewList, document.querySelector('.workspace-scroll'), document.scrollingElement].filter(Boolean).forEach((node) => {
+    try{ node.scrollTo({top:0, behavior:'auto'}); }
+    catch(_){ node.scrollTop = 0; }
+  });
+}
+
+function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.event){
+  const title = meetingPrepEventTitle(event);
+  setWorkspaceContent({
+    lens: 'Meeting Prep',
+    title: title || 'Preparing for this meeting',
+    meaning: 'VAL is gathering the meeting context before showing the brief.',
+    understanding: [
+      'Checking attendees and relationship files.',
+      'Checking project context and the most recent relevant transcript.',
+      'Checking saved public context only for admitted relationships.'
+    ],
+    recommendation: 'Hold here for a moment. The prep brief will replace this working state as soon as the packet is ready.',
+    actions: [],
+    label: 'Meeting Prep loading workspace',
+    suppressClarityStandard:true
+  });
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.add('meeting-prep-brief', 'meeting-prep-loading');
+  scraperPreviewList.innerHTML = [
+    '<section class="meeting-prep-loading-card" aria-live="polite">',
+      '<div class="meeting-prep-loading-orbit" aria-hidden="true"><i></i><i></i><i></i></div>',
+      '<div>',
+        '<span>VAL is preparing</span>',
+        '<h3>' + escapeHtml(title || 'This meeting') + '</h3>',
+        '<p>Opening the brief as soon as internal context is ready. Slow external research will never be treated as hidden certainty.</p>',
+        '<ol class="meeting-prep-loading-steps">',
+          '<li><b></b><span>Calendar and attendee context</span></li>',
+          '<li><b></b><span>Relationship and Project packets</span></li>',
+          '<li><b></b><span>Most recent transcript and open loops</span></li>',
+          '<li><b></b><span>Saved public web context receipt</span></li>',
+          '<li><b></b><span>LinkedIn activity link, post if available</span></li>',
+        '</ol>',
+        '<div class="meeting-prep-loading-bars" aria-hidden="true"><b></b><b></b><b></b></div>',
+      '</div>',
+    '</section>'
+  ].join('');
+  workspaceActions.innerHTML = '';
+  updateDrawerCoworkIcon();
 }
 
 async function runMeetingPrep(){
@@ -14752,24 +15319,30 @@ async function runMeetingPrep(){
     return;
   }
   try{
-    const result = await postJson('/api/val/calendar/meeting-prep', {event});
+    const result = await postJson('/api/val/calendar/meeting-prep', {event}, {
+      timeoutMs: 90000,
+      timeoutMessage: 'Meeting Prep is taking longer than expected. VAL is opening a safe brief from the calendar context while the heavier context path is investigated.'
+    });
     renderMeetingPrepResult(result);
   }catch(error){
-    setWorkspaceContent({
-      lens: 'Meeting Prep',
-      title: calendarEventIsMeeting(event) ? 'Meeting prep needs attention.' : 'This calendar item is not a meeting.',
-      meaning: 'VAL did not take any external action. The prep brief could not be assembled cleanly.',
-      understanding: [
-        error.message,
-        calendarEventIsMeeting(event) ? 'The calendar card remains available.' : 'No external attendee is attached, so VAL will treat this as a private calendar block.',
-        calendarEventIsMeeting(event) ? 'Co-Work can still help you prepare from what is visible.' : 'Private blocks can inform rhythm and capacity, but they do not receive meeting prep.'
-      ],
-      recommendation: calendarEventIsMeeting(event) ? 'Use Co-Work to prepare manually from the meeting title and what you already know.' : 'Choose a calendar event with attendees for meeting prep.',
-      actions: calendarEventIsMeeting(event) ? [{label: 'Co-Work with VAL', workflow: 'meetingPrepCowork'}] : [],
-      label: 'Meeting prep error workspace',
-      suppressClarityStandard:true
-    });
-    updateDrawerCoworkIcon();
+    if(calendarEventIsMeeting(event)) renderMeetingPrepResult(meetingPrepFallbackResultFromEvent(event, error));
+    else{
+      setWorkspaceContent({
+        lens: 'Meeting Prep',
+        title: 'This calendar item is not a meeting.',
+        meaning: 'VAL did not take any external action.',
+        understanding: [
+          error.message,
+          'No external attendee is attached, so VAL will treat this as a private calendar block.',
+          'Private blocks can inform rhythm and capacity, but they do not receive meeting prep.'
+        ],
+        recommendation: 'Choose a calendar event with attendees for meeting prep.',
+        actions: [],
+        label: 'Meeting prep error workspace',
+        suppressClarityStandard:true
+      });
+      updateDrawerCoworkIcon();
+    }
   }
 }
 
@@ -15365,9 +15938,9 @@ function leadSourcingEmptyBoard(){
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing board</span><small>Select one of the two scrapers above to begin.</small></div>',
     '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review and source evidence land here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row empty"><strong>Waiting for a scraper</strong><span>Organizations or partners</span><small>VAL will list discovered companies here.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Waiting for viable leads</strong><span>No contact is invented.</span><small>Decision-maker candidates attach after discovery.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Waiting for review</strong><span>Approval stays before import.</span><small>CRM duplicate review and source evidence land here.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -15409,7 +15982,7 @@ function renderScraperPreviewList(workflow, stage){
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + stageLabel + '</span><small data-preview-summary>' + stageSummary + '</small></div>',
     '<div class="lead-sourcing-board" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div>' +
+      '<section class="lead-sourcing-column done" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div>' +
         leads.map((lead, index) => (
           '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
             '<strong>' + escapeHtml(lead.name) + '</strong>' +
@@ -15419,7 +15992,7 @@ function renderScraperPreviewList(workflow, stage){
           '</article>'
         )).join('') +
       '</section>',
-      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div>' +
+      '<section class="lead-sourcing-column done" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div>' +
         leads.map((lead, index) => (
           '<article class="lead-stage-row" data-lead-stage-index="' + index + '">' +
             '<strong>' + escapeHtml(lead.contact || 'Decision maker not confirmed') + '</strong>' +
@@ -15428,7 +16001,7 @@ function renderScraperPreviewList(workflow, stage){
           '</article>'
         )).join('') +
       '</section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div>' +
+      '<section class="lead-sourcing-column active" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div>' +
         leads.map((lead, index) => (
           '<article class="preview-lead lead-stage-row" data-lead-index="' + index + '" data-lead-review="' + (lead._approved === false ? 'held' : 'approved') + '">' +
             '<div class="lead-confirm-main">' +
@@ -15448,6 +16021,7 @@ function renderScraperPreviewList(workflow, stage){
       '</section>',
     '</div>',
     '<div class="lead-sourcing-actions">',
+      isImportedStage ? '' : '<button type="button" data-lead-drawer-action="approve-all" data-lead-drawer-type="' + (activeScraperType || '') + '">Approve All</button>',
       '<button type="button" data-lead-drawer-action="import" data-lead-drawer-type="' + (activeScraperType || '') + '">Import approved leads</button>',
       '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (activeScraperType || '') + '">Train this scraper</button>',
     '</div>'
@@ -15464,9 +16038,9 @@ function renderLeadSourcingProgress(type){
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>Live sourcing run</span><small>VAL is preparing the preview. Nothing is entering CRM.</small></div>',
     '<div class="lead-sourcing-board loading" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row"><strong>Waiting for viable leads</strong><span>Decision-maker context attaches after discovery.</span><small>No contact is invented.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row"><strong>Waiting for preview rows</strong><span>CRM duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
+      '<section class="lead-sourcing-column active thinking" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>Scanning sources</strong><span>' + escapeHtml(definition.userLabel || 'Scraper') + '</span><small>Public and configured source discovery is running.</small></article></section>',
+      '<section class="lead-sourcing-column active thinking" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row"><strong>Checking contacts</strong><span>VAL is looking for decision-maker evidence.</span><small>No contact is invented.</small></article></section>',
+      '<section class="lead-sourcing-column active thinking" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row"><strong>Preparing review gate</strong><span>CRM duplicate and verification gates stay before import.</span><small>Approval will happen here.</small></article></section>',
     '</div>'
   ].join('');
 }
@@ -15480,9 +16054,9 @@ function renderLeadSourcingMessage(type, title, details = [], actionLabel = 'Tra
   leadDrawerPreviewList.innerHTML = [
     '<div class="preview-list-head"><span>' + escapeHtml(title) + '</span><small>Nothing has been imported into CRM.</small></div>',
     '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-      '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Paused</strong><span>' + escapeHtml(details[1] || 'Decision-maker enrichment did not run yet.') + '</span><small>No contact was invented.</small></article></section>',
-      '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Protected</strong><span>' + escapeHtml(details[2] || 'Approval and duplicate gates remain in place.') + '</span><small>No CRM write happened.</small></article></section>',
+      '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(definition.userLabel || 'Scraper') + '</strong><span>' + escapeHtml(details[0] || 'The source run needs attention.') + '</span><small>Adjust the scraper training before running again.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Paused</strong><span>' + escapeHtml(details[1] || 'Decision-maker enrichment did not run yet.') + '</span><small>No contact was invented.</small></article></section>',
+      '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Protected</strong><span>' + escapeHtml(details[2] || 'Approval and duplicate gates remain in place.') + '</span><small>No CRM write happened.</small></article></section>',
     '</div>',
     '<div class="lead-sourcing-actions">',
       '<button type="button" data-lead-drawer-action="train" data-lead-drawer-type="' + (type || activeScraperType || 'organizations') + '">' + escapeHtml(actionLabel) + '</button>',
@@ -17487,7 +18061,7 @@ function openCoworkFromClarityWorkspace(){
   });
 }
 
-function openMeetingPrepCoworkSession(){
+function openMeetingPrepCoworkSession(options = {}){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const briefing = activeMeetingPrepBriefing || {
     eventTitle: meetingPrepEventTitle(event),
@@ -17509,19 +18083,26 @@ function openMeetingPrepCoworkSession(){
   openContextualCoworkSession({
     returnTarget: 'meeting',
     title: 'Meeting Prep: ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting'),
-    meaning: 'This chat is scoped to the Meeting Prep brief. Use it to sharpen how you enter the room.',
+    meaning: 'This chat is scoped to the Meeting Prep packet. VAL should turn the evidence into useful executive judgment, not a static profile card.',
     context: [
       'Meeting: ' + compactSentence(briefing.eventTitle || meetingPrepEventTitle(event), 'Meeting'),
       'Readiness: ' + (briefing.readiness?.score || 0) + '% - ' + (briefing.readiness?.label || ''),
       'Purpose: ' + compactSentence(briefing.purpose || ''),
       'Suggested opening: ' + compactSentence(briefing.opening || '')
     ],
-    recommendation: 'Ask VAL to tighten the opening, choose the highest-leverage question, or role-play the first five minutes.',
+    recommendation: 'VAL should give you what matters, what to do first, what could derail the meeting, and the cleanest way to enter.',
     placeholder: 'Help me walk into this meeting prepared...',
     helper: 'VAL is holding the Meeting Prep brief privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
     backWorkflow: 'cancel:meeting'
   });
+  renderMeetingPrepCoworkEvidenceRail(briefing);
+  if(options.autoRun){
+    hideCoworkContextGathering();
+    const textarea = workspaceInputPanel?.querySelector?.('[data-workspace-input="cowork"]');
+    if(textarea) textarea.value = 'Prepare my executive meeting brief from this packet.';
+    window.setTimeout(() => runCowork('meeting_prep'), 120);
+  }
 }
 
 async function runCowork(mode){
@@ -17570,7 +18151,7 @@ async function runCowork(mode){
     return;
   }
   if(keepHomeCoworkOpen){
-    showCoworkContextGathering('VAL is gathering the relevant packets and source material for this conversation.');
+    showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.', {noTimeout: mode === 'meeting_prep'});
   }else{
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
@@ -17605,7 +18186,7 @@ async function runCowork(mode){
     });
     const content = result.message?.content || 'VAL prepared a response.';
     if(keepHomeCoworkOpen){
-      appendHomeCoworkMessage('val', content);
+      appendHomeCoworkMessage('val', content, {meetingPrep: mode === 'meeting_prep'});
       const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
       if(textarea){
         textarea.value = '';
@@ -17883,6 +18464,7 @@ function restoreCorrespondenceWindow(){
 
 function restoreLeadIntelligenceWindow(){
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'source';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
   drawerTray.setAttribute('aria-hidden', 'false');
@@ -18147,9 +18729,9 @@ function saveLeadScraperTraining(type){
     leadDrawerPreviewList.innerHTML = [
       '<div class="preview-list-head"><span>Training saved</span><small>The next run will use this scraper definition.</small></div>',
       '<div class="lead-sourcing-board idle" data-lead-sourcing-board>',
-        '<section class="lead-sourcing-column active" data-level="1"><div><span>Level 1</span><h4>Discovery</h4></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' definition updated</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the new sequence.</small></article></section>',
-        '<section class="lead-sourcing-column" data-level="2"><div><span>Level 2</span><h4>Decision Maker</h4></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
-        '<section class="lead-sourcing-column" data-level="3"><div><span>Level 3</span><h4>Confirm / Dedupe</h4></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered CRM.</small></article></section>',
+        '<section class="lead-sourcing-column active" data-level="1"><div><span>Step 1</span><h4>Find organizations</h4><small>Source discovery</small></div><article class="lead-stage-row"><strong>' + escapeHtml(leadScraperDefinitions[selectedType]?.userLabel || 'Scraper') + ' training saved</strong><span>Criteria and source instructions are stored locally for this VAL.</span><small>Run the scraper to test the updated sequence.</small></article></section>',
+        '<section class="lead-sourcing-column" data-level="2"><div><span>Step 2</span><h4>Find decision makers</h4><small>Contact evidence</small></div><article class="lead-stage-row empty"><strong>Ready for next run</strong><span>Decision-maker rules inherit the training context.</span><small>No contact is invented.</small></article></section>',
+        '<section class="lead-sourcing-column" data-level="3"><div><span>Step 3</span><h4>Confirm before CRM</h4><small>Dedupe and approval</small></div><article class="lead-stage-row empty"><strong>Ready for review</strong><span>Approval and duplicate gates remain in place.</span><small>Nothing entered CRM.</small></article></section>',
       '</div>',
       '<div class="lead-sourcing-actions">',
         '<button type="button" data-lead-drawer-action="preview" data-lead-drawer-type="' + selectedType + '">Run this scraper</button>',
@@ -18158,6 +18740,25 @@ function saveLeadScraperTraining(type){
     ].join('');
   }
   if(leadDrawerCriteriaPanel) leadDrawerCriteriaPanel.hidden = true;
+  updatePreviewApprovalSummary();
+  renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
+}
+
+function approveAllPreviewLeads(type){
+  const selectedType = leadScraperDefinitions[type] ? type : activeScraperType || 'organizations';
+  activeScraperType = selectedType;
+  const rows = leadDrawerPreviewList ? Array.from(leadDrawerPreviewList.querySelectorAll('.preview-lead')) : [];
+  const session = sessionFor(selectedType);
+  rows.forEach((row) => {
+    row.dataset.leadReview = 'approved';
+    row.querySelectorAll('[data-preview-choice]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.previewChoice === 'approved');
+    });
+    const index = Number(row.dataset.leadIndex);
+    if(session.previewLeads?.[index]) session.previewLeads[index]._approved = true;
+  });
+  const workflow = scraperWorkflows[selectedType];
+  if(workflow && session.previewLeads) workflow.previewLeads = session.previewLeads;
   updatePreviewApprovalSummary();
   renderDrawerPacketReceiptStrip(lastHearthPacketReceipt);
 }
@@ -18183,6 +18784,10 @@ async function handleLeadDrawerAction(action, type, node){
   }
   if(action === 'preview'){
     await runScraperPreview(selectedType);
+    return;
+  }
+  if(action === 'approve-all'){
+    approveAllPreviewLeads(selectedType);
     return;
   }
   if(action === 'import'){
@@ -20089,6 +20694,7 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
       '<span>' + escapeHtml(formatCalendarTime(event.start)) + '</span>' +
       '<strong>' + escapeHtml(event.title || event.summary || '(No title)') + '</strong>' +
       '<small>' + escapeHtml(calendarEventIsPast(event) ? 'Past event - open matching transcript' : (calendarEventIsMeeting(event) ? calendarEventSubtitle(event) : 'Calendar note - no attendee meeting prep')) + '</small>' +
+      renderCalendarAttendeeList(event) +
     '</button>'
   )).join('');
   if(nextMeetingCard && currentMeetingEvents[0]){
@@ -20101,7 +20707,7 @@ function renderCalendarAgenda(events = [], source = 'calendar', errors = []){
     const body = nextMeetingCard.querySelector('.calendar-page-body');
     nextMeetingCard.disabled = false;
     if(top) top.innerHTML = '<b>' + escapeHtml(month) + '</b><strong>' + escapeHtml(day) + '</strong>';
-    if(body) body.innerHTML = '<span class="calendar-kicker">Next</span><strong>' + escapeHtml(time) + '</strong><span>' + escapeHtml(first.title || '(No title)') + '</span><small>' + escapeHtml(source === 'google' ? 'Google Calendar connected' : calendarEventSubtitle(first)) + '</small>';
+    if(body) body.innerHTML = '<span class="calendar-kicker">Next</span><strong>' + escapeHtml(time) + '</strong><span>' + escapeHtml(first.title || '(No title)') + '</span><small>' + escapeHtml(calendarEventSubtitle(first)) + '</small>' + renderCalendarAttendeeList(first);
   }else if(nextMeetingCard){
     nextMeetingCard.disabled = true;
     const top = nextMeetingCard.querySelector('.calendar-page-top');
@@ -20406,6 +21012,34 @@ async function handleWorkflowAction(action, node = null){
     openMeetingPrepCoworkSession();
     return;
   }
+  if(command === 'meetingAttendeeAttachRelationship'){
+    await handleMeetingPrepAttendeeMappingAction('attachRelationship', type);
+    return;
+  }
+  if(command === 'meetingAttendeeAttachProject'){
+    await handleMeetingPrepAttendeeMappingAction('attachProject', type);
+    return;
+  }
+  if(command === 'meetingAttendeeCreateProject'){
+    await handleMeetingPrepAttendeeMappingAction('createProject', type);
+    return;
+  }
+  if(command === 'meetingAttendeeCreateRelationship'){
+    await handleMeetingPrepAttendeeMappingAction('createRelationship', type);
+    return;
+  }
+  if(command === 'contactCandidate'){
+    await handleMeetingContactCandidate(type);
+    return;
+  }
+  if(command === 'contactCreate'){
+    await createMeetingContactCandidate(type);
+    return;
+  }
+  if(command === 'contactOpen'){
+    openCanonicalRelationshipFile(type);
+    return;
+  }
   if(valWitnessingWorkflowCommands.has(command)){
     await handleValWitnessingWorkflowAction(command, type, rest);
     return;
@@ -20577,18 +21211,6 @@ async function handleWorkflowAction(action, node = null){
     handleProjectAction(type);
     return;
   }
-  if(command === 'contactCandidate'){
-    await handleMeetingContactCandidate(type);
-    return;
-  }
-  if(command === 'contactCreate'){
-    await createMeetingContactCandidate(type);
-    return;
-  }
-  if(command === 'contactOpen'){
-    openCanonicalRelationshipFile(type);
-    return;
-  }
   if(command === 'timeline'){
     closeWorkspace();
     restoreTimelineWindow();
@@ -20663,6 +21285,278 @@ async function handleWorkflowAction(action, node = null){
   if(command === 'pipeline') window.open('./dashboard.html', '_blank', 'noopener');
   if(command === 'reviewQueue') window.open('./dashboard.html', '_blank', 'noopener');
   if(command === 'teach') openTeachValSession();
+}
+
+async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
+  const briefing = activeMeetingPrepBriefing || {};
+  const attendees = Array.isArray(briefing.attendeeMappings) ? briefing.attendeeMappings : [];
+  const attendee = attendees.find((item) => item.key === key) || attendees[Number(key)] || {};
+  const attendeeIndex = attendees.indexOf(attendee);
+  const name = attendee.name || 'this attendee';
+  if(action === 'createRelationship'){
+    const record = activeMeetingContactCandidates[attendee.key || key];
+    const candidate = record?.candidate || {};
+    const payload = candidate.payload || {
+      name:attendee.name || '',
+      email:attendee.email || '',
+      source:'Meeting Prep attendee mapping',
+      tags:['val_meeting_prep_attendee'],
+      note:'Created from Meeting Prep attendee mapping.'
+    };
+    if(!payload.name && attendee.name) payload.name = attendee.name;
+    if(!payload.email && attendee.email) payload.email = attendee.email;
+    if(!payload.name || !payload.email){
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Add a name and email before creating this relationship.', 'danger');
+      return;
+    }
+    if(!canUseApi){
+      attendee.matchStatus = 'relationship ready to create';
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship creation is ready for live VAL.', 'success');
+      return;
+    }
+    setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Creating relationship...', 'working');
+    try{
+      const network = await postJson('/api/relationships/network/manual', {
+        name:payload.name,
+        email:payload.email,
+        organization:payload.company || payload.organization || '',
+        summary:payload.note || 'Created from Meeting Prep attendee mapping.'
+      });
+      const relationshipId = network.relationship?.id || network.profile?.id || network.relationship?.profileKey || payload.email || '';
+      attendee.crmContactId = relationshipId || attendee.crmContactId || '';
+      attendee.matchStatus = relationshipId ? 'relationship attached' : 'relationship created, ID pending';
+      if(relationshipId){
+        await postJson('/api/val/meeting-prep/attendee/link-relationship', {
+          calendarEventId:meetingPrepCalendarEventId(),
+          title:meetingPrepEventTitle(),
+          name:attendee.name || payload.name || '',
+          email:attendee.email || payload.email || '',
+          relationshipId,
+          relationshipName:network.relationship?.name || payload.name || relationshipId,
+          summary:(attendee.name || payload.name || 'Attendee') + ' attended ' + meetingPrepEventTitle() + '.'
+        }).catch(() => null);
+      }
+      let enrichmentMessage = '';
+      if(relationshipId || payload.email){
+        try{
+          const enriched = await postJson('/api/relationships/network/enrich', {relationshipId:relationshipId || payload.email, force:true}, {timeoutMs:120000, timeoutMessage:'Outscraper is still gathering current public context. Relationship was created; try meeting prep again in a moment.'});
+          enrichmentMessage = enriched?.message ? ' ' + enriched.message : ' Outscraper context refresh requested.';
+        }catch(error){
+          enrichmentMessage = ' Relationship created. Outscraper did not return current context yet: ' + error.message;
+        }
+      }
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, (relationshipId ? 'Relationship created and attached.' : 'Relationship created.') + enrichmentMessage, relationshipId ? 'success' : 'working');
+    }catch(error){
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship was not created: ' + error.message, 'danger');
+    }
+    return;
+  }
+  if(action === 'attachRelationship'){
+    const selected = meetingPrepSelectedRelationship(attendeeIndex);
+    if(selected?.id){
+      if(!canUseApi){
+        showRelationshipReceipt({
+          title: 'Relationship mapping ready for live VAL.',
+          meaning: name + ' would be attached to ' + (selected.name || selected.id) + ' in the live Meeting Prep evidence trail.',
+          understanding: ['No local API is available in this preview.', 'No CRM update, message, task, or calendar write happened.'],
+          recommendation: 'Use live VAL to save this attendee relationship mapping.',
+          label: 'Meeting attendee relationship mapping'
+        });
+        return;
+      }
+      try{
+        const result = await postJson('/api/val/meeting-prep/attendee/link-relationship', {
+          calendarEventId:meetingPrepCalendarEventId(),
+          title:meetingPrepEventTitle(),
+          name:attendee.name || selected.name || '',
+          email:attendee.email || selected.email || '',
+          relationshipId:selected.id,
+          relationshipName:selected.name || attendee.name || selected.id,
+          summary:(attendee.name || selected.name || 'Attendee') + ' attended ' + meetingPrepEventTitle() + '.'
+        });
+        attendee.crmContactId = selected.id;
+        attendee.matchStatus = 'relationship attached';
+        showRelationshipReceipt({
+          title: 'Relationship attached.',
+          meaning: result.message || name + ' is now attached to ' + (selected.name || selected.id) + ' for this meeting.',
+          understanding: [
+            attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email was attached.',
+            'Meeting evidence link: ' + (result.link?.id || 'saved locally'),
+            'No CRM update, message, task, calendar write, or external action happened.'
+          ],
+          recommendation: 'Meeting Prep can now use this relationship context in the briefing and future packets.',
+          actions: [{label:'Open relationship', workflow:'contactOpen:' + selected.id}],
+          label: 'Meeting attendee relationship mapping'
+        });
+        return;
+      }catch(error){
+        showRelationshipReceipt({
+          title: 'Relationship was not attached.',
+          meaning: error.message || 'VAL could not save this attendee relationship mapping.',
+          understanding: ['No external action happened.', 'The attendee remains unchanged.'],
+          recommendation: 'Check the relationship selection and try again.',
+          label: 'Meeting attendee relationship mapping'
+        });
+        return;
+      }
+    }
+    if(attendee.crmContactId){
+      openCanonicalRelationshipFile(attendee.crmContactId);
+      return;
+    }
+    await handleMeetingContactCandidate(attendee.key || key);
+    return;
+  }
+  if(action === 'attachProject'){
+    const project = meetingPrepSelectedProject(attendeeIndex) || attendee.projectLinks?.[0] || {};
+    const projectId = project.id || project.project_id || project.projectId || '';
+    const projectName = project.name || project.project_name || project.projectName || projectId;
+    if(!projectId){
+      showRelationshipReceipt({
+        title: 'Choose a project first.',
+        meaning: 'VAL needs the project name before it can attach this meeting attendee to the Project Manager packet.',
+        understanding: [
+          attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email is attached yet.',
+          'No project was changed from this click.'
+        ],
+        recommendation: 'Search for an existing project or create a new one from this attendee card.',
+        label: 'Meeting attendee project mapping'
+      });
+      return;
+    }
+    if(canUseApi){
+      try{
+        const calendarResult = await postJson('/api/projects/link-calendar-event', {
+          calendarEventId:meetingPrepCalendarEventId(),
+          title:meetingPrepEventTitle(),
+          projectId,
+          projectName,
+          summary:meetingPrepEventTitle() + ' is meeting context for ' + projectName + '.',
+          confidence:0.74,
+          attendees:[{name:attendee.name || '', email:attendee.email || ''}]
+        });
+        const relationshipId = attendee.crmContactId || meetingPrepSelectedRelationship(attendeeIndex)?.id || '';
+        let relationshipResult = null;
+        if(relationshipId){
+          relationshipResult = await postJson('/api/projects/link-relationship', {
+            projectId,
+            projectName,
+            relationshipId,
+            relationshipName:attendee.name || relationshipId,
+            email:attendee.email || '',
+            source:'hearth_meeting_prep_attendee_project_mapping'
+          }).catch(() => null);
+        }
+        attendee.projectLinks = [{project_id:projectId, project_name:projectName, summary:'User linked from Meeting Prep attendee mapping.'}];
+        showRelationshipReceipt({
+          title: 'Project attached.',
+          meaning: name + ' and this meeting are now connected to ' + projectName + ' for Project Manager context.',
+          understanding: [
+            'Calendar/project evidence link: ' + (calendarResult.link?.id || 'saved locally'),
+            relationshipResult?.link?.id ? 'Relationship/project evidence link: ' + relationshipResult.link.id : 'No relationship/project link was saved because no relationship ID was attached.',
+            'No calendar write, CRM update, task, message, or external action happened.'
+          ],
+          recommendation: 'Future Meeting Prep, transcripts, and project packets can use this confirmed project context.',
+          actions: [{label:'Open projects', workflow:'projectAllProjects'}],
+          label: 'Meeting attendee project mapping'
+        });
+        return;
+      }catch(error){
+        showRelationshipReceipt({
+          title: 'Project was not attached.',
+          meaning: error.message || 'VAL could not save this attendee project mapping.',
+          understanding: ['No external action happened.', 'The attendee remains unchanged.'],
+          recommendation: 'Check the project selection and try again.',
+          label: 'Meeting attendee project mapping'
+        });
+        return;
+      }
+    }
+    showRelationshipReceipt({
+      title: 'Project mapping ready for live VAL.',
+      meaning: name + ' would be attached to ' + projectName + ' in the live Meeting Prep evidence trail.',
+      understanding: [
+        attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email is attached yet.',
+        project.summary || 'Project selected from Meeting Prep.',
+        'No local API is available in this preview.'
+      ],
+      recommendation: 'Use live VAL to save this attendee project mapping.',
+      actions: [{label:'Open projects', workflow:'projectAllProjects'}],
+      label: 'Meeting attendee project mapping'
+    });
+    return;
+  }
+  if(action === 'createProject'){
+    const input = drawerTray?.querySelector?.('[data-meeting-attendee-project-name="' + attendeeIndex + '"]');
+    const projectName = String(input?.value || attendee.projectLinks?.[0]?.project_name || attendee.projectLinks?.[0]?.projectName || '').trim();
+    if(!projectName){
+      showRelationshipReceipt({
+        title: 'Name the project first.',
+        meaning: 'VAL needs a project name before it can create a Project Manager record from this attendee.',
+        understanding: ['No project was created.', 'No external action happened.'],
+        recommendation: 'Type the project name and choose Create project again.',
+        label: 'Meeting attendee project creation'
+      });
+      return;
+    }
+    if(canUseApi){
+      try{
+        const payload = new FormData();
+        payload.append('name', projectName);
+        payload.append('summary', 'Created from Meeting Prep attendee mapping: ' + meetingPrepEventTitle());
+        payload.append('relationships', [attendee.name, attendee.email].filter(Boolean).join(' <') + (attendee.email ? '>' : ''));
+        payload.append('rawContext', [meetingPrepEventTitle(), meetingPrepEventDescription(), attendee.name, attendee.email].filter(Boolean).join('\n'));
+        payload.append('createdFrom', 'hearth_meeting_prep_attendee_mapping');
+        payload.append('needsProjectOnboarding', 'true');
+        const result = await postFormData('/api/projects/create', payload);
+        const createdProject = result.project || {};
+        const createdProjectId = createdProject.id || createdProject.projectId || createdProject.profileKey || projectName;
+        projectIndexProfiles[createdProjectId] = projectProfileFromIndexItem(createdProject || {id:createdProjectId, name:projectName});
+        projectIndexLoaded = true;
+        const projectSearch = drawerTray?.querySelector?.('[data-meeting-attendee-project="' + attendeeIndex + '"]');
+        if(projectSearch) projectSearch.value = createdProject.name || projectName;
+        const relationshipId = attendee.crmContactId || meetingPrepSelectedRelationship(attendeeIndex)?.id || '';
+        const linkedProjectName = createdProject.name || projectName;
+        await postJson('/api/projects/link-calendar-event', {
+          calendarEventId:meetingPrepCalendarEventId(),
+          title:meetingPrepEventTitle(),
+          projectId:createdProjectId,
+          projectName:linkedProjectName,
+          summary:meetingPrepEventTitle() + ' is meeting context for ' + linkedProjectName + '.',
+          confidence:0.74,
+          attendees:[{name:attendee.name || '', email:attendee.email || ''}]
+        });
+        if(relationshipId){
+          await postJson('/api/projects/link-relationship', {
+            projectId:createdProjectId,
+            projectName:linkedProjectName,
+            relationshipId,
+            relationshipName:attendee.name || relationshipId,
+            email:attendee.email || '',
+            source:'hearth_meeting_prep_attendee_project_creation'
+          }).catch(() => null);
+        }
+        attendee.projectLinks = [{project_id:createdProjectId, project_name:linkedProjectName, summary:'User created and linked from Meeting Prep attendee mapping.'}];
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, '✓ Project created and linked. No email, CRM update, task, or calendar write happened.', 'success');
+        return;
+      }catch(error){
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, error.message || 'VAL could not create the project. No external action happened.', 'danger');
+        return;
+      }
+    }
+    showRelationshipReceipt({
+      title: 'Create a project from this meeting attendee.',
+      meaning: 'A project should be created only when this attendee belongs to a real body of work, not merely because they appeared on a calendar invite.',
+      understanding: [
+        'Attendee: ' + name,
+        attendee.email ? 'Email: ' + attendee.email : 'No attendee email is attached yet.',
+        'No project was created from this click.'
+      ],
+      recommendation: 'Open Projects and use the reviewed Project Manager creation flow so the name, owner, outcome, and evidence are explicit.',
+      actions: [{label:'Open projects', workflow:'projectAllProjects'}],
+      label: 'Meeting attendee project creation'
+    });
+  }
 }
 
 function openCanonicalRelationshipFile(contactId){
@@ -21704,6 +22598,8 @@ async function openMeetingPrep(){
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
+  renderMeetingPrepLoading(activeMeetingPrepEvent || meetingPrep.event);
+  scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
   await runMeetingPrep();
 }
@@ -21793,18 +22689,29 @@ function homeCoworkResponseNode(){
   return scraperPreviewList?.querySelector?.('[data-home-cowork-response]') || null;
 }
 
-function renderHomeCoworkMessage(role = 'val', text = ''){
+function renderHomeCoworkMeetingPrepText(text = ''){
+  const raw = String(text || '').trim();
+  const parts = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';
+  const top = parts.shift();
+  return '<div class="home-cowork-top-judgment">' + escapeHtml(top) + '</div><p>' + escapeHtml(parts.join('\n\n')) + '</p>';
+}
+
+function renderHomeCoworkMessage(role = 'val', text = '', options = {}){
   const label = role === 'user' ? 'You' : 'VAL';
-  return '<article class="home-cowork-message ' + escapeHtml(role) + '"><span>' + escapeHtml(label) + '</span><p>' + escapeHtml(text || '') + '</p></article>';
+  const body = options.meetingPrep && role === 'val'
+    ? renderHomeCoworkMeetingPrepText(text)
+    : '<p>' + escapeHtml(text || '') + '</p>';
+  return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + '</article>';
 }
 
 function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
   const response = homeCoworkResponseNode();
   if(!response) return null;
   if(options.replace){
-    response.innerHTML = renderHomeCoworkMessage(role, text);
+    response.innerHTML = renderHomeCoworkMessage(role, text, options);
   }else{
-    response.insertAdjacentHTML('beforeend', renderHomeCoworkMessage(role, text));
+    response.insertAdjacentHTML('beforeend', renderHomeCoworkMessage(role, text, options));
   }
   response.scrollTop = response.scrollHeight;
   if(role === 'val') hideCoworkContextGathering();
@@ -21813,13 +22720,14 @@ function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
 
 let coworkContextGatheringTimeoutId = null;
 
-function showCoworkContextGathering(detail = ''){
+function showCoworkContextGathering(detail = '', options = {}){
   const panel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
   if(!panel) return;
   if(coworkContextGatheringTimeoutId) window.clearTimeout(coworkContextGatheringTimeoutId);
   const detailNode = panel.querySelector('[data-cowork-context-gathering-detail]');
   if(detailNode && detail) detailNode.textContent = detail;
   panel.hidden = false;
+  if(options.noTimeout) return;
   coworkContextGatheringTimeoutId = window.setTimeout(() => {
     const currentPanel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
     if(!currentPanel || currentPanel.hidden) return;
@@ -22169,10 +23077,12 @@ sourceDrawerLink.addEventListener('click', () => {
   sourceDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#source-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
+    retrievalSystem.dataset.activeDrawer = 'source';
     drawerIndexPacketReceipt({node:sourceDrawerLink, packetName:'lead_intelligence_packet', action:'drawer:lead_intelligence', label:'Lead Intelligence drawer', downstreamConsumers:['lead_intelligence_drawer','preview_gate','ghl_handoff']});
     if(leadDrawerPreviewList && !leadDrawerPreviewList.innerHTML.trim()) leadSourcingEmptyBoard();
     scrollLeadIntelligenceActionsIntoView();
   } else {
+    retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
 });
@@ -22483,6 +23393,7 @@ stewardshipNetworkAddForm?.addEventListener('submit', async(event) => {
       name:values.get('name') || '',
       email:values.get('email') || '',
       organization:values.get('organization') || '',
+      linkedinUrl:values.get('linkedinUrl') || '',
       summary:values.get('summary') || ''
     }, {timeoutMs:30000,timeoutMessage:'Adding this person took longer than expected. Please try again.'});
     stewardshipSelectedNetworkId = result.relationship?.id || stewardshipSelectedNetworkId;
@@ -22881,6 +23792,14 @@ drawerTray.addEventListener('click', async (event) => {
     setStewardshipNetworkAddFormVisible(false);
     return;
   }
+  const returnNetwork = event.target.closest('[data-stewardship-return-network]');
+  if(returnNetwork){
+    event.preventDefault();
+    event.stopPropagation();
+    setStewardshipView('network');
+    relationshipSearchInput?.focus();
+    return;
+  }
   const suggestedDraft = event.target.closest('[data-stewardship-draft-pair]');
   if(suggestedDraft){
     event.preventDefault();
@@ -23100,6 +24019,7 @@ document.addEventListener('click', (event) => {
 
 closeSourceDetail.addEventListener('click', () => {
   drawerTray.classList.remove('source-open');
+  retrievalSystem.removeAttribute('data-active-drawer');
   sourceDrawerLink.setAttribute('aria-expanded', 'false');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
 });

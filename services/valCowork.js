@@ -2369,25 +2369,25 @@ const RELATIONSHIP_SECTION_CONTRACTS=Object.freeze({
   needs:{
     label:'Needs',
     targetField:'relationship_person_packet.what_this_person_needs[]',
-    question:(name)=>`What does ${name || 'this person'} need from this relationship right now? List only needs they have explicitly expressed or you personally confirm, one per line.`,
+    question:(name)=>`Tell VAL, in your own words, what ${name || 'this person'} needs right now. VAL will turn your note into clean reviewable Needs bullets before anything is saved.`,
     detail:'Feeds Stewardship > Network > Needs for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
   },
   offers:{
     label:'Offers',
     targetField:'relationship_person_packet.what_this_person_offers[]',
-    question:(name)=>`What does ${name || 'this person'} reliably offer in this relationship? List the concrete value, capability, access, or support you personally confirm, one per line.`,
+    question:(name)=>`Tell VAL what ${name || 'this person'} reliably offers: capability, access, perspective, support, or value. Natural language is fine; VAL will prepare the clean card update for review.`,
     detail:'Feeds Stewardship > Network > Offers for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
   },
   relationship:{
     label:'Relationship',
     targetField:'relationship_person_packet.relationship_context',
-    question:(name)=>`What should VAL understand about your relationship with ${name || 'this person'}? Describe the current context, boundaries, or history you want VAL to carry forward.`,
+    question:(name)=>`Talk to VAL about the relationship with ${name || 'this person'}: history, trust, boundaries, sensitivities, or what should be remembered. VAL will summarize it into a reviewable relationship card.`,
     detail:'Feeds Stewardship > Network > Relationship for this person only. VAL stores this as user-confirmed context and does not create a task, outreach, CRM change, calendar event, or external action.'
   },
   evidence:{
     label:'Evidence',
     targetField:'relationship_person_packet.user_confirmed_evidence[]',
-    question:(name)=>`What user-confirmed evidence should VAL retain about ${name || 'this person'}? List only observations you can stand behind, one per line.`,
+    question:(name)=>`What evidence do you personally want VAL to remember about ${name || 'this person'}? Say it naturally; VAL will separate it into clean reviewable evidence lines.`,
     detail:'Feeds Stewardship > Network > Evidence for this person only. VAL labels it as user-confirmed context; it does not rewrite or replace the original source evidence.'
   }
 });
@@ -2400,7 +2400,13 @@ function relationshipSectionAnswerLines(answer=''){
   const clean=multilineText(answer,2400);
   return clean
     .split(/\n+/)
-    .map(line=>compactText(line.replace(/^\s*(?:[-*]|\d+[.)])\s*/,''),420))
+    .flatMap(line=>{
+      const stripped=line.replace(/^\s*(?:[-*]|\d+[.)])\s*/,'').trim();
+      if(!stripped)return [];
+      const sentenceParts=stripped.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/).map(part=>part.trim()).filter(Boolean);
+      return sentenceParts.length>1 ? sentenceParts : [stripped];
+    })
+    .map(line=>compactText(line,420))
     .filter(Boolean)
     .filter((line,index,rows)=>rows.findIndex(candidate=>candidate.toLowerCase()===line.toLowerCase())===index)
     .slice(0,12);
@@ -2449,7 +2455,7 @@ function relationshipSectionUpdateFromAnswer(answer='',brief={}){
     values:sectionId==='relationship'?[raw]:values,
     userConfirmed:true,
     sourceType:'user_confirmed_relationship_context',
-    sourceSummary:`Executive-confirmed ${contract.label.toLowerCase()} context for ${brief.relationshipName || 'this relationship'}.`
+    sourceSummary:`VAL interpreted the user's conversational note into reviewed ${contract.label.toLowerCase()} context for ${brief.relationshipName || 'this relationship'}.`
   };
 }
 
