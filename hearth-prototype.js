@@ -11048,7 +11048,7 @@ function openProjectCoworkSession(node = null){
   return openProjectOverviewCowork(node);
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false}){
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   activeCoworkContextLocked = Boolean(lockContext);
@@ -11069,7 +11069,7 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     placeholder: placeholder || 'What should VAL help you think through here?'
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
-  showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
+  if(showGathering) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
 }
 
 function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefing || {}){
@@ -15157,61 +15157,62 @@ function renderMeetingPrepList(items = []){
   return '<ul>' + items.map((item) => '<li>' + renderMeetingPrepTextWithLinks(item) + '</li>').join('') + '</ul>';
 }
 
-function meetingPrepCoworkSeed(briefing = {}){
+function meetingPrepPacketSection(title = '', items = [], fallback = ''){
+  const lines = (Array.isArray(items) ? items : [items]).map((item) => compactSentence(item)).filter(Boolean);
+  return [
+    title,
+    ...(lines.length ? lines.map((item, index) => (index + 1) + '. ' + item) : [fallback || 'No source context found yet.'])
+  ].filter(Boolean);
+}
+
+function meetingPrepTemporaryPacketLines(briefing = {}){
   const verifiedExternalEvidence = (briefing.externalEvidence || []).filter((item) => !/still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated/i.test(String(item)));
   return [
-    'Prepare my executive meeting brief from this packet.',
-    '',
-    'Use the May 26 Meeting Mode style: useful judgment first, evidence second. Do not make this a static attendee profile card. Do not dump raw transcript text, source receipts, CRM ids, scraper diagnostics, or internal variable names. Do not use hashtags.',
-    '',
-    'Return the brief in this shape:',
-    '1. What matters most right now',
-    '2. First 30 minutes / before the meeting',
-    '3. How to enter the meeting',
-    '4. Flags that could derail the meeting or the day',
-    '5. Operating rule today',
-    '6. Likely follow-up after the meeting',
-    '',
-    'Always include current external evidence for each attendee when it is verified. Use plain language like "This is what I found on the web about Greg..." before naming any public signal. For a true first meeting, include website, public context, and the most recent LinkedIn signal if present. For a recurring or known relationship, still mention what is new externally, then prioritize relationship history, recent transcript context, open loops, boundaries, and the next useful move.',
-    'Treat any public context marked unverified_match or public match not verified as unusable. Do not infer occupation, title, company, credentials, website, or LinkedIn activity from it.',
-    '',
     'Meeting: ' + compactSentence(briefing.eventTitle, 'Meeting'),
     briefing.time ? 'Time: ' + briefing.time : '',
-    'Readiness: ' + briefing.readiness?.score + '% - ' + (briefing.readiness?.label || ''),
-    'Meeting type: ' + (briefing.meetingType?.label || 'Meeting prep') + (briefing.meetingType?.focus ? ' - ' + briefing.meetingType.focus : ''),
+    briefing.meetingType?.label ? 'Meeting type: ' + briefing.meetingType.label + (briefing.meetingType?.focus ? ' - ' + briefing.meetingType.focus : '') : '',
     '',
-    'Purpose: ' + briefing.purpose,
+    ...meetingPrepPacketSection('Attendee intelligence:', briefing.people, 'No attendee enrichment found yet. Use the calendar attendee names and say what is missing plainly.'),
     '',
-    'Success today:',
-    ...(briefing.success || []).map((item) => '- ' + item),
+    ...meetingPrepPacketSection('Relationship and Project packet context:', [
+      ...(briefing.relationshipIntelligence || []),
+      ...(briefing.project || [])
+    ], 'No relationship or project packet was matched yet.'),
     '',
-    'People:',
-    ...(briefing.people || []).map((item) => '- ' + item),
+    ...meetingPrepPacketSection('Current public web and LinkedIn evidence:', verifiedExternalEvidence, 'External review is still checking public web and LinkedIn context. Do not use public assumptions yet.'),
     '',
-    'Current external evidence:',
-    ...(verifiedExternalEvidence.length ? verifiedExternalEvidence.map((item) => '- ' + item) : ['- External review is still checking public web and LinkedIn context. Do not use public assumptions yet.']),
+    ...meetingPrepPacketSection('Saved memory / transcripts / recent changes:', briefing.changed, 'No saved meeting notes or transcripts matched this event yet.'),
     '',
-    'What changed since we last talked:',
-    ...(briefing.changed || []).map((item) => '- ' + item),
+    ...meetingPrepPacketSection('Related tasks / open loops / likely follow-up:', [
+      ...(briefing.followUpItems || []),
+      ...(briefing.decisions || []).map((item) => 'Decision to clarify: ' + item)
+    ], 'No linked tasks found.'),
     '',
-    'Likely decisions:',
-    ...(briefing.decisions || []).map((item) => '- ' + item),
+    'Suggested opening from packet: ' + compactSentence(briefing.opening || ''),
+    ...meetingPrepPacketSection('Suggested questions:', briefing.questions, '')
+  ].filter((line) => line !== '');
+}
+
+function meetingPrepCoworkSeed(briefing = {}){
+  const packetLines = meetingPrepTemporaryPacketLines(briefing);
+  return [
+    'Prepare me for this upcoming meeting using attendee intelligence, saved memory, dashboard context, relationship/project packets, recent transcripts, tasks, and public web/LinkedIn context.',
     '',
-    'Remember: ' + briefing.remember,
+    'This Meeting Prep packet is temporary and read-only. Do not write back to Relationships, Projects, transcripts, tasks, drafts, or other drawers. Co-Work may suggest explicit next actions, but nothing should be created, changed, sent, or saved unless the user asks.',
     '',
-    'Risks:',
-    ...(briefing.risks || []).map((item) => '- ' + item),
+    'Use the May 26 Meeting Mode style: useful judgment first, evidence second. Do not make this a static attendee profile card. Do not dump raw transcript text, source receipts, CRM ids, scraper diagnostics, or internal variable names. Do not use hashtags. No em dashes.',
     '',
-    'Opportunities:',
-    ...(briefing.opportunities || []).map((item) => '- ' + item),
+    'If the data is thin, say what is missing plainly. Keep it natural. Use all known attendees. If public evidence is verified, say "This is what I found on the web about [Name]" and include the useful website or LinkedIn post link. If it is not verified, do not use it.',
     '',
-    'Suggested opening: "' + briefing.opening + '"',
+    'Return the briefing in this shape:',
+    '1. What matters most right now',
+    '2. What I should know about each attendee',
+    '3. How to enter the meeting',
+    '4. Questions worth asking',
+    '5. Risks or flags',
+    '6. Likely follow-up',
     '',
-    'Suggested questions:',
-    ...(briefing.questions || []).map((item, index) => (index + 1) + '. ' + item),
-    '',
-    'Likely follow-up:',
-    ...(briefing.followUpItems || []).map((item) => '- ' + item)
+    packetLines.join('\n')
   ].filter((line) => line !== '').join('\n');
 }
 
@@ -18161,18 +18162,19 @@ function openMeetingPrepCoworkSession(options = {}){
   openContextualCoworkSession({
     returnTarget: 'meeting',
     title: 'Meeting Prep: ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting'),
-    meaning: 'This chat is scoped to the Meeting Prep packet. VAL should turn the evidence into useful executive judgment, not a static profile card.',
+    meaning: 'This chat is scoped to a temporary Meeting Prep packet. VAL should prepare you from the evidence without changing any drawer or source packet.',
     context: [
       'Meeting: ' + compactSentence(briefing.eventTitle || meetingPrepEventTitle(event), 'Meeting'),
-      'Readiness: ' + (briefing.readiness?.score || 0) + '% - ' + (briefing.readiness?.label || ''),
-      'Purpose: ' + compactSentence(briefing.purpose || ''),
-      'Suggested opening: ' + compactSentence(briefing.opening || '')
+      'Attendees: ' + compactSentence((briefing.people || []).slice(0, 4).join(' | '), 'Attendee context is loading.'),
+      'Public evidence: ' + compactSentence((briefing.externalEvidence || []).slice(0, 2).join(' | '), 'External web and LinkedIn review may still be running.'),
+      'Packet rule: read only unless the user explicitly asks VAL to create, attach, save, send, or update something.'
     ],
-    recommendation: 'VAL should give you what matters, what to do first, what could derail the meeting, and the cleanest way to enter.',
+    recommendation: 'VAL should give you what matters, how to enter, what to ask, what to watch, and the likely follow-up.',
     placeholder: 'Help me walk into this meeting prepared...',
-    helper: 'VAL is holding the Meeting Prep brief privately. Nothing external happens from Co-Work without approval.',
+    helper: 'VAL is holding the Meeting Prep packet privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
-    backWorkflow: 'cancel:meeting'
+    backWorkflow: 'cancel:meeting',
+    showGathering: false
   });
   renderMeetingPrepCoworkEvidenceRail(briefing);
   if(options.autoRun){
@@ -18228,22 +18230,26 @@ async function runCowork(mode){
     });
     return;
   }
-  if(keepHomeCoworkOpen && mode !== 'meeting_prep'){
-    showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.', {noTimeout: mode === 'meeting_prep'});
+  if(keepHomeCoworkOpen){
+    if(mode !== 'meeting_prep'){
+      showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
+    }else{
+      appendHomeCoworkMessage('val', 'I am preparing the meeting brief from the temporary packet. This could take a minute or two while public web and LinkedIn context finishes.');
+    }
   }else{
-  setWorkspaceContent({
-    lens: 'Co-Work with VAL',
-    title: 'VAL is thinking with you.',
-    meaning: 'Co-Work is becoming a private working response.',
-    understanding: [
-      'VAL is holding the relevant context privately.',
-      'VAL can prepare drafts, options, or decision framing.',
-      'External action still requires approval.'
-    ],
-    recommendation: 'Stay with the thought; VAL will bring back the next useful shape.',
-    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
-    label: 'Co-Work with VAL loading'
-  });
+    setWorkspaceContent({
+      lens: 'Co-Work with VAL',
+      title: 'VAL is thinking with you.',
+      meaning: 'Co-Work is becoming a private working response.',
+      understanding: [
+        'VAL is holding the relevant context privately.',
+        'VAL can prepare drafts, options, or decision framing.',
+        'External action still requires approval.'
+      ],
+      recommendation: 'Stay with the thought; VAL will bring back the next useful shape.',
+      actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+      label: 'Co-Work with VAL loading'
+    });
   }
   try{
     const result = await postJson('/api/val/chat', {
