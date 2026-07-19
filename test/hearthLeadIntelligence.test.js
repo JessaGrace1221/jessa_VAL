@@ -1392,8 +1392,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /renderMeetingPrepCoworkEvidenceRail/);
   assert.match(hearthJs, /renderMeetingPrepExternalStatus/);
   assert.match(hearthJs, /External review running/);
-  assert.match(hearthJs, /Web and LinkedIn context can take up to a minute/);
-  assert.match(hearthJs, /Public web and LinkedIn context can take up to a minute/);
+  assert.match(hearthJs, /This could take a minute or two while VAL checks public web and LinkedIn context/);
+  assert.match(hearthJs, /Checking public web and LinkedIn context\. This could take a minute or two/);
   assert.match(hearthJs, /LinkedIn activity and recent post check/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
