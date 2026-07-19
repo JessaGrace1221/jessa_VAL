@@ -13762,29 +13762,6 @@ function meetingPrepLinkedInSignalScore(result={}, attendee={}, contact={}, prof
 async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, profile={}){
   const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
   const activityUrl=meetingPrepLinkedInActivityUrl(knownProfileUrl);
-  if(activityUrl){
-    const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'this attendee');
-    const fallbackSummary=`LinkedIn activity link prepared for ${name}. Open LinkedIn activity: ${activityUrl}`;
-    return {
-      configured:!!OUTSCRAPER_API_KEY,
-      status:'activity_link_prepared',
-      query:'',
-      title:`LinkedIn activity for ${name}`,
-      url:activityUrl,
-      summary:fallbackSummary,
-      sourceRefs:[{
-        type:'linkedin_activity_fallback',
-        sourceType:'known_linkedin_profile_activity',
-        sourceId:activityUrl,
-        title:`LinkedIn activity for ${name}`,
-        summary:fallbackSummary,
-        confidence:'public_source'
-      }],
-      attempts:[],
-      rawResultCount:0,
-      completedAt:new Date().toISOString()
-    };
-  }
   const queries=meetingPrepLinkedInRecentQueries(attendee,contact,profile);
   const attempts=[];
   const selected=[];
@@ -13925,9 +13902,11 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
     for(const attendee of attendees){
       const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
       const profile = rocket.data || {};
-      const outscraper = await lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message}));
-      const linkedInRecentSignal = await lookupMeetingPrepLinkedInRecentSignal(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}));
-      const webSearch = await lookupMeetingPrepWebEvidence(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}));
+      const [outscraper,linkedInRecentSignal,webSearch] = await Promise.all([
+        lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message})),
+        lookupMeetingPrepLinkedInRecentSignal(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]})),
+        lookupMeetingPrepWebEvidence(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}))
+      ]);
       enriched.push({attendee, rocketReach:rocket, outscraper, linkedInRecentSignal, webSearch});
     }
     res.json({ok:true, attendees:enriched, missingConfig:{
@@ -21360,9 +21339,23 @@ async function enrichMeetingPrepAttendeePublicContext(input={}){
     const profile=result.profile||{};
     const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||input.email||'');
     const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
-    const linkedIn=input.refreshRecentActivity===false
+    const shouldRefreshGeneralWeb=input.refreshGeneralWeb===true || input.forceGeneralWeb===true || !result.cached;
+    const linkedInPromise=input.refreshRecentActivity===false
       ? {configured:!!OUTSCRAPER_API_KEY,skipped:true,cacheStatus:'refresh_not_requested',postsLastWeek:[],rawCount:0}
-      : await lookupOutscraperLinkedIn({name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl({name,email},contact,profile)},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,postsLastWeek:[],rawCount:0}));
+      : lookupOutscraperLinkedIn({name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl({name,email},contact,profile)},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,postsLastWeek:[],rawCount:0}));
+    const recentLinkedInSignalPromise=lookupMeetingPrepLinkedInRecentSignal({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}));
+    const webEvidencePromise=shouldRefreshGeneralWeb
+      ? lookupMeetingPrepWebEvidence({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
+      : Promise.resolve({
+        configured:!!OUTSCRAPER_API_KEY,
+        skipped:true,
+        cacheStatus:'cached',
+        completedAt:result.enrichment?.completedAt||result.enrichment?.completed_at||'',
+        query:result.enrichment?.query||'',
+        sourceRefs:[],
+        summary:'Saved general web context was reused for this meeting prep.'
+      });
+    const [linkedIn,recentLinkedInSignal,webEvidence]=await Promise.all([linkedInPromise,recentLinkedInSignalPromise,webEvidencePromise]);
     if(!linkedIn?.skipped&&(linkedIn?.configured||linkedIn?.error)){
       const posts=safeArray(linkedIn?.postsLastWeek).slice(0,3);
       const postRefs=posts.map((post,index)=>({
@@ -21389,7 +21382,6 @@ async function enrichMeetingPrepAttendeePublicContext(input={}){
         sourceRefs:safeArray(result.enrichment?.sourceRefs||result.enrichment?.source_refs).concat(postRefs)
       };
     }
-    const recentLinkedInSignal=await lookupMeetingPrepLinkedInRecentSignal({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}));
     if(recentLinkedInSignal?.configured||recentLinkedInSignal?.sourceRefs?.length||recentLinkedInSignal?.url){
       const signalRefs=safeArray(recentLinkedInSignal.sourceRefs);
       result.enrichment={
@@ -21401,18 +21393,6 @@ async function enrichMeetingPrepAttendeePublicContext(input={}){
         sourceRefs:safeArray(result.enrichment?.sourceRefs||result.enrichment?.source_refs).concat(signalRefs)
       };
     }
-    const shouldRefreshGeneralWeb=input.refreshGeneralWeb===true || input.forceGeneralWeb===true || !result.cached;
-    const webEvidence=shouldRefreshGeneralWeb
-      ? await lookupMeetingPrepWebEvidence({name,email}, contact, profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
-      : {
-        configured:!!OUTSCRAPER_API_KEY,
-        skipped:true,
-        cacheStatus:'cached',
-        completedAt:result.enrichment?.completedAt||result.enrichment?.completed_at||'',
-        query:result.enrichment?.query||'',
-        sourceRefs:[],
-        summary:'Saved general web context was reused for this meeting prep.'
-      };
     if(webEvidence?.configured||webEvidence?.summary||webEvidence?.sourceRefs?.length||webEvidence?.skipped){
       result.enrichment={
         ...(result.enrichment||{}),

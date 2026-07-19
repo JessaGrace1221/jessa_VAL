@@ -22676,12 +22676,11 @@ async function openMeetingPrep(){
   document.querySelectorAll('.living-room').forEach((room) => {
     room.classList.remove('active-room');
   });
-  renderMeetingPrepLoading(activeMeetingPrepEvent || meetingPrep.event);
   activeMeetingPrepBriefing = meetingPrepExecutiveBrief(meetingPrepFallbackResultFromEvent(activeMeetingPrepEvent || meetingPrep.event, {
     message:'Internal meeting context is loading now. External web and LinkedIn review will not block the chat.'
   }));
   openMeetingPrepCoworkSession({autoRun:false});
-  showCoworkContextGathering('VAL is loading internal meeting context first. External web and LinkedIn review is running separately.', {noTimeout:true});
+  renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
   scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
   await runMeetingPrep();

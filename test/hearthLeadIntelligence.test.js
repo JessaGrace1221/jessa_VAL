@@ -1321,7 +1321,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(meetingPrepService, /query:enriched\.enrichment\?\.query/);
   assert.match(hearthJs, /function renderMeetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function renderMeetingPrepLoading/);
-  assert.match(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false\}\);[\s\S]{0,240}await runMeetingPrep\(\)/);
+  assert.doesNotMatch(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,500}openMeetingPrepCoworkSession\(\{autoRun:false\}\)/);
+  assert.match(hearthJs, /activeMeetingPrepBriefing = meetingPrepExecutiveBrief\(meetingPrepFallbackResultFromEvent[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false\}\);[\s\S]{0,180}renderMeetingPrepCoworkEvidenceRail\(activeMeetingPrepBriefing\);[\s\S]{0,240}await runMeetingPrep\(\)/);
   assert.match(hearthJs, /Meeting Prep loading workspace/);
   assert.match(hearthJs, /Opening the brief as soon as internal context is ready/);
   assert.match(hearthJs, /meeting-prep-loading-steps/);
@@ -1356,8 +1357,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(server, /protected_owner_identity/);
   assert.match(server, /fetchOutscraperRelationshipContext\(profile\)/);
   assert.match(server, /lookupMeetingPrepLinkedInRecentSignal/);
-  assert.match(server, /known_linkedin_profile_activity/);
-  assert.match(server, /activity_link_prepared/);
+  assert.doesNotMatch(server, /sourceType:'known_linkedin_profile_activity'/);
+  assert.doesNotMatch(server, /if\(activityUrl\)\{[\s\S]{0,900}activity_link_prepared/);
+  assert.match(server, /const fallbackUrl=activityUrl\|\|profileResult\?\.url\|\|knownProfileUrl\|\|''/);
   assert.doesNotMatch(server, /deferred_to_recent_signal/);
   assert.doesNotMatch(server, /Outscraper was not run because VAL has a personal email and no company or work domain/);
   assert.match(server, /enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext/);
