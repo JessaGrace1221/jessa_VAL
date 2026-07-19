@@ -8,6 +8,7 @@ const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const hearth=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 const hearthJs=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 
 test('relationship ingestion establishes and enforces owner identity',()=>{
   assert.match(server,/function relationshipOwnerIdentity/);
@@ -50,6 +51,7 @@ test('Network offers a sent-mail refresh and an explicit manual person path',()=
   assert.match(hearth,/data-stewardship-network-add-form/);
   assert.match(hearth,/data-stewardship-import-network/);
   assert.match(hearth,/data-stewardship-network-total/);
+  assert.match(hearthCss, /\.stewardship-network-add-form\[hidden\]\{[\s\S]*display:none!important/);
   assert.match(hearthJs,/refreshStewardshipNetworkFromSentMail/);
   assert.match(hearthJs,/api\/relationships\/network\/manual/);
   assert.match(hearthJs,/api\/relationships\/network\/import-csv/);
