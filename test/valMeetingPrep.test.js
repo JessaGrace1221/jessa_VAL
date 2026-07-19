@@ -84,7 +84,9 @@ test('meeting prep Outscraper LinkedIn lookup uses name and organization instead
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
   assert.doesNotMatch(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
   assert.match(server,/const query = personalLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| companyLinkedIn \|\| organization \|\| usableDomain \|\| email/);
-  assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
+  assert.match(server,/OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS/);
+  assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
+  assert.match(server,/filter\(post=>post\.text&&\/linkedin\\\.com\\\/\(posts\|feed\\\/update\|pulse\)\\\/\/i\.test\(post\.url\|\|''\)\)/);
   assert.doesNotMatch(server,/const weekAgo = Date\.now\(\) - 7\*24\*60\*60\*1000/);
   assert.match(server,/return \{configured:true, query, postsLastWeek:recentPosts, rawCount:posts\.length\}/);
   assert.match(server,/await lookupOutscraperLinkedIn\(\{name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl/);
@@ -110,9 +112,12 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/\$\{name\} LinkedIn \$\{organization\}/);
   assert.match(server,/\$\{name\} LinkedIn posts/);
   assert.match(server,/async function lookupMeetingPrepLinkedInRecentSignal/);
-  assert.match(server,/queries\.slice\(0,2\)/);
+  assert.match(server,/queries\.slice\(0,1\)/);
+  assert.match(server,/OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS/);
+  assert.match(server,/Meeting Prep LinkedIn recent search/);
   assert.match(server,/OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS/);
   assert.match(server,/Meeting Prep public search/);
+  assert.match(server,/if\(!status && flattenOutscraperSearchResults\(data\)\.length\) return \{ok:true,data\}/);
   assert.match(server,/type:'linkedin_recent_signal'/);
   assert.match(server,/Open post:/);
   assert.match(server,/async function lookupMeetingPrepWebEvidence/);
@@ -398,13 +403,14 @@ test('meeting prep refreshes external evidence even when saved public context al
     resolveMeetingContext:async()=>({meeting:event,contactResolution:{},relationshipContext:{emailContext:[{subject:'Weekly',summary:'Known weekly meeting.'}]},transcripts:[{id:'tr_greg_weekly',title:'Greg weekly',summary:'Greg and Jessa reviewed implementation.'}],tasks:[],openLoops:[],sourcesChecked:['Calendar events (1)','Linked/fuzzy transcripts (1)'],errors:[]}),
     enrichRelationshipPublicContext:async(payload)=>{
       enrichPayload=payload;
-      return {cached:false,profile:{id:'rel_greg',displayName:'Greg Zlevor',metadata:{relationshipEnrichment:{status:'complete',provider:'outscraper',organization:'Westwood International Inc',website:'https://westwoodintl.com',summary:'Latest LinkedIn post found by Outscraper: Fresh post about nonprofit launch.',latestLinkedInPost:'Fresh post about nonprofit launch.',sourceRefs:[{type:'linkedin_post',sourceId:'linkedin:fresh',summary:'Fresh post about nonprofit launch.'}]}}},enrichment:{status:'complete',provider:'outscraper',organization:'Westwood International Inc',website:'https://westwoodintl.com',summary:'Latest LinkedIn post found by Outscraper: Fresh post about nonprofit launch.',latestLinkedInPost:'Fresh post about nonprofit launch.',sourceRefs:[{type:'linkedin_post',sourceId:'linkedin:fresh',summary:'Fresh post about nonprofit launch.'}]}};
+      return {cached:false,profile:{id:'rel_greg',displayName:'Greg Zlevor',metadata:{relationshipEnrichment:{status:'complete',provider:'outscraper',organization:'Westwood International Inc',website:'https://westwoodintl.com',summary:'Latest LinkedIn post found by Outscraper: Fresh post about nonprofit launch.',latestLinkedInPost:'Fresh post about nonprofit launch.',latestLinkedInUrl:'https://www.linkedin.com/posts/gregzlevor_fresh',sourceRefs:[{type:'linkedin_post',sourceId:'linkedin:older-shadow',summary:'Older shadow post.'},{type:'linkedin_recent_signal',sourceId:'https://www.linkedin.com/posts/gregzlevor_fresh',summary:'Fresh post about nonprofit launch.'}]}}},enrichment:{status:'complete',provider:'outscraper',organization:'Westwood International Inc',website:'https://westwoodintl.com',summary:'Latest LinkedIn post found by Outscraper: Fresh post about nonprofit launch.',latestLinkedInPost:'Fresh post about nonprofit launch.',latestLinkedInUrl:'https://www.linkedin.com/posts/gregzlevor_fresh',sourceRefs:[{type:'linkedin_post',sourceId:'linkedin:older-shadow',summary:'Older shadow post.'},{type:'linkedin_recent_signal',sourceId:'https://www.linkedin.com/posts/gregzlevor_fresh',summary:'Fresh post about nonprofit launch.'}]}};
     }
   });
   const result=await service.buildMeetingPrep({eventId:'cal_known_public_refresh'});
   assert.equal(result.ok,true);
   assert.equal(enrichPayload.force,true);
   assert.match(result.brief.attendeeIntelligenceJson[0].public_profile.latest_linkedin_post,/Fresh post/);
+  assert.equal(result.brief.attendeeIntelligenceJson[0].public_profile.latest_linkedin_url,'https://www.linkedin.com/posts/gregzlevor_fresh');
   assert.doesNotMatch(result.brief.attendeeIntelligenceJson[0].public_profile.latest_linkedin_post,/Older post/);
 });
 

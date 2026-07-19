@@ -666,6 +666,9 @@ function createValMeetingPrepService({
             return null;
           });
           if(enriched?.enrichment||enriched?.profile){
+            const linkedinRefs=safeArray(enriched.enrichment?.sourceRefs||enriched.enrichment?.source_refs)
+              .filter(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||ref.sourceId||ref.source_id||'')));
+            const preferredLinkedInRef=linkedinRefs.find(ref=>/linkedin_recent_signal|linkedin_activity_fallback/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))||linkedinRefs[0]||{};
             publicContextStatus={
               status:enriched.cached?'reused_saved':'ran',
               provider:enriched.enrichment?.provider||'Outscraper',
@@ -674,8 +677,8 @@ function createValMeetingPrepService({
               summary:enriched.enrichment?.summary||(enriched.cached?'Saved public context was already available.':'Public context was gathered for this meeting prep.'),
               website:enriched.enrichment?.website||'',
               organization:enriched.enrichment?.organization||'',
-              latest_linkedin_post:safeArray(enriched.enrichment?.sourceRefs||enriched.enrichment?.source_refs).find(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))?.summary||'',
-              latest_linkedin_url:safeArray(enriched.enrichment?.sourceRefs||enriched.enrichment?.source_refs).find(ref=>/linkedin/i.test(String(ref.type||ref.sourceType||ref.source_type||'')))?.sourceId||'',
+              latest_linkedin_post:enriched.enrichment?.latestLinkedInPost||enriched.enrichment?.latest_linkedin_post||preferredLinkedInRef.summary||'',
+              latest_linkedin_url:enriched.enrichment?.latestLinkedInUrl||enriched.enrichment?.latest_linkedin_url||preferredLinkedInRef.sourceId||preferredLinkedInRef.source_id||'',
               general_web_status:enriched.enrichment?.webSearch?.cacheStatus||enriched.enrichment?.generalWebStatus||(enriched.cached?'cached':'ran'),
               general_web_checked_at:enriched.enrichment?.webSearch?.completedAt||enriched.enrichment?.completedAt||savedPublicContext?.completedAt||'',
               recent_activity_status:enriched.enrichment?.linkedin?.cacheStatus||'ran'
