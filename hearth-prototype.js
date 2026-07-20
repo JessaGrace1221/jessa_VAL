@@ -219,6 +219,8 @@ const projectDocumentCount = document.querySelector('[data-project-document-coun
 const sourceDrawerLink = document.querySelector('.source-drawer-link');
 const closeSourceDetail = document.querySelector('.close-source-detail');
 const scraperButtons = Array.from(document.querySelectorAll('[data-open-scraper]'));
+const taskCompanionButton = document.querySelector('.task-companion-button');
+const taskCompanionCount = document.querySelector('[data-task-companion-count]');
 const nextMeetingCard = document.querySelector('.next-meeting-card');
 const agendaItems = Array.from(document.querySelectorAll('.agenda-item'));
 const agendaList = document.querySelector('.agenda-list');
@@ -5347,6 +5349,7 @@ function renderCoworkEmailThreadItem(workItem = {}){
 function updateCoworkEntryContext(result = {}){
   const brief = result.session?.workingBrief || {};
   const entrypointId = result.session?.entrypointId || activeCoworkEntry?.entrypointId || '';
+  const isObserverConversation = entrypointId === 'observer.discussion' || entrypointId === 'board.chief_of_staff';
   const isTranscript = entrypointId.startsWith('transcript.');
   const isEmailThread = entrypointId === 'email.thread';
   const isRelationship = entrypointId === 'relationship.overview' || entrypointId === 'relationship.section';
@@ -5386,6 +5389,16 @@ function updateCoworkEntryContext(result = {}){
     : 'Build a complete set of workstreams for this project.';
   const context = scraperPreviewList?.querySelector?.('[data-home-cowork-context]');
   if(!context) return;
+  if(isObserverConversation){
+    const isChief = entrypointId === 'board.chief_of_staff';
+    context.innerHTML = [
+      '<span>' + (isChief ? 'Chief of Staff' : 'Board of Observers') + '</span>',
+      '<strong>' + escapeHtml(brief.title || (isChief ? 'Chat with Your Chief of Staff' : 'Observer conversation')) + '</strong>',
+      '<p>' + escapeHtml(isChief ? 'Your Chief of Staff can reason across the full Board context.' : 'This conversation stays scoped to this Observer and its evidence.') + '</p>',
+      '<small>Saved privately and carried forward when you return.</small>'
+    ].join('');
+    return;
+  }
   if(isRelationship){
     const sectionLabel = entrypointId === 'relationship.section' ? (brief.sectionLabel || 'selected card') : 'next relationship move';
     context.innerHTML = [
@@ -5440,11 +5453,22 @@ function renderCoworkEntryResult(result = {}, options = {}){
       projectId:session.scope?.entityType === 'project_section' ? (session.scope?.entityId || activeProjectProfile?.projectId || activeProjectProfile?.id || '') : '',
       transcriptId:session.scope?.entityType === 'transcript' ? session.scope?.entityId || '' : '',
       emailThreadId:session.scope?.entityType === 'email_thread' ? session.scope?.entityId || '' : '',
-      relationshipId:(session.scope?.entityType === 'relationship' || session.scope?.entityType === 'relationship_section') ? session.scope?.entityId || '' : ''
+      relationshipId:(session.scope?.entityType === 'relationship' || session.scope?.entityType === 'relationship_section') ? session.scope?.entityId || '' : '',
+      observerId:(session.scope?.entityType === 'observer' || session.scope?.entityType === 'observer_board') ? session.scope?.entityId || '' : ''
     };
   }
   updateCoworkEntryContext(result);
   const response = homeCoworkResponseNode();
+  const isObserverConversation = session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff';
+  const savedMessages = Array.isArray(session.state?.messages) ? session.state.messages : [];
+  if(response && isObserverConversation && options.hydrateConversation){
+    response.innerHTML = savedMessages.length
+      ? savedMessages.map((saved) => renderHomeCoworkMessage(saved.role === 'user' ? 'user' : 'val', saved.content || '')).join('')
+      : renderHomeCoworkMessage('val', session.entrypointId === 'board.chief_of_staff'
+        ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
+        : 'I am here with this Observer\'s context. What would you like to examine together?');
+    response.scrollTop = response.scrollHeight;
+  }
   response?.querySelectorAll?.('[data-cowork-work-item]').forEach((node) => node.remove());
   const message = options.suppressMessage ? '' : (result.question?.question || result.message || '');
   if(message) appendHomeCoworkMessage('val', message, {replace:Boolean(options.replaceMessage)});
@@ -5496,9 +5520,13 @@ function renderCoworkEntryResult(result = {}, options = {}){
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
-  const isComplete = workItem.status === 'applied' || session.status === 'completed';
+  const isComplete = !isObserverConversation && (workItem.status === 'applied' || session.status === 'completed');
   const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
   if(textarea){
+    if(isObserverConversation){
+      textarea.placeholder = session.entrypointId === 'board.chief_of_staff' ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...';
+      textarea.disabled = false;
+    }else{
     const completeLabel = session.entrypointId === 'transcript.working_brief'
       ? 'Meeting overview draft created.'
       : session.entrypointId === 'transcript.action_item'
@@ -5544,9 +5572,10 @@ function renderCoworkEntryResult(result = {}, options = {}){
         : 'Workstreams applied.';
     const returnSurface = session.entrypointId === 'email.thread' ? ' Executive Inbox' : (session.entrypointId.startsWith('transcript.') ? ' Transcripts' : (session.entrypointId.startsWith('relationship.') ? ' Stewardship' : ' Project Managers'));
     textarea.placeholder = isComplete ? completeLabel + ' Return to' + returnSurface + ' when you are ready.' : isReadyForReview ? (session.entrypointId === 'email.thread' ? 'Review the private draft in Leverage.' : 'Review the source-backed result above, then use Apply.') : coworkEntryPlaceholder(result.question || {});
-    textarea.disabled = isComplete || isReadyForReview;
+      textarea.disabled = isComplete || isReadyForReview;
+    }
   }
-  if(submit) submit.disabled = isComplete || isReadyForReview;
+  if(submit) submit.disabled = isObserverConversation ? false : (isComplete || isReadyForReview);
 }
 
 async function openProjectWorkstreamsCowork(node = null){
@@ -6066,7 +6095,7 @@ async function submitActiveCoworkEntry(){
   if(textarea) textarea.value = '';
   if(submit) submit.disabled = true;
   try{
-    const label = entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'relationship.overview' ? 'Relationship next move' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
+    const label = entry.entrypointId === 'board.chief_of_staff' ? 'Chief of Staff conversation' : entry.entrypointId === 'observer.discussion' ? 'Observer conversation' : entry.entrypointId === 'email.thread' ? 'Executive Inbox reply' : entry.entrypointId === 'relationship.overview' ? 'Relationship next move' : entry.entrypointId === 'transcript.working_brief' ? 'Transcript Working Brief' : entry.entrypointId === 'transcript.action_item' ? 'Transcript Action Item' : entry.entrypointId === 'project.documents' ? 'Documents / Sources' : entry.entrypointId === 'project.people' ? 'People Involved' : entry.entrypointId === 'project.identity' ? 'project foundation' : entry.entrypointId === 'project.onboarding' ? 'project onboarding' : entry.entrypointId === 'project.milestones' ? 'Milestones' : entry.entrypointId === 'project.monitoring' ? 'Monitoring after launch' : entry.entrypointId === 'project.relationship_nurture' ? 'Relationship nurture' : entry.entrypointId === 'project.why_it_matters' ? 'Why it matters' : entry.entrypointId === 'project.risk' ? 'Risk / Blocker' : entry.entrypointId === 'project.narrative' ? 'Working narrative' : entry.entrypointId === 'project.needs_next' ? 'What VAL needs next' : entry.entrypointId === 'project.prepared_work' ? 'Prepared Work' : entry.entrypointId === 'project.next_move' ? 'next-move' : 'Workstreams';
     const displayLabel = entry.entrypointId === 'project.sop' ? 'Operating System' : (entry.entrypointId === 'project.phase' ? 'Current Phase' : label);
     const result = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(entry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this ' + displayLabel + ' step yet.'});
     await finalizeActiveCoworkResponse(entry, result);
@@ -6075,8 +6104,8 @@ async function submitActiveCoworkEntry(){
       try{
         showCoworkContextGathering('The page refreshed while VAL was holding this section. Restoring the exact selected context before answering.');
         const scope = coworkScopeForEntry(entry);
-        const restored = await postJson('/api/val/cowork/entries/open',{entrypointId:entry.entrypointId,scope},{timeoutMs:10000,timeoutMessage:'VAL could not restore this scoped session yet.'});
-        renderCoworkEntryResult(restored,{suppressMessage:true});
+        const restored = await postJson('/api/val/cowork/entries/open',{entrypointId:entry.entrypointId,scope,title:entry.title || '',context:entry.context || {}},{timeoutMs:10000,timeoutMessage:'VAL could not restore this scoped session yet.'});
+        renderCoworkEntryResult(restored,{suppressMessage:true,hydrateConversation:entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff'});
         const recoveredEntry = activeCoworkEntry;
         if(!recoveredEntry?.sessionId) throw new Error('VAL could not restore this scoped session.');
         const recovered = await postJson('/api/val/cowork/sessions/' + encodeURIComponent(recoveredEntry.sessionId) + '/respond',{answer:input},{timeoutMs:15000,timeoutMessage:'VAL could not complete this restored section yet.'});
@@ -6135,6 +6164,12 @@ function coworkScopeForEntry(entry = {}){
   }else if(entrypointId.startsWith('relationship.')){
     scope.entityType = entrypointId === 'relationship.section' ? 'relationship_section' : 'relationship';
     scope.entityId = entry.relationshipId || '';
+  }else if(entrypointId === 'observer.discussion'){
+    scope.entityType = 'observer';
+    scope.entityId = entry.observerId || '';
+  }else if(entrypointId === 'board.chief_of_staff'){
+    scope.entityType = 'observer_board';
+    scope.entityId = entry.observerId || 'chief-of-staff';
   }
   return scope;
 }
@@ -13040,9 +13075,10 @@ function timelineTranscriptKnownTitle(transcript = {}){
 }
 
 function timelineTranscriptTitle(transcript = {}){
+  const rawTitle = String(transcript.meetingTitle || transcript.title || 'Transcript').trim();
+  if(transcript.krispNative) return timelineCompactText(rawTitle || 'Transcript', 96);
   const summary = timelineSummaryObject(transcript);
   const fromSummary = timelineFirstSentence(summary.executiveSummary || summary.clientSummary || '', '');
-  const rawTitle = String(transcript.title || transcript.meetingTitle || 'Transcript').trim();
   const knownTitle = timelineTranscriptKnownTitle(transcript);
   if(knownTitle && (!rawTitle || /mammogram|wang building|screening|nope|untitled|transcript/i.test(rawTitle) || !new RegExp('\\b' + knownTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(rawTitle))) return knownTitle;
   if(fromSummary && (/mammogram|nope|untitled|transcript/i.test(rawTitle) || rawTitle.length < 8)) return fromSummary;
@@ -13050,7 +13086,7 @@ function timelineTranscriptTitle(transcript = {}){
 }
 
 function timelineTranscriptMeta(transcript = {}){
-  const date = transcript.receivedAt || transcript.createdAt || transcript.created_at || transcript.capturedAt || '';
+  const date = transcript.meetingDatetime || transcript.meeting_datetime || transcript.receivedAt || transcript.createdAt || transcript.created_at || transcript.capturedAt || '';
   const parts = [
     transcript.source ? String(transcript.source).toUpperCase() : '',
     date ? new Date(date).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '',
@@ -13280,6 +13316,28 @@ function timelineSelectedRelationshipOption(value = ''){
   return relationship ? {id:relationship.id || relationship.profileKey || relationship.contactId || raw, name:relationship.name || relationship.displayName || raw, email:relationship.email || relationship.query?.email || ''} : {id:raw, name:raw, email:''};
 }
 
+function timelineAttendeeEmailDraftRecord(transcript = {}){
+  return (Array.isArray(transcript.drafts) ? transcript.drafts : []).find((draft) => draft.draftType === 'transcript_action_items_email' && draft.sourceContext?.source === 'transcript_action_items_attendee_email') || null;
+}
+
+function renderTimelineAttendeeEmailReview(draft = {}){
+  const recipients = Array.isArray(draft.sourceContext?.recipients) ? draft.sourceContext.recipients.filter(Boolean) : [];
+  const provider = String(draft.sourceContext?.emailProvider || 'gmail').toLowerCase();
+  return [
+    '<div class="timeline-attendee-email-review" data-transcript-email-review="' + escapeHtml(draft.id || '') + '">',
+    '<div class="timeline-email-review-field"><label>To</label><div class="timeline-email-recipient-list">' + recipients.map((email) => '<span>' + escapeHtml(email) + '</span>').join('') + '</div></div>',
+    '<label class="timeline-email-review-field">Email account<select data-transcript-email-provider aria-label="Email account"><option value="gmail"' + (provider !== 'outlook' ? ' selected' : '') + '>Gmail</option><option value="outlook"' + (provider === 'outlook' ? ' selected' : '') + '>Outlook</option></select></label>',
+    '<label class="timeline-email-review-field">Subject<input type="text" value="' + escapeHtml(draft.subject || '') + '" data-transcript-email-subject></label>',
+    '<label class="timeline-email-review-field">Message<textarea rows="14" data-transcript-email-body>' + escapeHtml(draft.body || '') + '</textarea></label>',
+    '<div class="timeline-email-review-actions">',
+    '<button type="button" data-transcript-action="save_attendee_email" data-draft-id="' + escapeHtml(draft.id || '') + '">Save draft</button>',
+    '<button type="button" class="timeline-email-send-final" data-transcript-action="send_attendee_email" data-draft-id="' + escapeHtml(draft.id || '') + '">Send email now</button>',
+    '</div>',
+    '<small>Nothing leaves your account until you choose Send email now.</small>',
+    '</div>'
+  ].join('');
+}
+
 function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft = null){
   const invitees = timelineTranscriptInvitees(transcript);
   const suggestedProject = timelineSuggestedProjectOption(transcript);
@@ -13298,13 +13356,18 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   ].join('')).join('') : '<p>No attendees were attached to this transcript yet. Add attendees before sending Action Items.</p>';
   const calendarMismatchNote = calendarInviteMismatch ? '<small class="timeline-map-suggestion timeline-map-warning">VAL found a calendar invite, but it did not match this transcript closely enough to trust its attendees: ' + escapeHtml(calendarInviteMismatch.title || calendarInviteMismatch.id || 'calendar invite') + '.</small>' : '';
   const attendeeCount = invitees.filter((person) => String(person.email || '').trim()).length;
-  const actionCount = (overviewDraft || timelineMeetingOverviewDraft(transcript)).actionItems.length;
+  const sourceDraft = overviewDraft || timelineMeetingOverviewDraft(transcript);
+  const actionCount = sourceDraft.actionItems.length;
+  const keyPointCount = sourceDraft.keyPoints.length;
+  const attendeeEmailDraft = timelineAttendeeEmailDraftRecord(transcript);
   return [
     '<section class="timeline-transcript-section timeline-transcript-send-panel" data-transcript-section="send-action-items">',
-    '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Send Action Items to Attendees</strong></div>',
-    '<p>Uses the Action Items exactly as shown in this transcript. VAL prepares the email for review before anything leaves your account.</p>',
-    '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Send Action Items to Attendees</button>',
-    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee email' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
+    '<div class="timeline-overview-receipt"><span>Attendee Email</span><strong>Key Points and Action Items</strong></div>',
+    '<p>VAL keeps the source Key Points and Action Items exactly as shown, then prepares one group email for your review.</p>',
+    attendeeEmailDraft
+      ? renderTimelineAttendeeEmailReview(attendeeEmailDraft)
+      : '<button type="button" class="timeline-primary-action" data-transcript-action="send_action_items" data-transcript-id="' + escapeHtml(transcript.id || '') + '"' + (!attendeeCount || !actionCount ? ' disabled' : '') + '>Prepare group email</button>',
+    '<small>' + escapeHtml(attendeeCount ? attendeeCount + ' attendee email' + (attendeeCount === 1 ? '' : 's') + ' found' : 'No attendee emails found') + ' · ' + escapeHtml(keyPointCount ? keyPointCount + ' Key Point' + (keyPointCount === 1 ? '' : 's') : 'No Key Points found') + ' · ' + escapeHtml(actionCount ? actionCount + ' Action Item' + (actionCount === 1 ? '' : 's') : 'No Action Items found') + '</small>',
     '</section>',
     '<section class="timeline-transcript-section timeline-transcript-map-panel" data-transcript-section="people-projects">',
     '<div class="timeline-overview-receipt"><span>People and Projects</span><strong>Confirm VAL\'s mapping</strong></div>',
@@ -13681,7 +13744,7 @@ function setTimelineTranscriptActionStatus(message = '', tone = ''){
 
 async function prepareTranscriptActionItemsEmail(transcriptId = ''){
   if(!transcriptId) return;
-  setTimelineTranscriptActionStatus('Preparing the attendee Action Items email...', 'working');
+  setTimelineTranscriptActionStatus('Preparing one group email with the source Key Points and Action Items...', 'working');
   try{
     const result = await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/action-items-email-draft', {
       writingRules: typeof correspondenceActiveDraftRuleText === 'function' ? correspondenceActiveDraftRuleText() : ''
@@ -13691,9 +13754,82 @@ async function prepareTranscriptActionItemsEmail(transcriptId = ''){
       currentTimelineTranscript.drafts = result.draft ? [result.draft, ...drafts] : drafts;
       renderTimelineTranscriptDetail(currentTimelineTranscript);
     }
-    setTimelineTranscriptActionStatus(result.message || 'Action Items email is ready for review. No email was sent yet.', 'success');
+    setTimelineTranscriptActionStatus(result.message || 'The group email is ready for review. No email was sent yet.', 'success');
   }catch(error){
-    setTimelineTranscriptActionStatus(error.message || 'VAL could not prepare the Action Items email.', 'danger');
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not prepare the attendee email.', 'danger');
+  }
+}
+
+function timelineAttendeeEmailReviewValues(draftId = ''){
+  const panel = drawerTray?.querySelector?.('[data-transcript-email-review="' + CSS.escape(String(draftId || '')) + '"]');
+  const draft = timelineAttendeeEmailDraftRecord(currentTimelineTranscript || {});
+  return {
+    panel,
+    draft,
+    provider:String(panel?.querySelector?.('[data-transcript-email-provider]')?.value || draft?.sourceContext?.emailProvider || 'gmail'),
+    subject:String(panel?.querySelector?.('[data-transcript-email-subject]')?.value || draft?.subject || '').trim(),
+    body:String(panel?.querySelector?.('[data-transcript-email-body]')?.value || draft?.body || '').trim(),
+    recipients:Array.isArray(draft?.sourceContext?.recipients) ? draft.sourceContext.recipients.filter(Boolean) : []
+  };
+}
+
+async function saveTimelineAttendeeEmailDraft(draftId = '', {quiet = false} = {}){
+  const values = timelineAttendeeEmailReviewValues(draftId);
+  if(!values.draft || !values.subject || !values.body){
+    setTimelineTranscriptActionStatus('The attendee email needs a subject and message before it can be saved.', 'danger');
+    return null;
+  }
+  if(!quiet) setTimelineTranscriptActionStatus('Saving the attendee email draft...', 'working');
+  try{
+    const result = await postJson('/api/val/drafts/' + encodeURIComponent(draftId), {
+      subject:values.subject,
+      body:values.body,
+      status:'ready_for_review',
+      sourceContext:{...(values.draft.sourceContext || {}),emailProvider:values.provider,preparedArtifact:{...(values.draft.sourceContext?.preparedArtifact || {}),subject:values.subject,body:values.body}}
+    }, {method:'PATCH'});
+    if(currentTimelineTranscript){
+      currentTimelineTranscript.drafts = (currentTimelineTranscript.drafts || []).map((draft) => draft.id === draftId ? result.draft : draft);
+    }
+    if(!quiet) setTimelineTranscriptActionStatus('Draft saved. Nothing was sent.', 'success');
+    return result.draft;
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not save this draft.', 'danger');
+    return null;
+  }
+}
+
+async function sendTimelineAttendeeEmailDraft(draftId = ''){
+  const values = timelineAttendeeEmailReviewValues(draftId);
+  if(!values.recipients.length){
+    setTimelineTranscriptActionStatus('No attendee email addresses are attached to this draft.', 'danger');
+    return;
+  }
+  if(!values.subject || !values.body){
+    setTimelineTranscriptActionStatus('The attendee email needs a subject and message before it can be sent.', 'danger');
+    return;
+  }
+  if(!window.confirm('Send this email now to ' + values.recipients.join(', ') + '?')) return;
+  const saved = await saveTimelineAttendeeEmailDraft(draftId, {quiet:true});
+  if(!saved) return;
+  setTimelineTranscriptActionStatus('Sending the approved attendee email...', 'working');
+  try{
+    const result = await postJson('/api/val/external-actions/email-send-now', {
+      provider:values.provider,
+      to:values.recipients.join(', '),
+      subject:values.subject,
+      body:values.body,
+      sourceContext:{source:'transcript_action_items_attendee_email',draftId,transcriptId:currentTimelineTranscript?.id || ''},
+      approvalNote:'User approved the final transcript attendee email in the Transcripts drawer.'
+    });
+    if(!result?.executed) throw new Error(result?.error || 'The email send did not complete.');
+    const updated = await postJson('/api/val/drafts/' + encodeURIComponent(draftId), {status:'sent'}, {method:'PATCH'});
+    if(currentTimelineTranscript){
+      currentTimelineTranscript.drafts = (currentTimelineTranscript.drafts || []).map((draft) => draft.id === draftId ? updated.draft : draft);
+      renderTimelineTranscriptDetail(currentTimelineTranscript);
+    }
+    setTimelineTranscriptActionStatus('Email sent to ' + values.recipients.length + ' attendee' + (values.recipients.length === 1 ? '' : 's') + '.', 'success');
+  }catch(error){
+    setTimelineTranscriptActionStatus(error.message || 'VAL could not send the attendee email.', 'danger');
   }
 }
 
@@ -15413,6 +15549,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   activeHomeWorkspace = null;
   if(!/home co-work/i.test(String(label || ''))) deskWorkspace.classList.remove('home-cowork-mode');
   if(!/board of observers/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('observer-board-mode');
+  if(!/task workspace/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('task-workspace-mode');
   const preserveHeldCoworkContext = /co-work|cowork/i.test(String(lens || '') + ' ' + String(title || ''));
   const normalizedWorkspace = (suppressClarityStandard || preserveHeldCoworkContext)
     ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType}
@@ -16358,7 +16495,7 @@ async function postJson(url, payload, options = {}){
   let response;
   try{
     response = await fetch(url, {
-      method: 'POST',
+      method: options.method || 'POST',
       credentials: 'same-origin',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
@@ -18645,7 +18782,14 @@ function restoreTimelineWindow(){
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  renderTimelineReviewCards(currentTimelineReviewItems);
+  if(currentTimelineTranscript?.id){
+    renderTimelineTranscriptList(currentTimelineTranscript.id);
+    renderTimelineTranscriptDetail(currentTimelineTranscript);
+  }else if(currentTimelineTranscriptItems.length){
+    renderTimelineTranscriptList('');
+  }else{
+    renderTimelineReviewCards(currentTimelineReviewItems);
+  }
   updateCloseAllDrawersButton();
 }
 
@@ -22863,6 +23007,7 @@ function renderHomeCoworkPreview(options = {}){
   const detail = options.detail || '';
   const placeholder = options.placeholder || 'Tell VAL what you want to accomplish';
   const initialMessage = options.initialMessage || heading;
+  const historyMessage = options.historyMessage || 'No earlier project Co-Work thread is loaded in this view.';
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
@@ -22877,7 +23022,7 @@ function renderHomeCoworkPreview(options = {}){
         '<div class="home-cowork-history">',
           '<span>Previous conversations</span>',
           '<button type="button" aria-pressed="true">Current thread</button>',
-          '<small>No earlier project Co-Work thread is loaded in this view.</small>',
+          '<small>' + escapeHtml(historyMessage) + '</small>',
         '</div>',
       '</aside>',
       '<section class="home-cowork-main">',
@@ -23034,6 +23179,268 @@ function hideCoworkContextGathering(){
   if(panel) panel.hidden = true;
 }
 
+function taskWorkspaceDetails(task = {}){
+  return Array.isArray(task.details) ? task.details : (task.details ? [task.details] : []);
+}
+
+function taskWorkspaceTranscriptId(task = {}){
+  const direct = task.relatedTranscriptId || task.transcriptId || task.sourceTranscriptId || (task.sourceType === 'transcript' ? task.sourceId : '');
+  if(direct) return String(direct);
+  for(const detail of taskWorkspaceDetails(task)){
+    if(detail && typeof detail === 'object' && (detail.transcriptId || detail.relatedTranscriptId)) return String(detail.transcriptId || detail.relatedTranscriptId);
+  }
+  const notes = String(task.notes || '');
+  return String(notes.match(/Source transcript:\s*([^\s]+)/i)?.[1] || '');
+}
+
+function taskWorkspaceIdentityValues(task = {}){
+  const values = new Set([task.id,task.sourceId,task.relatedTranscriptId,task.transcriptId,task.relatedEmailId,task.relatedContactId].filter(Boolean).map(String));
+  taskWorkspaceDetails(task).forEach((detail) => {
+    if(!detail || typeof detail !== 'object') return;
+    ['id','taskId','sourceId','transcriptId','transcriptTaskId','emailId','projectId','draftId'].forEach((key) => {
+      if(detail[key]) values.add(String(detail[key]));
+    });
+  });
+  return values;
+}
+
+function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
+  const identities = taskWorkspaceIdentityValues(task);
+  const transcriptId = taskWorkspaceTranscriptId(task);
+  const matchesIdentity = (value) => {
+    const text = JSON.stringify(value || {});
+    if(transcriptId && text.includes(transcriptId)) return true;
+    return Array.from(identities).some((identity) => identity.length > 5 && text.includes(identity));
+  };
+  const attachedDrafts = drafts.filter((draft) => matchesIdentity(draft.sourceContext || draft)).slice(0,4).map((draft) => ({
+    kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
+  }));
+  const attachedReady = readyItems.filter(matchesIdentity).slice(0,4).map((item) => ({
+    kind:'prepared',id:item.id || '',title:item.title || item.whatValPrepared || 'Prepared work',status:item.status || item.itemStatus || 'ready',body:item.whatValPrepared || item.summary || item.whatUserNeedsToDo || ''
+  }));
+  return [...attachedDrafts,...attachedReady].filter((item,index,list) => list.findIndex((candidate) => candidate.kind === item.kind && candidate.id === item.id) === index);
+}
+
+function taskWorkspaceDueLabel(value = ''){
+  if(!value) return 'No due date';
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return String(value);
+  const now = new Date();
+  const tomorrow = new Date(now); tomorrow.setDate(now.getDate()+1);
+  const sameDay = (a,b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+  const day = sameDay(date,now) ? 'Today' : (sameDay(date,tomorrow) ? 'Tomorrow' : new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric',year:date.getFullYear()===now.getFullYear()?undefined:'numeric'}).format(date));
+  return day + ', ' + new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hour12:false}).format(date);
+}
+
+function taskWorkspaceSourceLabel(task = {}){
+  if(taskWorkspaceTranscriptId(task)) return 'Transcript';
+  if(task.relatedEmailId || /email/i.test(String(task.sourceType || task.source || ''))) return 'Email';
+  if(/project/i.test(String(task.sourceType || task.source || '')) || taskWorkspaceDetails(task).some((detail) => detail?.projectId)) return 'Project';
+  return 'Manual';
+}
+
+function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
+  const openTasks = tasks.filter((task) => !task.completed).sort((a,b) => {
+    if(!a.dueDate && !b.dueDate) return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    if(!a.dueDate) return 1;
+    if(!b.dueDate) return -1;
+    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  });
+  if(taskCompanionCount) taskCompanionCount.textContent = String(openTasks.length);
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
+  scraperPreviewList.innerHTML = [
+    '<section class="task-workspace" aria-label="Unresolved tasks">',
+      '<header class="task-workspace-header"><div><span>Tasks</span><strong>' + escapeHtml(openTasks.length) + ' unresolved</strong></div><p>Due soonest first. Prepared work stays attached to the task that needs it.</p></header>',
+      openTasks.length ? '<div class="task-workspace-list">' + openTasks.map((task) => {
+        const transcriptId = taskWorkspaceTranscriptId(task);
+        const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
+        const owner = task.contactName || task.assignedToName || 'Unassigned';
+        const status = task.schedulingStatus && task.schedulingStatus !== 'unscheduled' ? task.schedulingStatus : 'Open';
+        return [
+          '<article class="task-workspace-row">',
+            '<div class="task-workspace-row-main">',
+              '<div class="task-workspace-check" aria-hidden="true"></div>',
+              '<div><span>' + escapeHtml(taskWorkspaceSourceLabel(task)) + '</span><h3>' + escapeHtml(task.title || 'Untitled task') + '</h3><p>' + escapeHtml(task.notes || '') + '</p></div>',
+            '</div>',
+            '<dl class="task-workspace-meta"><div><dt>Due</dt><dd>' + escapeHtml(taskWorkspaceDueLabel(task.dueDate)) + '</dd></div><div><dt>Owner</dt><dd>' + escapeHtml(owner) + '</dd></div><div><dt>Status</dt><dd>' + escapeHtml(status) + '</dd></div></dl>',
+            attachments.length ? '<div class="task-workspace-prepared"><span>VAL has work ready here</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(compactSentence(item.body,'Prepared work is attached.')) + '</p><small>' + escapeHtml(item.status) + '</small></div>').join('') + '</div>' : '',
+            '<div class="task-workspace-actions">',
+              transcriptId ? '<button type="button" data-task-open-transcript="' + escapeHtml(transcriptId) + '">Open source transcript</button>' : '',
+              attachments.length ? '<button type="button" class="primary" data-task-open-prepared="' + escapeHtml(task.id || '') + '">Continue prepared work</button>' : '',
+            '</div>',
+          '</article>'
+        ].join('');
+      }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>Nothing unresolved.</strong><p>VAL will place new commitments here with their source and any prepared work.</p></div>',
+    '</section>'
+  ].join('');
+}
+
+async function hydrateTaskCompanionCount(){
+  if(!canUseApi || !taskCompanionCount) return;
+  try{
+    const tasks = await getJson('/api/val/tasks', {cache:'no-store'});
+    taskCompanionCount.textContent = String((Array.isArray(tasks)?tasks:[]).filter((task) => !task.completed).length);
+  }catch(error){
+    taskCompanionCount.textContent = '0';
+  }
+}
+
+async function openTaskWorkspace(){
+  closeCalendarPanel();
+  setWorkspaceContent({
+    lens:'Tasks',title:'Tasks',meaning:'Every unresolved commitment, with its source and prepared work.',
+    understanding:[],recommendation:'',actions:[{label:'Close and return to desk',workflow:'cancel:meeting'}],
+    label:'Task workspace',suppressClarityStandard:true
+  });
+  deskWorkspace.classList.add('task-workspace-mode');
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.innerHTML = '<section class="task-workspace-loading" aria-live="polite"><span></span><strong>Opening tasks</strong><p>VAL is connecting each task to its source and prepared work.</p></section>';
+  workspaceInputPanel.hidden = true;
+  hearth.dataset.distance='judgment';
+  deskWorkspace.setAttribute('aria-hidden','false');
+  openWorkspaceShell('Tasks',{returnTarget:'home'});
+  try{
+    const [tasksResult,draftsResult,readyResult] = await Promise.all([
+      getJson('/api/val/tasks',{cache:'no-store'}),
+      getJson('/api/val/drafts',{cache:'no-store'}),
+      getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
+    ]);
+    renderTaskWorkspace(Array.isArray(tasksResult)?tasksResult:[],draftsResult?.drafts || [],readyResult?.items || []);
+    if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
+      window.requestAnimationFrame(() => {
+        deskWorkspace.scrollTop = 0;
+        deskWorkspace.scrollIntoView({block:'start',inline:'nearest',behavior:'smooth'});
+      });
+    }
+  }catch(error){
+    scraperPreviewList.innerHTML = '<section class="task-workspace-empty"><strong>Tasks could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
+  }
+}
+
+async function openTaskSourceTranscript(transcriptId = ''){
+  if(!transcriptId) return;
+  restoreTimelineWindow();
+  await loadTimelineTranscripts({openFirst:false,days:transcriptSelectedRefreshDays()});
+  await openTimelineTranscript(transcriptId);
+}
+
+async function openTaskPreparedWork(){
+  await hydratePreparedWorkQueue();
+  openLeverageApprovalWorkspace();
+}
+
+function observerConversationId(value = ''){
+  return String(value || 'observer').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'observer';
+}
+
+function observerConversationContext(observer = null, role = 'observer'){
+  const transcript = currentTimelineTranscript || {};
+  const receipt = transcript.id ? timelineSourceReceipt(transcript) : {};
+  const relationship = activeRelationshipProfile || {};
+  const project = activeProjectProfile || {};
+  const queueSummary = Object.fromEntries(Object.entries(homeRoomQueues).map(([key,items]) => [key,(items || []).slice(0,5).map((item) => ({
+    title:item.title || item.sourceItem?.title || '',
+    summary:item.summary || item.meaning || item.sourceItem?.summary || ''
+  }))]));
+  const selectedObserver = observer ? {
+    name:observer.name,
+    stance:observer.stance,
+    truth:observer.truth,
+    evidence:observer.evidence
+  } : null;
+  return {
+    title:role === 'chief' ? 'Chat with Your Chief of Staff' : 'Talk with the ' + (observer?.name || 'Selected') + ' Observer',
+    role,
+    selectedObserver,
+    board:role === 'chief' ? observerBoardState : {chiefOfStaff:observerBoardState.chiefOfStaff,observer:selectedObserver},
+    home:queueSummary,
+    executiveBriefing:executiveBriefingState ? {
+      perspective:executiveBriefingState.perspective || executiveBriefingState.message || executiveBriefingState.summary || '',
+      verifiedFacts:executiveBriefingState.verifiedFacts || executiveBriefingState.verified || [],
+      openLoops:executiveBriefingState.openLoops || []
+    } : null,
+    transcript:transcript.id ? {
+      id:transcript.id,
+      title:timelineTranscriptTitle(transcript),
+      keyPoints:receipt.keyPoints || [],
+      actionItems:receipt.actionItems || []
+    } : null,
+    relationship:relationship.id ? {
+      id:relationship.id,
+      name:relationship.name || relationship.displayName || '',
+      summary:relationship.summary || relationship.context || '',
+      openLoops:relationship.openLoops || relationship.open_loops || []
+    } : null,
+    project:project.id ? {
+      id:project.id,
+      name:project.name || '',
+      status:project.status || project.phase || '',
+      nextMove:project.nextMove || project.next_move || '',
+      owner:project.owner || project.nextStepOwner || '',
+      workstreams:project.workstreams || []
+    } : null,
+    conversationContract:{saved:true,carriedForward:true,noExternalAction:true}
+  };
+}
+
+async function openObserverCowork(observerId = '', role = 'observer'){
+  const isChief = role === 'chief';
+  const observer = isChief ? null : observerBoardState.observers.find((item) => observerConversationId(item.name) === observerId);
+  if(!isChief && !observer) return;
+  const entrypointId = isChief ? 'board.chief_of_staff' : 'observer.discussion';
+  const stableId = isChief ? 'chief-of-staff' : observerConversationId(observer.name);
+  const title = isChief ? 'Chat with Your Chief of Staff' : 'Talk with the ' + observer.name + ' Observer';
+  const detail = isChief
+    ? 'Your Chief of Staff can see the full Board context and help you find patterns, risks, and opportunities.'
+    : 'This Observer holds the ' + observer.name + ' lens and the evidence available to it.';
+  const context = observerConversationContext(observer,isChief ? 'chief' : 'observer');
+  closeCalendarPanel();
+  setWorkspaceContent({
+    lens:isChief ? 'Chief of Staff' : 'Board of Observers',
+    title,
+    meaning:detail,
+    understanding:[],
+    recommendation:'',
+    actions:[{label:'Close and return to desk',workflow:'cancel:board'}],
+    label:title,
+    suppressClarityStandard:true
+  });
+  deskWorkspace.classList.remove('observer-board-mode');
+  deskWorkspace.classList.add('home-cowork-mode');
+  activeCoworkContextLocked = true;
+  activeCoworkHeldContext = title;
+  renderHomeCoworkPreview({
+    heading:title,
+    detail,
+    placeholder:isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...',
+    initialMessage:isChief
+      ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
+      : 'I am here with the ' + observer.name + ' lens. What would you like to examine together?',
+    historyMessage:'This conversation is saved and will be here when you return.'
+  });
+  activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'opening'};
+  hearth.dataset.distance = 'judgment';
+  deskWorkspace.setAttribute('aria-hidden','false');
+  openWorkspaceShell(title,{returnTarget:'board'});
+  showCoworkContextGathering('VAL is restoring this saved conversation and refreshing its current evidence.',{noTimeout:true});
+  try{
+    const result = await postJson('/api/val/cowork/entries/open',{
+      entrypointId,
+      scope:{entityType:isChief ? 'observer_board' : 'observer',entityId:stableId,sectionId:isChief ? 'board' : 'observer'},
+      title,
+      context
+    },{timeoutMs:15000,timeoutMessage:'VAL could not open this saved conversation yet.'});
+    renderCoworkEntryResult(result,{hydrateConversation:true,suppressMessage:true});
+  }catch(error){
+    activeCoworkEntry = null;
+    hideCoworkContextGathering();
+    appendHomeCoworkMessage('val','I could not open this saved conversation yet. Nothing was lost. ' + error.message,{replace:true});
+  }
+}
+
 function openObserverBoard(){
   const chief = observerBoardState.chiefOfStaff;
   closeCalendarPanel();
@@ -23056,22 +23463,22 @@ function openObserverBoard(){
   renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
-    '<section class="observer-chief-card" aria-label="Board readiness">',
-      '<span>Board readiness</span>',
+    '<button type="button" class="observer-chief-card" data-observer-cowork="chief-of-staff" data-observer-role="chief" aria-label="Chat with Your Chief of Staff">',
+      '<span>Chief of Staff</span>',
       '<strong>' + escapeHtml(chief.view) + '</strong>',
       '<p>' + escapeHtml(chief.why) + '</p>',
-      '<small>' + escapeHtml(chief.next) + '</small>',
-    '</section>',
+      '<small>Chat with Your Chief of Staff</small>',
+    '</button>',
     '<section class="observer-board-grid" aria-label="Observer packet readiness">',
       observerBoardState.observers.map((observer) => [
-        '<article class="observer-truth-card">',
+        '<button type="button" class="observer-truth-card" data-observer-cowork="' + escapeHtml(observerConversationId(observer.name)) + '" data-observer-role="observer">',
           '<div>',
             '<span>' + escapeHtml(observer.stance) + '</span>',
             '<strong>' + escapeHtml(observer.name) + '</strong>',
           '</div>',
           '<p>' + escapeHtml(observer.truth) + '</p>',
-          '<small>Evidence: ' + escapeHtml(observer.evidence) + '</small>',
-        '</article>'
+          '<small>Talk with this Observer</small>',
+        '</button>'
       ].join('')).join(''),
     '</section>',
     '<p class="observer-board-note">If this view claims certainty without a packet, that is a bug. Teach VAL or open the source drawer before trusting the Board.</p>'
@@ -23781,6 +24188,8 @@ drawerTray.addEventListener('click', async (event) => {
     event.stopPropagation();
     if(transcriptAction.dataset.transcriptAction === 'open_leverage') await openTranscriptLeverage();
     if(transcriptAction.dataset.transcriptAction === 'send_action_items') await prepareTranscriptActionItemsEmail(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
+    if(transcriptAction.dataset.transcriptAction === 'save_attendee_email') await saveTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
+    if(transcriptAction.dataset.transcriptAction === 'send_attendee_email') await sendTimelineAttendeeEmailDraft(transcriptAction.dataset.draftId || '');
     if(transcriptAction.dataset.transcriptAction === 'link_project') await linkTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'create_project') await createTimelineTranscriptProject(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
     if(transcriptAction.dataset.transcriptAction === 'link_transcript_relationship') await linkTimelineTranscriptStandaloneRelationship(transcriptAction.dataset.transcriptId || currentTimelineTranscript?.id || '');
@@ -24288,6 +24697,7 @@ document.addEventListener('click', (event) => {
   const launchTarget = event.target.closest([
     '[data-open-room]',
     '.cowork-notebook',
+    '.task-companion-button',
     '.next-meeting-card',
     '.agenda-item',
     '.calendar-tab',
@@ -24325,6 +24735,7 @@ closeSourceDetail.addEventListener('click', () => {
 });
 
 nextMeetingCard.addEventListener('click', () => openMeetingPrepWithPacket(nextMeetingCard, 0));
+taskCompanionButton?.addEventListener('click', openTaskWorkspace);
 agendaItems.forEach((item) => {
   item.addEventListener('click', () => {
     const eventRecord = currentCalendarEvents[Number(item.dataset.calendarEventIndex || 0)] || {};
@@ -24360,7 +24771,28 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
     runCowork('think');
   }
 });
+workspaceInputPanel.addEventListener('click', (event) => {
+  const observerButton = event.target.closest('[data-observer-cowork]');
+  if(!observerButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void openObserverCowork(observerButton.dataset.observerCowork || '',observerButton.dataset.observerRole || 'observer');
+});
 scraperPreviewList?.addEventListener('click', async (event) => {
+  const taskTranscript = event.target.closest('[data-task-open-transcript]');
+  if(taskTranscript){
+    event.preventDefault();
+    event.stopPropagation();
+    await openTaskSourceTranscript(taskTranscript.dataset.taskOpenTranscript || '');
+    return;
+  }
+  const taskPrepared = event.target.closest('[data-task-open-prepared]');
+  if(taskPrepared){
+    event.preventDefault();
+    event.stopPropagation();
+    await openTaskPreparedWork(taskPrepared.dataset.taskOpenPrepared || '');
+    return;
+  }
   const emailDraftReview = event.target.closest('[data-cowork-open-email-thread-draft]');
   if(emailDraftReview){
     event.preventDefault();
@@ -24420,6 +24852,7 @@ workspaceInputPanel.addEventListener('input', (event) => {
   orientHomeCoworkFromInput();
 });
 updateLinkedInWidget();
+void hydrateTaskCompanionCount();
 calendarTab.addEventListener('click', () => {
   if(hearth.classList.contains('calendar-open')){
     closeCalendarPanel();

@@ -9,6 +9,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valCoworkRoutes.js'),'utf8');
 const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthHtml=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
 
 function project(){
   return {
@@ -80,7 +81,7 @@ function documents(){
   ];
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents(),hasPg=false,dbQuery}={}){
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents(),hasPg=false,dbQuery,generateConversationReply=async()=>''}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
@@ -112,6 +113,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     tenantId:()=>'tenant',
     userId:()=>'user',
     uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`,
+    generateConversationReply,
     loadProject:async id=>id===loadedProject?.projectId ? loadedProject : null,
     loadRelationships:async()=>loadedRelationships,
     loadDocuments:async()=>loadedDocuments,
@@ -261,7 +263,68 @@ test('Co-Work schema and routes are mounted as a durable service',()=>{
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
-  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview','relationship.section']);
+  assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview','relationship.section','observer.discussion','board.chief_of_staff']);
+});
+
+test('Observer and Chief of Staff conversations resume their own durable message history',async()=>{
+  const replies=[];
+  const {service}=serviceFor({generateConversationReply:async input=>{
+    replies.push(input);
+    return input.entrypointId === 'board.chief_of_staff' ? 'The Board is holding that decision.' : 'This Observer will carry that forward.';
+  }});
+  const opened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationships',sectionId:'observer'},
+    title:'Talk with the Relationships Observer',
+    context:{observer:{name:'Relationships'},evidence:['Current relationship packet']}
+  });
+  assert.equal(opened.resumed,false);
+  const answered=await service.respond(opened.session.id,{answer:'Remember that trust matters more than speed.'});
+  assert.equal(answered.session.state.messages.length,2);
+  assert.equal(answered.session.state.messages[0].role,'user');
+  assert.match(answered.session.state.messages[1].content,/carry that forward/i);
+
+  const reopened=await service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationships',sectionId:'observer'},
+    title:'Talk with the Relationships Observer',
+    context:{observer:{name:'Relationships'},evidence:['Refreshed relationship packet']}
+  });
+  assert.equal(reopened.resumed,true);
+  assert.equal(reopened.session.id,opened.session.id);
+  assert.equal(reopened.session.state.messages.length,2);
+  assert.deepEqual(reopened.session.workingBrief.context.evidence,['Refreshed relationship packet']);
+
+  const chief=await service.openEntry({
+    entrypointId:'board.chief_of_staff',
+    scope:{entityType:'observer_board',entityId:'chief-of-staff',sectionId:'board'},
+    title:'Chat with Your Chief of Staff',
+    context:{board:{observers:['Relationships','Projects']}}
+  });
+  const chiefAnswered=await service.respond(chief.session.id,{answer:'What hidden opportunity should I notice?'});
+  assert.notEqual(chief.session.id,opened.session.id);
+  assert.match(chiefAnswered.message,/Board is holding/i);
+  assert.equal(replies.length,2);
+});
+
+test('Hearth exposes unresolved tasks with source and prepared-work continuation paths',()=>{
+  assert.match(hearthHtml,/class="task-companion-button"/);
+  assert.match(hearth,/function openTaskWorkspace/);
+  assert.match(hearth,/getJson\('\/api\/val\/tasks'/);
+  assert.match(hearth,/getJson\('\/api\/val\/drafts'/);
+  assert.match(hearth,/getJson\('\/api\/val\/ready-for-you\?limit=5&includeSnoozed=true'/);
+  assert.match(hearth,/function openTaskSourceTranscript/);
+  assert.match(hearth,/function openTaskPreparedWork/);
+  assert.match(hearth,/taskCompanionButton\?\.addEventListener\('click', openTaskWorkspace\)/);
+});
+
+test('Hearth opens Observer and Chief cards as resumable scoped Co-Work conversations',()=>{
+  assert.match(hearth,/function observerConversationContext/);
+  assert.match(hearth,/function openObserverCowork/);
+  assert.match(hearth,/const entrypointId = isChief \? 'board\.chief_of_staff' : 'observer\.discussion'/);
+  assert.match(hearth,/data-observer-cowork="chief-of-staff"/);
+  assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:true,suppressMessage:true\}\)/);
+  assert.match(hearth,/observerButton\.dataset\.observerCowork/);
 });
 
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{

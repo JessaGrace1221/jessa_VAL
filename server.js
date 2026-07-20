@@ -19904,16 +19904,10 @@ function eventTitleFromContext(ctx={}){
 }
 function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
-  const isKrisp=/krisp/i.test(String(payload.source||payload.provider||meta.source||meta.provider||sourceMeta.source||''))||meta.krispDetected||meta.provider==='krisp';
-  const rawHeadingTitle=isKrisp?krispReceiptHeadingTitle(rawText||payload.transcript||''):'';
+  const isKrisp=/krisp/i.test([payload.source,payload.provider,meta.source,meta.provider,sourceMeta.source,sourceMeta.provider].filter(Boolean).join(' '))||meta.krispDetected||meta.provider==='krisp';
   const rawPayloadTitle=payload.title||payload.meetingTitle||payload.meeting_title||payload.name||meta.title||sourceMeta.title;
-  if(rawHeadingTitle&&(/^\s*Krisp\s+/i.test(String(rawPayloadTitle||''))||/\bDownload Link\b/i.test(String(rawPayloadTitle||''))))return rawHeadingTitle;
-  const exactKrispTitle=valTitleCandidate(
-    isKrisp
-      ? rawPayloadTitle
-      : ''
-  );
-  if(exactKrispTitle)return exactKrispTitle;
+  if(isKrisp&&String(rawPayloadTitle||'').trim())return String(rawPayloadTitle).replace(/\s+/g,' ').trim();
+  const rawHeadingTitle=isKrisp?krispReceiptHeadingTitle(rawText||payload.transcript||''):'';
   if(rawHeadingTitle)return rawHeadingTitle;
   const knownContentTitle=transcriptKnownContentTitle(rawText,payload);
   const calendarTitle=eventTitleFromContext(payload);
@@ -23446,9 +23440,10 @@ function transcriptDetailFromIndex(data,transcript){
   return {...detail,sourceReceipt:transcriptSourceReceipt(detail)};
 }
 function transcriptKrispNativeMetadata(metadata={}){
-  const nativeSummary=String(metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||'').trim();
-  const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:(Array.isArray(metadata.krisp_action_items)?metadata.krisp_action_items:[]);
-  const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test(String(metadata.provider||metadata.source||metadata.importedVia||'')));
+  const sourceMetadata=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
+  const nativeSummary=String(metadata.krispSummary||metadata.summaryFromKrisp||metadata.krisp_summary||sourceMetadata.krispSummary||sourceMetadata.summaryFromKrisp||sourceMetadata.krisp_summary||'').trim();
+  const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:(Array.isArray(metadata.krisp_action_items)?metadata.krisp_action_items:(Array.isArray(sourceMetadata.krispActionItems)?sourceMetadata.krispActionItems:(Array.isArray(sourceMetadata.krisp_action_items)?sourceMetadata.krisp_action_items:[])));
+  const krispNative=Boolean(nativeSummary||nativeActionItems.length||/krisp/i.test([metadata.provider,metadata.source,metadata.importedVia,sourceMetadata.provider,sourceMetadata.source,sourceMetadata.importedVia].filter(Boolean).join(' ')));
   return {krispNative,nativeSummary,nativeActionItems};
 }
 function transcriptSourceItemText(item){
@@ -23587,16 +23582,15 @@ function transcriptSourceReceipt(transcript={}){
   return {body,sections,actionItems,keyPoints,ready:Boolean(body&&sections.length)};
 }
 function transcriptDrawerRecordTime(record={}){
-  const value=record.createdAt||record.meetingDatetime||record.receivedAt||'';
+  const value=record.meetingDatetime||record.createdAt||record.receivedAt||'';
   const parsed=Date.parse(value);
   return Number.isFinite(parsed)?parsed:0;
 }
 function transcriptDrawerRecordSignature(record={}){
   const id=String(record.id||record.transcriptId||record.transcript_id||'').trim();
-  if(id)return 'id|'+id;
   const source=String(record.source||record.metadata?.source||'unknown').trim().toLowerCase();
   const title=String(record.title||record.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
-  return source+'|'+title;
+  return title?source+'|'+title:'id|'+id;
 }
 function transcriptSourceReceiptQuality(record={}){
   const receipt=record.sourceReceipt||transcriptSourceReceipt(record);
@@ -23831,7 +23825,10 @@ function transcriptWritingRuleSignoff(writingRules=''){
   const match=text.match(/\bsign(?:\s|-)?off\s+(?:with|as)\s+([A-Za-z][A-Za-z .'-]{0,42})/i);
   return String(match?.[1]||'Jessa').replace(/[.]+$/,'').trim()||'Jessa';
 }
-function transcriptActionItemsEmailBody({title='',actionItems=[],writingRules=''}={}){
+function transcriptActionItemsEmailBody({title='',keyPoints=[],actionItems=[],writingRules=''}={}){
+  const cleanKeyPoints=(Array.isArray(keyPoints)?keyPoints:[])
+    .map(transcriptCleanDisplayLine)
+    .filter(Boolean);
   const cleanItems=(Array.isArray(actionItems)?actionItems:[])
     .map(transcriptCleanDisplayLine)
     .filter(Boolean);
@@ -23839,7 +23836,10 @@ function transcriptActionItemsEmailBody({title='',actionItems=[],writingRules=''
   return [
     'Hi everyone,',
     '',
-    `Here are the Action Items from ${meetingTitle}:`,
+    `Here are the Key Points and Action Items from ${meetingTitle}:`,
+    '',
+    'Key Points',
+    ...cleanKeyPoints.map(item=>`- ${item}`),
     '',
     'Action Items',
     ...cleanItems.map((item,index)=>`${index+1}. ${item}`),
@@ -23851,14 +23851,15 @@ function transcriptActionItemsEmailBody({title='',actionItems=[],writingRules=''
 async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},tasks=[],{writingRules=''}={}){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
   const overview=transcriptOverviewSections(transcript,tasks);
+  const keyPoints=(Array.isArray(overview.keyPoints)?overview.keyPoints:[]).map(String).filter(Boolean);
   const actionItems=(Array.isArray(overview.actionItems)&&overview.actionItems.length?overview.actionItems:tasks.map(task=>task.taskTitle||task.title||task.text||'')).map(String).filter(Boolean);
   const recipients=transcriptOverviewInvitees(transcript,calendarEvent);
   if(!actionItems.length)throw Object.assign(new Error('This transcript has no source Action Items to send yet.'),{statusCode:400});
   if(!recipients.length)throw Object.assign(new Error('VAL could not find attendee email addresses for this transcript yet. Link or add attendees first.'),{statusCode:400});
   const transcriptId=transcript.id||transcript.transcriptId||'';
   const title=transcript.title||transcript.meetingTitle||'Meeting';
-  const subject=`Action Items: ${title}`;
-  const body=transcriptActionItemsEmailBody({title,actionItems,writingRules});
+  const subject=`Meeting follow-up: ${title}`;
+  const body=transcriptActionItemsEmailBody({title,keyPoints,actionItems,writingRules});
   const existing=(await listDrafts()).find(d=>d.draftType==='transcript_action_items_email'&&d.sourceContext?.transcriptId===transcriptId);
   const draft=await saveInternalDraft({
     id:existing?.id,
@@ -23877,20 +23878,22 @@ async function prepareTranscriptActionItemsAttendeeEmailDraft(transcript={},task
       recipients:recipients.map(person=>person.email),
       recipientEmail:recipients.map(person=>person.email).join(', '),
       invitees:recipients,
+      keyPoints,
       actionItems,
       sourceReceipt:overview,
       preparedArtifactKind:'email_draft',
-      preparedArtifact:{kind:'email_draft',subject,body,recipients:recipients.map(person=>person.email)},
+      preparedArtifact:{kind:'email_draft',subject,body,recipients:recipients.map(person=>person.email),keyPoints,actionItems},
       canValAct:'approval_required',
       executionPath:'review_then_send_email',
       noExternalAction:true,
       noExternalSend:true,
+      exactKeyPointsFromSystem:true,
       exactActionItemsFromSystem:true,
       writingRules
     }
   });
   await logTranscriptAction(transcriptId,'action_items_attendee_email_draft_ready',draft.id||'','completed').catch(()=>{});
-  return {draft,recipientCount:recipients.length,recipients,actionItems,noExternalAction:true};
+  return {draft,recipientCount:recipients.length,recipients,keyPoints,actionItems,noExternalAction:true};
 }
 function transcriptLooksLikeProcessingPrompt(text=''){
   return /\b(User\/Time\/Date|Attendee intelligence|Saved memory|\[chat_memory\]|\[relationship_memory\]|dashboard context|user profile context|Prepare me for this upcoming meeting using attendee intelligence)\b/i.test(String(text||''));
@@ -23937,8 +23940,9 @@ function valConversationSummaryFromText(rawText=''){
 }
 function cleanTranscriptForUi(t={}){
   const raw=t.transcriptText||t.rawTranscript||t.rawText||t.raw_transcript||'';
-  const native=transcriptKrispNativeMetadata(t.metadata||t.sourcePayloadMetadata||{});
-  const title=cleanTranscriptTitleForUi(t.title||t.meetingTitle||'',raw,t.createdAt||t.meetingDatetime||'');
+  const native=transcriptKrispNativeMetadata({...t,...(t.metadata||{}),sourcePayloadMetadata:t.sourcePayloadMetadata||t.metadata?.sourcePayloadMetadata||{}});
+  const sourceTitle=String(t.meetingTitle||t.title||'').replace(/\s+/g,' ').trim();
+  const title=native.krispNative?(sourceTitle||'Transcript'):cleanTranscriptTitleForUi(sourceTitle,raw,t.createdAt||t.meetingDatetime||'');
   const cleanSummary=native.nativeSummary||cleanTranscriptSummaryForUi(t.summary,raw);
   return {...t,...native,title,meetingTitle:title,summaryPreview:cleanSummary,summary:{...(t.summary&&typeof t.summary==='object'?t.summary:{}),executiveSummary:cleanSummary}};
 }
@@ -28933,11 +28937,13 @@ function transcriptUiRecord(record,{includeText=false}={}){
   const reviewStatus=String(metadata.reviewStatus||metadata.review_status||metadata.status||(openActions.length?'needs_review':'unreviewed')).toLowerCase().replace(/\s+/g,'_');
   const createdAt=record.createdAt||metadata.created_at||metadata.timestamp||'';
   const receivedAt=metadata.receivedAt||metadata.received_at||createdAt;
+  const meetingEvent=metadata.calendarEvent||metadata.calendar_event||metadata.meetingMatch?.calendarEvent||metadata.meetingMatch?.event||{};
+  const meetingDatetime=record.meetingDatetime||record.meeting_datetime||metadata.meetingDatetime||metadata.meeting_datetime||metadata.meetingDate||metadata.meeting_date||metadata.startTime||metadata.start_time||metadata.startedAt||metadata.started_at||meetingEvent.startTime||meetingEvent.start_time||meetingEvent.start||'';
   const title=transcriptDisplayTitleFromPayload({...metadata,...record,title:record.title||metadata.title,metadata},rawText);
   const attendees=transcriptOverviewInvitees({...record,metadata,sourcePayloadMetadata:metadata,rawText,transcriptText:rawText},{});
   return {
     id:record.id,type:record.type||'transcript',title,
-    createdAt,receivedAt,source,status:reviewStatus,reviewStatus,
+    createdAt,receivedAt,meetingDatetime,source,status:reviewStatus,reviewStatus,
     summary,preview:rawText.replace(/\s+/g,' ').trim().slice(0,260),contactId:metadata.contact_id||metadata.contactId||'',
     contactName:metadata.contact_name||metadata.contactName||metadata.personName||'',company:metadata.company||metadata.companyName||'',opportunityId:metadata.opportunity_id||metadata.opportunityId||'',
     meetingId:metadata.meeting_id||metadata.meetingId||metadata.calendarEventId||'',relatedOpportunity:metadata.opportunityName||metadata.opportunity||'',
@@ -28965,16 +28971,18 @@ function transcriptIndexContextMetadata(metadata={}){
 }
 function transcriptIndexUiRecord(record){
   const detail=record?.detail&&typeof record.detail==='object'?record.detail:{};
+  const base=transcriptUiRecord(record);
   const transcript=cleanTranscriptForUi({
-    ...transcriptUiRecord(record),
+    ...base,
     ...detail,
     id:detail.id||detail.transcriptId||record?.id||record?.transcriptId||'',
     transcriptId:detail.transcriptId||record?.transcriptId||record?.id||'',
     source:detail.source||record?.metadata?.source||record?.type||'webhook',
-    createdAt:detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
-    receivedAt:detail.receivedAt||detail.createdAt||detail.meetingDatetime||record?.createdAt||'',
-    title:detail.title||detail.meetingTitle||record?.title||'',
-    meetingTitle:detail.meetingTitle||detail.title||record?.title||'',
+    createdAt:detail.createdAt||record?.createdAt||'',
+    receivedAt:detail.receivedAt||record?.createdAt||'',
+    meetingDatetime:detail.meetingDatetime||detail.meeting_datetime||record?.meetingDatetime||record?.meeting_datetime||record?.metadata?.meetingDatetime||record?.metadata?.meeting_datetime||record?.metadata?.startTime||record?.metadata?.start_time||'',
+    title:base.krispNative?base.title:(detail.title||detail.meetingTitle||record?.title||''),
+    meetingTitle:base.krispNative?base.title:(detail.meetingTitle||detail.title||record?.title||''),
     summary:detail.summary||detail.summaryPreview||record?.metadata?.summary||record?.metadata?.analysis?.summary||'',
     actionItems:detail.actionItems||detail.nativeActionItems||[],
     tasks:detail.tasks||[],
@@ -29007,6 +29015,7 @@ function transcriptIndexUiRecord(record){
     meetingTitle:transcript.meetingTitle||transcript.title||'Transcript',
     createdAt:transcript.createdAt||'',
     receivedAt:transcript.receivedAt||transcript.createdAt||'',
+    meetingDatetime:transcript.meetingDatetime||'',
     processingStatus:transcript.processingStatus||'',
     summaryStatus:transcript.summaryStatus||'',
     reviewStatus:transcript.reviewStatus||transcript.status||'',
@@ -29299,8 +29308,8 @@ app.post('/api/val/transcripts/:transcriptId/action-items-email-draft',async(req
       ? transcript.sourceReceipt.actionItems.map(item=>({taskTitle:item,sourceQuote:item,status:'source receipt'}))
       : (Array.isArray(transcript.tasks)?transcript.tasks:[]);
     const result=await prepareTranscriptActionItemsAttendeeEmailDraft(transcript,tasks,{writingRules:req.body?.writingRules||req.body?.writing_rules||''});
-    await auditLog({req,action:'transcript_action_items_email_draft_prepared',resourceType:'transcript',resourceId:id,metadata:{draftId:result.draft?.id,recipientCount:result.recipientCount,actionItems:result.actionItems.length},success:true}).catch(()=>{});
-    res.json({ok:true,...result,message:`Action Items email is ready for review for ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}. No email was sent yet.`});
+    await auditLog({req,action:'transcript_action_items_email_draft_prepared',resourceType:'transcript',resourceId:id,metadata:{draftId:result.draft?.id,recipientCount:result.recipientCount,keyPoints:result.keyPoints.length,actionItems:result.actionItems.length},success:true}).catch(()=>{});
+    res.json({ok:true,...result,message:`Key Points and Action Items are ready for review in one group email to ${result.recipientCount} attendee${result.recipientCount===1?'':'s'}. No email was sent yet.`});
   }catch(e){
     res.status(e.statusCode||500).json({ok:false,error:e.message});
   }
@@ -31016,6 +31025,30 @@ async function applyCoworkRelationshipSection({relationshipId,relationshipName='
   });
   return saved ? relationshipIndexItemFromProfile(publicRelationshipProfile(saved)) : null;
 }
+async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBrief={},messages=[]}={}){
+  const isChief=entrypointId==='board.chief_of_staff';
+  const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const conversation=safeArray(messages).slice(-18).map((message)=>({
+    role:message.role==='assistant'?'assistant':'user',
+    content:String(message.content||'').slice(0,5000)
+  }));
+  const system=[
+    VAL_SYSTEM_PROMPT,
+    isChief
+      ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
+      : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
+    'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
+    'Use only the supplied Board packet and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
+    'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
+    'Never claim an external action happened. Nothing leaves VAL from this conversation.',
+    'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
+  ].join('\n');
+  const packetMessage={
+    role:'user',
+    content:'Current private packet context:\n'+JSON.stringify(context).slice(0,24000)
+  };
+  return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:750,temperature:0.35,timeoutMs:15000});
+}
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -31052,6 +31085,7 @@ const valCowork = registerValCoworkRoutes(app,{
   loadRelationship:loadRelationshipForCowork,
   applyRelationshipOverview:applyCoworkRelationshipOverview,
   applyRelationshipSection:applyCoworkRelationshipSection,
+  generateConversationReply:generateObserverCoworkReply,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31095,10 +31129,11 @@ async function executeEmailSendPacket({packet,payload}){
   if(provider.includes('outlook')||provider.includes('microsoft')){
     const token=await getMicrosoftToken();
     if(!token)throw new Error('Microsoft auth required');
+    const recipients=to.split(/[;,]/).map(address=>address.trim()).filter(Boolean);
     const message={
       subject,
       body:{contentType:'Text',content:body},
-      toRecipients:[{emailAddress:{address:to}}]
+      toRecipients:recipients.map(address=>({emailAddress:{address}}))
     };
     const r=await fetch('https://graph.microsoft.com/v1.0/me/sendMail',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({message,saveToSentItems:true})});
     if(!r.ok){
@@ -31113,7 +31148,7 @@ async function executeEmailSendPacket({packet,payload}){
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
   const lines=[`To: ${to}`,`Subject: ${subject}`,'',body];
   const raw=Buffer.from(lines.join('\r\n')).toString('base64url');
-  const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||packet.targetId||undefined})});
+  const r=await fetch('https://www.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw,threadId:payload.threadId||undefined})});
   const d=await readJsonResponse(r);
   if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
   return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}.`,raw:d};

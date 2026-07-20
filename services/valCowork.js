@@ -2744,6 +2744,24 @@ const COWORK_ENTRYPOINTS=Object.freeze({
     requiredPackets:['relationship_packet','relationship_person_packet'],
     objective:'Improve one selected relationship card without changing any other person or card.',
     completionCondition:'The selected relationship card has one review-gated, user-confirmed internal update.'
+  },
+  'observer.discussion':{
+    id:'observer.discussion',
+    surface:'observer_board',
+    scopeType:'observer',
+    sectionId:'discussion',
+    requiredPackets:['observer_packet'],
+    objective:'Hold a durable conversation through one selected Observer lens.',
+    completionCondition:'The conversation and its confirmed corrections are retained for the same user and Observer.'
+  },
+  'board.chief_of_staff':{
+    id:'board.chief_of_staff',
+    surface:'observer_board',
+    scopeType:'observer_board',
+    sectionId:'synthesis',
+    requiredPackets:['observer_board_packet','chief_of_staff_packet'],
+    objective:'Hold a durable Chief of Staff conversation using the full Board context.',
+    completionCondition:'The conversation, decisions, and corrections are retained for the same user and available when the Chief of Staff is reopened.'
   }
 });
 
@@ -2782,7 +2800,8 @@ function createValCoworkService({
   prepareEmailThreadDraft=async()=>null,
   loadRelationship=async()=>null,
   applyRelationshipOverview=async()=>null,
-  applyRelationshipSection=async()=>null
+  applyRelationshipSection=async()=>null,
+  generateConversationReply=async()=>''
 }={}){
   function scope(){return {tenantId:tenantId(),userId:userId()};}
   function store(){
@@ -2857,6 +2876,16 @@ function createValCoworkService({
     }
     return store().coworkWorkItems.filter((item)=>item.sessionId===sessionId && item.tenantId===sc.tenantId && item.userId===sc.userId).sort((a,b)=>String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
   }
+  async function findLatestConversationSession(entrypointId,scopeId){
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery('select * from val_cowork_sessions where tenant_id=$1 and user_id=$2 and entrypoint_id=$3 and scope_id=$4 order by updated_at desc limit 1',[sc.tenantId,sc.userId,entrypointId,scopeId]);
+      return result.rows?.[0] ? rowToCamel(result.rows[0]) : null;
+    }
+    return store().coworkSessions
+      .filter((item)=>item.tenantId===sc.tenantId && item.userId===sc.userId && item.entrypointId===entrypointId && item.scopeId===scopeId)
+      .sort((a,b)=>String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0] || null;
+  }
   function publicResult(session,workItem,message='',question=null,receipt=null){
     const state=session.stateJson || {};
     const brief=session.workingBriefJson || {};
@@ -2883,7 +2912,8 @@ function createValCoworkService({
           draftNextMove:state.draftNextMove || null,
           draftTranscriptArtifact:state.draftTranscriptArtifact || null,
           draftEmailArtifact:state.draftEmailArtifact || null,
-          draftRelationshipOverview:state.draftRelationshipOverview || null
+          draftRelationshipOverview:state.draftRelationshipOverview || null,
+          messages:safeArray(state.messages)
         }
       },
       workItem:workItem ? {
@@ -2899,6 +2929,64 @@ function createValCoworkService({
       receipt,
       no_external_action:true
     };
+  }
+  async function openObserverConversation(entrypointId,input={}){
+    const entry=COWORK_ENTRYPOINTS[entrypointId];
+    const scopeInput=input.scope || {};
+    const scopeId=compactText(scopeInput.entityId || scopeInput.entity_id || input.observerId || input.observer_id || '',180);
+    if(!scopeId) throw new Error('VAL needs the selected Observer before opening this conversation.');
+    const context=input.context && typeof input.context==='object' ? input.context : {};
+    const title=compactText(input.title || context.title || (entrypointId==='board.chief_of_staff'?'Chief of Staff':'Observer'),180);
+    const now=new Date().toISOString();
+    const existing=await findLatestConversationSession(entrypointId,scopeId);
+    const brief={
+      ...(existing?.workingBriefJson || {}),
+      title,
+      observerId:scopeId,
+      objective:entry.objective,
+      completionCondition:entry.completionCondition,
+      context,
+      refreshedAt:now,
+      noExternalAction:true
+    };
+    if(existing){
+      existing.workingBriefJson=brief;
+      existing.stateJson={...(existing.stateJson || {}),stage:'conversation',messages:safeArray(existing.stateJson?.messages)};
+      existing.status='active';
+      existing.updatedAt=now;
+      const saved=await saveSession(existing);
+      return {...publicResult(saved,null,'',null),resumed:true};
+    }
+    const sc=scope();
+    const session=await saveSession({
+      id:uuid('cowork'),tenantId:sc.tenantId,userId:sc.userId,entrypointId,
+      scopeType:entry.scopeType,scopeId,scopeSectionId:entry.sectionId,status:'active',
+      workingBriefJson:brief,questionPlanJson:[],stateJson:{stage:'conversation',messages:[]},
+      createdAt:now,updatedAt:now
+    });
+    return {...publicResult(session,null,'',null),resumed:false};
+  }
+  async function respondObserverConversation(session,answer){
+    const state={...(session.stateJson || {}),stage:'conversation',messages:safeArray(session.stateJson?.messages)};
+    state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
+    let reply='';
+    try{
+      reply=multilineText(await generateConversationReply({
+        entrypointId:session.entrypointId,
+        scopeId:session.scopeId,
+        workingBrief:session.workingBriefJson || {},
+        messages:state.messages
+      }),6000);
+    }catch(error){
+      reply='I have saved what you said with this conversation, but I could not finish a thoughtful response yet. Nothing was lost.';
+    }
+    if(!reply) reply='I have saved that with this conversation. I will carry it forward the next time we work through this lens.';
+    state.messages.push({role:'assistant',content:reply,at:new Date().toISOString()});
+    session.stateJson=state;
+    session.status='active';
+    session.updatedAt=new Date().toISOString();
+    const saved=await saveSession(session);
+    return publicResult(saved,null,reply,null);
   }
   async function openProjectNextMoveEntry(input={}){
     const entry=COWORK_ENTRYPOINTS['project.next_move'];
@@ -3794,6 +3882,7 @@ function createValCoworkService({
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
+    if(entrypointId === 'observer.discussion' || entrypointId === 'board.chief_of_staff') return openObserverConversation(entrypointId,input);
     if(entrypointId === 'project.overview') return openProjectOverviewEntry(input);
     if(entrypointId === 'project.identity') return openProjectIdentityEntry(input);
     if(entrypointId === 'project.onboarding') return openProjectOnboardingEntry(input);
@@ -3864,6 +3953,7 @@ function createValCoworkService({
     if(!answer) throw new Error('VAL needs an answer before it can continue this scoped conversation.');
     const session=await getSession(sessionId);
     if(!session) throw new Error('This Co-Work session no longer exists.');
+    if(session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff') return respondObserverConversation(session,answer);
     const workItem=await findSessionWorkItem(session.id);
     if(!workItem) throw new Error('The prepared work item is missing. Nothing was applied.');
     if(session.entrypointId === 'project.overview') return respondProjectOverview(session,workItem,answer);

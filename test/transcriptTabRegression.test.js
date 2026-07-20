@@ -209,7 +209,7 @@ test('transcript list opens detail and exposes transcript-scoped Co-Work',()=>{
   assert.doesNotMatch(hearthJs,/Ready - send to invitees/);
 });
 
-test('transcript detail can map attendees/projects and prepare reviewed Action Items emails',()=>{
+test('transcript detail can map attendees/projects and prepare reviewed Key Points and Action Items emails',()=>{
   assert.match(server,/app\.post\('\/api\/val\/transcripts\/:transcriptId\/action-items-email-draft'/);
   assert.match(server,/prepareTranscriptActionItemsAttendeeEmailDraft/);
   assert.match(server,/transcript_action_items_attendee_email/);
@@ -227,7 +227,7 @@ test('transcript detail can map attendees/projects and prepare reviewed Action I
   assert.match(server,/transcript_context_for_project/);
   assert.match(server,/review_then_send_email/);
   assert.match(hearthJs,/function renderTimelineTranscriptMappingControls/);
-  assert.match(hearthJs,/Send Action Items to Attendees/);
+  assert.match(hearthJs,/Prepare group email/);
   assert.match(hearthJs,/data-transcript-action="send_action_items"/);
   assert.match(hearthJs,/data-transcript-action="link_relationship"/);
   assert.match(hearthJs,/data-transcript-action="create_relationship"/);
@@ -264,7 +264,7 @@ test('transcript attendees and titles stay source-exact instead of guessed',()=>
   assert.match(clientInviteeSource,/Found in the Krisp transcript title/);
   assert.match(serverInviteeSource,/nameNearEmail/);
   assert.match(clientInviteeSource,/nameNearEmail/);
-  assert.match(server,/exactKrispTitle/);
+  assert.match(server,/if\(isKrisp&&String\(rawPayloadTitle\|\|''\)\.trim\(\)\)return String\(rawPayloadTitle\)\.replace/);
   assert.match(server,/meetingTitle:title,calendarEventTitle:title/);
   assert.match(server,/const id=String\(record\.id\|\|record\.transcriptId/);
   assert.match(server,/transcript\.summary\?\.executiveSummary/);

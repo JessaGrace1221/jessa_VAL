@@ -23,10 +23,10 @@ test('July 10 known-good baseline is documented and linked from Do Not Regress',
   assert.match(doNotRegress, /Never replace the Meeting Notes transcript workbench/);
 });
 
-test('Home baseline keeps Velocity Alignment and Leverage distinct', () => {
+test('Home baseline keeps the perspective message with Alignment and Leverage distinct', () => {
   assert.doesNotMatch(html, /Prototype states/);
   assert.doesNotMatch(html, /data-state-option/);
-  assert.match(html, /<h2>What changed<\/h2>/);
+  assert.doesNotMatch(html, /<h2>What changed<\/h2>/);
   assert.match(html, /<h2>Top priority<\/h2>/);
   assert.match(html, /<h2>Prepared drafts<\/h2>/);
   assert.match(js, /function hydrateRoomsFromBriefing/);
