@@ -1395,7 +1395,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /I've switched to Meeting Mode/);
   assert.match(hearthJs, /Give me a full briefing/);
   assert.match(hearthJs, /who they are, what we have discussed before, what the goal of this meeting should be, and 3 talking points to open strong/);
-  assert.match(hearthJs, /Transcript\/email context/);
+  assert.match(hearthJs, /Prior discussion evidence/);
   assert.match(hearthJs, /Public lookup context/);
   assert.doesNotMatch(hearthJs, /Meeting Prep is reset to a clean starting point/);
   assert.doesNotMatch(hearthJs, /Original prompt held for rebuild/);
@@ -1408,6 +1408,12 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /If public evidence is verified, say "This is what I found on the web about \[Name\]"/);
   assert.doesNotMatch(hearthJs, /This is what I found on the web about \[Name\]/);
   assert.match(hearthJs, /function renderHomeCoworkMeetingPrepText/);
+  assert.match(hearthJs, /function renderMeetingPrepInlineMarkdown/);
+  assert.match(hearthJs, /function meetingPrepMarkdownHeading/);
+  assert.match(hearthJs, /activeMeetingPrepAutoPrompt/);
+  assert.match(hearthJs, /suppressVisibleUserPrompt/);
+  assert.match(hearthJs, /Open-loop evidence/);
+  assert.match(hearthJs, /drift risk/);
   assert.match(hearthJs, /home-cowork-top-judgment/);
   assert.match(hearthJs, /renderMeetingPrepCoworkEvidenceRail/);
   assert.doesNotMatch(hearthJs, /function renderMeetingPrepExternalStatus/);

@@ -254,6 +254,7 @@ let valWitnessingConnectionState = null;
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
+let activeMeetingPrepAutoPrompt = false;
 let currentCalendarEvents = [];
 let currentMeetingEvents = [];
 let calendarPanelShouldScrollToCurrent = false;
@@ -15158,20 +15159,28 @@ function meetingPrepCoworkSeed(briefing = {}){
 
 function meetingPrepHiddenEvidence(briefing = {}){
   const packet = briefing.briefPacket || {};
+  const evidenceLine = (label, values) => {
+    const list = (Array.isArray(values) ? values : [values]).map(compactSentence).filter(Boolean);
+    return list.length ? label + ': ' + list.join(' | ') : '';
+  };
   const lines = [
     'Use this evidence silently to answer the Meeting Mode prompt. Do not mention packets, readiness scores, lookup status, or diagnostics.',
-    'Meeting title: ' + compactSentence(briefing.eventTitle || packet.meeting_title || ''),
-    'Meeting time: ' + compactSentence(briefing.time || ''),
-    'Attendees: ' + compactSentence((briefing.people || []).join(' | '), ''),
-    'Who they are: ' + compactSentence((packet.attendees || []).map((item) => [item.name, item.email, item.relationship_summary, item.public_summary, item.website].filter(Boolean).join(' - ')).join(' | '), ''),
-    'Relationship context: ' + compactSentence([...(briefing.relationshipIntelligence || []), ...(packet.relationship_context || [])].join(' | '), ''),
-    'Project context: ' + compactSentence([...(briefing.project || []), ...(packet.project_context || [])].join(' | '), ''),
-    'Transcript/email context: ' + compactSentence([...(briefing.changed || []), ...(packet.what_changed_since_last_spoke || []), ...(packet.open_loops || [])].join(' | '), ''),
-    'Public lookup context: ' + compactSentence([...(briefing.externalEvidence || []), ...(packet.public_context || [])].join(' | '), ''),
-    'Likely goal: ' + compactSentence(packet.meeting_type_focus || briefing.purpose || ''),
-    'Possible opening/questions: ' + compactSentence([briefing.opening, ...(briefing.questions || []), ...(packet.questions || [])].filter(Boolean).join(' | '), ''),
-    'Follow-up context: ' + compactSentence([...(briefing.followUpItems || []), ...(packet.likely_follow_up || [])].join(' | '), '')
-  ].filter((line) => !/: $/.test(line));
+    'Write like an executive meeting brief, not a data inventory. Synthesize what matters, where ambiguity exists, what is still open, and how the meeting can stay useful.',
+    'Call out drift risk when the meeting could sprawl into strategy, philosophy, or too many unresolved threads. Make the desired outcome operational and specific.',
+    evidenceLine('Meeting title', briefing.eventTitle || packet.meeting_title || ''),
+    evidenceLine('Meeting time', briefing.time || ''),
+    evidenceLine('Attendees', briefing.people || []),
+    evidenceLine('Who they are', (packet.attendees || []).map((item) => [item.name, item.email, item.relationship_summary, item.public_summary, item.website].filter(Boolean).join(' - '))),
+    evidenceLine('Relationship context', [...(briefing.relationshipIntelligence || []), ...(packet.relationship_context || [])]),
+    evidenceLine('Project context', [...(briefing.project || []), ...(packet.project_context || [])]),
+    evidenceLine('Prior discussion evidence', [...(briefing.changed || []), ...(packet.what_changed_since_last_spoke || [])]),
+    evidenceLine('Open-loop evidence', [...(packet.open_loops || []), ...(briefing.followUpItems || []), ...(packet.likely_follow_up || [])]),
+    evidenceLine('Public lookup context', [...(briefing.externalEvidence || []), ...(packet.public_context || [])]),
+    evidenceLine('Likely goal', packet.meeting_type_focus || briefing.purpose || ''),
+    evidenceLine('Possible opening/questions', [briefing.opening, ...(briefing.questions || []), ...(packet.questions || [])].filter(Boolean)),
+    'Required output shape: who they are; what we have discussed before; what the goal of this meeting should be; 3 talking points to open strong.',
+    'The goal section must include the clearest useful outcome and the main open loops or ambiguity to control.'
+  ].filter(Boolean);
   return lines.join('\n');
 }
 
@@ -18146,19 +18155,27 @@ async function runMeetingPrepCoworkMayPrompt(briefing = activeMeetingPrepBriefin
     'Answer only as a useful Meeting Mode briefing. Use these sections: who they are, what we have discussed before, what the goal of this meeting should be, and 3 talking points to open strong.'
   ].filter(Boolean).join('\n\n');
   activeCoworkContextLocked = true;
+  activeMeetingPrepAutoPrompt = true;
   textarea.value = meetingPrepOriginalPromptSeed(briefing);
-  await runCowork('meeting_prep');
+  try{
+    await runCowork('meeting_prep');
+  }finally{
+    activeMeetingPrepAutoPrompt = false;
+    textarea.value = '';
+    textarea.placeholder = 'Add the next thought...';
+  }
 }
 
 async function runCowork(mode){
   const input = workspaceInputValue('cowork');
   const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
+  const suppressVisibleUserPrompt = Boolean(mode === 'meeting_prep' && activeMeetingPrepAutoPrompt);
   const heldContext = activeCoworkHeldContext || '';
   const heldSystemPrompt = heldContext
     ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext
     : '';
-  if(keepHomeCoworkOpen && input){
+  if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
   }
   if(mockScrapers || !canUseApi){
@@ -18196,6 +18213,11 @@ async function runCowork(mode){
     return;
   }
   if(keepHomeCoworkOpen){
+    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    if(suppressVisibleUserPrompt && textarea){
+      textarea.value = '';
+      textarea.placeholder = 'Add the next thought...';
+    }
     if(mode !== 'meeting_prep'){
       showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
     }else{
@@ -22743,16 +22765,60 @@ function homeCoworkResponseNode(){
   return scraperPreviewList?.querySelector?.('[data-home-cowork-response]') || null;
 }
 
+function renderMeetingPrepInlineMarkdown(value = ''){
+  return escapeHtml(String(value || ''))
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function meetingPrepMarkdownHeading(value = ''){
+  return String(value || '')
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^\*\*([^*]+)\*\*$/, '$1')
+    .trim();
+}
+
+function renderMeetingPrepMarkdownLines(lines = []){
+  const html = [];
+  let listType = '';
+  const closeList = () => {
+    if(listType){
+      html.push('</' + listType + '>');
+      listType = '';
+    }
+  };
+  lines.forEach((line) => {
+    const text = String(line || '').trim();
+    if(!text) return;
+    const bulletMatch = text.match(/^[-*]\s+(.+)$/);
+    const numberMatch = text.match(/^\d+\.\s+(.+)$/);
+    if(bulletMatch || numberMatch){
+      const desiredType = numberMatch ? 'ol' : 'ul';
+      if(listType !== desiredType){
+        closeList();
+        listType = desiredType;
+        html.push('<' + listType + '>');
+      }
+      html.push('<li>' + renderMeetingPrepInlineMarkdown((numberMatch || bulletMatch)[1]) + '</li>');
+      return;
+    }
+    closeList();
+    html.push('<p>' + renderMeetingPrepInlineMarkdown(text) + '</p>');
+  });
+  closeList();
+  return html.join('');
+}
+
 function renderHomeCoworkMeetingPrepText(text = ''){
   const raw = String(text || '').trim();
   const parts = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';
   const renderBlock = (part, index) => {
     const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
-    const heading = lines.shift() || '';
-    const body = lines.map((line) => escapeHtml(line)).join('<br>');
-    if(index === 0) return '<div class="home-cowork-top-judgment"><strong>' + escapeHtml(heading) + '</strong>' + (body ? '<p>' + body + '</p>' : '') + '</div>';
-    return '<section><strong>' + escapeHtml(heading) + '</strong>' + (body ? '<p>' + body + '</p>' : '') + '</section>';
+    let heading = lines.shift() || '';
+    heading = meetingPrepMarkdownHeading(heading);
+    const body = renderMeetingPrepMarkdownLines(lines);
+    if(index === 0) return '<div class="home-cowork-top-judgment"><strong>' + escapeHtml(heading) + '</strong>' + body + '</div>';
+    return '<section><strong>' + escapeHtml(heading) + '</strong>' + body + '</section>';
   };
   return '<div class="home-cowork-meeting-prep-answer">' + parts.map(renderBlock).join('') + '</div>';
 }
