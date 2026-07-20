@@ -109,6 +109,19 @@ const CLIENT_CONFIG = {
   projectName: process.env.VAL_PROJECT_NAME || '',
   projectType: process.env.VAL_PROJECT_TYPE || ''
 };
+function envFlag(name){
+  return /^(1|true|yes|on|coming_soon|disabled)$/i.test(String(process.env[name] || '').trim());
+}
+function clientLooksLikeGreg(){
+  return /(^|[-_\s])greg([-_\s]|$)|zlevor/i.test(`${CLIENT_CONFIG.clientSlug} ${CLIENT_CONFIG.clientName} ${CLIENT_CONFIG.brandName}`);
+}
+function clientFeatureLocks(){
+  const greg = clientLooksLikeGreg();
+  return {
+    projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
+    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
+  };
+}
 function requestBaseUrl(req=null){
   if(CLIENT_CONFIG.publicBaseUrl) return CLIENT_CONFIG.publicBaseUrl;
   const host=String(req?.get?.('host')||req?.headers?.host||'').trim();
@@ -129,6 +142,7 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
 const OPENAI_CHAT_MODEL = process.env.VAL_CHAT_MODEL || 'gpt-5.5';
 let RUNTIME_OPENAI_KEY = '';
 let RUNTIME_OPENAI_MODEL = '';
+const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number(process.env.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS) || 105000;
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || process.env.DG_KEY || '';
 const DEEPGRAM_TTS_MODEL = process.env.DEEPGRAM_TTS_MODEL || process.env.VAL_TTS_VOICE || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-cora-en';
 const DEEPGRAM_STT_MODEL = process.env.DEEPGRAM_STT_MODEL || 'nova-2';
@@ -7960,12 +7974,20 @@ app.get('/assets/hearth-:time(morning|afternoon|evening).png',(req,res)=>{
   res.set('Cache-Control','public, max-age=300');
   res.sendFile(path.join(__dirname,'assets',`hearth-${req.params.time}.png`));
 });
+app.get('/api/public-config',(req,res)=>{
+  res.json({
+    clientSlug: CLIENT_CONFIG.clientSlug,
+    clientName: CLIENT_CONFIG.clientName,
+    brandName: CLIENT_CONFIG.brandName,
+    featureFlags: clientFeatureLocks()
+  });
+});
 app.use(requireAuth);
 app.get('/api/config',async(req,res)=>{
   const studioOverride=await getTenantDashboardStudioOverride().catch(()=>null);
   const babyStudio=await getBabyStudioSettings().catch(()=>null);
   const configuredName=babyStudio?.babyValName||CLIENT_CONFIG.brandName;
-  res.json({...CLIENT_CONFIG,brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false)},dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
+  res.json({...CLIENT_CONFIG,brandName:configuredName,demoMode:DEMO_MODE,signupUrl:VAL_SIGNUP_URL,ghlAccounts:configuredGhlAccounts().map(a=>({slug:a.slug,label:a.label,locationId:a.locationId,calendarCount:a.calendarIds.length})),microsoftConfigured:!!(MICROSOFT_CLIENT_ID&&MICROSOFT_CLIENT_SECRET&&MICROSOFT_REDIRECT_URI),googleOAuth:googleOAuthConfigSnapshot(),featureFlags:{dashboard_studio_beta:await dashboardStudioFeatureEnabled(req).catch(()=>false),...clientFeatureLocks()},dashboardStudioOverrides:studioOverride?.config||{},babyValStudioSettings:babyStudio||null,dashboardStudioDeployment:{activeDeploymentId:studioOverride?.activeDeploymentId||'',updatedAt:studioOverride?.updatedAt||''}});
 });
 app.get('/api/config/status',(req,res)=>res.json(statusPayload()));
 app.get('/api/setup-health',async(req,res)=>{
@@ -13635,12 +13657,20 @@ function meetingPrepPublicSearchQueries(attendee={}, contact={}, profile={}){
   const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
   const usableDomain=domain&&!/(gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|protonmail)\./i.test(domain)?domain:'';
   const website=String(contact.website||contact.raw?.website||profile.website||profile.metadata?.website||'').replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'').trim();
+  const linkedInProfile=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
+  if(!usableDomain&&!organization&&!website&&!linkedInProfile){
+    return [
+      email || '',
+      email ? `"${email}"` : '',
+      email&&name ? `"${email}" "${name}"` : ''
+    ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
+  }
   return [
-    email || '',
-    email ? `"${email}"` : '',
     name&&usableDomain ? `"${name}" ${usableDomain}` : '',
     name&&organization ? `"${name}" "${organization}"` : '',
     name&&website ? `"${name}" ${website}` : '',
+    email || '',
+    email ? `"${email}"` : '',
     name ? `"${name}" LinkedIn` : ''
   ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
 }
@@ -13692,6 +13722,17 @@ function flattenOutscraperSearchResults(data={}){
   return candidates.map(normalizeOutscraperSearchResult).filter(Boolean).filter(result=>!meetingPrepRejectedPublicResult(result));
 }
 
+function outscraperRequestId(data={}){
+  return data.id||data.request_id||data.requestId||data.requestID||data.task_id||data.taskId||data.uuid||data.request?.id||data.data?.id||data.data?.request_id||'';
+}
+function outscraperResultsLocation(data={}){
+  return data.results_location||data.resultsLocation||data.result_url||data.results_url||data.url||data.request?.results_location||data.data?.results_location||'';
+}
+function outscraperStatus(data={}){
+  const nested=Array.isArray(data.data)?data.data.find(row=>row&&typeof row==='object'&&(row.status||row.state)):{};
+  return String(data.status||data.state||data.request?.status||data.data?.status||nested?.status||nested?.state||'').toLowerCase();
+}
+
 function meetingPrepSearchResultMatchesAttendee(result={}, attendee={}, contact={}, profile={}){
   const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
   const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'').toLowerCase();
@@ -13739,13 +13780,28 @@ function meetingPrepLinkedInActivityUrl(profileUrl=''){
 function meetingPrepLinkedInRecentQueries(attendee={}, contact={}, profile={}){
   const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
   const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'');
+  const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
+  const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
+  const linkedInSlug=String(knownProfileUrl||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]||'';
   return [
+    linkedInSlug ? `site:linkedin.com/posts ${linkedInSlug}` : '',
+    linkedInSlug ? `site:linkedin.com/feed/update ${linkedInSlug}` : '',
     name ? `site:linkedin.com/posts "${name}"` : '',
     name ? `site:linkedin.com/feed/update "${name}"` : '',
     name&&organization ? `site:linkedin.com/posts "${name}" "${organization}"` : '',
     name&&organization ? `${name} LinkedIn ${organization}` : '',
+    email ? `"${email}" LinkedIn` : '',
     name ? `${name} LinkedIn posts` : ''
   ].map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean).filter((value,index,array)=>array.indexOf(value)===index);
+}
+
+function meetingPrepLinkedInResultMatchesAttendee(result={}, attendee={}, contact={}, profile={}){
+  if(!/linkedin\.com\/(posts|feed\/update|pulse|in)\//i.test(result.url||''))return false;
+  const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
+  const knownSlug=String(knownProfileUrl||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+  const resultText=[result.title,result.snippet,result.url,result.displayedLink].filter(Boolean).join(' ').toLowerCase();
+  if(knownSlug&&resultText.includes(knownSlug))return true;
+  return meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile);
 }
 
 function meetingPrepLinkedInSignalScore(result={}, attendee={}, contact={}, profile={}){
@@ -13765,12 +13821,12 @@ async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, pr
   const queries=meetingPrepLinkedInRecentQueries(attendee,contact,profile);
   const attempts=[];
   const selected=[];
-  for(const query of queries.slice(0,1)){
+  for(const query of queries.slice(0,4)){
     const search=await lookupOutscraperGoogleSearch(query,{timeoutMs:OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS,label:'Meeting Prep LinkedIn recent search'}).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
     attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
     const matches=safeArray(search.results)
       .filter(result=>/linkedin\.com\/(posts|feed\/update|pulse|in)\//i.test(result.url||''))
-      .filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile)||/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''));
+      .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,attendee,contact,profile));
     selected.push(...matches);
     if(selected.some(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||'')))break;
   }
@@ -13840,11 +13896,11 @@ async function lookupOutscraperGoogleSearch(query,{timeoutMs=OUTSCRAPER_MEETING_
   const submittedData=await readJsonResponse(response);
   if(!response.ok)return {configured:true,query,error:submittedData.errorMessage||submittedData.message||`Outscraper ${response.status}`};
   let data=submittedData;
-  const submittedStatus=String(submittedData.status||'').toLowerCase();
+  const submittedStatus=outscraperStatus(submittedData);
   if(submittedStatus==='pending'||!flattenOutscraperSearchResults(submittedData).length){
-    const requestId=submittedData.id||submittedData.request_id;
+    const requestId=outscraperRequestId(submittedData);
     if(requestId){
-      const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey,{timeoutMs,label});
+      const polled=await pollOutscraperRequest(requestId,outscraperResultsLocation(submittedData),outscraperKey,{timeoutMs,label});
       if(polled.ok)data=polled.data;
       else return {configured:true,query,error:polled.error||'Outscraper Google Search did not finish'};
     }
@@ -13898,22 +13954,24 @@ app.post('/api/val/meeting-intel',async(req,res)=>{
   try{
     const event = req.body.event || req.body || {};
     const attendees = inferAttendeesFromEvent(event);
-    const enriched = [];
-    for(const attendee of attendees){
-      const rocket = await lookupRocketReach(attendee).catch(e=>({configured:!!ROCKETREACH_API_KEY,error:e.message}));
-      const profile = rocket.data || {};
-      const [outscraper,linkedInRecentSignal,webSearch] = await Promise.all([
-        lookupOutscraperLinkedIn(attendee,profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message})),
-        lookupMeetingPrepLinkedInRecentSignal(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]})),
-        lookupMeetingPrepWebEvidence(attendee,{},profile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,results:[]}))
-      ]);
-      enriched.push({attendee, rocketReach:rocket, outscraper, linkedInRecentSignal, webSearch});
-    }
+    const relationships=await meetingPrepRebuildTimeout(listRelationshipProfiles({limit:600}),4500,[]);
+    const enriched = await Promise.all(attendees.filter(attendee=>!attendeeIsProtectedOwner(attendee)).slice(0,8).map(async attendee=>{
+      const profile=meetingPrepRebuildRelationshipForAttendee(attendee,relationships);
+      const lookup=await meetingPrepRebuildPublicLookup({attendee,profile}).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,summary:''}));
+      return {
+        attendee,
+        rocketReach:{configured:false,skipped:true,reason:'RocketReach is not used for Meeting Prep public lookup.'},
+        outscraper:{configured:lookup.configured,summary:lookup.summary||'',error:lookup.error||'',webEvidence:lookup.webEvidence||null},
+        linkedInRecentSignal:lookup.linkedInRecentSignal||{configured:lookup.configured,sourceRefs:[],summary:''},
+        webSearch:lookup.webEvidence||{configured:lookup.configured,sourceRefs:[],summary:''}
+      };
+    }));
     res.json({ok:true, attendees:enriched, missingConfig:{
-      rocketReach:!ROCKETREACH_API_KEY
+      rocketReach:false
     }, optionalConfig:{
-      outscraperConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_LINKEDIN_POSTS_URL,
-      outscraperGoogleSearchConfigured:!!OUTSCRAPER_API_KEY && !!OUTSCRAPER_GOOGLE_SEARCH_URL
+      outscraperConfigured:enriched.some(row=>row.outscraper?.configured),
+      outscraperGoogleSearchConfigured:enriched.some(row=>row.webSearch?.configured),
+      meetingPrepPublicLookupExcluded:false
     }});
   }catch(e){ res.status(500).json({error:e.message}); }
 });
@@ -21279,9 +21337,9 @@ async function fetchOutscraperRelationshipContext(profile={}){
   if(!submitted.ok)throw new Error(submittedData.errorMessage||submittedData.message||`Outscraper ${submitted.status}`);
   let data=submittedData;
   if(!Array.isArray(submittedData.data)||!submittedData.data.length){
-    const requestId=submittedData.id||submittedData.request_id;
+    const requestId=outscraperRequestId(submittedData);
     if(!requestId)throw new Error('Outscraper did not return a request for this relationship.');
-    const polled=await pollOutscraperRequest(requestId,submittedData.results_location,outscraperKey);
+    const polled=await pollOutscraperRequest(requestId,outscraperResultsLocation(submittedData),outscraperKey);
     if(!polled.ok)throw new Error(polled.error||'Outscraper did not finish relationship context.');
     data=polled.data;
   }
@@ -24669,6 +24727,292 @@ async function ghlPlatformContext(query,dashboard,opts={}){
 async function callValModel({system,user,maxTokens=1200,temperature=0.4,json=false,jsonSchema=null,timeoutMs=0}){
   return callOpenAIResponses({system,messages:[{role:'user',content:user}],maxTokens,temperature,json,jsonSchema,timeoutMs});
 }
+function meetingPrepRebuildTimeout(promise,ms,fallback){
+  return Promise.race([
+    promise,
+    new Promise(resolve=>setTimeout(()=>resolve(typeof fallback==='function'?fallback():fallback),ms))
+  ]).catch(error=>typeof fallback==='function'?fallback(error):fallback);
+}
+function meetingPrepRebuildTitle(event={}){
+  return String(event.title||event.summary||event.subject||event.name||'Meeting').replace(/\s+/g,' ').trim()||'Meeting';
+}
+function meetingPrepRebuildTime(event={}){
+  const value=event.startTime||event.start||event.startDateTime||event.start?.dateTime||event.date||'';
+  if(!value)return '';
+  const d=new Date(value);
+  if(Number.isNaN(d.getTime()))return String(value).replace(/\s+/g,' ').trim();
+  return d.toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:process.env.TZ||'America/New_York'});
+}
+function meetingPrepRebuildNeedles(event={},attendees=[]){
+  const title=meetingPrepRebuildTitle(event);
+  const words=title.split(/\s+/).filter(word=>word.length>3&&!/^(meet|meeting|call|zoom|google|with|jessa|grace)$/i.test(word));
+  return Array.from(new Set([
+    title,
+    ...words,
+    ...safeArray(attendees).flatMap(attendee=>[attendee.name,attendee.email,String(attendee.email||'').split('@')[1]||'']),
+  ].map(value=>String(value||'').toLowerCase().trim()).filter(value=>value.length>=3)));
+}
+function meetingPrepRebuildText(value){
+  if(value==null)return '';
+  if(typeof value==='string')return value;
+  try{return JSON.stringify(value);}
+  catch(_){return String(value||'');}
+}
+function meetingPrepRebuildMatches(value,needles=[]){
+  const hay=meetingPrepRebuildText(value).toLowerCase();
+  return needles.some(needle=>needle&&hay.includes(needle));
+}
+function meetingPrepRebuildRelationshipForAttendee(attendee={},relationships=[]){
+  const email=normalizeContextEmail(attendee.email);
+  const name=normalizeContextName(attendee.name);
+  return safeArray(relationships).find(profile=>{
+    const profileEmail=relationshipProfilePrimaryEmail(profile);
+    const profileName=normalizeContextName(profile.displayName||profile.name||'');
+    return (email&&profileEmail===email)||(!email&&name&&profileName&&looseNameScore(name,profileName)>=0.92);
+  })||null;
+}
+function meetingPrepRebuildRelationshipSummary(attendee={},profile=null){
+  if(!profile)return `${attendee.name||attendee.email} is on the calendar but is not attached to a known relationship yet.`;
+  const name=profile.displayName||profile.name||attendee.name||attendee.email||'Matched relationship';
+  const email=relationshipProfilePrimaryEmail(profile)||normalizeContextEmail(attendee.email);
+  const status=profile.relationshipStatus||profile.relationship_status||'matched by email';
+  const openLoops=safeArray(profile.openLoops||profile.open_loops).slice(0,4).filter(Boolean).join(' | ');
+  const signals=safeArray(profile.relationshipSignals||profile.relationship_signals).slice(0,4).map(item=>item?.content||item).filter(Boolean).join(' | ');
+  const opportunities=safeArray(profile.opportunities).slice(0,3).map(item=>item?.content||item).filter(Boolean).join(' | ');
+  const risks=safeArray(profile.risks).slice(0,3).map(item=>item?.content||item).filter(Boolean).join(' | ');
+  const preferences=safeArray(profile.preferences).slice(0,3).map(item=>item?.content||item).filter(Boolean).join(' | ');
+  return [
+    `${name}${email?` <${email}>`:''}`,
+    `relationship status: ${status}`,
+    signals?`relationship signals: ${signals}`:'',
+    openLoops?`open loops: ${openLoops}`:'',
+    opportunities?`opportunities: ${opportunities}`:'',
+    risks?`risks: ${risks}`:'',
+    preferences?`preferences: ${preferences}`:''
+  ].filter(Boolean).join(' | ');
+}
+function meetingPrepRebuildPublicLookupProfile(row={}){
+  const attendee=row.attendee||{};
+  const profile=row.profile||{};
+  const attendeeEmail=normalizeContextEmail(attendee.email);
+  const profileEmail=relationshipProfilePrimaryEmail(profile);
+  const exactEmailMatch=Boolean(attendeeEmail&&profileEmail&&attendeeEmail===profileEmail);
+  const metadata=profile.metadata||profile.metadataJson||{};
+  const linkedinUrl=meetingPrepLinkedInKnownProfileUrl(attendee,{},exactEmailMatch?profile:{linkedinUrl:attendee.linkedinUrl||attendee.linkedin_url||''});
+  const website=String(exactEmailMatch?(profile.website||profile.raw?.website||metadata.website||''):'').trim();
+  const organization=exactEmailMatch?firstLookCandidateCleanName(profile.company||profile.organization||metadata.company||metadata.organization||''):'';
+  return {
+    displayName: firstLookCandidateCleanName(attendee.name||profile.displayName||profile.name||''),
+    name: firstLookCandidateCleanName(attendee.name||profile.displayName||profile.name||''),
+    email: attendeeEmail,
+    company: organization,
+    organization,
+    website,
+    linkedinUrl,
+    linkedin_url: linkedinUrl,
+    exactEmailMatch
+  };
+}
+function meetingPrepRebuildVerifiedPublicLookup(row={},lookup={}){
+  const attendee=row.attendee||{};
+  const name=firstLookCandidateCleanName(attendee.name||lookup.name||row.profile?.displayName||row.profile?.name||'this attendee');
+  const web=lookup.webEvidence||{};
+  const linkedIn=lookup.linkedInRecentSignal||{};
+  const pieces=[
+    web.summary||'',
+    linkedIn.summary||''
+  ].filter(Boolean);
+  if(!pieces.length)return '';
+  return [
+    `${name}:`,
+    ...pieces,
+    web.query?`Search used: ${web.query}`:'',
+    linkedIn.url?`LinkedIn activity/post URL: ${linkedIn.url}`:''
+  ].filter(Boolean).join(' ');
+}
+async function meetingPrepRebuildPublicLookup(row={}){
+  const attendee=row.attendee||{};
+  const lookupProfile=meetingPrepRebuildPublicLookupProfile(row);
+  const canLookup=Boolean(lookupProfile.email||lookupProfile.linkedinUrl||lookupProfile.website||lookupProfile.exactEmailMatch);
+  if(!canLookup)return {attendee,configured:!!OUTSCRAPER_API_KEY,skipped:true,summary:''};
+  const contact={
+    name:lookupProfile.name,
+    email:lookupProfile.email,
+    company:lookupProfile.organization,
+    organization:lookupProfile.organization,
+    website:lookupProfile.website,
+    linkedinUrl:lookupProfile.linkedinUrl
+  };
+  const [webEvidence,linkedInRecentSignal]=await Promise.all([
+    lookupMeetingPrepWebEvidence(attendee,contact,lookupProfile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''})),
+    lookupMeetingPrepLinkedInRecentSignal(attendee,contact,lookupProfile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
+  ]);
+  return {
+    attendee,
+    configured:Boolean(webEvidence.configured||linkedInRecentSignal.configured),
+    webEvidence,
+    linkedInRecentSignal,
+    summary:meetingPrepRebuildVerifiedPublicLookup(row,{name:lookupProfile.name,webEvidence,linkedInRecentSignal})
+  };
+}
+function meetingPrepRebuildProfileProjectKeys(profile={}){
+  const metadata=profile.metadata||profile.metadataJson||{};
+  return Array.from(new Set([
+    profile.projectId,
+    profile.project_id,
+    profile.projectProfileId,
+    profile.project_profile_id,
+    metadata.projectId,
+    metadata.project_id,
+    metadata.projectProfileId,
+    metadata.project_profile_id
+  ].map(value=>String(value||'').trim()).filter(Boolean)));
+}
+function meetingPrepRebuildProjectMatchesLinkedProfile(project={},linkedKeys=[]){
+  const keys=safeArray(linkedKeys).map(value=>String(value||'').trim().toLowerCase()).filter(Boolean);
+  if(!keys.length)return false;
+  const projectValues=[
+    project.id,
+    project.projectId,
+    project.project_id,
+    project.profileKey,
+    project.profile_key,
+    project.displayName,
+    project.name
+  ].map(value=>String(value||'').trim().toLowerCase()).filter(Boolean);
+  return projectValues.some(value=>keys.includes(value));
+}
+async function meetingPrepRebuildMaybeFullGoogleEvent(event={}){
+  if(String(event.source||'').toLowerCase()!=='google'||!event.id)return event;
+  return meetingPrepRebuildTimeout((async()=>{
+    const token=await getGoogleToken();
+    if(!token)return event;
+    const r=await fetchWithTimeout(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(event.id)}?maxAttendees=50`,{headers:{Authorization:`Bearer ${token}`}},6000,'Google meeting event');
+    const full=await readJsonResponse(r);
+    return r.ok?{...event,...mapGoogleEvent(full),eventId:full.id}:event;
+  })(),7000,event);
+}
+async function buildMeetingPrepRebuildContext(eventInput={}, options={}){
+  const includePublicLookup = options.includePublicLookup !== false;
+  const event=await meetingPrepRebuildMaybeFullGoogleEvent(eventInput||{});
+  const attendees=inferAttendeesFromEvent(event).filter(attendee=>!attendeeIsProtectedOwner(attendee)).slice(0,8);
+  const needles=meetingPrepRebuildNeedles(event,attendees);
+  const [relationships,projects,transcripts,tasks,memory,gmail,outlook]=await Promise.all([
+    meetingPrepRebuildTimeout(listRelationshipProfiles({limit:600}),4500,[]),
+    meetingPrepRebuildTimeout(listProjectProfiles({limit:180}),3500,[]),
+    meetingPrepRebuildTimeout(recentTranscripts(180),5500,[]),
+    meetingPrepRebuildTimeout(loadTasks(),3500,[]),
+    meetingPrepRebuildTimeout(recentMemoryItems(365,260),3500,[]),
+    meetingPrepRebuildTimeout(fetchGmailMessages({query:gmailMeetingQuery({...event,attendees}),maxResults:10,includeBody:false}),5500,{emails:[],error:'Gmail timed out'}),
+    meetingPrepRebuildTimeout(fetchUnifiedOutlookEmails(10),3500,{emails:[],error:'Outlook timed out'})
+  ]);
+  const matchedRelationships=attendees.map(attendee=>{
+    const profile=meetingPrepRebuildRelationshipForAttendee(attendee,relationships);
+    return {
+      attendee,
+      profile,
+      summary: meetingPrepRebuildRelationshipSummary(attendee,profile)
+    };
+  });
+  const linkedProjectKeys=matchedRelationships.flatMap(row=>meetingPrepRebuildProfileProjectKeys(row.profile||{}));
+  const relevantProjects=safeArray(projects).filter(project=>meetingPrepRebuildProjectMatchesLinkedProfile(project,linkedProjectKeys)).slice(0,8);
+  const relevantTranscripts=safeArray(transcripts).filter(transcript=>meetingPrepRebuildMatches([
+    transcript.title,transcript.rawText,transcript.summary,transcript.metadata
+  ],needles)).slice(0,8);
+  const relevantTasks=safeArray(tasks).filter(task=>!task.completed&&meetingPrepRebuildMatches([task.title,task.contactName,task.notes,task.details],needles)).slice(0,12);
+  const relevantMemory=safeArray(memory).filter(item=>meetingPrepRebuildMatches([item.summary,item.rawText,item.kind,item.metadata],needles)).slice(0,12);
+  const relevantEmails=safeArray(gmail.emails).concat(safeArray(outlook.emails)).filter(email=>meetingPrepRebuildMatches([
+    email.subject,email.snippet,email.bodyPreview,email.from,email.to,email.cc
+  ],needles)).slice(0,10);
+  const publicLookupTimeout=Number(process.env.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS)||60000;
+  const publicLookups=includePublicLookup ? await Promise.all(matchedRelationships.map(row=>meetingPrepRebuildTimeout(
+    meetingPrepRebuildPublicLookup(row),
+    publicLookupTimeout,
+    error=>({
+      attendee:row.attendee,
+      configured:!!OUTSCRAPER_API_KEY,
+      timeout:true,
+      error:error?.message||'Public lookup did not finish in time.',
+      summary:''
+    })
+  ))) : [];
+  return {
+    event,
+    title:meetingPrepRebuildTitle(event),
+    time:meetingPrepRebuildTime(event),
+    attendees,
+    matchedRelationships,
+    relevantProjects,
+    relevantTranscripts,
+    relevantTasks,
+    relevantMemory,
+    relevantEmails,
+    publicLookups,
+    sourceCounts:{
+      relationships:matchedRelationships.filter(row=>row.profile).length,
+      projects:relevantProjects.length,
+      transcripts:relevantTranscripts.length,
+      tasks:relevantTasks.length,
+      memory:relevantMemory.length,
+      email:relevantEmails.length,
+      publicLookups:safeArray(publicLookups).filter(lookup=>lookup.summary).length
+    }
+  };
+}
+function meetingPrepRebuildPrompt(context={}){
+  const lineList=(label,items,mapper)=>items?.length ? `${label}:\n${items.map(mapper).filter(Boolean).slice(0,10).map(item=>`- ${item}`).join('\n')}` : `${label}: none found`;
+  const publicLookupLines=safeArray(context.publicLookups).filter(lookup=>lookup.summary);
+  return [
+    `Visible user prompt: I've switched to Meeting Mode. My next meeting is ${context.title}${context.time?' at '+context.time:''}. Give me a full briefing: who they are, what we've discussed before, what the goal of this meeting should be, and 3 talking points to open strong.`,
+    '',
+    'Hidden context:',
+    `Meeting title: ${context.title}`,
+    context.time?`Meeting time: ${context.time}`:'',
+    lineList('Attendees',context.attendees||[],attendee=>[attendee.name,attendee.email].filter(Boolean).join(' <')+(attendee.email?'>':'')),
+    lineList('Relationship context',context.matchedRelationships||[],row=>row.summary),
+    lineList('Project context',context.relevantProjects||[],project=>[project.displayName||project.name,project.summary,meetingPrepRebuildText(project.metadata).slice(0,260)].filter(Boolean).join(' | ')),
+    lineList('Recent transcript context',context.relevantTranscripts||[],transcript=>[transcript.title,transcript.createdAt,String(transcript.rawText||transcript.summary||'').replace(/\s+/g,' ').slice(0,900)].filter(Boolean).join(' | ')),
+    lineList('Recent email context',context.relevantEmails||[],email=>[email.subject,email.snippet||email.bodyPreview,email.from?.email||email.from?.name||''].filter(Boolean).join(' | ')),
+    lineList('Open task or memory context',safeArray(context.relevantTasks).concat(safeArray(context.relevantMemory)),item=>[item.title||item.summary||item.kind,String(item.notes||item.rawText||'').replace(/\s+/g,' ').slice(0,500)].filter(Boolean).join(' | ')),
+    publicLookupLines.length ? lineList('Verified public web and LinkedIn context',publicLookupLines,lookup=>lookup.summary) : 'Verified public web and LinkedIn context: not included in this first-pass brief. External review will appear separately when ready.',
+    '',
+    'Write the final answer only. Use calm sentence-case section headings with bold markdown. Do not use markdown hash headings. Do not use all-caps headings.',
+    'Required sections, in this exact order: Who they are; What we have discussed before; What the goal of this meeting should be; 3 talking points to open strong.',
+    'The brief should feel like VAL: warm, discerning, specific, and operational. It should not feel like a status report, diagnostic dump, command block, or generic assistant answer.',
+    'In "Who they are", write short relational paragraphs for each attendee. Include the person, their known role only when verified by supplied context, why they matter in this specific meeting, and how to treat ambiguity. Do not make this section the main takeaway.',
+    'In "What we have discussed before", cluster prior context into 2-4 named threads. For each thread, explain the context and the concrete open loops or commitments. This is where the brief should become deeply useful.',
+    'In "What the goal of this meeting should be", name the operational outcome in plain language. Include the drift risk/capacity note if the meeting could sprawl. Then list exactly what should be confirmed before the meeting ends.',
+    'In "3 talking points to open strong", give the exact opening line, then a short sentence explaining why it helps. The lines should sound natural for Jessa to say.',
+    'Prefer paragraph-first prose with bullets only for concrete commitments, owners, dates, and open loops.',
+    'Do not mention packets, APIs, source status, diagnostics, or internal route names. Do not invent facts.',
+    'Use public web or LinkedIn facts only from the Verified public web and LinkedIn context section.',
+    publicLookupLines.length ? 'If that section has no verified result for a person, say what is not verified instead of filling the gap with public assumptions.' : 'Because public lookup is not included in this first-pass brief, do not discuss public web, LinkedIn, or external lookup status at all.'
+  ].filter(Boolean).join('\n');
+}
+function meetingPrepRebuildExternalReviewText(context={}){
+  const lookups=safeArray(context.publicLookups);
+  const ready=lookups.filter(lookup=>lookup.summary);
+  if(!lookups.length){
+    return 'External review finished. No attendee had enough verified public lookup context to run safely.';
+  }
+  if(!ready.length){
+    const errors=lookups.map(lookup=>{
+      const attendee=lookup.attendee||{};
+      const name=attendee.name||attendee.email||'Attendee';
+      const reason=lookup.error||lookup.webEvidence?.error||lookup.linkedInRecentSignal?.error||'No verified public result returned.';
+      return `${name}: ${reason}`;
+    }).filter(Boolean).slice(0,6);
+    return [
+      '**Current public web and LinkedIn context**',
+      'External review finished, but no verified public web or LinkedIn signal was safe enough to use in the meeting brief.',
+      ...errors.map(line=>`- ${line}`)
+    ].join('\n\n');
+  }
+  return [
+    '**Current public web and LinkedIn context**',
+    ...ready.map(lookup=>lookup.summary)
+  ].join('\n\n');
+}
 function cleanTaskTitle(title){ return String(title||'').replace(/\s+/g,' ').trim(); }
 function taskFingerprint(title,contactName){ return [cleanTaskTitle(title).toLowerCase(),String(contactName||'').trim().toLowerCase()].join('|'); }
 function validDueDate(value){ if(!value)return null; const d=new Date(value); return isNaN(d.getTime())?null:d.toISOString(); }
@@ -26762,7 +27106,7 @@ function normalizeOutscraperPlace(row,organizationType,employeeMinimum,market){
 const OUTSCRAPER_POLL_INTERVAL_MS = Number(process.env.OUTSCRAPER_POLL_INTERVAL_MS) || 3000;
 const OUTSCRAPER_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_POLL_TIMEOUT_MS) || 90000;
 const OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS = Number(process.env.OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS) || 45000;
-const OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS = Number(process.env.OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS) || 10000;
+const OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS = Number(process.env.OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS) || 45000;
 const OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS = Number(process.env.OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS) || 8000;
 const OUTSCRAPER_SUBMIT_TIMEOUT_MS = Number(process.env.OUTSCRAPER_SUBMIT_TIMEOUT_MS) || 14000;
 
@@ -26782,7 +27126,7 @@ async function pollOutscraperRequest(requestId,resultsLocation,outscraperKey,{ti
     const response=await fetchWithTimeout(pollUrl,{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,`${label} poll`).catch(e=>null);
     if(!response) continue;
     const data=await readJsonResponse(response);
-    const status=String(data.status||'').toLowerCase();
+    const status=outscraperStatus(data);
     if(status==='success') return {ok:true,data};
     if(status==='error' || status==='failed' || status==='failure') return {ok:false,error:data.errorMessage||data.message||'Outscraper request failed'};
     if(!status && flattenOutscraperSearchResults(data).length) return {ok:true,data};
@@ -26808,9 +27152,9 @@ async function discoverOutscraperProspects({organizationType,employeeMinimum,mar
   // (e.g. for very small/fast jobs) - use that directly instead of polling if present.
   let data=submitData;
   if(!Array.isArray(submitData.data) || !submitData.data.length){
-    const requestId=submitData.id||submitData.request_id;
+    const requestId=outscraperRequestId(submitData);
     if(!requestId) return {configured:true, leads:[], error:'Outscraper did not return a request id for the async job'};
-    const polled=await pollOutscraperRequest(requestId,submitData.results_location,outscraperKey);
+    const polled=await pollOutscraperRequest(requestId,outscraperResultsLocation(submitData),outscraperKey);
     if(!polled.ok) return {configured:true, leads:[], error:polled.error};
     data=polled.data;
   }
@@ -31096,7 +31440,7 @@ function hearthHydrationProviderMap(){
     email_identity:{status:'available',route:'/api/val/context/resolve-contact',description:'Conversation identity stores email messages, threads, and classifications.'},
     email_project_match:{status:'partial',route:'conversation classifications / evidence target metadata',description:'Project match exists through evidence/briefing metadata but needs a unified packet builder.'},
     meeting_context:{status:'available',route:'/api/val/context/resolve-meeting',description:'Meeting context resolves attendees, email, transcripts, tasks, memory, and sources checked.'},
-    meeting_prep:{status:'available',route:'/api/val/calendar/meeting-prep',description:'Meeting prep stores internal context, source refs, questions, and follow-up preparation.'},
+    meeting_prep:{status:'available',route:'/api/val/meeting-prep/rebuild',description:'Meeting prep opens one Co-Work brief from the clicked calendar event and verified internal relationship, project, transcript, email, task, and memory context.'},
     transcript_intelligence:{status:'available',route:'/api/val/transcripts/migrate',description:'Transcript intelligence feeds observations, open loops, prepared work, and relationship updates.'},
     documents:{status:'available',route:'/api/val/documents/reference',description:'Document references can be filtered by relationship or project.'},
     commitments:{status:'available',route:'/api/val/commitments',description:'Commitments combine transcript and email-derived open loops.'},
@@ -31641,6 +31985,73 @@ app.get('/api/val/book-state',async(req,res)=>{
 });
 app.get('/api/val/conversations',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const rows=[...(state.savedConversations||[]),{id:'demo-chat-1',title:'Morning Relationship Briefing',source:'chat',metadata:{demo:true},created_at:demoIso(0,8,0),updated_at:demoIso(0,8,12)},{id:'demo-chat-2',title:'Pipeline Priorities Review',source:'chat',metadata:{demo:true},created_at:demoIso(-1,15,30),updated_at:demoIso(-1,15,48)},{id:'demo-chat-3',title:'Meeting Follow-Up Drafts',source:'chat',metadata:{demo:true},created_at:demoIso(-2,10,0),updated_at:demoIso(-2,10,25)}];return res.json(rows.slice(0,Number(req.query.limit)||25));}await valDbReady;if(pgPool){const r=await dbQuery('select id,title,source,metadata,created_at,updated_at from val_conversations where user_id=$1 order by updated_at desc limit $2',[VAL_USER_ID,Number(req.query.limit)||25]);return res.json(r.rows);}res.json(valStore().conversations.slice(0,Number(req.query.limit)||25));}catch(e){res.status(500).json({error:e.message});}});
 app.get('/api/val/conversations/:id/messages',async(req,res)=>{try{if(DEMO_MODE){const state=demoState(req,res);const sets={'demo-chat-1':[{role:'user',content:'What needs my attention today?',created_at:demoIso(0,8,0)},{role:'assistant',content:withDemoCta('Marcus needs the pilot memo before the 2 PM demo. Elena needs the scope revision. Jordan has a warm intro offer that should not sit.'),created_at:demoIso(0,8,1)}],'demo-chat-2':[{role:'user',content:'Show me pipeline risk.',created_at:demoIso(-1,15,30)},{role:'assistant',content:withDemoCta('HealthBridge is the risk. The expansion is not blocked by value. It is blocked by sponsor fatigue and implementation load.'),created_at:demoIso(-1,15,31)}],'demo-chat-3':[{role:'user',content:'Draft the follow-ups.',created_at:demoIso(-2,10,0)},{role:'assistant',content:withDemoCta('I would queue three drafts: Marcus pilot memo, Elena revised scope, and Jordan one-paragraph intro ask.'),created_at:demoIso(-2,10,1)}]};return res.json(state.savedConversationMessages?.[req.params.id]||sets[req.params.id]||[]);}await valDbReady;if(pgPool){const r=await dbQuery('select role,content,metadata,created_at from val_messages where conversation_id=$1 order by created_at asc',[req.params.id]);return res.json(r.rows);}res.json(valStore().messages.filter(m=>m.conversationId===req.params.id));}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/meeting-prep/rebuild',async(req,res)=>{
+  try{
+    const event=(req.body&&req.body.event)||req.body||{};
+    const context=await buildMeetingPrepRebuildContext(event,{includePublicLookup:false});
+    if(!context.attendees.length){
+      return res.status(422).json({ok:false,error:'This calendar item does not have an external attendee to prepare for.'});
+    }
+    const system=[
+      VAL_SYSTEM_PROMPT,
+      'You are VAL in Meeting Mode. Produce the useful May 26 style meeting brief from the supplied hidden context.',
+      'No external action happens from this route. The answer is private preparation only.'
+    ].join('\n\n');
+    const brief=await callValModel({
+      system,
+      user:meetingPrepRebuildPrompt(context),
+      maxTokens:2600,
+      temperature:0.25,
+      timeoutMs:MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS
+    });
+    res.json({
+      ok:true,
+      brief,
+      meeting:{title:context.title,time:context.time,event:context.event,attendees:context.attendees},
+      mapping:{
+        relationships:context.matchedRelationships.map(row=>({
+          attendee:row.attendee,
+          attached:!!row.profile,
+          relationshipId:row.profile?.id||'',
+          relationshipName:row.profile?.displayName||row.profile?.name||''
+        })),
+        projects:context.relevantProjects.map(project=>({id:project.id||project.profileKey||'',name:project.displayName||project.name||'',summary:project.summary||''}))
+      },
+      sourcesUsed:context.sourceCounts,
+      externalReview:{
+        status:'pending',
+        message:'External web and LinkedIn review can take a minute or two. The brief is ready to use while that finishes.'
+      },
+      no_external_action:true
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
+app.post('/api/val/meeting-prep/external-review',async(req,res)=>{
+  try{
+    const event=(req.body&&req.body.event)||req.body||{};
+    const context=await buildMeetingPrepRebuildContext(event,{includePublicLookup:true});
+    if(!context.attendees.length){
+      return res.status(422).json({ok:false,error:'This calendar item does not have an external attendee to review.'});
+    }
+    const text=meetingPrepRebuildExternalReviewText(context);
+    const hasVerified=safeArray(context.publicLookups).some(lookup=>lookup.summary);
+    res.json({
+      ok:true,
+      externalReview:{
+        status:hasVerified?'ready':'empty',
+        message:text,
+        publicLookups:context.publicLookups,
+        sourcesUsed:{publicLookups:context.sourceCounts.publicLookups}
+      },
+      meeting:{title:context.title,time:context.time,event:context.event,attendees:context.attendees},
+      no_external_action:true
+    });
+  }catch(e){
+    res.status(500).json({ok:false,error:e.message});
+  }
+});
 app.post('/api/val/meeting-briefing',async(req,res)=>{
   try{
     if(DEMO_MODE){

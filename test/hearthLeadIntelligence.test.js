@@ -82,6 +82,9 @@ test('Hearth Lead Intelligence keeps preview and import endpoints separate', () 
 test('Network renders every admitted relationship and enriches context only when the user asks', () => {
   assert.match(hearthCss, /relationship-detail\.show-index \.stewardship-network-layout \.relationship-rolodex\{[\s\S]*overflow-y:scroll/);
   assert.match(hearthCss, /max-height:min\(72vh,820px\)/);
+  assert.match(hearthCss, /drawer-tray\.relationship-open \.relationship-detail\.show-index \.stewardship-network-layout\{[\s\S]*height:min\(72vh,820px\)[\s\S]*overflow:hidden/);
+  assert.match(hearthCss, /drawer-tray\.relationship-open \.relationship-detail\.show-index \.stewardship-network-layout \.relationship-rolodex\{[\s\S]*height:100%[\s\S]*overflow-y:auto/);
+  assert.match(hearthCss, /drawer-tray\.relationship-open \.relationship-detail\.show-index \.stewardship-network-detail\{[\s\S]*height:100%[\s\S]*overflow-y:auto/);
   assert.match(hearthCss, /drawer-tray\.relationship-open \.relationship-detail\.show-index\{[\s\S]*display:block/);
   assert.match(hearthJs, /data-stewardship-enrich-person/);
   assert.match(hearthJs, /Enrich this relationship\\'s context/);
@@ -1275,11 +1278,29 @@ test('Stewardship V1 is an introduction engine with Network discovery', () => {
 });
 
 test('Hearth calendar prep is connected to the meeting prep backend contract', () => {
-  const meetingPrepResultBlock = hearthJs.slice(
-    hearthJs.indexOf('function renderMeetingPrepResult'),
-    hearthJs.indexOf('async function runMeetingPrep')
+  const runMeetingPrepBlock = hearthJs.slice(
+    hearthJs.indexOf('async function runMeetingPrep'),
+    hearthJs.indexOf('function setWorkspaceContent')
   );
-  assert.match(hearthJs, /\/api\/val\/calendar\/meeting-prep/);
+  const renderMeetingPrepResultBlock = hearthJs.slice(
+    hearthJs.indexOf('function renderMeetingPrepResult'),
+    hearthJs.indexOf('function meetingPrepFallbackResultFromEvent')
+  );
+  const openMeetingPrepCoworkSessionBlock = hearthJs.slice(
+    hearthJs.indexOf('function openMeetingPrepCoworkSession'),
+    hearthJs.indexOf('async function runMeetingPrepCoworkMayPrompt')
+  );
+  const meetingPrepRebuildServerBlock = server.slice(
+    server.indexOf('function meetingPrepRebuildTimeout'),
+    server.indexOf('function cleanTaskTitle')
+  );
+  assert.match(hearthJs, /\/api\/val\/meeting-prep\/rebuild/);
+  assert.doesNotMatch(runMeetingPrepBlock, /\/api\/val\/calendar\/meeting-prep/);
+  assert.doesNotMatch(runMeetingPrepBlock, /fetchSavedMeetingPrepResult/);
+  assert.doesNotMatch(runMeetingPrepBlock, /renderMeetingPrepResult/);
+  assert.doesNotMatch(runMeetingPrepBlock, /runCowork\('meeting_prep'\)/);
+  assert.match(renderMeetingPrepResultBlock, /Deprecated Meeting Prep packet renderer blocked/);
+  assert.match(openMeetingPrepCoworkSessionBlock, /Deprecated Meeting Prep auto-run blocked/);
   assert.match(hearthJs, /\/api\/calendar\/sidebar/);
   assert.match(hearthJs, /function hydrateCalendarPanel/);
   assert.match(hearthJs, /function renderCalendarAgenda/);
@@ -1290,8 +1311,13 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /VAL is assembling the two-minute executive brief for this meeting/);
   assert.doesNotMatch(hearthJs, /VAL is checking attendees, relationship context, projects, transcripts, email, and public stewardship signals/);
   assert.doesNotMatch(hearthJs, /The final card will show what matters, how to enter, what to ask, and what to watch/);
-  assert.match(hearthJs, /postJson\('\/api\/val\/calendar\/meeting-prep', \{event\}, \{/);
-  assert.match(hearthJs, /timeoutMs: 90000/);
+  assert.match(runMeetingPrepBlock, /postJson\('\/api\/val\/meeting-prep\/rebuild', \{event\}, \{/);
+  assert.match(runMeetingPrepBlock, /timeoutMs: 120000/);
+  assert.match(runMeetingPrepBlock, /result\.externalReview\?\.status === 'pending'/);
+  assert.match(runMeetingPrepBlock, /runMeetingPrepExternalReview\(event\)/);
+  assert.match(hearthJs, /async function runMeetingPrepExternalReview/);
+  assert.match(hearthJs, /postJson\('\/api\/val\/meeting-prep\/external-review', \{event\}, \{/);
+  assert.match(hearthJs, /This could take a minute or two/);
   assert.match(hearthJs, /meetingPrepFallbackResultFromEvent/);
   assert.match(hearthJs, /function meetingPrepQualityLine/);
   assert.match(hearthJs, /function meetingPrepStakesLine/);
@@ -1308,7 +1334,15 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /meeting-prep-type/);
   assert.match(hearthJs, /function meetingPrepPublicContextLines/);
   assert.match(hearthJs, /public_context_status/);
-  assert.match(hearthJs, /public context checked/);
+  assert.match(meetingPrepRebuildServerBlock, /function meetingPrepRebuildPublicLookup/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepWebEvidence\(attendee,contact,lookupProfile\)/);
+  assert.match(meetingPrepRebuildServerBlock, /function meetingPrepRebuildRelationshipSummary/);
+  assert.doesNotMatch(meetingPrepRebuildServerBlock, /profile\.summary/);
+  assert.match(meetingPrepRebuildServerBlock, /warm, discerning, specific, and operational/);
+  assert.match(meetingPrepRebuildServerBlock, /Do not use all-caps headings/);
+  assert.match(meetingPrepRebuildServerBlock, /Do not make this section the main takeaway/);
+  assert.match(meetingPrepRebuildServerBlock, /cluster prior context into 2-4 named threads/);
+  assert.match(meetingPrepRebuildServerBlock, /name the operational outcome in plain language/);
   assert.match(hearthJs, /function meetingPrepFirstMeetingSignals/);
   assert.doesNotMatch(hearthJs, /function renderMeetingPrepFirstMeetingSignals/);
   assert.doesNotMatch(hearthJs, /First-Meeting Intelligence/);
@@ -1323,14 +1357,16 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /function renderMeetingPrepExecutiveBrief/);
   assert.match(hearthJs, /function renderMeetingPrepLoading/);
   assert.doesNotMatch(hearthJs, /renderMeetingPrepLoading\(activeMeetingPrepEvent \|\| meetingPrep\.event\);[\s\S]{0,500}openMeetingPrepCoworkSession\(\{autoRun:false\}\)/);
-  assert.match(hearthJs, /activeMeetingPrepBriefing = meetingPrepExecutiveBrief\(meetingPrepFallbackResultFromEvent[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\);[\s\S]{0,180}renderMeetingPrepCoworkEvidenceRail\(activeMeetingPrepBriefing\);[\s\S]{0,240}await runMeetingPrep\(\)/);
-  assert.match(hearthJs, /showCoworkContextGathering\('VAL is preparing your meeting brief\. This can take a moment\.', \{noTimeout:true\}\)/);
-  assert.match(hearthJs, /runMeetingPrepCoworkMayPrompt\(briefing\)/);
+  assert.match(hearthJs, /activeMeetingPrepBriefing = meetingPrepExecutiveBrief\(meetingPrepFallbackResultFromEvent[\s\S]{0,360}openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\);[\s\S]{0,180}renderMeetingPrepCoworkEvidenceRail\(activeMeetingPrepBriefing\);[\s\S]{0,320}window\.requestAnimationFrame\(\(\) => \{[\s\S]{0,160}runMeetingPrep\(\)\.catch/);
+  assert.doesNotMatch(hearthJs, /await runMeetingPrep\(\)/);
+  assert.doesNotMatch(hearthJs, /showCoworkContextGathering\('VAL is preparing your meeting brief\. This can take a moment\.', \{noTimeout:true\}\)/);
+  assert.doesNotMatch(hearthJs, /runMeetingPrepCoworkMayPrompt\(briefing\)/);
   assert.doesNotMatch(hearthJs, /appendHomeCoworkMessage\('val', meetingPrepCoworkBriefAnswer\(briefing\), \{meetingPrep:true, replace:true\}\)/);
   assert.match(hearthJs, /Meeting Prep loading workspace/);
-  assert.match(hearthJs, /Opening the brief as soon as internal context is ready/);
+  assert.match(hearthJs, /Opening the brief after VAL checks internal context and verified public signals/);
+  assert.match(hearthJs, /This can take a minute or two/);
   assert.match(hearthJs, /meeting-prep-loading-steps/);
-  assert.match(hearthJs, /LinkedIn activity and recent post check/);
+  assert.match(hearthJs, /public lookup/);
   assert.match(hearthJs, /function scrollMeetingPrepToTop/);
   assert.match(hearthJs, /function openMeetingPrepCoworkSession/);
   assert.match(hearthJs, /hearth\.classList\.contains\('calendar-prep-open'\) && workspaceOpen \? 'meeting_prep'/);
@@ -1359,8 +1395,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(server, /process\.env\.OUTLOOK_USER_EMAIL/);
   assert.match(server, /attendeeIsProtectedOwner/);
   assert.match(server, /protected_owner_identity/);
-  assert.match(server, /fetchOutscraperRelationshipContext\(profile\)/);
-  assert.match(server, /lookupMeetingPrepLinkedInRecentSignal/);
+  assert.match(server, /async function enrichMeetingPrepAttendeePublicContext/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepLinkedInRecentSignal\(attendee,contact,lookupProfile\)/);
   assert.doesNotMatch(server, /sourceType:'known_linkedin_profile_activity'/);
   assert.doesNotMatch(server, /if\(activityUrl\)\{[\s\S]{0,900}activity_link_prepared/);
   assert.match(server, /const fallbackUrl=activityUrl\|\|profileResult\?\.url\|\|knownProfileUrl\|\|''/);
@@ -1392,9 +1428,10 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function meetingPrepOriginalPromptSeed/);
   assert.match(hearthJs, /function meetingPrepHiddenEvidence/);
   assert.match(hearthJs, /function runMeetingPrepCoworkMayPrompt/);
+  assert.doesNotMatch(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
   assert.match(hearthJs, /I've switched to Meeting Mode/);
   assert.match(hearthJs, /Give me a full briefing/);
-  assert.match(hearthJs, /who they are, what we have discussed before, what the goal of this meeting should be, and 3 talking points to open strong/);
+  assert.match(server, /who they are, what we've discussed before, what the goal of this meeting should be, and 3 talking points to open strong/);
   assert.match(hearthJs, /Prior discussion evidence/);
   assert.match(hearthJs, /Public lookup context/);
   assert.doesNotMatch(hearthJs, /Meeting Prep is reset to a clean starting point/);
@@ -1408,6 +1445,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /If public evidence is verified, say "This is what I found on the web about \[Name\]"/);
   assert.doesNotMatch(hearthJs, /This is what I found on the web about \[Name\]/);
   assert.match(hearthJs, /function renderHomeCoworkMeetingPrepText/);
+  assert.doesNotMatch(hearthJs, /if\(index === 0\) return '<div class="home-cowork-top-judgment">/);
+  assert.match(hearthJs, /appendHomeCoworkMessage\('val', result\.brief, \{meetingPrep:true, replace:true\}\)/);
   assert.match(hearthJs, /function renderMeetingPrepInlineMarkdown/);
   assert.match(hearthJs, /function meetingPrepMarkdownHeading/);
   assert.match(hearthJs, /firstLineIsListItem/);
@@ -1418,23 +1457,25 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /suppressVisibleUserPrompt/);
   assert.match(hearthJs, /Open-loop evidence/);
   assert.match(hearthJs, /drift risk/);
-  assert.match(hearthJs, /home-cowork-top-judgment/);
+  assert.doesNotMatch(hearthJs, /home-cowork-top-judgment/);
   assert.match(hearthJs, /renderMeetingPrepCoworkEvidenceRail/);
   assert.doesNotMatch(hearthJs, /function renderMeetingPrepExternalStatus/);
   assert.doesNotMatch(hearthJs, /External review running/);
   assert.doesNotMatch(hearthJs, /External review ready/);
-  assert.match(hearthJs, /VAL is preparing your meeting brief\. This can take a moment/);
+  assert.match(hearthJs, /VAL is preparing your meeting brief\. This can take a minute or two/);
   assert.match(hearthJs, /Still working\. This meeting has more context to reason through/);
-  assert.match(hearthJs, /The screen has not frozen/);
-  assert.match(hearthJs, /LinkedIn activity and recent post check/);
+  assert.doesNotMatch(runMeetingPrepBlock, /The screen has not frozen/);
+  assert.match(meetingPrepRebuildServerBlock, /Verified public web and LinkedIn context/);
+  assert.doesNotMatch(meetingPrepRebuildServerBlock, /deliberately excluded from this reset path/);
   assert.doesNotMatch(hearthJs, /did not run cleanly\|taking longer than expected\|safe brief\|investigated/);
   assert.doesNotMatch(hearthJs, /External review is still checking public web and LinkedIn context\. Do not use public assumptions yet/);
   assert.doesNotMatch(hearthJs, /if\(keepHomeCoworkOpen\)\{\\n\\s*showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'/);
   assert.doesNotMatch(hearthJs, /appendHomeCoworkMessage\('val', meetingPrepCoworkBriefAnswer\(briefing\), \{meetingPrep:true, replace:true\}\)/);
-  assert.match(hearthJs, /showGathering: loading/);
+  assert.match(hearthJs, /showGathering: false/);
+  assert.doesNotMatch(hearthJs, /showGathering: loading/);
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
-  assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
+  assert.doesNotMatch(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
   assert.match(hearthCss, /\.home-cowork-meeting-prep-answer section > strong/);
   assert.match(hearthCss, /\.home-cowork-meeting-prep-answer li strong/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\)/);
@@ -1450,7 +1491,7 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthCss, /\.meeting-prep-external-status/);
   assert.match(hearthCss, /grid-template-columns:minmax\(260px,320px\) minmax\(0,1fr\)/);
   assert.match(hearthCss, /\.meeting-prep-attendee-drawer summary/);
-  assert.match(hearthCss, /\.home-cowork-top-judgment/);
+  assert.doesNotMatch(hearthCss, /\.home-cowork-top-judgment/);
   assert.match(hearthCss, /max-height:100%;\n  overflow:auto;/);
   assert.match(hearthJs, /\/api\/val\/meeting-prep\/attendee\/link-relationship/);
   assert.match(hearthJs, /\/api\/projects\/link-calendar-event/);
@@ -1489,11 +1530,11 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /preserveHeldCoworkContext = \/co-work\|cowork\/i/);
   assert.doesNotMatch(hearthJs, /value: initialValue \|\| ''/);
   assert.match(hearthCss, /\.workspace-grid\[hidden\]\{display:none!important\}/);
-  assert.doesNotMatch(meetingPrepResultBlock, /workflow: 'pipeline'/);
-  assert.doesNotMatch(meetingPrepResultBlock, /label: 'Prepare follow-up'/);
-  assert.doesNotMatch(meetingPrepResultBlock, /Open full calendar/);
-  assert.doesNotMatch(meetingPrepResultBlock, /Open Transcripts/);
-  assert.doesNotMatch(meetingPrepResultBlock, /Close and return to desk/);
+  assert.doesNotMatch(renderMeetingPrepResultBlock, /workflow: 'pipeline'/);
+  assert.doesNotMatch(renderMeetingPrepResultBlock, /label: 'Prepare follow-up'/);
+  assert.doesNotMatch(renderMeetingPrepResultBlock, /Open full calendar/);
+  assert.doesNotMatch(renderMeetingPrepResultBlock, /Open Transcripts/);
+  assert.doesNotMatch(renderMeetingPrepResultBlock, /Close and return to desk/);
   assert.match(hearthHtml, /data-calendar-packet-receipt/);
   assert.match(hearthJs, /function meetingPrepAttendeeIdentityLines/);
   assert.match(hearthJs, /not in CRM yet\. Create the contact before VAL attaches relationship context/);
@@ -1615,7 +1656,8 @@ test('Hearth Home presence hydrates from executive briefing intelligence', () =>
   assert.match(hearthJs, /function hydrateHomePresence/);
   assert.match(hearthJs, /\/api\/executive-briefing/);
   assert.match(hearthJs, /function hydrateGreetingFromBriefing/);
-  assert.match(hearthJs, /Good morning\|Good afternoon\|Good evening/);
+  assert.match(hearthJs, /function velocityPerspectiveFromBriefing/);
+  assert.match(hearthJs, /Refresh Perspective/);
   assert.match(hearthJs, /window\.executiveBriefingState/);
   assert.match(hearthJs, /function hydrateRoomsFromBriefing/);
   assert.match(hearthJs, /updateRoomFromBriefing\('velocity'/);
@@ -2161,7 +2203,7 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
     /No meaningful movement earned Home/,
     /No priority needs your judgment first/,
-    /No prepared work is waiting for approval/
+    /No prepared work is waiting right now/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
 });
@@ -2220,7 +2262,8 @@ test('Hearth prototype fallback exercises Velocity Alignment and Leverage withou
   assert.match(hearthJs, /Client follow-up email/);
   assert.match(hearthJs, /hydrateGreetingFromBriefing\(briefing\)/);
   assert.match(hearthJs, /hydrateRoomsFromBriefing\(briefing\)/);
-  assert.match(hearthHtml, /<h2>What changed<\/h2>/);
+  assert.match(hearthHtml, /data-refresh-perspective/);
+  assert.doesNotMatch(hearthHtml, /<h2>What changed<\/h2>/);
   assert.match(hearthHtml, /<h2>Top priority<\/h2>/);
   assert.match(hearthHtml, /<h2>Prepared drafts<\/h2>/);
   assert.doesNotMatch(hearthHtml, /<h2>Executive Inbox<\/h2>/);
@@ -2396,8 +2439,8 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
-  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,180}bottom:15vh/);
-  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:104px/);
+  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,220}grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:132px/);
   assert.doesNotMatch(hearthHtml, /Prototype states/);
   assert.doesNotMatch(hearthHtml, /data-state-option/);
   assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:90\}/);

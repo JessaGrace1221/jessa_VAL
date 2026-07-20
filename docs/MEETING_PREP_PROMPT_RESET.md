@@ -43,7 +43,7 @@ If the data is thin, say what is missing plainly. Keep it natural. Use all known
 ```
 
 The backend also added `meeting_prep_brief_packet_v1` wording that attempted to
-summarize relationship mapping, project mapping, public context, and open loops.
+summarize relationship mapping, project mapping, verified internal context, and open loops.
 That packet may remain as raw evidence while rebuilding, but it must not drive
 the visible Meeting Prep answer until the new prompt is rebuilt.
 
@@ -59,3 +59,61 @@ For the next pass:
   and how to open strong.
 - Outscraper rebuild is separate and should not be patched into this prompt
   reset.
+
+## 2026-07-19 Complete Rebuild Approval Boundary
+
+The active Hearth Meeting Prep click path must be rebuilt as one path:
+
+1. User clicks a calendar meeting.
+2. Hearth opens the Co-Work Meeting Prep surface immediately.
+3. The frontend sends the clicked event to one backend route.
+4. The backend gathers only the context needed for the May-style brief.
+5. The backend returns one final executive brief.
+6. The frontend renders that brief in the same Co-Work surface.
+
+The active click path must not call or depend on:
+
+- `/api/val/calendar/meeting-prep`
+- `renderMeetingPrepResult`
+- `fetchSavedMeetingPrepResult`
+- `runMeetingPrepCoworkMayPrompt`
+- `/api/val/chat` for the initial Meeting Prep answer
+- `meeting_prep_brief_packet_v1` as visible user copy
+- the old static Meeting Prep drawer/page sections
+
+These old pieces may remain in the repository only for historical tests,
+Ready-For-You compatibility, or migration reference. They must not be reachable
+from the calendar click path.
+
+The rebuilt visible answer must not show:
+
+- packet names
+- readiness scores
+- external review status cards
+- source diagnostics
+- CRM ids
+- "VAL did not take external action"
+- "relationship file has not been matched yet"
+- "use Co-Work to add context"
+- reset/archive/prompt-rebuild notices
+
+The rebuilt prompt is allowed to use hidden evidence from:
+
+- clicked calendar event title, time, description, attendees, and organizer
+- relationship profiles, excluding saved public/web enrichment
+- project profiles
+- recent relevant transcripts
+- recent relevant Gmail/Outlook snippets
+- open tasks and memory
+- public web and LinkedIn lookup context is excluded from this reset path until
+  the public lookup rebuild has exact-person verification
+
+The output must use the May-style executive structure:
+
+- who they are
+- what we have discussed before
+- what the goal of this meeting should be
+- 3 talking points to open strong
+
+It should explicitly surface open loops, ambiguity, and drift risk when they
+matter. It should not become a system-status report.

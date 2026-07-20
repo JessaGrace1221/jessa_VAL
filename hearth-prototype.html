@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=executive-inbox-polish-20260718">
+<link rel="stylesheet" href="./hearth-prototype.css?v=home-perspective-20260720">
 </head>
 <body>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
@@ -33,6 +33,9 @@
       <p data-line="orientation">Home should update from Velocity, Alignment, and Leverage packets.</p>
       <p data-line="permission">If no packet earns attention, VAL should say that plainly.</p>
     </div>
+    <button class="refresh-perspective-button" type="button" data-refresh-perspective>
+      Refresh Perspective
+    </button>
   </section>
 
   <aside class="desk-companions" aria-label="Desk companions">
@@ -78,12 +81,6 @@
   </aside>
 
   <section class="living-rooms" aria-label="VAL living rooms">
-    <article class="living-room velocity" data-room="velocity">
-      <p><span class="room-symbol"></span>Velocity</p>
-      <h2>What changed</h2>
-      <span class="room-copy">Movement VAL noticed while you were away.</span>
-      <button class="room-action" type="button" data-open-room="velocity">Review what changed <b>&rarr;</b></button>
-    </article>
     <article class="living-room alignment" data-room="alignment">
       <p><span class="room-symbol"></span>Alignment</p>
       <h2>Top priority</h2>
@@ -894,6 +891,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=executive-inbox-polish-20260718"></script>
+  <script src="./hearth-prototype.js?v=home-perspective-20260720"></script>
 </body>
 </html>

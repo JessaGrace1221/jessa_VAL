@@ -37,6 +37,13 @@ test('meeting prep routes are backend-only and mounted',()=>{
   assert.match(server,/Use this contactId as the canonical relationship key going forward/);
 });
 
+test('meeting prep rebuild allows the OpenAI brief enough time to finish',()=>{
+  assert.match(server,/const MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS = Number\(process\.env\.MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS\) \|\| 105000/);
+  assert.match(server,/timeoutMs:MEETING_PREP_REBUILD_OPENAI_TIMEOUT_MS/);
+  assert.match(server,/maxTokens:2600/);
+  assert.doesNotMatch(server,/timeoutMs:18000/);
+});
+
 test('calendar attendees are immediately packeted as relationship contacts',async()=>{
   let store={};
   const event={id:'cal_new_attendee',source:'google',title:'Intro with Dana New',startTime:'2026-07-26T15:00:00Z',attendees:[{name:'Dana New',email:'dana@example.com'}]};
@@ -98,6 +105,9 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/function meetingPrepPublicSearchQueries/);
   assert.match(server,/email \|\| ''/);
   assert.match(server,/email \? `"\$\{email\}"` : ''/);
+  assert.match(server,/if\(!usableDomain&&!organization&&!website&&!linkedInProfile\)/);
+  assert.match(server,/email&&name \? `"\$\{email\}" "\$\{name\}"` : ''/);
+  assert.match(server,/name&&usableDomain \? `"\$\{name\}" \$\{usableDomain\}` : ''/);
   assert.match(server,/async function lookupOutscraperGoogleSearch/);
   assert.match(server,/url\.searchParams\.set\('query',query\)/);
   assert.match(server,/sourceType:'outscraper_google_search_result'/);
@@ -109,20 +119,34 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/function meetingPrepLinkedInRecentQueries/);
   assert.match(server,/site:linkedin\.com\/posts/);
   assert.match(server,/site:linkedin\.com\/feed\/update/);
+  assert.match(server,/linkedInSlug \? `site:linkedin\.com\/posts \$\{linkedInSlug\}` : ''/);
+  assert.match(server,/email \? `"\$\{email\}" LinkedIn` : ''/);
   assert.match(server,/\$\{name\} LinkedIn \$\{organization\}/);
   assert.match(server,/\$\{name\} LinkedIn posts/);
   assert.match(server,/async function lookupMeetingPrepLinkedInRecentSignal/);
-  assert.match(server,/queries\.slice\(0,1\)/);
+  assert.match(server,/queries\.slice\(0,4\)/);
+  assert.match(server,/function meetingPrepLinkedInResultMatchesAttendee/);
+  assert.doesNotMatch(server,/meetingPrepSearchResultMatchesAttendee\(result,attendee,contact,profile\)\|\|\/linkedin\\\.com\\\/\(posts\|feed\\\/update\)/);
   assert.match(server,/OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS/);
+  assert.match(server,/const OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS = Number\(process\.env\.OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS\) \|\| 45000/);
   assert.match(server,/Meeting Prep LinkedIn recent search/);
   assert.match(server,/OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS/);
   assert.match(server,/Meeting Prep public search/);
+  assert.match(server,/function outscraperRequestId/);
+  assert.match(server,/function outscraperResultsLocation/);
+  assert.match(server,/function outscraperStatus/);
   assert.match(server,/if\(!status && flattenOutscraperSearchResults\(data\)\.length\) return \{ok:true,data\}/);
   assert.match(server,/type:'linkedin_recent_signal'/);
   assert.match(server,/Open post:/);
   assert.match(server,/async function lookupMeetingPrepWebEvidence/);
   assert.match(server,/This is what VAL found on the web about/);
   assert.match(server,/webSearch:webEvidence/);
+  assert.match(server,/const publicLookupTimeout=Number\(process\.env\.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS\)\|\|60000/);
+  assert.match(server,/Promise\.all\(matchedRelationships\.map\(row=>meetingPrepRebuildTimeout\(/);
+  assert.match(server,/buildMeetingPrepRebuildContext\(event,\{includePublicLookup:false\}\)/);
+  assert.match(server,/app\.post\('\/api\/val\/meeting-prep\/external-review'/);
+  assert.match(server,/meetingPrepRebuildExternalReviewText/);
+  assert.doesNotMatch(server,/meetingPrepRebuildTimeout\(\s*Promise\.all\(matchedRelationships\.map\(row=>meetingPrepRebuildPublicLookup\(row\)\)\)/);
 });
 
 test('meeting prep persists JSON and attendee rows under the saved brief id',()=>{

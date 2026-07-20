@@ -5,6 +5,7 @@ const orientation = document.querySelector('[data-line="orientation"]');
 const permission = document.querySelector('[data-line="permission"]');
 const evidence = document.querySelector('#hearth-evidence');
 const observerBoardButton = document.querySelector('.observer-board-button');
+const refreshPerspectiveButton = document.querySelector('[data-refresh-perspective]');
 const completionSoundToggle = document.querySelector('[data-completion-sound-toggle]');
 const leanButton = document.querySelector('.lean-button');
 const freshDeskButton = document.querySelector('.fresh-desk-button');
@@ -233,6 +234,10 @@ const prototypeParams = new URLSearchParams(location.search);
 const mockScrapers = prototypeParams.has('mockScrapers');
 const mockBriefing = prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
+const clientFeatureLocks = {
+  projectManagersComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
+  linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
+};
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
@@ -14525,7 +14530,7 @@ function renderMeetingPrep(){
       sourceRefsJson:[]
     }
   });
-  openMeetingPrepCoworkSession({autoRun:true});
+  openMeetingPrepCoworkSession({autoRun:false});
 }
 
 function meetingPrepAttendeeIdentityLines(attendees = []){
@@ -15189,9 +15194,7 @@ function meetingPrepCoworkBriefAnswer(briefing = {}){
 }
 
 function renderMeetingPrepResult(result){
-  activeMeetingPrepBriefing = meetingPrepExecutiveBrief(result);
-  openMeetingPrepCoworkSession({autoRun:true});
-  requestAnimationFrame(() => scrollMeetingPrepToTop());
+  console.warn('Deprecated Meeting Prep packet renderer blocked. Use /api/val/meeting-prep/rebuild.');
 }
 
 function meetingPrepFallbackResultFromEvent(event = {}, error = null){
@@ -15291,7 +15294,7 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
     understanding: [
       'Checking attendees and relationship files.',
       'Checking project context and the most recent relevant transcript.',
-      'Checking public web and LinkedIn context. This could take a minute or two.'
+      'Checking recent email, tasks, memory, and verified public context.'
     ],
     recommendation: 'Hold here for a moment. The prep brief will replace this working state as soon as the packet is ready.',
     actions: [],
@@ -15307,13 +15310,12 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
       '<div>',
         '<span>VAL is preparing</span>',
         '<h3>' + escapeHtml(title || 'This meeting') + '</h3>',
-        '<p>Opening the brief as soon as internal context is ready. This could take a minute or two while VAL checks public web and LinkedIn context.</p>',
+        '<p>Opening the brief after VAL checks internal context and verified public signals. This can take a minute or two.</p>',
         '<ol class="meeting-prep-loading-steps">',
           '<li><b></b><span>Calendar and attendee context</span></li>',
           '<li><b></b><span>Relationship and Project packets</span></li>',
           '<li><b></b><span>Most recent transcript and open loops</span></li>',
-          '<li><b></b><span>Public web search</span></li>',
-          '<li><b></b><span>LinkedIn activity and recent post check</span></li>',
+          '<li><b></b><span>Recent email, tasks, memory, and public lookup</span></li>',
         '</ol>',
         '<div class="meeting-prep-loading-bars" aria-hidden="true"><b></b><b></b><b></b></div>',
       '</div>',
@@ -15323,24 +15325,8 @@ function renderMeetingPrepLoading(event = activeMeetingPrepEvent || meetingPrep.
   updateDrawerCoworkIcon();
 }
 
-function meetingPrepDelay(ms = 1000){
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 async function fetchSavedMeetingPrepResult(eventId = '', options = {}){
-  const id = String(eventId || '').trim();
-  if(!id) return null;
-  const attempts = Math.max(1, Number(options.attempts || 10));
-  const delayMs = Math.max(250, Number(options.delayMs || 3000));
-  for(let attempt = 0; attempt < attempts; attempt += 1){
-    try{
-      const result = await getJson('/api/val/calendar/meeting-prep/' + encodeURIComponent(id), {cache:'no-store'});
-      if(result?.brief) return result;
-    }catch(error){
-      if(error.status && error.status !== 404) throw error;
-    }
-    if(attempt < attempts - 1) await meetingPrepDelay(delayMs);
-  }
+  console.warn('Deprecated Meeting Prep saved-result polling blocked. Use /api/val/meeting-prep/rebuild.');
   return null;
 }
 
@@ -15351,22 +15337,43 @@ async function runMeetingPrep(){
     return;
   }
   try{
-    const result = await postJson('/api/val/calendar/meeting-prep', {event}, {
-      timeoutMs: 90000,
+    const result = await postJson('/api/val/meeting-prep/rebuild', {event}, {
+      timeoutMs: 120000,
       timeoutMessage: 'Meeting Prep is taking longer than expected.'
     });
-    renderMeetingPrepResult(result);
-  }catch(error){
-    if(calendarEventIsMeeting(event)){
-      showCoworkContextGathering('VAL is still finishing the real meeting packet. I will not replace it with a calendar-only fallback.', {noTimeout:true});
-      const savedResult = await fetchSavedMeetingPrepResult(meetingPrepCalendarEventId(), {attempts:12, delayMs:5000}).catch(() => null);
-      if(savedResult){
-        renderMeetingPrepResult(savedResult);
-        return;
+    if(result?.brief){
+      hideCoworkContextGathering();
+      appendHomeCoworkMessage('val', result.brief, {meetingPrep:true, replace:true});
+      if(result.mapping){
+        activeMeetingPrepBriefing = {
+          ...(activeMeetingPrepBriefing || {}),
+          attendeeMappings: (result.mapping.relationships || []).map((row, index) => ({
+            key: row.attendee?.email || row.attendee?.name || String(index),
+            name: row.attendee?.name || row.relationshipName || row.attendee?.email || 'Attendee',
+            email: row.attendee?.email || '',
+            matchStatus: row.attached ? 'relationship attached' : 'needs review',
+            crmContactId: row.relationshipId || '',
+            projectLinks: (result.mapping.projects || []).slice(0, 1).map((project) => ({
+              project_id: project.id || project.name || '',
+              project_name: project.name || ''
+            }))
+          }))
+        };
+        renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
       }
-      appendHomeCoworkMessage('val', 'The real meeting packet did not finish cleanly yet. I am keeping this in loading/retry mode instead of giving you a fake calendar-only brief.', {meetingPrep:true, replace:true});
+      scrollMeetingPrepToTop();
+      if(result.externalReview?.status === 'pending'){
+        appendHomeCoworkMessage('val', result.externalReview.message || 'External web and LinkedIn review is still running. This could take a minute or two.', {meetingPrep:true});
+      }
+      runMeetingPrepExternalReview(event).catch((error) => {
+        appendHomeCoworkMessage('val', 'External web and LinkedIn review did not finish cleanly yet: ' + (error.message || 'public lookup failed.'), {meetingPrep:true});
+      });
+      return;
     }
-    else{
+    hideCoworkContextGathering();
+    appendHomeCoworkMessage('val', 'I could not assemble a useful meeting brief yet. I need the calendar attendee details before this can run cleanly.', {meetingPrep:true, replace:true});
+  }catch(error){
+    if(!calendarEventIsMeeting(event)){
       setWorkspaceContent({
         lens: 'Meeting Prep',
         title: 'This calendar item is not a meeting.',
@@ -15382,8 +15389,24 @@ async function runMeetingPrep(){
         suppressClarityStandard:true
       });
       updateDrawerCoworkIcon();
+      return;
     }
+    hideCoworkContextGathering();
+    appendHomeCoworkMessage('val', 'I could not prepare this meeting brief cleanly yet: ' + (error.message || 'Meeting Prep failed.'), {meetingPrep:true, replace:true});
   }
+}
+
+async function runMeetingPrepExternalReview(event = activeMeetingPrepEvent || meetingPrep.event){
+  if(mockScrapers || !canUseApi || !event) return null;
+  const result = await postJson('/api/val/meeting-prep/external-review', {event}, {
+    timeoutMs: 135000,
+    timeoutMessage: 'External web and LinkedIn review is still running. This could take a minute or two.'
+  });
+  const message = result?.externalReview?.message || '';
+  if(message){
+    appendHomeCoworkMessage('val', message, {meetingPrep:true});
+  }
+  return result;
 }
 
 function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt,sourceItem,cardType,suppressClarityStandard}){
@@ -16420,6 +16443,60 @@ async function getJson(url, {cache = 'default'} = {}){
   return data;
 }
 
+function showFeatureComingSoon(label){
+  setWorkspaceContent({
+    lens: 'Coming Soon',
+    title: label + ' is coming soon.',
+    meaning: 'This surface is intentionally held back for this VAL until it is connected cleanly.',
+    understanding: [
+      'No data was opened or changed.',
+      'This protects onboarding from showing unfinished or cross-client context.',
+      'The rest of Hearth remains available.'
+    ],
+    recommendation: 'Continue with the available drawers and Witnessing Session for now.',
+    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
+    label: label + ' coming soon',
+    suppressClarityStandard: true
+  });
+  openWorkspaceShell(label + ' coming soon', {returnTarget:'home'});
+}
+
+function applyClientFeatureLocks(){
+  if(clientFeatureLocks.projectManagersComingSoon && projectDrawerLink){
+    projectDrawerLink.classList.add('drawer-link-coming-soon');
+    projectDrawerLink.disabled = true;
+    projectDrawerLink.setAttribute('aria-disabled', 'true');
+    projectDrawerLink.setAttribute('title', 'Project Managers coming soon');
+    const small = projectDrawerLink.querySelector('small');
+    if(small) small.textContent = 'Coming soon';
+  }
+  if(clientFeatureLocks.linkedinHomeComingSoon && linkedinWidget){
+    linkedinWidget.classList.add('feature-coming-soon');
+    linkedinWidget.setAttribute('aria-disabled', 'true');
+    linkedinWidget.setAttribute('title', 'LinkedIn support coming soon');
+    const strong = linkedinWidget.querySelector('.linkedin-widget-copy strong');
+    const small = linkedinWidget.querySelector('.linkedin-widget-copy small');
+    if(strong) strong.textContent = 'Coming Soon';
+    if(small) small.textContent = 'LinkedIn support will be connected after onboarding';
+  }
+}
+
+async function hydrateClientConfig(){
+  if(!canUseApi) {
+    applyClientFeatureLocks();
+    return;
+  }
+  try{
+    const config = await getJson('/api/public-config', {cache:'no-store'}).catch(() => getJson('/api/config', {cache:'no-store'}));
+    const flags = config?.featureFlags || {};
+    clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
+    clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
+  }catch(error){
+    console.warn('[hearth] client config unavailable', error.message);
+  }
+  applyClientFeatureLocks();
+}
+
 const hearthServerPacketNames = new Set([
   'relationship_packet',
   'project_packet',
@@ -17126,17 +17203,68 @@ function roomCardImplication(item, fallback, lens){
   return meaningText;
 }
 
+function homePerspectiveUserName(){
+  const titleText = String(currentState?.title || title?.textContent || '');
+  const directName = titleText.match(/^([A-Z][a-z]+),/);
+  if(directName?.[1]) return directName[1];
+  const fromGreeting = titleText.match(/,\s*([A-Z][a-z]+)\./);
+  return fromGreeting?.[1] || 'there';
+}
+
+function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
+  const text = compactSentence(String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/^[-–—]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim(), '');
+  if(!text) return '';
+  if(/^\d{1,2}:\d{2}\s*(AM|PM)\b/i.test(text)) return '';
+  if(/\b(Messages meeting|meeting July|processed and changed|Home should update|Velocity, Alignment, and Leverage)\b/i.test(text)) return '';
+  if(text.length <= maxLength) return text;
+  const shortened = text.slice(0, maxLength).replace(/\s+\S*$/, '').trim();
+  return shortened ? shortened + '.' : '';
+}
+
+function velocityPerspectiveFromBriefing(briefing = {}){
+  const daily = briefing.dailyWitness || {};
+  const name = homePerspectiveUserName();
+  const rawLines = [
+    daily.velocityPerspective,
+    daily.perspective,
+    daily.display_greeting,
+    ...(Array.isArray(daily.greeting_lines) ? daily.greeting_lines : []),
+    daily.what_was_witnessed,
+    daily.what_it_cost_or_represented,
+    daily.permission_line
+  ].filter(Boolean);
+  const lines = rawLines
+    .map((line) => cleanVelocityPerspectiveLine(line))
+    .filter(Boolean)
+    .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
+  const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
+  const verifiedLine = evidenceCount
+    ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before bringing this to Home.'
+    : "I'm watching the live signals and keeping anything unproven out of your way.";
+  return {
+    headline: lines[0] || name + ", I'm here watching and protecting every important relationship.",
+    witness: lines[1] || verifiedLine,
+    orientation: lines[2] || 'I will surface the next real move only when there is enough context to trust it.',
+    permission: lines[3] || 'Nothing moves without your approval.'
+  };
+}
+
+function applyVelocityPerspective(briefing = executiveBriefingState || {}){
+  const perspective = velocityPerspectiveFromBriefing(briefing || {});
+  if(title) title.textContent = perspective.headline;
+  if(witness) witness.textContent = perspective.witness;
+  if(orientation) orientation.textContent = perspective.orientation;
+  if(permission) permission.textContent = perspective.permission;
+}
+
 function hydrateGreetingFromBriefing(briefing){
   const greeting = briefing.dailyWitness;
-  if(!greeting || !Array.isArray(greeting.greeting_lines) || !greeting.greeting_lines.length) return;
-  const existingName = (currentState.title.match(/,\s*([A-Za-z]+)\./) || [,'Jessa'])[1];
-  const lines = greeting.greeting_lines.map((line) => (
-    compactSentence(line).replace(/\b(Good morning|Good afternoon|Good evening),\s*VAL\./i, '$1, ' + existingName + '.')
-  )).filter(Boolean);
-  if(lines[0]) title.textContent = lines[0];
-  witness.textContent = lines[1] || greeting.what_was_witnessed || currentState.witness;
-  orientation.textContent = lines[2] || greeting.what_it_cost_or_represented || currentState.orientation;
-  permission.textContent = greeting.permission_line || currentState.permission;
+  if(!greeting) return;
+  applyVelocityPerspective(briefing);
 }
 
 function homeAdmittedCount(roomName){
@@ -17779,7 +17907,7 @@ function prototypeBriefing(){
   };
 }
 
-async function hydrateHomePresence(){
+async function hydrateHomePresence(options = {}){
   if(mockBriefing){
     const briefing = prototypeBriefing();
     executiveBriefingState = briefing;
@@ -17791,11 +17919,13 @@ async function hydrateHomePresence(){
     return;
   }
   if(!canUseApi){
+    applyVelocityPerspective(null);
     renderWhyTodayPanel(null, 'unavailable');
     return;
   }
   try{
-    const briefing = await getJson('/api/executive-briefing');
+    const refreshSuffix = options.refresh ? '?refreshPerspective=1&t=' + encodeURIComponent(Date.now()) : '';
+    const briefing = await getJson('/api/executive-briefing' + refreshSuffix, {cache: options.refresh ? 'no-store' : 'default'});
     if(!briefing || briefing.bookMode) return;
     executiveBriefingState = briefing;
     window.executiveBriefingState = briefing;
@@ -17805,8 +17935,24 @@ async function hydrateHomePresence(){
     hydrateAlignmentFromProjectPins();
     renderWhyTodayPanel(briefing, 'loaded');
   }catch(error){
+    applyVelocityPerspective(null);
     renderWhyTodayPanel(null, 'unavailable');
     console.warn('Executive briefing unavailable:', error.message);
+  }
+}
+
+async function refreshHomePerspective(){
+  if(refreshPerspectiveButton){
+    refreshPerspectiveButton.setAttribute('aria-busy', 'true');
+    refreshPerspectiveButton.textContent = 'Refreshing...';
+  }
+  try{
+    await hydrateHomePresence({refresh:true});
+  }finally{
+    if(refreshPerspectiveButton){
+      refreshPerspectiveButton.removeAttribute('aria-busy');
+      refreshPerspectiveButton.textContent = 'Refresh Perspective';
+    }
   }
 }
 
@@ -18133,37 +18279,19 @@ function openMeetingPrepCoworkSession(options = {}){
     helper: 'VAL is holding the meeting context privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
     heading: loading ? 'VAL is preparing this meeting.' : '',
-    publicDetail: loading ? 'VAL is preparing your meeting brief. This can take a moment.' : '',
+    publicDetail: loading ? 'VAL is preparing your meeting brief. This can take a minute or two.' : '',
     initialMessage: loading
-      ? 'VAL is preparing your meeting brief.'
+      ? 'VAL is preparing your meeting brief. This can take a minute or two.'
       : '',
     backWorkflow: 'cancel:meeting',
-    showGathering: loading
+    showGathering: false
   });
   renderMeetingPrepCoworkEvidenceRail(briefing);
-  if(loading) showCoworkContextGathering('VAL is preparing your meeting brief. This can take a moment.', {noTimeout:true});
-  if(options.autoRun){
-    runMeetingPrepCoworkMayPrompt(briefing);
-  }
+  if(options.autoRun) console.warn('Deprecated Meeting Prep auto-run blocked. Use the rebuild route instead.');
 }
 
 async function runMeetingPrepCoworkMayPrompt(briefing = activeMeetingPrepBriefing || {}){
-  const textarea = workspaceInputPanel?.querySelector?.('[data-workspace-input="cowork"]');
-  if(!textarea) return;
-  activeCoworkHeldContext = [
-    meetingPrepHiddenEvidence(briefing),
-    'Answer only as a useful Meeting Mode briefing. Use these sections: who they are, what we have discussed before, what the goal of this meeting should be, and 3 talking points to open strong.'
-  ].filter(Boolean).join('\n\n');
-  activeCoworkContextLocked = true;
-  activeMeetingPrepAutoPrompt = true;
-  textarea.value = meetingPrepOriginalPromptSeed(briefing);
-  try{
-    await runCowork('meeting_prep');
-  }finally{
-    activeMeetingPrepAutoPrompt = false;
-    textarea.value = '';
-    textarea.placeholder = 'Add the next thought...';
-  }
+  console.warn('Deprecated Meeting Prep Co-Work autoprompt blocked. Use /api/val/meeting-prep/rebuild.');
 }
 
 async function runCowork(mode){
@@ -18223,7 +18351,7 @@ async function runCowork(mode){
     if(mode !== 'meeting_prep'){
       showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
     }else{
-      appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a moment.');
+      appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a minute or two while VAL checks the meeting context and public signals.');
       progressTimers.push(window.setTimeout(() => {
         appendHomeCoworkMessage('val', 'Still working. This meeting has more context to reason through, so VAL is taking a little longer than usual.');
       }, 45000));
@@ -21845,6 +21973,10 @@ async function openTeachValSessionWithPacket(node = teachPen){
 }
 
 async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
+  if(clientFeatureLocks.linkedinHomeComingSoon){
+    showFeatureComingSoon('LinkedIn');
+    return;
+  }
   const item = linkedinVisibilityItems[0] || {};
   const preflight = await ensureHearthClickPacket({
     node,
@@ -22321,17 +22453,22 @@ function openAlignmentExecutionWorkspace(){
 
 function openLeverageApprovalWorkspace(){
   const items = homeRoomQueues.leverage || [];
+  const firstWorkspace = items.length ? activateHomeQueueItem('leverage', 0) : null;
+  if(firstWorkspace){
+    activeHomeWorkspace = {roomName:'leverage', workspace:firstWorkspace};
+    activeClarityWorkspace = firstWorkspace;
+    openHomeCardCowork(firstWorkspace);
+    return;
+  }
+  const count = Number(leveragePreparedCount?.dataset?.count || 0);
   setWorkspaceContent({
     lens: 'Leverage',
-    title: 'Prepared work waiting for approval.',
-    meaning: items.length ? 'VAL prepared work you can inspect, edit, or approve for execution.' : 'No prepared work is waiting for approval right now.',
-    understanding: items.length
-      ? items.slice(0, 5).map((item) => {
-          const fields = homePacketDisplayFields(item.sourceItem || item, 'leverage');
-          return fields.what_changed + ' — triggered by ' + fields.source_type + ' — ' + fields.recommended_next_step;
-        })
+    title: count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
+    meaning: count ? 'VAL has counted prepared work, but the review queue is still hydrating. Nothing has been approved or sent.' : 'Leverage only opens real prepared work, not loose possibilities.',
+    understanding: count
+      ? ['Prepared count: ' + count, 'The review queue has not finished loading in this view yet.', 'No prepared work has been hidden, dismissed, approved, or sent.']
       : ['No prepared email, proposal, appointment, CRM update, task, document, or packet is currently loaded.'],
-    recommendation: items.length ? 'Open one prepared item, edit if needed, then approve only the external action tied to that item.' : 'Nothing needs approval from Leverage.',
+    recommendation: count ? 'Give VAL a moment to finish loading the reviewable prepared items, then open Leverage again.' : 'Nothing needs approval from Leverage.',
     actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
     label: 'Leverage approval workspace',
     packetReceipt: {},
@@ -22680,13 +22817,17 @@ async function openMeetingPrep(){
     room.classList.remove('active-room');
   });
   activeMeetingPrepBriefing = meetingPrepExecutiveBrief(meetingPrepFallbackResultFromEvent(activeMeetingPrepEvent || meetingPrep.event, {
-    message:'VAL is preparing your meeting brief.'
+    message:'VAL is preparing your meeting brief. This can take a minute or two.'
   }));
   openMeetingPrepCoworkSession({autoRun:false, loading:true});
   renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
   scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
-  await runMeetingPrep();
+  window.requestAnimationFrame(() => {
+    runMeetingPrep().catch((error) => {
+      console.error('Meeting Prep failed after opening workspace', error);
+    });
+  });
 }
 
 function openCoworkSession(){
@@ -22829,13 +22970,12 @@ function renderHomeCoworkMeetingPrepText(text = ''){
   if(parts.length < 2){
     return '<div class="home-cowork-meeting-prep-answer"><section>' + renderMeetingPrepMarkdownLines(normalized.split('\n')) + '</section></div>';
   }
-  const renderBlock = (part, index) => {
+  const renderBlock = (part) => {
     const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
     const firstLine = lines[0] || '';
     const firstLineIsListItem = /^[-*]\s+/.test(firstLine) || /^\d+\.\s+/.test(firstLine);
     let heading = firstLineIsListItem ? '' : meetingPrepMarkdownHeading(lines.shift() || '');
     const body = renderMeetingPrepMarkdownLines(lines);
-    if(index === 0) return '<div class="home-cowork-top-judgment">' + (heading ? '<strong>' + escapeHtml(heading) + '</strong>' : '') + body + '</div>';
     return '<section>' + (heading ? '<strong>' + escapeHtml(heading) + '</strong>' : '') + body + '</section>';
   };
   return '<div class="home-cowork-meeting-prep-answer">' + parts.map(renderBlock).join('') + '</div>';
@@ -23111,6 +23251,7 @@ leanButton?.addEventListener('click', () => {
 });
 
 freshDeskButton?.addEventListener('click', clearRoomAttendance);
+refreshPerspectiveButton?.addEventListener('click', refreshHomePerspective);
 
 drawerPull.addEventListener('click', () => {
   hideWorkspaceForDrawerNavigation();
@@ -23262,7 +23403,10 @@ relationshipDrawerLink.addEventListener('click', () => {
 });
 
 projectDrawerLink.addEventListener('click', () => {
-  if(projectDrawerLink.disabled) return;
+  if(projectDrawerLink.disabled || clientFeatureLocks.projectManagersComingSoon){
+    showFeatureComingSoon('Project Managers');
+    return;
+  }
   ensureDrawerTrayOpen();
   drawerTray.classList.remove('val-open', 'relationship-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -24647,6 +24791,7 @@ returnButton.addEventListener('click', (event) => {
 enableValAutocorrect(document);
 observeHearthClickContracts();
 setState(hearth.dataset.state || 'quiet');
+hydrateClientConfig();
 hydrateHomePresence();
 hydrateCalendarPanel();
 
