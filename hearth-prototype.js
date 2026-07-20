@@ -17012,14 +17012,23 @@ function preparedArtifactHomeCopy(item){
     workspaceMeaning: 'VAL found a useful relationship connection and drafted the introduction for review.',
     recommendation: 'Review why both people belong in the same conversation before sending anything.'
   };
-  if(kind === 'email_draft') return {
-    observation: 'Email draft prepared',
+  if(kind === 'email_draft' || kind === 'meeting_overview_email_draft') return {
+    observation: kind === 'meeting_overview_email_draft' ? 'Meeting overview prepared' : 'Email draft prepared',
     implication: subject + ' is ready to review before anything is sent.',
-    invitation: 'Would you like to review the email?',
-    action: 'Review email draft',
+    invitation: kind === 'meeting_overview_email_draft' ? 'Would you like to review the overview?' : 'Would you like to review the email?',
+    action: kind === 'meeting_overview_email_draft' ? 'Review meeting overview' : 'Review email draft',
     workspaceTitle: subject,
-    workspaceMeaning: 'VAL prepared the email from the transcript and held it for approval.',
+    workspaceMeaning: kind === 'meeting_overview_email_draft' ? 'VAL prepared the meeting overview from transcript evidence and held it for approval.' : 'VAL prepared the email and held it for approval.',
     recommendation: 'Read for accuracy and relationship tone before releasing it.'
+  };
+  if(kind === 'research_brief' || kind === 'code_draft' || kind === 'task_plan') return {
+    observation: kind === 'research_brief' ? 'Research brief prepared' : kind === 'code_draft' ? 'Code draft prepared' : 'Task plan prepared',
+    implication: subject + ' is ready for review.',
+    invitation: 'Would you like to review what VAL prepared?',
+    action: 'Review prepared work',
+    workspaceTitle: subject,
+    workspaceMeaning: 'VAL prepared this work from source evidence and kept any external or system action behind review.',
+    recommendation: 'Review the source, the work product, and the approval boundary before moving it forward.'
   };
   return null;
 }
@@ -17526,6 +17535,29 @@ function updateRoomFromBriefing(roomName, content){
 
 function clearHomeRoomForAdmission(roomName){
   const leverageCount = roomName === 'leverage' ? Number(leveragePreparedCount?.dataset?.count || 0) : 0;
+  const leverageState = roomName === 'leverage' ? String(leveragePreparedCount?.dataset?.state || 'ready') : 'ready';
+  if(roomName === 'leverage' && leverageState === 'unavailable'){
+    updateRoomFromBriefing('leverage', {
+      card: {
+        observation: 'Prepared work is temporarily unavailable.',
+        implication: 'VAL could not reach the private review queue. Nothing was approved, dismissed, or sent.',
+        invitation: 'Try the review queue again',
+        title: 'Prepared work is temporarily unavailable.',
+        summary: 'VAL could not reach the private review queue. Nothing was approved, dismissed, or sent.',
+        action: 'Open Leverage'
+      },
+      workspace: {
+        lens: 'Leverage',
+        title: 'The prepared-work queue could not be loaded.',
+        meaning: 'This is a service availability issue, not an empty queue.',
+        understanding: ['Existing prepared work remains private and unchanged.', 'No approval or external action occurred.'],
+        recommendation: 'Close this view and try Leverage again after the queue reconnects.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    });
+    return;
+  }
   const empty = {
     velocity: {
       card: {
@@ -17568,18 +17600,18 @@ function clearHomeRoomForAdmission(roomName){
     leverage: {
       card: {
         observation: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        implication: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        invitation: leverageCount ? 'Open when the queue finishes loading' : 'Nothing to approve',
+        implication: leverageCount ? 'VAL has review-ready work and has not approved or sent it.' : 'VAL has not produced a review-ready artifact from the current Inbox or Transcript evidence.',
+        invitation: leverageCount ? 'Review prepared work' : 'Nothing to approve',
         title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        summary: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
+        summary: leverageCount ? 'VAL has review-ready work and has not approved or sent it.' : 'VAL has not produced a review-ready artifact from the current Inbox or Transcript evidence.',
         action: 'Open Leverage'
       },
       workspace: {
         lens: 'Leverage',
-        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No Leverage item passed the v1 admission gate.',
-        meaning: leverageCount ? 'VAL has counted prepared work, but the review queue has not finished loading in this view yet.' : 'VAL is not showing loose opportunities as prepared work.',
-        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Open Leverage again after the review queue finishes hydrating.'] : ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
-        recommendation: leverageCount ? 'Wait for the prepared work queue to finish loading before approving anything.' : 'Prepared work will appear here only when it is real enough to review or approve.',
+        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
+        meaning: leverageCount ? 'Each item has a source, a work product, and an approval boundary.' : 'VAL is not showing classifications, possibilities, or missing-context notices as completed work.',
+        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.'] : ['A draft or artifact will appear here after VAL actually prepares it from source evidence.'],
+        recommendation: leverageCount ? 'Review the prepared item and decide whether to refine, approve, reject, or leave it waiting.' : 'Nothing needs approval from Leverage.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }
@@ -17739,8 +17771,9 @@ function preparedWorkPacketForHomeItem(item = {}){
 }
 
 function hasPreparedWorkPacketAndActionStatus(item = {}){
-  if(homeAdmissionExplicitPass(item, 'preparedWorkPacketComplete')) return true;
-  const packet = item.preparedWorkPacket || item.prepared_work_packet || preparedWorkPacketForHomeItem(item);
+  const metadata = homeAdmissionMetadata(item);
+  const packet = item.preparedWorkPacket || item.prepared_work_packet || metadata.preparedWorkPacket || metadata.prepared_work_packet || null;
+  if(!packet) return false;
   return Boolean(
     packet.prepared_work_type &&
     packet.trigger_source_id &&
@@ -17907,6 +17940,7 @@ function normalizeReadyForYouItem(item = {}){
   const metadata = item.metadataJson || item.metadata || {};
   const readiness = item.readinessJson || {};
   const artifact = metadata.preparedArtifact || item.preparedArtifact || item.prepared_artifact || {};
+  const preparedWorkPacket = item.preparedWorkPacket || item.prepared_work_packet || metadata.preparedWorkPacket || metadata.prepared_work_packet || null;
   return {
     ...item,
     cardType: 'ready_for_you',
@@ -17915,6 +17949,10 @@ function normalizeReadyForYouItem(item = {}){
     reason_it_matters: item.whyNow || item.whyUserIsSeeingThis || item.summary || '',
     preparedArtifactKind: metadata.preparedArtifactKind || readiness.prepared_artifact_kind || artifact.kind || '',
     preparedArtifact: artifact,
+    preparedWorkPacket,
+    preparedWorkState: item.preparedWorkState || metadata.preparedWorkState || readiness.prepared_work_state || '',
+    canValAct: item.canValAct || item.canValActStatus || metadata.canValAct || metadata.canValActStatus || '',
+    executionPath: item.executionPath || metadata.executionPath || '',
     metadata,
     confidence: item.confidence,
     target: item.target || (metadata.projectId || metadata.projectName ? {type:'project', id:metadata.projectId || metadata.projectName, label:metadata.projectName || metadata.projectId} : {type:'prepared_work', id:item.id || ''}),
@@ -17922,10 +17960,11 @@ function normalizeReadyForYouItem(item = {}){
   };
 }
 
-function updatePreparedCount(count){
+function updatePreparedCount(count, state = 'ready'){
   if(!leveragePreparedCount) return;
   const safeCount = Math.max(0, Number(count) || 0);
   leveragePreparedCount.dataset.count = String(safeCount);
+  leveragePreparedCount.dataset.state = state;
   leveragePreparedCount.textContent = safeCount + ' prepared';
 }
 
@@ -17936,7 +17975,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
   setHomeRoomQueue('leverage', admittedQueueItems);
   const preparedCount = Number(result.preparedCount != null ? result.preparedCount : (allBuilt.length || items.length));
-  updatePreparedCount(preparedCount);
+  updatePreparedCount(preparedCount, 'ready');
   const ready = firstBriefingItem(admittedQueueItems);
   if(!ready || !ready.id){
     clearHomeRoomForAdmission('leverage');
@@ -17984,6 +18023,7 @@ function hydrateLeverageFromReadyForYou(result = {}){
 
 async function hydratePreparedWorkQueue(){
   if(!canUseApi) return;
+  if(leveragePreparedCount) leveragePreparedCount.dataset.state = 'loading';
   try{
     const result = await postJson('/api/val/ready-for-you/build', {limit:5});
     hydrateLeverageFromReadyForYou(result);
@@ -17993,6 +18033,10 @@ async function hydratePreparedWorkQueue(){
       hydrateLeverageFromReadyForYou(fallback);
     }catch(inner){
       console.warn('Prepared work queue unavailable:', inner.message || error.message);
+      updatePreparedCount(Number(leveragePreparedCount?.dataset?.count || 0), 'unavailable');
+      clearHomeRoomForAdmission('leverage');
+      setRoomCopy(currentState);
+      renderWhyTodayPanel(executiveBriefingState, executiveBriefingState ? 'loaded' : 'waiting');
     }
   }
 }
@@ -18050,7 +18094,15 @@ function prototypeBriefing(){
       draftId: 'demo-frisson-introduction',
       metadataJson: {
         preparedArtifactKind: 'introduction_email_draft',
-        preparedArtifact: {kind: 'introduction_email_draft', id: 'demo-frisson-introduction'}
+        preparedArtifact: {kind: 'introduction_email_draft', id: 'demo-frisson-introduction', body: 'Prepared Frisson introduction draft.'},
+        preparedWorkPacket: {
+          prepared_work_type: 'introduction_email_draft',
+          trigger_source_id: 'demo-frisson-introduction',
+          work_product: 'Prepared Frisson introduction draft.',
+          approval_needed: true,
+          execution_path: 'review_then_send_email',
+          can_val_act_status: 'approval_required'
+        }
       },
       portalPhrases: ['Frisson introduction']
     }, {
@@ -18062,7 +18114,15 @@ function prototypeBriefing(){
       draftId: 'demo-d3day-page-copy',
       metadataJson: {
         preparedArtifactKind: 'copy_draft',
-        preparedArtifact: {kind: 'copy_draft', id: 'demo-d3day-page-copy'}
+        preparedArtifact: {kind: 'copy_draft', id: 'demo-d3day-page-copy', body: 'Prepared D3Day page copy draft.'},
+        preparedWorkPacket: {
+          prepared_work_type: 'copy_draft',
+          trigger_source_id: 'demo-d3day-page-copy',
+          work_product: 'Prepared D3Day page copy draft.',
+          approval_needed: true,
+          execution_path: 'review_then_create_document',
+          can_val_act_status: 'approval_required'
+        }
       },
       portalPhrases: ['D3Day page copy']
     }, {
@@ -18074,7 +18134,25 @@ function prototypeBriefing(){
       draftId: 'demo-client-follow-up',
       metadataJson: {
         preparedArtifactKind: 'email_draft',
-        preparedArtifact: {kind: 'email_draft', id: 'demo-client-follow-up'}
+        preparedArtifact: {kind: 'email_draft', id: 'demo-client-follow-up', body: 'Prepared client follow-up draft.'},
+        preparedWorkPacket: {
+          prepared_work_type: 'email_draft',
+          trigger_source_id: 'demo-client-follow-up',
+          work_product: 'Prepared client follow-up draft.',
+          approval_needed: true,
+          execution_path: 'review_then_send_email',
+          can_val_act_status: 'approval_required'
+        },
+        canValAct: 'approval_required',
+        executionPath: 'review_then_send_email'
+      },
+      preparedWorkPacket: {
+        prepared_work_type: 'email_draft',
+        trigger_source_id: 'demo-client-follow-up',
+        work_product: 'Prepared client follow-up draft.',
+        approval_needed: true,
+        execution_path: 'review_then_send_email',
+        can_val_act_status: 'approval_required'
       },
       portalPhrases: ['Client follow-up']
     }],
@@ -18092,7 +18170,7 @@ async function hydrateHomePresence(options = {}){
     window.executiveBriefingState = briefing;
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
-    updatePreparedCount(Array.isArray(briefing.readyForYou) ? briefing.readyForYou.length : 0);
+    updatePreparedCount(homeAdmissionFilter('leverage', Array.isArray(briefing.readyForYou) ? briefing.readyForYou : []).length);
     renderWhyTodayPanel(briefing, 'loaded');
     return;
   }
@@ -22490,8 +22568,24 @@ function openHomeSourceDrawerDestination(workspace = {}){
   restoreLeadIntelligenceWindow();
 }
 
+function preparedArtifactReviewMessage(item = {}){
+  const metadata = item.metadata || item.metadataJson || {};
+  const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const kind = preparedArtifactKind(item);
+  if(!kind) return '';
+  const label = kind.replace(/_/g, ' ');
+  const subject = compactSentence(artifact.subject || artifact.title || item.title || '', '');
+  const body = compactSentence(artifact.body || artifact.content || item.draftBody || '', '');
+  return [
+    'Prepared ' + label + (subject ? ': ' + subject : '') + '.',
+    body,
+    'This is ready for review. Nothing has been approved or sent.'
+  ].filter(Boolean).join(' ');
+}
+
 function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
+  const artifactMessage = preparedArtifactReviewMessage(active.sourceItem || {});
   activeClarityWorkspace = active;
   openContextualCoworkSession({
     returnTarget: 'home',
@@ -22502,13 +22596,16 @@ function openHomeCardCowork(workspace){
       active.packetFields?.why_it_matters ? 'Why it matters: ' + active.packetFields.why_it_matters : '',
       active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
-      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
+      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : '',
+      artifactMessage
     ].filter(Boolean),
     recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
     placeholder: 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
     helper: 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
     initialValue: '',
-    backWorkflow: 'cancel:meeting'
+    backWorkflow: 'cancel:meeting',
+    initialMessage: artifactMessage,
+    showGathering: !artifactMessage
   });
 }
 
@@ -22565,14 +22662,22 @@ function openLeverageApprovalWorkspace(){
     return;
   }
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
+  const availability = String(leveragePreparedCount?.dataset?.state || 'ready');
+  if(availability === 'unavailable'){
+    clearHomeRoomForAdmission('leverage');
+    const unavailableWorkspace = currentState.rooms?.leverage?.workspace || {};
+    setWorkspaceContent({...unavailableWorkspace, label:'Leverage approval workspace', packetReceipt:{}, suppressClarityStandard:true});
+    openWorkspaceShell('Leverage approval workspace', {returnTarget:'home'});
+    return;
+  }
   setWorkspaceContent({
     lens: 'Leverage',
     title: count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-    meaning: count ? 'VAL has counted prepared work, but the review queue is still hydrating. Nothing has been approved or sent.' : 'Leverage only opens real prepared work, not loose possibilities.',
+    meaning: count ? 'VAL has review-ready work with a source and approval boundary. Nothing has been approved or sent.' : 'Leverage only opens real prepared work, not loose possibilities.',
     understanding: count
-      ? ['Prepared count: ' + count, 'The review queue has not finished loading in this view yet.', 'No prepared work has been hidden, dismissed, approved, or sent.']
+      ? ['Prepared count: ' + count, 'No prepared work has been hidden, dismissed, approved, or sent.']
       : ['No prepared email, proposal, appointment, CRM update, task, document, or packet is currently loaded.'],
-    recommendation: count ? 'Give VAL a moment to finish loading the reviewable prepared items, then open Leverage again.' : 'Nothing needs approval from Leverage.',
+    recommendation: count ? 'Review the prepared work when you are ready.' : 'Nothing needs approval from Leverage.',
     actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
     label: 'Leverage approval workspace',
     packetReceipt: {},

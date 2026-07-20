@@ -611,10 +611,23 @@ function createValExecutiveInboxService({
     return normalizeDraftWriterOutput(parseJsonObject(raw),payload.draft);
   }
   async function persistReviewDraft({draft,context={},classification={},readiness={},brief={},qa={},revisionOf='',status}={}){
+    const draftStatus=status || (qa.result==='ready_for_human_review'?'ready_for_review':qa.result||'needs_context');
     const sourceContext={
       source:'executive_inbox_review_only',
       noExternalAction:true,
       noProviderDraftCreated:true,
+      preparedArtifactKind:'email_draft',
+      preparedArtifact:{
+        kind:'email_draft',
+        title:draft.subject||brief.single_purpose||'Email draft ready for review',
+        subject:draft.subject||'',
+        body:draft.body||'',
+        reviewRequired:true,
+        externalSend:false
+      },
+      preparedWorkState:draftStatus,
+      canValAct:'approval_required',
+      executionPath:'create_provider_draft_then_human_send',
       conversationId:context.conversationId||'',
       threadId:context.threadId||'',
       currentMessageId:context.current_message?.messageId||context.current_message?.id||'',
@@ -635,7 +648,7 @@ function createValExecutiveInboxService({
       provider:'internal',
       subject:draft.subject,
       body:draft.body,
-      status:status || (qa.result==='ready_for_human_review'?'ready_for_review':qa.result||'needs_context'),
+      status:draftStatus,
       sourceContext
     };
     if(typeof saveReviewDraft==='function'){

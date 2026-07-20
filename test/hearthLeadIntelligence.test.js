@@ -1168,6 +1168,10 @@ test('Hearth Leverage card shows prepared work count from Ready For You', () => 
   assert.match(hearthJs, /preparedCount/);
   assert.match(hearthJs, /remainingContextNeeded/);
   assert.match(hearthJs, /Leverage counts prepared work without turning Home into a generic task queue/);
+  assert.match(hearthJs, /function preparedArtifactReviewMessage/);
+  assert.match(hearthJs, /This is ready for review\. Nothing has been approved or sent\./);
+  assert.match(hearthJs, /initialMessage: artifactMessage/);
+  assert.match(hearthJs, /showGathering: !artifactMessage/);
 });
 
 test('Stewardship V1 is an introduction engine with Network discovery', () => {
@@ -2210,6 +2214,13 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /No prepared work is waiting right now/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
+  const leverageAdmissionBody=hearthJs.slice(
+    hearthJs.indexOf('function hasPreparedWorkPacketAndActionStatus'),
+    hearthJs.indexOf('function homeAdmissionResult')
+  );
+  assert.match(leverageAdmissionBody,/metadata\.preparedWorkPacket/);
+  assert.match(leverageAdmissionBody,/if\(!packet\) return false/);
+  assert.doesNotMatch(leverageAdmissionBody,/homeAdmissionExplicitPass/);
 });
 
 test('Hearth room cards use target-aware witnessed copy instead of generic dashboard copy', () => {

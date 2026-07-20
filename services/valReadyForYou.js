@@ -1,5 +1,11 @@
 function safeArray(value){ return Array.isArray(value)?value:[]; }
 const {receiptForReadyItem}=require('./valExecutionVisibility');
+const {
+  inferPreparedWorkKind,
+  registerPreparedWork,
+  hydratePreparedWork,
+  isPreparedWorkItem
+}=require('./valPreparedWork');
 
 function compactText(value,limit=700){
   return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
@@ -33,7 +39,7 @@ function parseReadyRow(row={}){
   out.type=out.itemType||out.type||'prepared_work';
   out.whatValDid=out.whatValDid||out.whatValPrepared||'';
   out.whatOnlyUserCanDo=out.whatOnlyUserCanDo||out.whatUserNeedsToDo||'';
-  return out;
+  return hydratePreparedWork(out);
 }
 function sourceKey(value=''){
   return String(value||'')
@@ -57,11 +63,17 @@ function approvalActions(item){
     {key:'snooze',label:'Snooze',external_action:false}
   ];
   if(item.metadataJson?.draftId||item.metadata?.draftId) actions.unshift({key:'review_draft',label:'Review draft',external_action:false});
-  if(item.metadataJson?.preparedArtifactKind||item.metadata?.preparedArtifactKind) actions.unshift({key:'review_prepared_work',label:'Review prepared work',external_action:false});
+  if(isPreparedWorkItem(item)) actions.unshift({key:'review_prepared_work',label:'Review prepared work',external_action:false});
   return actions;
 }
 function preparedWorkCount(rows=[]){
-  return safeArray(rows).filter(row=>['ready','ready_for_review','needs_context'].includes(row.status||'ready_for_review')).length;
+  return safeArray(rows).filter(isPreparedWorkItem).length;
+}
+function compareReadyItems(a={},b={}){
+  return (Number(isPreparedWorkItem(b))-Number(isPreparedWorkItem(a)))||
+    (Number(b.requiresApproval)-Number(a.requiresApproval))||
+    (Number(b.confidence||0)-Number(a.confidence||0))||
+    String(b.createdAt||'').localeCompare(String(a.createdAt||''));
 }
 function draftToCandidate(draft,uuid,scope){
   const source=draft.sourceContext||{};
@@ -106,8 +118,27 @@ function draftToCandidate(draft,uuid,scope){
     reviewedAt:null,
     snoozedUntil:null
   };
-  item.actionsJson=approvalActions(item);
-  return item;
+  const registered=registerPreparedWork(item,{
+    kind:'email_draft',
+    artifact:{
+      id:draft.id,
+      kind:'email_draft',
+      title,
+      subject:title,
+      body,
+      recipients:safeArray(source.recipients),
+      recipientEmail:source.recipientEmail||'',
+      reviewRequired:true,
+      externalSend:false
+    },
+    sourceType:'executive_inbox',
+    sourceId:source.conversationId||source.threadId||draft.id,
+    executionPath:source.executionPath||'create_provider_draft_then_human_send',
+    canValAct:source.canValAct||'approval_required',
+    state:item.status
+  });
+  registered.actionsJson=approvalActions(registered);
+  return registered;
 }
 function draftEvaluationToCandidate(candidate,uuid,scope){
   const readiness=candidate.draftReadiness||candidate.draft_readiness||{};
@@ -196,8 +227,35 @@ function internalDraftCandidate(draft,uuid,scope){
     reviewedAt:null,
     snoozedUntil:null
   };
-  item.actionsJson=approvalActions(item);
-  return item;
+  const kind=inferPreparedWorkKind(
+    source.preparedArtifactKind,
+    source.prepared_artifact_kind,
+    source.preparedArtifact?.kind,
+    source.prepared_artifact?.kind,
+    draft.draftType,
+    sourceName
+  );
+  const registered=kind?registerPreparedWork(item,{
+    kind,
+    artifact:{
+      ...(source.preparedArtifact||source.prepared_artifact||{}),
+      id:draft.id,
+      kind,
+      title:draft.subject||source.meetingTitle||'Prepared work',
+      subject:draft.subject||'',
+      body:draft.body||'',
+      recipients:safeArray(source.recipients),
+      reviewRequired:true,
+      externalSend:false
+    },
+    sourceType:sourceName,
+    sourceId:source.transcriptId||source.conversationId||draft.id,
+    executionPath:source.executionPath||source.execution_path||'',
+    canValAct:source.canValAct||source.can_val_act||'approval_required',
+    state:item.status
+  }):item;
+  registered.actionsJson=approvalActions(registered);
+  return registered;
 }
 function meetingPrepCandidate(candidate,uuid,scope){
   const brief=candidate.brief||{};
@@ -305,8 +363,17 @@ function transcriptCandidate(candidate,uuid,scope){
     reviewedAt:null,
     snoozedUntil:null
   };
-  item.actionsJson=approvalActions(item);
-  return item;
+  const registered=artifact&&artifactKind?registerPreparedWork(item,{
+    kind:artifactKind,
+    artifact,
+    sourceType:'transcript_intelligence',
+    sourceId:candidate.transcriptId||run.transcriptId||artifact.sourceId||artifact.source_id||item.id,
+    executionPath:artifact.execution_path||artifact.executionPath||handoff.execution_path||handoff.executionPath||'',
+    canValAct:artifact.can_val_act||artifact.canValAct||handoff.can_val_act||handoff.canValAct||'approval_required',
+    state:item.status
+  }):item;
+  registered.actionsJson=approvalActions(registered);
+  return registered;
 }
 
 function createValReadyForYouService({
@@ -346,25 +413,27 @@ function createValReadyForYouService({
     if(idx>=0)s.readyForYouItems[idx]={...s.readyForYouItems[idx],...item,createdAt:s.readyForYouItems[idx].createdAt||item.createdAt,updatedAt:new Date().toISOString()};
     else s.readyForYouItems.unshift(item);
     saveStore(s);
-    return idx>=0?s.readyForYouItems[idx]:item;
+    return hydratePreparedWork(idx>=0?s.readyForYouItems[idx]:item);
   }
   async function listItems({limit=3,status='',includeSnoozed=false}={}){
     const lim=Math.max(1,Math.min(Number(limit)||3,5));
+    const fetchLimit=Math.max(20,lim);
     const activeStatuses=status?[status]:['ready','ready_for_review','needs_context'];
     let rows=[];
     if(hasPg()){
       const params=[tenantId(),userId(),activeStatuses];
       let where='tenant_id=$1 and user_id=$2 and status = any($3)';
       if(!includeSnoozed) where+=' and (snoozed_until is null or snoozed_until <= now())';
-      const r=await dbQuery(`select * from ready_for_you_items where ${where} order by requires_approval desc, confidence desc, created_at desc limit ${lim}`,params);
-      rows=(r.rows||[]).map(parseReadyRow);
+      const r=await dbQuery(`select * from ready_for_you_items where ${where} order by requires_approval desc, confidence desc, created_at desc limit ${fetchLimit}`,params);
+      rows=(r.rows||[]).map(parseReadyRow).sort(compareReadyItems).slice(0,lim);
     }else{
       const now=Date.now();
       rows=store().readyForYouItems
         .filter(r=>r.tenantId===tenantId()&&r.userId===userId())
         .filter(r=>activeStatuses.includes(r.status))
         .filter(r=>includeSnoozed||!r.snoozedUntil||Date.parse(r.snoozedUntil)<=now)
-        .sort((a,b)=>(Number(b.requiresApproval)-Number(a.requiresApproval))||(Number(b.confidence||0)-Number(a.confidence||0))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
+        .map(hydratePreparedWork)
+        .sort(compareReadyItems)
         .slice(0,lim);
     }
     return {ok:true,state:rows.length?'has_items':'caught_up',message:rows.length?'Ready for review.':"I'm caught up.",items:rows,visibleLimit:lim,preparedCount:preparedWorkCount(rows)};
@@ -462,7 +531,7 @@ function createValReadyForYouService({
     const {candidates,unknowns}=await collectCandidates();
     const actionable=candidates
       .filter(item=>item.requiresApproval||['ready_for_review','needs_context','ready'].includes(item.status))
-      .sort((a,b)=>(Number(b.requiresApproval)-Number(a.requiresApproval))||(Number(b.confidence||0)-Number(a.confidence||0))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
+      .sort(compareReadyItems)
       .slice(0,Math.max(1,Math.min(Number(limit)||5,5)));
     const saved=[];
     for(const item of actionable) saved.push(await saveItem(item));

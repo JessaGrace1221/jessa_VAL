@@ -85,9 +85,48 @@ test('builds a judgment-only review queue and limits visible items to three',asy
   assert.ok(built.allBuilt.every(item=>item.metadataJson.noExternalAction||item.metadataJson.source));
   const draftItem=built.allBuilt.find(item=>item.metadataJson.draftId==='draft_1');
   assert.equal(draftItem.metadataJson.writingRules,'Warm but direct. Sign off with Jessa.');
+  assert.equal(draftItem.preparedArtifactKind,'email_draft');
+  assert.equal(draftItem.preparedWorkPacket.prepared_work_type,'email_draft');
+  assert.equal(draftItem.preparedWorkPacket.trigger_source_id,'uc_1');
+  assert.equal(draftItem.canValAct,'approval_required');
+  assert.equal(draftItem.executionPath,'create_provider_draft_then_human_send');
+  assert.equal(built.preparedCount,2);
+  const evaluation=built.allBuilt.find(item=>item.metadataJson.evaluationId==='eval_1');
+  assert.ok(evaluation);
+  assert.equal(evaluation.preparedWorkPacket,null);
+  assert.ok(!evaluation.actionsJson.some(action=>action.key==='review_prepared_work'));
   const listed=await service.listItems();
   assert.equal(listed.items.length,3);
   assert.notEqual(listed.message,"I'm caught up.");
+});
+
+test('readiness evaluations do not inflate the prepared work count',async()=>{
+  let store={readyForYouItems:[]};
+  const service=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_evaluation_only`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    executiveInboxService:{
+      reviewDrafts:async()=>({drafts:[]}),
+      listReadyForYouDraftCandidates:async()=>[{
+        id:'eval_only',
+        conversationId:'uc_eval_only',
+        status:'ready_for_review',
+        draftReadiness:{status:'ready_for_review',representation_risk:'low',approval_policy:'approval_required'},
+        draftBrief:{single_purpose:'Confirm scheduling.',why_now:'Scheduling is open.'},
+        sourceRefs:[]
+      }]
+    },
+    listDrafts:async()=>[]
+  });
+  const built=await service.buildQueue();
+  assert.equal(built.allBuilt.length,1);
+  assert.equal(built.preparedCount,0);
+  assert.equal(built.allBuilt[0].preparedWorkPacket,null);
+  assert.ok(!built.allBuilt[0].actionsJson.some(action=>action.key==='review_prepared_work'));
 });
 
 test('approve, reject, and snooze update local state only',async()=>{

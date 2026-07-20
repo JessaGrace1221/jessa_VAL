@@ -350,6 +350,10 @@ test('generates review-only email drafts, revises once after QA, and stores loca
   assert.equal(savedDrafts[0].sourceContext.noProviderDraftCreated,true);
   assert.equal(savedDrafts[0].sourceContext.writingRules,'Warm but direct. Sign off with Jessa.');
   assert.equal(savedDrafts[0].sourceContext.draftBrief.writingRules,'Warm but direct. Sign off with Jessa.');
+  assert.equal(savedDrafts[0].sourceContext.preparedArtifactKind,'email_draft');
+  assert.equal(savedDrafts[0].sourceContext.preparedArtifact.body,result.writer_output.body);
+  assert.equal(savedDrafts[0].sourceContext.canValAct,'approval_required');
+  assert.equal(savedDrafts[0].sourceContext.executionPath,'create_provider_draft_then_human_send');
   const review=await service.reviewDrafts();
   assert.equal(review.drafts.length,1);
   const candidates=await service.listReadyForYouDraftCandidates();
