@@ -11078,30 +11078,9 @@ function renderMeetingPrepCoworkEvidenceRail(briefing = activeMeetingPrepBriefin
   if(!sidebar) return;
   sidebar.querySelectorAll('[data-meeting-prep-cowork-rail]').forEach((node) => node.remove());
   const mapping = renderMeetingPrepAttendeeMapping(briefing, {compact:true});
-  const externalStatus = renderMeetingPrepExternalStatus(briefing);
-  if(!mapping && !externalStatus) return;
-  sidebar.insertAdjacentHTML('beforeend', '<div class="meeting-prep-cowork-rail" data-meeting-prep-cowork-rail>' + externalStatus + mapping + '</div>');
+  if(!mapping) return;
+  sidebar.insertAdjacentHTML('beforeend', '<div class="meeting-prep-cowork-rail" data-meeting-prep-cowork-rail>' + mapping + '</div>');
   applyHearthClickContracts(deskWorkspace);
-}
-
-function renderMeetingPrepExternalStatus(briefing = {}){
-  const lines = Array.isArray(briefing.externalEvidence) ? briefing.externalEvidence.filter(Boolean).slice(0,3) : [];
-  const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
-  const links = signals.map((signal) => signal.latestLinkedInUrl).filter(Boolean).slice(0,3);
-  const unverifiedPattern = /still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated|no verified current web evidence/i;
-  const verifiedLines = lines.filter((line) => !unverifiedPattern.test(String(line)));
-  const hasVerifiedEvidence = verifiedLines.length > 0;
-  const label = hasVerifiedEvidence ? 'External review ready' : 'External review running';
-  const detail = hasVerifiedEvidence
-    ? compactSentence(verifiedLines[0], 'Current public context is attached.')
-    : (links.length
-      ? 'Internal prep is available now. VAL is still checking public web and LinkedIn context; the activity link is available while it works.'
-      : 'Internal prep is available now. This could take a minute or two while VAL checks public web and LinkedIn context.');
-  return '<section class="meeting-prep-external-status" data-state="' + (hasVerifiedEvidence ? 'ready' : 'working') + '">' +
-    '<div><span></span><strong>' + label + '</strong></div>' +
-    '<p>' + escapeHtml(detail) + '</p>' +
-    (links.length ? '<ul>' + links.map((url) => '<li><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Open LinkedIn activity</a></li>').join('') + '</ul>' : '') +
-  '</section>';
 }
 
 async function handleProjectAction(action){
@@ -14534,7 +14513,7 @@ function renderMeetingPrep(){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const eventTitle = meetingPrepEventTitle(event);
   const eventDescription = meetingPrepEventDescription(event);
-  renderMeetingPrepExecutiveBrief(meetingPrepExecutiveBrief({
+  activeMeetingPrepBriefing = meetingPrepExecutiveBrief({
     brief:{
       meetingContextJson:{title:eventTitle,startTime:event.startTime||event.start||'',source:event.source||'hearth'},
       attendeeIntelligenceJson:[],
@@ -14544,7 +14523,8 @@ function renderMeetingPrep(){
       followUpPreparationJson:{},
       sourceRefsJson:[]
     }
-  }));
+  });
+  openMeetingPrepCoworkSession({autoRun:true});
 }
 
 function meetingPrepAttendeeIdentityLines(attendees = []){
@@ -15028,28 +15008,6 @@ function renderMeetingPrepAttendeeMapping(briefing = {}, options = {}){
   }).join('') + '</div><datalist id="meeting-prep-relationship-options">' + relationshipOptions + '</datalist><datalist id="meeting-prep-project-options">' + projectOptions + '</datalist></section>';
 }
 
-function renderMeetingPrepFirstMeetingSignals(briefing = {}){
-  const signals = Array.isArray(briefing.firstMeetingSignals) ? briefing.firstMeetingSignals : [];
-  if(!signals.length) return '';
-  const heading = briefing.meetingType?.type === 'first_meeting' ? 'First-Meeting Intelligence' : 'Current Public Signals';
-  return '<section class="meeting-prep-section meeting-prep-first-look"><h3>' + escapeHtml(heading) + '</h3><div class="meeting-prep-signal-grid">' + signals.map((signal) => {
-    const website = signal.website ? '<a href="' + escapeHtml(signal.website.match(/^https?:\/\//i) ? signal.website : 'https://' + signal.website) + '" target="_blank" rel="noopener">' + escapeHtml(signal.website) + '</a>' : '<span>Website not found yet</span>';
-    const linkedin = signal.latestLinkedIn ? compactSentence(signal.latestLinkedIn) : 'No specific LinkedIn post text returned yet.';
-    const linkedinUrl = signal.latestLinkedInUrl ? '<a href="' + escapeHtml(signal.latestLinkedInUrl) + '" target="_blank" rel="noopener">Open LinkedIn activity</a>' : '';
-    const summary = signal.summary ? compactSentence(signal.summary) : 'Public context is still thin; use the meeting opening to learn what matters most.';
-    return '<article class="meeting-prep-signal-card">' +
-      '<header><strong>' + escapeHtml(signal.name) + '</strong>' + (signal.email ? '<span>' + escapeHtml(signal.email) + '</span>' : '') + '</header>' +
-      '<dl>' +
-        '<div><dt>Organization</dt><dd>' + escapeHtml(signal.organization || 'Not confirmed yet') + '</dd></div>' +
-        '<div><dt>Website</dt><dd>' + website + '</dd></div>' +
-        '<div><dt>Latest LinkedIn Signal</dt><dd>' + escapeHtml(linkedin) + (linkedinUrl ? '<br>' + linkedinUrl : '') + '</dd></div>' +
-        '<div><dt>Why It Matters</dt><dd>' + escapeHtml(summary) + '</dd></div>' +
-      '</dl>' +
-      (signal.query ? '<p>Search used: ' + escapeHtml(signal.query) + '</p>' : '') +
-    '</article>';
-  }).join('') + '</div></section>';
-}
-
 function meetingPrepExecutiveBrief(result = {}){
   const event = activeMeetingPrepEvent || meetingPrep.event;
   const brief = normalizeMeetingPrepBrief(result.brief || {}, event);
@@ -15198,57 +15156,27 @@ function meetingPrepCoworkSeed(briefing = {}){
   return meetingPrepOriginalPromptSeed(briefing);
 }
 
-function meetingPrepCoworkBriefAnswer(briefing = {}){
-  return [
-    'Meeting Prep is reset to a clean starting point.',
-    '',
-    'I archived the original May prompt and removed the current noisy briefing stack from the visible answer path.',
-    '',
-    'Original prompt held for rebuild:',
-    meetingPrepOriginalPromptSeed(briefing),
-    '',
-    'Next rebuild should start from that prompt and only add hidden evidence after the output is useful again.'
-  ].join('\n');
+function meetingPrepHiddenEvidence(briefing = {}){
+  const packet = briefing.briefPacket || {};
+  const lines = [
+    'Use this evidence silently to answer the Meeting Mode prompt. Do not mention packets, readiness scores, lookup status, or diagnostics.',
+    'Meeting title: ' + compactSentence(briefing.eventTitle || packet.meeting_title || ''),
+    'Meeting time: ' + compactSentence(briefing.time || ''),
+    'Attendees: ' + compactSentence((briefing.people || []).join(' | '), ''),
+    'Who they are: ' + compactSentence((packet.attendees || []).map((item) => [item.name, item.email, item.relationship_summary, item.public_summary, item.website].filter(Boolean).join(' - ')).join(' | '), ''),
+    'Relationship context: ' + compactSentence([...(briefing.relationshipIntelligence || []), ...(packet.relationship_context || [])].join(' | '), ''),
+    'Project context: ' + compactSentence([...(briefing.project || []), ...(packet.project_context || [])].join(' | '), ''),
+    'Transcript/email context: ' + compactSentence([...(briefing.changed || []), ...(packet.what_changed_since_last_spoke || []), ...(packet.open_loops || [])].join(' | '), ''),
+    'Public lookup context: ' + compactSentence([...(briefing.externalEvidence || []), ...(packet.public_context || [])].join(' | '), ''),
+    'Likely goal: ' + compactSentence(packet.meeting_type_focus || briefing.purpose || ''),
+    'Possible opening/questions: ' + compactSentence([briefing.opening, ...(briefing.questions || []), ...(packet.questions || [])].filter(Boolean).join(' | '), ''),
+    'Follow-up context: ' + compactSentence([...(briefing.followUpItems || []), ...(packet.likely_follow_up || [])].join(' | '), '')
+  ].filter((line) => !/: $/.test(line));
+  return lines.join('\n');
 }
 
-function renderMeetingPrepExecutiveBrief(briefing = {}){
-  activeMeetingPrepBriefing = briefing;
-  activeMeetingPrepBriefing.coworkSeed = meetingPrepCoworkSeed(briefing);
-  setWorkspaceContent({
-    lens: 'Meeting Prep',
-    title: briefing.eventTitle || 'Meeting Prep',
-    meaning: briefing.purpose || 'Walk into the meeting prepared.',
-    understanding: ['Executive readiness: ' + briefing.readiness.score + '%', 'The briefing below is the useful prep; Co-Work is the only action.'],
-    recommendation: briefing.opening || 'Use Co-Work if you want VAL to help shape the conversation before you enter.',
-    actions: [{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}],
-    label: 'Meeting Prep executive briefing',
-    suppressClarityStandard:true
-  });
-  if(workspaceGrid) workspaceGrid.hidden = true;
-  scraperPreviewList.hidden = false;
-  scraperPreviewList.classList.add('meeting-prep-brief');
-  scraperPreviewList.innerHTML = [
-    '<section class="meeting-prep-readiness">',
-      '<div><span>Executive Readiness</span><strong>' + escapeHtml(String(briefing.readiness.score)) + '%</strong><p>' + escapeHtml(briefing.readiness.label) + '</p><div class="meeting-prep-type"><b>' + escapeHtml(briefing.meetingType?.label || 'Meeting prep') + '</b>' + (briefing.meetingType?.focus ? '<small>' + escapeHtml(briefing.meetingType.focus) + '</small>' : '') + '</div></div>',
-      '<div class="meeting-prep-meter" aria-label="Executive readiness ' + escapeHtml(String(briefing.readiness.score)) + ' percent"><i style="width:' + escapeHtml(String(briefing.readiness.score)) + '%"></i></div>',
-    '</section>',
-    '<section class="meeting-prep-section"><h3>The Purpose</h3><p>' + escapeHtml(briefing.purpose) + '</p><h4>Success today</h4>' + renderMeetingPrepList(briefing.success) + '</section>',
-    '<section class="meeting-prep-section"><h3>Who You Are Meeting</h3>' + renderMeetingPrepList(briefing.people) + '</section>',
-    renderMeetingPrepFirstMeetingSignals(briefing),
-    renderMeetingPrepAttendeeMapping(briefing),
-    '<section class="meeting-prep-section"><h3>What Changed Since You Last Spoke</h3>' + renderMeetingPrepList(briefing.changed) + '</section>',
-    '<section class="meeting-prep-section"><h3>Relationship Intelligence</h3>' + renderMeetingPrepList(briefing.relationshipIntelligence) + '</section>',
-    briefing.project.length ? '<section class="meeting-prep-section"><h3>Project Context</h3>' + renderMeetingPrepList(briefing.project) + '</section>' : '',
-    '<section class="meeting-prep-section"><h3>Likely Decisions</h3>' + renderMeetingPrepList(briefing.decisions.map((item) => '□ ' + item)) + '</section>',
-    '<section class="meeting-prep-section"><h3>Remember</h3><p>' + escapeHtml(briefing.remember) + '</p></section>',
-    '<section class="meeting-prep-two"><article><h3>Risks</h3>' + renderMeetingPrepList(briefing.risks) + '</article><article><h3>Opportunities</h3>' + renderMeetingPrepList(briefing.opportunities) + '</article></section>',
-    '<section class="meeting-prep-section meeting-prep-opening"><h3>Suggested Opening</h3><p>"' + escapeHtml(briefing.opening) + '"</p></section>',
-    '<section class="meeting-prep-section"><h3>Suggested Questions</h3><ol>' + briefing.questions.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ol></section>',
-    '<section class="meeting-prep-section"><h3>Likely Follow-Up</h3>' + renderMeetingPrepList(briefing.followUpItems) + '</section>',
-    briefing.missing.length ? '<section class="meeting-prep-section meeting-prep-missing"><h3>Still Missing</h3>' + renderMeetingPrepList(briefing.missing) + '</section>' : ''
-  ].filter(Boolean).join('');
-  workspaceActions.innerHTML = renderWorkspaceActionButtons([{label:'Co-Work with VAL', workflow:'meetingPrepCowork'}]);
-  updateDrawerCoworkIcon();
+function meetingPrepCoworkBriefAnswer(briefing = {}){
+  return meetingPrepOriginalPromptSeed(briefing);
 }
 
 function renderMeetingPrepResult(result){
@@ -15416,7 +15344,7 @@ async function runMeetingPrep(){
   try{
     const result = await postJson('/api/val/calendar/meeting-prep', {event}, {
       timeoutMs: 90000,
-      timeoutMessage: 'Meeting Prep is taking longer than expected. VAL is opening a safe brief from the calendar context while the heavier context path is investigated.'
+      timeoutMessage: 'Meeting Prep is taking longer than expected.'
     });
     renderMeetingPrepResult(result);
   }catch(error){
@@ -18187,36 +18115,39 @@ function openMeetingPrepCoworkSession(options = {}){
   openContextualCoworkSession({
     returnTarget: 'meeting',
     title: 'Meeting Prep: ' + compactSentence(briefing.eventTitle || 'this meeting', 'this meeting'),
-    meaning: 'This chat is scoped to a temporary Meeting Prep packet. VAL should prepare you from the evidence without changing any drawer or source packet.',
+    meaning: 'This chat is scoped to preparing you for the meeting.',
     context: [
-      'Meeting: ' + compactSentence(briefing.eventTitle || meetingPrepEventTitle(event), 'Meeting'),
-      'Attendees: ' + compactSentence((briefing.people || []).slice(0, 4).join(' | '), 'Attendee context is loading.'),
-      'Public evidence: ' + compactSentence((briefing.externalEvidence || []).slice(0, 2).join(' | '), 'External web and LinkedIn review may still be running.'),
-      'Packet rule: read only unless the user explicitly asks VAL to create, attach, save, send, or update something.'
+      meetingPrepHiddenEvidence(briefing)
     ],
     recommendation: 'VAL should give you what matters, how to enter, what to ask, what to watch, and the likely follow-up.',
     placeholder: 'Help me walk into this meeting prepared...',
-    helper: 'VAL is holding the Meeting Prep packet privately. Nothing external happens from Co-Work without approval.',
+    helper: 'VAL is holding the meeting context privately. Nothing external happens from Co-Work without approval.',
     initialValue: seed,
     heading: loading ? 'VAL is preparing this meeting.' : '',
-    publicDetail: loading ? 'Internal context opens first. Public web and LinkedIn can take a minute or two.' : '',
+    publicDetail: loading ? 'VAL is preparing your meeting brief. This can take a moment.' : '',
     initialMessage: loading
-      ? 'I am gathering calendar attendees, relationship and project packets, recent transcripts, and public web or LinkedIn context. This could take a minute or two.'
+      ? 'VAL is preparing your meeting brief.'
       : '',
     backWorkflow: 'cancel:meeting',
     showGathering: loading
   });
   renderMeetingPrepCoworkEvidenceRail(briefing);
-  if(loading) showCoworkContextGathering('VAL is checking the calendar, packets, transcripts, public web, and LinkedIn. This could take a minute or two.', {noTimeout:true});
+  if(loading) showCoworkContextGathering('VAL is preparing your meeting brief. This can take a moment.', {noTimeout:true});
   if(options.autoRun){
-    hideCoworkContextGathering();
-    appendHomeCoworkMessage('val', meetingPrepCoworkBriefAnswer(briefing), {meetingPrep:true, replace:true});
-    const textarea = workspaceInputPanel?.querySelector?.('[data-workspace-input="cowork"]');
-    if(textarea){
-      textarea.value = '';
-      textarea.placeholder = 'Ask VAL to refine this prep, draft the opening, or pressure-test the meeting...';
-    }
+    runMeetingPrepCoworkMayPrompt(briefing);
   }
+}
+
+async function runMeetingPrepCoworkMayPrompt(briefing = activeMeetingPrepBriefing || {}){
+  const textarea = workspaceInputPanel?.querySelector?.('[data-workspace-input="cowork"]');
+  if(!textarea) return;
+  activeCoworkHeldContext = [
+    meetingPrepHiddenEvidence(briefing),
+    'Answer only as a useful Meeting Mode briefing. Use these sections: who they are, what we have discussed before, what the goal of this meeting should be, and 3 talking points to open strong.'
+  ].filter(Boolean).join('\n\n');
+  activeCoworkContextLocked = true;
+  textarea.value = meetingPrepOriginalPromptSeed(briefing);
+  await runCowork('meeting_prep');
 }
 
 async function runCowork(mode){
@@ -18268,7 +18199,7 @@ async function runCowork(mode){
     if(mode !== 'meeting_prep'){
       showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
     }else{
-      appendHomeCoworkMessage('val', 'I am preparing the meeting brief from the temporary packet. This could take a minute or two while public web and LinkedIn context finishes.');
+      appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a moment.');
     }
   }else{
     setWorkspaceContent({
@@ -22717,7 +22648,7 @@ async function openMeetingPrep(){
     room.classList.remove('active-room');
   });
   activeMeetingPrepBriefing = meetingPrepExecutiveBrief(meetingPrepFallbackResultFromEvent(activeMeetingPrepEvent || meetingPrep.event, {
-    message:'Internal meeting context is loading now. This could take a minute or two while VAL checks public web and LinkedIn context.'
+    message:'VAL is preparing your meeting brief.'
   }));
   openMeetingPrepCoworkSession({autoRun:false, loading:true});
   renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
