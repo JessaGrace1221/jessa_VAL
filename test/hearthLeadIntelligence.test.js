@@ -338,7 +338,7 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthJs, /button\.setAttribute\('aria-pressed', String\(activeProjectProfile\?\.id === project\.id\)\)/);
   assert.match(hearthJs, /button\.dataset\.projectOpenProfile === project\.id/);
   assert.match(hearthJs, /function hydrateProjectIndex/);
-  assert.match(hearthJs, /\/api\/projects\/index\?limit=80/);
+  assert.match(hearthJs, /\/api\/projects\/index\?limit=200/);
   assert.match(hearthJs, /function projectProfileFromIndexItem/);
   assert.match(hearthJs, /function normalizedProjectSourceDetails/);
   assert.match(hearthJs, /function renderProjectGraphPanel/);
@@ -1257,7 +1257,7 @@ test('Stewardship V1 is an introduction engine with Network discovery', () => {
   assert.doesNotMatch(hearthCss, /\.relationship-packet-audit/);
   assert.match(hearthJs, /row\.className = 'relationship-rolodex-row'/);
   assert.match(hearthJs, /async function hydrateRelationshipIndex/);
-  assert.match(hearthJs, /\/api\/relationships\/index\?limit=120/);
+  assert.match(hearthJs, /\/api\/relationships\/index\?limit=200/);
   assert.match(hearthJs, /VAL relationship index/);
   assert.match(hearthJs, /Local preview/);
   assert.match(hearthJs, /function appendRelationshipRolodexRow/);

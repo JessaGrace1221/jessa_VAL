@@ -2514,7 +2514,7 @@ async function hydrateRelationshipIndex({force=false}={}){
   if(!canUseApi || (relationshipIndexLoaded&&!force)) return;
   if(relationshipIndexRequest) return relationshipIndexRequest;
   if(force) relationshipIndexLoaded = false;
-  relationshipIndexRequest = getJson('/api/relationships/index?limit=120')
+  relationshipIndexRequest = getJson('/api/relationships/index?limit=200')
     .then(async(data) => {
       if(Array.isArray(data?.relationships)){
         const packetInventory = await getJson('/api/relationships/person-packets?limit=160&includeThin=1').catch(() => ({packets:[]}));
@@ -7864,12 +7864,13 @@ async function createProjectPinFromForm(event){
   }
 }
 
-async function hydrateProjectIndex(){
-  if(!canUseApi || projectIndexLoaded) return;
+async function hydrateProjectIndex({force=false, render=true}={}){
+  if(!canUseApi || (projectIndexLoaded && !force)) return;
   if(projectIndexRequest) return projectIndexRequest;
+  if(force) projectIndexLoaded = false;
   projectIndexSourceLabel = 'Checking project index';
   updateProjectIndexSourceLabel();
-  projectIndexRequest = getJson('/api/projects/index?limit=80')
+  projectIndexRequest = getJson('/api/projects/index?limit=200')
     .then((data) => {
       if(Array.isArray(data?.projects)){
         projectIndexProfiles = data.projects.reduce((profiles, item) => {
@@ -7880,13 +7881,15 @@ async function hydrateProjectIndex(){
         projectIndexLoaded = true;
         projectIndexSourceLabel = data.source === 'demo_project_profiles' ? 'Demo project index' : 'Canonical project index';
         updateProjectIndexSourceLabel();
-        renderProjectRolodex();
-        renderProjectSuggestions();
-        const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
-        const selectedProject = selectedProjectId && projectIndexItems().find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
-        const firstProject = selectedProject || projectIndexItems()[0];
-        if(firstProject) renderProjectProfile(firstProject.id);
-        else renderProjectManagerEmptyState();
+        if(render){
+          renderProjectRolodex();
+          renderProjectSuggestions();
+          const selectedProjectId = activeProjectProfile?.id || activeProjectProfile?.projectId || activeProjectProfile?.profileKey || '';
+          const selectedProject = selectedProjectId && projectIndexItems().find((project) => [project.id,project.projectId,project.profileKey].filter(Boolean).some((value) => String(value) === String(selectedProjectId)));
+          const firstProject = selectedProject || projectIndexItems()[0];
+          if(firstProject) renderProjectProfile(firstProject.id);
+          else renderProjectManagerEmptyState();
+        }
       }
     })
     .catch((error) => {
@@ -7898,6 +7901,38 @@ async function hydrateProjectIndex(){
       projectIndexRequest = null;
     });
   return projectIndexRequest;
+}
+
+function attachmentRelationshipOptions(){
+  return stewardshipNetworkPeople()
+    .map((relationship) => ({
+      id: relationship.id || relationship.profile?.id || relationship.profile?.profileKey || relationship.email || '',
+      name: relationship.name || relationship.profile?.displayName || relationship.email || 'Relationship',
+      email: normalizeTimelineEmail(relationship.email || relationship.profile?.email || relationship.profile?.metadata?.email || '')
+    }))
+    .filter((relationship) => relationship.id && relationship.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function attachmentProjectOptions(){
+  return projectIndexItems()
+    .map((project) => ({
+      id: project.id || project.projectId || project.profileKey || '',
+      name: project.name || project.displayName || project.projectName || ''
+    }))
+    .filter((project) => project.id && project.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function hydrateAttachmentCatalogs({force=false}={}){
+  await Promise.all([
+    hydrateRelationshipIndex({force}).catch(() => null),
+    hydrateProjectIndex({force, render:false}).catch(() => null)
+  ]);
+  return {
+    relationships:attachmentRelationshipOptions(),
+    projects:attachmentProjectOptions()
+  };
 }
 
 function projectRolodexEmptyText(){
@@ -9505,12 +9540,12 @@ function correspondencePopulateSelect(select, items = [], emptyLabel = 'Choose')
 }
 
 function correspondenceRelationshipOptions(){
-  return Object.values(relationshipIndexProfiles || {})
+  return attachmentRelationshipOptions()
     .map((item) => ({
-      id: item.id || item.profileKey || item.profile_key || item.email || '',
-      label: correspondenceOptionLabel(item),
-      email: item.email || item.primaryEmail || item.primary_email || '',
-      summary: item.role || item.relationship || item.summary || item.context || ''
+      id:item.id,
+      label:item.name,
+      email:item.email || '',
+      summary:relationshipIndexProfiles[item.id]?.role || relationshipIndexProfiles[item.id]?.summary || ''
     }))
     .filter((item) => item.id && item.label)
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -9563,9 +9598,9 @@ function renderCorrespondenceContextControls(){
     if(selected && !correspondenceRelationshipSearch.value.trim()) correspondenceRelationshipSearch.value = selected.label;
     correspondenceSetRelationshipSearch(false);
   }else{
-    correspondencePopulateSelect(correspondenceRelationshipSelect, Object.values(relationshipIndexProfiles || {}), 'Choose relationship');
+    correspondencePopulateSelect(correspondenceRelationshipSelect, attachmentRelationshipOptions(), 'Choose relationship');
   }
-  correspondencePopulateSelect(correspondenceProjectSelect, Object.values(projectIndexProfiles || {}), 'Choose project');
+  correspondencePopulateSelect(correspondenceProjectSelect, attachmentProjectOptions(), 'Choose project');
 }
 
 function correspondenceRuleLabel(rule = {}){
@@ -10359,8 +10394,8 @@ function selectedCorrespondenceRelationship(){
 
 function selectedCorrespondenceProject(){
   const id = String(correspondenceProjectSelect?.value || '').trim();
-  const profile = id ? projectIndexProfiles[id] || projectProfiles[id] : null;
-  return profile ? {id, name:correspondenceOptionLabel(profile)} : null;
+  const project = id ? attachmentProjectOptions().find((item) => String(item.id) === id) : null;
+  return project ? {id:project.id, name:project.name} : null;
 }
 
 async function createCorrespondenceRelationship(item = activeCorrespondenceItem){
@@ -10393,7 +10428,7 @@ async function createCorrespondenceProject(item = activeCorrespondenceItem){
   payload.append('rawContext', [item.summary, item.threadMessages?.[0]?.body].filter(Boolean).join('\n\n'));
   payload.append('createdFrom', 'executive_inbox_context_link');
   const result = await postFormData('/api/projects/create', payload);
-  await hydrateProjectIndex().catch(() => null);
+  await hydrateProjectIndex({force:true, render:false}).catch(() => null);
   const project = result.project || {};
   if(correspondenceProjectName) correspondenceProjectName.value = '';
   await linkCorrespondenceContext('project', item, {id:project.id || project.projectId || name, name:project.name || name});
@@ -10436,8 +10471,8 @@ async function hydrateCorrespondenceDrawer(){
   activeCorrespondenceItem = currentCorrespondenceItems[0] || null;
   renderCorrespondenceBrief(activeCorrespondenceItem);
   await Promise.all([
-    hydrateRelationshipIndex({force:false}).catch(() => null),
-    hydrateProjectIndex().catch(() => null)
+    hydrateRelationshipIndex({force:true}).catch(() => null),
+    hydrateProjectIndex({force:true, render:false}).catch(() => null)
   ]);
   renderCorrespondenceIntelligence(activeCorrespondenceItem);
   if(!canUseApi){
@@ -13254,9 +13289,9 @@ function timelineTranscriptInviteesFromSource(transcript = {}, seen = new Set())
 function timelineRelationshipMatchForPerson(person = {}){
   const email = normalizeTimelineEmail(person.email || '');
   const name = String(person.name || person.label || '').trim().toLowerCase();
-  const items = relationshipIndexItems();
-  return items.find((item) => email && normalizeTimelineEmail(item.email || item.profile?.email || item.profile?.metadata?.email || '') === email)
-    || items.find((item) => name && [item.name,item.displayName,item.profile?.displayName,item.profile?.name].filter(Boolean).some((value) => String(value).trim().toLowerCase() === name))
+  const items = attachmentRelationshipOptions();
+  return items.find((item) => email && normalizeTimelineEmail(item.email || '') === email)
+    || items.find((item) => name && String(item.name || '').trim().toLowerCase() === name)
     || null;
 }
 
@@ -13281,8 +13316,7 @@ function timelineSelectedProjectOption(root = drawerTray){
   const raw = String(input?.value || '').trim();
   if(!raw) return null;
   const lower = raw.toLowerCase();
-  const project = projectIndexItems().find((item) => [item.name,item.displayName,item.id,item.projectId,item.profileKey].filter(Boolean).some((value) => String(value).toLowerCase() === lower)) || projectIndexProfiles[raw] || projectProfiles[raw] || null;
-  return project ? {id:project.id || project.projectId || project.profileKey || raw, name:project.name || project.displayName || raw} : {id:raw, name:raw};
+  return attachmentProjectOptions().find((item) => [item.name,item.id].some((value) => String(value).toLowerCase() === lower)) || null;
 }
 
 function timelineSuggestedProjectOption(transcript = {}){
@@ -13294,16 +13328,15 @@ function timelineSuggestedProjectOption(transcript = {}){
     timelineFullTranscriptText(transcript).slice(0, 1400)
   ].filter(Boolean).join(' ').toLowerCase();
   if(!text.trim()) return null;
-  const projects = projectIndexItems();
+  const projects = attachmentProjectOptions();
   const exact = projects.find((project) => {
-    const names = [project.name, project.displayName, project.id, project.projectId, project.profileKey].filter(Boolean).map((value) => String(value).toLowerCase());
+    const names = [project.name, project.id].filter(Boolean).map((value) => String(value).toLowerCase());
     return names.some((name) => name && text.includes(name));
   });
-  if(exact) return {id:exact.id || exact.projectId || exact.profileKey || exact.name || exact.displayName, name:exact.name || exact.displayName || exact.id || exact.projectId || 'Project', reason:'VAL saw this project name in the transcript.'};
+  if(exact) return {...exact, reason:'VAL saw this project name in the transcript.'};
   if(/\bgoall\b|goallprogram|goal agency|goall agency/i.test(text)){
-    const goall = projects.find((project) => /goall|goal agency|goallprogram/i.test([project.name, project.displayName, project.id, project.projectId, project.profileKey].filter(Boolean).join(' ')));
-    if(goall) return {id:goall.id || goall.projectId || goall.profileKey || goall.name || 'GOALL', name:goall.name || goall.displayName || 'GOALL', reason:'VAL saw GOALL in the transcript title/source.'};
-    return {id:'GOALL', name:'GOALL', reason:'VAL saw GOALL in the transcript title/source.'};
+    const goall = projects.find((project) => /goall|goal agency|goallprogram/i.test([project.name, project.id].filter(Boolean).join(' ')));
+    if(goall) return {...goall, reason:'VAL saw GOALL in the transcript title/source.'};
   }
   return null;
 }
@@ -13312,8 +13345,7 @@ function timelineSelectedRelationshipOption(value = ''){
   const raw = String(value || '').trim();
   if(!raw) return null;
   const lower = raw.toLowerCase();
-  const relationship = relationshipIndexItems().find((item) => [item.name,item.displayName,item.email,item.id,item.profileKey,item.contactId].filter(Boolean).some((candidate) => String(candidate).toLowerCase() === lower)) || relationshipIndexProfiles[raw] || relationshipProfiles[raw] || null;
-  return relationship ? {id:relationship.id || relationship.profileKey || relationship.contactId || raw, name:relationship.name || relationship.displayName || raw, email:relationship.email || relationship.query?.email || ''} : {id:raw, name:raw, email:''};
+  return attachmentRelationshipOptions().find((item) => [item.name,item.email,item.id].filter(Boolean).some((candidate) => String(candidate).toLowerCase() === lower)) || null;
 }
 
 function timelineAttendeeEmailDraftRecord(transcript = {}){
@@ -13343,8 +13375,8 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
   const suggestedProject = timelineSuggestedProjectOption(transcript);
   const suggestedRelationship = invitees.find((person) => person.relationshipId) || invitees[0] || null;
   const calendarInviteMismatch = transcript.calendarInviteMismatch || null;
-  const projectOptions = projectIndexItems().slice(0, 80).map((project) => '<option value="' + escapeHtml(project.name || project.displayName || project.id || '') + '"></option>').join('');
-  const relationshipOptions = relationshipIndexItems().slice(0, 160).map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.displayName || relationship.email || relationship.id || '') + '"></option>').join('');
+  const projectOptions = attachmentProjectOptions().map((project) => '<option value="' + escapeHtml(project.name) + '"></option>').join('');
+  const relationshipOptions = attachmentRelationshipOptions().map((relationship) => '<option value="' + escapeHtml(relationship.name || relationship.email) + '"></option>').join('');
   const attendeeRows = invitees.length ? invitees.map((person, index) => [
     '<article class="timeline-attendee-row' + (person.relationshipId ? ' relationship-linked' : '') + '" data-transcript-attendee-row="' + index + '">',
     '<div><strong>' + escapeHtml(person.label || person.email || 'Attendee') + '</strong><span class="' + escapeHtml(person.email ? 'timeline-attendee-email-found' : 'timeline-attendee-email-missing') + '">' + escapeHtml(person.email ? 'Email found: ' + person.email : 'No email captured') + '</span>' + (person.relationshipId ? '<small class="timeline-map-suggestion">VAL matched relationship: ' + escapeHtml(person.relationshipName || person.label || person.relationshipId) + '</small>' : (person.matchReason ? '<small>' + escapeHtml(person.matchReason) + '</small>' : '')) + '</div>',
@@ -13388,7 +13420,7 @@ function renderTimelineTranscriptMappingControls(transcript = {}, overviewDraft 
     '</div>',
     suggestedProject ? '<small class="timeline-map-suggestion">✓ VAL matched project: ' + escapeHtml(suggestedProject.name || 'Project') + '. ' + escapeHtml(suggestedProject.reason || 'VAL suggested this project from the transcript.') + '</small>' : '',
     '<div class="timeline-project-link-row timeline-project-create-row">',
-    '<input type="text" placeholder="New project name..." value="' + escapeHtml(suggestedProject?.name || '') + '" data-transcript-project-create-name aria-label="New project name for this transcript">',
+    '<input type="text" placeholder="New project name..." value="" data-transcript-project-create-name aria-label="New project name for this transcript">',
     '<button type="button" data-transcript-action="create_project" data-transcript-id="' + escapeHtml(transcript.id || '') + '">Create project</button>',
     '</div>',
     '<datalist id="timeline-project-options">' + projectOptions + '</datalist>',
@@ -13670,7 +13702,10 @@ async function openTimelineTranscript(transcriptId){
   if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcript</span><p>VAL is opening the source receipt.</p></article>';
   resetTimelineTranscriptDetailScroll();
   try{
-    const data = await getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId), {cache: 'no-store'});
+    const [data] = await Promise.all([
+      getJson('/api/val/transcripts/' + encodeURIComponent(transcriptId), {cache: 'no-store'}),
+      hydrateAttachmentCatalogs().catch(() => null)
+    ]);
     if(!data?.transcript) throw new Error('Transcript detail was empty.');
     if(requestId !== timelineTranscriptOpenRequest) return;
     renderTimelineTranscriptDetail(data.transcript);
@@ -13698,10 +13733,7 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
     return;
   }
   try{
-    await Promise.all([
-      hydrateRelationshipIndex().catch(() => null),
-      hydrateProjectIndex().catch(() => null)
-    ]);
+    await hydrateAttachmentCatalogs({force:true});
     const data = refresh
       ? await postJson('/api/val/transcripts/refresh', {days:timelineTranscriptRefreshDays, limit:50})
       : await getJson('/api/val/transcripts?days=' + encodeURIComponent(timelineTranscriptRefreshDays) + '&limit=50', {cache: 'no-store'});
@@ -13859,7 +13891,7 @@ async function linkTimelineTranscriptProject(transcriptId = ''){
 
 async function createTimelineTranscriptProject(transcriptId = ''){
   const input = drawerTray?.querySelector?.('[data-transcript-project-create-name]');
-  const name = String(input?.value || timelineSuggestedProjectOption(currentTimelineTranscript || {})?.name || '').trim();
+  const name = String(input?.value || '').trim();
   if(!transcriptId || !name){
     setTimelineTranscriptActionStatus('Name the project before creating it.', 'danger');
     return;
@@ -13878,7 +13910,18 @@ async function createTimelineTranscriptProject(transcriptId = ''){
     projectIndexLoaded = true;
     const search = drawerTray?.querySelector?.('[data-transcript-project-search]');
     if(search) search.value = project.name || name;
-    await linkTimelineTranscriptProject(transcriptId);
+    const linkedProjectName = project.name || name;
+    await postJson('/api/val/transcripts/' + encodeURIComponent(transcriptId) + '/link-project', {
+      projectId,
+      projectName:linkedProjectName,
+      transcriptTitle:timelineTranscriptTitle(currentTimelineTranscript || {}),
+      calendarEventId:timelineTranscriptCalendarEventId(currentTimelineTranscript || {})
+    });
+    if(currentTimelineTranscript && String(currentTimelineTranscript.id || '') === String(transcriptId)){
+      currentTimelineTranscript.projectId = projectId;
+      currentTimelineTranscript.projectName = linkedProjectName;
+    }
+    await hydrateProjectIndex({force:true, render:false}).catch(() => null);
     setTimelineTranscriptActionStatus(result.message ? 'Project created and transcript linked. ' + result.message : 'Project created and transcript linked locally.', 'success');
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not create the project.', 'danger');
@@ -13910,6 +13953,7 @@ async function linkTimelineTranscriptRelationship(transcriptId = '', attendeeInd
       currentTimelineTranscript.attendees = timelineTranscriptInvitees(currentTimelineTranscript).map((person, index) => index === Number(attendeeIndex) ? {...person, relationshipId:result.relationship.id, relationshipName:result.relationship.name || person.label || '', matchReason:mode === 'create' ? 'User created in transcript drawer' : 'User linked in transcript drawer'} : person);
       renderTimelineTranscriptDetail(currentTimelineTranscript);
     }
+    await hydrateRelationshipIndex({force:true}).catch(() => null);
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not save the attendee mapping.', 'danger');
   }
@@ -13957,6 +14001,7 @@ async function linkTimelineTranscriptStandaloneRelationship(transcriptId = '', m
       }
       renderTimelineTranscriptDetail(currentTimelineTranscript);
     }
+    await hydrateRelationshipIndex({force:true}).catch(() => null);
     setTimelineTranscriptActionStatus(result.message || 'Relationship mapping saved locally.', 'success');
   }catch(error){
     setTimelineTranscriptActionStatus(error.message || 'VAL could not save the relationship mapping.', 'danger');
@@ -14066,7 +14111,7 @@ function renderTimelineReviewCards(reviews = []){
   currentTimelineReviewItems = items;
   timelineReviewCount.textContent = items.length ? items.length + ' review proposal' + (items.length === 1 ? '' : 's') : 'No proposals loaded yet';
   if(!items.length){
-    timelineReviewCards.innerHTML = '<article class="empty"><span>Review-only</span><p>The event queue may show transcript review needs, but no proposal packet is loaded here yet. Notes and tasks appear only when source excerpts, relationships, project, owner, due date, and approval boundary can be inspected.</p></article>';
+    timelineReviewCards.innerHTML = '<article class="empty"><span>Select a transcript</span><p>Choose a meeting from the transcript archive to review its source, people, projects, Key Points, and Action Items.</p></article>';
     return;
   }
   timelineReviewCards.innerHTML = items.map((item) => {
@@ -14989,24 +15034,11 @@ function meetingPrepProjectLinks(brief = {}){
 }
 
 function meetingPrepRelationshipOptions(){
-  return relationshipIndexItems()
-    .map((relationship) => ({
-      id: relationship.id || relationship.profile?.id || relationship.profile?.profileKey || relationship.email || relationship.name || '',
-      name: relationship.name || relationship.profile?.displayName || relationship.email || 'Relationship',
-      email: relationship.email || relationship.profile?.email || relationship.profile?.metadata?.email || ''
-    }))
-    .filter((relationship) => relationship.id || relationship.name || relationship.email)
-    .slice(0, 160);
+  return attachmentRelationshipOptions();
 }
 
 function meetingPrepProjectOptions(){
-  return projectIndexItems()
-    .map((project) => ({
-      id: project.id || project.projectId || project.profileKey || project.name || '',
-      name: project.name || project.displayName || project.projectName || project.id || 'Project'
-    }))
-    .filter((project) => project.id || project.name)
-    .slice(0, 120);
+  return attachmentProjectOptions();
 }
 
 function meetingPrepSelectedRelationship(index){
@@ -15017,7 +15049,7 @@ function meetingPrepSelectedRelationship(index){
   return meetingPrepRelationshipOptions().find((relationship) => (
     [relationship.id, relationship.name, relationship.email].filter(Boolean)
       .some((value) => String(value).trim().toLowerCase() === lower)
-  )) || {id:raw, name:raw, email:''};
+  )) || null;
 }
 
 function meetingPrepSelectedProject(index){
@@ -15028,7 +15060,7 @@ function meetingPrepSelectedProject(index){
   return meetingPrepProjectOptions().find((project) => (
     [project.id, project.name].filter(Boolean)
       .some((value) => String(value).trim().toLowerCase() === lower)
-  )) || {id:raw, name:raw};
+  )) || null;
 }
 
 function meetingPrepCalendarEventId(){
@@ -15114,7 +15146,8 @@ function renderMeetingPrepAttendeeMapping(briefing = {}, options = {}){
   const projectOptions = meetingPrepProjectOptions().map((project) => '<option value="' + escapeHtml(project.name || project.id) + '"></option>').join('');
   return '<section class="meeting-prep-section meeting-prep-attendee-mapping' + (compact ? ' is-compact' : '') + '"><h3>Attendee Mapping</h3>' + (compact ? '<p class="meeting-prep-attendee-note">Confirm only what needs correction.</p>' : '') + '<div class="meeting-prep-attendee-grid">' + attendees.map((attendee, index) => {
     const projectLabel = attendee.projectLinks?.[0]?.project_name || attendee.projectLinks?.[0]?.projectName || '';
-    const projectCandidate = projectLabel || attendee.projectCandidate || '';
+    const projectMatch = meetingPrepProjectOptions().find((project) => [project.id, project.name].some((value) => String(value || '').trim().toLowerCase() === String(projectLabel || '').trim().toLowerCase()));
+    const projectCandidate = projectMatch?.name || '';
     const relationshipStatus = attendee.crmContactId ? 'Relationship attached' : attendee.matchStatus;
     const projectStatus = projectCandidate ? 'Project suggested' : 'Project not attached';
     const relationshipAction = attendee.crmContactId
@@ -15130,7 +15163,7 @@ function renderMeetingPrepAttendeeMapping(briefing = {}, options = {}){
         '<button type="button" data-workflow-action="meetingAttendeeAttachRelationship:' + escapeHtml(attendee.key) + '">Attach relationship</button>' +
         '<label><span>Project</span><input type="search" list="meeting-prep-project-options" data-meeting-attendee-project="' + index + '" placeholder="Search project..." value="' + escapeHtml(projectCandidate) + '"></label>' +
         '<button type="button" data-workflow-action="meetingAttendeeAttachProject:' + index + '">Attach project</button>' +
-        '<input type="text" data-meeting-attendee-project-name="' + index + '" placeholder="New project name..." value="' + escapeHtml(projectCandidate) + '">' +
+        '<input type="text" data-meeting-attendee-project-name="' + index + '" placeholder="New project name..." value="">' +
         '<button type="button" data-workflow-action="meetingAttendeeCreateProject:' + index + '">Create project</button>' +
       '</div>';
     if(compact){
@@ -15496,6 +15529,9 @@ async function runMeetingPrep(){
           }))
         };
         renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
+        void hydrateAttachmentCatalogs().then(() => {
+          if(activeMeetingPrepBriefing) renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
+        });
       }
       scrollMeetingPrepToTop();
       if(result.externalReview?.status === 'pending'){
@@ -18786,9 +18822,11 @@ function restoreTimelineWindow(){
     renderTimelineTranscriptList(currentTimelineTranscript.id);
     renderTimelineTranscriptDetail(currentTimelineTranscript);
   }else if(currentTimelineTranscriptItems.length){
-    renderTimelineTranscriptList('');
+    renderTimelineTranscriptList(currentTimelineTranscriptItems[0]?.id || '');
+    if(currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
   }else{
-    renderTimelineReviewCards(currentTimelineReviewItems);
+    if(timelineReviewCards) timelineReviewCards.innerHTML = '<article class="empty"><span>Opening transcripts</span><p>VAL is restoring the transcript archive.</p></article>';
+    void loadTimelineTranscripts({openFirst:true});
   }
   updateCloseAllDrawersButton();
 }
@@ -21663,8 +21701,8 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
     };
     if(!payload.name && attendee.name) payload.name = attendee.name;
     if(!payload.email && attendee.email) payload.email = attendee.email;
-    if(!payload.name || !payload.email){
-      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Add a name and email before creating this relationship.', 'danger');
+    if(!payload.name && !payload.email){
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Add a name or email before creating this relationship.', 'danger');
       return;
     }
     if(!canUseApi){
@@ -21694,16 +21732,9 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
           summary:(attendee.name || payload.name || 'Attendee') + ' attended ' + meetingPrepEventTitle() + '.'
         }).catch(() => null);
       }
-      let enrichmentMessage = '';
-      if(relationshipId || payload.email){
-        try{
-          const enriched = await postJson('/api/relationships/network/enrich', {relationshipId:relationshipId || payload.email, force:true}, {timeoutMs:120000, timeoutMessage:'Outscraper is still gathering current public context. Relationship was created; try meeting prep again in a moment.'});
-          enrichmentMessage = enriched?.message ? ' ' + enriched.message : ' Outscraper context refresh requested.';
-        }catch(error){
-          enrichmentMessage = ' Relationship created. Outscraper did not return current context yet: ' + error.message;
-        }
-      }
-      setMeetingPrepAttendeeInlineStatus(attendeeIndex, (relationshipId ? 'Relationship created and attached.' : 'Relationship created.') + enrichmentMessage, relationshipId ? 'success' : 'working');
+      await hydrateRelationshipIndex({force:true}).catch(() => null);
+      renderMeetingPrepCoworkEvidenceRail(briefing);
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, relationshipId ? 'Relationship created and attached. This meeting can use it now.' : 'Relationship created. Its permanent ID is still being prepared.', relationshipId ? 'success' : 'working');
     }catch(error){
       setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship was not created: ' + error.message, 'danger');
     }
@@ -21713,15 +21744,10 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
     const selected = meetingPrepSelectedRelationship(attendeeIndex);
     if(selected?.id){
       if(!canUseApi){
-        showRelationshipReceipt({
-          title: 'Relationship mapping ready for live VAL.',
-          meaning: name + ' would be attached to ' + (selected.name || selected.id) + ' in the live Meeting Prep evidence trail.',
-          understanding: ['No local API is available in this preview.', 'No CRM update, message, task, or calendar write happened.'],
-          recommendation: 'Use live VAL to save this attendee relationship mapping.',
-          label: 'Meeting attendee relationship mapping'
-        });
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship mapping is ready. Live VAL is required to save it.', 'working');
         return;
       }
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Attaching relationship...', 'working');
       try{
         const result = await postJson('/api/val/meeting-prep/attendee/link-relationship', {
           calendarEventId:meetingPrepCalendarEventId(),
@@ -21734,57 +21760,29 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
         });
         attendee.crmContactId = selected.id;
         attendee.matchStatus = 'relationship attached';
-        showRelationshipReceipt({
-          title: 'Relationship attached.',
-          meaning: result.message || name + ' is now attached to ' + (selected.name || selected.id) + ' for this meeting.',
-          understanding: [
-            attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email was attached.',
-            'Meeting evidence link: ' + (result.link?.id || 'saved locally'),
-            'No CRM update, message, task, calendar write, or external action happened.'
-          ],
-          recommendation: 'Meeting Prep can now use this relationship context in the briefing and future packets.',
-          actions: [{label:'Open relationship', workflow:'contactOpen:' + selected.id}],
-          label: 'Meeting attendee relationship mapping'
-        });
+        renderMeetingPrepCoworkEvidenceRail(briefing);
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship attached to this meeting. VAL will carry this context forward.', 'success');
         return;
       }catch(error){
-        showRelationshipReceipt({
-          title: 'Relationship was not attached.',
-          meaning: error.message || 'VAL could not save this attendee relationship mapping.',
-          understanding: ['No external action happened.', 'The attendee remains unchanged.'],
-          recommendation: 'Check the relationship selection and try again.',
-          label: 'Meeting attendee relationship mapping'
-        });
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Relationship was not attached: ' + (error.message || 'Please check the selection and try again.'), 'danger');
         return;
       }
     }
-    if(attendee.crmContactId){
-      openCanonicalRelationshipFile(attendee.crmContactId);
-      return;
-    }
-    await handleMeetingContactCandidate(attendee.key || key);
+    setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Choose a relationship from the matching results, or create a new relationship.', 'danger');
     return;
   }
   if(action === 'attachProject'){
-    const project = meetingPrepSelectedProject(attendeeIndex) || attendee.projectLinks?.[0] || {};
-    const projectId = project.id || project.project_id || project.projectId || '';
-    const projectName = project.name || project.project_name || project.projectName || projectId;
+    const project = meetingPrepSelectedProject(attendeeIndex);
+    const projectId = project?.id || '';
+    const projectName = project?.name || '';
     if(!projectId){
-      showRelationshipReceipt({
-        title: 'Choose a project first.',
-        meaning: 'VAL needs the project name before it can attach this meeting attendee to the Project Manager packet.',
-        understanding: [
-          attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email is attached yet.',
-          'No project was changed from this click.'
-        ],
-        recommendation: 'Search for an existing project or create a new one from this attendee card.',
-        label: 'Meeting attendee project mapping'
-      });
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Choose an existing Project Managers project from the matching results, or create a new project.', 'danger');
       return;
     }
     if(canUseApi){
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Attaching project...', 'working');
       try{
-        const calendarResult = await postJson('/api/projects/link-calendar-event', {
+        await postJson('/api/projects/link-calendar-event', {
           calendarEventId:meetingPrepCalendarEventId(),
           title:meetingPrepEventTitle(),
           projectId,
@@ -21794,9 +21792,8 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
           attendees:[{name:attendee.name || '', email:attendee.email || ''}]
         });
         const relationshipId = attendee.crmContactId || meetingPrepSelectedRelationship(attendeeIndex)?.id || '';
-        let relationshipResult = null;
         if(relationshipId){
-          relationshipResult = await postJson('/api/projects/link-relationship', {
+          await postJson('/api/projects/link-relationship', {
             projectId,
             projectName,
             relationshipId,
@@ -21806,55 +21803,22 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
           }).catch(() => null);
         }
         attendee.projectLinks = [{project_id:projectId, project_name:projectName, summary:'User linked from Meeting Prep attendee mapping.'}];
-        showRelationshipReceipt({
-          title: 'Project attached.',
-          meaning: name + ' and this meeting are now connected to ' + projectName + ' for Project Manager context.',
-          understanding: [
-            'Calendar/project evidence link: ' + (calendarResult.link?.id || 'saved locally'),
-            relationshipResult?.link?.id ? 'Relationship/project evidence link: ' + relationshipResult.link.id : 'No relationship/project link was saved because no relationship ID was attached.',
-            'No calendar write, CRM update, task, message, or external action happened.'
-          ],
-          recommendation: 'Future Meeting Prep, transcripts, and project packets can use this confirmed project context.',
-          actions: [{label:'Open projects', workflow:'projectAllProjects'}],
-          label: 'Meeting attendee project mapping'
-        });
+        renderMeetingPrepCoworkEvidenceRail(briefing);
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, projectName + ' attached. Meeting Prep, transcripts, and Project Managers can use this context.', 'success');
         return;
       }catch(error){
-        showRelationshipReceipt({
-          title: 'Project was not attached.',
-          meaning: error.message || 'VAL could not save this attendee project mapping.',
-          understanding: ['No external action happened.', 'The attendee remains unchanged.'],
-          recommendation: 'Check the project selection and try again.',
-          label: 'Meeting attendee project mapping'
-        });
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Project was not attached: ' + (error.message || 'Please check the selection and try again.'), 'danger');
         return;
       }
     }
-    showRelationshipReceipt({
-      title: 'Project mapping ready for live VAL.',
-      meaning: name + ' would be attached to ' + projectName + ' in the live Meeting Prep evidence trail.',
-      understanding: [
-        attendee.email ? 'Attendee email: ' + attendee.email : 'No attendee email is attached yet.',
-        project.summary || 'Project selected from Meeting Prep.',
-        'No local API is available in this preview.'
-      ],
-      recommendation: 'Use live VAL to save this attendee project mapping.',
-      actions: [{label:'Open projects', workflow:'projectAllProjects'}],
-      label: 'Meeting attendee project mapping'
-    });
+    setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Project mapping is ready. Live VAL is required to save it.', 'working');
     return;
   }
   if(action === 'createProject'){
     const input = drawerTray?.querySelector?.('[data-meeting-attendee-project-name="' + attendeeIndex + '"]');
-    const projectName = String(input?.value || attendee.projectLinks?.[0]?.project_name || attendee.projectLinks?.[0]?.projectName || '').trim();
+    const projectName = String(input?.value || '').trim();
     if(!projectName){
-      showRelationshipReceipt({
-        title: 'Name the project first.',
-        meaning: 'VAL needs a project name before it can create a Project Manager record from this attendee.',
-        understanding: ['No project was created.', 'No external action happened.'],
-        recommendation: 'Type the project name and choose Create project again.',
-        label: 'Meeting attendee project creation'
-      });
+      setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Type the new project name before creating it.', 'danger');
       return;
     }
     if(canUseApi){
@@ -21895,25 +21859,16 @@ async function handleMeetingPrepAttendeeMappingAction(action = '', key = ''){
           }).catch(() => null);
         }
         attendee.projectLinks = [{project_id:createdProjectId, project_name:linkedProjectName, summary:'User created and linked from Meeting Prep attendee mapping.'}];
-        setMeetingPrepAttendeeInlineStatus(attendeeIndex, '✓ Project created and linked. No email, CRM update, task, or calendar write happened.', 'success');
+        await hydrateProjectIndex({force:true, render:false}).catch(() => null);
+        renderMeetingPrepCoworkEvidenceRail(briefing);
+        setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Project created and linked. It is now available throughout VAL.', 'success');
         return;
       }catch(error){
         setMeetingPrepAttendeeInlineStatus(attendeeIndex, error.message || 'VAL could not create the project. No external action happened.', 'danger');
         return;
       }
     }
-    showRelationshipReceipt({
-      title: 'Create a project from this meeting attendee.',
-      meaning: 'A project should be created only when this attendee belongs to a real body of work, not merely because they appeared on a calendar invite.',
-      understanding: [
-        'Attendee: ' + name,
-        attendee.email ? 'Email: ' + attendee.email : 'No attendee email is attached yet.',
-        'No project was created from this click.'
-      ],
-      recommendation: 'Open Projects and use the reviewed Project Manager creation flow so the name, owner, outcome, and evidence are explicit.',
-      actions: [{label:'Open projects', workflow:'projectAllProjects'}],
-      label: 'Meeting attendee project creation'
-    });
+    setMeetingPrepAttendeeInlineStatus(attendeeIndex, 'Project creation is ready. Live VAL is required to save it.', 'working');
   }
 }
 
@@ -22958,6 +22913,7 @@ async function handleHomeRoomAction(action, node = null){
 
 async function openMeetingPrep(){
   closeCalendarPanel();
+  const catalogRefresh = hydrateAttachmentCatalogs({force:true});
   workspaceReturnTarget = 'meeting';
   hearth.dataset.distance = 'judgment';
   hearth.classList.add('calendar-prep-open');
@@ -22970,6 +22926,9 @@ async function openMeetingPrep(){
   }));
   openMeetingPrepCoworkSession({autoRun:false, loading:true});
   renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
+  catalogRefresh.then(() => {
+    if(activeMeetingPrepBriefing) renderMeetingPrepCoworkEvidenceRail(activeMeetingPrepBriefing);
+  }).catch(() => null);
   scrollMeetingPrepToTop();
   updateDrawerCoworkIcon();
   window.requestAnimationFrame(() => {
