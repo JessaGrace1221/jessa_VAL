@@ -15188,86 +15188,27 @@ function renderMeetingPrepList(items = []){
   return '<ul>' + items.map((item) => '<li>' + renderMeetingPrepTextWithLinks(item) + '</li>').join('') + '</ul>';
 }
 
-function meetingPrepPacketSection(title = '', items = [], fallback = ''){
-  const lines = (Array.isArray(items) ? items : [items]).map((item) => compactSentence(item)).filter(Boolean);
-  return [
-    title,
-    ...(lines.length ? lines.map((item, index) => (index + 1) + '. ' + item) : [fallback || 'No source context found yet.'])
-  ].filter(Boolean);
-}
-
-function meetingPrepTemporaryPacketLines(briefing = {}){
-  const verifiedExternalEvidence = (briefing.externalEvidence || []).filter((item) => !/still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated/i.test(String(item)));
-  return [
-    'Meeting: ' + compactSentence(briefing.eventTitle, 'Meeting'),
-    briefing.time ? 'Time: ' + briefing.time : '',
-    briefing.meetingType?.label ? 'Meeting type: ' + briefing.meetingType.label + (briefing.meetingType?.focus ? ' - ' + briefing.meetingType.focus : '') : '',
-    '',
-    ...meetingPrepPacketSection('Attendee intelligence:', briefing.people, 'No attendee enrichment found yet. Use the calendar attendee names and say what is missing plainly.'),
-    '',
-    ...meetingPrepPacketSection('Relationship and Project packet context:', [
-      ...(briefing.relationshipIntelligence || []),
-      ...(briefing.project || [])
-    ], 'No relationship or project packet was matched yet.'),
-    '',
-    ...meetingPrepPacketSection('Current public web and LinkedIn evidence:', verifiedExternalEvidence, 'External review is still checking public web and LinkedIn context. Do not use public assumptions yet.'),
-    '',
-    ...meetingPrepPacketSection('Saved memory / transcripts / recent changes:', briefing.changed, 'No saved meeting notes or transcripts matched this event yet.'),
-    '',
-    ...meetingPrepPacketSection('Related tasks / open loops / likely follow-up:', [
-      ...(briefing.followUpItems || []),
-      ...(briefing.decisions || []).map((item) => 'Decision to clarify: ' + item)
-    ], 'No linked tasks found.'),
-    '',
-    'Suggested opening from packet: ' + compactSentence(briefing.opening || ''),
-    ...meetingPrepPacketSection('Suggested questions:', briefing.questions, '')
-  ].filter((line) => line !== '');
+function meetingPrepOriginalPromptSeed(briefing = {}){
+  const title = compactSentence(briefing.eventTitle || meetingPrepEventTitle(activeMeetingPrepEvent || meetingPrep.event), 'my next meeting');
+  const time = compactSentence(briefing.time || meetingPrepEventTime(activeMeetingPrepEvent || meetingPrep.event), '');
+  return `I've switched to Meeting Mode. My next meeting is ${title}${time ? ' at ' + time : ''}. Give me a full briefing: who they are, what we've discussed before, what the goal of this meeting should be, and 3 talking points to open strong.`;
 }
 
 function meetingPrepCoworkSeed(briefing = {}){
-  const packetLines = meetingPrepTemporaryPacketLines(briefing);
-  return [
-    'Prepare me for this upcoming meeting using attendee intelligence, saved memory, dashboard context, relationship/project packets, recent transcripts, tasks, and public web/LinkedIn context.',
-    '',
-    'This Meeting Prep packet is temporary and read-only. Do not write back to Relationships, Projects, transcripts, tasks, drafts, or other drawers. Co-Work may suggest explicit next actions, but nothing should be created, changed, sent, or saved unless the user asks.',
-    '',
-    'Use the May 26 Meeting Mode style: useful judgment first, evidence second. Do not make this a static attendee profile card. Do not dump raw transcript text, source receipts, CRM ids, scraper diagnostics, or internal variable names. Do not use hashtags. No em dashes.',
-    '',
-    'If the data is thin, say what is missing plainly. Keep it natural. Use all known attendees. If public evidence is verified, say "This is what I found on the web about [Name]" and include the useful website or LinkedIn post link. If it is not verified, do not use it.',
-    '',
-    'Return the briefing in this shape:',
-    '1. What matters most right now',
-    '2. What I should know about each attendee',
-    '3. How to enter the meeting',
-    '4. Questions worth asking',
-    '5. Risks or flags',
-    '6. Likely follow-up',
-    '',
-    packetLines.join('\n')
-  ].filter((line) => line !== '').join('\n');
+  return meetingPrepOriginalPromptSeed(briefing);
 }
 
 function meetingPrepCoworkBriefAnswer(briefing = {}){
-  const verifiedExternalEvidence = (briefing.externalEvidence || [])
-    .filter((item) => !/still running|not returned|not checked|did not finish|not verified|did not run cleanly|taking longer than expected|safe brief|investigated|no verified current web evidence/i.test(String(item)))
-    .slice(0, 3);
-  const attendeeLines = (briefing.people || []).slice(0, 5);
-  const relationshipLines = (briefing.relationshipIntelligence || []).slice(0, 4);
-  const questionLines = (briefing.questions || []).slice(0, 4);
-  const riskLines = (briefing.risks || []).slice(0, 4);
-  const followUpLines = (briefing.followUpItems || []).slice(0, 4);
-  const opening = compactSentence(briefing.opening || '');
-  const sections = [
-    'What matters most right now\n' + compactSentence(briefing.purpose || briefing.readiness?.label || 'Enter with one clear outcome and do not over-assume missing context.'),
-    'What I should know about each attendee\n' + (attendeeLines.length ? attendeeLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Attendee context is still thin. Use the calendar names and ask clean clarifying questions.'),
-    'Current web and LinkedIn context\n' + (verifiedExternalEvidence.length ? verifiedExternalEvidence.map((item) => '- ' + compactSentence(item)).join('\n') : '- Public web and LinkedIn review is still running or did not return verified evidence yet. Do not use public assumptions in the meeting.'),
-    relationshipLines.length ? 'Relationship and project context\n' + relationshipLines.map((item) => '- ' + compactSentence(item)).join('\n') : '',
-    'How to enter the meeting\n' + (opening ? '"' + opening + '"' : 'Open with alignment first: name the desired outcome before moving into details.'),
-    'Questions worth asking\n' + (questionLines.length ? questionLines.map((item, index) => (index + 1) + '. ' + compactSentence(item)).join('\n') : '1. What would make this meeting useful today?'),
-    'Risks or flags\n' + (riskLines.length ? riskLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Do not assume alignment just because the meeting is on the calendar.'),
-    'Likely follow-up\n' + (followUpLines.length ? followUpLines.map((item) => '- ' + compactSentence(item)).join('\n') : '- Capture what changed and create only the next confirmed action.')
-  ].filter(Boolean);
-  return sections.join('\n\n');
+  return [
+    'Meeting Prep is reset to a clean starting point.',
+    '',
+    'I archived the original May prompt and removed the current noisy briefing stack from the visible answer path.',
+    '',
+    'Original prompt held for rebuild:',
+    meetingPrepOriginalPromptSeed(briefing),
+    '',
+    'Next rebuild should start from that prompt and only add hidden evidence after the output is useful again.'
+  ].join('\n');
 }
 
 function renderMeetingPrepExecutiveBrief(briefing = {}){

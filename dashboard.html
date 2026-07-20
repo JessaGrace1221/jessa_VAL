@@ -8029,8 +8029,10 @@ function openCalendarEvent(ev){
       return (ev.title&&hay.includes(ev.title.toLowerCase().split(' ')[0])) || (ev.contact&&hay.includes(ev.contact.toLowerCase()));
     });
     var taskText=tasks.length?tasks.slice(0,6).map(function(t){return '- '+t.title+(t.dueDate?' · due '+new Date(t.dueDate).toLocaleDateString():'');}).join('\n'):'No linked tasks found.';
-    addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText,false);
-    var prompt=(past?'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.':'Prepare me for this upcoming meeting using attendee intelligence, saved memory, dashboard context, and user profile context.')+'\n\n'+header+'\n\nAttendee intelligence:\n'+people+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText+'\n\nUse all known attendees. If the data is thin, say what is missing plainly. Keep it natural. No em dashes.';
+    addMsg((past?'Past meeting notes':'Meeting prep')+'\n\nMeeting Prep is reset to the original Meeting Mode prompt. Attendee intelligence, saved memory, and related tasks are held for the clean rebuild instead of being pasted into the prompt.',false);
+    var prompt=past
+      ? 'Summarize this past meeting and extract unresolved follow-ups/tasks from the saved notes.\n\n'+header+'\n\nSaved memory:\n'+notes+'\n\nRelated tasks:\n'+taskText+'\n\nKeep it natural. No em dashes.'
+      : 'I\'ve switched to Meeting Mode. My next meeting is '+(ev.title||'upcoming meeting')+(ev.timeStr?' at '+ev.timeStr:'')+'. Give me a full briefing: who they are, what we\'ve discussed before, what the goal of this meeting should be, and 3 talking points to open strong.';
     setTimeout(function(){chatSilent(prompt);},250);
   })
   .catch(function(e){
