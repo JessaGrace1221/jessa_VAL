@@ -20669,7 +20669,24 @@ async function listRelationshipProfiles({limit=80}={}){
 }
 async function listProjectProfiles({limit=80}={}){
   const capped=Math.max(1,Math.min(Number(limit)||80,200));
-  return (await listRelationshipProfiles({limit:Math.max(capped,160)})).filter(p=>p.profileType==='project').slice(0,capped);
+  const rank=(a,b)=>(b.openLoopCount+b.riskCount+b.opportunityCount)-(a.openLoopCount+a.riskCount+a.opportunityCount);
+  if(DEMO_MODE){
+    return (transcriptDemoArray('relationshipProfiles')||[])
+      .map(publicRelationshipProfile)
+      .filter(profile=>profile?.profileType==='project')
+      .sort(rank)
+      .slice(0,capped);
+  }
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`select * from relationship_profiles where tenant_id=$1 and profile_type='project' order by (open_loop_count+risk_count+opportunity_count) desc, last_observed_at desc nulls last limit $2`,[tenantId(),capped]);
+    return result.rows.map(row=>publicRelationshipProfile(transcriptPgRow(row))).filter(Boolean);
+  }
+  return transcriptFileArray(valStore(),'relationshipProfiles')
+    .map(publicRelationshipProfile)
+    .filter(profile=>profile?.profileType==='project')
+    .sort(rank)
+    .slice(0,capped);
 }
 function projectProfileMatchesIdentifier(row={},identifier=''){
   const needle=String(identifier||'').trim().toLowerCase();

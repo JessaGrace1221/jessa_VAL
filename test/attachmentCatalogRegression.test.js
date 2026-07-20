@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const hearth = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
+const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 
 function sourceBetween(start, end){
   const startIndex = hearth.indexOf(start);
@@ -77,4 +78,12 @@ test('drawers refresh attachment catalogs when opened', () => {
   const inboxHydration = sourceBetween('async function hydrateCorrespondenceDrawer', 'async function scanCorrespondenceWindow');
   assert.match(inboxHydration, /hydrateRelationshipIndex\(\{force:true\}\)/);
   assert.match(inboxHydration, /hydrateProjectIndex\(\{force:true, render:false\}\)/);
+});
+
+test('project catalog filters at the storage boundary before applying its limit', () => {
+  assert.match(server, /where tenant_id=\$1 and profile_type='project'/);
+  assert.doesNotMatch(
+    server,
+    /listRelationshipProfiles\(\{limit:Math\.max\(capped,160\)\}\)\)\.filter\(p=>p\.profileType==='project'/
+  );
 });
