@@ -1838,14 +1838,35 @@ button,a{font:inherit}
   gap:5px;
   padding-top:2px;
 }
-.home-cowork-meeting-prep-answer strong{
+.home-cowork-meeting-prep-answer section > strong,
+.home-cowork-top-judgment > strong{
   color:rgba(38,38,35,.9);
-  font:850 .72rem/1.2 var(--body);
-  letter-spacing:.08em;
+  font:780 .68rem/1.25 var(--body);
+  letter-spacing:.06em;
   text-transform:uppercase;
 }
 .home-cowork-meeting-prep-answer section p{
   white-space:pre-wrap;
+}
+.home-cowork-meeting-prep-answer p,
+.home-cowork-meeting-prep-answer li{
+  color:rgba(43,43,39,.76);
+  font:450 .98rem/1.56 var(--body);
+  letter-spacing:0;
+  text-transform:none;
+}
+.home-cowork-meeting-prep-answer ul,
+.home-cowork-meeting-prep-answer ol{
+  margin:2px 0 0 1.2rem;
+  padding:0;
+  display:grid;
+  gap:4px;
+}
+.home-cowork-meeting-prep-answer li strong{
+  color:rgba(38,38,35,.88);
+  font-weight:720;
+  letter-spacing:0;
+  text-transform:none;
 }
 .home-cowork-top-judgment{
   margin:2px 0 4px;
@@ -1859,7 +1880,7 @@ button,a{font:inherit}
   box-shadow:0 12px 26px rgba(93,56,46,.08);
   white-space:pre-wrap;
 }
-.home-cowork-top-judgment strong{
+.home-cowork-top-judgment > strong{
   display:block;
   margin-bottom:6px;
   color:rgba(92,33,44,.88);

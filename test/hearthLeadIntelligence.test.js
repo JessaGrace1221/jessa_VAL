@@ -1410,6 +1410,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function renderHomeCoworkMeetingPrepText/);
   assert.match(hearthJs, /function renderMeetingPrepInlineMarkdown/);
   assert.match(hearthJs, /function meetingPrepMarkdownHeading/);
+  assert.match(hearthJs, /firstLineIsListItem/);
+  assert.match(hearthJs, /replace\(\/\\n\{2,\}\(\?=\\s\*\(\?:\[-\*\]\|\\d\+\\\.\)\\s\+\)\/g/);
   assert.match(hearthJs, /activeMeetingPrepAutoPrompt/);
   assert.match(hearthJs, /suppressVisibleUserPrompt/);
   assert.match(hearthJs, /Open-loop evidence/);
@@ -1429,6 +1431,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /renderMeetingPrepAttendeeMapping\(briefing, \{compact:true\}\)/);
   assert.match(hearthJs, /meeting-prep-attendee-drawer/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:true\}\)/);
+  assert.match(hearthCss, /\.home-cowork-meeting-prep-answer section > strong/);
+  assert.match(hearthCss, /\.home-cowork-meeting-prep-answer li strong/);
   assert.match(hearthJs, /openMeetingPrepCoworkSession\(\{autoRun:false, loading:true\}\)/);
   assert.match(hearthJs, /meetingPrepDomainProjectCandidate/);
   assert.doesNotMatch(hearthJs, /showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.', \{noTimeout: mode === 'meeting_prep'\}\)/);

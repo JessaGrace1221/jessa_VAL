@@ -22767,13 +22767,15 @@ function homeCoworkResponseNode(){
 
 function renderMeetingPrepInlineMarkdown(value = ''){
   return escapeHtml(String(value || ''))
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 }
 
 function meetingPrepMarkdownHeading(value = ''){
   return String(value || '')
+    .replace(/^[-*]\s*/, '')
+    .replace(/^\d+\.\s*/, '')
     .replace(/^#{1,6}\s*/, '')
-    .replace(/^\*\*([^*]+)\*\*$/, '$1')
+    .replace(/^\*\*(.+?)\*\*$/, '$1')
     .trim();
 }
 
@@ -22810,15 +22812,19 @@ function renderMeetingPrepMarkdownLines(lines = []){
 
 function renderHomeCoworkMeetingPrepText(text = ''){
   const raw = String(text || '').trim();
-  const parts = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  const normalized = raw
+    .replace(/\n{2,}(?=\s*(?:[-*]|\d+\.)\s+)/g, '\n')
+    .replace(/\n{2,}(?=\s*\*\*[^*]+\*\*\s*$)/gm, '\n');
+  const parts = normalized.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';
   const renderBlock = (part, index) => {
     const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
-    let heading = lines.shift() || '';
-    heading = meetingPrepMarkdownHeading(heading);
+    const firstLine = lines[0] || '';
+    const firstLineIsListItem = /^[-*]\s+/.test(firstLine) || /^\d+\.\s+/.test(firstLine);
+    let heading = firstLineIsListItem ? '' : meetingPrepMarkdownHeading(lines.shift() || '');
     const body = renderMeetingPrepMarkdownLines(lines);
-    if(index === 0) return '<div class="home-cowork-top-judgment"><strong>' + escapeHtml(heading) + '</strong>' + body + '</div>';
-    return '<section><strong>' + escapeHtml(heading) + '</strong>' + body + '</section>';
+    if(index === 0) return '<div class="home-cowork-top-judgment">' + (heading ? '<strong>' + escapeHtml(heading) + '</strong>' : '') + body + '</div>';
+    return '<section>' + (heading ? '<strong>' + escapeHtml(heading) + '</strong>' : '') + body + '</section>';
   };
   return '<div class="home-cowork-meeting-prep-answer">' + parts.map(renderBlock).join('') + '</div>';
 }
