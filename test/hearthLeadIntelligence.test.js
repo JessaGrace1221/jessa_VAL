@@ -1412,6 +1412,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function meetingPrepMarkdownHeading/);
   assert.match(hearthJs, /firstLineIsListItem/);
   assert.match(hearthJs, /replace\(\/\\n\{2,\}\(\?=\\s\*\(\?:\[-\*\]\|\\d\+\\\.\)\\s\+\)\/g/);
+  assert.equal(hearthJs.includes("if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';"), false);
+  assert.match(hearthJs, /renderMeetingPrepMarkdownLines\(normalized\.split\('\\n'\)\)/);
   assert.match(hearthJs, /activeMeetingPrepAutoPrompt/);
   assert.match(hearthJs, /suppressVisibleUserPrompt/);
   assert.match(hearthJs, /Open-loop evidence/);
@@ -1422,6 +1424,8 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.doesNotMatch(hearthJs, /External review running/);
   assert.doesNotMatch(hearthJs, /External review ready/);
   assert.match(hearthJs, /VAL is preparing your meeting brief\. This can take a moment/);
+  assert.match(hearthJs, /Still working\. This meeting has more context to reason through/);
+  assert.match(hearthJs, /The screen has not frozen/);
   assert.match(hearthJs, /LinkedIn activity and recent post check/);
   assert.doesNotMatch(hearthJs, /did not run cleanly\|taking longer than expected\|safe brief\|investigated/);
   assert.doesNotMatch(hearthJs, /External review is still checking public web and LinkedIn context\. Do not use public assumptions yet/);

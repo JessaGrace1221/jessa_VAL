@@ -18171,6 +18171,8 @@ async function runCowork(mode){
   const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
   const suppressVisibleUserPrompt = Boolean(mode === 'meeting_prep' && activeMeetingPrepAutoPrompt);
+  const progressTimers = [];
+  const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
   const heldSystemPrompt = heldContext
     ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext
@@ -18222,6 +18224,12 @@ async function runCowork(mode){
       showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
     }else{
       appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a moment.');
+      progressTimers.push(window.setTimeout(() => {
+        appendHomeCoworkMessage('val', 'Still working. This meeting has more context to reason through, so VAL is taking a little longer than usual.');
+      }, 45000));
+      progressTimers.push(window.setTimeout(() => {
+        appendHomeCoworkMessage('val', 'Still preparing the brief. The screen has not frozen; VAL is waiting on the model response.');
+      }, 90000));
     }
   }else{
     setWorkspaceContent({
@@ -18256,6 +18264,7 @@ async function runCowork(mode){
       }
     });
     const content = result.message?.content || 'VAL prepared a response.';
+    clearProgressTimers();
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', content, {meetingPrep: mode === 'meeting_prep'});
       const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
@@ -18290,6 +18299,7 @@ async function runCowork(mode){
       value: input
     });
   }catch(error){
+    clearProgressTimers();
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.');
       return;
@@ -22816,7 +22826,9 @@ function renderHomeCoworkMeetingPrepText(text = ''){
     .replace(/\n{2,}(?=\s*(?:[-*]|\d+\.)\s+)/g, '\n')
     .replace(/\n{2,}(?=\s*\*\*[^*]+\*\*\s*$)/gm, '\n');
   const parts = normalized.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-  if(parts.length < 2) return '<p>' + escapeHtml(raw) + '</p>';
+  if(parts.length < 2){
+    return '<div class="home-cowork-meeting-prep-answer"><section>' + renderMeetingPrepMarkdownLines(normalized.split('\n')) + '</section></div>';
+  }
   const renderBlock = (part, index) => {
     const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
     const firstLine = lines[0] || '';
