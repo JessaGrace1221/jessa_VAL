@@ -17220,6 +17220,10 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   if(!text) return '';
   if(/^\d{1,2}:\d{2}\s*(AM|PM)\b/i.test(text)) return '';
   if(/\b(Messages meeting|meeting July|processed and changed|Home should update|Velocity, Alignment, and Leverage)\b/i.test(text)) return '';
+  if(/\b(moved forward|review the meeting overview|transcript|meeting overview|prepared work packet|can val act|no prepared work)\b/i.test(text)) return '';
+  if(/\b(Meet w\/|Meeting with|Discovery|Invitation:|Updated invitation:)\b/i.test(text)) return '';
+  if(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return '';
+  if(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b/i.test(text)) return '';
   if(text.length <= maxLength) return text;
   const shortened = text.slice(0, maxLength).replace(/\s+\S*$/, '').trim();
   return shortened ? shortened + '.' : '';
@@ -17228,17 +17232,17 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
 function velocityPerspectiveFromBriefing(briefing = {}){
   const daily = briefing.dailyWitness || {};
   const name = homePerspectiveUserName();
-  const rawLines = [
+  const headlineLines = [
     daily.velocityPerspective,
-    daily.perspective,
-    daily.display_greeting,
-    ...(Array.isArray(daily.greeting_lines) ? daily.greeting_lines : []),
+    daily.perspective
+  ].filter(Boolean);
+  const supportLines = [
     daily.what_was_witnessed,
     daily.what_it_cost_or_represented,
     daily.permission_line
   ].filter(Boolean);
-  const lines = rawLines
-    .map((line) => cleanVelocityPerspectiveLine(line))
+  const lines = [...headlineLines, ...supportLines]
+    .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
     .filter(Boolean)
     .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
@@ -17348,6 +17352,7 @@ function updateRoomFromBriefing(roomName, content){
 }
 
 function clearHomeRoomForAdmission(roomName){
+  const leverageCount = roomName === 'leverage' ? Number(leveragePreparedCount?.dataset?.count || 0) : 0;
   const empty = {
     velocity: {
       card: {
@@ -17389,19 +17394,19 @@ function clearHomeRoomForAdmission(roomName){
     },
     leverage: {
       card: {
-        observation: 'No prepared work is waiting for approval.',
-        implication: 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        invitation: 'Nothing to approve',
-        title: 'No prepared work is waiting for approval.',
-        summary: 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
+        observation: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
+        implication: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
+        invitation: leverageCount ? 'Open when the queue finishes loading' : 'Nothing to approve',
+        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
+        summary: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
         action: 'Open Leverage'
       },
       workspace: {
         lens: 'Leverage',
-        title: 'No Leverage item passed the v1 admission gate.',
-        meaning: 'VAL is not showing loose opportunities as prepared work.',
-        understanding: ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
-        recommendation: 'Prepared work will appear here only when it is real enough to review or approve.',
+        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No Leverage item passed the v1 admission gate.',
+        meaning: leverageCount ? 'VAL has counted prepared work, but the review queue has not finished loading in this view yet.' : 'VAL is not showing loose opportunities as prepared work.',
+        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Open Leverage again after the review queue finishes hydrating.'] : ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
+        recommendation: leverageCount ? 'Wait for the prepared work queue to finish loading before approving anything.' : 'Prepared work will appear here only when it is real enough to review or approve.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }

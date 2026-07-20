@@ -1657,6 +1657,10 @@ test('Hearth Home presence hydrates from executive briefing intelligence', () =>
   assert.match(hearthJs, /\/api\/executive-briefing/);
   assert.match(hearthJs, /function hydrateGreetingFromBriefing/);
   assert.match(hearthJs, /function velocityPerspectiveFromBriefing/);
+  assert.match(hearthJs, /moved forward\|review the meeting overview\|transcript\|meeting overview/);
+  assert.match(hearthJs, /Meet w\\\/\|Meeting with\|Discovery\|Invitation:\|Updated invitation:/);
+  assert.match(hearthJs, /A-Z0-9\._%\+-\]\+\@\[A-Z0-9\.-\]\+\\\.\[A-Z\]\{2,\}/);
+  assert.doesNotMatch(hearthJs, /daily\.display_greeting,[\s\S]{0,120}daily\.greeting_lines/);
   assert.match(hearthJs, /Refresh Perspective/);
   assert.match(hearthJs, /window\.executiveBriefingState/);
   assert.match(hearthJs, /function hydrateRoomsFromBriefing/);

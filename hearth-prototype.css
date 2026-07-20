@@ -236,8 +236,8 @@ button,a{font:inherit}
 }
 .hearth h1{
   margin:0;
-  max-width:580px;
-  font:500 clamp(2.65rem,3.55vw,4.45rem)/.94 var(--serif);
+  max-width:min(560px,46vw);
+  font:500 clamp(2.35rem,3vw,3.65rem)/1 var(--serif);
   letter-spacing:0;
   color:var(--paper);
   text-wrap:balance;
@@ -689,7 +689,7 @@ button,a{font:inherit}
   z-index:5;
   left:auto;
   right:clamp(270px,17vw,360px);
-  bottom:clamp(90px,13vh,138px);
+  bottom:clamp(156px,18vh,218px);
   transform:none;
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
@@ -9258,6 +9258,7 @@ button.timeline-overview-receipt:focus-visible{
   .living-rooms{
     right:clamp(230px,18vw,285px);
     width:min(460px,calc(100vw - 620px));
+    bottom:clamp(150px,18vh,198px);
   }
 }
 
@@ -9267,14 +9268,14 @@ button.timeline-overview-receipt:focus-visible{
   }
   .hearth h1{
     max-width:500px;
-    font-size:clamp(2.35rem,3.05vw,3.7rem);
+    font-size:clamp(2.1rem,2.65vw,3.2rem);
   }
   .hearth-lines{
     max-width:470px;
   }
   .living-rooms{
     right:clamp(270px,22vw,330px);
-    bottom:clamp(86px,13vh,118px);
+    bottom:clamp(150px,18vh,196px);
     grid-template-columns:1fr;
     width:min(252px,calc(100vw - 1010px));
     min-width:230px;
