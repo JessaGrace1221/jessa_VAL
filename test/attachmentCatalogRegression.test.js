@@ -23,6 +23,8 @@ test('all attachment surfaces use the canonical Stewardship and Project Managers
   assert.match(hearth, /function hydrateAttachmentCatalogs\(\{force=false\}=\{\}\)/);
   assert.match(hearth, /api\/relationships\/index\?limit=200/);
   assert.match(hearth, /api\/projects\/index\?limit=200/);
+  assert.match(hearth, /getJson\('\/api\/relationships\/index\?limit=200', \{cache:'no-store'\}\)/);
+  assert.match(hearth, /getJson\('\/api\/projects\/index\?limit=200', \{cache:'no-store'\}\)/);
   assert.match(hearth, /function meetingPrepRelationshipOptions\(\)\{\s*return attachmentRelationshipOptions\(\);/);
   assert.match(hearth, /function meetingPrepProjectOptions\(\)\{\s*return attachmentProjectOptions\(\);/);
   assert.match(hearth, /const projectOptions = attachmentProjectOptions\(\)/);

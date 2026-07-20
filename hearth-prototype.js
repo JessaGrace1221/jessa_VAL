@@ -2514,7 +2514,7 @@ async function hydrateRelationshipIndex({force=false}={}){
   if(!canUseApi || (relationshipIndexLoaded&&!force)) return;
   if(relationshipIndexRequest) return relationshipIndexRequest;
   if(force) relationshipIndexLoaded = false;
-  relationshipIndexRequest = getJson('/api/relationships/index?limit=200')
+  relationshipIndexRequest = getJson('/api/relationships/index?limit=200', {cache:'no-store'})
     .then(async(data) => {
       if(Array.isArray(data?.relationships)){
         const packetInventory = await getJson('/api/relationships/person-packets?limit=160&includeThin=1').catch(() => ({packets:[]}));
@@ -7870,7 +7870,7 @@ async function hydrateProjectIndex({force=false, render=true}={}){
   if(force) projectIndexLoaded = false;
   projectIndexSourceLabel = 'Checking project index';
   updateProjectIndexSourceLabel();
-  projectIndexRequest = getJson('/api/projects/index?limit=200')
+  projectIndexRequest = getJson('/api/projects/index?limit=200', {cache:'no-store'})
     .then((data) => {
       if(Array.isArray(data?.projects)){
         projectIndexProfiles = data.projects.reduce((profiles, item) => {
