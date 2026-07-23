@@ -83,13 +83,15 @@ test('Hearth Co-Work includes current calendar context for voice questions',()=>
 });
 
 test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
-  assert.match(hearth,/const voiceFastLane = Boolean\(valCoworkVoiceState\.active && mode !== 'meeting_prep'\);/);
-  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget\);/);
+  assert.match(hearth,/const needsFullValContext = Boolean\(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext\(visiblePrompt\)\);/);
+  assert.match(hearth,/const voiceFastLane = Boolean\(valCoworkVoiceState\.active && mode !== 'meeting_prep' && !needsFullValContext\);/);
+  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext\);/);
   assert.match(hearth,/latencyMode: voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)/);
   assert.match(hearth,/showCoworkContextGathering\('VAL is thinking with you\.', \{noTimeout:true\}\);/);
   assert.doesNotMatch(hearth,/showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'\)/);
   assert.match(server,/function hearthFastChatEnabled/);
   assert.match(server,/function sendFastHearthChatNow/);
+  assert.match(server,/function hearthFastNeedsFullValContext/);
   assert.match(server,/const immediateCalendarAnswer=hearthFastCalendarFallback\(lastUser,dashboard\);/);
   assert.match(server,/Fast Hearth Co-Work lane/);
   assert.match(server,/Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context/);
@@ -100,4 +102,14 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(hearth,/timeoutMs: voiceFastLane \? 22000 : 28000/);
   assert.match(hearth,/function ensureValCoworkVoiceSurface/);
   assert.match(hearth,/console\.warn\('VAL voice turn failed:', error\);/);
+});
+
+test('Home VAL can leave fast lane for system-wide email and Stewardship context',()=>{
+  assert.match(hearth,/function homeCoworkNeedsFullValContext/);
+  assert.match(hearth,/homeCoworkNeedsFullValContext\(visiblePrompt\)/);
+  assert.match(hearth,/VAL is checking contact context, Stewardship, and Gmail or Outlook email options/);
+  assert.match(hearth,/if\(valCoworkVoiceState\.active\) speakValCoworkMessage\(fullContextDetail\);/);
+  assert.match(server,/Gmail and Outlook are the email execution layers for provider drafts and email sends/);
+  assert.match(server,/&& !hearthFastNeedsFullValContext\(lastUser\)/);
+  assert.match(server,/if\(\/\\b\(send\|write\|compose\|draft\|create\|prepare\)\\b\[\\s\\S\]\{0,60\}\\b\(email\|reply\|message\)\\b\/i\.test\(value\)\) return false;/);
 });

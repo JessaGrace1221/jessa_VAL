@@ -411,6 +411,23 @@ function calendarCoworkContextLines(limit = 6){
   return [nextMeetingLine, ...events].filter(Boolean);
 }
 
+function homeCoworkNeedsFullValContext(text = ''){
+  const value = String(text || '');
+  if(/\b(next|upcoming)\b[\s\S]{0,30}\b(appointment|calendar|meeting|schedule)\b/i.test(value)) return false;
+  return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(value);
+}
+
+function homeCoworkFullContextDetail(text = ''){
+  const value = String(text || '');
+  if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Just a sec. VAL is checking Stewardship, relationships, contact context, and the Board of Observers.';
+  if(/\b(send|email|draft|reply)\b/i.test(value)) return 'Just a sec. VAL is checking contact context, Stewardship, and Gmail or Outlook email options.';
+  if(/\b(project)\b/i.test(value)) return 'Just a sec. VAL is checking Project Managers, source packets, and relevant relationship context.';
+  if(/\b(transcript)\b/i.test(value)) return 'Just a sec. VAL is checking transcript intelligence and related memory.';
+  if(/\b(linkedin)\b/i.test(value)) return 'Just a sec. VAL is checking LinkedIn context and relationship signals.';
+  if(/\b(board|observer|director)\b/i.test(value)) return 'Just a sec. VAL is checking the Board of Observers and current system context.';
+  return 'Just a sec. VAL is checking the wider system context.';
+}
+
 const hearthPacketCompletenessRegistry = {
   navigation_packet: {
     requiredLayers: ['witnessing_root','active_user','val_os_rules','navigation_context'],
@@ -19087,8 +19104,9 @@ async function runCowork(mode, messageOverride = ''){
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
   const calendarContextLines = calendarCoworkContextLines();
-  const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep');
-  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget);
+  const needsFullValContext = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext(visiblePrompt));
+  const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep' && !needsFullValContext);
+  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext);
   const conversationFastLane = Boolean(voiceFastLane || chatFastLane);
   const calendarContext = calendarContextLines.length
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
@@ -19147,8 +19165,12 @@ async function runCowork(mode, messageOverride = ''){
         hideCoworkContextGathering();
       }else if(conversationFastLane){
         showCoworkContextGathering('VAL is thinking with you.', {noTimeout:true});
+      }else if(needsFullValContext){
+        const fullContextDetail = homeCoworkFullContextDetail(visiblePrompt);
+        showCoworkContextGathering(fullContextDetail, {noTimeout:true});
+        if(valCoworkVoiceState.active) speakValCoworkMessage(fullContextDetail);
       }else{
-        showCoworkContextGathering('VAL is gathering the scoped context for this conversation.');
+        showCoworkContextGathering('VAL is gathering the scoped context for this conversation.', {noTimeout:true});
       }
     }else{
       appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a minute or two while VAL checks the meeting context and public signals.');

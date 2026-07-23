@@ -12180,7 +12180,10 @@ async function fetchUnifiedOutlookEmails(limit=20){
 }
 
 function inboxCommandIntent(text=''){
-  return /\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|what did|find|search)\b/i.test(String(text||''))&&/\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|said|sent|from|about|find|search)\b/i.test(String(text||''));
+  const value=String(text||'');
+  if(/\b(send|write|compose|draft|create|prepare)\b[\s\S]{0,60}\b(email|reply|message)\b/i.test(value)) return false;
+  if(/\b(email|reply|message)\b[\s\S]{0,60}\b(to|for)\s+[A-Z][A-Za-z]+/i.test(value)&&!/\b(find|search|show|pull|open|summarize|what did|what was|what has)\b/i.test(value)) return false;
+  return /\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|what did|find|search)\b/i.test(value)&&/\b(email|inbox|gmail|outlook|message|thread|invoice|attachment|forward|reply|draft|summarize|said|sent|from|about|find|search)\b/i.test(value);
 }
 function inboxSearchTerms(text=''){
   const raw=String(text||'');
@@ -28665,7 +28668,7 @@ Physiological regulation: executive clarity depends on nervous system stability.
 
 Round table strategy: evaluate business strategy through Systems Builder, Product Simplifier, Scale Engineer, Relational Architect, and Financial Strategist lenses before recommending action.
 
-Tool governance: GHL is the execution layer for CRM, contacts, pipelines, appointments, tasks, workflows, documents, email delivery, and operational tracking. Make.com is the orchestration layer for automation, routing, API coordination, conditional logic, webhooks, system communication, and execution sequencing. VAL/Postgres memory is the memory and retrieval layer for transcripts, institutional memory, historical recall, contact context, and document context. If legacy Pinecone memory is referenced, treat it as the previous memory layer; current durable memory is VAL/Postgres. Do not collapse tool responsibilities.
+Tool governance: GHL is the execution layer for CRM, contacts, pipelines, CRM appointments, CRM tasks, workflows, documents, and operational tracking. Gmail and Outlook are the email execution layers for provider drafts and email sends. Make.com is the orchestration layer for automation, routing, API coordination, conditional logic, webhooks, system communication, and execution sequencing. VAL/Postgres memory is the memory and retrieval layer for transcripts, institutional memory, historical recall, contact context, and document context. If legacy Pinecone memory is referenced, treat it as the previous memory layer; current durable memory is VAL/Postgres. Do not collapse tool responsibilities.
 
 Client configuration: this VAL supports ${CLIENT_CONFIG.clientName}. ${process.env.VAL_CLIENT_CONTEXT || 'Prioritize relationship context, calendar awareness, tasks, transcripts, contact notes, pipeline clarity, next best action, and concise executive visibility.'}
 
@@ -33014,8 +33017,15 @@ app.post('/api/val/intelligence',async(req,res)=>{
     res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext});
   }catch(e){res.status(500).json({error:e.message});}
 });
+function hearthFastNeedsFullValContext(text=''){
+  return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(String(text||''));
+}
 function hearthFastChatEnabled(body={}){
-  return body?.channel === 'hearth_cowork' && /^(voice_fast|chat_fast)$/i.test(String(body.latencyMode||''));
+  const messages=Array.isArray(body.messages)?body.messages:[];
+  const lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'';
+  return body?.channel === 'hearth_cowork'
+    && /^(voice_fast|chat_fast)$/i.test(String(body.latencyMode||''))
+    && !hearthFastNeedsFullValContext(lastUser);
 }
 function hearthFastDashboardContext(dashboard={}){
   const calendar=Array.isArray(dashboard.calendar)?dashboard.calendar.filter(Boolean).slice(0,6):[];
