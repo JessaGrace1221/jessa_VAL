@@ -16420,13 +16420,13 @@ body.val-ghl-voice-active .val-cowork-voice-mark .val-presence-core{
   top:calc(50% + 108px);
   transform:translateX(-50%);
   margin:0;
-  color:rgba(255,249,239,.68);
+  color:rgba(255,251,244,.92);
   font-family:Inter,system-ui,sans-serif;
   font-size:.72rem;
   font-weight:560;
   letter-spacing:.08em;
   text-transform:uppercase;
-  text-shadow:0 0 16px rgba(255,236,202,.3);
+  text-shadow:0 0 18px rgba(255,236,202,.58),0 1px 8px rgba(27,36,26,.42);
   pointer-events:none;
 }
 body.val-ghl-voice-active .hearth-brand-cluster,
