@@ -16265,8 +16265,14 @@ function renderValCoworkVoicePanel(){
         '</span>',
       '</div>',
     '</section>',
-    '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
+      '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
   ].join(''));
+}
+
+function ensureValCoworkVoiceSurface(){
+  workspaceInputPanel.classList.add('val-cowork-voice-active');
+  deskWorkspace?.classList.add('val-cowork-voice-active');
+  renderValCoworkVoicePanel();
 }
 
 function clearValCoworkVoiceRestart(){
@@ -16438,6 +16444,13 @@ async function sendValCoworkVoiceTranscript(transcript = ''){
     const scopedEntryReady = Boolean(entry?.sessionId && entry.status !== 'opening' && entry.status !== 'applied');
     if(scopedEntryReady && await submitActiveCoworkEntry(spoken)) return;
     await runCowork('think', spoken);
+  }catch(error){
+    console.warn('VAL voice turn failed:', error);
+    if(valCoworkVoiceState.active){
+      speakValCoworkMessage(error?.message || 'I heard you, but that voice turn did not complete. Ask me again in one shorter sentence.', {silentVoice:true});
+    }else{
+      appendHomeCoworkMessage('val', 'Voice needs attention: ' + (error?.message || 'The voice turn did not complete.') + '\n\nNo external action was taken.');
+    }
   }finally{
     valCoworkVoiceState.pending = false;
     if(valCoworkVoiceState.active && valCoworkVoiceState.mode === 'thinking'){
@@ -16499,14 +16512,13 @@ function startValCoworkVoiceMode(){
     return;
   }
   if(valCoworkVoiceState.active){
+    ensureValCoworkVoiceSurface();
     startValCoworkListening();
     return;
   }
   valCoworkVoiceState.active = true;
   valCoworkVoiceState.pending = false;
-  workspaceInputPanel.classList.add('val-cowork-voice-active');
-  deskWorkspace?.classList.add('val-cowork-voice-active');
-  renderValCoworkVoicePanel();
+  ensureValCoworkVoiceSurface();
   primeValCoworkVoiceRecognition();
   const greeting = valCoworkGreeting();
   appendHomeCoworkMessage('val', greeting, {silentVoice:true});
@@ -19181,7 +19193,12 @@ async function runCowork(mode, messageOverride = ''){
         permission: permission.textContent,
         calendar: calendarContextLines
       }
-    });
+    }, conversationFastLane ? {
+      timeoutMs: voiceFastLane ? 22000 : 28000,
+      timeoutMessage: voiceFastLane
+        ? 'VAL heard you, but the voice response took too long. Ask again in one shorter sentence.'
+        : 'VAL took too long to answer this chat turn. Try one narrower question.'
+    } : {});
     const content = result.message?.content || 'VAL prepared a response.';
     clearProgressTimers();
     if(keepHomeCoworkOpen){

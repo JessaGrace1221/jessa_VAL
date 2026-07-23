@@ -33028,7 +33028,7 @@ function hearthFastDashboardContext(dashboard={}){
   ].filter(Boolean).join('\n');
 }
 function hearthFastCalendarFallback(lastUser='',dashboard={}){
-  if(!/\b(calendar|meeting|schedule|next|today|tomorrow)\b/i.test(lastUser)) return '';
+  if(!/\b(calendar|meeting|appointment|schedule|next|today|tomorrow)\b/i.test(lastUser)) return '';
   const lines=Array.isArray(dashboard.calendar)?dashboard.calendar.filter(Boolean):[];
   if(lines.length){
     const next=String(lines.find(line=>/^Next meeting:/i.test(line))||lines[0]).replace(/^Next meeting:\s*/i,'');
@@ -33037,12 +33037,16 @@ function hearthFastCalendarFallback(lastUser='',dashboard={}){
   return 'I do not see an upcoming calendar item in the Hearth sidebar right now.';
 }
 async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=false}){
+  const immediateCalendarAnswer=hearthFastCalendarFallback(lastUser,dashboard);
+  if(immediateCalendarAnswer && /\b(next|upcoming|appointment|calendar|meeting|schedule|today|tomorrow)\b/i.test(lastUser)){
+    return immediateCalendarAnswer;
+  }
   const dashboardContext=hearthFastDashboardContext(dashboard);
   const system=[
     VAL_SYSTEM_PROMPT,
     'Fast Hearth Co-Work lane. Prioritize conversational responsiveness over broad source retrieval.',
     'Use only the user message, the recent visible conversation, and the supplied Hearth dashboard context. Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context.',
-    'If the user asks about calendar or meetings, answer only from the supplied Hearth calendar context. If it is missing, say that plainly.',
+    'If the user asks about calendar, appointments, schedule, or meetings, answer only from the supplied Hearth calendar context. If it is missing, say that plainly.',
     'No external action happens from this lane. If action is needed, say what you can prepare or where the user should open the source.',
     voiceMode
       ? 'Voice mode: answer in one to three natural spoken sentences. No markdown. No lists unless absolutely necessary.'
@@ -33070,6 +33074,17 @@ async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=fals
       ? 'I am here. I did not get a clean fast response, so ask me one smaller thing and I will stay with you.'
       : 'I am here. I did not get a clean fast response on that pass, so give me one smaller thread and I will stay with it.';
   }
+}
+function sendFastHearthChatNow(res,{content,messages,conversationId,conversationTitle,channel,projectContext,extra={}}){
+  const fullMessages=messages.concat({role:'assistant',content});
+  res.json({message:{role:'assistant',content},conversationId,saved:false,saveDeferred:true,saveWarning:'Fast Hearth chat returned before persistence so voice could stay conversational.',...extra});
+  saveConversation({
+    id:conversationId,
+    title:conversationTitle,
+    source:channel||'hearth_cowork',
+    messages:fullMessages,
+    metadata:{channel:channel||'hearth_cowork',savedBy:'fast_hearth_chat_route',projectContext:projectContext||undefined,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',deferredPersistence:true}
+  }).catch(error=>console.warn('Fast Hearth chat deferred save failed:',error.message));
 }
 app.post('/api/val/chat',async(req,res)=>{
   try{
@@ -33139,7 +33154,15 @@ app.post('/api/val/chat',async(req,res)=>{
     }
     if(hearthFastChatEnabled(req.body)){
       const content=await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:!!req.body.voiceMode});
-      return sendChat(content,{fastHearthChat:true,voiceMode:!!req.body.voiceMode,noExternalAction:true});
+      return sendFastHearthChatNow(res,{
+        content,
+        messages,
+        conversationId,
+        conversationTitle,
+        channel:req.body.channel,
+        projectContext,
+        extra:{fastHearthChat:true,voiceMode:!!req.body.voiceMode,noExternalAction:true}
+      });
     }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();

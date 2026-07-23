@@ -89,8 +89,15 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(hearth,/showCoworkContextGathering\('VAL is thinking with you\.', \{noTimeout:true\}\);/);
   assert.doesNotMatch(hearth,/showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'\)/);
   assert.match(server,/function hearthFastChatEnabled/);
+  assert.match(server,/function sendFastHearthChatNow/);
+  assert.match(server,/const immediateCalendarAnswer=hearthFastCalendarFallback\(lastUser,dashboard\);/);
   assert.match(server,/Fast Hearth Co-Work lane/);
   assert.match(server,/Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context/);
+  assert.match(server,/calendar, appointments, schedule, or meetings/);
   assert.match(server,/maxTokens:voiceMode\?260:520/);
+  assert.match(server,/saveDeferred:true/);
   assert.match(server,/fastHearthChat:true/);
+  assert.match(hearth,/timeoutMs: voiceFastLane \? 22000 : 28000/);
+  assert.match(hearth,/function ensureValCoworkVoiceSurface/);
+  assert.match(hearth,/console\.warn\('VAL voice turn failed:', error\);/);
 });
