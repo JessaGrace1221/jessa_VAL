@@ -91,6 +91,7 @@ test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=
   assert.match(hearthCss,/pointer-events:auto!important/);
   assert.match(hearthCss,/pointer-events:none!important/);
   assert.match(hearthCss,/\.val-cowork-voice-hint/);
+  assert.match(hearthCss,/color:rgba\(255,251,244,\.92\)/);
 });
 
 test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
@@ -224,6 +225,17 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/const actionContext=ghlVoiceActionContext\(\{lastUser,voiceContextText,priorMessagesText\}\)/);
   assert.match(server,/const actionRequest=hearthActionIntent\(lastUser\)\?lastUser:actionContext/);
   assert.match(server,/hearthActionPrepContent\(\{lastUser:actionRequest,dashboard,voiceMode:true,contextText:actionContext\}\)/);
+});
+
+test('GHL voice groups timestamp-style conversation IDs into a rolling flow',()=>{
+  assert.match(server,/function ghlVoiceLooksLikeEphemeralConversationId/);
+  assert.match(server,/\\d\{10,17\}/);
+  assert.match(server,/function ghlVoiceActorKey/);
+  assert.match(server,/function recentGhlVoiceConversationIdForActor/);
+  assert.match(server,/updated_at >= \$3 order by updated_at desc limit 1/);
+  assert.match(server,/function ghlVoiceStableConversationId/);
+  assert.match(server,/await ghlVoiceStableConversationId\(req\.body,contact\)/);
+  assert.match(server,/voiceActorKey/);
 });
 
 test('GHL voice actions can inherit recipient and body from transcript context',()=>{
