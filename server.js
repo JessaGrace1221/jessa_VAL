@@ -866,14 +866,20 @@ function isBookEditorProject(){
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
-  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL,'jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
+  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL])
   .map(e=>String(e||'').trim().toLowerCase())
   .filter(Boolean));
-const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
-  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
-  'miken@goallprogram.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'},
-  'mikenonhof.wealth@gmail.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'}
-};
+const KNOWN_RELATIONSHIP_EMAIL_ALIASES = (() => {
+  try{
+    const configured=JSON.parse(process.env.VAL_KNOWN_RELATIONSHIP_ALIASES_JSON||'{}');
+    return Object.fromEntries(Object.entries(configured||{}).map(([email,value])=>[
+      String(email||'').trim().toLowerCase(),
+      value
+    ]).filter(([email,value])=>email&&value&&typeof value==='object'));
+  }catch(_error){
+    return {};
+  }
+})();
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -10051,6 +10057,7 @@ app.get('/guide',(req,res)=>{
     res.type('html').send(guideHtml(markdown));
   });
 });
+app.use('/data',(_req,res)=>res.sendStatus(404));
 app.use(express.static(__dirname));
 app.get('/dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'hearth-prototype.html'));});
 app.get('/legacy-dashboard',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.sendFile(path.join(__dirname,'dashboard.html'));});
@@ -14342,7 +14349,7 @@ function normalizeSidebarCalendarEvent(ev,source){
   };
 }
 
-const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(OWNER_EMAILS);
 function sidebarCalendarAttendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SIDEBAR_SELF_CALENDAR_EMAILS.has(email)));
