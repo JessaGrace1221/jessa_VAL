@@ -414,18 +414,63 @@ function calendarCoworkContextLines(limit = 6){
 function homeCoworkNeedsFullValContext(text = ''){
   const value = String(text || '');
   if(/\b(next|upcoming)\b[\s\S]{0,30}\b(appointment|calendar|meeting|schedule)\b/i.test(value)) return false;
+  if(homeCoworkNeedsActionPrep(value)) return false;
+  if(/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(value)) return false;
   return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(value);
+}
+
+function homeCoworkNeedsActionPrep(text = ''){
+  const value = String(text || '');
+  return /\b(send|write|compose|draft|prepare)\b[\s\S]{0,80}\b(email|reply|message)\b/i.test(value)
+    || /\b(email|reply|message)\b[\s\S]{0,50}\b(to|for)\b/i.test(value)
+    || /\b(text|sms)\b[\s\S]{0,80}\b(send|tell|ask|message)\b/i.test(value)
+    || /\b(send|tell|ask|message)\b[\s\S]{0,80}\b(text|sms)\b/i.test(value)
+    || /\b(remind me|set a reminder|create (a )?reminder|add (a )?task|create (a )?task)\b/i.test(value)
+    || /\b(book|schedule|create|set up)\b[\s\S]{0,80}\b(appointment|meeting|calendar|event|call)\b/i.test(value);
 }
 
 function homeCoworkFullContextDetail(text = ''){
   const value = String(text || '');
-  if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Just a sec. VAL is checking Stewardship, relationships, contact context, and the Board of Observers.';
-  if(/\b(send|email|draft|reply)\b/i.test(value)) return 'Just a sec. VAL is checking contact context, Stewardship, and Gmail or Outlook email options.';
+  if(/\b(send|email|draft|reply|text|sms)\b/i.test(value)) return 'Give me one moment. VAL is finding the right person and preparing the safest path.';
+  if(/\b(remind|task)\b/i.test(value)) return 'Give me one moment. VAL is finding where this should live.';
+  if(/\b(book|schedule|appointment|meeting|calendar|event|call)\b/i.test(value)) return 'Give me one moment. VAL is checking the right calendar path.';
+  if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Give me one moment. VAL is finding the right relationship record.';
   if(/\b(project)\b/i.test(value)) return 'Just a sec. VAL is checking Project Managers, source packets, and relevant relationship context.';
   if(/\b(transcript)\b/i.test(value)) return 'Just a sec. VAL is checking transcript intelligence and related memory.';
   if(/\b(linkedin)\b/i.test(value)) return 'Just a sec. VAL is checking LinkedIn context and relationship signals.';
   if(/\b(board|observer|director)\b/i.test(value)) return 'Just a sec. VAL is checking the Board of Observers and current system context.';
   return 'Just a sec. VAL is checking the wider system context.';
+}
+
+let pendingHomeCoworkActionPacket = null;
+let pendingHomeCoworkActionDraft = null;
+
+function isHomeCoworkActionConfirmation(text = ''){
+  return /^(send|send it|yes send|yes, send|do it|approve|approved|confirm|confirmed)$/i.test(String(text || '').trim());
+}
+
+async function confirmPendingHomeCoworkActionPacket(text = ''){
+  if(!pendingHomeCoworkActionPacket || !isHomeCoworkActionConfirmation(text)) return false;
+  const packet = pendingHomeCoworkActionPacket;
+  pendingHomeCoworkActionPacket = null;
+  const payload = packet.payloadPreviewJson || packet.payload_preview_json || {};
+  showCoworkContextGathering('VAL is sending exactly the approved message.', {noTimeout:true});
+  try{
+    await postJson('/api/val/external-actions/' + encodeURIComponent(packet.id) + '/approve', {
+      note: 'Approved by spoken Home VAL confirmation.'
+    }, {timeoutMs:10000});
+    const result = await postJson('/api/val/external-actions/' + encodeURIComponent(packet.id) + '/execute', {
+      finalConfirmation:true,
+      executedBy:'home_voice_confirmation'
+    }, {timeoutMs:18000});
+    const sent = result?.executed || result?.packet?.status === 'executed';
+    appendHomeCoworkMessage('val', sent
+      ? 'Done. I sent the approved email to ' + (payload.to || 'the recipient') + '.'
+      : 'I tried to send the approved email, but it did not complete. Nothing else was changed.');
+  }catch(error){
+    appendHomeCoworkMessage('val', 'I could not complete that send cleanly: ' + (error.message || 'the send gate did not finish.') + '\n\nNothing else was changed.');
+  }
+  return true;
 }
 
 const hearthPacketCompletenessRegistry = {
@@ -19097,17 +19142,29 @@ async function runMeetingPrepCoworkMayPrompt(briefing = activeMeetingPrepBriefin
 
 async function runCowork(mode, messageOverride = ''){
   const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
-  const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
+  let visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
+  if(keepHomeCoworkOpen && await confirmPendingHomeCoworkActionPacket(visiblePrompt)){
+    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    if(textarea) textarea.value = '';
+    return;
+  }
+  if(keepHomeCoworkOpen && pendingHomeCoworkActionDraft && input && !homeCoworkNeedsActionPrep(input)){
+    if(pendingHomeCoworkActionDraft.kind === 'email' && pendingHomeCoworkActionDraft.contact?.name){
+      visiblePrompt = 'Send ' + pendingHomeCoworkActionDraft.contact.name + ' an email saying: "' + input.replace(/"/g, "'") + '"';
+      pendingHomeCoworkActionDraft = null;
+    }
+  }
   const suppressVisibleUserPrompt = Boolean(mode === 'meeting_prep' && activeMeetingPrepAutoPrompt);
   const progressTimers = [];
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
   const calendarContextLines = calendarCoworkContextLines();
+  const actionPrepLane = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep(visiblePrompt));
   const needsFullValContext = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext(visiblePrompt));
-  const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep' && !needsFullValContext);
-  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext);
-  const conversationFastLane = Boolean(voiceFastLane || chatFastLane);
+  const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep' && !needsFullValContext && !actionPrepLane);
+  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext && !actionPrepLane);
+  const conversationFastLane = Boolean(voiceFastLane || chatFastLane || actionPrepLane);
   const calendarContext = calendarContextLines.length
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
     : '';
@@ -19163,6 +19220,10 @@ async function runCowork(mode, messageOverride = ''){
     if(mode !== 'meeting_prep'){
       if(voiceFastLane){
         hideCoworkContextGathering();
+      }else if(actionPrepLane){
+        const actionDetail = homeCoworkFullContextDetail(visiblePrompt);
+        showCoworkContextGathering(actionDetail, {noTimeout:true});
+        if(valCoworkVoiceState.active) speakValCoworkMessage(actionDetail);
       }else if(conversationFastLane){
         showCoworkContextGathering('VAL is thinking with you.', {noTimeout:true});
       }else if(needsFullValContext){
@@ -19200,8 +19261,8 @@ async function runCowork(mode, messageOverride = ''){
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
       title: 'Co-Work from Hearth',
-      latencyMode: voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context'),
-      voiceMode: voiceFastLane,
+      latencyMode: actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context')),
+      voiceMode: Boolean(voiceFastLane || (actionPrepLane && valCoworkVoiceState.active)),
       messages: [
         ...(heldSystemPrompt ? [{role: 'system', content: heldSystemPrompt}] : []),
         {role: 'user', content: visiblePrompt}
@@ -19216,13 +19277,21 @@ async function runCowork(mode, messageOverride = ''){
         calendar: calendarContextLines
       }
     }, conversationFastLane ? {
-      timeoutMs: voiceFastLane ? 22000 : 28000,
-      timeoutMessage: voiceFastLane
+      timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
+      timeoutMessage: actionPrepLane
+        ? 'VAL heard you, but preparing that action took too long. Ask again with the person and the action in one sentence.'
+        : voiceFastLane
         ? 'VAL heard you, but the voice response took too long. Ask again in one shorter sentence.'
         : 'VAL took too long to answer this chat turn. Try one narrower question.'
     } : {});
     const content = result.message?.content || 'VAL prepared a response.';
     clearProgressTimers();
+    if(result.externalActionPacket){
+      pendingHomeCoworkActionPacket = result.externalActionPacket;
+      pendingHomeCoworkActionDraft = null;
+    }else if(result.hearthActionPrep && result.needs === 'message_body'){
+      pendingHomeCoworkActionDraft = {kind:result.actionKind, contact:result.contact || null};
+    }
     if(keepHomeCoworkOpen){
       appendHomeCoworkMessage('val', content, {meetingPrep: mode === 'meeting_prep'});
       const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
