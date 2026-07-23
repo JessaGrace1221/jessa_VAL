@@ -259,6 +259,9 @@ const prototypeParams = new URLSearchParams(location.search);
 const mockScrapers = prototypeParams.has('mockScrapers');
 const mockBriefing = prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
+const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca';
+const VAL_GHL_WIDGET_LOADER_SRC = 'https://widgets.leadconnectorhq.com/loader.js';
+const VAL_GHL_WIDGET_RESOURCE_SRC = 'https://widgets.leadconnectorhq.com/chat-widget/loader.js';
 const clientFeatureLocks = {
   projectManagersComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
   linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
@@ -301,7 +304,11 @@ let valCoworkVoiceState = {
   playbackToken:0,
   listenAttempt:0,
   priming:false,
-  audioCache:{}
+  audioCache:{},
+  ghlBridge:false,
+  ghlScriptPromise:null,
+  ghlWidgetObserver:null,
+  ghlWidgetMarkTimer:null
 };
 let currentCalendarEvents = [];
 let currentMeetingEvents = [];
@@ -16414,6 +16421,112 @@ function valCoworkSpeechRecognitionCtor(){
   return window.SpeechRecognition || window.webkitSpeechRecognition;
 }
 
+function valGhlVoiceWidgetApi(){
+  return window.leadConnector?.chatWidget || null;
+}
+
+function markValGhlVoiceWidgetNodes(){
+  const selectors = [
+    'iframe[src*="leadconnectorhq.com"]',
+    'iframe[src*="widgets.leadconnectorhq.com"]',
+    'iframe[src*="msgsndr.com"]',
+    'chat-widget',
+    '[data-widget-id="' + VAL_GHL_VOICE_WIDGET_ID + '"]'
+  ];
+  document.querySelectorAll(selectors.join(',')).forEach((node) => {
+    if(node.tagName === 'SCRIPT') return;
+    node.setAttribute('data-val-ghl-voice-widget', 'true');
+  });
+}
+
+function startValGhlVoiceWidgetObserver(){
+  if(valCoworkVoiceState.ghlWidgetObserver || !window.MutationObserver) return;
+  valCoworkVoiceState.ghlWidgetObserver = new MutationObserver(markValGhlVoiceWidgetNodes);
+  valCoworkVoiceState.ghlWidgetObserver.observe(document.body, {childList:true,subtree:true});
+  markValGhlVoiceWidgetNodes();
+}
+
+function stopValGhlVoiceWidgetObserver(){
+  if(valCoworkVoiceState.ghlWidgetObserver){
+    valCoworkVoiceState.ghlWidgetObserver.disconnect();
+    valCoworkVoiceState.ghlWidgetObserver = null;
+  }
+  if(valCoworkVoiceState.ghlWidgetMarkTimer){
+    window.clearInterval(valCoworkVoiceState.ghlWidgetMarkTimer);
+    valCoworkVoiceState.ghlWidgetMarkTimer = null;
+  }
+}
+
+function waitForValGhlVoiceWidget(timeoutMs = 8000){
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = () => {
+      markValGhlVoiceWidgetNodes();
+      const api = valGhlVoiceWidgetApi();
+      if(api && typeof api.openWidget === 'function') return resolve(api);
+      if(Date.now() - started >= timeoutMs) return reject(new Error('VAL voice could not connect to the GHL voice agent.'));
+      window.setTimeout(tick, 150);
+    };
+    tick();
+  });
+}
+
+function ensureValGhlVoiceWidget(){
+  if(valCoworkVoiceState.ghlScriptPromise) return valCoworkVoiceState.ghlScriptPromise;
+  startValGhlVoiceWidgetObserver();
+  valCoworkVoiceState.ghlScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-val-ghl-voice-loader]');
+    const complete = () => waitForValGhlVoiceWidget().then(resolve).catch(reject);
+    if(existing){
+      complete();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = VAL_GHL_WIDGET_LOADER_SRC;
+    script.async = true;
+    script.defer = true;
+    script.dataset.valGhlVoiceLoader = 'true';
+    script.setAttribute('data-resources-url', VAL_GHL_WIDGET_RESOURCE_SRC);
+    script.setAttribute('data-widget-id', VAL_GHL_VOICE_WIDGET_ID);
+    script.addEventListener('load', complete, {once:true});
+    script.addEventListener('error', () => reject(new Error('VAL voice could not load the GHL voice agent.')), {once:true});
+    document.body.appendChild(script);
+  }).catch((error) => {
+    valCoworkVoiceState.ghlScriptPromise = null;
+    throw error;
+  });
+  return valCoworkVoiceState.ghlScriptPromise;
+}
+
+async function openValGhlVoiceWidget(){
+  document.body.classList.add('val-ghl-voice-active');
+  startValGhlVoiceWidgetObserver();
+  setValCoworkVoiceMode('thinking', 'Opening VAL voice.');
+  const api = await ensureValGhlVoiceWidget();
+  markValGhlVoiceWidgetNodes();
+  if(typeof api.openWidget === 'function') api.openWidget();
+  let marks = 0;
+  if(valCoworkVoiceState.ghlWidgetMarkTimer) window.clearInterval(valCoworkVoiceState.ghlWidgetMarkTimer);
+  valCoworkVoiceState.ghlWidgetMarkTimer = window.setInterval(() => {
+    markValGhlVoiceWidgetNodes();
+    marks += 1;
+    if(marks > 30 && valCoworkVoiceState.ghlWidgetMarkTimer){
+      window.clearInterval(valCoworkVoiceState.ghlWidgetMarkTimer);
+      valCoworkVoiceState.ghlWidgetMarkTimer = null;
+    }
+  }, 250);
+  setValCoworkVoiceMode('listening', 'VAL voice is open.');
+}
+
+function closeValGhlVoiceWidget(){
+  document.body.classList.remove('val-ghl-voice-active');
+  try{
+    const api = valGhlVoiceWidgetApi();
+    if(api && typeof api.closeWidget === 'function') api.closeWidget();
+  }catch(error){}
+  stopValGhlVoiceWidgetObserver();
+}
+
 function primeValCoworkVoiceRecognition(){
   const SpeechRecognition = valCoworkSpeechRecognitionCtor();
   if(!SpeechRecognition || !valCoworkVoiceState.active || valCoworkVoiceState.priming) return false;
@@ -16493,9 +16606,11 @@ function fetchValCoworkDeepgramAudio(cleanText = ''){
 
 function stopValCoworkVoiceMode(){
   clearValCoworkVoiceRestart();
+  if(valCoworkVoiceState.ghlBridge) closeValGhlVoiceWidget();
   valCoworkVoiceState.active = false;
   valCoworkVoiceState.pending = false;
   valCoworkVoiceState.priming = false;
+  valCoworkVoiceState.ghlBridge = false;
   valCoworkVoiceState.playbackToken += 1;
   if(valCoworkVoiceState.audio){
     try{ valCoworkVoiceState.audio.pause(); }catch(error){}
@@ -16641,18 +16756,17 @@ function startValCoworkVoiceMode(){
   }
   if(valCoworkVoiceState.active){
     ensureValCoworkVoiceSurface();
-    startValCoworkListening();
+    if(valCoworkVoiceState.ghlBridge) void openValGhlVoiceWidget();
+    else startValCoworkListening();
     return;
   }
   valCoworkVoiceState.active = true;
   valCoworkVoiceState.pending = false;
+  valCoworkVoiceState.ghlBridge = true;
   ensureValCoworkVoiceSurface();
-  primeValCoworkVoiceRecognition();
-  const greeting = valCoworkGreeting();
-  appendHomeCoworkMessage('val', greeting, {silentVoice:true});
-  speakValCoworkMessage(greeting, {
-    detail:'VAL is greeting you.',
-    onEnd:() => startValCoworkListening()
+  void openValGhlVoiceWidget().catch((error) => {
+    console.warn('VAL GHL voice bridge failed:', error);
+    setValCoworkVoiceMode('idle', error?.message || 'VAL voice could not connect. Try again in a moment.');
   });
 }
 

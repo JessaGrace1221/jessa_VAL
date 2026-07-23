@@ -16368,6 +16368,43 @@ button.timeline-overview-receipt:focus-visible{
   opacity:0!important;
   pointer-events:none!important;
 }
+body.val-ghl-voice-active [data-val-ghl-voice-widget]{
+  position:fixed!important;
+  right:18px!important;
+  bottom:18px!important;
+  width:1px!important;
+  min-width:1px!important;
+  max-width:1px!important;
+  height:1px!important;
+  min-height:1px!important;
+  max-height:1px!important;
+  opacity:.015!important;
+  transform:none!important;
+  z-index:5290!important;
+  overflow:hidden!important;
+}
+body.val-ghl-voice-active .val-cowork-voice-shell{
+  cursor:default;
+}
+body.val-ghl-voice-active .val-cowork-voice-shell::before{
+  animation-duration:6.4s;
+}
+body.val-ghl-voice-active .val-cowork-voice-shell::after{
+  animation-duration:8.2s;
+}
+body.val-ghl-voice-active .val-cowork-voice-mark .val-presence-core{
+  animation:valVoiceSpeakingCore 1.35s ease-in-out infinite;
+}
+body.val-ghl-voice-active .hearth-brand-cluster,
+body.val-ghl-voice-active .hearth,
+body.val-ghl-voice-active .desk-companions,
+body.val-ghl-voice-active .living-rooms,
+body.val-ghl-voice-active .retrieval-system{
+  opacity:0!important;
+  pointer-events:none!important;
+  filter:blur(2px)!important;
+  transition:opacity .22s ease, filter .22s ease!important;
+}
 
 /* Final chat-tool guard: all chat tools use VAL-native icons instead of text labels. */
 .home-cowork-chatbar [data-home-cowork-submit]{
