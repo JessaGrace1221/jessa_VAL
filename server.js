@@ -33061,10 +33061,19 @@ function hearthFastNeedsFullValContext(text=''){
   if(/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(String(text||'')))return false;
   return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(String(text||''));
 }
+function isHearthCoworkLane(body={}){
+  const channel=String(body.channel||'').toLowerCase();
+  const context=String(body.context||'').toLowerCase();
+  const scope=String(body.scope||'').toLowerCase();
+  return channel==='hearth_cowork'
+    || context==='home_cowork'
+    || context==='hearth_cowork'
+    || (scope==='home' && /^(voice_fast|chat_fast|action_fast)$/i.test(String(body.latencyMode||'')));
+}
 function hearthFastChatEnabled(body={}){
   const messages=Array.isArray(body.messages)?body.messages:[];
   const lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'';
-  return body?.channel === 'hearth_cowork'
+  return isHearthCoworkLane(body)
     && /^(voice_fast|chat_fast)$/i.test(String(body.latencyMode||''))
     && !hearthFastNeedsFullValContext(lastUser);
 }
@@ -33080,7 +33089,7 @@ function hearthActionIntent(text=''){
 function hearthActionChatEnabled(body={}){
   const messages=Array.isArray(body.messages)?body.messages:[];
   const lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'';
-  return body?.channel === 'hearth_cowork'
+  return isHearthCoworkLane(body)
     && /^action_fast$/i.test(String(body.latencyMode||''))
     && !!hearthActionIntent(lastUser);
 }
