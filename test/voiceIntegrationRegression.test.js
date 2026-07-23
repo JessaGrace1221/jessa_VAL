@@ -268,8 +268,15 @@ test('Home VAL chat Rolodex resolves action contacts from Stewardship context',(
   assert.match(server,/resolveContactFromContext\(\{name:needle,email:directEmail,company:companyHint\}\)/);
 });
 
-test('Stewardship Network stores GHL-ready phone numbers in the Rolodex',()=>{
+test('Stewardship Network stores GHL-ready email and phone details in the Rolodex',()=>{
   const html=fs.readFileSync(path.join(root,'hearth-prototype.html'),'utf8');
+  assert.match(server,/function relationshipProfileEmailCandidates/);
+  assert.match(server,/relationshipProfilePrimaryEmail/);
+  assert.match(server,/metadata\.primaryEmail/);
+  assert.match(server,/metadata\.ghlEmail/);
+  assert.match(server,/email_addresses:savedEmails/);
+  assert.match(server,/person:\{\s*\.\.\.existingPacketPerson,\s*email_addresses:savedEmails/s);
+  assert.match(server,/existingProfileId:req\.body\.existingProfileId/);
   assert.match(server,/function relationshipProfilePrimaryPhone/);
   assert.match(server,/normalizePhoneNumber\(metadata\.ghlPhone/);
   assert.match(server,/phone:req\.body\.phone\|\|req\.body\.phoneNumber\|\|req\.body\.phone_number/);
@@ -277,7 +284,12 @@ test('Stewardship Network stores GHL-ready phone numbers in the Rolodex',()=>{
   assert.match(server,/ghlPhone:savedPhone/);
   assert.match(server,/phone_numbers:savedPhone\?\[savedPhone\]/);
   assert.match(server,/function hearthActionProfilePhone\(profile=\{\}\)\{\s*return relationshipProfilePrimaryPhone\(profile\);/);
+  assert.match(html,/name="email"/);
   assert.match(html,/name="phone"/);
+  assert.match(hearth,/function stewardshipRelationshipEmail/);
+  assert.match(hearth,/data-stewardship-email/);
+  assert.match(hearth,/data-stewardship-save-email/);
+  assert.match(hearth,/Email saved in GHL-ready format for Gmail and Outlook actions/);
   assert.match(hearth,/function stewardshipRelationshipPhone/);
   assert.match(hearth,/data-stewardship-phone/);
   assert.match(hearth,/data-stewardship-save-phone/);
