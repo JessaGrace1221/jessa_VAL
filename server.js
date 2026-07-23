@@ -33058,6 +33058,7 @@ app.post('/api/val/intelligence',async(req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 function hearthFastNeedsFullValContext(text=''){
+  if(/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(String(text||'')))return false;
   return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(String(text||''));
 }
 function hearthFastChatEnabled(body={}){
@@ -33066,6 +33067,136 @@ function hearthFastChatEnabled(body={}){
   return body?.channel === 'hearth_cowork'
     && /^(voice_fast|chat_fast)$/i.test(String(body.latencyMode||''))
     && !hearthFastNeedsFullValContext(lastUser);
+}
+function hearthActionIntent(text=''){
+  const value=String(text||'').trim();
+  if(!value)return null;
+  if(/\b(send|write|compose|draft|prepare)\b[\s\S]{0,80}\b(email|reply|message)\b/i.test(value)||/\b(email|reply|message)\b[\s\S]{0,50}\b(to|for)\b/i.test(value))return {kind:'email',label:'email'};
+  if(/\b(text|sms)\b[\s\S]{0,80}\b(send|tell|ask|message)\b/i.test(value)||/\b(send|tell|ask|message)\b[\s\S]{0,80}\b(text|sms)\b/i.test(value))return {kind:'sms',label:'SMS'};
+  if(/\b(remind me|set a reminder|create (a )?reminder|add (a )?task|create (a )?task)\b/i.test(value))return {kind:'reminder',label:'reminder'};
+  if(/\b(book|schedule|create|set up)\b[\s\S]{0,80}\b(appointment|meeting|calendar|event|call)\b/i.test(value))return {kind:'appointment',label:'appointment'};
+  return null;
+}
+function hearthActionChatEnabled(body={}){
+  const messages=Array.isArray(body.messages)?body.messages:[];
+  const lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'';
+  return body?.channel === 'hearth_cowork'
+    && /^action_fast$/i.test(String(body.latencyMode||''))
+    && !!hearthActionIntent(lastUser);
+}
+function hearthActionNameCandidate(text='',kind=''){
+  const value=String(text||'').replace(/[“”]/g,'"').replace(/[’]/g,"'").trim();
+  const patterns=[
+    /\b(?:send|write|compose|draft|prepare)\s+(.+?)\s+(?:an?\s+)?(?:email|reply|message)\b/i,
+    /\b(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:\s+(?:about|saying|that|and|with|$))/i,
+    /\b(?:text|sms|message)\s+(.+?)(?:\s+(?:that|saying|about|and|$))/i,
+    /\b(?:schedule|book|set up|create)\s+(?:a\s+)?(?:meeting|appointment|call|event)\s+(?:with|for)\s+(.+?)(?:\s+(?:about|on|at|tomorrow|today|next|$))/i
+  ];
+  if(kind==='reminder')return '';
+  for(const pattern of patterns){
+    const match=value.match(pattern);
+    if(match?.[1]){
+      const candidate=match[1]
+        .replace(/\b(to|for|with|an?|the|email|message|reply|sms|text)\b/ig,' ')
+        .replace(/[^a-z0-9@._'\-\s]/ig,' ')
+        .replace(/\s+/g,' ')
+        .trim();
+      if(candidate && !/\b(email|message|reply|sms|text|appointment|meeting|calendar|event|call)\b/i.test(candidate))return candidate.slice(0,120);
+    }
+  }
+  const directEmail=value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]||'';
+  return directEmail;
+}
+function hearthActionMessageBody(text=''){
+  const value=String(text||'').trim();
+  const quoted=value.match(/["']([^"']{4,2000})["']/);
+  if(quoted?.[1])return quoted[1].trim();
+  const body=value.match(/\b(?:saying|that says|to say|message is|body is)\b[:\s]+([\s\S]{4,2000})$/i);
+  return body?.[1]?.trim()||'';
+}
+function hearthActionSubject(text='',name=''){
+  const value=String(text||'').trim();
+  const subject=value.match(/\bsubject(?: line)?\s*(?:is|:)\s*["']?([^"'\n]{3,180})/i)?.[1]?.trim();
+  return subject||`Message for ${name||'recipient'}`;
+}
+function hearthActionPreviewText(value='',limit=700){
+  return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);
+}
+function hearthActionSpokenSentence(value=''){
+  const text=hearthActionPreviewText(value,260);
+  return text.replace(/[.?!]+\s*$/,'');
+}
+function hearthActionProfilePhone(profile={}){
+  const metadata=profile.metadata||{};
+  const packetPhone=profile.personPacket?.person?.phone_numbers?.[0]||metadata.personPacket?.person?.phone_numbers?.[0]||'';
+  return normalizeContextPhone(metadata.phone||profile.phone||profile.contactPhone||packetPhone||'');
+}
+function hearthActionComparableName(value=''){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9@\s._-]/g,' ').replace(/\s+/g,' ').trim();
+}
+async function resolveHearthActionContact(nameOrEmail=''){
+  const needle=String(nameOrEmail||'').trim();
+  if(!needle)return {profile:null,email:'',phone:'',status:'missing_name'};
+  const cleanNeedle=hearthActionComparableName(needle);
+  const directEmail=normalizeContextEmail(needle);
+  const profiles=(await listRelationshipProfiles({limit:800}).catch(()=>[])).filter(profile=>profile.profileType==='person');
+  const scored=profiles.map((profile)=>{
+    const display=String(profile.displayName||profile.display_name||profile.name||'').trim();
+    const email=relationshipProfilePrimaryEmail(profile);
+    const phone=hearthActionProfilePhone(profile);
+    const comparable=hearthActionComparableName(display);
+    let score=0;
+    if(directEmail&&email===directEmail)score+=1;
+    if(cleanNeedle&&comparable===cleanNeedle)score+=0.92;
+    if(cleanNeedle&&comparable.split(/\s+/).includes(cleanNeedle))score+=0.82;
+    if(cleanNeedle&&comparable.includes(cleanNeedle))score+=0.68;
+    if(cleanNeedle&&email&&email.includes(cleanNeedle.replace(/\s+/g,'.')))score+=0.42;
+    return {profile,display,email,phone,score};
+  }).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
+  const best=scored[0]||null;
+  return best?{...best,status:best.score>=0.65?'matched':'possible_match',matches:scored.slice(0,5)}:{profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
+}
+async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false}={}){
+  const intent=hearthActionIntent(lastUser);
+  if(!intent)return null;
+  const nameCandidate=hearthActionNameCandidate(lastUser,intent.kind);
+  const contact=await resolveHearthActionContact(nameCandidate);
+  const contactName=contact.display||nameCandidate||'that person';
+  if(intent.kind==='email'){
+    const body=hearthActionMessageBody(lastUser);
+    if(!nameCandidate)return {content:'Who should I send it to?',extra:{hearthActionPrep:true,actionKind:'email',needs:'recipient'}};
+    if(!contact.email)return {content:`I can do that, but I need a safe email address for ${contactName} before I prepare it.`,extra:{hearthActionPrep:true,actionKind:'email',contactResolution:contact.status,needs:'email_address'}};
+    if(!body)return {content:`I found ${contactName}. What would you like the email to say?`,extra:{hearthActionPrep:true,actionKind:'email',contact:{name:contactName,email:contact.email},needs:'message_body'}};
+    const packet=await valExternalActions.createEmailSendPacket({
+      to:contact.email,
+      subject:hearthActionSubject(lastUser,contactName),
+      body,
+      provider:'gmail',
+      summary:`Prepare email to ${contactName}.`,
+      sourceContext:{source:'hearth_home_action',relationshipProfileId:contact.profile?.id||'',relationshipName:contactName}
+    });
+    const subject=packet.payloadPreviewJson?.subject||hearthActionSubject(lastUser,contactName);
+    const bodyPreview=voiceMode ? hearthActionSpokenSentence(packet.payloadPreviewJson?.body||body) : hearthActionPreviewText(packet.payloadPreviewJson?.body||body,700);
+    return {
+      content:voiceMode
+        ? `I found ${contactName}. I’ll send: ${bodyPreview}. Say “Send” when you want me to send it.`
+        : [`I found ${contactName} and prepared the email for approval.`, `To: ${contact.email}`, `Subject: ${subject}`, `Message: ${bodyPreview}`, 'Say “Send” when you want me to send it. Nothing has been sent yet.'].join('\n'),
+      extra:{hearthActionPrep:true,actionKind:'email',externalActionPacket:packet,noExternalAction:true}
+    };
+  }
+  if(intent.kind==='sms'){
+    if(!nameCandidate)return {content:'Who should I text?',extra:{hearthActionPrep:true,actionKind:'sms',needs:'recipient'}};
+    if(!contact.phone)return {content:`I can prepare that, but I need a safe phone number for ${contactName} first.`,extra:{hearthActionPrep:true,actionKind:'sms',contactResolution:contact.status,needs:'phone_number'}};
+    const body=hearthActionMessageBody(lastUser);
+    return {content:body?`I found ${contactName}. I can prepare that SMS for approval before anything sends.`:`I found ${contactName}. What should the text say?`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone},needs:body?'approval_packet':'message_body',noExternalAction:true}};
+  }
+  if(intent.kind==='reminder'){
+    return {content:'I can create that reminder. What should it remind you to do, and when?',extra:{hearthActionPrep:true,actionKind:'reminder',needs:'task_and_time',noExternalAction:true}};
+  }
+  if(intent.kind==='appointment'){
+    return {content:nameCandidate?`I can prepare that appointment with ${contactName}. What day and time should I use?`:'I can prepare that appointment. Who is it with, and what day and time should I use?',extra:{hearthActionPrep:true,actionKind:'appointment',needs:'attendee_and_time',noExternalAction:true}};
+  }
+  return null;
 }
 function hearthFastDashboardContext(dashboard={}){
   const calendar=Array.isArray(dashboard.calendar)?dashboard.calendar.filter(Boolean).slice(0,6):[];
@@ -33086,7 +33217,13 @@ function hearthFastCalendarFallback(lastUser='',dashboard={}){
   }
   return 'I do not see an upcoming calendar item in the Hearth sidebar right now.';
 }
+function hearthFastWitnessingFallback(lastUser=''){
+  if(!/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(String(lastUser||''))) return '';
+  return 'Yes. If your Witnessing Session has been completed and saved into VAL, I can use that context from the Home VAL lane. If it has not been completed yet, I will hold space until that context exists.';
+}
 async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=false}){
+  const witnessingFallback=hearthFastWitnessingFallback(lastUser);
+  if(witnessingFallback)return witnessingFallback;
   const immediateCalendarAnswer=hearthFastCalendarFallback(lastUser,dashboard);
   if(immediateCalendarAnswer && /\b(next|upcoming|appointment|calendar|meeting|schedule|today|tomorrow)\b/i.test(lastUser)){
     return immediateCalendarAnswer;
@@ -33201,6 +33338,20 @@ app.post('/api/val/chat',async(req,res)=>{
       const inbox=await runInboxCommand(lastUser,{maxResults:5});
       const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
       return sendChat([inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n'),{inboxCommand:inbox});
+    }
+    if(hearthActionChatEnabled(req.body)){
+      const prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:!!req.body.voiceMode});
+      if(prepared){
+        return sendFastHearthChatNow(res,{
+          content:prepared.content,
+          messages,
+          conversationId,
+          conversationTitle,
+          channel:req.body.channel,
+          projectContext,
+          extra:{voiceMode:!!req.body.voiceMode,...prepared.extra}
+        });
+      }
     }
     if(hearthFastChatEnabled(req.body)){
       const content=await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:!!req.body.voiceMode});
