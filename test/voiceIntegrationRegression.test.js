@@ -69,3 +69,15 @@ test('Hearth voice primes microphone access on click and keeps listening after s
   assert.match(hearth,/setValCoworkVoiceMode\('listening', 'VAL is still listening\.'\);/);
   assert.match(hearth,/valCoworkVoiceState\.listenAttempt === attempt/);
 });
+
+test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
+  assert.match(hearth,/const scopedEntryReady = Boolean\(entry\?\.sessionId && entry\.status !== 'opening'/);
+  assert.match(hearth,/if\(scopedEntryReady && await submitActiveCoworkEntry\(spoken\)\) return;/);
+  assert.match(hearth,/await runCowork\('think', spoken\);/);
+});
+
+test('Hearth Co-Work includes current calendar context for voice questions',()=>{
+  assert.match(hearth,/function calendarCoworkContextLines\(limit = 6\)/);
+  assert.match(hearth,/Current calendar context from the Hearth sidebar/);
+  assert.match(hearth,/calendar: calendarContextLines/);
+});

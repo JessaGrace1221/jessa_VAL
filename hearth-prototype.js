@@ -391,6 +391,26 @@ function calendarEventIsFutureMeeting(event = {}){
   return calendarEventIsMeeting(event) && !calendarEventIsPast(event);
 }
 
+function calendarCoworkContextLines(limit = 6){
+  const events = (currentCalendarEvents || [])
+    .filter((event) => !calendarEventIsPast(event))
+    .slice(0, limit)
+    .map((event, index) => {
+      const date = calendarEventStartDate(event);
+      const when = date ? date.toLocaleString([], {weekday:'short', hour:'numeric', minute:'2-digit'}) : 'Time unknown';
+      const titleText = event.title || event.summary || '(No title)';
+      const attendees = calendarEventAttendeeSummary(event, 3);
+      const location = String(event.location || event.meetingLink || '').trim();
+      return [String(index + 1) + '. ' + when + ': ' + titleText, attendees ? 'Attendees: ' + attendees : '', location ? 'Location: ' + location : ''].filter(Boolean).join(' | ');
+    });
+  const nextMeeting = currentMeetingEvents?.[0];
+  const nextMeetingDate = nextMeeting ? calendarEventStartDate(nextMeeting) : null;
+  const nextMeetingLine = nextMeeting
+    ? 'Next meeting: ' + (nextMeetingDate ? nextMeetingDate.toLocaleString([], {weekday:'short', hour:'numeric', minute:'2-digit'}) : 'Time unknown') + ' - ' + (nextMeeting.title || nextMeeting.summary || '(No title)') + (calendarEventAttendeeSummary(nextMeeting, 3) ? ' with ' + calendarEventAttendeeSummary(nextMeeting, 3) : '')
+    : '';
+  return [nextMeetingLine, ...events].filter(Boolean);
+}
+
 const hearthPacketCompletenessRegistry = {
   navigation_packet: {
     requiredLayers: ['witnessing_root','active_user','val_os_rules','navigation_context'],
@@ -16414,7 +16434,9 @@ async function sendValCoworkVoiceTranscript(transcript = ''){
   valCoworkVoiceState.lastTranscript = spoken;
   setValCoworkVoiceMode('thinking', 'VAL heard you. Holding the thread and preparing a response.');
   try{
-    if(await submitActiveCoworkEntry(spoken)) return;
+    const entry = activeCoworkEntry;
+    const scopedEntryReady = Boolean(entry?.sessionId && entry.status !== 'opening' && entry.status !== 'applied');
+    if(scopedEntryReady && await submitActiveCoworkEntry(spoken)) return;
     await runCowork('think', spoken);
   }finally{
     valCoworkVoiceState.pending = false;
@@ -19052,9 +19074,14 @@ async function runCowork(mode, messageOverride = ''){
   const progressTimers = [];
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
-  const heldSystemPrompt = heldContext
-    ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext
+  const calendarContextLines = calendarCoworkContextLines();
+  const calendarContext = calendarContextLines.length
+    ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
     : '';
+  const heldSystemPrompt = [
+    heldContext ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext : '',
+    calendarContext
+  ].filter(Boolean).join('\n\n');
   if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
     const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
@@ -19140,7 +19167,8 @@ async function runCowork(mode, messageOverride = ''){
         hearth: title.textContent,
         witness: witness.textContent,
         orientation: orientation.textContent,
-        permission: permission.textContent
+        permission: permission.textContent,
+        calendar: calendarContextLines
       }
     });
     const content = result.message?.content || 'VAL prepared a response.';
