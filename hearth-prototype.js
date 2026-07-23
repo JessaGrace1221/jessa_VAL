@@ -90,6 +90,15 @@ const relationshipDrawerLink = document.querySelector('.relationship-drawer-link
 const closeRelationshipDetail = document.querySelector('.close-relationship-detail');
 const projectDrawerLink = document.querySelector('.project-drawer-link');
 const closeProjectDetail = document.querySelector('.close-project-detail');
+const markPipelineCommandRoom = document.querySelector('[data-mark-pipeline-command-room]');
+const markPipelineRefresh = document.querySelector('[data-mark-pipeline-refresh]');
+const markPipelineStatus = document.querySelector('[data-mark-pipeline-status]');
+const markPipelineBands = document.querySelector('[data-mark-pipeline-bands]');
+const markOpportunityList = document.querySelector('[data-mark-opportunity-list]');
+const markPipelineActive = document.querySelector('[data-mark-pipeline-active]');
+const markPipelineValue = document.querySelector('[data-mark-pipeline-value]');
+const markPipelineStalled = document.querySelector('[data-mark-pipeline-stalled]');
+const markCallCenterDashboard = document.querySelector('[data-mark-call-center-dashboard]');
 const timelineDrawerLink = document.querySelector('.timeline-drawer-link');
 const closeTimelineDetail = document.querySelector('.close-timeline-detail');
 const correspondenceDrawerLink = document.querySelector('.correspondence-drawer-link');
@@ -252,8 +261,12 @@ const mockBriefing = prototypeParams.has('mockBriefing');
 const canUseApi = !mockScrapers && (location.protocol === 'http:' || location.protocol === 'https:');
 const clientFeatureLocks = {
   projectManagersComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
-  linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
+  linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
+  pipelineCommandRoom: /^(mark|mark-goall|goall)$/i.test(prototypeParams.get('client') || '')
 };
+let clientPipelineDashboardUrl = clientFeatureLocks.pipelineCommandRoom
+  ? 'https://mark-goall-val-production.up.railway.app/call-center-dashboards'
+  : '';
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
@@ -17213,6 +17226,20 @@ function showFeatureComingSoon(label){
 }
 
 function applyClientFeatureLocks(){
+  if(clientFeatureLocks.pipelineCommandRoom){
+    document.body.classList.add('mark-pipeline-client');
+    const label = projectDrawerLink?.querySelector('span');
+    const small = projectDrawerLink?.querySelector('small');
+    if(label) label.textContent = 'Pipelines';
+    if(small) small.textContent = 'CRM movement and call-center performance';
+    const kicker = document.querySelector('#project-detail .drawer-kicker');
+    const title = document.querySelector('#project-detail [data-project-title]');
+    const subtitle = document.querySelector('#project-detail [data-project-subtitle]');
+    if(kicker) kicker.textContent = 'Pipelines';
+    if(title) title.textContent = 'GOALL Pipelines';
+    if(subtitle) subtitle.textContent = 'A clear operating view of opportunity movement, attention, and call-center performance.';
+    if(markPipelineCommandRoom) markPipelineCommandRoom.hidden = false;
+  }
   if(clientFeatureLocks.projectManagersComingSoon && projectDrawerLink){
     projectDrawerLink.classList.add('drawer-link-coming-soon');
     projectDrawerLink.disabled = true;
@@ -17242,11 +17269,98 @@ async function hydrateClientConfig(){
     const flags = config?.featureFlags || {};
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
+    clientFeatureLocks.pipelineCommandRoom = Boolean(flags.pipelineCommandRoom);
+    clientPipelineDashboardUrl = String(config?.pipelineDashboardUrl||'').trim();
   }catch(error){
     console.warn('[hearth] client config unavailable', error.message);
   }
   applyClientFeatureLocks();
 }
+
+function markPipelineMoney(value){
+  return new Intl.NumberFormat(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}).format(Number(value)||0);
+}
+
+function markPipelineLabel(value){
+  const text=String(value||'').trim();
+  if(/strategic partner/i.test(text)) return 'GOALL Strategic Partners';
+  if(/employer/i.test(text)) return 'GOALL Employers';
+  return text||'Unassigned pipeline';
+}
+
+function renderMarkPipelineCommandRoom(data={}){
+  const opportunities=Array.isArray(data.opportunities)?data.opportunities:[];
+  const active=Number(data.pipelineActive)||opportunities.length;
+  const stalled=Number(data.stalledDeals)||opportunities.filter(item=>item.stalled).length;
+  const totalValue=opportunities.reduce((sum,item)=>sum+(Number(item.value)||0),0);
+  if(markPipelineActive) markPipelineActive.textContent=String(active);
+  if(markPipelineValue) markPipelineValue.textContent=markPipelineMoney(totalValue);
+  if(markPipelineStalled) markPipelineStalled.textContent=String(stalled);
+
+  const grouped=new Map();
+  opportunities.forEach(item=>{
+    const pipeline=markPipelineLabel(item.pipelineName||item.accountLabel);
+    if(!grouped.has(pipeline)) grouped.set(pipeline,[]);
+    grouped.get(pipeline).push(item);
+  });
+  ['GOALL Employers','GOALL Strategic Partners'].forEach(name=>{
+    if(!grouped.has(name)) grouped.set(name,[]);
+  });
+  if(markPipelineBands){
+    markPipelineBands.innerHTML=Array.from(grouped.entries()).map(([name,items])=>{
+      const stages=new Map();
+      items.forEach(item=>{
+        const stage=String(item.stage||'Unknown Stage');
+        stages.set(stage,(stages.get(stage)||0)+1);
+      });
+      const value=items.reduce((sum,item)=>sum+(Number(item.value)||0),0);
+      const stageMarkup=Array.from(stages.entries())
+        .sort((a,b)=>b[1]-a[1])
+        .map(([stage,count])=>`<li><span>${escapeHtml(stage)}</span><strong>${count}</strong></li>`)
+        .join('');
+      return `<article class="mark-pipeline-band">
+        <header><div><span>Pipeline</span><h4>${escapeHtml(name)}</h4></div><div><strong>${items.length}</strong><small>${markPipelineMoney(value)}</small></div></header>
+        <ul>${stageMarkup||'<li><span>No open opportunities returned</span><strong>0</strong></li>'}</ul>
+      </article>`;
+    }).join('');
+  }
+  if(markOpportunityList){
+    const review=opportunities.slice().sort((a,b)=>{
+      if(Boolean(a.stalled)!==Boolean(b.stalled)) return a.stalled?-1:1;
+      return (Number(b.daysInStage)||0)-(Number(a.daysInStage)||0);
+    }).slice(0,30);
+    markOpportunityList.innerHTML=review.length?review.map(item=>`<article>
+      <div><span>${escapeHtml(markPipelineLabel(item.pipelineName||item.accountLabel))} · ${escapeHtml(item.stage||'Unknown stage')}</span><h5>${escapeHtml(item.name||item.contactName||'Untitled opportunity')}</h5><p>${escapeHtml(item.contactName||'No contact attached')}</p></div>
+      <div class="mark-opportunity-meta"><strong>${markPipelineMoney(item.value)}</strong><small>${Number(item.daysInStage)||0} days in stage</small>${item.stalled?'<em>Needs attention</em>':''}</div>
+    </article>`).join(''):'<p class="mark-pipeline-empty">No open opportunities were returned from the CRM.</p>';
+  }
+  if(markPipelineStatus){
+    const errorCount=Array.isArray(data?._debug?.errors)?data._debug.errors.length:0;
+    markPipelineStatus.textContent=errorCount
+      ? `VAL loaded ${opportunities.length} opportunities. ${errorCount} CRM account connection needs review.`
+      : `VAL verified ${opportunities.length} open opportunities across the connected GOALL pipelines.`;
+  }
+}
+
+async function hydrateMarkPipelineCommandRoom(){
+  if(!clientFeatureLocks.pipelineCommandRoom||!markPipelineCommandRoom) return;
+  if(markPipelineStatus) markPipelineStatus.textContent='VAL is reading the current CRM pipeline state...';
+  markPipelineRefresh?.setAttribute('aria-busy','true');
+  try{
+    const data=await getJson('/api/pipeline?status=open&limit=250',{cache:'no-store'});
+    renderMarkPipelineCommandRoom(data);
+    const dashboardUrl=clientPipelineDashboardUrl||'/call-center-dashboards';
+    const dashboardLink=document.querySelector('.mark-call-center-panel a');
+    if(dashboardLink) dashboardLink.href=dashboardUrl;
+    if(markCallCenterDashboard&&!markCallCenterDashboard.src) markCallCenterDashboard.src=dashboardUrl;
+  }catch(error){
+    if(markPipelineStatus) markPipelineStatus.textContent=`VAL could not load the live pipeline view: ${error.message}`;
+  }finally{
+    markPipelineRefresh?.removeAttribute('aria-busy');
+  }
+}
+
+markPipelineRefresh?.addEventListener('click',hydrateMarkPipelineCommandRoom);
 
 const hearthServerPacketNames = new Set([
   'relationship_packet',
@@ -25115,8 +25229,9 @@ projectDrawerLink.addEventListener('click', () => {
   document.querySelector('#project-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
     retrievalSystem.dataset.activeDrawer = 'project';
-    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
-    openProjectIndex();
+    drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:clientFeatureLocks.pipelineCommandRoom?'drawer:pipelines':'drawer:projects', label:clientFeatureLocks.pipelineCommandRoom?'Pipelines drawer':'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
+    if(clientFeatureLocks.pipelineCommandRoom) hydrateMarkPipelineCommandRoom();
+    else openProjectIndex();
   } else {
     retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);

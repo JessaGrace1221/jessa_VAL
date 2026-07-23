@@ -119,7 +119,8 @@ function clientFeatureLocks(){
   const greg = clientLooksLikeGreg();
   return {
     projectManagersComingSoon: envFlag('VAL_FEATURE_PROJECT_MANAGERS') || greg,
-    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg
+    linkedinHomeComingSoon: envFlag('VAL_FEATURE_LINKEDIN_HOME') || greg,
+    pipelineCommandRoom: IS_MARK_GOALL_DEPLOYMENT
   };
 }
 function requestBaseUrl(req=null){
@@ -7994,6 +7995,7 @@ app.get('/api/public-config',(req,res)=>{
     clientSlug: CLIENT_CONFIG.clientSlug,
     clientName: CLIENT_CONFIG.clientName,
     brandName: CLIENT_CONFIG.brandName,
+    pipelineDashboardUrl: process.env.VAL_PIPELINE_DASHBOARD_URL || (IS_MARK_GOALL_DEPLOYMENT?'https://mark-goall-val-production.up.railway.app/call-center-dashboards':''),
     featureFlags: clientFeatureLocks()
   });
 });
@@ -14150,6 +14152,9 @@ async function enrichGhlOpportunityForAccount(o,account,now=Date.now()){
     name:o.name,
     status:o.status,
     stage,
+    pipelineId:o.pipelineId||o.pipeline_id||o.pipeline?.id||'',
+    pipelineStageId:o.pipelineStageId||o.pipeline_stage_id||o.pipelineStage?.id||o.stage?.id||'',
+    pipelineName:o.pipeline?.name||o.pipelineName||o.pipeline_name||'',
     value:o.monetaryValue,
     contactName:o.contact?.name||o.contactName||'',
     contactId,
@@ -14176,17 +14181,45 @@ app.get('/api/pipeline',async(req,res)=>{
       return res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{configured:false,error:'Missing GHL account configuration'}});
     }
     const now=Date.now();
+    const requestedLimit=Math.min(Math.max(Number(req.query.limit)||250,1),500);
     const batches=await Promise.allSettled(accounts.map(async account=>{
-      const found=await fetchGhlOpportunitiesForAccount(account,{status:'open',limit:100});
+      const [found,pipelineResponse]=await Promise.all([
+        fetchGhlOpportunitiesForAccount(account,{status:req.query.status||'open',limit:requestedLimit}),
+        ghlTryForAccount(account,'GET',`/opportunities/pipelines?locationId=${encodeURIComponent(account.locationId)}`)
+      ]);
       const opps=found.data?.opportunities||[];
       const enriched=await mapWithConcurrency(opps,6,o=>enrichGhlOpportunityForAccount(o,account,now));
-      return {account,path:found.path,attempts:found.attempts,opportunities:enriched,total:found.data?.meta?.total||opps.length};
+      const pipelines=pipelineResponse.ok
+        ? (pipelineResponse.data?.pipelines||pipelineResponse.data?.data||[])
+        : [];
+      const pipelineById=new Map(pipelines.map(p=>[String(p.id||p._id||''),p]));
+      const stageById=new Map();
+      pipelines.forEach(p=>{
+        (p.stages||p.pipelineStages||[]).forEach(stage=>{
+          stageById.set(String(stage.id||stage._id||''),{
+            stageName:stage.name||stage.title||'Unknown Stage',
+            pipelineId:String(p.id||p._id||''),
+            pipelineName:p.name||p.title||'Unassigned pipeline'
+          });
+        });
+      });
+      const normalized=enriched.map(opportunity=>{
+        const directPipeline=pipelineById.get(String(opportunity.pipelineId||''));
+        const stageMatch=stageById.get(String(opportunity.pipelineStageId||''));
+        return {
+          ...opportunity,
+          pipelineId:opportunity.pipelineId||stageMatch?.pipelineId||'',
+          pipelineName:opportunity.pipelineName||directPipeline?.name||directPipeline?.title||stageMatch?.pipelineName||'Unassigned pipeline',
+          stage:opportunity.stage==='Unknown Stage'&&stageMatch?.stageName?stageMatch.stageName:opportunity.stage
+        };
+      });
+      return {account,path:found.path,attempts:found.attempts,opportunities:normalized,total:found.data?.meta?.total||opps.length,pipelines:pipelines.map(p=>({id:p.id||p._id,name:p.name||p.title||'',stages:(p.stages||p.pipelineStages||[]).map(s=>({id:s.id||s._id,name:s.name||s.title||''}))}))};
     }));
     const successful=batches.filter(b=>b.status==='fulfilled').map(b=>b.value);
     const errors=batches.filter(b=>b.status==='rejected').map((b,i)=>({account:accounts[i]?.label,error:b.reason?.message||String(b.reason)}));
     const enriched=successful.flatMap(b=>b.opportunities);
     const stalled=enriched.filter(o=>o.stalled);
-    res.json({pipelineActive:successful.reduce((n,b)=>n+b.total,0)||enriched.length,stalledDeals:stalled.length,opportunities:enriched,_debug:{configured:true,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts})),errors}});
+    res.json({pipelineActive:successful.reduce((n,b)=>n+b.total,0)||enriched.length,stalledDeals:stalled.length,opportunities:enriched,pipelines:successful.flatMap(b=>b.pipelines||[]),_debug:{configured:true,accounts:successful.map(b=>({slug:b.account.slug,label:b.account.label,count:b.opportunities.length,path:b.path,attempts:b.attempts})),errors}});
   }catch(e){console.error('pipeline error:',e);res.json({pipelineActive:0,stalledDeals:0,opportunities:[],_debug:{error:e.message}});}
 });
 
