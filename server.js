@@ -33154,7 +33154,24 @@ async function resolveHearthActionContact(nameOrEmail=''){
     return {profile,display,email,phone,score};
   }).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
   const best=scored[0]||null;
-  return best?{...best,status:best.score>=0.65?'matched':'possible_match',matches:scored.slice(0,5)}:{profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
+  const broader=await resolveContactFromContext({name:needle,email:directEmail}).catch(()=>null);
+  const broaderContact=broader?.contact||null;
+  const broaderEmail=normalizeContextEmail(broaderContact?.email||'');
+  const broaderPhone=normalizeContextPhone(broaderContact?.phone||'');
+  if(best){
+    return {
+      ...best,
+      email:best.email||broaderEmail,
+      phone:best.phone||broaderPhone,
+      status:best.score>=0.65?'matched':'possible_match',
+      contactSource:best.email?'relationship_profile':(broaderEmail?'broader_contact_context':'relationship_profile'),
+      matches:scored.slice(0,5)
+    };
+  }
+  if(broaderContact&&(broaderEmail||broaderPhone||broader.status==='matched'||broader.status==='possible_match')){
+    return {profile:null,display:broaderContact.name||needle,email:broaderEmail||directEmail,phone:broaderPhone,score:Number(broader.confidence||0),status:broader.status||'possible_match',contactSource:broaderContact.source||'broader_contact_context',matches:broader.matches||[]};
+  }
+  return {profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
 }
 async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false}={}){
   const intent=hearthActionIntent(lastUser);
