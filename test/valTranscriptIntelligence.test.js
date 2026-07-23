@@ -46,6 +46,45 @@ test('capacity and tone context is non-clinical',()=>{
   assert.match(context.limitation,/not clinical/i);
 });
 
+test('Postgres transcript intelligence writes serialize every jsonb value',async()=>{
+  const calls=[];
+  const dbQuery=async(sql,params=[])=>{
+    calls.push({sql,params});
+    if(sql.includes('insert into transcript_intelligence_runs')){
+      return {rows:[{id:params[0],tenant_id:params[1],user_id:params[2],transcript_id:params[3],status:params[4]}],rowCount:1};
+    }
+    return {rows:[],rowCount:1};
+  };
+  const service=createValTranscriptIntelligenceService({
+    hasPg:()=>true,
+    dbQuery,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_pg_test`,
+    getTranscript:async()=>({
+      id:'tr_pg_json',
+      title:'Postgres JSON boundary',
+      rawText:'Jessa: I will send the project notes tomorrow. Client: Thank you, I will review those notes. Jessa: We should also track the relationship context and confirm the next decision after review.'
+    }),
+    resolveMeetingContext:async()=>({meeting:{id:'cal_pg_json',attendees:[{name:'Client',email:'client@example.com'}]},relationshipContext:{attendees:[{name:'Client',email:'client@example.com'}]},openLoops:[],errors:[]})
+  });
+  await service.intake({transcriptId:'tr_pg_json'});
+  const runCall=calls.find(call=>call.sql.includes('insert into transcript_intelligence_runs'));
+  const itemCalls=calls.filter(call=>call.sql.includes('insert into transcript_intelligence_items'));
+  assert.ok(runCall);
+  assert.ok(itemCalls.length>0);
+  for(const index of [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22]){
+    assert.equal(typeof runCall.params[index],'string');
+    assert.doesNotThrow(()=>JSON.parse(runCall.params[index]));
+  }
+  for(const call of itemCalls){
+    for(const index of [10,11,16]){
+      assert.equal(typeof call.params[index],'string');
+      assert.doesNotThrow(()=>JSON.parse(call.params[index]));
+    }
+  }
+});
+
 test('intakes transcript intelligence and stores linked follow-up candidates',async()=>{
   let store={};
   const transcript={
