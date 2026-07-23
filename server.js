@@ -33101,8 +33101,17 @@ function hearthActionMessageBody(text=''){
   const value=String(text||'').trim();
   const quoted=value.match(/["']([^"']{4,2000})["']/);
   if(quoted?.[1])return quoted[1].trim();
-  const body=value.match(/\b(?:saying|that says|to say|message is|body is)\b[:\s]+([\s\S]{4,2000})$/i);
+  const body=value.match(/\b(?:saying|that says|to say|message is|body is|i\s+(?:want|wanna|would like)\s+(?:to\s+)?say)\b[:\s]+([\s\S]{4,2000})$/i);
   return body?.[1]?.trim()||'';
+}
+function hearthActionMessageBodyFromVoiceContext(text=''){
+  const lines=String(text||'').split(/\n+/).map(line=>line.replace(/^\s*(?:you|user)\s*[:\-]\s*/i,'').trim()).filter(Boolean);
+  for(let i=lines.length-1;i>=0;i--){
+    const line=lines[i];
+    const body=hearthActionMessageBody(line);
+    if(body)return body.replace(/\b(?:continue|yeah|yes|please|email her)\b\.?$/i,'').trim();
+  }
+  return hearthActionMessageBody(text);
 }
 function hearthActionSubject(text='',name=''){
   const value=String(text||'').trim();
@@ -33121,30 +33130,82 @@ function hearthActionProfilePhone(profile={}){
   const packetPhone=profile.personPacket?.person?.phone_numbers?.[0]||metadata.personPacket?.person?.phone_numbers?.[0]||'';
   return normalizeContextPhone(metadata.phone||profile.phone||profile.contactPhone||packetPhone||'');
 }
+function hearthActionProfileCompany(profile={}){
+  const metadata=profile.metadata||{};
+  const enrichment=metadata.relationshipEnrichment||metadata.relationship_enrichment||profile.relationshipEnrichment||null;
+  return String(metadata.company||metadata.companyName||metadata.organization||metadata.organizationName||profile.company||profile.companyName||profile.organization||enrichment?.organization||'').trim();
+}
 function hearthActionComparableName(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9@\s._-]/g,' ').replace(/\s+/g,' ').trim();
 }
-async function resolveHearthActionContact(nameOrEmail=''){
+function hearthActionEditDistance(a='',b=''){
+  const left=String(a||''),right=String(b||'');
+  if(left===right)return 0;
+  if(!left.length)return right.length;
+  if(!right.length)return left.length;
+  const row=Array.from({length:right.length+1},(_,i)=>i);
+  for(let i=1;i<=left.length;i++){
+    let previous=row[0];
+    row[0]=i;
+    for(let j=1;j<=right.length;j++){
+      const temp=row[j];
+      row[j]=left[i-1]===right[j-1]?previous:Math.min(previous,row[j],row[j-1])+1;
+      previous=temp;
+    }
+  }
+  return row[right.length];
+}
+function hearthActionLooseNameScore(a='',b=''){
+  const aw=contextWords(a),bw=contextWords(b);
+  if(!aw.length||!bw.length)return 0;
+  let matches=0;
+  for(const word of aw){
+    if(bw.some(candidate=>candidate===word||hearthActionEditDistance(candidate,word)<=1))matches++;
+  }
+  return matches/Math.max(aw.length,bw.length);
+}
+function hearthActionCompanyHint(text=''){
+  const lines=String(text||'').split(/\n+/).map(line=>line.trim()).filter(Boolean).slice(-12);
+  const patterns=[
+    /\b(?:works?|work|is)\s+(?:at|for|with)\s+([a-z0-9&.' -]{3,80})/i,
+    /\b(?:company|organization|business)\s+(?:is|at|with)\s+([a-z0-9&.' -]{3,80})/i,
+    /^([a-z0-9&.' -]{3,80})\s+is\s+where\s+(?:she|he|they)\s+works?\b/i
+  ];
+  for(let i=lines.length-1;i>=0;i--){
+    for(const pattern of patterns){
+      const match=lines[i].match(pattern);
+      if(match?.[1])return match[1].replace(/\b(?:continue|yeah|yes|please)\b.*$/i,'').trim().slice(0,80);
+    }
+  }
+  return '';
+}
+async function resolveHearthActionContact(nameOrEmail='',contextText=''){
   const needle=String(nameOrEmail||'').trim();
   if(!needle)return {profile:null,email:'',phone:'',status:'missing_name'};
   const cleanNeedle=hearthActionComparableName(needle);
   const directEmail=normalizeContextEmail(needle);
+  const companyHint=hearthActionCompanyHint(contextText);
+  const cleanCompanyHint=hearthActionComparableName(companyHint);
   const profiles=(await listRelationshipProfiles({limit:800}).catch(()=>[])).filter(profile=>profile.profileType==='person');
   const scored=profiles.map((profile)=>{
     const display=String(profile.displayName||profile.display_name||profile.name||'').trim();
     const email=relationshipProfilePrimaryEmail(profile);
     const phone=hearthActionProfilePhone(profile);
+    const company=hearthActionProfileCompany(profile);
     const comparable=hearthActionComparableName(display);
     let score=0;
     if(directEmail&&email===directEmail)score+=1;
     if(cleanNeedle&&comparable===cleanNeedle)score+=0.92;
     if(cleanNeedle&&comparable.split(/\s+/).includes(cleanNeedle))score+=0.82;
     if(cleanNeedle&&comparable.includes(cleanNeedle))score+=0.68;
+    const looseScore=hearthActionLooseNameScore(cleanNeedle,comparable);
+    if(cleanNeedle&&looseScore>=0.5)score+=0.62*looseScore;
     if(cleanNeedle&&email&&email.includes(cleanNeedle.replace(/\s+/g,'.')))score+=0.42;
-    return {profile,display,email,phone,score};
+    if(cleanCompanyHint&&hearthActionLooseNameScore(cleanCompanyHint,company)>=0.5)score+=0.22;
+    return {profile,display,email,phone,company,score};
   }).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
   const best=scored[0]||null;
-  const broader=await resolveContactFromContext({name:needle,email:directEmail}).catch(()=>null);
+  const broader=await resolveContactFromContext({name:needle,email:directEmail,company:companyHint}).catch(()=>null);
   const broaderContact=broader?.contact||null;
   const broaderEmail=normalizeContextEmail(broaderContact?.email||'');
   const broaderPhone=normalizeContextPhone(broaderContact?.phone||'');
@@ -33163,14 +33224,15 @@ async function resolveHearthActionContact(nameOrEmail=''){
   }
   return {profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
 }
-async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false}={}){
-  const intent=hearthActionIntent(lastUser);
+async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,contextText=''}={}){
+  const actionText=[contextText,lastUser].filter(Boolean).join('\n');
+  const intent=hearthActionIntent(lastUser)||hearthActionIntent(actionText);
   if(!intent)return null;
-  const nameCandidate=hearthActionNameCandidate(lastUser,intent.kind);
-  const contact=await resolveHearthActionContact(nameCandidate);
+  const nameCandidate=hearthActionNameCandidate(lastUser,intent.kind)||hearthActionNameCandidate(actionText,intent.kind);
+  const contact=await resolveHearthActionContact(nameCandidate,actionText);
   const contactName=contact.display||nameCandidate||'that person';
   if(intent.kind==='email'){
-    const body=hearthActionMessageBody(lastUser);
+    const body=hearthActionMessageBody(lastUser)||hearthActionMessageBodyFromVoiceContext(actionText);
     if(!nameCandidate)return {content:'Who should I send it to?',extra:{hearthActionPrep:true,actionKind:'email',needs:'recipient'}};
     if(!contact.email)return {content:`I can do that, but I need a safe email address for ${contactName} before I prepare it.`,extra:{hearthActionPrep:true,actionKind:'email',contactResolution:contact.status,needs:'email_address'}};
     if(!body)return {content:`I found ${contactName}. What would you like the email to say?`,extra:{hearthActionPrep:true,actionKind:'email',contact:{name:contactName,email:contact.email},needs:'message_body'}};
@@ -33338,11 +33400,27 @@ function ghlVoiceUserMessage(body={}){
     || ''
   ).trim();
 }
+function ghlVoiceContextText(body={}){
+  const chunks=[];
+  for(const key of ['conversation','conversationText','conversation_text','transcript','callTranscript','call_transcript','history','full_context','fullContext']){
+    if(typeof body[key]==='string'&&body[key].trim())chunks.push(body[key].trim());
+  }
+  if(Array.isArray(body.messages)){
+    chunks.push(body.messages.map(message=>`${message.role||'user'}: ${message.content||message.text||message.message||''}`).join('\n'));
+  }
+  if(Array.isArray(body.turns)){
+    chunks.push(body.turns.map(turn=>`${turn.role||turn.speaker||'user'}: ${turn.content||turn.text||turn.message||''}`).join('\n'));
+  }
+  return chunks.filter(Boolean).join('\n').slice(-12000);
+}
 function ghlVoiceMeetingPrepIntent(text=''){
   return /\b(meeting prep|prep me|prepare me|run .*prep|prepare .*meeting|meeting brief|brief me)\b/i.test(String(text||''));
 }
 function ghlVoiceNextAppointmentIntent(text=''){
   return /\b(next|upcoming|when)\b[\s\S]{0,40}\b(appointment|meeting|call|calendar|schedule)\b/i.test(String(text||''));
+}
+function ghlVoiceContactLookupIntent(text=''){
+  return /\b(stewardship|contact info|contact information|email address|phone number|find (?:her|him|their|the|this)|look up|lookup)\b/i.test(String(text||''));
 }
 function ghlVoiceEventStart(event={}){
   return new Date(event.startTime||event.start_time||event.start||event.dateTime||event.date||0);
@@ -33453,9 +33531,21 @@ async function ghlVoiceMeetingPrepResponse({body,lastUser}){
   // started in VAL and acknowledged immediately instead of keeping the call open.
   return `I'm starting Meeting Prep for ${ghlVoiceFormatEvent(event)}. It will be ready for you in VAL when you're ready.`;
 }
+async function ghlVoiceContactLookupResponse({lastUser,contextText=''}={}){
+  const actionText=[contextText,lastUser].filter(Boolean).join('\n');
+  const nameCandidate=hearthActionNameCandidate(lastUser,'email')||hearthActionNameCandidate(actionText,'email')||hearthActionNameCandidate(actionText,'sms');
+  if(!nameCandidate)return '';
+  const contact=await resolveHearthActionContact(nameCandidate,actionText);
+  const contactName=contact.display||nameCandidate;
+  if(contact.email&&contact.phone)return `I found ${contactName} in VAL. I have an email address and phone number available, so I can prepare the message for your approval.`;
+  if(contact.email)return `I found ${contactName} in VAL and I have an email address available. I can prepare the email for your approval.`;
+  if(contact.phone)return `I found ${contactName} in VAL and I have a phone number available. I can prepare a text for your approval.`;
+  return `I checked VAL for ${contactName}, but I do not have a safe email address or phone number yet.`;
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
+    const voiceContextText=ghlVoiceContextText(req.body);
     const contact=req.body.contact&&typeof req.body.contact==='object'?req.body.contact:{};
     const contactId=String(req.body.contactId||contact.id||contact.contactId||'').trim();
     const contactName=String(req.body.contactName||contact.name||contact.fullName||contact.full_name||'').trim();
@@ -33469,15 +33559,20 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     let prepared=null;
     let content='';
     let functionRan='';
-    if(ghlVoiceMeetingPrepIntent(lastUser)){
+    const actionContext=[voiceContextText,lastUser].filter(Boolean).join('\n');
+    if(ghlVoiceMeetingPrepIntent(actionContext)){
       content=await ghlVoiceMeetingPrepResponse({body:req.body,lastUser});
       functionRan='meeting_prep';
-    }else if(ghlVoiceNextAppointmentIntent(lastUser)){
+    }else if(ghlVoiceNextAppointmentIntent(actionContext)){
       content=await ghlVoiceNextAppointmentResponse({body:req.body,lastUser});
       functionRan='calendar_next';
     }
-    if(hearthActionIntent(lastUser)){
-      prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:true});
+    if(hearthActionIntent(actionContext)){
+      prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:true,contextText:voiceContextText});
+      if(prepared)functionRan=functionRan||`action_${prepared.extra?.actionKind||'prep'}`;
+    }else if(!content&&ghlVoiceContactLookupIntent(actionContext)){
+      content=await ghlVoiceContactLookupResponse({lastUser,contextText:voiceContextText});
+      if(content)functionRan='contact_lookup';
     }
     content=content || prepared?.content || await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:true});
     const title=String(req.body.title||`GHL Voice${contactName?' - '+contactName:''}`).slice(0,120);
