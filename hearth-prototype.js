@@ -267,6 +267,7 @@ const clientFeatureLocks = {
 let clientPipelineDashboardUrl = clientFeatureLocks.pipelineCommandRoom
   ? 'https://mark-goall-val-production.up.railway.app/call-center-dashboards'
   : '';
+let clientDisplayName = '';
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
@@ -17271,10 +17272,12 @@ async function hydrateClientConfig(){
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
     clientFeatureLocks.pipelineCommandRoom = Boolean(flags.pipelineCommandRoom);
     clientPipelineDashboardUrl = String(config?.pipelineDashboardUrl||'').trim();
+    clientDisplayName = String(config?.clientName||'').trim();
   }catch(error){
     console.warn('[hearth] client config unavailable', error.message);
   }
   applyClientFeatureLocks();
+  if(executiveBriefingState) applyVelocityPerspective(executiveBriefingState);
 }
 
 function markPipelineMoney(value){
@@ -18114,6 +18117,8 @@ function roomCardImplication(item, fallback, lens){
 }
 
 function homePerspectiveUserName(){
+  const configuredFirstName = String(clientDisplayName || '').trim().split(/\s+/)[0] || '';
+  if(configuredFirstName) return configuredFirstName;
   const titleText = String(currentState?.title || title?.textContent || '');
   const directName = titleText.match(/^([A-Z][a-z]+),/);
   if(directName?.[1]) return directName[1];
@@ -26662,8 +26667,7 @@ observeHearthClickContracts();
 applyHearthTimePeriod();
 window.setInterval(applyHearthTimePeriod, 5 * 60 * 1000);
 setState(hearth.dataset.state || 'quiet');
-hydrateClientConfig();
-hydrateHomePresence();
+hydrateClientConfig().finally(() => hydrateHomePresence());
 hydrateCalendarPanel();
 
 if(location.hash === '#valWitnessingResume'){

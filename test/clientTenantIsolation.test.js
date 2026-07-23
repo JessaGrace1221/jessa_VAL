@@ -5,6 +5,8 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const hearthHtml = fs.readFileSync(path.join(root, 'hearth-prototype.html'), 'utf8');
+const hearthJs = fs.readFileSync(path.join(root, 'hearth-prototype.js'), 'utf8');
 
 test('client release excludes Jessa private witnessing data', () => {
   assert.equal(
@@ -21,4 +23,10 @@ test('client release derives owner and known aliases from tenant configuration',
 
 test('client release blocks direct data-directory access', () => {
   assert.match(server, /app\.use\('\/data',\(_req,res\)=>res\.sendStatus\(404\)\)/);
+});
+
+test('home perspective waits for the configured tenant identity', () => {
+  assert.doesNotMatch(hearthHtml, /id="hearth-title">[^<]*Jessa/);
+  assert.match(hearthJs, /clientDisplayName = String\(config\?\.clientName\|\|''\)\.trim\(\)/);
+  assert.match(hearthJs, /hydrateClientConfig\(\)\.finally\(\(\) => hydrateHomePresence\(\)\)/);
 });
