@@ -254,6 +254,7 @@ const clientFeatureLocks = {
   projectManagersComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || ''),
   linkedinHomeComingSoon: /^(greg|greg-val|zlevor)$/i.test(prototypeParams.get('client') || '')
 };
+let clientDisplayName = '';
 const scraperSessions = {};
 const attendedRoomsStorageKey = 'val.hearth.attendedRooms.v1';
 let activeScraperType = '';
@@ -17287,10 +17288,12 @@ async function hydrateClientConfig(){
     const flags = config?.featureFlags || {};
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
+    clientDisplayName = String(config?.clientName||'').trim();
   }catch(error){
     console.warn('[hearth] client config unavailable', error.message);
   }
   applyClientFeatureLocks();
+  if(executiveBriefingState) applyVelocityPerspective(executiveBriefingState);
 }
 
 const hearthServerPacketNames = new Set([
@@ -18045,6 +18048,8 @@ function roomCardImplication(item, fallback, lens){
 }
 
 function homePerspectiveUserName(){
+  const configuredFirstName = String(clientDisplayName || '').trim().split(/\s+/)[0] || '';
+  if(configuredFirstName) return configuredFirstName;
   const titleText = String(currentState?.title || title?.textContent || '');
   const directName = titleText.match(/^([A-Z][a-z]+),/);
   if(directName?.[1]) return directName[1];
@@ -26616,8 +26621,7 @@ observeHearthClickContracts();
 applyHearthTimePeriod();
 window.setInterval(applyHearthTimePeriod, 5 * 60 * 1000);
 setState(hearth.dataset.state || 'quiet');
-hydrateClientConfig();
-hydrateHomePresence();
+hydrateClientConfig().finally(() => hydrateHomePresence());
 hydrateCalendarPanel();
 
 if(location.hash === '#valWitnessingResume'){
