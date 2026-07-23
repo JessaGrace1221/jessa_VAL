@@ -33058,7 +33058,7 @@ app.post('/api/val/intelligence',async(req,res)=>{
   }catch(e){res.status(500).json({error:e.message});}
 });
 function hearthFastNeedsFullValContext(text=''){
-  if(/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(String(text||'')))return false;
+  if(/\bwitnessing\b/i.test(String(text||'')))return false;
   return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(String(text||''));
 }
 function isHearthCoworkLane(body={}){
@@ -33244,10 +33244,52 @@ function hearthFastCalendarFallback(lastUser='',dashboard={}){
   return 'I do not see an upcoming calendar item in the Hearth sidebar right now.';
 }
 function hearthFastWitnessingFallback(lastUser=''){
-  if(!/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(String(lastUser||''))) return '';
+  if(!/\bwitnessing\b/i.test(String(lastUser||''))) return '';
+  if(/\bwhat\b[\s\S]{0,80}\b(know|remember|have|see)\b|\babout me\b/i.test(String(lastUser||''))) return '';
   return 'Yes. If your Witnessing Session has been completed and saved into VAL, I can use that context from the Home VAL lane. If it has not been completed yet, I will hold space until that context exists.';
 }
+function hearthFastCapabilityFallback(lastUser=''){
+  if(!/\bwhat\b[\s\S]{0,40}\b(help|do|can you)\b|\bwhat can you help me with\b/i.test(String(lastUser||''))) return '';
+  return 'I can help you think, prepare, and act from Home. I can check your calendar, reason from Witnessing and relationship context, draft messages, prepare reminders or appointments, and ask for approval before anything leaves VAL.';
+}
+function hearthFastDefinitionFallback(lastUser=''){
+  const text=String(lastUser||'');
+  if(/\bwhat is\b[\s\S]{0,30}\bmic handoff\b/i.test(text)){
+    return 'A mic handoff is the moment Voice stops listening so VAL can answer, then hands the microphone back to you. It should feel seamless, not like the conversation dropped.';
+  }
+  return '';
+}
+function shortWitnessingSnippet(value=''){
+  return String(value||'')
+    .replace(/\s+/g,' ')
+    .replace(/^(visible response|response|answer|source|summary)\s*[:\-]\s*/i,'')
+    .trim()
+    .slice(0,220);
+}
+async function hearthFastWitnessingSummary(lastUser=''){
+  if(!/\bwitnessing\b/i.test(String(lastUser||''))) return '';
+  if(!(/\bwhat\b[\s\S]{0,80}\b(know|remember|have|see)\b|\babout me\b/i.test(String(lastUser||'')))) return '';
+  const rows=await listTeachValWitnessingSourceMemory({limit:6}).catch(()=>[]);
+  if(!rows.length){
+    return 'I can use your Witnessing Session when it has been completed and saved. I do not see enough saved Witnessing context in this lane yet.';
+  }
+  const themes=rows
+    .map(row=>String(row.category||row.title||'').replace(/^witnessing:\s*/i,'').trim())
+    .filter(Boolean)
+    .slice(0,3);
+  const first=shortWitnessingSnippet(rows[0]?.detail||rows[0]?.summary||'');
+  if(first){
+    return `I can see your Witnessing context. The strongest saved threads I see right now are ${themes.join(', ') || 'your story and operating context'}. One piece I’m holding is: ${first}`;
+  }
+  return `I can see your Witnessing context. The strongest saved threads I see right now are ${themes.join(', ') || 'your story and operating context'}.`;
+}
 async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=false}){
+  const capabilityFallback=hearthFastCapabilityFallback(lastUser);
+  if(capabilityFallback)return capabilityFallback;
+  const definitionFallback=hearthFastDefinitionFallback(lastUser);
+  if(definitionFallback)return definitionFallback;
+  const witnessingSummary=await hearthFastWitnessingSummary(lastUser);
+  if(witnessingSummary)return witnessingSummary;
   const witnessingFallback=hearthFastWitnessingFallback(lastUser);
   if(witnessingFallback)return witnessingFallback;
   const immediateCalendarAnswer=hearthFastCalendarFallback(lastUser,dashboard);
