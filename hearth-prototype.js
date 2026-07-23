@@ -285,6 +285,8 @@ let valCoworkVoiceState = {
   restartTimer:null,
   audio:null,
   playbackToken:0,
+  listenAttempt:0,
+  priming:false,
   audioCache:{}
 };
 let currentCalendarEvents = [];
@@ -16254,6 +16256,42 @@ function clearValCoworkVoiceRestart(){
   }
 }
 
+function valCoworkSpeechRecognitionCtor(){
+  return window.SpeechRecognition || window.webkitSpeechRecognition;
+}
+
+function primeValCoworkVoiceRecognition(){
+  const SpeechRecognition = valCoworkSpeechRecognitionCtor();
+  if(!SpeechRecognition || !valCoworkVoiceState.active || valCoworkVoiceState.priming) return false;
+  valCoworkVoiceState.priming = true;
+  try{
+    const recognition = new SpeechRecognition();
+    valCoworkVoiceState.recognition = recognition;
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = () => {};
+    recognition.onerror = () => {
+      valCoworkVoiceState.priming = false;
+    };
+    recognition.onend = () => {
+      if(valCoworkVoiceState.recognition === recognition) valCoworkVoiceState.recognition = null;
+      valCoworkVoiceState.priming = false;
+    };
+    recognition.onstart = () => {
+      window.setTimeout(() => {
+        try{ recognition.stop(); }catch(error){}
+      }, 90);
+    };
+    recognition.start();
+    return true;
+  }catch(error){
+    valCoworkVoiceState.priming = false;
+    return false;
+  }
+}
+
 function valCoworkSpeechText(text = ''){
   return String(text || '')
     .replace(/\*\*(.*?)\*\*/g, '$1')
@@ -16303,6 +16341,7 @@ function stopValCoworkVoiceMode(){
   clearValCoworkVoiceRestart();
   valCoworkVoiceState.active = false;
   valCoworkVoiceState.pending = false;
+  valCoworkVoiceState.priming = false;
   valCoworkVoiceState.playbackToken += 1;
   if(valCoworkVoiceState.audio){
     try{ valCoworkVoiceState.audio.pause(); }catch(error){}
@@ -16387,7 +16426,7 @@ async function sendValCoworkVoiceTranscript(transcript = ''){
 
 function startValCoworkListening(){
   if(!valCoworkVoiceState.active || valCoworkVoiceState.pending) return;
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognition = valCoworkSpeechRecognitionCtor();
   if(!SpeechRecognition){
     setValCoworkVoiceMode('idle', 'Voice capture is not available in this browser. Typed co-work is still available.');
     return;
@@ -16396,6 +16435,7 @@ function startValCoworkListening(){
   try{ valCoworkVoiceState.recognition?.stop?.(); }catch(error){}
   const recognition = new SpeechRecognition();
   valCoworkVoiceState.recognition = recognition;
+  const attempt = ++valCoworkVoiceState.listenAttempt;
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.continuous = false;
@@ -16408,14 +16448,19 @@ function startValCoworkListening(){
       .trim();
     void sendValCoworkVoiceTranscript(transcript);
   };
-  recognition.onerror = () => {
+  recognition.onerror = (event) => {
     if(!valCoworkVoiceState.active) return;
-    setValCoworkVoiceMode('idle', 'Voice paused. Check microphone permission, then click Voice again.');
+    const errorName = String(event?.error || '');
+    if(errorName === 'not-allowed' || errorName === 'service-not-allowed' || errorName === 'audio-capture'){
+      setValCoworkVoiceMode('idle', 'Microphone permission is needed for VAL voice mode.');
+      return;
+    }
+    setValCoworkVoiceMode('listening', 'VAL is still listening.');
   };
   recognition.onend = () => {
     if(!valCoworkVoiceState.active || valCoworkVoiceState.pending || valCoworkVoiceState.mode === 'speaking') return;
     valCoworkVoiceState.restartTimer = window.setTimeout(() => {
-      if(valCoworkVoiceState.active && !valCoworkVoiceState.pending) startValCoworkListening();
+      if(valCoworkVoiceState.active && !valCoworkVoiceState.pending && valCoworkVoiceState.listenAttempt === attempt) startValCoworkListening();
     }, 600);
   };
   try{
@@ -16440,6 +16485,7 @@ function startValCoworkVoiceMode(){
   workspaceInputPanel.classList.add('val-cowork-voice-active');
   deskWorkspace?.classList.add('val-cowork-voice-active');
   renderValCoworkVoicePanel();
+  primeValCoworkVoiceRecognition();
   const greeting = valCoworkGreeting();
   appendHomeCoworkMessage('val', greeting, {silentVoice:true});
   speakValCoworkMessage(greeting, {

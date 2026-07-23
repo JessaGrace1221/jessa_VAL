@@ -60,3 +60,12 @@ test('voice waits for Deepgram before falling back to browser speech',()=>{
   assert.doesNotMatch(dashboard,/fallbackTimer=setTimeout\(fallbackOnce,900\)/);
   assert.match(dashboard,/curAudio\.onerror=function\(\)\{URL\.revokeObjectURL\(url\);curAudio=null;fallbackOnce\(\);\}/);
 });
+
+test('Hearth voice primes microphone access on click and keeps listening after silence',()=>{
+  assert.match(hearth,/function primeValCoworkVoiceRecognition\(\)/);
+  assert.match(hearth,/primeValCoworkVoiceRecognition\(\);\s*const greeting = valCoworkGreeting\(\);/);
+  assert.match(hearth,/recognition\.onresult = \(\) => \{\};/);
+  assert.match(hearth,/const errorName = String\(event\?\.error \|\| ''\);/);
+  assert.match(hearth,/setValCoworkVoiceMode\('listening', 'VAL is still listening\.'\);/);
+  assert.match(hearth,/valCoworkVoiceState\.listenAttempt === attempt/);
+});
