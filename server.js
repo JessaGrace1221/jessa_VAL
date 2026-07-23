@@ -33357,6 +33357,113 @@ function ghlVoiceUserMessage(body={}){
     || ''
   ).trim();
 }
+function ghlVoiceMeetingPrepIntent(text=''){
+  return /\b(meeting prep|prep me|prepare me|run .*prep|prepare .*meeting|meeting brief|brief me)\b/i.test(String(text||''));
+}
+function ghlVoiceNextAppointmentIntent(text=''){
+  return /\b(next|upcoming|when)\b[\s\S]{0,40}\b(appointment|meeting|call|calendar|schedule)\b/i.test(String(text||''));
+}
+function ghlVoiceEventStart(event={}){
+  return new Date(event.startTime||event.start_time||event.start||event.dateTime||event.date||0);
+}
+function ghlVoiceEventTitle(event={}){
+  return String(event.title||event.summary||event.name||'(No title)').trim()||'(No title)';
+}
+function ghlVoiceFormatEvent(event={}){
+  const start=ghlVoiceEventStart(event);
+  const when=Number.isNaN(start.getTime())?'time unknown':start.toLocaleString('en-US',{weekday:'long',month:'long',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:CLIENT_CONFIG.timezone||'America/New_York'});
+  return `${ghlVoiceEventTitle(event)} on ${when}`;
+}
+function ghlVoiceLooksLikePrivateBlock(event={}){
+  const text=[event.title,event.summary,event.name,event.description,event.location].filter(Boolean).join(' ').toLowerCase();
+  return /\b(mammogram|screening|doctor|dentist|therapy|medical|appointment|annual physical|haircut|personal block|focus block|thinking day|ceo thinking day)\b/.test(text);
+}
+function ghlVoiceEventHasExternalAttendee(event={}){
+  const attendees=inferAttendeesFromEvent(event);
+  return attendees.some(attendee=>!attendeeIsProtectedOwner(attendee)&&String(attendee.email||attendee.name||'').trim());
+}
+async function ghlVoiceUpcomingCalendarEvents({days=14}={}){
+  const start=new Date();
+  const end=new Date();
+  end.setDate(end.getDate()+days);
+  const settled=await Promise.allSettled([
+    fetchGhlCalendarEvents(start,end),
+    fetchGoogleCalendarEvents(start,end,50),
+    fetchOutlookCalendarEvents(start,end,50),
+    fetchValCalendarEvents(start,end)
+  ]);
+  return settled
+    .flatMap(result=>result.status==='fulfilled'?result.value:[])
+    .filter(event=>ghlVoiceEventStart(event) >= start)
+    .sort((a,b)=>ghlVoiceEventStart(a)-ghlVoiceEventStart(b));
+}
+function ghlVoiceBodyEvents(body={}){
+  const values=[body.event,body.currentEvent,body.calendarEvent,body.appointment,body.meeting].filter(item=>item&&typeof item==='object');
+  const arrays=[body.events,body.calendarEvents,body.calendar,body.appointments,body.meetings].filter(Array.isArray).flat();
+  return [...values,...arrays].filter(item=>item&&typeof item==='object');
+}
+function ghlVoiceTargetWeekday(text=''){
+  const value=String(text||'').toLowerCase();
+  const days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  const index=days.findIndex(day=>value.includes(day));
+  return index>=0?index:null;
+}
+function ghlVoiceSelectCalendarEvent(events=[],text='',{meetingPrep=false}={}){
+  const now=new Date();
+  const weekday=ghlVoiceTargetWeekday(text);
+  let candidates=events
+    .filter(event=>ghlVoiceEventStart(event)>=now)
+    .filter(event=>!ghlVoiceLooksLikePrivateBlock(event))
+    .sort((a,b)=>ghlVoiceEventStart(a)-ghlVoiceEventStart(b));
+  if(weekday!==null)candidates=candidates.filter(event=>ghlVoiceEventStart(event).getDay()===weekday);
+  if(meetingPrep)candidates=candidates.filter(ghlVoiceEventHasExternalAttendee);
+  return candidates[0]||null;
+}
+function ghlVoiceBriefForSpeech(brief='',event={}){
+  const clean=String(brief||'').replace(/\s+/g,' ').trim();
+  if(!clean)return `I ran Meeting Prep for ${ghlVoiceFormatEvent(event)}, but the brief came back empty.`;
+  const first=clean
+    .replace(/^#+\s*/,'')
+    .split(/(?:\n\n|(?<=\.)\s+(?=[A-Z]))/)
+    .map(part=>part.trim())
+    .filter(Boolean)
+    .slice(0,4)
+    .join(' ');
+  return `I ran Meeting Prep for ${ghlVoiceFormatEvent(event)}. ${first.slice(0,900)}`;
+}
+async function ghlVoiceNextAppointmentResponse({body,lastUser}){
+  const supplied=ghlVoiceBodyEvents(body);
+  const events=supplied.length?supplied:await ghlVoiceUpcomingCalendarEvents({days:14});
+  const event=ghlVoiceSelectCalendarEvent(events,lastUser,{meetingPrep:false});
+  if(!event)return 'I do not see an upcoming calendar item I can safely read right now.';
+  return `Your next appointment is ${ghlVoiceFormatEvent(event)}.`;
+}
+async function ghlVoiceMeetingPrepResponse({body,lastUser}){
+  const supplied=ghlVoiceBodyEvents(body);
+  const events=supplied.length?supplied:await ghlVoiceUpcomingCalendarEvents({days:14});
+  const event=ghlVoiceSelectCalendarEvent(events,lastUser,{meetingPrep:true});
+  if(!event){
+    return 'I can run Meeting Prep, but I need a calendar event with an external attendee. I do not see one in the context GHL sent me yet.';
+  }
+  const context=await buildMeetingPrepRebuildContext(event,{includePublicLookup:false});
+  if(!context.attendees.length){
+    return `I found ${ghlVoiceFormatEvent(event)}, but it does not have an external attendee for Meeting Prep.`;
+  }
+  const system=[
+    VAL_SYSTEM_PROMPT,
+    'You are VAL in Meeting Mode. Produce a concise spoken meeting prep brief from the supplied hidden context.',
+    'No external action happens from this route. The answer is private preparation only.',
+    'Voice output: lead with the most important context, then the opening move, risks, and questions. Keep it concise.'
+  ].join('\n\n');
+  const brief=await callValModel({
+    system,
+    user:meetingPrepRebuildPrompt(context),
+    maxTokens:900,
+    temperature:0.25,
+    timeoutMs:25000
+  });
+  return ghlVoiceBriefForSpeech(brief,event);
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
@@ -33371,10 +33478,19 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const messages=[{role:'user',content:lastUser}];
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
     let prepared=null;
+    let content='';
+    let functionRan='';
+    if(ghlVoiceMeetingPrepIntent(lastUser)){
+      content=await ghlVoiceMeetingPrepResponse({body:req.body,lastUser});
+      functionRan='meeting_prep';
+    }else if(ghlVoiceNextAppointmentIntent(lastUser)){
+      content=await ghlVoiceNextAppointmentResponse({body:req.body,lastUser});
+      functionRan='calendar_next';
+    }
     if(hearthActionIntent(lastUser)){
       prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:true});
     }
-    const content=prepared?.content || await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:true});
+    content=content || prepared?.content || await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:true});
     const title=String(req.body.title||`GHL Voice${contactName?' - '+contactName:''}`).slice(0,120);
     saveConversation({
       id:conversationId,
@@ -33392,6 +33508,7 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       conversationId,
       saved:false,
       saveDeferred:true,
+      functionRan,
       ...(prepared?.extra||{})
     });
   }catch(error){
