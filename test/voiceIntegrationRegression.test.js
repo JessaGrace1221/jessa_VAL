@@ -152,6 +152,12 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/function ghlVoiceUserMessage/);
   assert.match(server,/body\.user_request/);
   assert.match(server,/body\.userUtterance/);
+  assert.match(server,/function ghlVoiceMeetingPrepIntent/);
+  assert.match(server,/function ghlVoiceMeetingPrepResponse/);
+  assert.match(server,/function ghlVoiceNextAppointmentResponse/);
+  assert.match(server,/functionRan='meeting_prep'/);
+  assert.match(server,/functionRan='calendar_next'/);
+  assert.match(server,/buildMeetingPrepRebuildContext\(event,\{includePublicLookup:false\}\)/);
   assert.match(server,/speak:content/);
   assert.match(server,/val_response:content/);
   assert.match(server,/GHL did not pass me the user’s words yet/);
