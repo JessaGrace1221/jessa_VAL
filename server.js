@@ -33308,6 +33308,65 @@ function sendFastHearthChatNow(res,{content,messages,conversationId,conversation
     metadata:{channel:channel||'hearth_cowork',savedBy:'fast_hearth_chat_route',projectContext:projectContext||undefined,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',deferredPersistence:true}
   }).catch(error=>console.warn('Fast Hearth chat deferred save failed:',error.message));
 }
+function ghlVoiceUserMessage(body={}){
+  return String(
+    body.user_request
+    || body.userRequest
+    || body.user_utterance
+    || body.userUtterance
+    || body.last_message
+    || body.lastMessage
+    || body.message
+    || body.text
+    || body.query
+    || body.prompt
+    || body.messages?.slice?.().reverse?.().find?.(m=>m?.role==='user')?.content
+    || ''
+  ).trim();
+}
+app.post('/api/val/ghl/voice-turn',async(req,res)=>{
+  try{
+    const lastUser=ghlVoiceUserMessage(req.body);
+    const contact=req.body.contact&&typeof req.body.contact==='object'?req.body.contact:{};
+    const contactId=String(req.body.contactId||contact.id||contact.contactId||'').trim();
+    const contactName=String(req.body.contactName||contact.name||contact.fullName||contact.full_name||'').trim();
+    const conversationId=String(req.body.conversationId||req.body.conversation_id||contactId||'').trim()||uuid('ghl_voice');
+    if(!lastUser){
+      const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
+      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance'});
+    }
+    const messages=[{role:'user',content:lastUser}];
+    const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
+    let prepared=null;
+    if(hearthActionIntent(lastUser)){
+      prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:true});
+    }
+    const content=prepared?.content || await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:true});
+    const title=String(req.body.title||`GHL Voice${contactName?' - '+contactName:''}`).slice(0,120);
+    saveConversation({
+      id:conversationId,
+      title,
+      source:'ghl_voice',
+      messages:[...messages,{role:'assistant',content}],
+      metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
+    }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
+    return res.json({
+      ok:true,
+      speak:content,
+      val_response:content,
+      reply:content,
+      message:{role:'assistant',content},
+      conversationId,
+      saved:false,
+      saveDeferred:true,
+      ...(prepared?.extra||{})
+    });
+  }catch(error){
+    console.warn('GHL voice turn failed:',error.message);
+    const speak='I heard you, but VAL could not complete that voice turn. Try that one more time in a shorter sentence.';
+    res.status(200).json({ok:true,speak,val_response:speak,reply:speak,error:error.message});
+  }
+});
 app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
