@@ -24197,7 +24197,7 @@ function isValVoiceSelfTranscriptRecord(record={}){
     || /\bGHL Voice\b/i.test(combined)
     || /\bVAL voice\b/i.test(combined)
     || /\bone sec\b[\s\S]{0,160}\bRolodex|Rolodex[\s\S]{0,160}\bone sec\b/i.test(combined);
-  return looksLikeKrispChrome&&looksLikeValVoice;
+  return looksLikeKrispChrome&&(looksLikeValVoice||/\bGoogle Chrome meeting\b/i.test(title));
 }
 function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
