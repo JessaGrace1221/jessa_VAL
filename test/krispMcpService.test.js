@@ -69,7 +69,8 @@ test('server skips Krisp captures of VAL voice self-talk instead of saving them 
   assert.match(server,/Hey Jessa/);
   assert.match(server,/transcript_val_voice_self_capture_skipped/);
   assert.match(server,/reason:'val_voice_self_capture'/);
-  assert.match(server,/if\(isValVoiceSelfTranscriptRecord\(\{\.\.\.payload,rawText:transcriptText\}\)\)/);
+  assert.match(server,/const rawWebhookPreview=transcriptWebhookBodyPreview\(req\.body\)/);
+  assert.match(server,/rawText:\[transcriptText,rawWebhookPreview\]/);
   assert.match(server,/if\(isValVoiceSelfTranscriptRecord\(record\)\) return false;/);
 });
 
