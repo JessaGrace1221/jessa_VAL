@@ -146,3 +146,13 @@ test('Home VAL voice supports source questions and spoken approval handoff',()=>
   assert.match(hearth,/let pendingHomeCoworkActionDraft = null;/);
   assert.match(hearth,/Send ' \+ pendingHomeCoworkActionDraft\.contact\.name \+ ' an email saying:/);
 });
+
+test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
+  assert.match(server,/app\.post\('\/api\/val\/ghl\/voice-turn'/);
+  assert.match(server,/function ghlVoiceUserMessage/);
+  assert.match(server,/body\.user_request/);
+  assert.match(server,/body\.userUtterance/);
+  assert.match(server,/speak:content/);
+  assert.match(server,/val_response:content/);
+  assert.match(server,/GHL did not pass me the user’s words yet/);
+});
