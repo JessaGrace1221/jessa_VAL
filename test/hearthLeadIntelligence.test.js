@@ -547,7 +547,7 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
   assert.match(hearthJs, /function renderTimelineTranscriptList/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
   assert.match(hearthJs, /function renderTimelineTranscriptMappingControls/);
-  assert.match(hearthJs, /Send Action Items to Attendees/);
+  assert.match(hearthJs, /Prepare email draft/);
   assert.match(hearthJs, /data-transcript-project-search/);
   assert.match(hearthJs, /data-transcript-relationship-search/);
   assert.match(hearthJs, /data-transcript-full-toggle/);
@@ -1005,8 +1005,6 @@ test('Executive Inbox drawer opens prepared replies inside the Hearth', () => {
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.drawer-grid/);
   assert.match(hearthCss, /\.correspondence-workbench/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-loading-veil/);
-  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-filterbar/);
-  assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-rulebar/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-is-loading \.correspondence-workbench/);
   assert.match(hearthCss, /display:none!important/);
   assert.match(hearthCss, /\.drawer-tray\.correspondence-open \.correspondence-loading-orbit/);
@@ -1572,7 +1570,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /coworkContextGatheringTimeoutId/);
   assert.match(hearthJs, /VAL could not finish gathering this context in time/);
   assert.match(hearthJs, /const workspaceVisible = deskWorkspace\?\.getAttribute\('aria-hidden'\) !== 'true'/);
-  assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*hideCoworkContextGathering\(\);/);
+  assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*stopValCoworkVoiceMode\(\);\s*hideCoworkContextGathering\(\);/);
   assert.match(hearthJs, /Gathering Context/);
   assert.match(hearthJs, /data-cowork-context-gathering/);
   assert.match(hearthJs, /function coworkScopeForEntry/);
@@ -1591,10 +1589,11 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);
   assert.match(hearthJs, /No live Board packet is loaded for this session yet/);
-  assert.match(hearthJs, /Board readiness/);
+  assert.match(hearthJs, /Packet Field Active/);
+  assert.match(hearthJs, /Holding Space/);
   assert.match(hearthJs, /if\(workspaceGrid\) workspaceGrid\.hidden = true/);
   assert.match(hearthJs, /observer-truth-card/);
-  assert.match(hearthJs, /If this view claims certainty without a packet, that is a bug/);
+  assert.match(hearthJs, /Holding space for Analytical and Relational Context/);
   assert.match(hearthJs, /if\(command === 'cancel'\)\{/);
   assert.doesNotMatch(hearthJs, /larger morning intact/);
   assert.doesNotMatch(hearthJs, /protecting the morning/);
@@ -1631,7 +1630,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /openWorkspaceShell\('LinkedIn visibility workspace', \{returnTarget:'home'\}\)/);
   assert.match(hearthJs, /data-linkedin-copy/);
   assert.match(hearthJs, /data-linkedin-link/);
-  assert.match(hearthJs, /VAL never auto-publishes LinkedIn posts, comments, or DMs/);
+  assert.match(hearthJs, /LinkedIn publishing remains manual to protect the account and the relationship/);
   assert.match(hearthCss, /\.linkedin-widget/);
   assert.match(hearthCss, /\.linkedin-engagement-list/);
   assert.match(hearthCss, /\.linkedin-engagement-actions button,\n\.linkedin-engagement-actions a/);
@@ -2443,8 +2442,8 @@ test('Hearth pre-drawer responsive polish keeps closed panels quiet and targets 
   assert.match(hearthJs, /retrievalSystem\?\.classList\.contains\('open'\) && !event\.target\.closest\('\.retrieval-system'\)/);
   assert.match(hearthCss, /\.close-all-drawers/);
   assert.match(hearthCss, /\.observer-board-button\{z-index:28\}/);
-  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,220}grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
-  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:132px/);
+  assert.match(hearthCss, /\.living-rooms\{[\s\S]{0,220}width:min\(350px,calc\(100vw - 660px\)\)/);
+  assert.match(hearthCss, /\.living-room\{[\s\S]{0,220}min-height:220px/);
   assert.doesNotMatch(hearthHtml, /Prototype states/);
   assert.doesNotMatch(hearthHtml, /data-state-option/);
   assert.match(hearthCss, /\.retrieval-system\{position:fixed;left:18px;right:18px;bottom:14px;width:auto;margin:0;transform:none;z-index:90\}/);
@@ -3046,8 +3045,9 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(hearthJs, /Projects for Project Managers/);
   assert.match(hearthJs, /Witnessing coverage:/);
   assert.match(hearthJs, /Deliver approved items/);
-  assert.match(hearthJs, /Open Stewardship/);
-  assert.match(hearthJs, /Open Project Managers/);
+  assert.match(hearthJs, /Continue Witnessing to Confirm Relationships and the Partnership Promise/);
+  assert.doesNotMatch(hearthJs, /data-workflow-action="valFirstLookOpen:stewardship"/);
+  assert.doesNotMatch(hearthJs, /data-workflow-action="valFirstLookOpen:projects"/);
   assert.match(hearthJs, /Identity is supported by the cited source evidence/);
   assert.match(hearthJs, /Keep it only if it belongs in your network/);
   const receipt = hearthJs.slice(hearthJs.indexOf('function renderValFirstLookReceipt'), hearthJs.indexOf('function renderValFirstLookConversation'));
@@ -3057,4 +3057,14 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(valFirstLookCandidateReview, /First Look never creates, changes, or admits an Executive Inbox conversation/);
   assert.match(valFirstLookCandidateReview, /Phone numbers, email addresses, generic mailboxes, automated senders, and unnamed participants cannot become candidates/);
   assert.match(valFirstLookCandidateReview, /cannot save a proposed map until every completed Witnessing answer has a coverage receipt/i);
+});
+
+test('Alignment and Leverage always create a reviewable draft surface', () => {
+  assert.match(hearthJs, /function alignmentDraftFromWorkspace/);
+  assert.match(hearthJs, /VAL has created a review packet from the current Alignment context/);
+  assert.match(hearthJs, /Review the source, decide the next move, then approve, revise, or hold/);
+  assert.match(hearthJs, /const canLoadDraft = true/);
+  assert.match(hearthJs, /data-alignment-load-draft aria-expanded="false">Load Draft/);
+  assert.doesNotMatch(hearthJs, /preparedDraftCount/);
+  assert.doesNotMatch(hearthJs, /\(draft \? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft/);
 });
