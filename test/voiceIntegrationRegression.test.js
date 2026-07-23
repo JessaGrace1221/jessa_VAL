@@ -200,6 +200,7 @@ test('GHL voice actions can inherit recipient and body from transcript context',
   assert.match(server,/const actionText=\[contextText,lastUser\]/);
   assert.match(server,/hearthActionIntent\(lastUser\)\|\|hearthActionIntent\(actionText\)/);
   assert.match(server,/hearthActionNameCandidate\(lastUser,intent\.kind\)\|\|hearthActionNameCandidate\(actionText,intent\.kind\)/);
+  assert.match(server,/send\|write\|compose\|draft\|prepare\)\\s\+\(\?:an\?\\s\+\)\?\(\?:email\|reply\|message\)\\s\+\(\?:to\|for\)/);
   assert.match(server,/resolveHearthActionContact\(nameCandidate,actionText\)/);
   assert.match(server,/function hearthActionMessageBodyFromVoiceContext/);
   assert.match(server,/i\\s\+\(\?:want\|wanna\|would like\)\\s\+\(\?:to\\s\+\)\?say/);
