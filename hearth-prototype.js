@@ -5895,7 +5895,8 @@ function renderCoworkEntryResult(result = {}, options = {}){
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
   const isComplete = !isObserverConversation && (workItem.status === 'applied' || session.status === 'completed');
-  const isReadyForReview = !isComplete && (session.entrypointId.startsWith('transcript.') || session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
+  const chatShouldStayOpen = session.entrypointId.startsWith('transcript.') || session.entrypointId === 'observer.discussion' || session.entrypointId === 'board.chief_of_staff';
+  const isReadyForReview = !isComplete && !chatShouldStayOpen && (session.entrypointId === 'email.thread' || session.entrypointId === 'relationship.overview' || session.entrypointId === 'relationship.section') && workItem.status === 'needs_review';
   if(textarea){
     if(isObserverConversation){
       textarea.placeholder = session.entrypointId === 'board.chief_of_staff' ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...';
@@ -16928,6 +16929,17 @@ function handleHomeCoworkInput(event){
   return true;
 }
 
+function handleHomeCoworkEnterToSend(event){
+  if(event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+  const field = event.target.closest?.('[data-home-cowork-form] [data-workspace-input="cowork"]');
+  if(!field) return false;
+  event.preventDefault();
+  const form = field.closest('[data-home-cowork-form]');
+  if(form?.requestSubmit) form.requestSubmit();
+  else if(form) handleHomeCoworkFormSubmit({target:form,preventDefault(){}});
+  return true;
+}
+
 async function handleWorkspaceFileChange(event){
   const input = event.target.closest('[data-workspace-file-input]');
   if(!input) return false;
@@ -20933,7 +20945,7 @@ function renderValFirstLookCandidateMap(){
       relationships.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Relationships for Stewardship</h5><small>'+relationships.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+relationships.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       projects.length?'<section><div class="val-first-look-candidate-group-heading"><h5>Projects for Project Managers</h5><small>'+projects.length+' proposed</small></div><div class="val-first-look-candidate-grid">'+projects.map(renderValFirstLookCandidate).join('')+'</div></section>':'',
       ready.length?'<div class="val-first-look-delivery"><strong>'+ready.length+' approved item'+(ready.length===1?'':'s')+' ready for delivery.</strong><p>Delivery creates local Stewardship and Project Managers packets with their notes and source references. It does not send, schedule, or change anything outside VAL.</p><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookDeliver">Deliver approved items</button></div>':'',
-      delivered.length?'<div class="val-first-look-delivery delivered"><strong>'+delivered.length+' item'+(delivered.length===1?'':'s')+' delivered.</strong><p>VAL created the approved local packets and preserved their First Look notes and source references.</p><div><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:stewardship">Open Stewardship</button><button type="button" data-val-witnessing-action="true" data-workflow-action="valFirstLookOpen:projects">Open Project Managers</button></div></div>':'',
+      delivered.length?'<div class="val-first-look-delivery delivered"><strong>'+delivered.length+' item'+(delivered.length===1?'':'s')+' delivered.</strong><p>VAL created the approved local packets and preserved their First Look notes and source references. Continue Witnessing to Confirm Relationships and the Partnership Promise.</p></div>':'',
     '</section>'
   ].join('');
 }
@@ -23623,6 +23635,8 @@ function openHomeCardCowork(workspace){
 function alignmentDraftFromWorkspace(workspace = {}){
   const fields = workspace.packetFields || {};
   const source = workspace.sourceItem || {};
+  const packet = workspace.preparedWorkPacket || workspace.prepared_work_packet || source.preparedWorkPacket || source.prepared_work_packet || workspace.payload?.preparedWorkPacket || workspace.payload?.prepared_work_packet || source.payload?.preparedWorkPacket || source.payload?.prepared_work_packet || {};
+  const artifact = workspace.preparedArtifact || workspace.prepared_artifact || source.preparedArtifact || source.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || source.payload?.preparedArtifact || source.payload?.prepared_artifact || {};
   const candidates = [
     workspace.draftBody,
     workspace.draft_body,
@@ -23646,9 +23660,31 @@ function alignmentDraftFromWorkspace(workspace = {}){
     source.payload?.prepared_artifact?.body
   ].map((value) => String(value || '').trim()).filter(Boolean);
   const body = candidates.find((value) => value.length > 20) || '';
-  if(!body) return null;
+  if(!body){
+    const fallbackLines = [
+      workspace.title || source.title || fields.what_changed,
+      workspace.meaning || fields.why_it_matters,
+      packet.what_val_prepared || artifact.what_val_prepared || artifact.summary || source.whatValPrepared || source.what_val_prepared,
+      packet.prepared_work || artifact.prepared_work,
+      packet.review_boundary || artifact.reviewBoundary || artifact.review_boundary,
+      packet.source_context || artifact.sourceContext || artifact.source_context,
+      fields.evidence_summary,
+      fields.recommended_next_step || workspace.recommendation || source.recommendation
+    ].map((line) => compactSentence(projectCleanText(line), '')).filter(Boolean);
+    const uniqueLines = Array.from(new Set(fallbackLines));
+    if(!uniqueLines.length){
+      uniqueLines.push(
+        'VAL has created a review packet from the current Alignment context.',
+        'Review the source, decide the next move, then approve, revise, or hold.'
+      );
+    }
+    return {
+      title: workspace.draftTitle || workspace.draft_title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.title || 'Prepared work packet',
+      body: uniqueLines.map((line) => '- ' + line).join('\n')
+    };
+  }
   return {
-    title: workspace.draftTitle || workspace.draft_title || workspace.preparedArtifact?.subject || source.draftTitle || source.draft_title || source.preparedArtifact?.subject || 'Prepared draft',
+    title: workspace.draftTitle || workspace.draft_title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.preparedArtifact?.subject || 'Prepared draft',
     body
   };
 }
@@ -23674,8 +23710,7 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   const evidence = fields.evidence_summary || fields.source_type || active.coworkContext || 'No source evidence is exposed here until you choose to inspect it.';
   const known = fields.what_val_now_knows || 'VAL is keeping the relevant context private until it is useful to show.';
   const draft = alignmentDraftFromWorkspace(active);
-  const preparedDraftCount = Number(leveragePreparedCount?.dataset?.count || 0);
-  const canLoadDraft = Boolean(draft || preparedDraftCount > 0);
+  const canLoadDraft = true;
   activeCoworkHeldContext = [
     title,
     'Why it matters: ' + meaning,
@@ -23793,7 +23828,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
           '<div class="alignment-room-meta"><span>Prepared Work</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
-          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (draft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
+          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p><button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button></div>',
           draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
         '</section>',
       '</div>',
@@ -26808,6 +26843,7 @@ Array.from(new Set([scraperPreviewList, leadDrawerPreviewList].filter(Boolean)))
 });
 
 document.addEventListener('keydown', (event) => {
+  if(handleHomeCoworkEnterToSend(event)) return;
   if(event.key !== 'Escape') return;
   if(correspondenceRelationshipResults && !correspondenceRelationshipResults.hidden){
     correspondenceRelationshipResults.hidden = true;
