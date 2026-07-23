@@ -33077,8 +33077,9 @@ function hearthActionChatEnabled(body={}){
 function hearthActionNameCandidate(text='',kind=''){
   const value=String(text||'').replace(/[“”]/g,'"').replace(/[’]/g,"'").trim();
   const patterns=[
+    /\b(?:send|write|compose|draft|prepare)\s+(?:an?\s+)?(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:[.\n]|(?:\s+(?:about|saying|that|and|with|$)))/i,
     /\b(?:send|write|compose|draft|prepare)\s+(.+?)\s+(?:an?\s+)?(?:email|reply|message)\b/i,
-    /\b(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:\s+(?:about|saying|that|and|with|$))/i,
+    /\b(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:[.\n]|(?:\s+(?:about|saying|that|and|with|$)))/i,
     /\b(?:text|sms|message)\s+(.+?)(?:\s+(?:that|saying|about|and|$))/i,
     /\b(?:schedule|book|set up|create)\s+(?:a\s+)?(?:meeting|appointment|call|event)\s+(?:with|for)\s+(.+?)(?:\s+(?:about|on|at|tomorrow|today|next|$))/i
   ];
