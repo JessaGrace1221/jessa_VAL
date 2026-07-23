@@ -72,11 +72,25 @@ test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=
   assert.match(hearth,/script\.setAttribute\('data-resources-url', VAL_GHL_WIDGET_RESOURCE_SRC\)/);
   assert.match(hearth,/function openValGhlVoiceWidget/);
   assert.match(hearth,/api\.openWidget\(\)/);
+  assert.match(hearth,/function valGhlVoiceStage/);
+  assert.match(hearth,/function valGhlVoiceStageIsActive/);
+  assert.match(hearth,/function activateValGhlVoiceStage/);
+  assert.match(hearth,/function preloadValGhlVoiceWidget/);
+  assert.match(hearth,/function activatePreloadedValGhlVoiceWidget/);
+  assert.match(hearth,/preloadValGhlVoiceWidget\(\)/);
+  assert.match(hearth,/activatePreloadedValGhlVoiceWidget\(\)/);
+  assert.match(hearth,/if\(valGhlVoiceStageIsActive\(stage\)\) return true/);
+  assert.match(hearth,/\.voice-orb-stage,\[aria-label\*="Tap to talk"\],\[role="button"\]/);
+  assert.ok(hearth.includes("'[data-val-ghl-voice-widget]'"));
   assert.match(hearth,/function closeValGhlVoiceWidget/);
   assert.match(hearth,/api\.closeWidget\(\)/);
   assert.match(hearth,/valCoworkVoiceState\.ghlBridge = true/);
   assert.match(hearthCss,/body\.val-ghl-voice-active \[data-val-ghl-voice-widget\]/);
-  assert.match(hearthCss,/opacity:\.015!important/);
+  assert.match(hearthCss,/body:not\(\.val-ghl-voice-active\) \[data-val-ghl-voice-widget\]/);
+  assert.match(hearthCss,/width:460px!important/);
+  assert.match(hearthCss,/pointer-events:auto!important/);
+  assert.match(hearthCss,/pointer-events:none!important/);
+  assert.match(hearthCss,/\.val-cowork-voice-hint/);
 });
 
 test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
@@ -184,6 +198,10 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/body\.userUtterance/);
   assert.match(server,/function ghlVoiceMeetingPrepIntent/);
   assert.match(server,/function ghlVoiceContactLookupIntent/);
+  assert.match(server,/function conversationMessagesForContext/);
+  assert.match(server,/function ghlVoiceActionContext/);
+  assert.match(server,/function ghlVoiceAsksSystemLookup/);
+  assert.match(server,/function ghlVoicePriorActionText/);
   assert.match(server,/function ghlVoiceContactLookupResponse/);
   assert.match(server,/function ghlVoiceMeetingPrepResponse/);
   assert.match(server,/function ghlVoiceMeetingPrepFallbackFromContext/);
@@ -202,6 +220,10 @@ test('GHL voice endpoint returns a flat speak field for custom actions',()=>{
   assert.match(server,/speak:content/);
   assert.match(server,/val_response:content/);
   assert.match(server,/GHL did not pass me the user’s words yet/);
+  assert.match(server,/const priorMessages=await conversationMessagesForContext\(conversationId,10\)/);
+  assert.match(server,/const actionContext=ghlVoiceActionContext\(\{lastUser,voiceContextText,priorMessagesText\}\)/);
+  assert.match(server,/const actionRequest=hearthActionIntent\(lastUser\)\?lastUser:actionContext/);
+  assert.match(server,/hearthActionPrepContent\(\{lastUser:actionRequest,dashboard,voiceMode:true,contextText:actionContext\}\)/);
 });
 
 test('GHL voice actions can inherit recipient and body from transcript context',()=>{
@@ -210,17 +232,20 @@ test('GHL voice actions can inherit recipient and body from transcript context',
   assert.match(server,/hearthActionIntent\(lastUser\)\|\|hearthActionIntent\(actionText\)/);
   assert.match(server,/hearthActionNameCandidate\(lastUser,intent\.kind\)\|\|hearthActionNameCandidate\(actionText,intent\.kind\)/);
   assert.match(server,/send\|write\|compose\|draft\|prepare\)\\s\+\(\?:an\?\\s\+\)\?\(\?:email\|reply\|message\)\\s\+\(\?:to\|for\)/);
+  assert.match(server,/introduc\(\?:e\|ing\)/);
   assert.match(server,/resolveHearthActionContact\(nameCandidate,actionText\)/);
   assert.match(server,/function hearthActionMessageBodyFromVoiceContext/);
   assert.match(server,/i\\s\+\(\?:want\|wanna\|would like\)\\s\+\(\?:to\\s\+\)\?say/);
   assert.match(server,/hearthActionMessageBody\(lastUser\)\|\|hearthActionMessageBodyFromVoiceContext\(actionText\)/);
-  assert.match(server,/hearthActionPrepContent\(\{lastUser,dashboard,voiceMode:true,contextText:voiceContextText\}\)/);
+  assert.match(server,/hearthActionPrepContent\(\{lastUser:actionRequest,dashboard,voiceMode:true,contextText:actionContext\}\)/);
   assert.match(server,/functionRan=functionRan\|\|`action_\$\{prepared\.extra\?\.actionKind\|\|'prep'\}`/);
   assert.match(server,/resolveHearthActionContact\(nameCandidate,actionText\);/);
 });
 
 test('Home VAL chat Rolodex resolves action contacts from Stewardship context',()=>{
   assert.match(server,/function hearthActionProfileCompany/);
+  assert.match(server,/function hearthActionUsableEmail/);
+  assert.match(server,/example\.com/);
   assert.match(server,/function hearthActionCompanyHint/);
   assert.match(server,/Julian Method|is\\s\+where\\s\+\(\?:she\|he\|they\)\\s\+works/);
   assert.match(server,/function hearthActionEditDistance/);

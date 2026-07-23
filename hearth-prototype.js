@@ -16365,6 +16365,10 @@ function valCoworkVoiceShell(){
   return workspaceInputPanel.querySelector('[data-val-cowork-voice-shell]');
 }
 
+function setValGhlVoiceWidgetPlacement(mode = 'hidden'){
+  document.body.dataset.valGhlVoicePlacement = mode;
+}
+
 function setValCoworkVoiceMode(mode = 'idle', detail = ''){
   valCoworkVoiceState.mode = mode;
   const shell = valCoworkVoiceShell();
@@ -16386,6 +16390,7 @@ function renderValCoworkVoicePanel(){
           '<span class="val-presence-core">VAL</span>',
         '</span>',
       '</div>',
+      '<p class="val-cowork-voice-hint" aria-hidden="true">Speak with VAL</p>',
     '</section>',
       '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
   ].join(''));
@@ -16424,6 +16429,33 @@ function markValGhlVoiceWidgetNodes(){
     if(node.tagName === 'SCRIPT') return;
     node.setAttribute('data-val-ghl-voice-widget', 'true');
   });
+}
+
+function valGhlVoiceStage(){
+  const widget = document.querySelector('chat-widget[data-val-ghl-voice-widget],chat-widget');
+  return widget?.shadowRoot?.querySelector?.('.voice-orb-stage,[aria-label*="Tap to talk"],[role="button"]') || null;
+}
+
+function valGhlVoiceStageIsActive(stage = valGhlVoiceStage()){
+  const text = String(stage?.innerText || stage?.textContent || '').trim();
+  return /\b(speaking|listening|end call|connected|connecting)\b/i.test(text);
+}
+
+function activateValGhlVoiceStage(){
+  const stage = valGhlVoiceStage();
+  if(!stage) return false;
+  if(valGhlVoiceStageIsActive(stage)) return true;
+  try{
+    stage.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true,composed:true,cancelable:true,pointerId:1,pointerType:'mouse'}));
+    stage.dispatchEvent(new MouseEvent('mousedown', {bubbles:true,composed:true,cancelable:true}));
+    stage.dispatchEvent(new PointerEvent('pointerup', {bubbles:true,composed:true,cancelable:true,pointerId:1,pointerType:'mouse'}));
+    stage.dispatchEvent(new MouseEvent('mouseup', {bubbles:true,composed:true,cancelable:true}));
+    stage.click();
+    return true;
+  }catch(error){
+    try{ stage.click(); return true; }catch(innerError){}
+  }
+  return false;
 }
 
 function startValGhlVoiceWidgetObserver(){
@@ -16485,13 +16517,37 @@ function ensureValGhlVoiceWidget(){
   return valCoworkVoiceState.ghlScriptPromise;
 }
 
+function preloadValGhlVoiceWidget(){
+  startValGhlVoiceWidgetObserver();
+  void ensureValGhlVoiceWidget().then(markValGhlVoiceWidgetNodes).catch((error) => {
+    console.warn('VAL GHL voice preload failed:', error.message);
+  });
+}
+
+function activatePreloadedValGhlVoiceWidget(){
+  const api = valGhlVoiceWidgetApi();
+  if(!api || typeof api.openWidget !== 'function') return false;
+  document.body.classList.add('val-ghl-voice-active');
+  setValGhlVoiceWidgetPlacement('voice');
+  startValGhlVoiceWidgetObserver();
+  markValGhlVoiceWidgetNodes();
+  api.openWidget();
+  return activateValGhlVoiceStage();
+}
+
 async function openValGhlVoiceWidget(){
   document.body.classList.add('val-ghl-voice-active');
+  setValGhlVoiceWidgetPlacement('voice');
   startValGhlVoiceWidgetObserver();
   setValCoworkVoiceMode('thinking', 'Opening VAL voice.');
   const api = await ensureValGhlVoiceWidget();
   markValGhlVoiceWidgetNodes();
   if(typeof api.openWidget === 'function') api.openWidget();
+  window.setTimeout(() => activateValGhlVoiceStage(), 120);
+  window.setTimeout(() => {
+    const stage = valGhlVoiceStage();
+    if(stage && !valGhlVoiceStageIsActive(stage)) activateValGhlVoiceStage();
+  }, 900);
   let marks = 0;
   if(valCoworkVoiceState.ghlWidgetMarkTimer) window.clearInterval(valCoworkVoiceState.ghlWidgetMarkTimer);
   valCoworkVoiceState.ghlWidgetMarkTimer = window.setInterval(() => {
@@ -16507,6 +16563,7 @@ async function openValGhlVoiceWidget(){
 
 function closeValGhlVoiceWidget(){
   document.body.classList.remove('val-ghl-voice-active');
+  setValGhlVoiceWidgetPlacement('hidden');
   try{
     const api = valGhlVoiceWidgetApi();
     if(api && typeof api.closeWidget === 'function') api.closeWidget();
@@ -16751,6 +16808,7 @@ function startValCoworkVoiceMode(){
   valCoworkVoiceState.pending = false;
   valCoworkVoiceState.ghlBridge = true;
   ensureValCoworkVoiceSurface();
+  activatePreloadedValGhlVoiceWidget();
   void openValGhlVoiceWidget().catch((error) => {
     console.warn('VAL GHL voice bridge failed:', error);
     setValCoworkVoiceMode('idle', error?.message || 'VAL voice could not connect. Try again in a moment.');
@@ -24197,6 +24255,7 @@ function renderHomeCoworkPreview(options = {}){
     '</form>'
   ].join('');
   enableValAutocorrect(workspaceInputPanel);
+  preloadValGhlVoiceWidget();
 }
 
 function homeCoworkResponseNode(){
@@ -26230,7 +26289,8 @@ document.addEventListener('click', (event) => {
     '.observer-board-button',
     '.teach-pen',
     '.linkedin-widget',
-    '.lean-button'
+    '.lean-button',
+    '[data-val-ghl-voice-widget]'
   ].join(','));
   if(launchTarget) return;
   if(hearth.classList.contains('calendar-open') && !event.target.closest('.full-calendar-panel')){
