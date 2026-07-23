@@ -16368,20 +16368,39 @@ button.timeline-overview-receipt:focus-visible{
   opacity:0!important;
   pointer-events:none!important;
 }
-body.val-ghl-voice-active [data-val-ghl-voice-widget]{
+body:not(.val-ghl-voice-active) [data-val-ghl-voice-widget]{
   position:fixed!important;
-  right:18px!important;
-  bottom:18px!important;
+  right:0!important;
+  bottom:0!important;
   width:1px!important;
   min-width:1px!important;
   max-width:1px!important;
   height:1px!important;
   min-height:1px!important;
   max-height:1px!important;
-  opacity:.015!important;
-  transform:none!important;
-  z-index:5290!important;
+  opacity:0!important;
   overflow:hidden!important;
+  pointer-events:none!important;
+  z-index:-1!important;
+}
+body.val-ghl-voice-active [data-val-ghl-voice-widget]{
+  position:fixed!important;
+  left:50%!important;
+  top:clamp(76px,14vh,126px)!important;
+  width:460px!important;
+  min-width:460px!important;
+  max-width:460px!important;
+  height:495px!important;
+  min-height:495px!important;
+  max-height:495px!important;
+  opacity:.002!important;
+  transform:translateX(-50%)!important;
+  z-index:5350!important;
+  overflow:visible!important;
+  pointer-events:auto!important;
+}
+body.val-ghl-voice-active [data-val-cowork-voice-end]{
+  z-index:5450!important;
 }
 body.val-ghl-voice-active .val-cowork-voice-shell{
   cursor:default;
@@ -16394,6 +16413,21 @@ body.val-ghl-voice-active .val-cowork-voice-shell::after{
 }
 body.val-ghl-voice-active .val-cowork-voice-mark .val-presence-core{
   animation:valVoiceSpeakingCore 1.35s ease-in-out infinite;
+}
+.val-cowork-voice-hint{
+  position:absolute;
+  left:50%;
+  top:calc(50% + 108px);
+  transform:translateX(-50%);
+  margin:0;
+  color:rgba(255,249,239,.68);
+  font-family:Inter,system-ui,sans-serif;
+  font-size:.72rem;
+  font-weight:560;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  text-shadow:0 0 16px rgba(255,236,202,.3);
+  pointer-events:none;
 }
 body.val-ghl-voice-active .hearth-brand-cluster,
 body.val-ghl-voice-active .hearth,
