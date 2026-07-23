@@ -19075,6 +19075,9 @@ async function runCowork(mode, messageOverride = ''){
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
   const calendarContextLines = calendarCoworkContextLines();
+  const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep');
+  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget);
+  const conversationFastLane = Boolean(voiceFastLane || chatFastLane);
   const calendarContext = calendarContextLines.length
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
     : '';
@@ -19128,7 +19131,13 @@ async function runCowork(mode, messageOverride = ''){
       textarea.placeholder = 'Add the next thought...';
     }
     if(mode !== 'meeting_prep'){
-      showCoworkContextGathering('VAL is writing the meeting brief from the gathered packet.');
+      if(voiceFastLane){
+        hideCoworkContextGathering();
+      }else if(conversationFastLane){
+        showCoworkContextGathering('VAL is thinking with you.', {noTimeout:true});
+      }else{
+        showCoworkContextGathering('VAL is gathering the scoped context for this conversation.');
+      }
     }else{
       appendHomeCoworkMessage('val', 'I am preparing your meeting brief. This can take a minute or two while VAL checks the meeting context and public signals.');
       progressTimers.push(window.setTimeout(() => {
@@ -19157,6 +19166,8 @@ async function runCowork(mode, messageOverride = ''){
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
       title: 'Co-Work from Hearth',
+      latencyMode: voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context'),
+      voiceMode: voiceFastLane,
       messages: [
         ...(heldSystemPrompt ? [{role: 'system', content: heldSystemPrompt}] : []),
         {role: 'user', content: visiblePrompt}

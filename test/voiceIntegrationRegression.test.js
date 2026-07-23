@@ -81,3 +81,16 @@ test('Hearth Co-Work includes current calendar context for voice questions',()=>
   assert.match(hearth,/Current calendar context from the Hearth sidebar/);
   assert.match(hearth,/calendar: calendarContextLines/);
 });
+
+test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
+  assert.match(hearth,/const voiceFastLane = Boolean\(valCoworkVoiceState\.active && mode !== 'meeting_prep'\);/);
+  assert.match(hearth,/const chatFastLane = Boolean\(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget\);/);
+  assert.match(hearth,/latencyMode: voiceFastLane \? 'voice_fast' : \(conversationFastLane \? 'chat_fast' : 'full_context'\)/);
+  assert.match(hearth,/showCoworkContextGathering\('VAL is thinking with you\.', \{noTimeout:true\}\);/);
+  assert.doesNotMatch(hearth,/showCoworkContextGathering\('VAL is writing the meeting brief from the gathered packet\.'\)/);
+  assert.match(server,/function hearthFastChatEnabled/);
+  assert.match(server,/Fast Hearth Co-Work lane/);
+  assert.match(server,/Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context/);
+  assert.match(server,/maxTokens:voiceMode\?260:520/);
+  assert.match(server,/fastHearthChat:true/);
+});

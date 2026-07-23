@@ -33014,6 +33014,63 @@ app.post('/api/val/intelligence',async(req,res)=>{
     res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext});
   }catch(e){res.status(500).json({error:e.message});}
 });
+function hearthFastChatEnabled(body={}){
+  return body?.channel === 'hearth_cowork' && /^(voice_fast|chat_fast)$/i.test(String(body.latencyMode||''));
+}
+function hearthFastDashboardContext(dashboard={}){
+  const calendar=Array.isArray(dashboard.calendar)?dashboard.calendar.filter(Boolean).slice(0,6):[];
+  return [
+    dashboard.hearth?`Home message: ${String(dashboard.hearth).slice(0,500)}`:'',
+    dashboard.witness?`Witness: ${String(dashboard.witness).slice(0,500)}`:'',
+    dashboard.orientation?`Orientation: ${String(dashboard.orientation).slice(0,500)}`:'',
+    dashboard.permission?`Permission boundary: ${String(dashboard.permission).slice(0,500)}`:'',
+    calendar.length?'Calendar visible in Hearth:\n'+calendar.map(line=>`- ${String(line).slice(0,500)}`).join('\n'):'Calendar visible in Hearth: no upcoming events were supplied by the page.'
+  ].filter(Boolean).join('\n');
+}
+function hearthFastCalendarFallback(lastUser='',dashboard={}){
+  if(!/\b(calendar|meeting|schedule|next|today|tomorrow)\b/i.test(lastUser)) return '';
+  const lines=Array.isArray(dashboard.calendar)?dashboard.calendar.filter(Boolean):[];
+  if(lines.length){
+    const next=String(lines.find(line=>/^Next meeting:/i.test(line))||lines[0]).replace(/^Next meeting:\s*/i,'');
+    return `The next thing I can see from the Hearth calendar is ${next}.`;
+  }
+  return 'I do not see an upcoming calendar item in the Hearth sidebar right now.';
+}
+async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=false}){
+  const dashboardContext=hearthFastDashboardContext(dashboard);
+  const system=[
+    VAL_SYSTEM_PROMPT,
+    'Fast Hearth Co-Work lane. Prioritize conversational responsiveness over broad source retrieval.',
+    'Use only the user message, the recent visible conversation, and the supplied Hearth dashboard context. Do not fetch, imply, or wait for Gmail, Drive, GHL, transcripts, uploaded documents, or executive briefing context.',
+    'If the user asks about calendar or meetings, answer only from the supplied Hearth calendar context. If it is missing, say that plainly.',
+    'No external action happens from this lane. If action is needed, say what you can prepare or where the user should open the source.',
+    voiceMode
+      ? 'Voice mode: answer in one to three natural spoken sentences. No markdown. No lists unless absolutely necessary.'
+      : 'Typed mode: answer like ChatGPT in a clean executive chat. Keep it concise unless the user asks for detail.',
+    dashboardContext?'Current Hearth dashboard context:\n'+dashboardContext:''
+  ].filter(Boolean).join('\n\n');
+  const recent=messages
+    .filter(message=>message&&message.content)
+    .slice(-6)
+    .map(message=>({role:message.role==='assistant'?'assistant':'user',content:String(message.content).slice(0,2200)}));
+  if(!recent.length) recent.push({role:'user',content:lastUser||'Help me think this through.'});
+  try{
+    return await callOpenAIResponses({
+      system,
+      messages:recent,
+      maxTokens:voiceMode?260:520,
+      temperature:voiceMode?0.45:0.5,
+      timeoutMs:voiceMode?14000:18000
+    });
+  }catch(error){
+    const calendarFallback=hearthFastCalendarFallback(lastUser,dashboard);
+    if(calendarFallback) return calendarFallback;
+    console.warn('Fast Hearth chat fallback:',error.message);
+    return voiceMode
+      ? 'I am here. I did not get a clean fast response, so ask me one smaller thing and I will stay with you.'
+      : 'I am here. I did not get a clean fast response on that pass, so give me one smaller thread and I will stay with it.';
+  }
+}
 app.post('/api/val/chat',async(req,res)=>{
   try{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
@@ -33079,6 +33136,10 @@ app.post('/api/val/chat',async(req,res)=>{
       const inbox=await runInboxCommand(lastUser,{maxResults:5});
       const sourceLines=(inbox.sources||[]).slice(0,5).map((email,i)=>`${i+1}. ${email.subject||'(No subject)'} — ${email.from?.name||email.from?.email||'unknown'} — ${email.date?new Date(email.date).toLocaleString():''}\n   ${email.snippet||''}`).join('\n');
       return sendChat([inbox.answer,sourceLines?'\nSources:\n'+sourceLines:'',inbox.needsChoice?'\nIf you want me to act on one, tell me which number.':''].filter(Boolean).join('\n'),{inboxCommand:inbox});
+    }
+    if(hearthFastChatEnabled(req.body)){
+      const content=await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:!!req.body.voiceMode});
+      return sendChat(content,{fastHearthChat:true,voiceMode:!!req.body.voiceMode,noExternalAction:true});
     }
     if(isGoallTestContactRequest(lastUser)){
       const result=await createOrUpdateGoallTestContact();
