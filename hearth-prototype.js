@@ -2986,6 +2986,20 @@ function appendRelationshipRolodexRow(item){
   relationshipRolodex.appendChild(row);
 }
 
+function stewardshipRelationshipPhone(profile = {}){
+  return String(
+    profile.ghlPhone ||
+    profile.phoneNumber ||
+    profile.phone ||
+    profile.metadata?.ghlPhone ||
+    profile.metadata?.phoneNumber ||
+    profile.metadata?.phone ||
+    profile.personPacket?.person?.phone_numbers?.[0] ||
+    profile.metadata?.personPacket?.person?.phone_numbers?.[0] ||
+    ''
+  ).trim();
+}
+
 function renderStewardshipNetworkDetail(profile = null){
   if(!stewardshipNetworkDetail) return;
   if(!profile){
@@ -2995,6 +3009,7 @@ function renderStewardshipNetworkDetail(profile = null){
   const matches = stewardshipBestMatches(profile, 3);
   const enrichment = profile.relationshipEnrichment || profile.relationship_enrichment || {};
   const linkedinUrl = profile.linkedinUrl || profile.linkedin_url || profile.metadata?.linkedinUrl || profile.metadata?.linkedin_url || '';
+  const phone = stewardshipRelationshipPhone(profile);
   const linkedinActivityUrl = linkedinUrl ? linkedinUrl.replace(/[#?].*$/, '').replace(/\/$/, '') + (/linkedin\.com\/in\//i.test(linkedinUrl) ? '/recent-activity/all/' : '') : '';
   const enrichmentLines = stewardshipCleanList([
     linkedinUrl ? 'LinkedIn: ' + linkedinUrl : '',
@@ -3015,8 +3030,9 @@ function renderStewardshipNetworkDetail(profile = null){
     '<button type="button" class="stewardship-network-back" data-stewardship-return-network>Return to Stewardship</button>',
     '<h5>' + escapeHtml(profile.name || 'Relationship') + '</h5>',
     '<p>' + escapeHtml(stewardshipRelationshipLine(profile)) + '</p>',
-    '<div class="stewardship-profile-links">' + (linkedinUrl ? '<a href="' + escapeHtml(linkedinUrl) + '" target="_blank" rel="noopener">Open LinkedIn profile</a><a href="' + escapeHtml(linkedinActivityUrl) + '" target="_blank" rel="noopener">Open recent activity</a><span>Used by Meeting Prep and LinkedIn commenting.</span>' : '<span>LinkedIn URL has not been added yet. Add it here so Meeting Prep and LinkedIn commenting can use it.</span>') + '</div>',
+    '<div class="stewardship-profile-links">' + (linkedinUrl ? '<a href="' + escapeHtml(linkedinUrl) + '" target="_blank" rel="noopener">Open LinkedIn profile</a><a href="' + escapeHtml(linkedinActivityUrl) + '" target="_blank" rel="noopener">Open recent activity</a><span>Used by Meeting Prep and LinkedIn commenting.</span>' : '<span>LinkedIn URL has not been added yet. Add it here so Meeting Prep and LinkedIn commenting can use it.</span>') + (phone ? '<span>Phone: ' + escapeHtml(phone) + '</span>' : '<span>Phone has not been added yet. Add it here so SMS actions can use it.</span>') + '</div>',
     '<div class="stewardship-linkedin-editor"><input type="url" data-stewardship-linkedin-url value="' + escapeHtml(linkedinUrl) + '" placeholder="https://www.linkedin.com/in/name" aria-label="LinkedIn URL for ' + escapeHtml(profile.name || 'this relationship') + '"><button type="button" data-stewardship-save-linkedin="' + escapeHtml(stewardshipSelectedNetworkId) + '">Save LinkedIn</button></div>',
+    '<div class="stewardship-linkedin-editor"><input type="tel" data-stewardship-phone value="' + escapeHtml(phone) + '" placeholder="+1 555 555 5555" aria-label="Phone for ' + escapeHtml(profile.name || 'this relationship') + '"><button type="button" data-stewardship-save-phone="' + escapeHtml(stewardshipSelectedNetworkId) + '">Save Phone</button></div>',
     '<div class="stewardship-four-grid">',
     stewardshipCoworkCard('needs', 'Needs', stewardshipNeeds(profile), profile),
     stewardshipCoworkCard('offers', 'Offers', stewardshipOffers(profile), profile),
@@ -3303,6 +3319,7 @@ async function saveStewardshipLinkedInUrl(personId = '', button = null){
     const result = await postJson('/api/relationships/network/manual', {
       name:profile.name || profile.displayName || '',
       email:profile.email || profile.query?.email || '',
+      phone:stewardshipRelationshipPhone(profile),
       organization:profile.company || profile.metadata?.company || '',
       linkedinUrl,
       summary:profile.summary || profile.signal || ''
@@ -3313,6 +3330,41 @@ async function saveStewardshipLinkedInUrl(personId = '', button = null){
     setStewardshipNetworkStatus('LinkedIn URL saved. Meeting Prep and LinkedIn commenting can use it now.');
   }catch(error){
     setStewardshipNetworkStatus(error.message || 'VAL could not save that LinkedIn URL.','error');
+  }finally{
+    setStewardshipNetworkButtonWorking(button, false);
+  }
+}
+
+async function saveStewardshipPhoneNumber(personId = '', button = null){
+  if(!canUseApi || !personId) return;
+  const profile = stewardshipPersonById(personId);
+  const input = stewardshipNetworkDetail?.querySelector('[data-stewardship-phone]');
+  const phone = String(input?.value || '').trim();
+  if(!profile){
+    setStewardshipNetworkStatus('Choose a Network contact before saving a phone number.','error');
+    return;
+  }
+  if(!phone){
+    setStewardshipNetworkStatus('Add a phone number before saving.','error');
+    return;
+  }
+  setStewardshipNetworkButtonWorking(button, true, 'Saving...');
+  try{
+    const result = await postJson('/api/relationships/network/manual', {
+      name:profile.name || profile.displayName || '',
+      email:profile.email || profile.query?.email || '',
+      phone,
+      organization:profile.company || profile.metadata?.company || '',
+      linkedinUrl:profile.linkedinUrl || profile.linkedin_url || profile.metadata?.linkedinUrl || profile.metadata?.linkedin_url || '',
+      summary:profile.summary || profile.signal || ''
+    }, {timeoutMs:30000,timeoutMessage:'Saving the phone number took longer than expected. Please try again.'});
+    stewardshipSelectedNetworkId = result.relationship?.id || personId;
+    if(result.relationship) applyStewardshipRelationshipRefresh(result.relationship);
+    await hydrateRelationshipIndex({force:true});
+    renderStewardshipNetworkDetail(stewardshipPersonById(stewardshipSelectedNetworkId));
+    setStewardshipNetworkStatus('Phone saved in GHL-ready format for SMS actions.');
+  }catch(error){
+    setStewardshipNetworkStatus(error.message || 'VAL could not save that phone number.','error');
   }finally{
     setStewardshipNetworkButtonWorking(button, false);
   }
@@ -25436,6 +25488,7 @@ stewardshipNetworkAddForm?.addEventListener('submit', async(event) => {
     const result = await postJson('/api/relationships/network/manual', {
       name:values.get('name') || '',
       email:values.get('email') || '',
+      phone:values.get('phone') || '',
       organization:values.get('organization') || '',
       linkedinUrl:values.get('linkedinUrl') || '',
       summary:values.get('summary') || ''
@@ -25903,6 +25956,13 @@ drawerTray.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await saveStewardshipLinkedInUrl(saveStewardshipLinkedIn.dataset.stewardshipSaveLinkedin, saveStewardshipLinkedIn);
+    return;
+  }
+  const saveStewardshipPhone = event.target.closest('[data-stewardship-save-phone]');
+  if(saveStewardshipPhone){
+    event.preventDefault();
+    event.stopPropagation();
+    await saveStewardshipPhoneNumber(saveStewardshipPhone.dataset.stewardshipSavePhone, saveStewardshipPhone);
     return;
   }
   const pendingTemperatureReview = event.target.closest('[data-relationship-pending-temperature-review]');

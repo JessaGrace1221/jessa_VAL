@@ -21122,6 +21122,11 @@ function relationshipProfilePrimaryEmail(profile={}){
   const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
   return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
 }
+function relationshipProfilePrimaryPhone(profile={}){
+  const metadata=profile.metadata||{};
+  const packetPhone=profile.personPacket?.person?.phone_numbers?.[0]||metadata.personPacket?.person?.phone_numbers?.[0]||'';
+  return normalizePhoneNumber(metadata.ghlPhone||metadata.phoneNumber||metadata.phone||profile.phone||profile.contactPhone||packetPhone||'');
+}
 function stewardshipNetworkNamedEmailAdmission(profile={}){
   const email=relationshipProfilePrimaryEmail(profile);
   const name=firstLookCandidateCleanName(profile.displayName||profile.display_name||profile.name||'');
@@ -21634,20 +21639,28 @@ function networkCsvPerson(record={}){
   return {
     name:networkCsvField(record,['name','full_name','fullname','contact_name','contact'])||[first,last].filter(Boolean).join(' '),
     email:networkCsvField(record,['email','email_address','e_mail']),
+    phone:networkCsvField(record,['phone','phone_number','phonenumber','mobile','mobile_phone','cell','cell_phone','sms','telephone']),
     organization:networkCsvField(record,['organization','company','company_name','business']),
     linkedinUrl:networkCsvField(record,['linkedin','linkedin_url','linkedinurl','linkedin profile','linkedin_profile','profile_url']),
     summary:networkCsvField(record,['notes','note','summary','detail','details','context'])
   };
 }
-async function saveStewardshipNetworkManualPerson({name='',email='',organization='',summary='',linkedinUrl='',source='network_manual_add',existingByEmail=null}={}){
+async function saveStewardshipNetworkManualPerson({name='',email='',phone='',organization='',summary='',linkedinUrl='',source='network_manual_add',existingByEmail=null}={}){
   const displayName=firstLookCandidateCleanName(name);
   const cleanEmail=normalizeExecutiveEmailAddress(email);
+  const rawPhone=String(phone||'').trim().slice(0,80);
+  const cleanPhone=rawPhone?normalizePhoneNumber(rawPhone):'';
   const cleanOrganization=firstLookCandidateCleanName(organization);
   const cleanSummary=String(summary||'').replace(/\s+/g,' ').trim().slice(0,800);
   const cleanLinkedInUrl=String(linkedinUrl||'').trim().slice(0,500);
   if(!displayName||!cleanEmail)throw new Error('A name and real email address are required to add someone to Network.');
   if(!stewardshipNetworkNamedEmailAdmission({displayName,email:cleanEmail}))throw new Error('Use a real person name and email address. Your own email address cannot be added to Network.');
+  if(rawPhone&&!cleanPhone)throw new Error('Use a real phone number with area code so GHL can read it.');
   const existing=existingByEmail?.get(cleanEmail)||(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===cleanEmail)||null;
+  const existingPhone=relationshipProfilePrimaryPhone(existing||{});
+  const savedPhone=cleanPhone||existingPhone||'';
+  const existingPacket=existing?.metadata?.personPacket||existing?.personPacket||{};
+  const existingPacketPerson=existingPacket.person||{};
   const row=await saveRelationshipProfile({
     ...(existing||{}),
     profileType:'person',
@@ -21661,9 +21674,20 @@ async function saveStewardshipNetworkManualPerson({name='',email='',organization
       source,
       networkAdmission:'manual',
       email:cleanEmail,
+      phone:savedPhone,
+      phoneNumber:savedPhone,
+      ghlPhone:savedPhone,
+      phoneRaw:rawPhone||existing?.metadata?.phoneRaw||existing?.metadata?.phone||'',
       linkedinUrl:cleanLinkedInUrl||existing?.metadata?.linkedinUrl||existing?.linkedinUrl||'',
       linkedin_url:cleanLinkedInUrl||existing?.metadata?.linkedin_url||existing?.linkedin_url||'',
       company:cleanOrganization||existing?.metadata?.company||'',
+      personPacket:{
+        ...existingPacket,
+        person:{
+          ...existingPacketPerson,
+          phone_numbers:savedPhone?[savedPhone]:(Array.isArray(existingPacketPerson.phone_numbers)?existingPacketPerson.phone_numbers:[])
+        }
+      },
       relationshipAdmissionSignals:Array.from(new Set([...(existing?.metadata?.relationshipAdmissionSignals||[]),'manual_network'])),
       noExternalAction:true
     }
@@ -21921,6 +21945,7 @@ function relationshipIndexItemFromProfile(profile={}){
   const contactId=realRelationshipContactId(profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id)||resolvedCrmContactId(profile)||'';
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
   const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
+  const phone=relationshipProfilePrimaryPhone(profile);
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   const packetItem=relationshipPersonPacketItemFromProfile(profile);
   const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
@@ -21936,6 +21961,9 @@ function relationshipIndexItemFromProfile(profile={}){
     id:String(id),
     query:{name,email,targetId:id,contactId},
     name,
+    phone,
+    phoneNumber:phone,
+    ghlPhone:phone,
     initials:name.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'R',
     role:profile.relationshipStatus||profile.profileType||'Relationship',
     company:metadata.company||profile.organizationId||'Relationship',
@@ -21956,7 +21984,7 @@ function relationshipIndexItemFromProfile(profile={}){
     lastChangedAt:profile.updatedAt||profile.lastObservedAt||'',
     signal:relationshipIndexPrimarySignal(profile,state),
     identity:name,
-    contact:[email,metadata.phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
+    contact:[email,phone,profile.profileKey].filter(Boolean).join(' · ')||profile.profileKey||'CRM identity review may be required.',
     wisdom:profile.summary||'Review the relationship file before acting.',
     evidence:profile.summary||relationshipIndexPrimarySignal(profile,state),
     patterns:dashboardShortText(profile.executiveAssessment||profile.patterns||relationshipIndexPrimarySignal(profile,state),profile.summary||'Pattern not confirmed yet. VAL needs relationship evidence or user context before treating this as judgment.',220),
@@ -21997,6 +22025,7 @@ function relationshipPersonPacketItemFromProfile(profile={}){
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
   const email=admission.email||metadata.email||'';
+  const phone=relationshipProfilePrimaryPhone(profile);
   const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||profile.relationshipEvidenceMap||profile.relationship_evidence_map||{};
   const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
   const lastDirectCommunicationSource=relationshipEvidenceMap.lastDirectCommunicationSource||relationshipEvidenceMap.last_direct_communication_source||'';
@@ -22028,6 +22057,10 @@ function relationshipPersonPacketItemFromProfile(profile={}){
   });
   const packet={
     ...rawPacket,
+    person:{
+      ...(rawPacket.person||{}),
+      phone_numbers:phone?[phone]:safeArray(rawPacket.person?.phone_numbers)
+    },
     relationship_evidence_map:rawPacket.relationship_evidence_map||relationshipEvidenceMap,
     relationship_state:{
       ...(rawPacket.relationship_state||{}),
@@ -32269,13 +32302,14 @@ app.post('/api/relationships/network/manual',async(req,res)=>{
     const saved=await saveStewardshipNetworkManualPerson({
       name:req.body.name||req.body.displayName||'',
       email:req.body.email||'',
+      phone:req.body.phone||req.body.phoneNumber||req.body.phone_number||'',
       organization:req.body.organization||'',
       linkedinUrl:req.body.linkedinUrl||req.body.linkedin_url||'',
       summary:req.body.summary||req.body.detail||''
     });
     res.json({ok:true,relationship:saved.relationship,message:`${saved.profile.displayName} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});
   }catch(e){
-    res.status(/required|Use a real person/i.test(e.message)?400:500).json({ok:false,error:e.message});
+    res.status(/required|Use a real person|Use a real phone/i.test(e.message)?400:500).json({ok:false,error:e.message});
   }
 });
 app.post('/api/relationships/network/import-csv',upload.single('file'),async(req,res)=>{
@@ -32301,7 +32335,7 @@ app.post('/api/relationships/network/import-csv',upload.single('file'),async(req
         skipped+=1;
       }
     }
-    res.json({ok:true,added,updated,skipped,totalRows:rows.length,message:`Imported ${added} people and updated ${updated}. Skipped ${skipped} rows without a usable name and email. No external system changed.`,noExternalAction:true});
+    res.json({ok:true,added,updated,skipped,totalRows:rows.length,message:`Imported ${added} people and updated ${updated}. Skipped ${skipped} rows without a usable name, email, or readable optional phone. No external system changed.`,noExternalAction:true});
   }catch(e){
     res.status(500).json({ok:false,error:e.message});
   }
@@ -33120,9 +33154,7 @@ function hearthActionSpokenSentence(value=''){
   return text.replace(/[.?!]+\s*$/,'');
 }
 function hearthActionProfilePhone(profile={}){
-  const metadata=profile.metadata||{};
-  const packetPhone=profile.personPacket?.person?.phone_numbers?.[0]||metadata.personPacket?.person?.phone_numbers?.[0]||'';
-  return normalizeContextPhone(metadata.phone||profile.phone||profile.contactPhone||packetPhone||'');
+  return relationshipProfilePrimaryPhone(profile);
 }
 function hearthActionProfileCompany(profile={}){
   const metadata=profile.metadata||{};
@@ -33202,7 +33234,7 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
   const broader=await resolveContactFromContext({name:needle,email:directEmail,company:companyHint}).catch(()=>null);
   const broaderContact=broader?.contact||null;
   const broaderEmail=normalizeContextEmail(broaderContact?.email||'');
-  const broaderPhone=normalizeContextPhone(broaderContact?.phone||'');
+  const broaderPhone=normalizePhoneNumber(broaderContact?.phone||'');
   if(best){
     return {
       ...best,
