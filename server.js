@@ -24642,6 +24642,28 @@ async function saveConversation(payload){
   }
   return {id,title,count:messages.length};
 }
+async function conversationMessagesForContext(conversationId='',limit=10){
+  const id=String(conversationId||'').trim();
+  if(!id)return [];
+  try{
+    if(DEMO_MODE){
+      const state=requestContext.getStore()?.demoState||{};
+      return (state.savedConversationMessages?.[id]||[]).slice(-limit).map(message=>({role:message.role||'user',content:message.content||''}));
+    }
+    await valDbReady;
+    if(pgPool){
+      const result=await dbQuery('select role,content from val_messages where conversation_id=$1 order by created_at desc limit $2',[id,limit]);
+      return result.rows.reverse().map(message=>({role:message.role||'user',content:message.content||''}));
+    }
+    return valStore().messages
+      .filter(message=>message.conversationId===id)
+      .slice(-limit)
+      .map(message=>({role:message.role||'user',content:message.content||''}));
+  }catch(error){
+    console.warn('Conversation context lookup failed:',error.message);
+    return [];
+  }
+}
 async function recentMemoryContext(query){
   await valDbReady;
   const terms=queryTerms(query);
@@ -33104,7 +33126,7 @@ function hearthActionChatEnabled(body={}){
 function hearthActionNameCandidate(text='',kind=''){
   const value=String(text||'').replace(/[“”]/g,'"').replace(/[’]/g,"'").trim();
   const patterns=[
-    /\b(?:send|write|compose|draft|prepare)\s+(?:an?\s+)?(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:[.\n]|(?:\s+(?:about|saying|that|and|with|$)))/i,
+    /\b(?:send|write|compose|draft|prepare)\s+(?:an?\s+)?(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:[.\n]|(?:\s+(?:about|saying|that|introduc(?:e|ing)|and|with|from|$)))/i,
     /\b(?:send|write|compose|draft|prepare)\s+(.+?)\s+(?:an?\s+)?(?:email|reply|message)\b/i,
     /\b(?:email|reply|message)\s+(?:to|for)\s+(.+?)(?:[.\n]|(?:\s+(?:about|saying|that|and|with|$)))/i,
     /\b(?:text|sms|message)\s+(.+?)(?:\s+(?:that|saying|about|and|$))/i,
@@ -33115,6 +33137,7 @@ function hearthActionNameCandidate(text='',kind=''){
     const match=value.match(pattern);
     if(match?.[1]){
       const candidate=match[1]
+        .replace(/\bintroduc(?:e|ing)\b[\s\S]*$/i,' ')
         .replace(/\b(to|for|with|an?|the|email|message|reply|sms|text)\b/ig,' ')
         .replace(/[^a-z0-9@._'\-\s]/ig,' ')
         .replace(/\s+/g,' ')
@@ -33160,6 +33183,13 @@ function hearthActionProfileCompany(profile={}){
   const metadata=profile.metadata||{};
   const enrichment=metadata.relationshipEnrichment||metadata.relationship_enrichment||profile.relationshipEnrichment||null;
   return String(metadata.company||metadata.companyName||metadata.organization||metadata.organizationName||profile.company||profile.companyName||profile.organization||enrichment?.organization||'').trim();
+}
+function hearthActionUsableEmail(value=''){
+  const email=normalizeContextEmail(value);
+  if(!email)return '';
+  const domain=email.split('@')[1]||'';
+  if(['example.com','example.org','example.net','test.com','demo.val'].includes(domain))return '';
+  return email;
 }
 function hearthActionComparableName(value=''){
   return String(value||'').toLowerCase().replace(/[^a-z0-9@\s._-]/g,' ').replace(/\s+/g,' ').trim();
@@ -33215,7 +33245,7 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
   const profiles=(await listRelationshipProfiles({limit:800}).catch(()=>[])).filter(profile=>profile.profileType==='person');
   const scored=profiles.map((profile)=>{
     const display=String(profile.displayName||profile.display_name||profile.name||'').trim();
-    const email=relationshipProfilePrimaryEmail(profile);
+    const email=hearthActionUsableEmail(relationshipProfilePrimaryEmail(profile));
     const phone=hearthActionProfilePhone(profile);
     const company=hearthActionProfileCompany(profile);
     const comparable=hearthActionComparableName(display);
@@ -33233,7 +33263,7 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
   const best=scored[0]||null;
   const broader=await resolveContactFromContext({name:needle,email:directEmail,company:companyHint}).catch(()=>null);
   const broaderContact=broader?.contact||null;
-  const broaderEmail=normalizeContextEmail(broaderContact?.email||'');
+  const broaderEmail=hearthActionUsableEmail(broaderContact?.email||'');
   const broaderPhone=normalizePhoneNumber(broaderContact?.phone||'');
   if(best){
     return {
@@ -33439,6 +33469,32 @@ function ghlVoiceContextText(body={}){
   }
   return chunks.filter(Boolean).join('\n').slice(-12000);
 }
+function ghlVoiceMessagesText(messages=[]){
+  return (Array.isArray(messages)?messages:[])
+    .filter(message=>message&&message.content)
+    .map(message=>`${message.role==='assistant'?'AI':'You'}: ${String(message.content||'').slice(0,1200)}`)
+    .join('\n');
+}
+function ghlVoiceAsksSystemLookup(text=''){
+  return /\b(check|search|look(?:\s+it)?\s+up|find|pull|use)\b[\s\S]{0,60}\b(system|val|rolodex|stewardship|contacts?|relationship|network)\b|\b(check|search|look(?:\s+it)?\s+up|find|pull|use)\s+(?:the\s+)?rolodex\b/i.test(String(text||''));
+}
+function ghlVoicePriorActionText(text=''){
+  const lines=String(text||'').split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  for(let i=lines.length-1;i>=0;i--){
+    const line=lines[i].replace(/^\s*(?:You|User)\s*[:\-]\s*/i,'').trim();
+    if(hearthActionIntent(line))return line;
+  }
+  return '';
+}
+function ghlVoiceActionContext({lastUser='',voiceContextText='',priorMessagesText=''}={}){
+  const combined=[priorMessagesText,voiceContextText,lastUser].filter(Boolean).join('\n');
+  if(hearthActionIntent(lastUser))return combined;
+  if(ghlVoiceAsksSystemLookup(lastUser)){
+    const prior=ghlVoicePriorActionText([voiceContextText,priorMessagesText].filter(Boolean).join('\n'));
+    if(prior)return [voiceContextText,priorMessagesText,prior,lastUser].filter(Boolean).join('\n');
+  }
+  return combined;
+}
 function ghlVoiceMeetingPrepIntent(text=''){
   return /\b(meeting prep|prep me|prepare me|run .*prep|prepare .*meeting|meeting brief|brief me)\b/i.test(String(text||''));
 }
@@ -33576,16 +33632,18 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const contactId=String(req.body.contactId||contact.id||contact.contactId||'').trim();
     const contactName=String(req.body.contactName||contact.name||contact.fullName||contact.full_name||'').trim();
     const conversationId=String(req.body.conversationId||req.body.conversation_id||contactId||'').trim()||uuid('ghl_voice');
+    const priorMessages=await conversationMessagesForContext(conversationId,10);
+    const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
       const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
       return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance'});
     }
-    const messages=[{role:'user',content:lastUser}];
+    const messages=[...priorMessages,{role:'user',content:lastUser}].slice(-12);
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
     let prepared=null;
     let content='';
     let functionRan='';
-    const actionContext=[voiceContextText,lastUser].filter(Boolean).join('\n');
+    const actionContext=ghlVoiceActionContext({lastUser,voiceContextText,priorMessagesText});
     if(ghlVoiceMeetingPrepIntent(actionContext)){
       content=await ghlVoiceMeetingPrepResponse({body:req.body,lastUser});
       functionRan='meeting_prep';
@@ -33594,19 +33652,21 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       functionRan='calendar_next';
     }
     if(hearthActionIntent(actionContext)){
-      prepared=await hearthActionPrepContent({lastUser,dashboard,voiceMode:true,contextText:voiceContextText});
+      const actionRequest=hearthActionIntent(lastUser)?lastUser:actionContext;
+      prepared=await hearthActionPrepContent({lastUser:actionRequest,dashboard,voiceMode:true,contextText:actionContext});
       if(prepared)functionRan=functionRan||`action_${prepared.extra?.actionKind||'prep'}`;
     }else if(!content&&ghlVoiceContactLookupIntent(actionContext)){
-      content=await ghlVoiceContactLookupResponse({lastUser,contextText:voiceContextText});
+      content=await ghlVoiceContactLookupResponse({lastUser,contextText:actionContext});
       if(content)functionRan='contact_lookup';
     }
     content=content || prepared?.content || await hearthFastChatContent({messages,lastUser,dashboard,voiceMode:true});
     const title=String(req.body.title||`GHL Voice${contactName?' - '+contactName:''}`).slice(0,120);
+    const savedMessages=[...messages,{role:'assistant',content}].slice(-14);
     saveConversation({
       id:conversationId,
       title,
       source:'ghl_voice',
-      messages:[...messages,{role:'assistant',content}],
+      messages:savedMessages,
       metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
     }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
     return res.json({
