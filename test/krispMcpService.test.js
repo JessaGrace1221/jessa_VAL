@@ -71,6 +71,7 @@ test('server skips Krisp captures of VAL voice self-talk instead of saving them 
   assert.match(server,/reason:'val_voice_self_capture'/);
   assert.match(server,/const rawWebhookPreview=transcriptWebhookBodyPreview\(req\.body\)/);
   assert.match(server,/rawText:\[transcriptText,rawWebhookPreview\]/);
+  assert.match(server,/looksLikeValVoice\|\|\/\\bGoogle Chrome meeting\\b\/i\.test\(title\)/);
   assert.match(server,/if\(isValVoiceSelfTranscriptRecord\(record\)\) return false;/);
 });
 
