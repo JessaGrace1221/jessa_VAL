@@ -416,7 +416,7 @@ function homeCoworkNeedsFullValContext(text = ''){
   const value = String(text || '');
   if(/\b(next|upcoming)\b[\s\S]{0,30}\b(appointment|calendar|meeting|schedule)\b/i.test(value)) return false;
   if(homeCoworkNeedsActionPrep(value)) return false;
-  if(/\b(access|see|read|have|use)\b[\s\S]{0,80}\bwitnessing\b/i.test(value)) return false;
+  if(/\bwitnessing\b/i.test(value)) return false;
   return /\b(send|email|draft|reply|contact|person|people|relationship|stewardship|crm|ghl|pipeline|opportunity|note|task|project|transcript|linkedin|board|observer|director|witnessing|document|file|memory|search|find|look up|check|who is|what do we know)\b/i.test(value);
 }
 
@@ -432,15 +432,15 @@ function homeCoworkNeedsActionPrep(text = ''){
 
 function homeCoworkFullContextDetail(text = ''){
   const value = String(text || '');
-  if(/\b(send|email|draft|reply|text|sms)\b/i.test(value)) return 'Give me one moment. VAL is finding the right person and preparing the safest path.';
-  if(/\b(remind|task)\b/i.test(value)) return 'Give me one moment. VAL is finding where this should live.';
-  if(/\b(book|schedule|appointment|meeting|calendar|event|call)\b/i.test(value)) return 'Give me one moment. VAL is checking the right calendar path.';
-  if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Give me one moment. VAL is finding the right relationship record.';
-  if(/\b(project)\b/i.test(value)) return 'Just a sec. VAL is checking Project Managers, source packets, and relevant relationship context.';
-  if(/\b(transcript)\b/i.test(value)) return 'Just a sec. VAL is checking transcript intelligence and related memory.';
-  if(/\b(linkedin)\b/i.test(value)) return 'Just a sec. VAL is checking LinkedIn context and relationship signals.';
-  if(/\b(board|observer|director)\b/i.test(value)) return 'Just a sec. VAL is checking the Board of Observers and current system context.';
-  return 'Just a sec. VAL is checking the wider system context.';
+  if(/\b(send|email|draft|reply|text|sms)\b/i.test(value)) return 'Give me one moment. I’m finding the right person and preparing the safest path.';
+  if(/\b(remind|task)\b/i.test(value)) return 'Give me one moment. I’m finding where this should live.';
+  if(/\b(book|schedule|appointment|meeting|calendar|event|call)\b/i.test(value)) return 'Give me one moment. I’m checking the right calendar path.';
+  if(/\b(stewardship|relationship|contact|person|people|michele)\b/i.test(value)) return 'Give me one moment. I’m finding the right relationship record.';
+  if(/\b(project)\b/i.test(value)) return 'Just a sec. I’m checking Project Managers, source packets, and relevant relationship context.';
+  if(/\b(transcript)\b/i.test(value)) return 'Just a sec. I’m checking transcript intelligence and related memory.';
+  if(/\b(linkedin)\b/i.test(value)) return 'Just a sec. I’m checking LinkedIn context and relationship signals.';
+  if(/\b(board|observer|director)\b/i.test(value)) return 'Just a sec. I’m checking the Board of Observers and current system context.';
+  return 'Just a sec. I’m checking the wider system context.';
 }
 
 let pendingHomeCoworkActionPacket = null;
@@ -19263,6 +19263,17 @@ async function runCowork(mode, messageOverride = ''){
     });
   }
   try{
+    const requestOptions = conversationFastLane ? {
+      timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
+      timeoutMessage: actionPrepLane
+        ? 'I heard you, but preparing that action took too long. Ask again with the person and the action in one sentence.'
+        : voiceFastLane
+        ? 'I heard you, but the voice response took too long. Ask again in one shorter sentence.'
+        : 'I took too long to answer this chat turn. Try one narrower question.'
+    } : (valCoworkVoiceState.active ? {
+      timeoutMs: 16000,
+      timeoutMessage: 'I’m still gathering that context. Ask me one narrower version and I’ll stay with you.'
+    } : {});
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
       title: 'Co-Work from Hearth',
@@ -19281,14 +19292,7 @@ async function runCowork(mode, messageOverride = ''){
         permission: permission.textContent,
         calendar: calendarContextLines
       }
-    }, conversationFastLane ? {
-      timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
-      timeoutMessage: actionPrepLane
-        ? 'VAL heard you, but preparing that action took too long. Ask again with the person and the action in one sentence.'
-        : voiceFastLane
-        ? 'VAL heard you, but the voice response took too long. Ask again in one shorter sentence.'
-        : 'VAL took too long to answer this chat turn. Try one narrower question.'
-    } : {});
+    }, requestOptions);
     const content = result.message?.content || 'VAL prepared a response.';
     clearProgressTimers();
     if(result.externalActionPacket){
@@ -19333,7 +19337,10 @@ async function runCowork(mode, messageOverride = ''){
   }catch(error){
     clearProgressTimers();
     if(keepHomeCoworkOpen){
-      appendHomeCoworkMessage('val', 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.');
+      const recoveryMessage = valCoworkVoiceState.active
+        ? (error.message || 'I heard you, but that turn did not complete. Ask me one smaller thing and I’ll stay with you.')
+        : 'Co-Work needs attention: ' + error.message + '\n\nNo external action was taken.';
+      appendHomeCoworkMessage('val', recoveryMessage, {silentVoice:!valCoworkVoiceState.active});
       return;
     }
     setWorkspaceContent({
