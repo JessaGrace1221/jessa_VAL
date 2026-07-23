@@ -148,12 +148,11 @@ function createGhlMcpService({
     return !!(c.apiKey&&c.locationId);
   }
 
-  async function searchContacts({query='',limit=20,sortBy='date_added',sortDirection='desc'}={}){
+  async function searchContacts({query='',limit=20,sortBy='date_added'}={}){
     const c=await credentials();
     const qs=new URLSearchParams({locationId:c.locationId||'',limit:String(limit)});
     if(query) qs.set('query',query);
     if(sortBy) qs.set('sortBy',sortBy);
-    if(sortDirection) qs.set('sortDirection',sortDirection);
     const data=await request('GET',`/contacts/?${qs.toString()}`);
     return extractItems(data,'contacts').map(contact=>({
       id:contact.id,

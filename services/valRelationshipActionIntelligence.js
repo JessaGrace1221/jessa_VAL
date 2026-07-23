@@ -516,8 +516,8 @@ function relationshipIntroCandidates({currentContact={},crmContacts=[],limit=5}=
         stewardshipType:'introduction',
         recommendedMove:'Review possible introduction',
         status:score>0?'candidate':'weak_signal',
-        personA:{name:currentName,contactId:currentId,email:currentContactForMatch.email||''},
-        personB:{name:candidateContact.name||candidateContact.email||'Contact',contactId:otherId,email:candidateContact.email||''},
+        personA:{name:currentName,contactId:currentId,email:currentContactForMatch.email||'',relationshipId:currentPacket.packet_id||currentId},
+        personB:{name:candidateContact.name||candidateContact.email||'Contact',contactId:otherId,email:candidateContact.email||'',relationshipId:candidatePacket.packet_id||otherId},
         score,
         direction,
         confidence:Math.max(0.35,Math.min(0.86,0.45+(score*0.06))),
@@ -631,7 +631,8 @@ function relationshipIntroDraft(candidate={}){
   const firstA=nameA.split(/\s+/)[0]||nameA;
   const firstB=nameB.split(/\s+/)[0]||nameB;
   const subject=compactText(candidate.draft?.subject||`Introduction: ${nameA} <> ${nameB}`,180);
-  const body=compactText(candidate.draft?.body,3000)||[
+  const suppliedBody=String(candidate.draft?.body||'').trim().slice(0,3000);
+  const body=suppliedBody||[
     `Hi ${firstA} and ${firstB},`,
     '',
     'I wanted to introduce you because I think there may be a useful overlap in what you are each building, deciding, or carrying right now.',
@@ -640,17 +641,26 @@ function relationshipIntroDraft(candidate={}){
     '',
     'No pressure from either side. I simply thought this might be a worthwhile conversation if it feels useful to both of you.'
   ].join('\n');
+  const recipients=[
+    {name:nameA,email:compactText(personA.email||'',320),contactId:contactA,relationshipId:compactText(personA.relationshipId||personA.personPacketId||contactA,220)},
+    {name:nameB,email:compactText(personB.email||'',320),contactId:contactB,relationshipId:compactText(personB.relationshipId||personB.personPacketId||contactB,220)}
+  ];
+  const relationshipIds=[...new Set(recipients.map(item=>item.relationshipId).filter(Boolean))];
   return {
     ok:true,
     draftType:'introduction_email_draft',
     provider:'internal',
     subject,
     body,
+    recipients,
+    relationshipIds,
     sourceContext:{
       source:'relationship_introduction_review',
       candidateId:candidate.id||'',
       personA,
       personB,
+      recipients,
+      relationshipIds,
       contactIds:{personA:contactA,personB:contactB},
       direction:candidate.direction||{},
       whyThisMayMatter:candidate.whyThisMayMatter||'',

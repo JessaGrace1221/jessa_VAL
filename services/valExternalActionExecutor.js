@@ -25,19 +25,20 @@ function blockingSafety(packet={},opts={}){
   const text=[packet.actionType,packet.whyThisActionExists,JSON.stringify(payload(packet)),JSON.stringify(ctx)].join(' ');
   const blocks=safeArray(auth.blocking_safety_rules).concat(safeArray(ctx.blockingSafetyRules),safeArray(payload(packet).blockingSafetyRules));
   if(/\b(bulk|all contacts|all clients|everyone|entire list)\b/i.test(text))blocks.push('bulk_external_action');
-  if(['send_invoice','send_sms','send_proposal','publish_content','move_crm_stage','add_or_remove_tag'].includes(packet.actionType)&&packet.approvalPolicy!=='voice_authorized')blocks.push('unsupported_or_requires_future_confirmation');
-  if(packet.actionType==='send_email'&&packet.approvalPolicy!=='voice_authorized'&&!opts.finalConfirmation&&!opts.final_confirmation)blocks.push('final_send_confirmation_required');
+  if(['send_invoice','send_proposal','publish_content'].includes(packet.actionType)&&packet.approvalPolicy!=='voice_authorized')blocks.push('unsupported_or_requires_future_confirmation');
+  if(['send_email','send_sms','send_calendar_invite'].includes(packet.actionType)&&packet.approvalPolicy!=='voice_authorized'&&!opts.finalConfirmation&&!opts.final_confirmation)blocks.push('final_send_confirmation_required');
   if(['charge_money','delete_record','merge_contacts'].includes(packet.actionType))blocks.push('never_auto_action');
   return [...new Set(blocks.filter(Boolean))];
 }
 function supportedActions(){
-  return ['create_gmail_draft','create_outlook_draft','send_email','create_crm_note','create_crm_task','create_calendar_hold'];
+  return ['create_gmail_draft','create_outlook_draft','send_email','send_sms','create_crm_note','create_crm_task','create_calendar_hold','send_calendar_invite','upsert_contact','update_contact','add_or_remove_tag','update_opportunity','move_crm_stage'];
 }
 function blockedActions(){
-  return ['send_sms','send_proposal','send_invoice','charge_money','publish_content','move_crm_stage','merge_contacts','delete_record','add_or_remove_tag','send_calendar_invite'];
+  return ['send_proposal','send_invoice','charge_money','publish_content','merge_contacts','delete_record'];
 }
 function validatePayload(packet={}){
   const p=payload(packet);
+  const ctx=sourceContext(packet);
   const missing=[];
   if(!packet.targetSystem)missing.push('target_system');
   if(!packet.actionType)missing.push('action_type');
@@ -49,6 +50,21 @@ function validatePayload(packet={}){
     if(!p.to)missing.push('payload.to');
     if(!p.subject)missing.push('payload.subject');
     if(!p.body&&!p.bodyPreview)missing.push('payload.body');
+    const isIntroduction=p.isIntroduction===true||ctx.isIntroduction===true||ctx.kind==='introduction_email_draft';
+    if(isIntroduction){
+      const emails=[];
+      for(const value of String(p.to||'').split(/[;,]/))if(value.trim())emails.push(value.trim().toLowerCase());
+      for(const item of safeArray(p.recipients)){
+        const email=String(typeof item==='string'?item:item?.email||item?.address||'').trim().toLowerCase();
+        if(email)emails.push(email);
+      }
+      const verified=[...new Set(emails.filter(email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))];
+      if(verified.length<2)missing.push('introduction_two_verified_recipients');
+    }
+  }
+  if(packet.actionType==='send_sms'){
+    if(!p.contactId&&!packet.targetId)missing.push('verified_contact_id');
+    if(!p.message&&!p.body&&!p.bodyPreview)missing.push('payload.message');
   }
   if(packet.actionType==='create_crm_note'){
     if(!packet.targetId)missing.push('target_id');
@@ -61,6 +77,33 @@ function validatePayload(packet={}){
   if(packet.actionType==='create_calendar_hold'){
     if(!p.start&&!p.scheduledStart)missing.push('payload.start');
     if(!p.end&&!p.scheduledEnd&&!p.durationMinutes)missing.push('payload.end_or_duration');
+  }
+  if(packet.actionType==='send_calendar_invite'){
+    if(!p.title&&!p.summary&&!packet.whyThisActionExists)missing.push('payload.title');
+    if(!p.start&&!p.scheduledStart)missing.push('payload.start');
+    if(!p.end&&!p.scheduledEnd&&!p.durationMinutes)missing.push('payload.end_or_duration');
+    const attendees=Array.isArray(p.attendees)?p.attendees:[];
+    if(!attendees.length&&!p.to&&!p.recipientEmail)missing.push('payload.attendees');
+  }
+  if(packet.actionType==='upsert_contact'){
+    const contact=p.contact||p;
+    if(!contact.email&&!contact.phone)missing.push('verified_contact_identity');
+    if(contact.createNewIfDuplicateAllowed===true)missing.push('duplicate_creation_not_allowed');
+  }
+  if(packet.actionType==='update_contact'){
+    const contact=p.contact||p;
+    if(!p.contactId&&!packet.targetId)missing.push('verified_contact_id');
+    if(!Object.keys(contact).some(key=>!['contactId','targetId','reviewRequired'].includes(key)))missing.push('reviewed_contact_fields');
+  }
+  if(packet.actionType==='add_or_remove_tag'){
+    if(!p.contactId&&!packet.targetId)missing.push('verified_contact_id');
+    if(!['add','remove'].includes(String(p.operation||p.mode||'').toLowerCase()))missing.push('payload.operation');
+    if(!(Array.isArray(p.tags)&&p.tags.length)&&!p.tag)missing.push('payload.tags');
+  }
+  if(['update_opportunity','move_crm_stage'].includes(packet.actionType)){
+    const opportunity=p.opportunity||p;
+    if(!p.opportunityId&&!packet.targetId)missing.push('verified_opportunity_id');
+    if(!Object.keys(opportunity).some(key=>['name','status','pipelineId','pipelineStageId','monetaryValue','assignedTo'].includes(key)))missing.push('reviewed_opportunity_fields');
   }
   return missing;
 }
@@ -87,6 +130,7 @@ function freshRiskCheck(packet={},opts={}){
   if(!supported)errors.push('unsupported_adapter');
   if(ambiguity.length)errors.push('ambiguous_packet');
   if(missing.length)errors.push('invalid_payload');
+  if(missing.includes('introduction_two_verified_recipients'))errors.push('introduction_requires_two_verified_recipients');
   if(finalConfirmationRequired&&!finalConfirmed)errors.push('final_confirmation_required');
   return {
     ok:errors.length===0,
@@ -116,7 +160,7 @@ async function executeWithAdapter(packet,adapters={}){
   if(typeof adapter!=='function')throw new Error(`Provider adapter unavailable for ${action}`);
   return adapter({packet,payload:p,idempotencyKey:idempotencyKey(packet)});
 }
-function createValExternalActionExecutor({packetService,receiptService=null,adapters={},executedBy=()=>'val_executor'}={}){
+function createValExternalActionExecutor({packetService,receiptService=null,adapters={},executedBy=()=>'val_executor',onExecutionComplete=async()=>null}={}){
   if(!packetService)throw new Error('packetService is required');
   async function freshRiskCheckById(id,opts={}){
     const packet=await packetService.get(id);
@@ -153,7 +197,10 @@ function createValExternalActionExecutor({packetService,receiptService=null,adap
       await packetService.audit(id,'executed',attempting,after,providerSummary(result));
       const receipt=receiptService?await receiptService.createReceipt({packet:after,providerResult:result}).catch(()=>null):null;
       const reconciliation=receipt&&receiptService?await receiptService.reconcile(receipt,{packet:after}).catch(e=>({ok:false,error:e.message})):null;
-      return {ok:true,packet:after,risk_check:check,provider_result:result,receipt,reconciliation,executed:true};
+      const carryForward=receipt?.status==='succeeded'
+        ? await onExecutionComplete({packet:after,receipt,reconciliation,providerResult:result}).catch(error=>({ok:false,error:error.message}))
+        : null;
+      return {ok:true,packet:after,risk_check:check,provider_result:result,receipt,reconciliation,carry_forward:carryForward,executed:true};
     }catch(e){
       const retryCount=Number(attempting.retryCount||0)+1;
       const failed=await packetService.updatePacket(id,{status:'execution_failed',failureReason:e.message||'Execution failed',retryCount,idempotencyKey:key,executedBy:actor});

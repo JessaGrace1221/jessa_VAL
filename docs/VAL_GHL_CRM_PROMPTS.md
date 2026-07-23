@@ -14,6 +14,9 @@ Companion specs:
 - [VAL_EMAIL_DRAFT_PROMPTS.md](./VAL_EMAIL_DRAFT_PROMPTS.md)
 - [VAL_CHAT_VOICE_CONTEXT_PROMPTS.md](./VAL_CHAT_VOICE_CONTEXT_PROMPTS.md)
 - [VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md](./VAL_RELATIONSHIP_PROJECT_UNDERSTANDING_PROMPTS.md)
+- [VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md](./VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md)
+
+The Transcript Action Capability and Workflow Registry is the authority for which HighLevel operations are context reads, low-level routes, prepared work, blocked actions, or packetized execution paths. This CRM suite must not treat endpoint availability as permission or execution readiness.
 
 ## Core Thesis
 

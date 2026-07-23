@@ -134,12 +134,77 @@ function normalizeParticipants(...values){
   });
 }
 
+function krispHeadingTitle(value=''){
+  const text=extractText(value);
+  for(const line of String(text||'').split(/\r?\n/).slice(0,16)){
+    const match=line.match(/^\s*#{1,3}\s+(.+?)\s*$/);
+    if(!match)continue;
+    const title=compactText(match[1],220);
+    if(title&&!/^(?:transcript|action items?|key points?|meeting notes?|recording download link)$/i.test(title))return title;
+  }
+  return '';
+}
+
+function krispMetadataObjects(source={},fallback={}){
+  const objects=[];
+  const push=value=>{
+    if(value&&typeof value==='object'&&!Array.isArray(value)&&!objects.includes(value))objects.push(value);
+  };
+  [source,fallback].forEach(root=>{
+    push(root);
+    ['meeting','metadata','meetingMetadata','meeting_metadata','calendarEvent','calendar_event','event','details','data'].forEach(key=>push(root?.[key]));
+  });
+  return objects;
+}
+
+function firstKrispValue(objects=[],keys=[]){
+  for(const object of objects){
+    for(const key of keys){
+      const value=object?.[key];
+      if(value!==undefined&&value!==null&&String(value).trim())return value;
+    }
+  }
+  return '';
+}
+
 function normalizeKrispDocumentId(value=''){
   return String(value||'').trim().toLowerCase().replace(/-/g,'');
 }
 
 function isKrispDocumentId(value=''){
   return /^[a-f0-9]{32}$/.test(normalizeKrispDocumentId(value));
+}
+
+function krispDocumentTimestamp(value='',now=Date.now()){
+  const documentId=normalizeKrispDocumentId(value);
+  if(!isKrispDocumentId(documentId))return '';
+  const milliseconds=Number.parseInt(documentId.slice(0,12),16);
+  const earliest=Date.UTC(2015,0,1);
+  const latest=Number(now)+24*60*60*1000;
+  if(!Number.isFinite(milliseconds)||milliseconds<earliest||milliseconds>latest)return '';
+  return new Date(milliseconds).toISOString();
+}
+
+function krispMeetingTimestamp(meeting={}){
+  const explicit=Date.parse(meeting.startedAt||'');
+  if(Number.isFinite(explicit))return explicit;
+  const decoded=Date.parse(krispDocumentTimestamp(meeting.documentId||''));
+  return Number.isFinite(decoded)?decoded:0;
+}
+
+function newestKrispMeetingsFirst(meetings=[]){
+  return [...meetings].sort((left,right)=>{
+    const timestampDifference=krispMeetingTimestamp(right)-krispMeetingTimestamp(left);
+    if(timestampDifference)return timestampDifference;
+    return String(right.documentId||'').localeCompare(String(left.documentId||''));
+  });
+}
+
+function krispExclusiveBeforeDate(value=''){
+  const match=String(value||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!match)return '';
+  const [,year,month,day]=match;
+  return new Date(Date.UTC(Number(year),Number(month)-1,Number(day)+1)).toISOString().slice(0,10);
 }
 
 function normalizeMcpContent(value){
@@ -173,6 +238,24 @@ function normalizeMcpContent(value){
     }
   }
   return value.result||value;
+}
+
+function krispToolErrorMessage(value){
+  const text=typeof value==='string'
+    ?value.trim()
+    :String(value?.text||value?.message||'').trim();
+  if(!text)return '';
+  if(/\binsufficient_scope\b|\binsufficient scope\b/i.test(text))return text;
+  if(/^\s*[a-z0-9_ -]+\s+error\s*:/i.test(text))return text;
+  return '';
+}
+
+function throwKrispToolError(value){
+  const message=krispToolErrorMessage(value);
+  if(!message)return value;
+  const error=new Error(message);
+  error.noFallback=true;
+  throw error;
 }
 
 function toolMatches(tool,patterns=[]){
@@ -214,15 +297,41 @@ function toolAcceptsAnyArgument(tool,...names){
 }
 
 function normalizeKrispMeeting(row={}){
+  const objects=krispMetadataObjects(row);
   const documentId=normalizeKrispDocumentId(row.documentId||row.document_id||row.documentID||row.meetingId||row.meeting_id||row.id||row.docId||row.doc_id||row.agendaId||row.agenda_id||'');
+  const metadataTitle=compactText(firstKrispValue(objects,['title','name','meetingTitle','meeting_title','topic','subject','summary']),220);
+  const headingTitle=krispHeadingTitle(row);
   return {
     documentId,
-    title:compactText(row.title||row.name||row.meetingTitle||row.meeting_title||row.summary||'Krisp meeting',220),
-    startedAt:row.startedAt||row.started_at||row.startTime||row.start_time||row.date||row.createdAt||row.created_at||row.meeting_date||'',
+    title:/^(?:krisp meeting|meeting|transcript)$/i.test(metadataTitle)?(headingTitle||metadataTitle):(metadataTitle||headingTitle||'Krisp meeting'),
+    startedAt:firstKrispValue(objects,['startedAt','started_at','startTime','start_time','meetingDatetime','meeting_datetime','meetingDate','meeting_date','date','occurredAt','occurred_at','createdAt','created_at'])||krispDocumentTimestamp(documentId),
     duration:row.duration||row.durationText||row.duration_text||'',
-    participants:normalizeParticipants(row.participants,row.attendees,row.users),
+    participants:normalizeParticipants(...objects.flatMap(object=>[object.participants,object.attendees,object.invitees,object.guests,object.users,object.speakers])),
     raw:row
   };
+}
+
+function normalizeKrispActivityMeeting(row={}){
+  const nestedMeeting=row?.meeting&&typeof row.meeting==='object'?row.meeting:{};
+  const nestedDocument=row?.document&&typeof row.document==='object'?row.document:{};
+  const metadata=row?.metadata&&typeof row.metadata==='object'?row.metadata:{};
+  const data=row?.data&&typeof row.data==='object'?row.data:{};
+  const objects=[row,metadata,data,nestedMeeting,nestedDocument];
+  const directId=firstKrispValue([row,metadata,data],[
+    'documentId','document_id','documentID','meetingId','meeting_id',
+    'sourceMeetingId','source_meeting_id','docId','doc_id'
+  ]);
+  const nestedId=firstKrispValue([nestedMeeting,nestedDocument],[
+    'documentId','document_id','meetingId','meeting_id','docId','doc_id','id'
+  ]);
+  const documentId=normalizeKrispDocumentId(directId||nestedId);
+  if(!isKrispDocumentId(documentId))return null;
+  return normalizeKrispMeeting({
+    documentId,
+    title:firstKrispValue(objects,['meetingName','meeting_name','title','name','subject','topic'])||'Krisp meeting',
+    startedAt:firstKrispValue(objects,['meetingDate','meeting_date','startedAt','started_at','occurredAt','occurred_at','createdAt','created_at','date']),
+    participants:firstKrispValue(objects,['participants','attendees','invitees','guests','speakers'])
+  });
 }
 
 function findKrispDocumentIds(value,ids=new Set(),depth=0){
@@ -366,8 +475,11 @@ function normalizeKrispDocument(doc={},fallback={}){
     actionItems:jsonClone(source.actionItems||source.action_items||source.tasks||[]),
     keyPoints:jsonClone(source.keyPoints||source.key_points||source.summary||source.notes||'')
   };
-  const participants=normalizeParticipants(source.participants,source.attendees,source.users,fallback.participants);
-  const title=compactText(source.title||source.name||source.meetingTitle||source.meeting_title||fallback.title||'Krisp meeting',220);
+  const objects=krispMetadataObjects(source,fallback);
+  const participants=normalizeParticipants(...objects.flatMap(object=>[object.participants,object.attendees,object.invitees,object.guests,object.users,object.speakers]));
+  const metadataTitle=compactText(firstKrispValue(objects,['title','name','meetingTitle','meeting_title','topic','subject']),220);
+  const headingTitle=krispHeadingTitle(transcriptText);
+  const title=/^(?:krisp meeting|meeting|transcript)$/i.test(metadataTitle)?(headingTitle||metadataTitle):(metadataTitle||headingTitle||'Krisp meeting');
   return {
     documentId,
     title,
@@ -376,7 +488,7 @@ function normalizeKrispDocument(doc={},fallback={}){
     actionItems,
     sourceSections,
     participants,
-    startedAt:source.startedAt||source.started_at||source.startTime||source.start_time||source.date||source.createdAt||source.created_at||fallback.startedAt||fallback.started_at||'',
+    startedAt:firstKrispValue(objects,['startedAt','started_at','startTime','start_time','meetingDatetime','meeting_datetime','meetingDate','meeting_date','date','occurredAt','occurred_at','createdAt','created_at'])||krispDocumentTimestamp(documentId),
     duration:source.duration||source.durationText||source.duration_text||fallback.duration||'',
     sourceUrl:source.url||source.sourceUrl||source.source_url||'',
     raw:jsonClone(source)
@@ -528,15 +640,15 @@ function createKrispMcpService({
       if(McpClient&&StreamableHTTPClientTransport){
         try{
           const result=await withSdkClient(client=>client.callTool({name,arguments:args}, undefined, {timeout:timeoutMs}));
-          return normalizeMcpContent(result);
+          return throwKrispToolError(normalizeMcpContent(result));
         }catch(e){
-          if(!shouldFallbackAfterSdkError(e))throw e;
+          if(e?.noFallback||!shouldFallbackAfterSdkError(e))throw e;
           logger.warn?.(`[krisp-mcp] sdk ${name} failed; falling back`,e.message);
         }
       }
       await initialize();
       const data=await rpc('tools/call',{name,arguments:args});
-      return normalizeMcpContent(data);
+      return throwKrispToolError(normalizeMcpContent(data));
     });
   }
 
@@ -557,27 +669,28 @@ function createKrispMcpService({
   async function searchMeetings({query='',from='',to='',limit=10}={}){
     const found=await findTools();
     if(!found.searchMeetings)throw new Error('Krisp MCP did not expose a meeting search tool.');
+    const safeLimit=Math.max(1,Math.min(Number(limit)||10,50));
     const startDate=from?String(from).slice(0,10):'';
-    const endDate=to?String(to).slice(0,10):'';
+    const endDate=krispExclusiveBeforeDate(to);
     const fields=['name','date','url','attendees','speakers','transcript','agenda','meeting_notes','key_points','action_items','past_meeting_occurrences'];
     const searchTool=found.searchMeetings;
     const attempts=[];
     if(isKrispDocumentId(query)&&toolAcceptsAnyArgument(searchTool,'id')){
-      attempts.push({id:normalizeKrispDocumentId(query),limit,fields});
+      attempts.push({id:normalizeKrispDocumentId(query),limit:safeLimit,fields});
     }
     if(query&&toolAcceptsAnyArgument(searchTool,'search')){
-      attempts.push({search:query,limit,after:startDate,before:endDate,fields});
+      attempts.push({search:query,limit:safeLimit,after:startDate,before:endDate,fields});
     }
     if(!query&&startDate&&toolAcceptsAnyArgument(searchTool,'after','before')){
-      attempts.push({limit,after:startDate,before:endDate,fields});
+      attempts.push({limit:safeLimit,after:startDate,before:endDate,fields});
     }
     if(query&&toolAcceptsAnyArgument(searchTool,'query')){
-      attempts.push({query,limit,from,to,start_date:startDate,end_date:endDate});
+      attempts.push({query,limit:safeLimit,from,to,start_date:startDate,end_date:endDate});
     }
     if(query&&toolAcceptsAnyArgument(searchTool,'search_query')){
-      attempts.push({search_query:query,limit,start_date:startDate,end_date:endDate});
+      attempts.push({search_query:query,limit:safeLimit,start_date:startDate,end_date:endDate});
     }
-    if(!attempts.length)attempts.push({search:query||'meeting',limit});
+    if(!attempts.length)attempts.push({search:query||'meeting',limit:safeLimit});
     const seen=new Set();
     let lastError=null;
     for(const args of attempts){
@@ -650,8 +763,9 @@ function createKrispMcpService({
 
   async function discoverTranscriptReceipts({limit=50,from='',to=''}={}){
     const startDate=from?String(from).slice(0,10):'';
-    const endDate=to?String(to).slice(0,10):'';
-    const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
+    const endDate=krispExclusiveBeforeDate(to);
+    const safeLimit=Math.max(1,Math.min(Number(limit)||50,250));
+    const pageLimit=Math.min(50,safeLimit);
     let found;
     try{
       found=await findTools();
@@ -665,7 +779,8 @@ function createKrispMcpService({
         window:{start:startDate,end:endDate}
       };
     }
-    const fields=['name','date','duration_seconds','url','attendees','speakers','transcript','agenda','meeting_notes','key_points','action_items'];
+    // Discover newest meetings cheaply; full transcript content is fetched by getDocument only for new receipts.
+    const fields=['name','date','duration_seconds','url','attendees','speakers'];
     const documents=[];
     const seen=new Set();
     const probes=[];
@@ -679,18 +794,49 @@ function createKrispMcpService({
       return meetings.length;
     };
     const runMeetingSearch=async(label,extra={})=>{
-      const args={limit:safeLimit,after:startDate,before:endDate,fields,...extra};
-      const compactArgs=Object.fromEntries(Object.entries(args).filter(([,value])=>value!==''&&value!==undefined&&value!==null));
-      try{
-        const data=await callTool(found.searchMeetings.name,compactArgs);
-        const returned=pushMeetings(rowsFromKrispResponse(data),found.searchMeetings.name);
-        probes.push({label,state:'complete',returned});
-        return returned;
-      }catch(error){
-        probes.push({label,state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
-        return 0;
+      const supportsOffset=toolHasArgument(found.searchMeetings,'offset');
+      const maximumPages=supportsOffset?Math.max(1,Math.ceil(safeLimit/pageLimit)):1;
+      let offset=0;
+      let pages=0;
+      let returned=0;
+      let errorMessage='';
+      while(pages<maximumPages&&documents.length<safeLimit){
+        const args={limit:pageLimit,after:startDate,before:endDate,fields,...extra};
+        if(supportsOffset)args.offset=offset;
+        const compactArgs=Object.fromEntries(Object.entries(args).filter(([,value])=>value!==''&&value!==undefined&&value!==null));
+        try{
+          const data=await callTool(found.searchMeetings.name,compactArgs);
+          const rows=rowsFromKrispResponse(data);
+          returned+=pushMeetings(rows,found.searchMeetings.name);
+          pages+=1;
+          if(!supportsOffset||rows.length<pageLimit)break;
+          offset+=rows.length;
+        }catch(error){
+          errorMessage=compactText(error?.message||error,220);
+          break;
+        }
       }
+      probes.push({
+        label,
+        state:returned||!errorMessage?'complete':'unavailable',
+        returned,
+        pages,
+        ...(errorMessage?{error:errorMessage}:{})
+      });
+      return returned;
     };
+
+    if(found.listActivities?.name){
+      try{
+        const data=await callTool(found.listActivities.name,{limit:pageLimit});
+        const rows=safeArray(data.activities||data.items||data.results||data);
+        const activityMeetings=rows.map(normalizeKrispActivityMeeting).filter(Boolean);
+        const returned=pushMeetings(activityMeetings,found.listActivities.name);
+        probes.push({label:'Meetings linked from recent Krisp activity',state:'complete',returned});
+      }catch(error){
+        probes.push({label:'Meetings linked from recent Krisp activity',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
+      }
+    }
 
     if(!found.searchMeetings?.name){
       probes.push({label:'Krisp meetings',state:'unavailable',returned:0,error:'Krisp did not expose a meeting search.'});
@@ -702,7 +848,7 @@ function createKrispMcpService({
 
     if(!documents.length&&found.listActionItems?.name){
       try{
-        const data=await callTool(found.listActionItems.name,{limit:safeLimit});
+        const data=await callTool(found.listActionItems.name,{limit:pageLimit});
         const actionItems=safeArray(data.actionItems||data.action_items||data.items||data.results||data);
         const meetingRows=actionItems.map(item=>({
           meetingId:item.meeting_id||item.meetingId||item.source_meeting_id||item.sourceMeetingId||'',
@@ -718,7 +864,7 @@ function createKrispMcpService({
 
     if(!documents.length&&found.searchMeetingContent?.name){
       const args={
-        search:'the',limit:safeLimit,after:startDate,before:endDate,
+        search:'the',limit:pageLimit,after:startDate,before:endDate,
         fields:['document_id','title','content','chunk_type','date']
       };
       try{
@@ -730,25 +876,15 @@ function createKrispMcpService({
       }
     }
 
-    if(!documents.length&&found.listActivities?.name){
-      try{
-        const data=await callTool(found.listActivities.name,{limit:safeLimit});
-        const rows=safeArray(data.activities||data.items||data.results||data);
-        const returned=pushMeetings(documentCandidatesFromRows(rows),found.listActivities.name);
-        probes.push({label:'Meetings linked from recent Krisp activity',state:'complete',returned});
-      }catch(error){
-        probes.push({label:'Meetings linked from recent Krisp activity',state:'unavailable',returned:0,error:compactText(error?.message||error,220)});
-      }
-    }
-
+    const orderedDocuments=newestKrispMeetingsFirst(documents).slice(0,safeLimit);
     const allUnavailable=probes.length>0&&probes.every(probe=>probe.state==='unavailable');
-    const status=documents.length?'complete':(allUnavailable?'unavailable':'needs_verification');
-    const detail=documents.length
-      ? `Krisp returned ${documents.length} meeting receipt${documents.length===1?'':'s'} from this connection.`
+    const status=orderedDocuments.length?'complete':(allUnavailable?'unavailable':'needs_verification');
+    const detail=orderedDocuments.length
+      ? `Krisp returned ${orderedDocuments.length} meeting receipt${orderedDocuments.length===1?'':'s'} from this connection.`
       : allUnavailable
         ? 'Krisp could not return meeting receipts from this connection.'
         : 'Krisp checked accessible, owned, shared, action-item-linked, content-indexed, and activity-linked meetings but did not return a meeting receipt for this window.';
-    return {documents:documents.slice(0,safeLimit),probes,status,detail,checkedAt:new Date().toISOString(),window:{start:startDate,end:endDate}};
+    return {documents:orderedDocuments,probes,status,detail,checkedAt:new Date().toISOString(),window:{start:startDate,end:endDate}};
   }
 
   async function getDocument(documentId){
@@ -882,6 +1018,7 @@ function createKrispMcpService({
     getDocument,
     resolveTranscriptDocument,
     inspectTranscriptDocument,
+    krispDocumentTimestamp,
     krispDocumentContentSummary,
     normalizeKrispDocument,
     krispTranscriptPayloadFromDocument
@@ -892,6 +1029,7 @@ module.exports={
   createKrispMcpService,
   normalizeKrispDocumentId,
   isKrispDocumentId,
+  krispDocumentTimestamp,
   normalizeKrispDocument,
   krispDocumentContentSummary,
   sanitizeKrispDocumentInspection,

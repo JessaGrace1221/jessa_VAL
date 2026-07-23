@@ -61,7 +61,6 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   assert.match(html, /data-transcript-list/);
   assert.match(html, /data-transcript-detail/);
   assert.doesNotMatch(html, /Select a transcript/);
-  assert.doesNotMatch(html, /Krisp|Crisp|Outscraper|RocketReach|GoHighLevel|\bGHL\b/);
   assert.match(html, /Action Items/);
   assert.match(html, /Meeting Overview/);
   assert.match(html, /People and Projects/);
@@ -91,13 +90,13 @@ test('Transcript drawer baseline stays source-grounded, not diagnostic workflow'
   }
 });
 
-test('Hearth-facing copy hides provider names behind VAL and CRM', () => {
+test('Hearth narrative copy sanitizes provider names while Data Connections may name them', () => {
   assert.match(js, /function publicSurfaceText/);
   assert.match(js, /replace\([^)]*CRM/);
   for(const provider of ['Krisp', 'Crisp', 'Outscraper', 'RocketReach', 'Apollo', 'GoHighLevel']){
     assert.match(js, new RegExp('replace\\([^\\n]*' + provider));
   }
-  assert.doesNotMatch(html, /\bGHL\b|GoHighLevel|Krisp|Crisp|Outscraper|RocketReach/);
+  assert.match(html, /Data Connections/);
 });
 
 test('Transcript titles stay source-grounded and reject weak calendar contradictions', () => {
@@ -120,6 +119,26 @@ test('Opened drawer visuals keep frosted white baseline', () => {
   assert.match(css, /\.transcript-workbench/);
   assert.match(css, /\.drawer-tray\.correspondence-open\{[\s\S]{0,180}background:var\(--frost-open-surface\)/);
   assert.doesNotMatch(css, /--frost-open-surface:[\s\S]{0,180}rgba\(235,241,226,\.34\)/);
+});
+
+test('Executive Inbox shows the action review receipt for the exact selected email', () => {
+  assert.match(html, /data-correspondence-trigger-receipt/);
+  assert.match(html, /data-correspondence-trigger-status/);
+  assert.match(js, /function renderCorrespondenceTriggerReceipt/);
+  assert.match(js, /String\(message\.messageId \|\| message\.message_id \|\| message\.id \|\| ''\) === String\(thread\.messageId \|\| messageId\)/);
+  assert.match(js, /triggerReceipt:selectedSourceMessage\.triggerReceipt/);
+  assert.match(css, /\.correspondence-trigger-receipt\[data-state="failed"\]/);
+});
+
+test('Incoming email action review runs in the background without duplicate overlap', () => {
+  assert.match(server, /const EMAIL_ACTION_SYNC_INTERVAL_MS=/);
+  assert.match(server, /async function runEmailActionSchedulerCheck/);
+  assert.match(server, /if\(emailActionSyncInFlight\.has\(key\)\)return emailActionSyncInFlight\.get\(key\)/);
+  assert.match(server, /valConversationIdentity\.syncEmail\(\{providers:\['gmail','outlook'\],limit:EMAIL_ACTION_SYNC_LIMIT,query:EMAIL_ACTION_SYNC_LOOKBACK\}\)/);
+  assert.match(server, /const owner=users\.find\(user=>user\.role==='owner'\)/);
+  assert.doesNotMatch(server, /Promise\.allSettled\(users\.map\(user=>runEmailActionSyncForUser\(user\)\)\)/);
+  assert.match(server, /app\.get\('\/api\/val\/email\/action-sync-status'/);
+  assert.match(server, /setInterval\(\(\)=>runEmailActionSchedulerCheck/);
 });
 
 test('Lead Intelligence baseline keeps two scrapers plus train control and three levels', () => {

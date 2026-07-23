@@ -66,7 +66,7 @@ test('core drawer Co-Work controls route to selected canonical entries only', ()
   const projectRoute = hearthJs.match(/async function openProjectScopedCowork[\s\S]*?\n}\n\nfunction openProjectFieldCowork/)[0];
   const transcriptRoute = hearthJs.match(/function openTimelineCoworkSession[\s\S]*?\n}\n\nasync function hydrateTimelineStatus/)[0];
 
-  assert.match(drawerIconRoute, /await openRelationshipOverviewCowork\(activeRelationshipProfile\);/);
+  assert.match(drawerIconRoute, /await openRelationshipOverviewCowork\(stewardshipPersonById\(stewardshipSelectedNetworkId\) \|\| activeRelationshipProfile\);/);
   assert.match(drawerIconRoute, /await openProjectOverviewCowork\(drawerCoworkIcon\);/);
   assert.match(drawerIconRoute, /await openTimelineCoworkSession\(\);/);
   assert.match(drawerIconRoute, /await openCorrespondenceThreadCowork\(activeCorrespondenceItem\);/);

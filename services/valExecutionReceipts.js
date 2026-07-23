@@ -95,7 +95,8 @@ function createValExecutionReceiptService({
   async function saveReceipt(row){
     if(hasPg()){
       const cols=['id','tenantId','userId','packetId','actionType','targetSystem','providerResponseId','providerObjectUrl','providerResponseSummary','executedAt','executedBy','status','failureReason','retryAllowed','sourceRefsJson','auditRefsJson','reconciliationStatus','reconciliationSummary','providerPayloadJson','createdAt','updatedAt'];
-      const values=cols.map(c=>row[c]);
+      const jsonCols=new Set(['sourceRefsJson','auditRefsJson','providerPayloadJson']);
+      const values=cols.map(c=>jsonCols.has(c)&&row[c]!=null?JSON.stringify(row[c]):row[c]);
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
       const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
@@ -109,7 +110,8 @@ function createValExecutionReceiptService({
   async function saveEvent(row){
     if(hasPg()){
       const cols=['id','tenantId','userId','receiptId','packetId','targetTable','targetId','reconciliationType','status','summary','beforeJson','afterJson','createdAt'];
-      const values=cols.map(c=>row[c]);
+      const jsonCols=new Set(['beforeJson','afterJson']);
+      const values=cols.map(c=>jsonCols.has(c)&&row[c]!=null?JSON.stringify(row[c]):row[c]);
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
       await dbQuery(`insert into val_execution_reconciliation_events (${names.join(',')}) values (${params})`,values);

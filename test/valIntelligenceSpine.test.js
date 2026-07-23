@@ -8,6 +8,7 @@ const {VAL_INTELLIGENCE_SPINE_SQL}=require('../services/valIntelligenceSpineSche
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valIntelligenceSpineRoutes.js'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 
 test('VAL Intelligence Spine schema creates durable reasoning tables',()=>{
   for(const table of [
@@ -31,6 +32,12 @@ test('VAL Intelligence Spine exposes backend-only API routes',()=>{
   assert.match(routes,/\/api\/val\/round-table\/runs/);
   assert.match(routes,/\/api\/val\/chief-of-staff\/recommend/);
   assert.match(routes,/\/api\/val\/chief-of-staff\/:id\/complete/);
+});
+
+test('Hearth makes the Witnessing Steward visible on the Board of Observers',()=>{
+  assert.match(hearth,/name: 'Witnessing Steward'/);
+  assert.match(hearth,/stance: 'Governing context'/);
+  assert.match(hearth,/reviewed Teach VAL memory, and delivery receipts/);
 });
 
 test('source references normalize to the shared audit structure',()=>{
@@ -68,7 +75,12 @@ test('in-memory intelligence pass records observers, round table, recommendation
   });
   const result=await spine.runIntelligencePass({event:{type:'smoke_test',sourceType:'test'}});
   assert.equal(result.ok,true);
-  assert.equal(result.observerRuns.length,12);
+  assert.equal(result.observerRuns.length,13);
+  const witnessing=result.observerRuns.find(run=>run.observerName==='Witnessing Steward');
+  assert.ok(witnessing);
+  assert.equal(witnessing.promptKey,'teach_val');
+  assert.equal(witnessing.outputJson.enactment_audit.status,'watching');
+  assert.equal(witnessing.outputJson.enactment_audit.protected_context_count,1);
   assert.ok(result.roundTable.id);
   assert.ok(result.recommendation.id);
   assert.ok(result.momentumSnapshot.id);

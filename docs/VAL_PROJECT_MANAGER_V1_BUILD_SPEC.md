@@ -38,6 +38,146 @@ Opening a project should lead to a full Project Manager page.
 
 The first screen must be dynamic. It should not always start with identity, snapshot, or project charter. Those are stable context. The top of the page should reflect what the Project Manager is handling right now.
 
+## Approved Executive Experience Contract
+
+Approved 2026-07-21.
+
+The Project Manager page is a project command room, not a packet inspector. The packet, observer, Round Table, source-proof, and audit architecture remains authoritative behind the experience. Internal packet names must not become the visible page hierarchy merely because they exist in the data model.
+
+Within ten seconds, the page must answer:
+
+```text
+What is moving?
+What is stuck or quietly drifting?
+Who owns the next move?
+What has VAL witnessed?
+What has VAL prepared?
+What has VAL completed?
+What needs executive judgment?
+Which relationship needs attention?
+What happens next, and when?
+```
+
+### Project Creation Contract
+
+The new-project form is deliberately small:
+
+- project name
+- one accountable owner
+- people and relationships through type-to-search
+- `Create relationship` when a person is missing
+- optional source document or evidence
+- `Create and begin Project Interview`
+
+Do not ask the user to think out loud inside the quick-create form. Do not present the full Project Manager Packet as a database form. Voice and conversational shaping belong in the Project Interview.
+
+After the project shell is created, an unshaped project should show a sparse starting state:
+
+```text
+VAL does not understand this project well enough yet.
+Begin the Project Interview so VAL can establish the outcome,
+people, risks, responsibilities, and next move.
+```
+
+### Project Interview Contract
+
+The Project Interview is the primary doorway into a new project. It supports voice and text, asks one useful question at a time, and can be paused and resumed.
+
+It collects and structures:
+
+- why the project exists
+- intended outcome
+- what is and is not in scope
+- accountable owner
+- participants and stakeholders
+- time, cost, quality, and capacity constraints
+- workstreams and milestones
+- risks, sensitivities, and dependencies
+- communication expectations
+- what VAL may prepare
+- what VAL should monitor
+- what requires approval
+
+The user speaks naturally. VAL converts the interview into project-manager language and updates the Project Manager Packet with source receipts.
+
+### Active Project Hierarchy
+
+The active-project page is an interview-led confidence view. The executive does not maintain the Project Manager Packet and does not work through a wall of equal-weight sections.
+
+1. `Project Interview`
+   - the only visible path for shaping, correcting, or expanding the project
+   - prominent above every project readout
+   - asks only the next useful question
+2. `Project at a glance`
+   - current truth
+   - current phase
+   - next move
+3. `Project tasks`
+   - one quiet list sourced from the project packet's tasks, commitments, and recorded next move
+   - show task, owner, due state, and `Open` / `Waiting` / `Done`
+   - task changes return to the Project Interview so the packet remains coherent
+4. `Handled by VAL`
+   - Witnessed
+   - Prepared
+   - Completed with receipt
+5. `Still needs clarity`
+   - one short bullet list of unresolved items
+   - one return-to-interview action
+   - no separate forms or section-level controls
+6. `Project record`
+   - collapsed by default
+   - people, plan, evidence, monitoring, and history remain inspectable
+
+Existing modules such as Identity, Observation, Interpretation, Meaning, Wisdom, Current Phase, Workstreams, Milestones, Risks, Relationship Nurture, and Prepared Work feed this view behind the scenes. The user speaks naturally in the Project Interview; VAL updates the appropriate packet fields and brings back the resulting readout.
+
+### Scoped Co-Work Contract
+
+Co-Work with VAL is the primary project action, not one more card among many. A new project centers the Project Interview entrypoint. An active project keeps a prominent `Continue Project Interview` entrypoint.
+
+The visible readouts are not editing surfaces. Any unresolved item returns to the same Project Interview, which carries:
+
+- project identity and Project Manager Packet
+- selected section and current section state
+- attached relationships
+- source receipts
+- relevant transcripts, emails, documents, tasks, and decisions
+- Witnessing Session context through the Witnessing Steward
+- the exact artifact or object that may change
+
+Uploads made from scoped Co-Work attach to both the project and selected section. They must not become orphaned generic uploads.
+
+Before a consequential update is applied, VAL shows what will change. After it is applied, VAL produces a receipt.
+
+### Proof of Work Contract
+
+VAL must not imply that work is complete when it only updated an internal packet.
+
+Every displayed action must state:
+
+- what VAL did
+- when it happened
+- what source triggered it
+- where the result lives
+- whether it was witnessed, prepared, completed, or is being monitored
+- who approved it when approval was required
+- what remains open
+
+This activity and receipt trail is the trust surface for `VAL's Work`.
+
+### Portfolio Contract
+
+Before opening a project, the Project Managers drawer groups projects for executive scanning:
+
+- Needs your judgment
+- At risk
+- Moving
+- Waiting on someone
+- Prepared by VAL
+- Quietly monitored
+- Parked
+
+Each project row shows only project name, owner, next move, date, health, and latest meaningful VAL activity. Do not default to a generic Gantt chart, Kanban board, or backend packet list when no source-backed plan supports it.
+
 ## 2026-07-12 Implementation Status
 
 The first source-backed Project Managers suggestion slice is live in production:

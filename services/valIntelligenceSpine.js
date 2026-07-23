@@ -1,6 +1,7 @@
 const {createValPromptRegistry} = require('./valPromptRegistry');
 
 const DEFAULT_OBSERVERS = [
+  {observerName:'Witnessing Steward',promptKey:'teach_val'},
   {observerName:'Executive Inbox',promptKey:'executive_inbox'},
   {observerName:'Relationship',promptKey:'relationship_project_understanding'},
   {observerName:'Project',promptKey:'relationship_project_understanding'},
@@ -331,7 +332,45 @@ function createValIntelligenceSpine({
     let observation='No strong signal detected yet.';
     let attentionSignals=[];
     let confidence=0.55, conviction=0.45, closing='I do not have enough evidence to pound the table.';
-    if(kind==='executive_inbox'){
+    if(kind==='witnessing_steward'){
+      const witnessing=safeArray(context.teachVal);
+      const directAnswers=witnessing.filter(item=>item.kind==='teach_val_witnessing_answer');
+      const evidence=safeArray(context.sourceRefs)
+        .filter(ref=>String(ref.source_type||ref.sourceType||'')==='teach_val_memory')
+        .slice(0,8)
+        .map(normalizeSourceRef);
+      observation=witnessing.length
+        ? `${witnessing.length} confirmed Witnessing and Teach VAL record${witnessing.length===1?' is':'s are'} available to protect the user's stated priorities, boundaries, relationships, voice, and operating commitments.`
+        : 'No confirmed Witnessing context is available yet, so enactment cannot be audited responsibly.';
+      attentionSignals=witnessing.length
+        ? ['stated priorities','boundaries and capacity','relationship commitments','voice and operating preferences','unenacted instructions']
+        : ['complete or revisit the Witnessing Session'];
+      confidence=witnessing.length?0.82:0.3;
+      conviction=witnessing.length?0.78:0.25;
+      closing=witnessing.length
+        ? 'I will protect what the user explicitly taught VAL and surface source-backed enactment gaps without turning inference into a rule.'
+        : 'I need confirmed Witnessing answers before I can claim the system is enacting what matters to the user.';
+      return {
+        observer:observerName,
+        executive_question:'What confirmed Witnessing truth must this work protect or enact right now?',
+        observation,
+        evidence,
+        confidence,
+        conviction,
+        supports:[],
+        conflicts_with:[],
+        attention_signals:attentionSignals,
+        unknowns:baseUnknowns,
+        enactment_audit:{
+          status:witnessing.length?'watching':'needs_witnessing_context',
+          protected_context_count:witnessing.length,
+          direct_answer_count:directAnswers.length,
+          possible_gaps:[],
+          rule:'A gap requires both a cited Witnessing record and current event or packet evidence.'
+        },
+        closing_statement:closing
+      };
+    }else if(kind==='executive_inbox'){
       const convs=context.conversationsSummary?.conversations||[];
       observation=convs.length?`${convs.length} durable conversation record${convs.length===1?' is':'s are'} available for inbox judgment.`:'No durable conversation records are available yet.';
       attentionSignals=convs.length?[convs[0].subject||'recent conversation','conversation state','relationship temperature']:['email sync','conversation state'];

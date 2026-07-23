@@ -208,13 +208,14 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthHtml, /data-project-create-toggle/);
   assert.match(hearthHtml, /data-project-create-form/);
   assert.match(hearthHtml, /enctype="multipart\/form-data"/);
-  assert.match(hearthHtml, /name="websiteSource"/);
   assert.match(hearthHtml, /type="file" name="documentsAndContracts"/);
   assert.match(hearthHtml, /multiple/);
   assert.match(hearthHtml, /data-project-file-receipt/);
-  assert.match(hearthHtml, /name="documents"/);
   assert.match(hearthHtml, /name="relationships"/);
-  assert.match(hearthHtml, /name="rawContext"/);
+  assert.match(hearthHtml, /name="ownerRelationship"/);
+  assert.match(hearthHtml, /name="relationshipName"/);
+  assert.match(hearthHtml, /name="relationshipEmail"/);
+  assert.doesNotMatch(hearthHtml, /Think out loud, VAL will interview you/);
   assert.match(hearthHtml, /data-project-suggestions/);
   assert.match(hearthHtml, /Suggested projects from relationship documents/);
   assert.match(hearthHtml, /data-project-rolodex/);
@@ -238,6 +239,25 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthJs, /function projectAdmissionPacket/);
   assert.match(hearthJs, /function projectIsDrawerAdmitted/);
   assert.match(hearthJs, /function projectManagerPacket/);
+  assert.match(hearthHtml, /Create and begin Project Interview/);
+  assert.match(hearthHtml, /data-project-create-relationship-options/);
+  assert.match(hearthJs, /Continue Project Interview/);
+  assert.match(hearthJs, /Project at a glance/);
+  assert.match(hearthJs, /Project tasks/);
+  assert.match(hearthJs, /What needs to move/);
+  assert.match(hearthJs, /Update tasks with VAL/);
+  assert.match(hearthJs, /projectManagerTaskItems/);
+  assert.match(hearthJs, /Handled by VAL/);
+  assert.match(hearthJs, /Still needs clarity/);
+  assert.match(hearthJs, /You do not need to fill out this page/);
+  assert.match(hearthJs, /Project record/);
+  assert.match(hearthJs, /data-project-cowork-field="project_interview"/);
+  assert.match(hearthJs, /data-project-relationship-filter/);
+  assert.match(hearthJs, /<summary>Change owner<\/summary>/);
+  assert.match(hearthJs, /Add or change people/);
+  assert.match(hearthCss, /\.project-relationship-picker button\[hidden\]/);
+  assert.match(hearthCss, /align-items:start/);
+  assert.match(hearthJs, /payload\.set\('needsProjectOnboarding', 'true'\)/);
   assert.match(hearthJs, /function renderProjectManagerProfile/);
   assert.match(hearthJs, /PROJECT_ONBOARDING_FIRST_QUESTION/);
   assert.match(hearthJs, /What should this project be called, and what outcome should it create\?/);
@@ -305,7 +325,7 @@ test('Project Managers receives approved First Look project packets through its 
   assert.match(hearthJs, /It will reopen in Project Managers and Alignment/);
   assert.match(hearthJs, /Mark reminder handled/);
   assert.match(hearthJs, /Only the reminder loop was cleared/);
-  assert.match(hearthJs, /data-project-cowork-scope="project_overview"/);
+  assert.match(hearthJs, /data-project-cowork-field="project_interview"/);
   assert.match(hearthJs, /if\(field === 'project_overview'\) return openProjectOverviewCowork/);
   assert.match(hearthJs, /project_scoped_cowork_packet/);
   assert.match(hearthJs, /selected_action_label/);
@@ -523,6 +543,7 @@ test('Drawer buttons use distinct rose and green tones so retrieval choices stay
 });
 
 test('Transcripts drawer restores source-grounded transcript workbench instead of diagnostic workflow cards', () => {
+  const transcriptSurface = hearthHtml.match(/<div class="source-detail timeline-detail"[\s\S]*?<div class="source-detail correspondence-detail"/)?.[0] || '';
   assert.match(hearthHtml, /<h3>Transcripts<\/h3>/);
   assert.match(hearthHtml, /Meeting evidence, attendee context, source Action Items, and clean review-ready follow-up/);
   assert.match(hearthHtml, /data-transcript-list/);
@@ -531,7 +552,7 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
   assert.doesNotMatch(hearthHtml, /Import recent VAL meetings/);
   assert.doesNotMatch(hearthHtml, /Select a transcript/);
   assert.doesNotMatch(hearthHtml, /VAL will show the .* action items and meeting overview first/);
-  assert.doesNotMatch(hearthHtml, /Krisp|Crisp|Outscraper|RocketReach|GoHighLevel|\bGHL\b/);
+  assert.doesNotMatch(transcriptSurface, /Krisp|Crisp|Outscraper|RocketReach|GoHighLevel|\bGHL\b/);
   assert.match(hearthHtml, /Action Items/);
   assert.match(hearthHtml, /Meeting Overview/);
   assert.match(hearthHtml, /People and Projects/);
@@ -547,7 +568,8 @@ test('Transcripts drawer restores source-grounded transcript workbench instead o
   assert.match(hearthJs, /function renderTimelineTranscriptList/);
   assert.match(hearthJs, /function renderTimelineTranscriptDetail/);
   assert.match(hearthJs, /function renderTimelineTranscriptMappingControls/);
-  assert.match(hearthJs, /Send Action Items to Attendees/);
+  assert.match(hearthJs, /Prepare group email/);
+  assert.match(hearthJs, /Key Points and Action Items/);
   assert.match(hearthJs, /data-transcript-project-search/);
   assert.match(hearthJs, /data-transcript-relationship-search/);
   assert.match(hearthJs, /data-transcript-full-toggle/);
@@ -1339,7 +1361,9 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(hearthJs, /function meetingPrepPublicContextLines/);
   assert.match(hearthJs, /public_context_status/);
   assert.match(meetingPrepRebuildServerBlock, /function meetingPrepRebuildPublicLookup/);
-  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepWebEvidence\(attendee,contact,lookupProfile\)/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupOutscraperGoogleSearch\(batchQueries/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepWebEvidence\(attendee,contact,lookupProfile,searchOptions\)/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepLinkedInRecentSignal\(attendee,contact,lookupProfile,searchOptions\)/);
   assert.match(meetingPrepRebuildServerBlock, /function meetingPrepRebuildRelationshipSummary/);
   assert.doesNotMatch(meetingPrepRebuildServerBlock, /profile\.summary/);
   assert.match(meetingPrepRebuildServerBlock, /warm, discerning, specific, and operational/);
@@ -1400,10 +1424,11 @@ test('Hearth calendar prep is connected to the meeting prep backend contract', (
   assert.match(server, /attendeeIsProtectedOwner/);
   assert.match(server, /protected_owner_identity/);
   assert.match(server, /async function enrichMeetingPrepAttendeePublicContext/);
-  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepLinkedInRecentSignal\(attendee,contact,lookupProfile\)/);
+  assert.match(meetingPrepRebuildServerBlock, /lookupMeetingPrepLinkedInRecentSignal\(attendee,contact,lookupProfile,searchOptions\)/);
   assert.doesNotMatch(server, /sourceType:'known_linkedin_profile_activity'/);
   assert.doesNotMatch(server, /if\(activityUrl\)\{[\s\S]{0,900}activity_link_prepared/);
-  assert.match(server, /const fallbackUrl=activityUrl\|\|profileResult\?\.url\|\|knownProfileUrl\|\|''/);
+  assert.match(server, /const resolved=await resolveMeetingPrepLinkedInPublicPost\(\{attendee,contact,profile,\.\.\.options\}\)/);
+  assert.match(server, /const fallbackUrl=resolved\.url\|\|resolved\.profileUrl\|\|''/);
   assert.doesNotMatch(server, /deferred_to_recent_signal/);
   assert.doesNotMatch(server, /Outscraper was not run because VAL has a personal email and no company or work domain/);
   assert.match(server, /enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext/);
@@ -1595,7 +1620,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);
   assert.match(hearthJs, /No live Board packet is loaded for this session yet/);
-  assert.match(hearthJs, /Board readiness/);
+  assert.match(hearthJs, /aria-label="Observer packet readiness"/);
   assert.match(hearthJs, /if\(workspaceGrid\) workspaceGrid\.hidden = true/);
   assert.match(hearthJs, /observer-truth-card/);
   assert.match(hearthJs, /If this view claims certainty without a packet, that is a bug/);
@@ -1629,7 +1654,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthCss, /\.home-cowork-chatbar textarea/);
   assert.match(hearthCss, /\.home-cowork-context-gathering/);
   assert.match(hearthCss, /context-gathering-pulse/);
-  assert.match(hearthJs, /const linkedinVisibilityItems/);
+  assert.match(hearthJs, /let linkedinVisibilityItems = \[\]/);
+  assert.match(hearthJs, /\/api\/val\/linkedin\/engagement/);
   assert.match(hearthJs, /function openLinkedInEngagementWorkspace/);
   assert.match(hearthJs, /function renderLinkedInEngagementList/);
   assert.match(hearthJs, /openWorkspaceShell\('LinkedIn visibility workspace', \{returnTarget:'home'\}\)/);
@@ -1911,7 +1937,10 @@ test('Hearth packet contracts require the deep source web behind every click', (
     '{{val.external_action_allowed}}'
   ].forEach((variable) => assert.match(hearthJs, new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
 
-  const packetNames = Array.from(hearthJs.matchAll(/packet:'([^']+)'/g)).map((match) => match[1]);
+  const clickRegistryStart=hearthJs.indexOf('const hearthClickContractRegistry = ');
+  const clickRegistryEnd=hearthJs.indexOf('function applyHearthClickContracts',clickRegistryStart);
+  const clickRegistry=hearthJs.slice(clickRegistryStart,clickRegistryEnd);
+  const packetNames = Array.from(clickRegistry.matchAll(/packet:'([^']+)'/g)).map((match) => match[1]).filter(Boolean);
   packetNames.forEach((packetName) => {
     assert.match(hearthJs, new RegExp(packetName + ': \\{'), 'Missing completeness registry entry for ' + packetName);
   });
@@ -2472,12 +2501,12 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthHtml, /aria-controls="val-detail"/);
   assert.match(hearthHtml, /id="val-detail"/);
   assert.match(hearthHtml, /Witnessing Session/);
-  assert.match(hearthHtml, /Begin Witnessing Session/);
+  assert.match(hearthHtml, /Open Witnessing Session/);
   assert.match(hearthHtml, /data-calendar-source-status/);
-  assert.match(hearthHtml, /One thoughtful question at a time/);
+  assert.match(hearthHtml, /Return at any time to review or update a specific part/);
   assert.match(hearthHtml, /Nothing leaves this session/);
   assert.match(hearthHtml, /data-val-live-status/);
-  assert.match(hearthHtml, /data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session/);
+  assert.match(hearthHtml, /data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Open Witnessing Session/);
   assert.doesNotMatch(hearthHtml, /Pick Up Where We Left Off/);
   assert.doesNotMatch(hearthHtml, />Start Fresh</);
   assert.match(hearthJs, /const valDetail = document\.querySelector\('#val-detail'\)/);
@@ -2569,8 +2598,12 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.doesNotMatch(hearthJs, /val-conversation-next/);
   assert.doesNotMatch(hearthJs, /Next question/);
   assert.match(hearthJs, /witnessing-mode/);
-  assert.match(hearthJs, /document\.querySelector\('\.val-witnessing-entry'\)/);
-  assert.match(hearthJs, /Nothing leaves this session\. VAL will show what it notices before anything becomes memory\./);
+  assert.doesNotMatch(hearthJs, /if\(document\.querySelector\('\.val-witnessing-entry'\)\)\{\s*valLiveStatus/);
+  assert.match(hearthJs, /const witnessingButton = document\.querySelector\('#val-detail \[data-workflow-action="valWitnessingBegin"\]'\)/);
+  assert.match(hearthJs, /function renderValWitnessingSectionNavigator/);
+  assert.match(hearthJs, /data-workflow-action="valWitnessingQuestion:/);
+  assert.match(hearthJs, /'">Back<\/button>'/);
+  assert.match(hearthHtml, /Nothing leaves this session\. VAL will show what it notices before anything becomes memory\./);
   assert.match(hearthJs, /async function openValOnboardingWorkspace/);
   assert.match(hearthJs, /async function saveValOnboardingContext/);
   assert.match(hearthJs, /function openValConnectionsWorkspace/);
@@ -2585,7 +2618,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /valWitnessingOAuth/);
   assert.match(hearthJs, /window\.addEventListener\('message'/);
   assert.match(hearthJs, /openai: \{keyLabel:'OpenAI'/);
-  assert.doesNotMatch(hearthJs, /outscraper: \{keyLabel:'Outscraper'/);
+  assert.match(hearthJs, /outscraper: \{keyLabel:'Outscraper'/);
+  assert.match(hearthJs, /rocketreach: \{keyLabel:'RocketReach'/);
+  assert.match(hearthJs, /apollo: \{keyLabel:'Apollo'/);
+  assert.match(hearthJs, /custom: \{keyLabel:'Custom API'/);
   assert.match(hearthJs, /valWitnessingCredentialForm/);
   assert.match(hearthJs, /valWitnessingSourcesContinue/);
   assert.match(hearthJs, /Continue to First Look/);
@@ -2601,7 +2637,10 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   const witnessingConnections = server.match(/async function witnessingConnectionStatusPayload\(\)[\s\S]*?\n}\napp\.get\('\/api\/val\/witnessing\/connections'/)?.[0] || '';
   assert.match(witnessingConnections, /actionHref:'\/auth\/krisp'/);
   assert.match(witnessingConnections, /Sign in to let VAL read your Krisp meeting material/);
-  assert.doesNotMatch(witnessingConnections, /id:'outscraper'/);
+  assert.match(witnessingConnections, /credentialConnection\('outscraper'/);
+  assert.match(witnessingConnections, /credentialConnection\('rocketreach'/);
+  assert.match(witnessingConnections, /credentialConnection\('apollo'/);
+  assert.match(witnessingConnections, /credentialConnection\('custom'/);
   assert.doesNotMatch(witnessingConnections, /Krisp MCP is not configured yet/);
   assert.match(server, /app\.get\('\/api\/val\/witnessing\/connections'/);
   assert.match(server, /app\.post\('\/api\/val\/witnessing\/connections\/:provider'/);
@@ -2829,7 +2868,8 @@ test('Retired relationship dossier helpers remain available behind the V1 introd
   assert.match(hearthJs, /Refine wording/);
   assert.match(hearthJs, /Not this intro/);
   assert.match(hearthJs, /Teach VAL about this relationship move/);
-  assert.match(hearthJs, /Introduction draft approved for the review queue/);
+  assert.match(hearthJs, /Introduction draft is ready for your final review/);
+  assert.match(hearthJs, /Introduction draft reopened for editing/);
   assert.match(hearthJs, /No email, LinkedIn message, calendar invite, scrape, import, or CRM write happened/);
   assert.match(hearthJs, /function relationshipRouteUrl/);
   assert.match(hearthJs, /location\.protocol === 'http:' \|\| location\.protocol === 'https:'/);
@@ -3010,6 +3050,8 @@ test('Witnessing First Look is source-backed, receipt-first, and cannot use the 
   assert.match(hearthJs, /First Look complete/);
   assert.match(hearthJs, /VAL did not create projects, relationships, tasks, drafts, or memory/);
   assert.match(hearthJs, /Before we continue, VAL needs to complete your First Look/);
+  const firstLookRenderer = hearthJs.slice(hearthJs.indexOf('function renderValFirstLookConversation'), hearthJs.indexOf('async function loadValFirstLookRun'));
+  assert.match(firstLookRenderer, /renderValWitnessingSectionNavigator\(index\)/);
   assert.match(hearthCss, /\.val-first-look-progress/);
   assert.match(hearthCss, /\.val-first-look-source-grid/);
 });

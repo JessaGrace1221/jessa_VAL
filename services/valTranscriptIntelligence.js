@@ -1,5 +1,6 @@
 const {extractExecutiveInstructions}=require('./valExecutiveInstructions');
 const {relationshipIntroCandidates}=require('./valRelationshipActionIntelligence');
+const {buildResearchHandoff,buildEngineeringBrief}=require('./valWorkProductPreparation');
 
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=800){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
@@ -122,7 +123,7 @@ function missingContextForInstruction(instruction={},linkage={},artifactKind='pr
   if(ambiguity.includes('calendar_time_unclear'))missing.push('Confirm the date, time, duration, and attendees.');
   if(blocking.length)missing.push('Human judgment is required because this touches safety, legal, financial, destructive, public, or external consequences.');
   if(/proposal|invoice|agreement|sow|document|copy/.test(artifactKind))missing.push('Confirm scope, pricing, terms, claims, and authority before external use.');
-  if(/html_page|code|build/.test(artifactKind)&&!safeArray(linkage.linked_projects).length)missing.push('Confirm the project, repository, destination path, brand/source assets, and publish target.');
+  if(/engineering_brief|html_page|code|build/.test(artifactKind)&&!safeArray(linkage.linked_projects).length)missing.push('Confirm the project and GitHub repository.');
   if(!safeArray(linkage.linked_people).length&&/email|introduction|proposal|calendar/.test(artifactKind))missing.push('Resolve relationship identity before this can be sent, scheduled, or attached externally.');
   return [...new Set(missing)];
 }
@@ -194,7 +195,8 @@ function preparedWorkType(instruction={}){
   const text=String(instruction.instruction||'').toLowerCase();
   if(action==='prepare_proposal'||action==='send_proposal')return 'proposal_draft';
   if(action==='prepare_invoice'||action==='send_invoice')return 'invoice_draft';
-  if(action==='build_artifact')return 'html_page_draft';
+  if(action==='build_artifact')return 'engineering_brief';
+  if(action==='research')return 'research_handoff';
   if(action==='send_calendar_invite'||action==='create_calendar_hold')return 'calendar_invite_draft';
   if(action==='make_introduction'||action==='draft_introduction')return 'introduction_email_draft';
   if(action==='create_draft'){
@@ -235,6 +237,7 @@ function preparedArtifactForInstruction(instruction={},record={},linkage={},evid
     continuation_task:{
       id:taskId,
       title:compactText(`Continue: ${instruction.instruction||type}`,140),
+      source:'transcript_execution_opportunity',
       status:completionStatus==='complete_for_review'?'ready_for_review':'needs_context',
       project:linkedContext.project,
       relationships:linkedContext.relationships,
@@ -247,12 +250,38 @@ function preparedArtifactForInstruction(instruction={},record={},linkage={},evid
     review_required:true,
     no_external_action:true
   };
+  if(type==='engineering_brief'){
+    const artifact=buildEngineeringBrief({
+      title:'Engineering brief from transcript request',
+      instruction:instruction.instruction,
+      target:{name:target,system:'github'},
+      context:{linked_context:linkedContext,continuation_task:base.continuation_task},
+      sourceRefs:instruction.source_refs||evidenceRefs,
+      sourceChannel:'transcript',
+      sourceType:'transcript_instruction',
+      sourceId:id
+    });
+    const remaining=[...new Set(missing.concat(artifact.missing_inputs||[]))];
+    return {...base,...artifact,kind:type,destination:'GitHub engineering brief',completion_status:remaining.length?'partial_needs_context':'ready_for_implementation_review',remaining_context_needed:remaining,linked_context:linkedContext,continuation_task:{...base.continuation_task,remaining_context_needed:remaining,status:remaining.length?'needs_context':'ready_for_review'},externalPublish:false,no_external_action:true};
+  }
+  if(type==='research_handoff'){
+    const artifact=buildResearchHandoff({
+      title:`Research handoff for ${target}`,
+      instruction:instruction.instruction,
+      target:{name:target},
+      context:{linked_context:linkedContext,continuation_task:base.continuation_task},
+      sourceRefs:instruction.source_refs||evidenceRefs,
+      sourceChannel:'transcript',
+      sourceType:'transcript_instruction',
+      sourceId:id
+    });
+    return {...base,...artifact,kind:type,destination:'Research handoff',remaining_context_needed:missing,linked_context:linkedContext,continuation_task:base.continuation_task,no_external_action:true};
+  }
   if(type==='proposal_draft')return {...base,kind:type,destination:'GHL/CRM proposal draft',title:`Proposal draft for ${target}`,sections:['Context heard in transcript','Recommended scope','Implementation path','Investment or pricing placeholder','Approval questions'],externalSend:false};
   if(type==='invoice_draft')return {...base,kind:type,destination:'Invoice draft packet',title:`Invoice draft for ${target}`,sections:['Context heard in transcript','Amount or pricing placeholder','Terms needing confirmation','Approval questions'],externalSend:false,externalFinancialAction:false};
   if(type==='agreement_draft')return {...base,kind:type,destination:'Agreement/SOW draft',title:`Agreement draft for ${target}`,sections:['Parties','Scope','Responsibilities','Timeline','Terms requiring human/legal review','Approval questions'],externalSend:false,legalReviewRequired:true};
   if(type==='document_draft')return {...base,kind:type,destination:'Prepared document draft',title:`Document draft for ${target}`,sections:['Purpose','Context from transcript','Draft content','Open questions','Next review decision'],externalPublish:false};
   if(type==='copy_draft')return {...base,kind:type,destination:'Copy draft',title:`Copy draft for ${target}`,sections:['Audience','Promise','Draft copy','CTA','Review questions'],externalPublish:false};
-  if(type==='html_page_draft')return {...base,kind:type,destination:'VAL workspace HTML artifact',title:`HTML page draft from transcript request`,filename:`${String(target||'val-page').toLowerCase().replace(/[^a-z0-9]+/g,'-') || 'val-page'}.html`,html:'<!doctype html>\\n<html>\\n<head><meta charset=\"utf-8\"><title>Draft Page</title><style>body{font-family:Inter,system-ui,sans-serif;margin:0;color:#172033;background:#f7f3eb}main{max-width:920px;margin:0 auto;padding:72px 24px}section{margin-top:32px}a{color:#234f3b}</style></head>\\n<body>\\n  <main>\\n    <h1>Draft page from transcript request</h1>\\n    <p>VAL prepared this page structure from the meeting. Replace placeholders after project/repo context is confirmed.</p>\\n    <section><h2>Purpose</h2><p>Clarify the promise, audience, and next action from the transcript.</p></section>\\n    <section><h2>Next Step</h2><p>Review copy, attach assets, and confirm the publish target before release.</p></section>\\n  </main>\\n</body>\\n</html>',externalPublish:false};
   if(type==='calendar_invite_draft')return {...base,kind:type,destination:'GHL/Calendar invitation draft',title:`Calendar invitation draft for ${target}`,attendees:safeArray(linkage.linked_people).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),timeHint:(instruction.instruction.match(/\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|next week|at \d[^.]+)/i)||[])[0]||'',externalCalendarWrite:false};
   if(type==='introduction_email_draft')return {...base,kind:type,destination:'Email draft with two recipients',title:`Introduction draft involving ${target}`,recipients:safeArray(linkage.linked_people).slice(0,2).map(p=>({name:p.name,email:p.email,contactId:p.crm_contact_id||p.contactId||''})),relationship_match_required:true,externalSend:false};
   return {...base,kind:type,destination:'Email draft',title:`Email draft for ${target}`,externalSend:false};
@@ -274,7 +303,7 @@ function preparedWorkCandidates(record={},executiveInstructions=[],linkage={},ev
       what_only_user_can_do:artifact.remaining_context_needed?.length
         ? `Review the partial work and provide missing context: ${artifact.remaining_context_needed.join('; ')}`
         : 'Confirm whether this is accurate, edit it, and approve any external action separately.',
-      estimated_review_minutes:artifact.kind==='html_page_draft'?6:3,
+      estimated_review_minutes:artifact.kind==='engineering_brief'?6:3,
       approval_policy:instruction.authorization==='voice_authorized'?'voice_authorized':'approval_required',
       representation_risk:/proposal|email|introduction/.test(artifact.kind)?'high':'medium',
       requires_approval:true,
@@ -391,6 +420,7 @@ function createValTranscriptIntelligenceService({
   resolveIdentity=null,
   listRelationshipContacts=null,
   createContinuationTask=null,
+  actionOrchestrator=null,
   logger=console
 }={}){
   function store(){
@@ -574,8 +604,24 @@ function createValTranscriptIntelligenceService({
         await saveItem({id:uuid('tritem'),tenantId:tenantId(),userId:userId(),runId:run.id,transcriptId:id,category,itemType:item.type||item.instruction_type||category,title:item.title||item.requested_action||item.summary||category,summary:item.summary||item.instruction||'',sourceQuote:item.source_quote||item.authorization_quote||'',sourceRefsJson:item.source_refs||evidenceRefs.slice(0,3),linkTargetsJson:[linkage.linked_calendar_event&&{type:'calendar_event',id:linkage.linked_calendar_event},linkage.linked_meeting_prep_brief&&{type:'meeting_prep_brief',id:linkage.linked_meeting_prep_brief},linked.project&&{type:'project',id:linked.project.id||linked.project.name||'',label:linked.project.name||''},...(safeArray(linked.relationships).map(p=>({type:'relationship',id:p.contactId||p.email||p.name,label:p.name||p.email||''}))),linked.task&&{type:'task',id:linked.task.id||'',label:linked.task.title||''}].filter(Boolean),approvalPolicy:item.approval_policy||item.authorization||'approval_required',requiresApproval:item.requires_approval!==false&&item.authorization!=='voice_authorized',confidence:item.confidence||confidence,status:'candidate',metadataJson:{source:'transcript_intelligence',noExternalAction:true,executiveInstruction:category==='executive_instruction',executionLevel:item.execution_level||item.prepared_artifact?.execution_level||'',completionStatus:item.completion_status||item.prepared_artifact?.completion_status||'',preparedWorkIds:item.prepared_work_ids||[],remainingContextNeeded:item.remaining_context_needed||item.prepared_artifact?.remaining_context_needed||[],linkedContext:linked,preparedArtifact:item.prepared_artifact||null},createdAt:new Date().toISOString()});
       }
     }
+    const orchestrator=typeof actionOrchestrator==='function'?actionOrchestrator():actionOrchestrator;
+    const structuredActions=[
+      ...executiveInstructions,
+      ...readyCandidates.filter(candidate=>candidate.category==='prepared_work'||candidate.prepared_artifact||candidate.preparedArtifact)
+    ];
+    const actionOrchestration=orchestrator?await orchestrator.ingest({
+      sourceChannel:input.sourceChannel||input.channel||'transcript',
+      sourceType:'transcript_intelligence',
+      sourceId:id,
+      sourceEventId:run.id,
+      title:transcriptTitle(record),
+      text:transcriptText(record),
+      context:{linkage,qualityGate:gate,capacityAndTone:capacity,unknowns},
+      structuredActions,
+      sourceRefs:evidenceRefs
+    }).catch(error=>({ok:false,error:error.message,candidates:[]})):null;
     logger.log?.(`[val-transcript-intel] processed ${id}`);
-    return {ok:true,run,no_action_needed:noAction,final,ready_for_you_candidates:readyCandidates,no_external_action:true};
+    return {ok:true,run,no_action_needed:noAction,final,ready_for_you_candidates:readyCandidates,action_orchestration:actionOrchestration,no_external_action:true};
   }
   async function getIntelligence(transcriptId){
     if(hasPg()){

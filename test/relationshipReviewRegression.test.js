@@ -62,6 +62,26 @@ test('Network offers a sent-mail refresh and an explicit manual person path',()=
   assert.match(hearthJs,/Meeting Prep and LinkedIn commenting/);
 });
 
+test('Stewardship Co-Work carries the visibly selected person through every relationship entry path',()=>{
+  assert.match(hearthJs,/function relationshipCoworkIdentifier/);
+  assert.match(hearthJs,/function relationshipCoworkProfileMatches/);
+  assert.match(hearthJs,/activeRelationshipProfile = profile;/);
+  assert.match(hearthJs,/relationshipCoworkIdentifier\(profile, stewardshipSelectedNetworkId\)/);
+  assert.match(hearthJs,/stewardshipPersonById\(stewardshipSelectedNetworkId\) \|\| activeRelationshipProfile/);
+  assert.doesNotMatch(hearthJs,/if\(!relationshipId \|\| !canUseApi\) return;/);
+  assert.doesNotMatch(hearthJs,/if\(!sectionLabel \|\| !selected \|\| !durableId \|\| !canUseApi\) return;/);
+});
+
+test('Stewardship introductions use a durable two-person review and explicit final send gate',()=>{
+  assert.match(hearthJs,/action:'draft_intro_candidate'/);
+  assert.match(hearthJs,/\/api\/relationships\/actions/);
+  assert.match(hearthJs,/Review recipients and send/);
+  assert.match(hearthJs,/\/api\/val\/external-actions\/email-send-now/);
+  assert.match(hearthJs,/Two distinct verified email addresses are required/);
+  assert.match(hearthJs,/The earlier review packet is no longer treated as approval for this wording/);
+  assert.match(hearthJs,/Both relationships will receive the execution receipt/);
+});
+
 test('tracking notifications and preference memory are not relationship evidence',()=>{
   assert.match(server,/mailsuite\|mailtrack\|email tracking\|tracking notification/);
   assert.match(server,/memory\.filter\(m=>m&&m\.kind!==\'relationship_preference\'\)/);

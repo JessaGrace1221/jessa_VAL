@@ -7,9 +7,25 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./hearth-prototype.css?v=home-safe-20260720">
+<link rel="stylesheet" href="./hearth-prototype.css?v=val-settings-20260721">
 </head>
-<body>
+<body class="val-access-checking">
+<section class="val-access-gate" data-val-access-gate aria-live="polite">
+  <div class="val-access-gate-panel">
+    <img src="./assets/val-favicon.png" alt="">
+    <p class="drawer-kicker">VAL CONNECTION</p>
+    <h1 data-val-access-gate-title>Checking OpenAI...</h1>
+    <p data-val-access-gate-copy>VAL is confirming the private intelligence connection for this account.</p>
+    <form data-val-access-gate-form hidden>
+      <label>
+        <span>OpenAI API key</span>
+        <input type="password" autocomplete="off" placeholder="sk-..." data-val-access-gate-input>
+      </label>
+      <button type="submit">Connect OpenAI</button>
+      <small data-val-access-gate-status>Your key is encrypted and never shown again.</small>
+    </form>
+  </div>
+</section>
 <main class="hearth-shell" data-state="quiet" data-distance="presence">
   <div class="hearth-light" aria-hidden="true"></div>
 
@@ -210,6 +226,7 @@
         </button>
       </div>
       <div class="workspace-packet-receipt drawer-packet-receipt" data-drawer-packet-receipt hidden></div>
+      <section class="drawer-carry-forward-projection" data-drawer-carry-forward-projection aria-live="polite" hidden></section>
       <div class="source-detail val-detail" id="val-detail" aria-hidden="true">
         <div class="source-detail-header">
           <div>
@@ -219,10 +236,22 @@
           </div>
           <button type="button" class="close-val-detail">Close</button>
         </div>
-        <div class="val-witnessing-entry" aria-label="Begin VAL Witnessing Session">
-          <p>One thoughtful question at a time. Later, you can choose the real-world sources VAL may review with you.</p>
+        <div class="val-witnessing-entry" aria-label="VAL settings">
+          <div class="val-entry-heading">
+            <span>PARTNERSHIP CONTEXT</span>
+            <strong>Witnessing Session</strong>
+            <p>Return at any time to review or update a specific part of what VAL understands about you.</p>
+          </div>
           <div class="val-entry-actions">
-            <button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Begin Witnessing Session</button>
+            <button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingBegin" data-val-variable-packet="val_os_packet">Open Witnessing Session</button>
+          </div>
+          <div class="val-entry-heading val-connections-entry">
+            <span>DATA CONNECTIONS</span>
+            <strong>One secure home for every source</strong>
+            <p>Manage OpenAI, Gmail, Outlook, Krisp, Outscraper, RocketReach, Apollo, and custom connections here.</p>
+          </div>
+          <div class="val-entry-actions">
+            <button type="button" data-workflow-action="valConnections:review">Manage Data Connections</button>
           </div>
           <small data-val-live-status>Nothing leaves this session. VAL will show what it notices before anything becomes memory.</small>
         </div>
@@ -409,47 +438,46 @@
         <section class="project-suggestions" data-project-suggestions aria-label="Suggested projects from relationship documents" hidden></section>
         <button type="button" class="project-create-toggle" data-project-create-toggle aria-expanded="false">New project</button>
         <form class="project-create-form" data-project-create-form enctype="multipart/form-data" hidden>
+          <input type="hidden" name="needsProjectOnboarding" value="true">
+          <input type="hidden" name="createdFrom" value="hearth_project_interview">
+          <input type="hidden" name="onboardingQuestion" value="What should this project make true when it is successful, and why does that matter now?">
           <label>
             <span>Project name</span>
             <input type="text" name="name" placeholder="Frisson, client portal, book launch..." autocomplete="off" required>
           </label>
           <label>
-            <span>Operating system / SOP</span>
-            <select name="sopId" data-project-sop-select>
-              <option value="">Choose after VAL interviews me</option>
-              <option value="frisson_partner_onboarding">Frisson Partner Onboarding</option>
-              <option value="client_dashboard_buildout">Client Dashboard Buildout</option>
-              <option value="relationship_nurture_partnership">Long-Term Partnership Nurture</option>
-              <option value="new_sop">Create a new SOP from this project</option>
-            </select>
+            <span>Accountable owner</span>
+            <input type="text" name="ownerRelationship" list="project-create-relationship-options" placeholder="Search relationships" autocomplete="off">
           </label>
           <label>
-            <span>What is this project?</span>
-            <textarea name="summary" placeholder="Think out loud. VAL will interview you, structure this into a Project Manager Packet, and ask what is missing."></textarea>
+            <span>Another person involved</span>
+            <input type="text" name="relationships" list="project-create-relationship-options" placeholder="Search relationships" autocomplete="off">
           </label>
-          <label>
-            <span>Website or source code</span>
-            <textarea name="websiteSource" placeholder="URLs, repo paths, source-code notes, sitemap clues, or what the codebase is called."></textarea>
-          </label>
+          <datalist id="project-create-relationship-options" data-project-create-relationship-options></datalist>
+          <details class="project-create-relationship">
+            <summary>Create a person or relationship</summary>
+            <div>
+              <label>
+                <span>Name</span>
+                <input type="text" name="relationshipName" autocomplete="off">
+              </label>
+              <label>
+                <span>Email</span>
+                <input type="email" name="relationshipEmail" autocomplete="off">
+              </label>
+              <label>
+                <span>Role or context</span>
+                <input type="text" name="relationshipDetail" autocomplete="off">
+              </label>
+            </div>
+          </details>
           <label class="project-file-upload">
-            <span>Documents and contracts</span>
+            <span>Optional source or evidence</span>
             <input type="file" name="documentsAndContracts" accept=".txt,.md,.markdown,.html,.htm,.json,.csv,.tsv,.pdf,.docx,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
             <small data-project-file-receipt>No files selected</small>
           </label>
-          <label>
-            <span>Document / contract notes</span>
-            <textarea name="documents" placeholder="Optional: contract purpose, clauses to watch, folder context, terms, dates, or questions."></textarea>
-          </label>
-          <label>
-            <span>People and relationships</span>
-            <textarea name="relationships" placeholder="Names, roles, relationship context, stakeholders, clients, partners, decision makers."></textarea>
-          </label>
-          <label>
-            <span>Raw context</span>
-            <textarea name="rawContext" placeholder="Anything else VAL should hold: risks, promises, constraints, links, pasted notes, open questions."></textarea>
-          </label>
           <div class="project-create-actions">
-            <button type="submit">Create project</button>
+            <button type="submit">Create and begin Project Interview</button>
             <button type="button" data-project-create-cancel>Cancel</button>
           </div>
           <p class="project-create-status" data-project-create-status></p>
@@ -692,6 +720,11 @@
               <span>Conversation Summary</span>
               <p data-correspondence-field="decision-summary">Select a conversation to see why VAL put it here.</p>
             </section>
+            <section class="correspondence-trigger-receipt" data-correspondence-trigger-receipt hidden aria-live="polite">
+              <span data-correspondence-trigger-label>VAL reviewed</span>
+              <strong data-correspondence-trigger-status>No action needed</strong>
+              <p data-correspondence-trigger-summary></p>
+            </section>
             <section class="correspondence-email-content" aria-label="Actual email content">
               <span>Recent Thread</span>
               <div class="correspondence-thread-body" data-correspondence-thread-body></div>
@@ -895,6 +928,6 @@
     </div>
   </section>
 </main>
-  <script src="./hearth-prototype.js?v=attachment-audit-20260720"></script>
+  <script src="./hearth-prototype.js?v=val-settings-20260721"></script>
 </body>
 </html>

@@ -31,6 +31,15 @@ function registerValConversationIdentityRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  app.get('/api/val/email/messages/:messageId/trigger-receipt',async(req,res)=>{
+    try{
+      await waitForDb();
+      const result=await service.triggerReceiptForMessage({messageId:req.params.messageId,provider:req.query.provider||''});
+      if(!result)return res.status(404).json({ok:false,error:'Email message not found'});
+      res.json(result);
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
   app.post('/api/val/crm/resolve-identity',async(req,res)=>{
     try{
       await waitForDb();

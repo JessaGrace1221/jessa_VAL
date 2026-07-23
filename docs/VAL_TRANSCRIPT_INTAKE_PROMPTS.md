@@ -13,6 +13,9 @@ Companion specs:
 - [VAL_CHIEF_OF_STAFF_PROMPTS.md](./VAL_CHIEF_OF_STAFF_PROMPTS.md)
 - [VAL_MOMENTUM_CARD_PROMPTS.md](./VAL_MOMENTUM_CARD_PROMPTS.md)
 - [VAL_READY_FOR_YOU_CARD_PROMPTS.md](./VAL_READY_FOR_YOU_CARD_PROMPTS.md)
+- [VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md](./VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md)
+
+The Transcript Action Capability and Workflow Registry is the authority for what a transcript-derived candidate may prepare or execute. This intake suite may identify candidates, but it may not create a second action vocabulary or bypass the registry's approval and receipt contracts.
 
 ## Core Thesis
 

@@ -73,7 +73,7 @@ function protectedOwnerEmails(extra=[]){
     ...safeArray(extra)
   ].map(email=>String(email||'').trim().toLowerCase()).filter(Boolean));
 }
-let SELF_CALENDAR_EMAILS=protectedOwnerEmails(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+let SELF_CALENDAR_EMAILS=protectedOwnerEmails();
 function attendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SELF_CALENDAR_EMAILS.has(email)));

@@ -22,6 +22,7 @@ create table if not exists email_messages (
   received_at timestamptz,
   sent_at timestamptz,
   raw_json jsonb not null default '{}',
+  trigger_receipt_json jsonb not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (tenant_id,user_id,provider,message_id)
@@ -136,6 +137,7 @@ async function ensureValConversationIdentityTables({dbQuery,logger=console}={}){
   await dbQuery("alter table conversation_classifications add column if not exists false_urgency_check_json jsonb not null default '{}'");
   await dbQuery("alter table conversation_classifications add column if not exists routing_json jsonb not null default '{}'");
   await dbQuery("alter table conversation_classifications add column if not exists approval_policy text not null default 'approval_required'");
+  await dbQuery("alter table email_messages add column if not exists trigger_receipt_json jsonb not null default '{}'");
   logger.log?.('VAL Conversation + Identity tables ready');
 }
 

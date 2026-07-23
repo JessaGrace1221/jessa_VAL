@@ -71,10 +71,14 @@ test('API Keys & Connections UI is exposed under settings navigation',()=>{
   assert.doesNotMatch(dashboard,/Full keys never show after save[\s\S]*value="\$\{/);
 });
 
-test('clean dashboard exposes Google connection as a first-run user action',()=>{
+test('clean dashboard requires OpenAI first and keeps Google in Data Connections',()=>{
   assert.match(server,/app\.get\('\/dashboard',\(req,res\)=>\{res\.set\('Cache-Control','no-store, max-age=0'\);res\.sendFile\(path\.join\(__dirname,'hearth-prototype\.html'\)\);\}\);/);
   assert.match(server,/app\.get\('\/witnessing-dashboard'/);
-  assert.match(hearth,/Connect inbox\/calendar/);
+  assert.match(hearth,/data-val-access-gate/);
+  assert.match(hearth,/OpenAI API key/);
+  assert.match(hearth,/Connect OpenAI/);
+  assert.match(hearth,/Manage Data Connections/);
+  assert.match(hearth,/OpenAI, Gmail, Outlook, Krisp, Outscraper, RocketReach, Apollo, and custom connections/);
   assert.match(hearth,/data-calendar-source-status/);
   assert.match(hearth,/data-google-oauth/);
   assert.match(hearthJs,/\/api\/setup-health/);

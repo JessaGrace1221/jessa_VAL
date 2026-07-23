@@ -29,10 +29,10 @@ test('intelligence backfill rehydrates existing evidence before dashboard conclu
 test('transcript migration merges old archive records with the processed transcript index',()=>{
   assert.match(server,/function mergeTranscriptMigrationRecords/);
   assert.match(server,/transcriptMigrationRecordsFromIndex/);
-  const start=server.indexOf("app.get('/api/val/transcripts'");
-  const end=server.indexOf("app.get('/api/val/transcripts/review'",start);
+  const start=server.indexOf('async function transcriptDrawerListPayload');
+  const end=server.indexOf("app.get('/api/val/transcripts'",start);
   const body=server.slice(start,end);
-  assert.match(body,/transcriptArchiveRecords\(days,limit\)/);
+  assert.match(body,/transcriptArchiveRecords\(safeDays,Math\.max\(safeLimit\*4,200\)\)/);
   assert.match(body,/mergeTranscriptMigrationRecords\(archive,data\)/);
   assert.doesNotMatch(body,/if\(data\.transcripts\.length\)/);
 });

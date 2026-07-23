@@ -10,7 +10,13 @@ function parseLimit(value,defaultValue=50,max=200){
 function registerValExternalActionsRoutes(app,deps={}){
   const service=deps.service||createValExternalActionsService(deps);
   const receiptService=deps.receiptService||createValExecutionReceiptService(deps);
-  const executor=deps.executor||createValExternalActionExecutor({packetService:service,receiptService,adapters:deps.executionAdapters||{},executedBy:deps.executedBy});
+  const executor=deps.executor||createValExternalActionExecutor({
+    packetService:service,
+    receiptService,
+    adapters:deps.executionAdapters||{},
+    executedBy:deps.executedBy,
+    onExecutionComplete:deps.onExecutionComplete
+  });
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
 
@@ -121,9 +127,25 @@ function registerValExternalActionsRoutes(app,deps={}){
       await waitForDb();
       if(typeof service.createEmailSendPacket!=='function')throw new Error('Email send packets are not available.');
       const packet=await service.createEmailSendPacket(req.body||{});
+      if(!packet?.id)throw new Error('Email send packet could not be created. Nothing was sent.');
       const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final send approved from VAL send gate.'});
+      if(!approved?.id)throw new Error('Email send packet could not be approved. Nothing was sent.');
       const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
       await auditLog({req,action:result.executed?'email_send_gate_executed':'email_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
+      res.status(result.ok?200:409).json({...result,packet:result.packet||approved,final_confirmation:true});
+    }catch(e){res.status(500).json({ok:false,error:e.message});}
+  });
+
+  app.post('/api/val/external-actions/calendar-send-now',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.createCalendarInvitePacket!=='function')throw new Error('Calendar invite packets are not available.');
+      const packet=await service.createCalendarInvitePacket(req.body||{});
+      if(!packet?.id)throw new Error('Calendar appointment packet could not be created. Nothing was added to the calendar.');
+      const approved=await service.approve(packet.id,{note:req.body?.approvalNote||'Final calendar appointment approved from VAL send gate.'});
+      if(!approved?.id)throw new Error('Calendar appointment packet could not be approved. Nothing was added to the calendar.');
+      const result=await executor.execute(approved.id,{finalConfirmation:true,executedBy:req.body?.executedBy});
+      await auditLog({req,action:result.executed?'calendar_send_gate_executed':'calendar_send_gate_not_completed',resourceType:'val_external_action_packet',resourceId:approved.id,metadata:{executed:!!result.executed,status:result.packet?.status,error:result.error||'',riskErrors:result.risk_check?.errors||[]},success:!!result.executed}).catch(()=>{});
       res.status(result.ok?200:409).json({...result,packet:result.packet||approved,final_confirmation:true});
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
@@ -171,6 +193,8 @@ function registerValExternalActionsRoutes(app,deps={}){
     }catch(e){res.status(500).json({ok:false,error:e.message});}
   });
 
+  service.executor=executor;
+  service.receiptService=receiptService;
   return service;
 }
 

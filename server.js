@@ -38,6 +38,12 @@ const {ensureValExternalActionTables} = require('./services/valExternalActionsSc
 const {registerValExternalActionsRoutes} = require('./services/valExternalActionsRoutes');
 const {createValExternalActionExecutor} = require('./services/valExternalActionExecutor');
 const {createValExecutionReceiptService} = require('./services/valExecutionReceipts');
+const {ensureValActionOrchestratorTables} = require('./services/valActionOrchestratorSchema');
+const {registerValActionOrchestratorRoutes} = require('./services/valActionOrchestratorRoutes');
+const {createValResearchExecution} = require('./services/valResearchExecution');
+const {createValGhlActionAdapters} = require('./services/valGhlActionAdapters');
+const {GMAIL_SEND_SCOPE,MICROSOFT_SEND_SCOPE,selectEmailProvider,hasMicrosoftSendScope} = require('./services/valEmailProviderPolicy');
+const {GOOGLE_CALENDAR_WRITE_SCOPE,selectCalendarProvider,hasMicrosoftCalendarWriteScope} = require('./services/valCalendarProviderPolicy');
 const {registerValExecutiveInstructionRoutes} = require('./services/valExecutiveInstructionsRoutes');
 const {documentLooksLikeCalendarInvite} = require('./services/valDocumentEvidenceFilters');
 const {buildDailyWitnessGreeting,isGenericDailyWitnessSignal} = require('./services/dailyWitnessGreeting');
@@ -150,6 +156,21 @@ const DEEPGRAM_STT_ENDPOINTING_MS = Math.min(Math.max(Number(process.env.DEEPGRA
 const VAL_VOICE_RESPONSE_TEMPERATURE = Math.min(Math.max(Number(process.env.VAL_VOICE_RESPONSE_TEMPERATURE)||0.6,0),2);
 const KRISP_MCP_URL = process.env.KRISP_MCP_URL || 'https://mcp.krisp.ai/mcp';
 const KRISP_MCP_ACCESS_TOKEN = process.env.KRISP_MCP_ACCESS_TOKEN || process.env.KRISP_ACCESS_TOKEN || process.env.KRISP_BEARER_TOKEN || '';
+const TRANSCRIPT_AUTO_SYNC_INTERVAL_MS = Math.max(60*1000,Math.min(30*60*1000,Number(process.env.VAL_TRANSCRIPT_AUTO_SYNC_INTERVAL_MS)||5*60*1000));
+const TRANSCRIPT_AUTO_SYNC_DAYS = Math.max(1,Math.min(7,Number(process.env.VAL_TRANSCRIPT_AUTO_SYNC_DAYS)||2));
+const TRANSCRIPT_AUTO_SYNC_LIMIT = Math.max(1,Math.min(50,Number(process.env.VAL_TRANSCRIPT_AUTO_SYNC_LIMIT)||25));
+let transcriptAutomaticSyncRunning = false;
+let transcriptAutomaticSyncState = {
+  enabled:true,
+  status:'waiting',
+  lastCheckedAt:'',
+  lastSuccessfulAt:'',
+  lastImportedAt:'',
+  lastImportedTitle:'',
+  imported:0,
+  found:0,
+  message:'VAL will automatically check Krisp for newly completed meetings.'
+};
 const ROCKETREACH_API_KEY = process.env.ROCKETREACH_API_KEY;
 const ROCKETREACH_BASE_URL = process.env.ROCKETREACH_BASE_URL || 'https://api.rocketreach.co/api/v2';
 const ROCKETREACH_REQUEST_TIMEOUT_MS = Number(process.env.ROCKETREACH_REQUEST_TIMEOUT_MS) || 15000;
@@ -161,7 +182,7 @@ const APOLLO_REQUEST_TIMEOUT_MS = Number(process.env.APOLLO_REQUEST_TIMEOUT_MS) 
 const OUTSCRAPER_API_KEY = process.env.OUTSCRAPER_API_KEY;
 const OUTSCRAPER_LINKEDIN_POSTS_URL = process.env.OUTSCRAPER_LINKEDIN_POSTS_URL || '';
 const OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_MAPS_SEARCH_URL || 'https://api.app.outscraper.com/maps/search-v3';
-const OUTSCRAPER_GOOGLE_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_SEARCH_URL || 'https://api.app.outscraper.com/google-search-v3';
+const OUTSCRAPER_GOOGLE_SEARCH_URL = process.env.OUTSCRAPER_GOOGLE_SEARCH_URL || 'https://api.outscraper.com/google-search';
 const GHL_CALENDAR_ID = process.env.GHL_CALENDAR_ID || '';
 const GHL_CALENDAR_IDS = String(process.env.GHL_CALENDAR_IDS || GHL_CALENDAR_ID || '').split(',').map(v=>v.trim()).filter(Boolean);
 const GHL_OPPORTUNITY_PIPELINE_ID = process.env.GHL_OPPORTUNITY_PIPELINE_ID || process.env.GHL_PIPELINE_ID || '';
@@ -188,7 +209,12 @@ const FRISSON_PARTNER_STAGE_NAME = process.env.FRISSON_PARTNER_STAGE_NAME || pro
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || '';
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || '';
 const MICROSOFT_REDIRECT_URI = process.env.MICROSOFT_REDIRECT_URI || (CLIENT_CONFIG.publicBaseUrl ? `${CLIENT_CONFIG.publicBaseUrl.replace(/\/$/,'')}/auth/microsoft/callback` : '');
-const MICROSOFT_SCOPES = String(process.env.MICROSOFT_SCOPES || 'offline_access User.Read Mail.Read Calendars.Read Calendars.ReadWrite').split(/\s+/).filter(Boolean);
+const MICROSOFT_SCOPES = Array.from(new Set(
+  String(process.env.MICROSOFT_SCOPES || 'offline_access User.Read Mail.Read Calendars.Read Calendars.ReadWrite')
+    .split(/\s+/)
+    .filter(Boolean)
+    .concat([MICROSOFT_SEND_SCOPE])
+));
 const GOALL_LEAD_SEARCH_MAX = Number(process.env.GOALL_LEAD_SEARCH_MAX) || 200;
 const GOALL_LEAD_RAW_SEARCH_MAX = Number(process.env.GOALL_LEAD_RAW_SEARCH_MAX) || Math.max(GOALL_LEAD_SEARCH_MAX*4,200);
 const GOALL_LEAD_SEARCH_CALLS_MAX = Number(process.env.GOALL_LEAD_SEARCH_CALLS_MAX) || 28;
@@ -865,14 +891,18 @@ function isBookEditorProject(){
 }
 const OWNER_EMAILS = new Set(String(process.env.VAL_OWNER_EMAILS || process.env.VAL_OWNER_EMAIL || '')
   .split(',')
-  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL,'jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'])
+  .concat([process.env.ADMIN_EMAIL,process.env.GMAIL_USER_EMAIL,process.env.OUTLOOK_USER_EMAIL])
   .map(e=>String(e||'').trim().toLowerCase())
   .filter(Boolean));
-const KNOWN_RELATIONSHIP_EMAIL_ALIASES = {
-  'realestatewitharic@gmail.com': {name:'Aric Soyring', relationshipStatus:'known relationship', source:'user_confirmed_email_alias'},
-  'miken@goallprogram.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'},
-  'mikenonhof.wealth@gmail.com': {name:'Mike Nonhof', relationshipStatus:'known relationship', source:'source_confirmed_goall_relationship'}
-};
+const KNOWN_RELATIONSHIP_EMAIL_ALIASES = (() => {
+  try{
+    const parsed=JSON.parse(process.env.VAL_KNOWN_RELATIONSHIP_ALIASES_JSON||'{}');
+    return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};
+  }catch(error){
+    console.warn('VAL_KNOWN_RELATIONSHIP_ALIASES_JSON is invalid JSON; no configured aliases were loaded.');
+    return {};
+  }
+})();
 const BASE    = 'https://services.leadconnectorhq.com';
 const TASKS_FILE = process.env.TASKS_FILE || '/tmp/val_tasks.json';
 const STORE_FILE = process.env.VAL_STORE_FILE || '/tmp/val_store.json';
@@ -1483,7 +1513,7 @@ function writeJson(file,value){
 }
 function valStore(){
   const store=readJson(STORE_FILE,{conversations:[],messages:[],transcripts:[],memoryItems:[],oauthTokens:{},users:[],sessions:[]});
-  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
+  ['drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','identityLinks','valDecisions','tenantFeatureFlags','dashboardChangeRequests','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','linkedinEngagementPreferences','linkedinEngagementRuns','valActionSources','valActionCandidates','valActionCandidateEvents'].forEach(key=>{if(!Array.isArray(store[key]))store[key]=[];});
   return store;
 }
 function saveValStore(store){ writeJson(STORE_FILE,store); }
@@ -1687,7 +1717,8 @@ const TENANT_API_KEY_PROVIDER_REGISTRY={
   outscraper:{providerId:'outscraper',displayName:'Outscraper',description:'Supports approved business search and enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://app.outscraper.com/profile',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Outscraper account.'},
   rocketreach:{providerId:'rocketreach',displayName:'RocketReach',description:'Supports approved contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://rocketreach.co/api',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your RocketReach account.'},
   apollo:{providerId:'apollo',displayName:'Apollo',description:'Supports approved prospect/contact enrichment workflows.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://developer.apollo.io/',costRiskCategory:'usage_based_data',helpText:'Paste the API key from your Apollo account.'},
-  krisp:{providerId:'krisp',displayName:'Krisp MCP',description:'Connects Krisp meeting transcripts through the Krisp MCP server for transcript evidence intake.',credentialFields:['access_token'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://help.krisp.ai/hc/en-us/articles/25396920405148-Krisp-MCP',costRiskCategory:'private_meeting_data',helpText:'Use a Krisp MCP access token or saved OAuth token. VAL treats Krisp output as transcript evidence only.'}
+  krisp:{providerId:'krisp',displayName:'Krisp MCP',description:'Connects Krisp meeting transcripts through the Krisp MCP server for transcript evidence intake.',credentialFields:['access_token'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'https://help.krisp.ai/hc/en-us/articles/25396920405148-Krisp-MCP',costRiskCategory:'private_meeting_data',helpText:'Use a Krisp MCP access token or saved OAuth token. VAL treats Krisp output as transcript evidence only.'},
+  custom:{providerId:'custom',displayName:'Custom API',description:'Securely holds one additional API credential for an approved custom VAL connection.',credentialFields:['api_key'],enabledGlobally:true,requiresAdminApproval:false,defaultTenantAvailability:true,testType:'presence_only',docsUrl:'',costRiskCategory:'custom_connection',helpText:'Name the connection for your records, then paste its API key or access token.'}
 };
 const TENANT_API_KEY_PROVIDERS=Object.keys(TENANT_API_KEY_PROVIDER_REGISTRY);
 function tenantApiKeyProvider(provider){
@@ -3153,7 +3184,7 @@ async function resetValLocalContentForCleanStart({req,confirmation}={}){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState;
     if(state){
-      const keys=['transcripts','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','savedConversations','drafts','tasks','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','identityLinks','valDecisions','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','projectPins'];
+      const keys=['transcripts','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','savedConversations','drafts','tasks','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','identityLinks','valDecisions','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valCoworkEvents','valCoworkEventDeliveries','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','valActionSources','valActionCandidates','valActionCandidateEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','projectPins'];
       for(const key of keys)deleted[key]=cleanStartStoreDeleteRows(state,key,{tenant,userId});
       state.memoryItems=(state.memoryItems||[]).filter(row=>!cleanStartRowBelongsToCurrentUser(row,tenant,userId));
     }
@@ -3169,6 +3200,11 @@ async function resetValLocalContentForCleanStart({req,confirmation}={}){
         await add('val_execution_receipts',()=>cleanStartDeleteTable(client,'val_execution_receipts','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_external_action_audit',()=>cleanStartDeleteTable(client,'val_external_action_audit','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_external_action_packets',()=>cleanStartDeleteTable(client,'val_external_action_packets','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_action_candidate_events',()=>cleanStartDeleteTable(client,'val_action_candidate_events','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_action_candidates',()=>cleanStartDeleteTable(client,'val_action_candidates','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_action_sources',()=>cleanStartDeleteTable(client,'val_action_sources','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_cowork_event_deliveries',()=>cleanStartDeleteTable(client,'val_cowork_event_deliveries','tenant_id=$1 and user_id=$2',[tenant,userId]));
+        await add('val_cowork_events',()=>cleanStartDeleteTable(client,'val_cowork_events','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_cowork_action_receipts',()=>cleanStartDeleteTable(client,'val_cowork_action_receipts','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_cowork_work_items',()=>cleanStartDeleteTable(client,'val_cowork_work_items','tenant_id=$1 and user_id=$2',[tenant,userId]));
         await add('val_cowork_sessions',()=>cleanStartDeleteTable(client,'val_cowork_sessions','tenant_id=$1 and user_id=$2',[tenant,userId]));
@@ -3234,7 +3270,7 @@ async function resetValLocalContentForCleanStart({req,confirmation}={}){
       }finally{client.release();}
     }else{
       const store=valStore();
-      const keys=['conversations','messages','transcripts','memoryItems','drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','identityLinks','valDecisions','emailRules','emailActionLog','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','unifiedConversations','emailMessages','emailThreads','conversationClassifications','emailDraftEvaluations','hearthPacketReceipts','projectPins','userPreferences'];
+      const keys=['conversations','messages','transcripts','memoryItems','drafts','templates','transcriptIndex','transcriptParticipants','transcriptSummaries','transcriptTasks','transcriptContactUpdates','transcriptActionLog','transcriptIntelligenceItems','transcriptIntelligenceRuns','meetingTranscriptLinks','meetingPrepBriefs','attendeeIntelligence','identityLinks','valDecisions','emailRules','emailActionLog','relationshipProfiles','relationshipTimelineEvents','evidenceItems','evidenceObservations','agencyMoves','agencyMoveSources','evidenceLinks','teachValOnboardingSessions','teachValImports','teachValMemoryItems','valFirstLookRuns','valFirstLookCandidateAnalyses','valFirstLookCandidates','valFirstLookChangeSets','sourceProcessingRecords','observerRuns','roundTableRuns','chiefOfStaffRecommendations','momentumSnapshots','readyForYouItems','preparedArtifactRecords','surfaceRegistrations','valReviewUpdates','valReviewUpdateAudit','valCoworkSessions','valCoworkWorkItems','valCoworkActionReceipts','valCoworkEvents','valCoworkEventDeliveries','valExternalActionPackets','valExternalActionAudit','valExecutionReceipts','valExecutionReconciliationEvents','valActionSources','valActionCandidates','valActionCandidateEvents','externalResearchResults','valOsRules','valOsRuleDecisions','valOsLearningDecisions','valOsAuditLog','valOsReviewQueue','valOsCalendarApprovals','valOsExternalActionPackets','unifiedConversations','emailMessages','emailThreads','conversationClassifications','emailDraftEvaluations','hearthPacketReceipts','projectPins','userPreferences'];
       for(const key of keys)deleted[key]=cleanStartStoreDeleteRows(store,key,{tenant,userId});
       saveValStore(store);
     }
@@ -7242,6 +7278,28 @@ async function initValDb(){
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists linkedin_engagement_preferences (
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      preferences_json jsonb not null default '{}',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (tenant_id,user_id)
+    );
+    create table if not exists linkedin_engagement_runs (
+      id text primary key,
+      tenant_id text not null default 'default',
+      user_id text not null default 'default',
+      run_date text not null,
+      status text not null default 'running',
+      started_at timestamptz not null default now(),
+      completed_at timestamptz,
+      items_json jsonb not null default '[]',
+      errors_json jsonb not null default '[]',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (tenant_id,user_id,run_date)
+    );
     create table if not exists val_sessions (
       id text primary key,
       user_id text references val_users(id) on delete cascade,
@@ -7625,6 +7683,7 @@ async function initValDb(){
   await ensureValProjectPinsTables({dbQuery,logger:console});
   await ensureValCoworkTables({dbQuery,logger:console});
   await ensureValExternalActionTables({dbQuery,logger:console});
+  await ensureValActionOrchestratorTables({dbQuery,logger:console});
   for(const table of ['val_tasks','val_conversations','val_transcripts','val_memory_items','val_oauth_tokens']){
     await dbQuery(`alter table ${table} add column if not exists client_slug text not null default 'default'`);
     await dbQuery(`alter table ${table} add column if not exists tenant_id text not null default 'default'`);
@@ -8033,12 +8092,12 @@ async function witnessingOpenAIReadiness(){
     tenantOpenAIConnectionReadiness(),
     getTeachValWitnessingResumeSession().catch(()=>null)
   ]);
-  const continuationAllowed=!!resumableSession?.id;
+  const continuationAllowed=!!resumableSession?.id&&openai.connected;
   return {
     ok:true,
     openai,
     continuationAllowed,
-    requiresOpenAIKey:!openai.connected&&!continuationAllowed
+    requiresOpenAIKey:!openai.connected
   };
 }
 async function requireOpenAIForNewWitnessing(res){
@@ -8055,12 +8114,32 @@ async function requireOpenAIForNewWitnessing(res){
   return true;
 }
 async function witnessingConnectionStatusPayload(){
-  const [google,microsoftTokens]=await Promise.all([
+  const [google,microsoftTokens,apiProviders]=await Promise.all([
     getGoogleConnectionStatus(GOOGLE_SCOPES).catch(error=>({connected:false,error:error.message,missingScopes:GOOGLE_SCOPES})),
-    loadOAuthTokens('microsoft').catch(()=>null)
+    loadOAuthTokens('microsoft').catch(()=>null),
+    tenantApiKeyConnectionStatuses().catch(()=>[])
   ]);
   const openai=await tenantOpenAIConnectionReadiness();
   const krisp=await krispOAuthConnectionStatus().catch(error=>({connected:false,error:error.message||'Krisp needs to reconnect.'}));
+  const microsoftSendReady=!!(microsoftTokens?.refresh_token&&hasMicrosoftSendScope(microsoftTokens));
+  const apiStatus=new Map(apiProviders.map(provider=>[provider.providerId,provider]));
+  const credentialConnection=(id,{learns,limits})=>{
+    const provider=apiStatus.get(id)||TENANT_API_KEY_PROVIDER_REGISTRY[id]||{};
+    const connected=provider.status==='connected';
+    return {
+      id,
+      label:provider.displayName||id,
+      configured:connected,
+      status:provider.status||'not_connected',
+      connected,
+      lastUpdatedAt:provider.lastUpdatedAt||'',
+      lastTestedAt:provider.lastTestedAt||'',
+      action:'credential',
+      learns,
+      limits,
+      error:String(provider.metadata?.lastError||'')
+    };
+  };
   return {
     ok:true,
     source:'witnessing_connection_hub',
@@ -8080,13 +8159,14 @@ async function witnessingConnectionStatusPayload(){
       {
         id:'microsoft',
         label:'Outlook',
-        status:microsoftTokens?.refresh_token?'connected':'not_connected',
-        connected:!!microsoftTokens?.refresh_token,
+        status:microsoftSendReady?'connected':microsoftTokens?.refresh_token?'reconnect_required':'not_connected',
+        connected:microsoftSendReady,
         action:'oauth',
         actionHref:'/auth/microsoft',
         learns:'Outlook email and Microsoft Calendar context.',
         limits:'VAL reads evidence only. It never sends, changes a calendar, or shares a file without approval.',
-        error:''
+        missingScopes:microsoftSendReady?[]:[MICROSOFT_SEND_SCOPE],
+        error:microsoftTokens?.refresh_token&&!microsoftSendReady?'Reconnect Microsoft to grant Outlook send permission.':''
       },
       {
         id:'krisp',
@@ -8112,7 +8192,11 @@ async function witnessingConnectionStatusPayload(){
         learns:'Nothing from your world. This powers VAL\'s live reasoning and Witnessing responses.',
         limits:'A saved key is encrypted and never shown again.',
         error:''
-      }
+      },
+      credentialConnection('outscraper',{learns:'Public business, organization, and approved research evidence.',limits:'Research remains evidence to verify. VAL does not treat enrichment as relationship truth.'}),
+      credentialConnection('rocketreach',{learns:'Approved professional contact and organization research.',limits:'Contact enrichment is never permission to contact, message, or change a relationship record.'}),
+      credentialConnection('apollo',{learns:'Approved prospect, contact, and organization research.',limits:'Apollo results remain research evidence until the user confirms the correct person and use.'}),
+      credentialConnection('custom',{learns:'A user-selected API connection held securely for an approved VAL workflow.',limits:'Saving a key does not authorize a workflow. VAL will still require a named use and approval boundary.'})
     ]
   };
 }
@@ -8127,10 +8211,10 @@ app.get('/api/val/witnessing/readiness',async(req,res)=>{
 app.post('/api/val/witnessing/connections/:provider',async(req,res)=>{
   try{
     const provider=String(req.params.provider||'').trim().toLowerCase();
-    if(!['openai','outscraper'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
+    if(!['openai','outscraper','rocketreach','apollo','custom'].includes(provider)) return res.status(404).json({ok:false,error:'Use the secure connection button for that source.'});
     const apiKey=String(req.body.apiKey||req.body.key||req.body.token||'').trim();
     if(!apiKey) return res.status(400).json({ok:false,error:'Paste the connection key before saving it.'});
-    await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub'}});
+    await saveTenantApiKey(req,{provider,apiKey,metadata:{source:'witnessing_connection_hub',connectionName:String(req.body.connectionName||'').trim()}});
     const test=await testTenantApiKey(req,provider);
     await auditLog({req,action:'witnessing_connection_saved',resourceType:'witnessing_connection',resourceId:provider,metadata:{provider,status:test.status||''},success:!!test.ok}).catch(()=>{});
     res.json({ok:true,provider,message:test.message||'Connection saved.',connections:(await witnessingConnectionStatusPayload()).connections});
@@ -9365,6 +9449,7 @@ app.get('/api/integrations/health',async(req,res)=>{
       connected:!!token&&!missingScopes.includes('https://www.googleapis.com/auth/gmail.readonly'),
       hasReadScope:!missingScopes.includes('https://www.googleapis.com/auth/gmail.readonly'),
       hasComposeScope:!missingScopes.includes('https://www.googleapis.com/auth/gmail.compose'),
+      hasSendScope:!missingScopes.includes(GMAIL_SEND_SCOPE),
       hasRefreshToken,
       recentInboxCount:(recentGmail.emails||[]).length,
       unreadCount:(unreadGmail.emails||[]).length,
@@ -9391,12 +9476,13 @@ app.get('/api/integrations/health',async(req,res)=>{
         tokenExpiresAt:googleTokenExpiresAt(),
         refreshTest,
         calendar:{enabled:!!token,past7DaysCount:pastCal.length,next7DaysCount:nextCal.length},
-        gmail:{enabled:gmailHealth.connected,hasReadScope:gmailHealth.hasReadScope,hasComposeScope:gmailHealth.hasComposeScope,unreadCount:gmailHealth.unreadCount,recent7DaysCount:gmailHealth.recentInboxCount,sent14DaysCount:gmailHealth.sentCount,lastSyncAt:gmailHealth.lastSyncAt,errors:gmailHealth.errors},
+        gmail:{enabled:gmailHealth.connected,hasReadScope:gmailHealth.hasReadScope,hasComposeScope:gmailHealth.hasComposeScope,hasSendScope:gmailHealth.hasSendScope,unreadCount:gmailHealth.unreadCount,recent7DaysCount:gmailHealth.recentInboxCount,sent14DaysCount:gmailHealth.sentCount,lastSyncAt:gmailHealth.lastSyncAt,errors:gmailHealth.errors},
         docs:{enabled:docsHealth.connected,hasDriveFileScope:docsHealth.hasDriveFileScope,hasDocumentsScope:docsHealth.hasDocumentsScope,missingScopes:docsHealth.missingScopes,error:docsHealth.error}
       },
       microsoft:{
         configured:microsoftConfigured,
         connected:!!microsoftToken,
+        hasSendScope:hasMicrosoftSendScope(microsoftSaved||{}),
         hasRefreshToken:!!microsoftSaved?.refresh_token,
         refreshTest:microsoftToken?'passed':'failed',
         scopes:String(microsoftSaved?.scope||MICROSOFT_SCOPES.join(' ')).split(/\s+/).filter(Boolean),
@@ -9428,6 +9514,7 @@ async function emailIntelligencePayload(req,{force=false}={}){
     }
     if(DEMO_MODE){
       const s=requestContext.getStore()?.demoState||{emails:[]}, emails=s.emails||[];
+      await Promise.all(emails.map((email)=>valConversationIdentity.upsertEmailMessage(email)));
       const buckets=emails.reduce((acc,email)=>{acc[email.classification]=(acc[email.classification]||0)+1;return acc;},{});
       return {ok:true,needsAttention:emails.filter(e=>e.classification==='needs_attention'),needsReply:emails.filter(e=>e.classification==='needs_reply'),lowPriority:[],waitingOnResponse:emails.filter(e=>e.classification==='waiting_on_response'),draftSuggestions:emails.filter(e=>['needs_reply','appointment_recap_needed'].includes(e.classification)),providers:{gmail:{status:'connected',needsAuth:false,missingScopes:[],error:'',lastSyncAt:new Date().toISOString(),lastSuccessfulSyncAt:new Date().toISOString(),recentInboxCount:emails.length,analyzedCount:emails.length},outlook:{status:'connected',needsAuth:false,error:''}},errors:[],emails,summary:{total:emails.length,buckets,draftsPrepared:2,waitingOnResponse:1,forwardingSuggestions:0,ignoredLowPriority:0,ruleSuggestions:2,savedRules:1},rules:[{id:'demo-rule-1',ruleName:'Draft replies for investor requests',ruleType:'draft_reply',isActive:true}]};
     }
@@ -10062,6 +10149,7 @@ const DEFAULT_GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.compose',
+  GMAIL_SEND_SCOPE,
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/documents'
@@ -10071,12 +10159,14 @@ const GOOGLE_SCOPES = String(process.env.GOOGLE_SCOPES||'').trim()
       'https://www.googleapis.com/auth/drive.readonly',
       'https://www.googleapis.com/auth/drive.file',
       'https://www.googleapis.com/auth/documents',
-      'https://www.googleapis.com/auth/calendar.events'
+      'https://www.googleapis.com/auth/calendar.events',
+      GMAIL_SEND_SCOPE
     ])))
   : DEFAULT_GOOGLE_SCOPES;
 const REQUIRED_GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.compose'
+  'https://www.googleapis.com/auth/gmail.compose',
+  GMAIL_SEND_SCOPE
 ];
 const REQUIRED_GOOGLE_DOC_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
@@ -10943,6 +11033,51 @@ async function createOutlookTaskBlock(task,{start,end,calendarId='',durationMinu
   if(!r.ok) throw new Error(d.error?.message||`Outlook task block failed (${r.status})`);
   return {provider:'outlook',calendarId,eventId:d.id,webLink:d.webLink||'',raw:d};
 }
+async function createGoogleCalendarAppointment({title,description='',start,end,attendees=[],calendarId='primary',timeZone=CLIENT_CONFIG.timezone}={}){
+  const status=await getGoogleConnectionStatus([GOOGLE_CALENDAR_WRITE_SCOPE]);
+  if((status.missingScopes||[]).length)throw new Error('Google Calendar write scope missing. Reconnect Google in Data Connections.');
+  const token=await getGoogleToken();
+  if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
+  const event={
+    summary:title,
+    description,
+    start:{dateTime:start.toISOString(),timeZone},
+    end:{dateTime:end.toISOString(),timeZone},
+    transparency:'opaque',
+    visibility:'default',
+    attendees:attendees.map(attendee=>({email:attendee.email,displayName:attendee.name||undefined})),
+    reminders:{useDefault:true},
+    extendedProperties:{private:{val_action_type:'send_calendar_invite'}}
+  };
+  const url=`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId||'primary')}/events?sendUpdates=all`;
+  const response=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(event)});
+  const data=await readJsonResponse(response);
+  if(!response.ok||data.error)throw new Error(data.error?.message||`Google calendar appointment failed (${response.status})`);
+  return {provider:'google',calendarId:calendarId||'primary',eventId:data.id||'',webLink:data.htmlLink||'',status:data.status||'',raw:data};
+}
+async function createOutlookCalendarAppointment({title,description='',start,end,attendees=[],calendarId='',timeZone=CLIENT_CONFIG.timezone}={}){
+  const saved=await loadOAuthTokens('microsoft').catch(()=>null);
+  if(!hasMicrosoftCalendarWriteScope(saved||{}))throw new Error('Outlook Calendar write scope missing. Reconnect Microsoft in Data Connections.');
+  const token=await getMicrosoftToken();
+  if(!token)throw new Error('Microsoft auth required');
+  const event={
+    subject:title,
+    body:{contentType:'Text',content:description},
+    start:{dateTime:start.toISOString(),timeZone:'UTC'},
+    end:{dateTime:end.toISOString(),timeZone:'UTC'},
+    showAs:'busy',
+    sensitivity:'normal',
+    attendees:attendees.map(attendee=>({emailAddress:{address:attendee.email,name:attendee.name||attendee.email},type:'required'})),
+    isReminderOn:true,
+    reminderMinutesBeforeStart:15,
+    transactionId:`val-${crypto.createHash('sha256').update([title,start.toISOString(),attendees.map(a=>a.email).join(',')].join('|')).digest('hex').slice(0,28)}`
+  };
+  const url=calendarId?`https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(calendarId)}/events`:'https://graph.microsoft.com/v1.0/me/events';
+  const response=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',Prefer:`outlook.timezone="${timeZone}"`},body:JSON.stringify(event)});
+  const data=await readJsonResponse(response);
+  if(!response.ok)throw new Error(data.error?.message||`Outlook calendar appointment failed (${response.status})`);
+  return {provider:'outlook',calendarId,eventId:data.id||'',webLink:data.webLink||'',status:data.showAs||'',raw:data};
+}
 async function updateOutlookTaskBlock(task,{eventId,start,end,completed=false,focus=false}={}){
   const token=await getMicrosoftToken();
   if(!token) throw new Error('Microsoft auth required');
@@ -10961,8 +11096,8 @@ async function updateOutlookTaskBlock(task,{eventId,start,end,completed=false,fo
   return {provider:'outlook',eventId,webLink:d.webLink||'',raw:d};
 }
 const calendarProviders={
-  google:{createTaskBlock:createGoogleTaskBlock,updateTaskBlock:updateGoogleTaskBlock},
-  outlook:{createTaskBlock:createOutlookTaskBlock,updateTaskBlock:updateOutlookTaskBlock}
+  google:{createTaskBlock:createGoogleTaskBlock,updateTaskBlock:updateGoogleTaskBlock,createAppointment:createGoogleCalendarAppointment},
+  outlook:{createTaskBlock:createOutlookTaskBlock,updateTaskBlock:updateOutlookTaskBlock,createAppointment:createOutlookCalendarAppointment}
 };
 
 async function fetchGhlCalendarEvents(start,end){
@@ -13186,6 +13321,8 @@ function transcriptMigrationRecordsFromIndex(index={}){
       id:detail.id||row.transcriptId,
       type:'transcript',
       title:detail.title||row.meetingTitle||'Recovered transcript',
+      sourceTitle:row.meetingTitle||detail.meetingTitle||detail.title||'',
+      meetingDatetime:row.meetingDatetime||'',
       rawText:detail.transcriptText||row.rawTranscript||'',
       metadata:{
         source:row.source||'transcript_index',
@@ -13200,6 +13337,32 @@ function transcriptMigrationRecordsFromIndex(index={}){
     };
   }).filter(record=>record.id&&String(record.rawText||'').trim());
 }
+function transcriptSourceIdentity(record={}){
+  const metadata=record.metadata||{};
+  const sourcePayload=metadata.sourcePayloadMetadata&&typeof metadata.sourcePayloadMetadata==='object'?metadata.sourcePayloadMetadata:{};
+  const rawDocument=metadata.rawKrispDocument&&typeof metadata.rawKrispDocument==='object'?metadata.rawKrispDocument:
+    (sourcePayload.rawKrispDocument&&typeof sourcePayload.rawKrispDocument==='object'?sourcePayload.rawKrispDocument:{});
+  const sourceData=sourcePayload.data&&typeof sourcePayload.data==='object'?sourcePayload.data:{};
+  const detail=record.detail&&typeof record.detail==='object'?record.detail:{};
+  let title=transcriptFirstString(
+    rawDocument.title,rawDocument.name,rawDocument.meetingTitle,rawDocument.meeting_title,
+    sourcePayload.sourceTitle,sourcePayload.title,sourcePayload.name,sourcePayload.meetingTitle,sourcePayload.meeting_title,
+    sourceData.title,sourceData.name,sourceData.meetingTitle,sourceData.meeting_title,
+    record.sourceTitle,record.meetingTitle,record.meeting_title,record.title,
+    detail.sourceTitle,detail.meetingTitle,detail.meeting_title,detail.title
+  ).replace(/\s+/g,' ').trim();
+  if(!title||/^(?:krisp meeting|meeting|transcript)$/i.test(title)){
+    title=krispReceiptHeadingTitle(record.rawText||record.rawTranscript||detail.transcriptText||detail.rawTranscript||'')||title;
+  }
+  const meetingDatetime=transcriptFirstString(
+    rawDocument.startedAt,rawDocument.started_at,rawDocument.startTime,rawDocument.start_time,rawDocument.meetingDate,rawDocument.meeting_date,rawDocument.date,
+    sourcePayload.startedAt,sourcePayload.started_at,sourcePayload.startTime,sourcePayload.start_time,sourcePayload.meetingDatetime,sourcePayload.meeting_datetime,sourcePayload.meetingDate,sourcePayload.meeting_date,sourcePayload.date,
+    sourceData.startedAt,sourceData.started_at,sourceData.startTime,sourceData.start_time,sourceData.meetingDatetime,sourceData.meeting_datetime,sourceData.meetingDate,sourceData.meeting_date,sourceData.date,
+    record.meetingDatetime,record.meeting_datetime,metadata.meetingDatetime,metadata.meeting_datetime,metadata.startedAt,metadata.started_at,metadata.startTime,metadata.start_time,
+    detail.meetingDatetime,detail.meeting_datetime
+  );
+  return {title,meetingDatetime};
+}
 function mergeTranscriptMigrationRecords(records=[],index={}){
   const byId=new Map();
   for(const record of transcriptMigrationRecordsFromIndex(index))byId.set(String(record.id),record);
@@ -13207,17 +13370,24 @@ function mergeTranscriptMigrationRecords(records=[],index={}){
     if(!record?.id)continue;
     const id=String(record.id),existing=byId.get(id);
     if(existing){
+      const sourceIdentity=transcriptSourceIdentity(record);
       byId.set(id,{
-        ...record,
         ...existing,
-        title:existing.title||record.title,
+        ...record,
+        detail:existing.detail||record.detail,
+        sourceTitle:sourceIdentity.title||record.sourceTitle||existing.sourceTitle||'',
+        title:sourceIdentity.title||record.title||existing.title,
+        meetingDatetime:sourceIdentity.meetingDatetime||record.meetingDatetime||existing.meetingDatetime||'',
         rawText:existing.rawText||record.rawText,
-        metadata:{...(record.metadata||{}),...(existing.metadata||{})},
-        createdAt:existing.createdAt||record.createdAt
+        metadata:{...(existing.metadata||{}),...(record.metadata||{})},
+        createdAt:record.createdAt||existing.createdAt
       });
-    }else byId.set(id,record);
+    }else{
+      const sourceIdentity=transcriptSourceIdentity(record);
+      byId.set(id,{...record,sourceTitle:sourceIdentity.title||record.sourceTitle||'',title:sourceIdentity.title||record.title,meetingDatetime:sourceIdentity.meetingDatetime||record.meetingDatetime||''});
+    }
   }
-  return [...byId.values()].sort((a,b)=>interactionDate(b.createdAt||b.metadata?.timestamp)-interactionDate(a.createdAt||a.metadata?.timestamp));
+  return [...byId.values()].sort((a,b)=>interactionDate(b.meetingDatetime||b.createdAt||b.metadata?.timestamp)-interactionDate(a.meetingDatetime||a.createdAt||a.metadata?.timestamp));
 }
 async function backfillTranscriptEvidence({days=3650,limit=250}={}){
   const [records,index]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[],participants:[],summaries:[],tasks:[],contactUpdates:[],actionLog:[]}))]);
@@ -13622,30 +13792,21 @@ async function enrichProspectWithApollo(p){
 }
 
 async function lookupOutscraperLinkedIn(attendee, profile){
-  const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
-  if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
-  if(!OUTSCRAPER_LINKEDIN_POSTS_URL) return {configured:false, error:'OUTSCRAPER_LINKEDIN_POSTS_URL is not set'};
-  const url = new URL(OUTSCRAPER_LINKEDIN_POSTS_URL);
-  const organization = profile?.company || profile?.organization || profile?.metadata?.company || profile?.metadata?.organization || '';
-  const email=normalizeContextEmail(attendee.email||relationshipProfilePrimaryEmail(profile)||'');
-  const domain=String(email.split('@')[1]||'').replace(/^www\./i,'').toLowerCase();
-  const usableDomain=domain&&!/(gmail|googlemail|yahoo|outlook|hotmail|icloud|me|mac|aol|protonmail)\./i.test(domain)?domain:'';
-  const name=firstLookCandidateCleanName(attendee.name||profile?.displayName||profile?.display_name||profile?.name||'');
-  const personalLinkedIn=profile?.linkedinUrl || attendee.linkedinUrl || profile?.linkedin_url || '';
-  const companyLinkedIn=profile?.companyLinkedInUrl || profile?.company_linkedin_url || profile?.metadata?.companyLinkedInUrl || profile?.metadata?.company_linkedin_url || '';
-  const query = personalLinkedIn || [name, organization || usableDomain].filter(Boolean).join(' ') || name || companyLinkedIn || organization || usableDomain || email;
-  if(query) url.searchParams.set('query', query);
-  url.searchParams.set('async','false');
-  const response = await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts');
-  const data = await readJsonResponse(response);
-  if(!response.ok) return {configured:true, error:data.errorMessage || data.message || `Outscraper ${response.status}`};
-  const posts = Array.isArray(data.data) ? data.data.flat(3).filter(Boolean) : [];
-  const recentPosts = posts.slice(0,12).map(p=>({
-    date:p.date || p.posted_at || p.created_at || '',
-    text:String(p.text || p.post_text || p.content || p.description || p.title || '').slice(0,700),
-    url:p.url || p.post_url || p.link || ''
-  })).filter(post=>post.text&&/linkedin\.com\/(posts|feed\/update|pulse)\//i.test(post.url||'')).slice(0,6);
-  return {configured:true, query, postsLastWeek:recentPosts, rawCount:posts.length};
+  const resolved=await resolveMeetingPrepLinkedInPublicPost({attendee,profile});
+  const post=resolved.status==='post_found'?{
+    date:resolved.date||'',
+    text:resolved.text||'',
+    url:resolved.url||''
+  }:null;
+  return {
+    configured:resolved.configured,
+    query:resolved.query||'',
+    postsLastWeek:post?[post]:[],
+    rawCount:post?1:0,
+    status:resolved.status,
+    error:resolved.error||'',
+    profileUrl:resolved.profileUrl||''
+  };
 }
 
 function meetingPrepPublicSearchQueries(attendee={}, contact={}, profile={}){
@@ -13682,6 +13843,7 @@ function normalizeOutscraperSearchResult(row={}){
   if(!rawTitle&&!snippet&&!url)return null;
   const title=dashboardShortText(rawTitle||url,'Search result',180);
   return {
+    query:String(row.query||'').trim(),
     title,
     url,
     displayedLink:String(row.displayed_link||row.displayedLink||'').trim(),
@@ -13714,7 +13876,7 @@ function flattenOutscraperSearchResults(data={}){
       row.search_results
     ].filter(Boolean);
     if(nested.length){
-      nested.flat(4).filter(Boolean).forEach(item=>candidates.push(item));
+      nested.flat(4).filter(Boolean).forEach(item=>candidates.push({...item,query:item.query||row.query||''}));
     }else{
       candidates.push(row);
     }
@@ -13777,6 +13939,198 @@ function meetingPrepLinkedInActivityUrl(profileUrl=''){
   return clean;
 }
 
+const linkedInPublicPostCache=new Map();
+const linkedInEmailProfileCache=new Map();
+const outscraperGoogleSearchCache=new Map();
+const outscraperGoogleSearchFlights=new Map();
+function linkedInPostActivityId(url=''){
+  const match=String(url||'').match(/activity-(\d{10,})/i);
+  return match?BigInt(match[1]):0n;
+}
+function linkedInPostCanonicalUrl(url=''){
+  return String(url||'').trim().replace(/#:~:text=[\s\S]*$/i,'').replace(/#.*$/,'');
+}
+function htmlMetaContent(html='',key=''){
+  const escaped=String(key).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const patterns=[
+    new RegExp(`<meta[^>]+(?:name|property)=["']${escaped}["'][^>]+content=["']([^"']*)["']`,'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["']${escaped}["']`,'i')
+  ];
+  for(const pattern of patterns){
+    const match=String(html||'').match(pattern);
+    if(match?.[1])return decodeBasicHtml(match[1]).replace(/\r\n?/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  return '';
+}
+async function fetchPublicLinkedInPost(candidate={}){
+  const url=linkedInPostCanonicalUrl(candidate.url||'');
+  if(!/^https:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/(?:posts|feed\/update)\//i.test(url))return null;
+  const response=await fetchWithTimeout(url,{
+    headers:{
+      'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      'Accept-Language':'en-US,en;q=0.9'
+    }
+  },7000,'LinkedIn public post');
+  if(!response.ok)return null;
+  const html=await response.text();
+  const title=htmlMetaContent(html,'og:title')||decodeBasicHtml(String(html.match(/<title>([\s\S]*?)<\/title>/i)?.[1]||'')).trim()||candidate.title||'';
+  const text=htmlMetaContent(html,'og:description')||htmlMetaContent(html,'description')||'';
+  if(text.length<40)return null;
+  return {url,title:dashboardShortText(title,'LinkedIn post',240),text:dashboardShortText(text,'',2400)};
+}
+function linkedInResolverInput(input={}){
+  const attendee=input.attendee||{};
+  const contact=input.contact||{};
+  const profile=input.profile||input;
+  const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
+  const linkedinUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
+  const slug=String(linkedinUrl||'').match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+  return {attendee,contact,profile,name,linkedinUrl,slug};
+}
+async function resolveLinkedInPublicPost(input={}){
+  const identity=linkedInResolverInput(input);
+  const activityUrl=meetingPrepLinkedInActivityUrl(identity.linkedinUrl);
+  const cacheKey=[tenantId(),currentUserId(),identity.slug||identity.name.toLowerCase(),new Date().toISOString().slice(0,10)].join(':');
+  if(!input.force&&!Array.isArray(input.searchResults)&&linkedInPublicPostCache.has(cacheKey))return linkedInPublicPostCache.get(cacheKey);
+  const work=(async()=>{
+    const queries=Array.from(new Set([
+      identity.name?`site:linkedin.com/posts "${identity.name}"`:'',
+      identity.slug?`site:linkedin.com/posts "${identity.slug}"`:''
+    ].filter(Boolean)));
+    if(!queries.length)return {configured:!!OUTSCRAPER_API_KEY,status:'not_found',error:'A usable LinkedIn profile URL or name is missing.',profileUrl:activityUrl};
+    const attempts=[];
+    const candidates=[];
+    if(Array.isArray(input.searchResults)){
+      attempts.push({query:queries.join(' | '),configured:input.searchConfigured!==false,error:input.searchError||'',rawCount:input.searchResults.length,reusedBatch:true});
+      safeArray(input.searchResults)
+        .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,identity.attendee,identity.contact,identity.profile))
+        .filter(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))
+        .forEach(result=>candidates.push({...result,query:result.query||queries.join(' | ')}));
+    }else{
+      const search=await lookupOutscraperGoogleSearch(queries,{timeoutMs:Number(process.env.VAL_LINKEDIN_POST_LOOKUP_TIMEOUT_MS)||60000,label:`LinkedIn post discovery for ${identity.name||identity.slug}`}).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,results:[]}));
+      attempts.push({query:queries.join(' | '),configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
+      safeArray(search.results)
+        .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,identity.attendee,identity.contact,identity.profile))
+        .filter(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))
+        .forEach(result=>candidates.push({...result,query:result.query||queries.join(' | ')}));
+    }
+    const unique=candidates.filter((candidate,index,array)=>array.findIndex(item=>linkedInPostCanonicalUrl(item.url)===linkedInPostCanonicalUrl(candidate.url))===index);
+    unique.sort((a,b)=>{
+      const activityA=linkedInPostActivityId(a.url);
+      const activityB=linkedInPostActivityId(b.url);
+      if(activityA!==activityB)return activityA>activityB?-1:1;
+      return meetingPrepLinkedInSignalScore(b,identity.attendee,identity.contact,identity.profile)-meetingPrepLinkedInSignalScore(a,identity.attendee,identity.contact,identity.profile);
+    });
+    for(const candidate of unique.slice(0,4)){
+      const resolved=await fetchPublicLinkedInPost(candidate).catch(()=>null);
+      if(!resolved)continue;
+      return {
+        configured:true,
+        status:'post_found',
+        query:candidate.query||queries.join(' | '),
+        title:resolved.title,
+        url:resolved.url,
+        text:resolved.text,
+        profileUrl:activityUrl,
+        attempts,
+        rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
+        completedAt:new Date().toISOString(),
+        source:'outscraper_google_discovery_and_linkedin_public_post'
+      };
+    }
+    const failed=attempts.length&&attempts.every(attempt=>attempt.error);
+    return {
+      configured:attempts.some(attempt=>attempt.configured)||!!OUTSCRAPER_API_KEY,
+      status:unique.length?'post_link_found':(failed?'failed':'no_recent_post'),
+      query:queries.join(' | '),
+      title:unique[0]?.title||'',
+      url:linkedInPostCanonicalUrl(unique[0]?.url||'')||activityUrl,
+      text:'',
+      profileUrl:activityUrl,
+      attempts,
+      error:failed?attempts.map(attempt=>attempt.error).filter(Boolean).join(' | '):'',
+      completedAt:new Date().toISOString()
+    };
+  })();
+  linkedInPublicPostCache.set(cacheKey,work);
+  try{
+    const result=await work;
+    linkedInPublicPostCache.set(cacheKey,result);
+    return result;
+  }catch(error){
+    linkedInPublicPostCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function resolveLinkedInProfileByEmail(input={}){
+  const attendee=input.attendee||{};
+  const contact=input.contact||{};
+  const profile=input.profile||{};
+  const email=normalizeContextEmail(attendee.email||contact.email||relationshipProfilePrimaryEmail(profile)||'');
+  if(!email){
+    return {configured:!!OUTSCRAPER_API_KEY,status:'email_missing',email:'',profileUrl:'',error:'The calendar attendee does not include an email address.'};
+  }
+  const cacheKey=[tenantId(),currentUserId(),email,new Date().toISOString().slice(0,10)].join(':');
+  if(!input.force&&!Array.isArray(input.searchResults)&&linkedInEmailProfileCache.has(cacheKey))return linkedInEmailProfileCache.get(cacheKey);
+  const work=(async()=>{
+    const query=`site:linkedin.com/in "${email}"`;
+    const search=Array.isArray(input.searchResults)
+      ? {configured:input.searchConfigured!==false,error:input.searchError||'',results:input.searchResults,rawCount:input.searchResults.length}
+      : await lookupOutscraperGoogleSearch(query,{
+        timeoutMs:Number(process.env.VAL_LINKEDIN_EMAIL_PROFILE_TIMEOUT_MS)||60000,
+        label:`LinkedIn email profile discovery for ${email}`
+      }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,results:[]}));
+    const candidate=safeArray(search.results).find(result=>{
+      if(!/linkedin\.com\/in\//i.test(result.url||''))return false;
+      const evidence=[result.title,result.snippet,result.url,result.displayedLink].filter(Boolean).join(' ').toLowerCase();
+      return evidence.includes(email.toLowerCase());
+    });
+    if(!candidate){
+      return {
+        configured:search.configured||!!OUTSCRAPER_API_KEY,
+        status:'no_official_profile_for_email',
+        email,
+        query,
+        profileUrl:'',
+        error:search.error||'',
+        message:`No official LinkedIn profile exists with this attendee's email address: ${email}.`
+      };
+    }
+    return {
+      configured:true,
+      status:'profile_found',
+      email,
+      query,
+      profileUrl:linkedInPostCanonicalUrl(candidate.url),
+      title:candidate.title||'',
+      evidence:dashboardShortText(candidate.snippet||'', '', 520)
+    };
+  })();
+  linkedInEmailProfileCache.set(cacheKey,work);
+  try{
+    const result=await work;
+    linkedInEmailProfileCache.set(cacheKey,result);
+    return result;
+  }catch(error){
+    linkedInEmailProfileCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function resolveMeetingPrepLinkedInPublicPost(input={}){
+  const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(input.attendee||{},input.contact||{},input.profile||{});
+  if(knownProfileUrl){
+    const resolved=await resolveLinkedInPublicPost(input);
+    return {...resolved,identitySource:'stewardship_linkedin_url'};
+  }
+  const emailProfile=await resolveLinkedInProfileByEmail(input);
+  if(emailProfile.status!=='profile_found')return emailProfile;
+  const profile={...(input.profile||{}),linkedinUrl:emailProfile.profileUrl,linkedin_url:emailProfile.profileUrl};
+  const resolved=await resolveLinkedInPublicPost({...input,profile});
+  return {...resolved,identitySource:'calendar_email_lookup',emailVerifiedProfileUrl:emailProfile.profileUrl,emailVerifiedProfileEvidence:emailProfile.evidence||''};
+}
+
 function meetingPrepLinkedInRecentQueries(attendee={}, contact={}, profile={}){
   const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'');
   const organization=firstLookCandidateCleanName(contact.company||contact.organization||profile.company||profile.organization||profile.metadata?.company||profile.metadata?.organization||'');
@@ -13815,111 +14169,121 @@ function meetingPrepLinkedInSignalScore(result={}, attendee={}, contact={}, prof
   return score;
 }
 
-async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, profile={}){
-  const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl(attendee,contact,profile);
-  const activityUrl=meetingPrepLinkedInActivityUrl(knownProfileUrl);
-  const queries=meetingPrepLinkedInRecentQueries(attendee,contact,profile);
-  const attempts=[];
-  const selected=[];
-  for(const query of queries.slice(0,4)){
-    const search=await lookupOutscraperGoogleSearch(query,{timeoutMs:OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS,label:'Meeting Prep LinkedIn recent search'}).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
-    attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
-    const matches=safeArray(search.results)
-      .filter(result=>/linkedin\.com\/(posts|feed\/update|pulse|in)\//i.test(result.url||''))
-      .filter(result=>meetingPrepLinkedInResultMatchesAttendee(result,attendee,contact,profile));
-    selected.push(...matches);
-    if(selected.some(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||'')))break;
-  }
-  const unique=selected.filter((result,index,array)=>{
-    const key=String(result.url||result.title||result.snippet||'').toLowerCase();
-    return key&&array.findIndex(item=>String(item.url||item.title||item.snippet||'').toLowerCase()===key)===index;
-  }).sort((a,b)=>meetingPrepLinkedInSignalScore(b,attendee,contact,profile)-meetingPrepLinkedInSignalScore(a,attendee,contact,profile));
-  const post=unique.find(result=>/linkedin\.com\/(posts|feed\/update)\//i.test(result.url||''))||null;
-  const profileResult=unique.find(result=>/linkedin\.com\/in\//i.test(result.url||''))||null;
+async function lookupMeetingPrepLinkedInRecentSignal(attendee={}, contact={}, profile={}, options={}){
   const name=firstLookCandidateCleanName(attendee.name||contact.name||profile.displayName||profile.display_name||profile.name||'this attendee');
-  if(post){
-    const summary=dashboardShortText([post.title,post.snippet].filter(Boolean).join(': '),`VAL found a public LinkedIn post result for ${name}.`,700);
+  const resolved=await resolveMeetingPrepLinkedInPublicPost({attendee,contact,profile,...options});
+  if(resolved.status==='no_official_profile_for_email'||resolved.status==='email_missing'){
+    const summary=resolved.message||`No official LinkedIn profile exists with this attendee's email address.`;
+    return {...resolved,status:resolved.status,title:'LinkedIn profile not verified',url:'',summary,sourceRefs:[]};
+  }
+  if(resolved.status==='post_found'){
+    const summary=dashboardShortText(resolved.text,`VAL found a public LinkedIn post for ${name}.`,900);
     return {
-      configured:attempts.some(attempt=>attempt.configured),
+      ...resolved,
       status:'post_found',
-      query:attempts.map(attempt=>attempt.query).filter(Boolean).join(' | '),
-      title:post.title,
-      url:post.url,
-      summary:`Latest public LinkedIn signal VAL found for ${name}: ${summary} Open post: ${post.url}`,
+      summary:`Latest public LinkedIn post VAL found for ${name}: ${summary} Open post: ${resolved.url}`,
       sourceRefs:[{
         type:'linkedin_recent_signal',
-        sourceType:'outscraper_google_linkedin_recent_signal',
-        sourceId:post.url,
-        title:post.title||`LinkedIn post for ${name}`,
+        sourceType:'outscraper_google_discovery_and_linkedin_public_post',
+        sourceId:resolved.url,
+        title:resolved.title||`LinkedIn post for ${name}`,
         summary,
         confidence:'public_source'
-      }],
-      attempts,
-      rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
-      completedAt:new Date().toISOString()
+      }]
     };
   }
-  const fallbackUrl=activityUrl||profileResult?.url||knownProfileUrl||'';
-  const fallbackTitle=profileResult?.title||`LinkedIn activity for ${name}`;
+  const fallbackUrl=resolved.url||resolved.profileUrl||'';
+  const fallbackTitle=resolved.title||`LinkedIn activity for ${name}`;
   const fallbackSummary=fallbackUrl
     ? `No readable recent LinkedIn post was returned for ${name}. Open LinkedIn activity/profile: ${fallbackUrl}`
     : `No readable recent LinkedIn post was returned for ${name}, and VAL does not have a LinkedIn profile URL yet.`;
   return {
-    configured:attempts.some(attempt=>attempt.configured)||!!OUTSCRAPER_API_KEY,
+    ...resolved,
     status:fallbackUrl?'profile_fallback':'not_found',
-    query:attempts.map(attempt=>attempt.query).filter(Boolean).join(' | '),
     title:fallbackTitle,
     url:fallbackUrl,
     summary:fallbackSummary,
     sourceRefs:fallbackUrl?[{
       type:'linkedin_activity_fallback',
-      sourceType:'outscraper_google_linkedin_recent_signal',
+      sourceType:'outscraper_google_discovery_and_linkedin_public_post',
       sourceId:fallbackUrl,
       title:fallbackTitle,
       summary:fallbackSummary,
       confidence:'public_source'
-    }]:[],
-    attempts,
-    rawResultCount:attempts.reduce((total,attempt)=>total+Number(attempt.rawCount||0),0),
-    completedAt:new Date().toISOString()
+    }]:[]
   };
 }
 
-async function lookupOutscraperGoogleSearch(query,{timeoutMs=OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS,label='Meeting Prep public search'}={}){
+function outscraperGoogleSearchCacheKey(query=''){
+  return [tenantId(),currentUserId(),new Date().toISOString().slice(0,10),String(query||'').trim().toLowerCase()].join(':');
+}
+async function lookupOutscraperGoogleSearch(queryInput,{timeoutMs=OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS,label='Meeting Prep public search',force=false}={}){
   const outscraperKey=await resolveIntegrationSecret('outscraper','api_key',OUTSCRAPER_API_KEY);
   if(!outscraperKey) return {configured:false, error:'OUTSCRAPER_API_KEY is not set'};
-  const url=new URL(OUTSCRAPER_GOOGLE_SEARCH_URL);
-  url.searchParams.set('query',query);
-  url.searchParams.set('limit','10');
-  url.searchParams.set('async','true');
-  const response=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper Google Search submit');
-  const submittedData=await readJsonResponse(response);
-  if(!response.ok)return {configured:true,query,error:submittedData.errorMessage||submittedData.message||`Outscraper ${response.status}`};
-  let data=submittedData;
-  const submittedStatus=outscraperStatus(submittedData);
-  if(submittedStatus==='pending'||!flattenOutscraperSearchResults(submittedData).length){
-    const requestId=outscraperRequestId(submittedData);
-    if(requestId){
-      const polled=await pollOutscraperRequest(requestId,outscraperResultsLocation(submittedData),outscraperKey,{timeoutMs,label});
-      if(polled.ok)data=polled.data;
-      else return {configured:true,query,error:polled.error||'Outscraper Google Search did not finish'};
-    }
+  const queries=Array.from(new Set(safeArray(Array.isArray(queryInput)?queryInput:[queryInput]).map(value=>String(value||'').replace(/\s+/g,' ').trim()).filter(Boolean)));
+  if(!queries.length)return {configured:true,query:'',queries:[],results:[],rawCount:0,byQuery:{}};
+  const cachedByQuery={};
+  const missing=[];
+  for(const query of queries){
+    const cached=!force&&outscraperGoogleSearchCache.get(outscraperGoogleSearchCacheKey(query));
+    if(cached)cachedByQuery[query]=cached;
+    else missing.push(query);
   }
-  const results=flattenOutscraperSearchResults(data);
-  return {configured:true,query,results,rawCount:results.length};
+  if(missing.length){
+    const flightKey=[tenantId(),currentUserId(),...missing.slice().sort()].join(':');
+    let flight=outscraperGoogleSearchFlights.get(flightKey);
+    if(!flight){
+      flight=(async()=>{
+        const url=new URL(OUTSCRAPER_GOOGLE_SEARCH_URL);
+        missing.forEach(query=>url.searchParams.append('query',query));
+        url.searchParams.set('pagesPerQuery','1');
+        url.searchParams.set('async','true');
+        const response=await fetchWithTimeout(url.toString(),{headers:{'X-API-KEY':outscraperKey}},OUTSCRAPER_SUBMIT_TIMEOUT_MS,'Outscraper Google Search submit');
+        const submittedData=await readJsonResponse(response);
+        if(!response.ok)throw new Error(submittedData.errorMessage||submittedData.message||`Outscraper ${response.status}`);
+        let data=submittedData;
+        const inlineResults=flattenOutscraperSearchResults(submittedData);
+        const submittedStatus=outscraperStatus(submittedData);
+        if(submittedStatus==='pending'||(!inlineResults.length&&submittedStatus!=='success')){
+          const requestId=outscraperRequestId(submittedData);
+          if(!requestId)throw new Error('Outscraper accepted the search but did not return a request id or inline results.');
+          const polled=await pollOutscraperRequest(requestId,outscraperResultsLocation(submittedData),outscraperKey,{timeoutMs,label});
+          if(!polled.ok)throw new Error(polled.error||'Outscraper Google Search did not finish');
+          data=polled.data;
+        }
+        const results=flattenOutscraperSearchResults(data);
+        for(const query of missing){
+          const queryResults=results.filter(result=>!result.query||result.query===query);
+          outscraperGoogleSearchCache.set(outscraperGoogleSearchCacheKey(query),queryResults);
+        }
+        return results;
+      })().finally(()=>outscraperGoogleSearchFlights.delete(flightKey));
+      outscraperGoogleSearchFlights.set(flightKey,flight);
+    }
+    try{await flight;}
+    catch(error){return {configured:true,query:queries.join(' | '),queries,results:[],rawCount:0,byQuery:cachedByQuery,error:error.message};}
+  }
+  const byQuery={};
+  for(const query of queries)byQuery[query]=outscraperGoogleSearchCache.get(outscraperGoogleSearchCacheKey(query))||cachedByQuery[query]||[];
+  const results=queries.flatMap(query=>byQuery[query]).filter((result,index,array)=>{
+    const key=[result.query,result.url,result.title].join('|').toLowerCase();
+    return array.findIndex(item=>[item.query,item.url,item.title].join('|').toLowerCase()===key)===index;
+  });
+  return {configured:true,query:queries.join(' | '),queries,results,rawCount:results.length,byQuery,cached:missing.length===0};
 }
 
-async function lookupMeetingPrepWebEvidence(attendee={}, contact={}, profile={}){
+async function lookupMeetingPrepWebEvidence(attendee={}, contact={}, profile={}, options={}){
   const queries=meetingPrepPublicSearchQueries(attendee,contact,profile);
   if(!queries.length)return {configured:!!OUTSCRAPER_API_KEY,query:'',results:[],sourceRefs:[],summary:'',rawResultCount:0};
   const attempts=[];
   const selected=[];
-  for(const query of queries.slice(0,4)){
-    const search=await lookupOutscraperGoogleSearch(query).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query,error:e.message,results:[]}));
-    attempts.push({query,configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
-    const matches=safeArray(search.results).filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile));
-    selected.push(...matches);
-    if(selected.length>=3)break;
+  if(Array.isArray(options.searchResults)){
+    attempts.push({query:queries.slice(0,4).join(' | '),configured:options.searchConfigured!==false,error:options.searchError||'',rawCount:options.searchResults.length,reusedBatch:true});
+    selected.push(...safeArray(options.searchResults).filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile)));
+  }else{
+    const search=await lookupOutscraperGoogleSearch(queries.slice(0,4)).catch(e=>({configured:!!OUTSCRAPER_API_KEY,query:queries.join(' | '),error:e.message,results:[]}));
+    attempts.push({query:queries.slice(0,4).join(' | '),configured:search.configured,error:search.error||'',rawCount:search.rawCount||0});
+    selected.push(...safeArray(search.results).filter(result=>meetingPrepSearchResultMatchesAttendee(result,attendee,contact,profile)));
   }
   const unique=selected.filter((result,index,array)=>{
     const key=String(result.url||result.title||result.snippet||'').toLowerCase();
@@ -14291,7 +14655,7 @@ function normalizeSidebarCalendarEvent(ev,source){
   };
 }
 
-const SIDEBAR_SELF_CALENDAR_EMAILS=new Set(['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com']);
+const SIDEBAR_SELF_CALENDAR_EMAILS=OWNER_EMAILS;
 function sidebarCalendarAttendeeIsSelf(attendee={}){
   const email=String(attendee.email||attendee.address||attendee.emailAddress?.address||attendee.mail||'').trim().toLowerCase();
   return !!(attendee.self||(email&&SIDEBAR_SELF_CALENDAR_EMAILS.has(email)));
@@ -16926,23 +17290,23 @@ async function krispTranscriptAlreadyStored(transcriptId=''){
   if(DEMO_MODE)return (requestContext.getStore()?.demoState?.transcripts||[]).some(row=>String(row.id)===id);
   await valDbReady;
   if(pgPool){
-    const result=await dbQuery('select id from val_transcripts where id=$1 and user_id=$2 limit 1',[id,currentUserId()]);
+    const result=await dbQuery('select id from val_transcripts where id=$1 and user_id=$2 limit 1',[id,VAL_USER_ID]);
     return !!result.rows?.[0];
   }
-  return (valStore().transcripts||[]).some(row=>String(row.id)===id&&String(row.userId||row.user_id||currentUserId())===String(currentUserId()));
+  return (valStore().transcripts||[]).some(row=>String(row.id)===id&&String(row.userId||row.user_id||VAL_USER_ID)===String(VAL_USER_ID));
 }
 async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={}){
   const transcriptId=String(payload.id||'').trim();
   const transcript=String(payload.transcript||payload.rawText||'').trim();
   if(!transcriptId||!transcript)throw new Error('Krisp did not provide readable transcript text.');
-  const title=valTitleCandidate(payload.title||payload.meetingTitle||payload.meeting_title)||transcriptDisplayTitleFromPayload(payload,transcript);
+  const title=transcriptDisplayTitleFromPayload(payload,transcript)||valTitleCandidate(payload.title||payload.meetingTitle||payload.meeting_title);
   const metadata=payload.metadata&&typeof payload.metadata==='object'?payload.metadata:{};
   const nativeSummary=String(metadata.krispSummary||'').trim();
   const nativeActionItems=Array.isArray(metadata.krispActionItems)?metadata.krispActionItems:[];
   const participants=Array.isArray(payload.attendees)?payload.attendees:[];
   const saved=await saveTranscript({...payload,title});
   if(meetingMatch){
-    await updateTranscriptIndexStatus(saved.id,{meetingTitle:title,calendarEventTitle:title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:payload.timestamp||meetingMatch.startTime||null}).catch(()=>{});
+    await updateTranscriptIndexStatus(saved.id,{meetingTitle:title,calendarEventTitle:title,calendarEventId:meetingMatch.calendarEventId||meetingMatch.meetingEventId||'',meetingDatetime:meetingMatch.startTime||payload.timestamp||null}).catch(()=>{});
   }
   await updateTranscriptMetadata(saved.id,{
     source:'krisp_mcp',provider:'krisp',reviewStatus:'ready_for_review',processingStatus:'source_captured',summaryStatus:'krisp_exact',
@@ -16958,11 +17322,63 @@ async function saveKrispTranscriptSourceReceipt({payload={},meetingMatch=null}={
   }
   return {id:saved.id,title,evidenceItemId:evidence?.id||'',actionItemCount:nativeActionItems.length,hasKeyPoints:!!nativeSummary,meetingMatched:!!meetingMatch};
 }
-async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgress=async()=>{}}={}){
+async function processCapturedKrispTranscript({payload={},meetingMatch=null,saved={}}={}){
+  const transcriptId=String(saved.id||payload.id||'').trim();
+  if(!transcriptId)return {ok:false,error:'Krisp transcript processing requires a saved transcript identifier.'};
+  try{
+    const processed=await processTranscriptPayload({...payload,source:'krisp_mcp',savedTranscriptId:transcriptId,meetingMatch});
+    await updateTranscriptMetadata(transcriptId,{
+      analysis:processed.analysis,
+      reviewStatus:'needs_review',
+      krispPostProcessing:'complete',
+      processedAt:new Date().toISOString()
+    });
+    return {ok:true,transcriptId,processed};
+  }catch(error){
+    const nativeSummary=String(payload.metadata?.krispSummary||'').trim();
+    const transcript=String(payload.transcript||payload.rawText||'').trim();
+    const fallback=fallbackTranscriptSummary(
+      transcript,
+      'Krisp source material is preserved exactly. Derived intelligence needs review because post-processing did not complete.'
+    );
+    if(nativeSummary)fallback.executiveSummary=nativeSummary;
+    await saveTranscriptSummary(transcriptId,fallback).catch(()=>{});
+    await updateTranscriptIndexStatus(transcriptId,{processingStatus:'failed',summaryStatus:'fallback_complete'}).catch(()=>{});
+    await updateTranscriptMetadata(transcriptId,{
+      reviewStatus:'needs_review',
+      krispPostProcessing:'failed',
+      processingError:firstLookError(error)
+    }).catch(()=>{});
+    await logTranscriptAction(transcriptId,'failed_action','krisp_post_processing','failed',firstLookError(error)).catch(()=>{});
+    return {ok:false,transcriptId,error:firstLookError(error),fallbackSaved:true};
+  }
+}
+async function processPendingCapturedKrispTranscripts({limit=5}={}){
+  const safeLimit=Math.max(0,Math.min(10,Number(limit)||0));
+  if(!safeLimit)return {found:0,processed:0,failed:0,results:[]};
+  const data=await transcriptIndexData();
+  const pending=(data.transcripts||[]).filter(row=>{
+    const source=String(row.source||'').toLowerCase();
+    const processing=String(row.processingStatus||'').toLowerCase();
+    const summary=String(row.summaryStatus||'').toLowerCase();
+    return source==='krisp_mcp'
+      && ['received','pending','source_captured','matching_participants','summarizing','extracting_actions'].includes(processing)
+      && (!summary||summary==='pending');
+  }).slice(0,safeLimit);
+  const results=[];
+  for(const row of pending)results.push(await processExistingTranscriptRecord(row));
+  return {
+    found:pending.length,
+    processed:results.filter(result=>result.ok).length,
+    failed:results.filter(result=>!result.ok).length,
+    results
+  };
+}
+async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,processLimit=5,onProgress=async()=>{}}={}){
   if(await cleanStartSourceIntakeLocked())throw new Error('VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.');
   if(!(await krispMcp.isConfigured()))throw new Error('Krisp is not connected.');
   const window=krispThirtyDayWindow(days);
-  const safeLimit=Math.max(1,Math.min(Number(limit)||50,50));
+  const safeLimit=Math.max(1,Math.min(Number(limit)||250,250));
   const report=(state,message,extra={})=>onProgress({type:'progress',source:'krisp',state,message,...extra});
   await report('reading','Krisp is listing meeting transcripts from the last '+window.days+' days.');
   const discovery=await withTimeout(
@@ -16972,8 +17388,8 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
   );
   const receipts=Array.isArray(discovery.documents)?discovery.documents:[];
   const result={
-    version:'krisp_thirty_day_intake_v1',window,receiptLimit:safeLimit,receiptLimitReached:receipts.length>=safeLimit,
-    found:receipts.length,imported:0,alreadyPresent:0,withoutTranscriptText:0,failed:0,records:[],failures:[],status:discovery.status||'complete',checkedAt:new Date().toISOString()
+    version:'krisp_thirty_day_intake_v2',window,receiptLimit:safeLimit,receiptLimitReached:receipts.length>=safeLimit,
+    found:receipts.length,imported:0,processed:0,recovered:0,processingFailed:0,processingQueued:0,alreadyPresent:0,withoutTranscriptText:0,failed:0,deferred:0,records:[],failures:[],status:discovery.status||'complete',checkedAt:new Date().toISOString()
   };
   if(!receipts.length){
     await report('complete','Krisp did not return a transcript receipt in the last '+window.days+' days.',{count:0});
@@ -16990,8 +17406,8 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
       continue;
     }
     const transcriptId='krisp_'+documentId.replace(/-/g,'').toLowerCase();
-    if(await krispTranscriptAlreadyStored(transcriptId)){
-      await updateTranscriptIndexStatus(transcriptId,{meetingTitle:title,calendarEventTitle:title,meetingDatetime:receipt.startedAt||receipt.startTime||receipt.date||receipt.createdAt||null}).catch(()=>{});
+    const alreadyPresent=await krispTranscriptAlreadyStored(transcriptId);
+    if(alreadyPresent){
       result.alreadyPresent++;
       result.records.push({id:transcriptId,title,status:'already_present'});
       continue;
@@ -17012,18 +17428,128 @@ async function syncKrispTranscriptsForLastThirtyDays({days=30,limit=50,onProgres
       }
       const meetingMatch=await linkTranscriptToBestMeeting({id:payload.id,title:payload.title,rawText:payload.transcript,metadata:payload.metadata,createdAt:payload.timestamp}).catch(()=>null);
       const saved=await saveKrispTranscriptSourceReceipt({payload,meetingMatch});
+      let processing={ok:false,queued:true};
+      if(result.processed+result.processingFailed<Math.max(0,Number(processLimit)||0)){
+        processing=await processCapturedKrispTranscript({payload,meetingMatch,saved});
+        if(processing.ok)result.processed++;
+        else result.processingFailed++;
+      }else{
+        result.processingQueued++;
+      }
       result.imported++;
-      result.records.push({...saved,status:'imported'});
+      result.records.push({...saved,status:processing.ok?'imported_and_processed':(processing.queued?'imported_processing_queued':'imported_processing_needs_review'),processingError:processing.error||''});
     }catch(error){
       result.failed++;
       result.failures.push({title,reason:firstLookError(error)});
+      if(/TOO_MANY_REQUESTS|too many concurrent|blocked_seconds|rate limit/i.test(String(error?.message||error))){
+        result.deferred=receipts.length-index-1;
+        break;
+      }
     }
   }
-  const outcome=result.failed
-    ? `Krisp intake finished: ${result.imported} saved, ${result.alreadyPresent} already present, and ${result.failed} unavailable for review.`
-    : `Krisp intake finished: ${result.imported} exact transcript${result.imported===1?'':'s'} saved and ${result.alreadyPresent} already present.`;
+  const remainingProcessSlots=Math.max(0,(Number(processLimit)||0)-result.processed-result.processingFailed);
+  if(remainingProcessSlots){
+    const recovery=await processPendingCapturedKrispTranscripts({limit:remainingProcessSlots}).catch(error=>({found:0,processed:0,failed:1,error:firstLookError(error)}));
+    result.recovered=recovery.processed||0;
+    result.processingFailed+=recovery.failed||0;
+    if(recovery.error)result.failures.push({title:'Stored Krisp transcript processing',reason:recovery.error});
+  }
+  const outcome=result.failed||result.deferred
+    ? `Krisp intake finished: ${result.imported} saved, ${result.processed+result.recovered} processed, ${result.alreadyPresent} already present, ${result.failed} unavailable, and ${result.deferred} deferred until Krisp is ready.`
+    : `Krisp intake finished: ${result.imported} exact transcript${result.imported===1?'':'s'} saved, ${result.processed+result.recovered} processed, and ${result.alreadyPresent} already present.`;
   await report(result.failed?'partial':'complete',outcome,{count:result.imported,receipt:result});
   return result;
+}
+function transcriptAutomaticSyncEnabled(){
+  return !/^(0|false|no|off)$/i.test(String(process.env.VAL_TRANSCRIPT_AUTO_SYNC_ENABLED||'true'));
+}
+function transcriptAutomaticSyncPublicStatus(){
+  return {
+    ...transcriptAutomaticSyncState,
+    enabled:transcriptAutomaticSyncEnabled(),
+    running:transcriptAutomaticSyncRunning,
+    intervalMinutes:Math.round(TRANSCRIPT_AUTO_SYNC_INTERVAL_MS/60000),
+    lookbackDays:TRANSCRIPT_AUTO_SYNC_DAYS
+  };
+}
+async function runTranscriptAutomaticSyncCheck(){
+  if(!transcriptAutomaticSyncEnabled()){
+    transcriptAutomaticSyncState={...transcriptAutomaticSyncState,enabled:false,status:'disabled',message:'Automatic Krisp transcript checks are disabled.'};
+    return transcriptAutomaticSyncPublicStatus();
+  }
+  if(transcriptAutomaticSyncRunning)return {...transcriptAutomaticSyncPublicStatus(),skipped:true,reason:'already_running'};
+  transcriptAutomaticSyncRunning=true;
+  const checkedAt=new Date().toISOString();
+  transcriptAutomaticSyncState={...transcriptAutomaticSyncState,enabled:true,status:'checking',lastCheckedAt:checkedAt,message:'VAL is checking Krisp for newly completed meetings.'};
+  try{
+    if(!(await krispMcp.isConfigured())){
+      transcriptAutomaticSyncState={...transcriptAutomaticSyncState,status:'waiting_for_connection',message:'Connect Krisp so VAL can automatically receive completed meeting transcripts.'};
+      return transcriptAutomaticSyncPublicStatus();
+    }
+    if(await cleanStartSourceIntakeLocked()){
+      transcriptAutomaticSyncState={...transcriptAutomaticSyncState,status:'waiting_for_first_look',message:'Automatic transcript checks begin after First Look is complete.'};
+      return transcriptAutomaticSyncPublicStatus();
+    }
+    const intake=await syncKrispTranscriptsForLastThirtyDays({days:TRANSCRIPT_AUTO_SYNC_DAYS,limit:TRANSCRIPT_AUTO_SYNC_LIMIT});
+    const importedRecord=(intake.records||[]).find(record=>String(record.status||'').startsWith('imported_'));
+    const processingIncomplete=Number(intake.processingFailed)||Number(intake.processingQueued);
+    const partial=Boolean(intake.failed||intake.deferred||processingIncomplete);
+    transcriptAutomaticSyncState={
+      ...transcriptAutomaticSyncState,
+      enabled:true,
+      status:partial?'partial':'current',
+      lastCheckedAt:checkedAt,
+      lastSuccessfulAt:new Date().toISOString(),
+      lastImportedAt:importedRecord?new Date().toISOString():transcriptAutomaticSyncState.lastImportedAt,
+      lastImportedTitle:importedRecord?.title||transcriptAutomaticSyncState.lastImportedTitle,
+      imported:Number(intake.imported)||0,
+      found:Number(intake.found)||0,
+      message:intake.imported
+        ? processingIncomplete
+          ? `VAL added ${intake.imported} completed Krisp transcript${intake.imported===1?'':'s'}. ${Number(intake.processingQueued)||0} remain queued and ${Number(intake.processingFailed)||0} need processing review.`
+          : `VAL automatically added ${intake.imported} completed Krisp transcript${intake.imported===1?'':'s'} and finished its intelligence processing.`
+        : 'VAL checked Krisp automatically. No new completed transcript was waiting.'
+    };
+    await auditLog({action:'krisp_automatic_transcript_sync_completed',resourceType:'transcript',metadata:{days:TRANSCRIPT_AUTO_SYNC_DAYS,limit:TRANSCRIPT_AUTO_SYNC_LIMIT,found:intake.found,imported:intake.imported,processed:intake.processed,recovered:intake.recovered,processingFailed:intake.processingFailed,processingQueued:intake.processingQueued,alreadyPresent:intake.alreadyPresent,failed:intake.failed,deferred:intake.deferred,lastImportedTitle:importedRecord?.title||''},success:!partial}).catch(()=>{});
+    return transcriptAutomaticSyncPublicStatus();
+  }catch(error){
+    transcriptAutomaticSyncState={...transcriptAutomaticSyncState,enabled:true,status:'retrying',lastCheckedAt:checkedAt,message:'VAL could not complete the latest automatic Krisp check. It will try again.'};
+    await auditLog({action:'krisp_automatic_transcript_sync_failed',resourceType:'transcript',metadata:{days:TRANSCRIPT_AUTO_SYNC_DAYS,error:firstLookError(error)},success:false}).catch(()=>{});
+    throw error;
+  }finally{
+    transcriptAutomaticSyncRunning=false;
+  }
+}
+async function transcriptAutomaticSyncUser(){
+  await valDbReady;
+  const tenant=tenantId();
+  if(pgPool){
+    const result=await dbQuery(`
+      select o.user_id,u.name,u.email,u.role
+      from val_oauth_tokens o
+      left join val_users u on u.id=o.user_id and u.tenant_id=o.tenant_id
+      where o.tenant_id=$1 and o.provider='krisp'
+      order by o.updated_at desc
+      limit 1
+    `,[tenant]);
+    const row=result.rows[0];
+    if(row?.user_id)return {id:row.user_id,name:row.name||'',email:row.email||'',role:row.role||'owner'};
+  }else{
+    const prefix=`${tenant}:`;
+    const suffix=':krisp';
+    const key=Object.keys(valStore().oauthTokens||{}).find(value=>value.startsWith(prefix)&&value.endsWith(suffix));
+    if(key){
+      const userId=key.slice(prefix.length,-suffix.length);
+      const saved=(valStore().users||[]).find(user=>String(user.id)===String(userId));
+      return {id:userId,name:saved?.name||'',email:saved?.email||'',role:saved?.role||'owner'};
+    }
+  }
+  const users=await linkedInSchedulerUsers();
+  return users.find(user=>user.role==='owner')||users.find(user=>user.id===VAL_USER_ID)||users[0]||{id:VAL_USER_ID,name:CLIENT_CONFIG.clientName||'',role:'owner'};
+}
+async function runTranscriptAutomaticSyncSchedulerCheck(){
+  const user=await transcriptAutomaticSyncUser();
+  return requestContext.run({user},()=>runTranscriptAutomaticSyncCheck());
 }
 function firstLookWitnessingRoutingRules(witnessing=[]){
   const rules=[];
@@ -19906,7 +20432,7 @@ function transcriptDisplayTitleFromPayload(payload={},rawText=''){
   const meta=payload.metadata||{},sourceMeta=meta.sourcePayloadMetadata||{};
   const isKrisp=/krisp/i.test([payload.source,payload.provider,meta.source,meta.provider,sourceMeta.source,sourceMeta.provider].filter(Boolean).join(' '))||meta.krispDetected||meta.provider==='krisp';
   const rawPayloadTitle=payload.title||payload.meetingTitle||payload.meeting_title||payload.name||meta.title||sourceMeta.title;
-  if(isKrisp&&String(rawPayloadTitle||'').trim())return String(rawPayloadTitle).replace(/\s+/g,' ').trim();
+  if(isKrisp&&String(rawPayloadTitle||'').trim()&&!/^(?:krisp meeting|meeting|transcript)$/i.test(String(rawPayloadTitle).trim()))return String(rawPayloadTitle).replace(/\s+/g,' ').trim();
   const rawHeadingTitle=isKrisp?krispReceiptHeadingTitle(rawText||payload.transcript||''):'';
   if(rawHeadingTitle)return rawHeadingTitle;
   const knownContentTitle=transcriptKnownContentTitle(rawText,payload);
@@ -22254,6 +22780,7 @@ function projectCreatePayload(body={}, files=[]){
   const createdFrom=String(body.createdFrom||body.created_from||'hearth_projects_drawer').trim();
   const needsProjectOnboarding=String(body.needsProjectOnboarding||body.needs_project_onboarding||'').toLowerCase()==='true'||createdFrom===PROJECT_DOCUMENT_ASSIGNMENT_SOURCE;
   const onboardingQuestion=String(body.onboardingQuestion||body.onboarding_question||'').trim();
+  const ownerRelationship=String(body.ownerRelationship||body.owner_relationship||body.owner||'').replace(/\s+/g,' ').trim();
   const intake={
     sopId:String(body.sopId||body.sop_id||'').trim(),
     websiteSource:String(body.websiteSource||body.website_source||body.website||body.sourceCode||body.source_code||'').trim(),
@@ -22266,7 +22793,7 @@ function projectCreatePayload(body={}, files=[]){
   if(projectFiles.length&&!sourceTypes.includes('documents'))sourceTypes.push('documents');
   if(projectFiles.length&&!sourceTypes.includes('documentFiles'))sourceTypes.push('documentFiles');
   intake.documentFiles=projectFiles.map(file=>({fileName:file.originalname||'project-source-file',mimeType:file.mimetype||'',size:file.size||0}));
-  return {name,summary,projectId,intake,sourceTypes,projectFiles,needsProjectOnboarding,createdFrom,onboardingQuestion};
+  return {name,summary,projectId,intake,sourceTypes,projectFiles,needsProjectOnboarding,createdFrom,onboardingQuestion,ownerRelationship};
 }
 async function saveProjectSourceFiles({files=[],payload={},profileKey=''}={}){
   const savedFiles=[];
@@ -22984,11 +23511,15 @@ async function buildExecutiveBriefing(){
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
   const relationshipDossiers=(briefing.people||[]).map(p=>p.relationshipDossier).filter(Boolean).slice(0,4).map(relationshipDossierPromptContext).filter(Boolean);
+  const concerns=[];
+  if(briefing.highestLeverageMove?.ifIgnored)concerns.push(briefing.highestLeverageMove.ifIgnored);
+  safeArray(briefing.watching).slice(0,4).forEach((move)=>concerns.push(move.why||move.title));
   return [
     briefing.dailyWitness?.display_greeting?`Daily Witness Greeting: ${briefing.dailyWitness.display_greeting.replace(/\n/g,' / ')}`:'',
     `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
     briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
-    briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
+    briefing.people?.length?'Current relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
+    concerns.length?'What VAL is worried about: '+Array.from(new Set(concerns.filter(Boolean))).join('; '):'',
     relationshipDossiers.length?'Relationship Dossiers:\n'+relationshipDossiers.join('\n\n'):'',
     briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
     briefing.watching?.length?'Watching: '+briefing.watching.slice(0,5).map(m=>m.title).join('; '):''
@@ -23604,8 +24135,17 @@ function transcriptDrawerRecordTime(record={}){
   return Number.isFinite(parsed)?parsed:0;
 }
 function transcriptDrawerRecordSignature(record={}){
-  const id=String(record.id||record.transcriptId||record.transcript_id||'').trim();
   const source=String(record.source||record.metadata?.source||'unknown').trim().toLowerCase();
+  const metadata=record.metadata||record.metadataJson||record.metadata_json||{};
+  const rawDocument=metadata.rawDocument||metadata.raw_document||{};
+  const sourceDocumentId=String(
+    metadata.documentId||metadata.document_id||metadata.krispDocumentId||metadata.krisp_document_id
+    ||rawDocument.documentId||rawDocument.document_id||rawDocument.id||''
+  ).trim().replace(/-/g,'').toLowerCase();
+  if(source.includes('krisp')&&/^[a-f0-9]{24}$/.test(sourceDocumentId))return 'krisp-document|'+sourceDocumentId;
+  const id=String(record.id||record.transcriptId||record.transcript_id||'').trim();
+  const krispId=id.replace(/^krisp_/i,'').replace(/-/g,'').toLowerCase();
+  if(source.includes('krisp')&&/^[a-f0-9]{24}$/.test(krispId))return 'krisp-document|'+krispId;
   const title=String(record.title||record.meetingTitle||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   return title?source+'|'+title:'id|'+id;
 }
@@ -23787,9 +24327,65 @@ async function transcriptCalendarEventForOverview(transcript={}){
   if(pgPool){
     const r=await dbQuery('select * from val_calendar_events where tenant_id=$1 and user_id=$2 and id=$3 limit 1',[tenantId(),VAL_USER_ID,id]);
     const row=r.rows[0];
-    return row?{id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}}:{};
+    if(row)return {id:row.id,title:row.title,startTime:row.start_time?.toISOString?.()||row.start_time||'',endTime:row.end_time?.toISOString?.()||row.end_time||'',attendees:row.attendees||[],source:row.source||'calendar',metadata:row.metadata||{}};
+    return transcriptCalendarEventFromProvider(id);
   }
-  return (valStore().calendarEvents||[]).find(event=>String(event.id||'')===id)||{};
+  const local=(valStore().calendarEvents||[]).find(event=>String(event.id||'')===id);
+  return local||transcriptCalendarEventFromProvider(id);
+}
+const transcriptCalendarProviderEventCache=new Map();
+async function transcriptCalendarEventFromProvider(id=''){
+  const eventId=String(id||'').trim();
+  if(!eventId)return {};
+  if(transcriptCalendarProviderEventCache.has(eventId))return transcriptCalendarProviderEventCache.get(eventId);
+  const request=(async()=>{
+    const googleToken=await getGoogleToken().catch(()=>null);
+    if(googleToken){
+      try{
+        const response=await fetchWithTimeout(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?maxAttendees=50`,{headers:{Authorization:`Bearer ${googleToken}`}},6500,'Google transcript calendar event');
+        const payload=await readJsonResponse(response);
+        if(response.ok&&payload?.id){
+          const mapped={...mapGoogleEvent(payload),title:payload.summary||'(No title)',calendarName:'Google Calendar'};
+          await saveValCalendarEvent(mapped).catch(()=>{});
+          return mapped;
+        }
+      }catch(error){
+        console.warn('Transcript Google calendar hydration failed:',error.message);
+      }
+    }
+    const microsoftToken=await getMicrosoftToken().catch(()=>null);
+    if(microsoftToken){
+      try{
+        const select='id,subject,bodyPreview,start,end,location,attendees,organizer,webLink,isCancelled,onlineMeeting,onlineMeetingUrl';
+        const response=await fetchWithTimeout(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}?$select=${encodeURIComponent(select)}`,{headers:{Authorization:`Bearer ${microsoftToken}`,Prefer:`outlook.timezone="${CLIENT_CONFIG.timezone}"`}},6500,'Outlook transcript calendar event');
+        const payload=await readJsonResponse(response);
+        if(response.ok&&payload?.id){
+          const mapped={
+            id:payload.id,
+            summary:payload.subject||'(No title)',
+            title:payload.subject||'(No title)',
+            startTime:payload.start?.dateTime||'',
+            endTime:payload.end?.dateTime||'',
+            location:payload.location?.displayName||'',
+            description:payload.bodyPreview||'',
+            attendees:(payload.attendees||[]).map(attendee=>({name:attendee.emailAddress?.name||'',email:String(attendee.emailAddress?.address||'').toLowerCase(),responseStatus:attendee.status?.response||''})),
+            organizer:payload.organizer?.emailAddress?{name:payload.organizer.emailAddress.name||'',email:String(payload.organizer.emailAddress.address||'').toLowerCase()}:null,
+            status:payload.isCancelled?'cancelled':'confirmed',
+            source:'outlook',
+            calendarName:'Outlook Calendar',
+            webLink:payload.webLink||''
+          };
+          await saveValCalendarEvent(mapped).catch(()=>{});
+          return mapped;
+        }
+      }catch(error){
+        console.warn('Transcript Outlook calendar hydration failed:',error.message);
+      }
+    }
+    return {};
+  })();
+  transcriptCalendarProviderEventCache.set(eventId,request);
+  return request;
 }
 function transcriptCalendarEventCompatible(transcript={},event={}){
   if(!event||!Object.keys(event).length)return false;
@@ -23803,14 +24399,33 @@ function transcriptCalendarEventCompatible(transcript={},event={}){
   if(!strongTokens.length)return true;
   return strongTokens.some(token=>eventText.includes(token));
 }
+function transcriptKrispDocumentTimestamp(transcript={}){
+  const source=String(transcript.source||transcript.provider||transcript.metadata?.source||transcript.metadata?.provider||'').toLowerCase();
+  if(!source.includes('krisp')&&!String(transcript.id||transcript.transcriptId||'').startsWith('krisp_'))return '';
+  return krispMcp.krispDocumentTimestamp?.(String(transcript.id||transcript.transcriptId||'').replace(/^krisp_/,''))||'';
+}
+function transcriptCalendarEventChronologicallyCompatible(transcript={},event={}){
+  const sourceTime=Date.parse(transcriptKrispDocumentTimestamp(transcript)||transcript.createdAt||transcript.receivedAt||transcript.metadata?.timestamp||'');
+  const eventTime=Date.parse(event.startTime||event.start_time||event.start||'');
+  if(!Number.isFinite(sourceTime)||!Number.isFinite(eventTime))return true;
+  return eventTime<=sourceTime+30*60*1000;
+}
 async function transcriptWithCalendarInvitees(transcript={}){
   const calendarEvent=await transcriptCalendarEventForOverview(transcript).catch(()=>({}));
-  const compatible=transcriptCalendarEventCompatible(transcript,calendarEvent);
+  const compatible=transcriptCalendarEventCompatible(transcript,calendarEvent)&&transcriptCalendarEventChronologicallyCompatible(transcript,calendarEvent);
   const attendees=transcriptOverviewInvitees(transcript,compatible?calendarEvent||{}:{});
+  const sourceIdentity=transcriptSourceIdentity(transcript);
+  const title=sourceIdentity.title||transcript.title||transcript.meetingTitle||'';
+  const sourceTimestamp=transcriptKrispDocumentTimestamp(transcript);
+  const meetingDatetime=(compatible?calendarEvent?.startTime||'':'')||sourceTimestamp||sourceIdentity.meetingDatetime||transcript.meetingDatetime||transcript.createdAt||'';
   return {
     ...transcript,
+    title,
+    sourceTitle:title,
+    meetingTitle:title,
+    meetingDatetime,
     calendarEvent:compatible&&calendarEvent&&Object.keys(calendarEvent).length?calendarEvent:transcript.calendarEvent,
-    calendarEventId:transcript.calendarEventId||calendarEvent?.id||'',
+    calendarEventId:compatible?(transcript.calendarEventId||calendarEvent?.id||''):'',
     calendarInviteMismatch:calendarEvent&&Object.keys(calendarEvent).length&&!compatible?{title:calendarEvent.title||calendarEvent.summary||'',id:calendarEvent.id||''}:null,
     attendees
   };
@@ -24065,10 +24680,18 @@ async function saveTranscript(payload){
   const metadata={...nested,...payload,receivedAt:payload.receivedAt||new Date().toISOString()};
   delete metadata.metadata;delete metadata.transcript;delete metadata.rawText;delete metadata.raw_text;delete metadata.transcriptText;delete metadata.transcript_text;delete metadata.text;delete metadata.content;delete metadata.body;delete metadata.segments;delete metadata.sentences;
   if(pgPool){
-    await dbQuery('insert into val_transcripts (id,user_id,type,title,raw_text,metadata,created_at) values ($1,$2,$3,$4,$5,$6,coalesce($7::timestamptz,now()))',[id,VAL_USER_ID,type,payload.title||null,rawText,JSON.stringify(metadata),payload.timestamp||null]);
+    await dbQuery(`insert into val_transcripts (id,user_id,type,title,raw_text,metadata,created_at)
+      values ($1,$2,$3,$4,$5,$6,coalesce($7::timestamptz,now()))
+      on conflict (id) do update set type=excluded.type,title=excluded.title,raw_text=excluded.raw_text,metadata=coalesce(val_transcripts.metadata,'{}'::jsonb)||excluded.metadata`,[id,VAL_USER_ID,type,payload.title||null,rawText,JSON.stringify(metadata),payload.timestamp||null]);
   }else{
     const store=valStore();
-    store.transcripts.unshift({id,userId:VAL_USER_ID,type,title:payload.title||'',rawText,metadata,createdAt:payload.timestamp||new Date().toISOString()});
+    const row={id,userId:VAL_USER_ID,type,title:payload.title||'',rawText,metadata,createdAt:payload.timestamp||new Date().toISOString()};
+    const existingIndex=(store.transcripts||[]).findIndex(item=>String(item.id)===String(id));
+    if(existingIndex>=0){
+      const existing=store.transcripts[existingIndex]||{};
+      store.transcripts.splice(existingIndex,1,{...existing,...row,metadata:{...(existing.metadata||{}),...metadata},createdAt:existing.createdAt||row.createdAt});
+    }
+    else store.transcripts.unshift(row);
     saveValStore(store);
   }
   if(rawText){
@@ -24512,6 +25135,7 @@ function scoreTranscriptMeetingMatch(transcript,event){
   });
   const ts=new Date(transcript.createdAt||transcript.metadata?.timestamp||transcript.metadata?.createdAt||0).getTime();
   const start=new Date(event.startTime||event.start||0).getTime();
+  if(ts&&start&&start>ts+30*60*1000)return {confidence:0,reason:'calendar event occurs after transcript source receipt'};
   if(ts&&start&&Math.abs(ts-start)<4*60*60*1000){score+=0.25;reasons.push('time window');}
   return {confidence:Math.min(Number(score.toFixed(2)),1),reason:[...new Set(reasons)].join(', ')||'weak match'};
 }
@@ -24864,9 +25488,19 @@ async function meetingPrepRebuildPublicLookup(row={}){
     website:lookupProfile.website,
     linkedinUrl:lookupProfile.linkedinUrl
   };
+  const batchQueries=Array.from(new Set([
+    ...meetingPrepPublicSearchQueries(attendee,contact,lookupProfile).slice(0,4),
+    ...meetingPrepLinkedInRecentQueries(attendee,contact,lookupProfile).slice(0,4),
+    !lookupProfile.linkedinUrl&&lookupProfile.email?`site:linkedin.com/in "${lookupProfile.email}"`:''
+  ].filter(Boolean)));
+  const batch=await lookupOutscraperGoogleSearch(batchQueries,{
+    timeoutMs:Number(process.env.VAL_MEETING_PREP_PUBLIC_CONTEXT_TIMEOUT_MS)||60000,
+    label:`Meeting Prep public review for ${lookupProfile.name||lookupProfile.email||'attendee'}`
+  }).catch(error=>({configured:!!OUTSCRAPER_API_KEY,error:error.message,results:[]}));
+  const searchOptions={searchResults:safeArray(batch.results),searchConfigured:batch.configured,searchError:batch.error||''};
   const [webEvidence,linkedInRecentSignal]=await Promise.all([
-    lookupMeetingPrepWebEvidence(attendee,contact,lookupProfile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''})),
-    lookupMeetingPrepLinkedInRecentSignal(attendee,contact,lookupProfile).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
+    lookupMeetingPrepWebEvidence(attendee,contact,lookupProfile,searchOptions).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''})),
+    lookupMeetingPrepLinkedInRecentSignal(attendee,contact,lookupProfile,searchOptions).catch(e=>({configured:!!OUTSCRAPER_API_KEY,error:e.message,sourceRefs:[],summary:''}))
   ]);
   return {
     attendee,
@@ -28939,10 +29573,20 @@ async function processTranscriptPayload(payload){
     await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');
   }
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
-  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
+  let transcriptIntelligence=null;
+  try{
+    transcriptIntelligence=await valTranscriptIntelligence.intake({
+      transcriptId:sourceId,
+      sourceChannel:/^presence_mode:/i.test(String(payload.source||''))?'voice':'transcript'
+    });
+  }catch(error){
+    await logTranscriptAction(sourceId,'failed_action','action_orchestrator_intake','failed',error.message).catch(()=>{});
+  }
+  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,transcriptIntelligence,actionOrchestration:transcriptIntelligence?.action_orchestration||null,counts:{participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
 }
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
+  const sourceIdentity=transcriptSourceIdentity(record);
   const rawText=String(record.rawText||record.raw_text||'');
   const native=transcriptKrispNativeMetadata(metadata);
   const actionItems=native.nativeActionItems.length?native.nativeActionItems:(Array.isArray(metadata.actionItems)?metadata.actionItems:Array.isArray(metadata.analysis?.actionItems)?metadata.analysis.actionItems:extractOpenLoopsFromText(rawText,`transcript:${record.id}`,record.createdAt).slice(0,12));
@@ -28955,11 +29599,11 @@ function transcriptUiRecord(record,{includeText=false}={}){
   const createdAt=record.createdAt||metadata.created_at||metadata.timestamp||'';
   const receivedAt=metadata.receivedAt||metadata.received_at||createdAt;
   const meetingEvent=metadata.calendarEvent||metadata.calendar_event||metadata.meetingMatch?.calendarEvent||metadata.meetingMatch?.event||{};
-  const meetingDatetime=record.meetingDatetime||record.meeting_datetime||metadata.meetingDatetime||metadata.meeting_datetime||metadata.meetingDate||metadata.meeting_date||metadata.startTime||metadata.start_time||metadata.startedAt||metadata.started_at||meetingEvent.startTime||meetingEvent.start_time||meetingEvent.start||'';
-  const title=transcriptDisplayTitleFromPayload({...metadata,...record,title:record.title||metadata.title,metadata},rawText);
+  const meetingDatetime=sourceIdentity.meetingDatetime||record.meetingDatetime||record.meeting_datetime||metadata.meetingDatetime||metadata.meeting_datetime||metadata.meetingDate||metadata.meeting_date||metadata.startTime||metadata.start_time||metadata.startedAt||metadata.started_at||meetingEvent.startTime||meetingEvent.start_time||meetingEvent.start||'';
+  const title=sourceIdentity.title||transcriptDisplayTitleFromPayload({...metadata,...record,title:record.title||metadata.title,metadata},rawText);
   const attendees=transcriptOverviewInvitees({...record,metadata,sourcePayloadMetadata:metadata,rawText,transcriptText:rawText},{});
   return {
-    id:record.id,type:record.type||'transcript',title,
+    id:record.id,type:record.type||'transcript',title,sourceTitle:sourceIdentity.title||title,
     createdAt,receivedAt,meetingDatetime,source,status:reviewStatus,reviewStatus,
     summary,preview:rawText.replace(/\s+/g,' ').trim().slice(0,260),contactId:metadata.contact_id||metadata.contactId||'',
     contactName:metadata.contact_name||metadata.contactName||metadata.personName||'',company:metadata.company||metadata.companyName||'',opportunityId:metadata.opportunity_id||metadata.opportunityId||'',
@@ -28988,6 +29632,7 @@ function transcriptIndexContextMetadata(metadata={}){
 }
 function transcriptIndexUiRecord(record){
   const detail=record?.detail&&typeof record.detail==='object'?record.detail:{};
+  const sourceIdentity=transcriptSourceIdentity(record);
   const base=transcriptUiRecord(record);
   const transcript=cleanTranscriptForUi({
     ...base,
@@ -28997,9 +29642,9 @@ function transcriptIndexUiRecord(record){
     source:detail.source||record?.metadata?.source||record?.type||'webhook',
     createdAt:detail.createdAt||record?.createdAt||'',
     receivedAt:detail.receivedAt||record?.createdAt||'',
-    meetingDatetime:detail.meetingDatetime||detail.meeting_datetime||record?.meetingDatetime||record?.meeting_datetime||record?.metadata?.meetingDatetime||record?.metadata?.meeting_datetime||record?.metadata?.startTime||record?.metadata?.start_time||'',
-    title:base.krispNative?base.title:(detail.title||detail.meetingTitle||record?.title||''),
-    meetingTitle:base.krispNative?base.title:(detail.meetingTitle||detail.title||record?.title||''),
+    meetingDatetime:sourceIdentity.meetingDatetime||detail.meetingDatetime||detail.meeting_datetime||record?.meetingDatetime||record?.meeting_datetime||record?.metadata?.meetingDatetime||record?.metadata?.meeting_datetime||record?.metadata?.startTime||record?.metadata?.start_time||'',
+    title:sourceIdentity.title||(base.krispNative?base.title:(detail.title||detail.meetingTitle||record?.title||'')),
+    meetingTitle:sourceIdentity.title||(base.krispNative?base.title:(detail.meetingTitle||detail.title||record?.title||'')),
     summary:detail.summary||detail.summaryPreview||record?.metadata?.summary||record?.metadata?.analysis?.summary||'',
     actionItems:detail.actionItems||detail.nativeActionItems||[],
     tasks:detail.tasks||[],
@@ -29010,6 +29655,13 @@ function transcriptIndexUiRecord(record){
     summaryStatus:detail.summaryStatus||record?.metadata?.summaryStatus||''
   });
   const metadata=transcriptIndexContextMetadata(transcript.sourcePayloadMetadata||transcript.metadata||{});
+  const calendarEventId=String(
+    record?.calendarEventId||record?.calendar_event_id||
+    record?.metadata?.calendarEventId||record?.metadata?.calendar_event_id||
+    detail.calendarEventId||detail.calendar_event_id||detail.meetingId||detail.meeting_id||
+    transcript.calendarEventId||transcript.calendar_event_id||transcript.meetingId||transcript.meeting_id||
+    metadata.calendarEventId||''
+  ).trim();
   const sourceReceipt=transcriptSourceReceipt(transcript);
   const sourceActions=(sourceReceipt.actionItems.length?sourceReceipt.actionItems:(Array.isArray(transcript.actionItems)?transcript.actionItems:[]))
     .slice(0,30)
@@ -29028,11 +29680,14 @@ function transcriptIndexUiRecord(record){
     id:transcript.id||transcript.transcriptId||'',
     transcriptId:transcript.transcriptId||transcript.id||'',
     source:transcript.source||metadata.source||'webhook',
+    sourceTitle:sourceIdentity.title||transcript.title||transcript.meetingTitle||'',
     title:transcript.title||transcript.meetingTitle||'Transcript',
     meetingTitle:transcript.meetingTitle||transcript.title||'Transcript',
     createdAt:transcript.createdAt||'',
     receivedAt:transcript.receivedAt||transcript.createdAt||'',
     meetingDatetime:transcript.meetingDatetime||'',
+    calendarEventId,
+    meetingId:calendarEventId,
     processingStatus:transcript.processingStatus||'',
     summaryStatus:transcript.summaryStatus||'',
     reviewStatus:transcript.reviewStatus||transcript.status||'',
@@ -29164,18 +29819,21 @@ function normalizedTranscriptWebhookPayload(body={}){
   }
   const metadata={...(body.metadata||{}),...(root.metadata||{}),sourcePayloadMetadata,participants,duration:root.duration||root.durationText||root.duration_text||meeting.duration||'',krispDetected:/krisp/i.test(source)||hasKrispTranscriptUrl(JSON.stringify(body).slice(0,8000)),webhookTextSource:noteText&&transcriptText===noteText?'note_or_summary':'transcript'};
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
-  return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
+  return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.meetingDate||root.meeting_date||root.date||meeting.startedAt||meeting.startTime||meeting.meetingDate||meeting.meeting_date||body.timestamp||root.createdAt||root.created_at||null};
 }
 async function transcriptDrawerListPayload({days=90,limit=50}={}){
   const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
   const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
   const cutoff=Date.now()-safeDays*24*60*60*1000;
-  const data=await transcriptIndexData();
-  const indexedRecords=transcriptMigrationRecordsFromIndex(data);
-  const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
-  const mapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
+  const [data,archive]=await Promise.all([
+    transcriptIndexData(),
+    transcriptArchiveRecords(safeDays,Math.max(safeLimit*4,200))
+  ]);
+  const records=mergeTranscriptMigrationRecords(archive,data);
+  const hydrated=await Promise.all(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord).map(transcriptWithCalendarInvitees));
+  const mapped=dedupeTranscriptDrawerRecords(hydrated)
     .filter(transcript=>{
-      const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
+      const time=Date.parse(transcript.meetingDatetime||transcript.receivedAt||transcript.createdAt||'');
       return !Number.isFinite(time)||time>=cutoff;
     })
     .slice(0,safeLimit);
@@ -29187,14 +29845,14 @@ app.get('/api/val/transcripts',async(req,res)=>{
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
     const payload=await transcriptDrawerListPayload({days:req.query.days||90,limit:req.query.limit||50});
-    res.json({ok:true,...payload});
+    res.json({ok:true,...payload,automaticSync:transcriptAutomaticSyncPublicStatus()});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.post('/api/val/transcripts/refresh',async(req,res)=>{
   try{
     res.set('Cache-Control','no-store, max-age=0');
     const days=[30,90].includes(Number(req.body?.days))?Number(req.body.days):90;
-    const limit=Math.max(1,Math.min(50,Number(req.body?.limit)||50));
+    const limit=Math.max(1,Math.min(250,Number(req.body?.limit)||250));
     let refresh={attempted:true,days,message:'Transcript refresh checked the local transcript archive.',warning:''};
     try{
       const intake=await syncKrispTranscriptsForLastThirtyDays({days,limit});
@@ -29204,7 +29862,7 @@ app.post('/api/val/transcripts/refresh',async(req,res)=>{
     }
     const payload=await transcriptDrawerListPayload({days,limit});
     await auditLog({req,action:'transcript_drawer_refreshed',resourceType:'transcript',metadata:{days,limit,refresh},success:!refresh.warning}).catch(()=>{});
-    res.json({ok:true,...payload,refresh});
+    res.json({ok:true,...payload,refresh,automaticSync:transcriptAutomaticSyncPublicStatus()});
   }catch(e){console.error('[transcripts] refresh failed',e);res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/api/val/transcripts/review',async(req,res)=>{
@@ -29245,6 +29903,7 @@ app.get('/api/val/transcripts/intake-status',async(req,res)=>{
     res.json({
       ok:true,
       days,
+      automaticSync:transcriptAutomaticSyncPublicStatus(),
       webhook:{...transcriptWebhookInfo(req),tokenPreview:transcriptWebhookToken().slice(0,8)+'...'},
       counts:{
         visibleTranscripts:visibleData.transcripts.length,
@@ -29301,10 +29960,14 @@ app.get('/api/val/transcripts/:transcriptId',async(req,res)=>{
     res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
     const id=decodeURIComponent(req.params.transcriptId);
-    const data=await transcriptIndexData(id);if(data.transcripts[0]){
-      const transcript=await transcriptWithCalendarInvitees(transcriptDetailFromIndex(data,data.transcripts[0]));
+    const [data,archiveRecords]=await Promise.all([transcriptIndexData(id),transcriptArchiveRecords(3650,1000)]);
+    const archiveRecord=archiveRecords.find(t=>String(t.id)===id);
+    if(data.transcripts[0]){
+      const sourceIdentity=transcriptSourceIdentity(archiveRecord||data.transcripts[0]);
+      const indexedRow={...data.transcripts[0],meetingTitle:sourceIdentity.title||data.transcripts[0].meetingTitle,meetingDatetime:sourceIdentity.meetingDatetime||data.transcripts[0].meetingDatetime};
+      const transcript=await transcriptWithCalendarInvitees(transcriptDetailFromIndex(data,indexedRow));
       transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});return res.json({ok:true,transcript});}
-    const record=(await transcriptArchiveRecords(3650,1000)).find(t=>String(t.id)===id);
+    const record=archiveRecord;
     if(!record) return res.status(404).json({ok:false,error:'Transcript not found'});
     let transcript=cleanTranscriptForUi(transcriptUiRecord(record,{includeText:true}));transcript.sourceReceipt=transcriptSourceReceipt(transcript);transcript=await transcriptWithCalendarInvitees(transcript);transcript.drafts=(await listDrafts()).filter(d=>String(d.sourceContext?.transcriptId||'')===String(id));await auditLog({req,action:'transcript_opened',resourceType:'transcript',resourceId:id,metadata:{title:transcript.title||''},success:true}).catch(()=>{});res.json({ok:true,transcript});
   }catch(e){console.error('[transcripts] detail retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
@@ -29435,6 +30098,7 @@ app.post('/api/val/transcripts/:transcriptId/link-project',async(req,res)=>{
 });
 app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req,res)=>{
   if(!transcriptIngressEnabled()) return res.status(403).json({ok:false,error:'Transcript ingestion is disabled until an executive explicitly connects a transcript source.'});
+  if(!isValidTranscriptWebhookReq(req)) return res.status(401).json({ok:false,error:'Invalid or missing transcript webhook token.'});
   if(await cleanStartSourceIntakeLocked())return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,cleanStartProtected:true,message:'VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.'});
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
@@ -29888,6 +30552,7 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+let valActionOrchestrator=null;
 const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -29900,6 +30565,7 @@ const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   fetchGmailMessages,
   fetchUnifiedOutlookEmails,
   resolveContactFromContext,
+  actionOrchestrator:()=>valActionOrchestrator,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -29978,6 +30644,7 @@ const valTranscriptIntelligence = registerValTranscriptIntelligenceRoutes(app,{
     await saveTask(task);
     return {ok:true,task,no_external_action:true};
   },
+  actionOrchestrator:()=>valActionOrchestrator,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31045,6 +31712,21 @@ async function applyCoworkRelationshipSection({relationshipId,relationshipName='
 async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBrief={},messages=[]}={}){
   const isChief=entrypointId==='board.chief_of_staff';
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const carriedForward=workingBrief.carriedForwardContext&&typeof workingBrief.carriedForwardContext==='object'
+    ? workingBrief.carriedForwardContext
+    : {};
+  const witnessingContext=workingBrief.witnessingContext&&typeof workingBrief.witnessingContext==='object'
+    ? workingBrief.witnessingContext
+    : {status:'not_yet_available',records:[]};
+  const carriedEvents=safeArray(carriedForward.events).slice(-16).map((event)=>({
+    occurredAt:String(event.occurredAt||'').slice(0,120),
+    entrypointId:String(event.entrypointId||'').slice(0,180),
+    eventType:String(event.eventType||'').slice(0,120),
+    summary:String(event.summary||'').slice(0,1200),
+    userMessage:String(event.payload?.userMessage||'').slice(0,1800),
+    valResponse:String(event.payload?.valResponse||'').slice(0,1800),
+    action:String(event.payload?.action||'').slice(0,220)
+  }));
   const conversation=safeArray(messages).slice(-18).map((message)=>({
     role:message.role==='assistant'?'assistant':'user',
     content:String(message.content||'').slice(0,5000)
@@ -31054,15 +31736,25 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
     isChief
       ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
       : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
+    'Deep conversational standard for every user-facing voice or chat response: sound like a present, emotionally intelligent partner, not a form, receipt, or database.',
+    'First show that you understood the human meaning, then help the user see the useful pattern, decision, or next thought.',
     'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
     'Use only the supplied Board packet and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
     'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
     'Never claim an external action happened. Nothing leaves VAL from this conversation.',
-    'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
+    'If the user corrects you, respond relationally before operationally: acknowledge what changed, then use the correction from then on.',
+    'Avoid generic receipt language such as noted, saved, or updated unless the user explicitly asks what was persisted.'
   ].join('\n');
   const packetMessage={
     role:'user',
-    content:'Current private packet context:\n'+JSON.stringify(context).slice(0,24000)
+    content:[
+      'Durable context carried forward from earlier Co-Work conversations and applied internal work:',
+      JSON.stringify({order:'oldest_to_newest',events:carriedEvents}).slice(0,14000),
+      'Confirmed Witnessing context that must constrain this conversation. Treat direct answers and reviewed memory as durable user context. Surface possible enactment gaps only with evidence:',
+      JSON.stringify(witnessingContext).slice(0,18000),
+      'Current private Board or Observer packet context:',
+      JSON.stringify(context).slice(0,18000)
+    ].join('\n')
   };
   return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:750,temperature:0.35,timeoutMs:15000});
 }
@@ -31100,9 +31792,11 @@ const valCowork = registerValCoworkRoutes(app,{
   loadEmailThread:loadEmailThreadForCowork,
   prepareEmailThreadDraft:prepareCoworkEmailThreadDraft,
   loadRelationship:loadRelationshipForCowork,
+  loadWitnessingContext:listTeachValCoreMemory,
   applyRelationshipOverview:applyCoworkRelationshipOverview,
   applyRelationshipSection:applyCoworkRelationshipSection,
   generateConversationReply:generateObserverCoworkReply,
+  actionOrchestrator:()=>valActionOrchestrator,
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31135,8 +31829,19 @@ async function executeOutlookDraftPacket({packet,payload}){
   if(!r.ok)throw new Error(d.error?.message||`Outlook draft failed (${r.status})`);
   return {providerResponseId:d.id||'',providerResponseSummary:'Created Outlook draft. Nothing was sent.',raw:d};
 }
+async function resolveConnectedEmailProvider(requested='auto'){
+  const [gmailStatus,microsoftTokens]=await Promise.all([
+    getGoogleConnectionStatus([GMAIL_SEND_SCOPE]).catch(()=>({connected:false})),
+    loadOAuthTokens('microsoft').catch(()=>null)
+  ]);
+  return selectEmailProvider({
+    requested,
+    gmailSendReady:!!gmailStatus.connected,
+    outlookSendReady:!!(microsoftTokens&&(microsoftTokens.access_token||microsoftTokens.refresh_token)&&hasMicrosoftSendScope(microsoftTokens))
+  });
+}
 async function executeEmailSendPacket({packet,payload}){
-  const provider=String(payload.provider||packet.targetSystem||'gmail').toLowerCase();
+  const provider=await resolveConnectedEmailProvider(payload.provider||packet.targetSystem||'auto');
   const to=String(payload.to||'').trim();
   const subject=String(payload.subject||'').trim();
   const body=String(payload.body||payload.bodyPreview||'').trim();
@@ -31159,7 +31864,7 @@ async function executeEmailSendPacket({packet,payload}){
     }
     return {providerResponseId:packet.id,providerResponseSummary:`Sent Outlook email to ${to}.`,raw:{provider:'outlook',status:202}};
   }
-  const status=await getGoogleConnectionStatus(['https://www.googleapis.com/auth/gmail.send']);
+  const status=await getGoogleConnectionStatus([GMAIL_SEND_SCOPE]);
   if((status.missingScopes||[]).length)throw new Error('Gmail send scope missing. Reconnect Google with send permission.');
   const token=await getGoogleToken();
   if(!token)throw new Error(lastGoogleAuthError||'Google auth required');
@@ -31199,6 +31904,40 @@ async function executeCalendarHoldPacket({packet,payload}){
   const created=await api.createTaskBlock(task,{start,end,calendarId:payload.calendarId||'primary',durationMinutes:duration,focus:true});
   return {providerResponseId:created.eventId||'',providerResponseSummary:`Created private ${created.provider||provider} calendar hold.`,raw:created};
 }
+async function resolveConnectedCalendarProvider(requested='auto'){
+  const [googleStatus,microsoftTokens]=await Promise.all([
+    getGoogleConnectionStatus([GOOGLE_CALENDAR_WRITE_SCOPE]).catch(()=>({connected:false})),
+    loadOAuthTokens('microsoft').catch(()=>null)
+  ]);
+  return selectCalendarProvider({
+    requested,
+    googleCalendarReady:!!googleStatus.connected,
+    outlookCalendarReady:!!(microsoftTokens&&(microsoftTokens.access_token||microsoftTokens.refresh_token)&&hasMicrosoftCalendarWriteScope(microsoftTokens))
+  });
+}
+function calendarInviteAttendees(payload={}){
+  const rows=Array.isArray(payload.attendees)?payload.attendees:[];
+  const normalized=rows.map(attendee=>typeof attendee==='string'?{email:attendee.trim(),name:''}:{email:String(attendee?.email||attendee?.address||'').trim(),name:String(attendee?.name||'').trim()});
+  const fallback=String(payload.to||payload.recipientEmail||'').trim();
+  if(!normalized.some(attendee=>attendee.email)&&fallback)normalized.push({email:fallback,name:''});
+  return normalized.filter(attendee=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(attendee.email));
+}
+async function executeCalendarInvitePacket({packet,payload}){
+  const title=String(payload.title||payload.summary||packet.whyThisActionExists||'VAL appointment').trim();
+  const start=parseTaskDate(payload.start||payload.scheduledStart);
+  const duration=Number(payload.durationMinutes||30);
+  const end=parseTaskDate(payload.end||payload.scheduledEnd)||(start?addMinutes(start,duration):null);
+  const attendees=calendarInviteAttendees(payload);
+  if(!title)throw new Error('Calendar appointment requires a title.');
+  if(!start||!end||end<=start)throw new Error('Calendar appointment requires valid start and end times.');
+  if(!attendees.length)throw new Error('Calendar appointment requires at least one valid attendee email.');
+  const provider=await resolveConnectedCalendarProvider(payload.provider||packet.targetSystem||'auto');
+  const api=calendarProviders[provider];
+  if(!api?.createAppointment)throw new Error(`Calendar appointment provider not supported: ${provider}`);
+  const created=await api.createAppointment({title,description:String(payload.description||payload.body||payload.notes||'').trim(),start,end,attendees,calendarId:payload.calendarId||'',timeZone:payload.timeZone||CLIENT_CONFIG.timezone});
+  return {providerResponseId:created.eventId||'',providerResponseSummary:`Created ${created.provider||provider} appointment and invited ${attendees.map(attendee=>attendee.email).join(', ')}.`,raw:created};
+}
+const valGhlActionAdapters=createValGhlActionAdapters({requestStrict:ghlStrict});
 const valExternalActions = registerValExternalActionsRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -31216,9 +31955,32 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
     send_email:executeEmailSendPacket,
     create_crm_note:executeCrmNotePacket,
     create_crm_task:executeCrmTaskPacket,
-    create_calendar_hold:executeCalendarHoldPacket
+    create_calendar_hold:executeCalendarHoldPacket,
+    send_calendar_invite:executeCalendarInvitePacket,
+    ...valGhlActionAdapters
   },
+  onExecutionComplete:({packet,receipt,reconciliation,providerResult})=>valCowork.recordExternalActionCompletion({packet,receipt,reconciliation,providerResult}),
   auditLog,
+  logger:console
+});
+const valResearchExecution=createValResearchExecution({
+  runSearch:(queries,options)=>lookupOutscraperGoogleSearch(queries,options),
+  logger:console
+});
+valActionOrchestrator=registerValActionOrchestratorRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  externalActionService:valExternalActions,
+  externalActionExecutor:valExternalActions.executor,
+  researchExecution:valResearchExecution,
+  onResearchComplete:({candidate,artifact})=>valCowork.recordResearchCompletion({candidate,artifact}),
+  onWorkProductPrepared:({candidate,artifact})=>valCowork.recordWorkProductPrepared({candidate,artifact}),
+  valDbReady:()=>valDbReady,
   logger:console
 });
 registerValExecutiveInstructionRoutes(app,{
@@ -32150,6 +32912,265 @@ app.post('/api/val/meeting-briefing',async(req,res)=>{
     res.json({ok:true,meeting:{...unified.meeting,attendees},contactResolution:unified.contactResolution,relationshipContext:unified.relationshipContext,gmailContext,transcriptContext:transcripts,taskContext:tasks,memoryContext:memoryItems,contactNotes:ghlNotes?ghlNotes.split('\n\n').slice(0,6):[],briefing,openLoops,sourcesChecked:unified.sourcesChecked,contextErrors:unified.errors||[],suggestedQuestions:[],recommendedFollowUps:[]});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+const LINKEDIN_REVIEW_TIME_ZONE=process.env.VAL_LINKEDIN_DAILY_TIMEZONE||'America/New_York';
+const LINKEDIN_REVIEW_HOUR=Math.max(0,Math.min(23,Number(process.env.VAL_LINKEDIN_DAILY_HOUR)||8));
+const linkedinReviewInFlight=new Map();
+const EMAIL_ACTION_SYNC_INTERVAL_MS=Math.max(60*1000,Math.min(30*60*1000,Number(process.env.VAL_EMAIL_ACTION_SYNC_INTERVAL_MS)||5*60*1000));
+const EMAIL_ACTION_SYNC_LIMIT=Math.max(10,Math.min(100,Number(process.env.VAL_EMAIL_ACTION_SYNC_LIMIT)||50));
+const EMAIL_ACTION_SYNC_LOOKBACK=String(process.env.VAL_EMAIL_ACTION_SYNC_LOOKBACK||'newer_than:2d').trim()||'newer_than:2d';
+const emailActionSyncInFlight=new Map();
+const emailActionSyncStatus=new Map();
+const DEFAULT_LINKEDIN_COMMENT_PREFERENCES={
+  tone:'Warm, thoughtful, specific, and human. Sound like a trusted peer, not a marketer.',
+  expertise:'Bring in my real experience only when it adds something useful to the conversation.',
+  emojis:'',
+  length:'2-4 sentences',
+  avoid:'No corporate polish, empty praise, sales pitches, invented familiarity, or generic comments such as “Great post.”',
+  examples:'',
+  additionalGuidance:'Protect the relationship. Respond to what the person actually said and add one genuine thought.'
+};
+function cleanLinkedInCommentPreferences(value={}){
+  const source=value&&typeof value==='object'?value:{};
+  return Object.fromEntries(Object.entries(DEFAULT_LINKEDIN_COMMENT_PREFERENCES).map(([key,fallback])=>[
+    key,
+    String(source[key]??fallback).trim().slice(0,key==='examples'?6000:1800)
+  ]));
+}
+function linkedInReviewClock(date=new Date()){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:LINKEDIN_REVIEW_TIME_ZONE,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(date).filter(part=>part.type!=='literal').map(part=>[part.type,part.value]));
+  return {date:`${parts.year}-${parts.month}-${parts.day}`,hour:Number(parts.hour||0)};
+}
+function linkedInRunRow(row={}){
+  return {
+    id:row.id,
+    tenantId:row.tenant_id||row.tenantId||tenantId(),
+    userId:row.user_id||row.userId||currentUserId(),
+    runDate:row.run_date||row.runDate||'',
+    status:row.status||'running',
+    startedAt:row.started_at?.toISOString?.()||row.started_at||row.startedAt||'',
+    completedAt:row.completed_at?.toISOString?.()||row.completed_at||row.completedAt||'',
+    items:evidenceJsonValue(row.items_json||row.itemsJson||row.items,[]),
+    errors:evidenceJsonValue(row.errors_json||row.errorsJson||row.errors,[]),
+    createdAt:row.created_at?.toISOString?.()||row.created_at||row.createdAt||'',
+    updatedAt:row.updated_at?.toISOString?.()||row.updated_at||row.updatedAt||''
+  };
+}
+async function getLinkedInCommentPreferences(userId=currentUserId()){
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select * from linkedin_engagement_preferences where tenant_id=$1 and user_id=$2 limit 1',[tenantId(),userId]);
+    return cleanLinkedInCommentPreferences(result.rows[0]?.preferences_json||{});
+  }
+  const row=(valStore().linkedinEngagementPreferences||[]).find(item=>item.tenantId===tenantId()&&item.userId===userId);
+  return cleanLinkedInCommentPreferences(row?.preferences||{});
+}
+async function saveLinkedInCommentPreferences(preferences,userId=currentUserId()){
+  const clean=cleanLinkedInCommentPreferences(preferences);
+  await valDbReady;
+  if(pgPool){
+    await dbQuery(`insert into linkedin_engagement_preferences (tenant_id,user_id,preferences_json,created_at,updated_at)
+      values ($1,$2,$3,now(),now()) on conflict (tenant_id,user_id) do update set preferences_json=excluded.preferences_json,updated_at=now()`,[tenantId(),userId,JSON.stringify(clean)]);
+    return clean;
+  }
+  const store=valStore();
+  const index=store.linkedinEngagementPreferences.findIndex(item=>item.tenantId===tenantId()&&item.userId===userId);
+  const row={tenantId:tenantId(),userId,preferences:clean,updatedAt:new Date().toISOString()};
+  if(index>=0)store.linkedinEngagementPreferences[index]={...store.linkedinEngagementPreferences[index],...row}; else store.linkedinEngagementPreferences.push({...row,createdAt:row.updatedAt});
+  saveValStore(store);
+  return clean;
+}
+async function getLinkedInEngagementRun(runDate='',userId=currentUserId()){
+  await valDbReady;
+  if(pgPool){
+    const params=[tenantId(),userId];
+    let sql='select * from linkedin_engagement_runs where tenant_id=$1 and user_id=$2';
+    if(runDate){params.push(runDate);sql+=' and run_date=$3';}
+    sql+=' order by run_date desc,updated_at desc limit 1';
+    const result=await dbQuery(sql,params);
+    return result.rows[0]?linkedInRunRow(result.rows[0]):null;
+  }
+  return (valStore().linkedinEngagementRuns||[]).filter(item=>item.tenantId===tenantId()&&item.userId===userId&&(!runDate||item.runDate===runDate)).sort((a,b)=>String(b.runDate||'').localeCompare(String(a.runDate||''))||String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')))[0]||null;
+}
+async function saveLinkedInEngagementRun(payload={},userId=currentUserId()){
+  const now=new Date().toISOString();
+  const run=linkedInRunRow({...payload,id:payload.id||`linkedin_${crypto.createHash('sha1').update([tenantId(),userId,payload.runDate].join('|')).digest('hex').slice(0,20)}`,tenantId:tenantId(),userId,startedAt:payload.startedAt||now,updatedAt:now});
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery(`insert into linkedin_engagement_runs (id,tenant_id,user_id,run_date,status,started_at,completed_at,items_json,errors_json,created_at,updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())
+      on conflict (tenant_id,user_id,run_date) do update set status=excluded.status,started_at=excluded.started_at,completed_at=excluded.completed_at,items_json=excluded.items_json,errors_json=excluded.errors_json,updated_at=now() returning *`,[run.id,run.tenantId,run.userId,run.runDate,run.status,run.startedAt,run.completedAt||null,JSON.stringify(run.items||[]),JSON.stringify(run.errors||[])]);
+    return linkedInRunRow(result.rows[0]);
+  }
+  const store=valStore();
+  const index=store.linkedinEngagementRuns.findIndex(item=>item.tenantId===run.tenantId&&item.userId===run.userId&&item.runDate===run.runDate);
+  if(index>=0)store.linkedinEngagementRuns[index]={...store.linkedinEngagementRuns[index],...run}; else store.linkedinEngagementRuns.unshift(run);
+  saveValStore(store);
+  return run;
+}
+function linkedInProfileActivityUrl(profile={}){
+  return meetingPrepLinkedInActivityUrl(profile.linkedinUrl||profile.linkedin_url||'');
+}
+function linkedInDailySearchQueries(profile={}){
+  const linkedInUrl=String(profile.linkedinUrl||profile.linkedin_url||'');
+  const slug=linkedInUrl.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]||'';
+  const name=firstLookCandidateCleanName(profile.displayName||'');
+  return Array.from(new Set([
+    name?`site:linkedin.com/posts "${name}"`:'',
+    slug?`site:linkedin.com/posts "${slug}"`:''
+  ].filter(Boolean)));
+}
+function linkedInResultBelongsToProfile(result={},profile={}){
+  const url=String(result.url||'');
+  if(!/linkedin\.com\/(posts|feed\/update)\//i.test(url))return false;
+  const known=String(profile.linkedinUrl||profile.linkedin_url||'');
+  const slug=known.match(/linkedin\.com\/in\/([^/?#]+)/i)?.[1]?.toLowerCase()||'';
+  const text=[result.title,result.snippet,result.url].filter(Boolean).join(' ').toLowerCase();
+  if(slug&&text.includes(slug))return true;
+  const name=firstLookCandidateCleanName(profile.displayName||'').toLowerCase();
+  return !!(name&&text.includes(name));
+}
+async function findLinkedInPostForProfile(profile={}){
+  return resolveLinkedInPublicPost({profile});
+}
+function linkedInWhyItMatters(profile={}){
+  const relationshipSignal=safeArray(profile.relationshipSignals)[0]?.content||safeArray(profile.relationshipSignals)[0]||'';
+  const openLoop=safeArray(profile.openLoops)[0]?.content||safeArray(profile.openLoops)[0]||'';
+  return dashboardShortText(relationshipSignal||openLoop||profile.summary||`A thoughtful response can keep the relationship with ${profile.displayName||'this person'} warm without creating a new ask.`,'',360);
+}
+async function draftLinkedInComment({profile,post,preferences}){
+  const system=[VAL_SYSTEM_PROMPT,'Write one LinkedIn comment for review. Respond to the actual post excerpt. Do not invent facts, familiarity, results, or experiences. Never pitch, ask for a meeting, or imply the comment has been published. Return only the comment text.'].join('\n\n');
+  const user=[
+    `Person: ${profile.displayName||'Unknown'}`,
+    `Post excerpt: ${post.text}`,
+    `Relationship context: ${linkedInWhyItMatters(profile)}`,
+    `Tone: ${preferences.tone}`,
+    `Expertise to draw from: ${preferences.expertise}`,
+    `Preferred emojis: ${preferences.emojis||'None unless natural'}`,
+    `Length: ${preferences.length}`,
+    `Never sound like: ${preferences.avoid}`,
+    preferences.examples?`Examples that sound like the user:\n${preferences.examples}`:'',
+    `Additional guidance: ${preferences.additionalGuidance}`
+  ].filter(Boolean).join('\n\n');
+  return dashboardShortText(await callValModel({system,user,maxTokens:1600,temperature:0.5,timeoutMs:45000}),'',1200);
+}
+async function mapWithConcurrency(items,limit,worker){
+  const results=new Array(items.length);let cursor=0;
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{while(cursor<items.length){const index=cursor++;results[index]=await worker(items[index],index);}}));
+  return results;
+}
+async function runLinkedInDailyReview({userId=currentUserId(),force=false}={}){
+  const clock=linkedInReviewClock();
+  const flightKey=`${tenantId()}:${userId}`;
+  if(linkedinReviewInFlight.has(flightKey))return linkedinReviewInFlight.get(flightKey);
+  const work=(async()=>{
+    const existing=await getLinkedInEngagementRun(clock.date,userId);
+    if(existing?.status==='completed'&&!force)return existing;
+    await saveLinkedInEngagementRun({runDate:clock.date,status:'running',startedAt:new Date().toISOString(),items:existing?.items||[],errors:[]},userId);
+    const preferences=await getLinkedInCommentPreferences(userId);
+    const profiles=(await listRelationshipProfiles({limit:300})).filter(profile=>profile.profileType==='person'&&/^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\//i.test(String(profile.linkedinUrl||profile.linkedin_url||'')));
+    const outcomes=await mapWithConcurrency(profiles,3,async profile=>{
+      try{
+        const post=await findLinkedInPostForProfile(profile);
+        if(post.status!=='post_found')return {profile,post};
+        let draftComment='';
+        let draftError='';
+        try{draftComment=await draftLinkedInComment({profile,post,preferences});}
+        catch(error){draftError=error.message||String(error);}
+        if(!draftComment)return {profile,post,draftError:draftError||'VAL could not prepare a grounded comment draft.'};
+        const draftId=`linkedin_${crypto.createHash('sha1').update([tenantId(),userId,post.url].join('|')).digest('hex').slice(0,24)}`;
+        const whyItMatters=linkedInWhyItMatters(profile);
+        const draft=await saveInternalDraft({id:draftId,userId,draftType:'linkedin_comment_draft',provider:'internal',subject:`LinkedIn comment for ${profile.displayName}`,body:draftComment,status:'ready_for_review',contactId:profile.personId||profile.id||'',sourceContext:{source:'linkedin_daily_review',runDate:clock.date,relationshipId:profile.id||'',relationshipKey:profile.profileKey||'',contactName:profile.displayName||'',linkedinUrl:profile.linkedinUrl||profile.linkedin_url||'',postUrl:post.url,postPreview:post.text,postTitle:post.title||'',whyItMatters,noExternalAction:true,manualPublishRequired:true,preparedArtifactKind:'linkedin_comment_draft'}});
+        return {profile,post,draft,whyItMatters};
+      }catch(error){return {profile,post:{status:'failed',error:error.message||String(error)}};}
+    });
+    const items=outcomes.filter(outcome=>outcome.post?.status==='post_found').map(outcome=>({id:outcome.draft?.id||`linkedin_source_${crypto.createHash('sha1').update([tenantId(),userId,outcome.post.url].join('|')).digest('hex').slice(0,24)}`,relationshipId:outcome.profile.id||'',contact:outcome.profile.displayName||'Relationship',linkedinUrl:outcome.profile.linkedinUrl||outcome.profile.linkedin_url||'',postTitle:outcome.post.title||'',postPreview:outcome.post.text||'',postUrl:outcome.post.url||'',whyItMatters:outcome.whyItMatters||linkedInWhyItMatters(outcome.profile),draftComment:outcome.draft?.body||'',status:outcome.draft?'ready_for_review':'draft_failed'}));
+    const errors=outcomes.filter(outcome=>outcome.post?.status!=='post_found'||outcome.draftError).map(outcome=>({contact:outcome.profile.displayName||'Relationship',linkedinUrl:outcome.profile.linkedinUrl||outcome.profile.linkedin_url||'',status:outcome.draftError?'draft_failed':outcome.post?.status||'failed',message:outcome.draftError||outcome.post?.error||'No recent public post was found.',postUrl:outcome.post?.url||'',profileUrl:outcome.post?.profileUrl||linkedInProfileActivityUrl(outcome.profile)}));
+    return saveLinkedInEngagementRun({runDate:clock.date,status:'completed',startedAt:existing?.startedAt||new Date().toISOString(),completedAt:new Date().toISOString(),items,errors},userId);
+  })().finally(()=>linkedinReviewInFlight.delete(flightKey));
+  linkedinReviewInFlight.set(flightKey,work);
+  return work;
+}
+async function linkedInSchedulerUsers(){
+  await valDbReady;
+  if(pgPool){
+    const result=await dbQuery('select id,name,email,role from val_users where tenant_id=$1',[tenantId()]);
+    if(result.rows.length)return result.rows.map(row=>({id:row.id,name:row.name||'',email:row.email||'',role:row.role||'owner'}));
+  }
+  const users=(valStore().users||[]).filter(user=>(user.tenantId||user.tenant_id||tenantId())===tenantId());
+  return users.length?users:[{id:VAL_USER_ID,name:CLIENT_CONFIG.clientName||'',role:'owner'}];
+}
+function emailActionSyncKey(userId=currentUserId()){
+  return `${tenantId()}:${userId}`;
+}
+async function runEmailActionSyncForUser(user={}){
+  const userId=user.id||VAL_USER_ID;
+  const key=emailActionSyncKey(userId);
+  if(emailActionSyncInFlight.has(key))return emailActionSyncInFlight.get(key);
+  const work=requestContext.run({user:{...user,id:userId}},async()=>{
+    const startedAt=new Date().toISOString();
+    emailActionSyncStatus.set(key,{status:'running',startedAt,completedAt:'',error:'',result:null});
+    if(await cleanStartSourceIntakeLocked()){
+      const result={ok:true,skipped:true,reason:'source_intake_locked',saved:0};
+      emailActionSyncStatus.set(key,{status:'skipped',startedAt,completedAt:new Date().toISOString(),error:'',result});
+      return result;
+    }
+    try{
+      const result=await valConversationIdentity.syncEmail({providers:['gmail','outlook'],limit:EMAIL_ACTION_SYNC_LIMIT,query:EMAIL_ACTION_SYNC_LOOKBACK});
+      emailActionSyncStatus.set(key,{status:'completed',startedAt,completedAt:new Date().toISOString(),error:'',result});
+      return result;
+    }catch(error){
+      emailActionSyncStatus.set(key,{status:'failed',startedAt,completedAt:new Date().toISOString(),error:error.message||String(error),result:null});
+      throw error;
+    }
+  }).finally(()=>emailActionSyncInFlight.delete(key));
+  emailActionSyncInFlight.set(key,work);
+  return work;
+}
+async function runEmailActionSchedulerCheck(){
+  if(DEMO_MODE)return;
+  const users=await linkedInSchedulerUsers();
+  // Google still maintains a process-wide hot token cache. Keep unattended
+  // intake on the tenant owner until that cache is fully user-scoped.
+  const owner=users.find(user=>user.role==='owner')||users.find(user=>user.id===VAL_USER_ID)||users[0];
+  if(owner)await runEmailActionSyncForUser(owner);
+}
+app.get('/api/val/email/action-sync-status',async(_req,res)=>{
+  const key=emailActionSyncKey();
+  res.json({
+    ok:true,
+    status:emailActionSyncStatus.get(key)||{status:'waiting',startedAt:'',completedAt:'',error:'',result:null},
+    schedule:{intervalMs:EMAIL_ACTION_SYNC_INTERVAL_MS,lookback:EMAIL_ACTION_SYNC_LOOKBACK,limit:EMAIL_ACTION_SYNC_LIMIT},
+    confirmation:'Each selected Executive Inbox email shows its own VAL action-review receipt.'
+  });
+});
+async function runLinkedInDailySchedulerCheck(){
+  const clock=linkedInReviewClock();
+  if(clock.hour<LINKEDIN_REVIEW_HOUR)return;
+  for(const user of await linkedInSchedulerUsers()){
+    const existing=await getLinkedInEngagementRun(clock.date,user.id);
+    const runningSince=new Date(existing?.updatedAt||existing?.startedAt||0).getTime();
+    const runningIsFresh=existing?.status==='running'&&Number.isFinite(runningSince)&&(Date.now()-runningSince)<10*60*1000;
+    if(existing?.status==='completed'||runningIsFresh)continue;
+    requestContext.run({user},()=>runLinkedInDailyReview({userId:user.id}).catch(error=>console.error('LinkedIn daily review failed:',error.message)));
+  }
+}
+app.get('/api/val/linkedin/engagement',async(req,res)=>{
+  try{
+    const run=await getLinkedInEngagementRun('',currentUserId());
+    const relationships=(await listRelationshipProfiles({limit:300})).filter(profile=>profile.profileType==='person'&&/^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\//i.test(String(profile.linkedinUrl||'').trim()));
+    res.json({ok:true,run,items:run?.items||[],issues:run?.errors||[],eligibleRelationshipCount:relationships.length,preferences:await getLinkedInCommentPreferences(),schedule:{hour:LINKEDIN_REVIEW_HOUR,timeZone:LINKEDIN_REVIEW_TIME_ZONE}});
+  }catch(error){res.status(500).json({ok:false,error:error.message});}
+});
+app.post('/api/val/linkedin/refresh',async(req,res)=>{
+  try{
+    const user=currentValUser()||{id:currentUserId(),name:'',role:'owner'};
+    requestContext.run({user},()=>runLinkedInDailyReview({userId:user.id,force:true}).catch(error=>console.error('LinkedIn manual review failed:',error.message)));
+    res.status(202).json({ok:true,status:'running',message:'VAL is checking the LinkedIn relationships in Stewardship. This may take a minute or two.'});
+  }catch(error){res.status(500).json({ok:false,error:error.message});}
+});
+app.get('/api/val/linkedin/preferences',async(req,res)=>{try{res.json({ok:true,preferences:await getLinkedInCommentPreferences()});}catch(error){res.status(500).json({ok:false,error:error.message});}});
+app.put('/api/val/linkedin/preferences',async(req,res)=>{try{res.json({ok:true,preferences:await saveLinkedInCommentPreferences(req.body||{})});}catch(error){res.status(500).json({ok:false,error:error.message});}});
+
 app.get('/api/relationships/review',async(req,res)=>{
   try{
     if(await cleanStartSourceIntakeLocked()){
@@ -32460,6 +33481,7 @@ app.post('/api/projects/create',upload.any(),async(req,res)=>{
         uploadedFiles,
         sourceTypes:payload.sourceTypes,
         createdFrom:payload.createdFrom||'hearth_projects_drawer',
+        ...(payload.ownerRelationship?{owner:{type:'relationship',id:payload.ownerRelationship,name:payload.ownerRelationship,source:'project_creation'}}:{}),
         needsProjectOnboarding:payload.needsProjectOnboarding,
         ...(payload.needsProjectOnboarding?{projectOnboarding:{status:'needs_interview',currentQuestion:payload.onboardingQuestion||'What should this project be called, and what outcome should it create?'}}:{}),
         noExternalAction:true
@@ -32772,6 +33794,8 @@ app.post('/api/relationships/actions',async(req,res)=>{
     }
     if(action==='draft_intro_candidate'){
       const candidate=req.body.candidate||req.body.introCandidate||{};
+      if(req.body.body)candidate.draft={...(candidate.draft||{}),body:req.body.body};
+      if(req.body.subject)candidate.draft={...(candidate.draft||{}),subject:req.body.subject};
       const prepared=relationshipIntroDraft(candidate);
       if(!prepared.ok)return res.status(400).json({ok:false,error:prepared.error||'Introduction candidate is not ready to draft.',noExternalAction:true});
       const draft=await saveInternalDraft({
@@ -32779,8 +33803,20 @@ app.post('/api/relationships/actions',async(req,res)=>{
         provider:prepared.provider,
         subject:req.body.subject||prepared.subject,
         body:req.body.body||prepared.body,
-        status:'draft',
-        sourceContext:{...prepared.sourceContext,contact,dossier}
+        status:'ready_for_review',
+        sourceContext:{...prepared.sourceContext,preparedArtifactKind:'introduction_email_draft',contact,dossier}
+      });
+      const externalActionPacket=await valExternalActions.preparePacketFromPreparedArtifact({
+        id:draft.id,
+        title:draft.subject,
+        summary:'VAL prepared a two-person introduction for review.',
+        preparedArtifactKind:'introduction_email_draft',
+        preparedArtifact:{
+          kind:'introduction_email_draft',subject:draft.subject,body:draft.body,
+          recipients:prepared.recipients,relationshipIds:prepared.relationshipIds,
+          sourceContext:{...prepared.sourceContext,draftId:draft.id,preparedArtifactKind:'introduction_email_draft'}
+        },
+        sourceRefs:req.body.sourceRefs||candidate.sourceRefs||[]
       });
       return res.json({
         ok:true,
@@ -32788,6 +33824,9 @@ app.post('/api/relationships/actions',async(req,res)=>{
         status:'introduction_draft_created',
         message:'Internal introduction draft created for review. No email, LinkedIn message, calendar event, scrape, import, or CRM write happened.',
         draft,
+        externalActionPacket,
+        recipients:prepared.recipients,
+        relationshipIds:prepared.relationshipIds,
         contactIds:prepared.sourceContext.contactIds,
         requiresApproval:true,
         noExternalAction:true
@@ -33024,6 +34063,7 @@ app.post('/api/val/chat',async(req,res)=>{
     const conversationTitle=String(req.body.title||lastUser||'New conversation').trim().slice(0,120)||'New conversation';
     async function sendChat(content,extra={}){
       let saved=null,saveWarning='';
+      let actionOrchestration=null;
       const fullMessages=messages.concat({role:'assistant',content});
       try{
         if(!DEMO_MODE&&process.env.DATABASE_URL&&!pgPool) throw new Error('Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.');
@@ -33050,7 +34090,19 @@ app.post('/api/val/chat',async(req,res)=>{
       }catch(saveError){
         saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
       }
-      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
+      if(valActionOrchestrator&&String(lastUser||'').trim()){
+        actionOrchestration=await valActionOrchestrator.ingest({
+          sourceChannel:String(req.body.channel||'chat').toLowerCase()==='voice'?'voice':'chat',
+          sourceType:projectContext?'project_chat':'general_chat',
+          sourceId:saved?.id||conversationId,
+          sourceEventId:String(req.body.messageId||req.body.message_id||''),
+          title:conversationTitle,
+          text:lastUser,
+          context:{projectContext:projectContext||{},dashboard},
+          sourceRefs:[{source_type:'conversation',source_id:saved?.id||conversationId,quote_or_summary:String(lastUser).slice(0,900),confidence:0.9}]
+        }).catch(error=>({ok:false,error:error.message,candidates:[]}));
+      }
+      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,actionOrchestration,...extra});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
@@ -33238,6 +34290,12 @@ app.post('/api/val/files',upload.any(),async(req,res)=>{
 const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{
   console.log(`VAL proxy running on port ${PORT}`);
+  setTimeout(()=>runTranscriptAutomaticSyncSchedulerCheck().catch(e=>console.error('Transcript automatic sync startup check failed:',e.message)),20000);
+  setInterval(()=>runTranscriptAutomaticSyncSchedulerCheck().catch(e=>console.error('Transcript automatic sync check failed:',e.message)),TRANSCRIPT_AUTO_SYNC_INTERVAL_MS).unref();
   setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
   setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
+  setTimeout(()=>runLinkedInDailySchedulerCheck().catch(e=>console.error('LinkedIn scheduler startup check failed:',e.message)),5000);
+  setInterval(()=>runLinkedInDailySchedulerCheck().catch(e=>console.error('LinkedIn scheduler check failed:',e.message)),5*60*1000).unref();
+  setTimeout(()=>runEmailActionSchedulerCheck().catch(e=>console.error('Email action scheduler startup check failed:',e.message)),12000);
+  setInterval(()=>runEmailActionSchedulerCheck().catch(e=>console.error('Email action scheduler check failed:',e.message)),EMAIL_ACTION_SYNC_INTERVAL_MS).unref();
 });

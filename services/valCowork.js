@@ -1,3 +1,5 @@
+const crypto=require('crypto');
+
 function safeArray(value){return Array.isArray(value) ? value : [];}
 function compactText(value='',limit=900){return String(value || '').replace(/\s+/g,' ').trim().slice(0,limit);}
 function multilineText(value='',limit=5000){return String(value || '').replace(/\r\n?/g,'\n').trim().slice(0,limit);}
@@ -2799,6 +2801,7 @@ function createValCoworkService({
   loadEmailThread=async()=>null,
   prepareEmailThreadDraft=async()=>null,
   loadRelationship=async()=>null,
+  loadWitnessingContext=async()=>[],
   applyRelationshipOverview=async()=>null,
   applyRelationshipSection=async()=>null,
   generateConversationReply=async()=>''
@@ -2809,6 +2812,8 @@ function createValCoworkService({
     if(!Array.isArray(value.coworkSessions)) value.coworkSessions=[];
     if(!Array.isArray(value.coworkWorkItems)) value.coworkWorkItems=[];
     if(!Array.isArray(value.coworkActionReceipts)) value.coworkActionReceipts=[];
+    if(!Array.isArray(value.coworkEvents)) value.coworkEvents=[];
+    if(!Array.isArray(value.coworkEventDeliveries)) value.coworkEventDeliveries=[];
     return value;
   }
   async function pgUpsert(table,row,columns){
@@ -2851,6 +2856,101 @@ function createValCoworkService({
     else value.coworkActionReceipts.unshift(row);
     saveStore(value);
     return index >= 0 ? value.coworkActionReceipts[index] : row;
+  }
+  async function saveEvent(row){
+    const columns=['id','tenantId','userId','sessionId','workItemId','entrypointId','eventType','status','summary','payloadJson','sourceRefsJson','createdAt'];
+    if(hasPg()) return pgUpsert('val_cowork_events',row,columns);
+    const value=store();
+    const index=value.coworkEvents.findIndex((item)=>item.id===row.id && item.tenantId===row.tenantId && item.userId===row.userId);
+    if(index >= 0) value.coworkEvents[index]={...value.coworkEvents[index],...row};
+    else value.coworkEvents.unshift(row);
+    saveStore(value);
+    return index >= 0 ? value.coworkEvents[index] : row;
+  }
+  async function saveEventDelivery(row){
+    const columns=['id','tenantId','userId','eventId','recipientType','recipientId','status','reason','payloadJson','deliveredAt','createdAt'];
+    if(hasPg()){
+      const names=columns.map(toSnake);
+      const values=columns.map((key)=>pgValueForColumn(key,row[key]));
+      const params=columns.map((_,index)=>`$${index+1}`).join(',');
+      const result=await dbQuery(`insert into val_cowork_event_deliveries (${names.join(',')}) values (${params})
+        on conflict (tenant_id,user_id,event_id,recipient_type,recipient_id) do update set
+          status=excluded.status,reason=excluded.reason,payload_json=excluded.payload_json,
+          delivered_at=excluded.delivered_at
+        returning *`,values);
+      if(!result?.rows?.[0]) throw new Error('VAL could not save this carry-forward delivery.');
+      return rowToCamel(result.rows[0]);
+    }
+    const value=store();
+    const index=value.coworkEventDeliveries.findIndex((item)=>item.tenantId===row.tenantId && item.userId===row.userId && item.eventId===row.eventId && item.recipientType===row.recipientType && item.recipientId===row.recipientId);
+    if(index >= 0) value.coworkEventDeliveries[index]={...value.coworkEventDeliveries[index],...row};
+    else value.coworkEventDeliveries.unshift(row);
+    saveStore(value);
+    return index >= 0 ? value.coworkEventDeliveries[index] : row;
+  }
+  async function deliveriesForEvent(eventId=''){
+    const id=compactText(eventId,220);
+    const sc=scope();
+    if(!id) return [];
+    if(hasPg()){
+      const result=await dbQuery('select * from val_cowork_event_deliveries where tenant_id=$1 and user_id=$2 and event_id=$3 order by created_at asc',[sc.tenantId,sc.userId,id]);
+      return safeArray(result?.rows).map(rowToCamel);
+    }
+    return store().coworkEventDeliveries
+      .filter((item)=>item.tenantId===sc.tenantId && item.userId===sc.userId && item.eventId===id)
+      .sort((a,b)=>String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  }
+  async function pendingCarryForwardEvents(limit=100){
+    const rowLimit=Math.max(1,Math.min(500,Number(limit) || 100));
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery(`select * from val_cowork_events
+        where tenant_id=$1 and user_id=$2 and status in ('recorded','delivery_incomplete')
+        order by created_at asc limit $3`,[sc.tenantId,sc.userId,rowLimit]);
+      return safeArray(result?.rows).map(rowToCamel);
+    }
+    return store().coworkEvents
+      .filter((item)=>item.tenantId===sc.tenantId && item.userId===sc.userId && ['recorded','delivery_incomplete'].includes(item.status))
+      .sort((a,b)=>String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .slice(0,rowLimit);
+  }
+  async function listCarryForwardForRecipient({recipientType='',recipientId='',limit=50}={}){
+    const type=compactText(recipientType,120);
+    const id=compactText(recipientId,220);
+    if(!type || !id) throw new Error('VAL needs an exact packet or drawer recipient before loading carried-forward context.');
+    const rowLimit=Math.max(1,Math.min(200,Number(limit) || 50));
+    const sc=scope();
+    if(hasPg()){
+      const result=await dbQuery(`select
+        d.id as delivery_id,d.event_id,d.recipient_type,d.recipient_id,d.status as delivery_status,
+        d.reason,d.payload_json as delivery_payload_json,d.delivered_at,
+        e.session_id,e.work_item_id,e.entrypoint_id,e.event_type,e.status as event_status,
+        e.summary,e.payload_json,e.source_refs_json,e.created_at
+        from val_cowork_event_deliveries d
+        join val_cowork_events e on e.id=d.event_id and e.tenant_id=d.tenant_id and e.user_id=d.user_id
+        where d.tenant_id=$1 and d.user_id=$2 and d.recipient_type=$3 and d.recipient_id=$4
+        order by e.created_at desc limit $5`,[sc.tenantId,sc.userId,type,id,rowLimit]);
+      return safeArray(result?.rows).map(rowToCamel);
+    }
+    const value=store();
+    const eventsById=new Map(value.coworkEvents
+      .filter((event)=>event.tenantId===sc.tenantId && event.userId===sc.userId)
+      .map((event)=>[event.id,event]));
+    return value.coworkEventDeliveries
+      .filter((delivery)=>delivery.tenantId===sc.tenantId && delivery.userId===sc.userId && delivery.recipientType===type && delivery.recipientId===id)
+      .map((delivery)=>{
+        const event=eventsById.get(delivery.eventId);
+        if(!event) return null;
+        return {
+          deliveryId:delivery.id,eventId:delivery.eventId,recipientType:delivery.recipientType,recipientId:delivery.recipientId,
+          deliveryStatus:delivery.status,reason:delivery.reason,deliveryPayloadJson:delivery.payloadJson || {},deliveredAt:delivery.deliveredAt,
+          sessionId:event.sessionId,workItemId:event.workItemId,entrypointId:event.entrypointId,eventType:event.eventType,
+          eventStatus:event.status,summary:event.summary,payloadJson:event.payloadJson || {},sourceRefsJson:event.sourceRefsJson || [],createdAt:event.createdAt
+        };
+      })
+      .filter(Boolean)
+      .sort((a,b)=>String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0,rowLimit);
   }
   async function getSession(id){
     const sc=scope();
@@ -2928,6 +3028,414 @@ function createValCoworkService({
       question,
       receipt,
       no_external_action:true
+    };
+  }
+  function addCarryForwardRecipient(recipients,recipientType,recipientId,reason,status='delivered'){
+    const type=compactText(recipientType,120);
+    const id=compactText(recipientId,220);
+    if(!type || !id) return;
+    const key=`${type}:${id}`;
+    if(recipients.has(key)) return;
+    recipients.set(key,{recipientType:type,recipientId:id,status,reason:compactText(reason,500)});
+  }
+  function exactIdsFromPayloads(payloads=[],field=''){
+    const ids=new Set();
+    const singular=field.toLowerCase();
+    const plural=field.replace(/Id$/,'Ids').toLowerCase();
+    const snakeSingular=field.replace(/[A-Z]/g,(letter)=>`_${letter.toLowerCase()}`).toLowerCase();
+    const snakePlural=field.replace(/Id$/,'Ids').replace(/[A-Z]/g,(letter)=>`_${letter.toLowerCase()}`).toLowerCase();
+    const desiredKind=field === 'projectId' ? 'project' : field === 'relationshipId' ? 'relationship' : '';
+    const visited=new Set();
+    const add=(value)=>{
+      const id=compactText(typeof value === 'string' ? value : '',220);
+      if(id) ids.add(id);
+    };
+    const walk=(value,depth=0)=>{
+      if(!value || typeof value !== 'object' || depth > 8 || visited.has(value)) return;
+      visited.add(value);
+      if(desiredKind){
+        const linkedKind=compactText(value.kind || value.targetType || value.target_type || value.entityType || value.entity_type || '',120).toLowerCase();
+        if(linkedKind.includes(desiredKind)) add(value.targetId || value.target_id || value[field] || value.id);
+      }
+      for(const [key,nested] of Object.entries(value)){
+        const normalized=String(key).toLowerCase();
+        if(normalized === singular || normalized === snakeSingular) add(nested);
+        else if(normalized === plural || normalized === snakePlural){
+          for(const item of safeArray(nested)) add(typeof item === 'string' ? item : item?.id || item?.[field] || item?.[snakeSingular]);
+        }
+        walk(nested,depth+1);
+      }
+    };
+    for(const payload of payloads) walk(payload);
+    return [...ids];
+  }
+  function originCarryForwardRecipient(session={}){
+    const originByScope={
+      project:'project_packet',project_section:'project_packet',
+      relationship:'relationship_packet',relationship_section:'relationship_packet',
+      transcript:'transcript_packet',email_thread:'email_thread_packet',
+      observer:'observer_packet',observer_board:'chief_of_staff_packet'
+    };
+    return {
+      recipientType:originByScope[session.scopeType] || `${session.scopeType || 'source'}_packet`,
+      recipientId:session.scopeType === 'observer_board' ? 'chief_of_staff' : compactText(session.scopeId,220)
+    };
+  }
+  function carryForwardRecipients(session,workItem=null,receipt=null,result=null){
+    const recipients=new Map();
+    const entry=COWORK_ENTRYPOINTS[session.entrypointId] || {};
+    const originReason='Exact scope selected when Co-Work opened.';
+    addCarryForwardRecipient(recipients,'chief_of_staff_packet','chief_of_staff','Every Co-Work event is retained for system-wide Chief of Staff synthesis.');
+    addCarryForwardRecipient(recipients,'round_table','system','Every Co-Work event enters the Round Table relevance and routing ledger.');
+    addCarryForwardRecipient(recipients,'observer_packet','witnessing_steward','The Witnessing Steward audits every Co-Work event against confirmed Witnessing context.');
+    const origin=originCarryForwardRecipient(session);
+    addCarryForwardRecipient(recipients,origin.recipientType,origin.recipientId,originReason);
+    if(entry.surface) addCarryForwardRecipient(recipients,'drawer',entry.surface,'The originating drawer can project this linked event.');
+
+    const payloads=[session.workingBriefJson || {},workItem?.payloadJson || workItem?.payload || {},receipt?.payloadJson || {},result || {}];
+    for(const projectId of exactIdsFromPayloads(payloads,'projectId')){
+      addCarryForwardRecipient(recipients,'project_packet',projectId,'An exact project identifier is linked to this Co-Work result.');
+      addCarryForwardRecipient(recipients,'drawer','project_managers','Project Managers can project an event linked to an exact project.');
+    }
+    for(const relationshipId of exactIdsFromPayloads(payloads,'relationshipId')){
+      addCarryForwardRecipient(recipients,'relationship_packet',relationshipId,'An exact relationship identifier is linked to this Co-Work result.');
+      addCarryForwardRecipient(recipients,'drawer','relationships','Stewardship can project an event linked to an exact relationship.');
+    }
+    for(const transcriptId of exactIdsFromPayloads(payloads,'transcriptId')){
+      addCarryForwardRecipient(recipients,'transcript_packet',transcriptId,'An exact transcript identifier is linked to this Co-Work result.');
+      addCarryForwardRecipient(recipients,'drawer','transcripts','Transcripts can project an event linked to an exact transcript.');
+    }
+    const emailId=exactIdsFromPayloads(payloads,'threadId')[0] || exactIdsFromPayloads(payloads,'messageId')[0] || exactIdsFromPayloads(payloads,'conversationId')[0];
+    if(emailId){
+      addCarryForwardRecipient(recipients,'email_thread_packet',emailId,'An exact email-thread identifier is linked to this Co-Work result.');
+      addCarryForwardRecipient(recipients,'drawer','executive_inbox','Executive Inbox can project an event linked to an exact email thread.');
+    }
+    if(workItem?.id && ['needs_review','applied'].includes(workItem.status)){
+      addCarryForwardRecipient(recipients,'prepared_work_packet',workItem.id,'The scoped work item is ready for review or has been applied.');
+      addCarryForwardRecipient(recipients,'drawer','leverage','Leverage can project reviewable or applied prepared work.');
+    }
+    const preparedWorkId=compactText(result?.preparedWorkId || '',220);
+    if(preparedWorkId){
+      addCarryForwardRecipient(recipients,'prepared_work_packet',preparedWorkId,'The prepared work product is ready for review or needs bounded context.');
+      addCarryForwardRecipient(recipients,'drawer','leverage','Leverage can project this prepared work product.');
+    }
+    const taskId=compactText(result?.task?.id || '',220);
+    if(taskId){
+      addCarryForwardRecipient(recipients,'commitment_packet',taskId,'The applied result created an exact internal commitment.');
+      addCarryForwardRecipient(recipients,'drawer','tasks','The task list can project the exact internal commitment.');
+    }
+    return [...recipients.values()];
+  }
+  function carryForwardDeliveryId(eventId='',recipient={}){
+    const identity=[eventId,recipient.recipientType,recipient.recipientId].join('|');
+    return `coworkdelivery_${crypto.createHash('sha256').update(identity).digest('hex').slice(0,32)}`;
+  }
+  function normalizeCarryForwardRecipients(value=[]){
+    const recipients=new Map();
+    for(const item of safeArray(value)) addCarryForwardRecipient(recipients,item?.recipientType || item?.recipient_type,item?.recipientId || item?.recipient_id,item?.reason || 'Relevant Co-Work context.',item?.status || 'delivered');
+    return [...recipients.values()];
+  }
+  async function expectedRecipientsForEvent(event={}){
+    const saved=normalizeCarryForwardRecipients(event.payloadJson?.carryForwardRecipients);
+    if(saved.length) return saved;
+    const session=await getSession(event.sessionId);
+    if(!session) return [];
+    const workItem=event.workItemId ? await getWorkItem(event.workItemId) : null;
+    return carryForwardRecipients(session,workItem,null,event.payloadJson || {});
+  }
+  async function deliverCarryForwardEvent(event={},recipients=[],attempts=3){
+    const expected=normalizeCarryForwardRecipients(recipients);
+    const sc=scope();
+    const now=new Date().toISOString();
+    let deliveries=await deliveriesForEvent(event.id);
+    let deliveredKeys=new Set(deliveries.filter((item)=>item.status === 'delivered').map((item)=>`${item.recipientType}:${item.recipientId}`));
+    const failures=[];
+    for(const recipient of expected){
+      const key=`${recipient.recipientType}:${recipient.recipientId}`;
+      if(deliveredKeys.has(key)) continue;
+      let delivered=null;
+      let lastError=null;
+      for(let attempt=0;attempt<Math.max(1,attempts);attempt+=1){
+        try{
+          delivered=await saveEventDelivery({
+            id:carryForwardDeliveryId(event.id,recipient),tenantId:sc.tenantId,userId:sc.userId,eventId:event.id,
+            recipientType:recipient.recipientType,recipientId:recipient.recipientId,status:recipient.status,
+            reason:recipient.reason,payloadJson:{operation:'link',entrypointId:event.entrypointId,noExternalAction:true},
+            deliveredAt:recipient.status === 'delivered' ? now : null,createdAt:event.createdAt || now
+          });
+          break;
+        }catch(error){
+          lastError=error;
+          if(attempt+1<Math.max(1,attempts)) await new Promise((resolve)=>setTimeout(resolve,25*(attempt+1)));
+        }
+      }
+      if(delivered?.status === 'delivered') deliveredKeys.add(key);
+      else failures.push({key,error:lastError?.message || 'Delivery was not confirmed.'});
+    }
+    deliveries=await deliveriesForEvent(event.id);
+    deliveredKeys=new Set(deliveries.filter((item)=>item.status === 'delivered').map((item)=>`${item.recipientType}:${item.recipientId}`));
+    const missing=expected.map((item)=>`${item.recipientType}:${item.recipientId}`).filter((key)=>!deliveredKeys.has(key));
+    const status=missing.length ? 'delivery_incomplete' : 'delivered';
+    const savedEvent=await saveEvent({
+      ...event,status,
+      payloadJson:{...(event.payloadJson || {}),carryForwardRecipients:expected,deliveryReconciledAt:now,noExternalAction:true}
+    });
+    return {event:savedEvent,deliveries,missing,failures,noExternalAction:true};
+  }
+  async function reconcileCarryForwardDeliveries({limit=100}={}){
+    const events=await pendingCarryForwardEvents(limit);
+    const results=[];
+    for(const event of events){
+      const recipients=await expectedRecipientsForEvent(event);
+      if(!recipients.length){
+        results.push({eventId:event.id,status:'unresolved',missing:['recipient_scope']});
+        continue;
+      }
+      const result=await deliverCarryForwardEvent(event,recipients,3);
+      results.push({eventId:event.id,status:result.event.status,missing:result.missing});
+    }
+    return {
+      checked:events.length,
+      repaired:results.filter((item)=>item.status === 'delivered').length,
+      incomplete:results.filter((item)=>item.status !== 'delivered'),
+      noExternalAction:true
+    };
+  }
+  async function recordCarryForward({session,workItem=null,receipt=null,result=null,eventType,summary,payload={},sourceRefs=[]}){
+    const now=new Date().toISOString();
+    const sc=scope();
+    const recipients=carryForwardRecipients(session,workItem,receipt,result);
+    const event=await saveEvent({
+      id:uuid('coworkevent'),tenantId:sc.tenantId,userId:sc.userId,sessionId:session.id,
+      workItemId:workItem?.id || null,entrypointId:session.entrypointId,eventType,status:'recorded',
+      summary:compactText(summary || 'Co-Work context was carried forward.',1200),
+      payloadJson:{...payload,carryForwardRecipients:recipients,noExternalAction:true},sourceRefsJson:safeArray(sourceRefs).map(sourceRef),createdAt:now
+    });
+    const outcome=await deliverCarryForwardEvent(event,recipients,3);
+    if(outcome.missing.length) throw new Error(`VAL saved the Co-Work result but could not carry it forward to: ${outcome.missing.join(', ')}. It is queued for automatic repair.`);
+    return outcome;
+  }
+  async function recordExternalActionCompletion({packet={},receipt={},reconciliation=null,providerResult={}}={}){
+    if(receipt.status !== 'succeeded') return {ok:false,skipped:true,reason:'provider_success_not_confirmed'};
+    const parseObject=(value)=>{
+      if(value && typeof value === 'object' && !Array.isArray(value)) return value;
+      if(typeof value === 'string'){
+        try{return JSON.parse(value);}catch(_){return {};}
+      }
+      return {};
+    };
+    const sourceContext=parseObject(packet.sourceContextJson || packet.source_context_json);
+    const actionPayload=parseObject(packet.payloadPreviewJson || packet.payload_preview_json);
+    const linkedPayloads=[sourceContext,actionPayload,providerResult];
+    const projectIds=exactIdsFromPayloads(linkedPayloads,'projectId');
+    const relationshipIds=exactIdsFromPayloads(linkedPayloads,'relationshipId');
+    const projectId=projectIds[0] || '';
+    const relationshipId=relationshipIds[0] || '';
+    const transcriptId=exactIdsFromPayloads(linkedPayloads,'transcriptId')[0] || '';
+    const emailId=exactIdsFromPayloads(linkedPayloads,'threadId')[0]
+      || exactIdsFromPayloads(linkedPayloads,'messageId')[0]
+      || exactIdsFromPayloads(linkedPayloads,'conversationId')[0]
+      || '';
+    const scopeType=projectId ? 'project' : relationshipId ? 'relationship' : transcriptId ? 'transcript' : emailId ? 'email_thread' : 'external_action';
+    const scopeId=projectId || relationshipId || transcriptId || emailId || compactText(packet.id || receipt.packetId || receipt.id,220);
+    const sc=scope();
+    const now=new Date().toISOString();
+    const sessionId=`cowork_external_${crypto.createHash('sha256').update(`${sc.tenantId}|${sc.userId}|${packet.id || receipt.packetId || receipt.id}`).digest('hex').slice(0,32)}`;
+    const session=await saveSession({
+      id:sessionId,tenantId:sc.tenantId,userId:sc.userId,entrypointId:'system.external_action_completion',
+      scopeType,scopeId,scopeSectionId:'execution_receipt',status:'complete',
+      workingBriefJson:{sourceContext,actionPayload,projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,packetId:packet.id || receipt.packetId,receiptId:receipt.id},
+      questionPlanJson:[],stateJson:{stage:'external_action_completed'},createdAt:now,updatedAt:now
+    });
+    return recordCarryForward({
+      session,receipt,result:{sourceContext,actionPayload,providerResult,reconciliation,projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId},
+      eventType:'external_action_completed',
+      summary:receipt.providerResponseSummary || packet.providerResponseSummary || `${packet.actionType || 'External action'} completed.`,
+      payload:{
+        packetId:packet.id || receipt.packetId,receiptId:receipt.id,actionType:packet.actionType || receipt.actionType,
+        targetSystem:packet.targetSystem || receipt.targetSystem,providerResponseId:receipt.providerResponseId,
+        providerObjectUrl:receipt.providerObjectUrl || '',projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,
+        externalActionPreviouslyCompleted:true,promotable:true
+      },
+      sourceRefs:safeArray(packet.sourceRefsJson || packet.source_refs_json)
+    });
+  }
+  async function recordResearchCompletion({candidate={},artifact={}}={}){
+    const linked=artifact.linked_context&&typeof artifact.linked_context==='object'?artifact.linked_context:{};
+    const candidateContext=candidate.contextJson&&typeof candidate.contextJson==='object'?candidate.contextJson:{};
+    const payloads=[linked,candidateContext,artifact.continuation_task||{}];
+    const projectIds=exactIdsFromPayloads(payloads,'projectId');
+    const relationshipIds=exactIdsFromPayloads(payloads,'relationshipId');
+    const transcriptId=exactIdsFromPayloads(payloads,'transcriptId')[0]||'';
+    const emailId=exactIdsFromPayloads(payloads,'threadId')[0]
+      ||exactIdsFromPayloads(payloads,'messageId')[0]
+      ||exactIdsFromPayloads(payloads,'conversationId')[0]
+      ||'';
+    const taskId=exactIdsFromPayloads(payloads,'taskId')[0]||artifact.continuation_task?.id||'';
+    const projectId=projectIds[0]||'';
+    const relationshipId=relationshipIds[0]||'';
+    const scopeType=projectId?'project':relationshipId?'relationship':transcriptId?'transcript':emailId?'email_thread':'research';
+    const scopeId=projectId||relationshipId||transcriptId||emailId||compactText(candidate.sourceId||candidate.id,220);
+    const sc=scope();
+    const now=new Date().toISOString();
+    const sessionId=`cowork_research_${crypto.createHash('sha256').update(`${sc.tenantId}|${sc.userId}|${candidate.id}`).digest('hex').slice(0,32)}`;
+    const session=await saveSession({
+      id:sessionId,tenantId:sc.tenantId,userId:sc.userId,entrypointId:'system.research_completion',
+      scopeType,scopeId,scopeSectionId:'research_handoff',status:'complete',
+      workingBriefJson:{candidateId:candidate.id,projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,taskId,linkedContext:linked},
+      questionPlanJson:[],stateJson:{stage:'research_completed'},createdAt:now,updatedAt:now
+    });
+    const sourceRefs=safeArray(artifact.source_refs).concat(safeArray(artifact.source_results).map(result=>({
+      source_type:'outscraper_google_search_result',source_id:result.url,
+      quote_or_summary:[result.title,result.snippet].filter(Boolean).join(': '),confidence:result.identity_confidence
+    })));
+    const subject=artifact.identity?.person_name||artifact.identity?.verified_email||candidate.title||'selected context';
+    const count=safeArray(artifact.source_results).length;
+    return recordCarryForward({
+      session,result:{projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,task:{id:taskId},candidateId:candidate.id},
+      eventType:'research_completed',
+      summary:count?`Research ready for ${subject}: ${count} verified source${count===1?'':'s'} available.`:`Research completed for ${subject}; no source could be tied safely to the verified identity.`,
+      payload:{candidateId:candidate.id,artifactKind:'research_handoff',completionStatus:artifact.completion_status,projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,taskId,verifiedFindings:safeArray(artifact.verified_findings),sourceResults:safeArray(artifact.source_results),noResultReason:artifact.no_result_reason||'',researchReady:true,promotable:true},
+      sourceRefs
+    });
+  }
+  async function recordWorkProductPrepared({candidate={},artifact={}}={}){
+    const linked=artifact.linked_context&&typeof artifact.linked_context==='object'?artifact.linked_context:{};
+    const candidateContext=candidate.contextJson&&typeof candidate.contextJson==='object'?candidate.contextJson:{};
+    const continuation=artifact.continuation_task&&typeof artifact.continuation_task==='object'?artifact.continuation_task:{};
+    const payloads=[linked,candidateContext,continuation];
+    const projectIds=exactIdsFromPayloads(payloads,'projectId');
+    const artifactProjectId=compactText(artifact.project?.id||'',220);
+    if(artifactProjectId&&!projectIds.includes(artifactProjectId))projectIds.unshift(artifactProjectId);
+    const relationshipIds=exactIdsFromPayloads(payloads,'relationshipId');
+    const transcriptId=exactIdsFromPayloads(payloads,'transcriptId')[0]||'';
+    const emailId=exactIdsFromPayloads(payloads,'threadId')[0]
+      ||exactIdsFromPayloads(payloads,'messageId')[0]
+      ||exactIdsFromPayloads(payloads,'conversationId')[0]
+      ||'';
+    const taskId=exactIdsFromPayloads(payloads,'taskId')[0]||compactText(continuation.id||'',220);
+    const projectId=projectIds[0]||'';
+    const relationshipId=relationshipIds[0]||'';
+    const scopeType=projectId?'project':relationshipId?'relationship':transcriptId?'transcript':emailId?'email_thread':'prepared_work';
+    const scopeId=projectId||relationshipId||transcriptId||emailId||compactText(candidate.sourceId||candidate.id,220);
+    const sc=scope();
+    const now=new Date().toISOString();
+    const sessionId=`cowork_work_product_${crypto.createHash('sha256').update(`${sc.tenantId}|${sc.userId}|${candidate.id}`).digest('hex').slice(0,32)}`;
+    const session=await saveSession({
+      id:sessionId,tenantId:sc.tenantId,userId:sc.userId,entrypointId:'system.work_product_prepared',
+      scopeType,scopeId,scopeSectionId:'engineering_brief',status:'complete',
+      workingBriefJson:{candidateId:candidate.id,projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,taskId,repository:artifact.repository||{},linkedContext:linked},
+      questionPlanJson:[],stateJson:{stage:'work_product_prepared'},createdAt:now,updatedAt:now
+    });
+    const ready=artifact.completion_status==='ready_for_implementation_review';
+    return recordCarryForward({
+      session,
+      result:{projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,task:{id:taskId},preparedWorkId:candidate.id,candidateId:candidate.id},
+      eventType:'work_product_prepared',
+      summary:ready?`${artifact.title||candidate.title||'Engineering brief'} is ready for implementation review.`:`${artifact.title||candidate.title||'Engineering brief'} is saved and needs ${safeArray(artifact.missing_inputs).length||'more'} bounded input${safeArray(artifact.missing_inputs).length===1?'':'s'}.`,
+      payload:{
+        candidateId:candidate.id,preparedWorkId:candidate.id,artifactKind:'engineering_brief',completionStatus:artifact.completion_status,
+        projectId,projectIds,relationshipId,relationshipIds,transcriptId,emailId,taskId,repository:artifact.repository||{},
+        objective:artifact.objective||'',files:safeArray(artifact.files),acceptanceCriteria:safeArray(artifact.acceptance_criteria),
+        testPlan:safeArray(artifact.test_plan),missingInputs:safeArray(artifact.missing_inputs),codeBriefReady:ready,
+        githubRuntimeConnection:artifact.github_runtime_connection||'not_connected',requiresExplicitApproval:true,promotable:true
+      },
+      sourceRefs:safeArray(artifact.source_refs).concat(safeArray(candidate.sourceRefsJson))
+    });
+  }
+  function carriedForwardContextItem(row={}){
+    return {
+      eventId:compactText(row.eventId,220),
+      sessionId:compactText(row.sessionId,220),
+      workItemId:compactText(row.workItemId,220),
+      entrypointId:compactText(row.entrypointId,180),
+      eventType:compactText(row.eventType,120),
+      summary:compactText(row.summary,1200),
+      payload:row.payloadJson && typeof row.payloadJson === 'object' ? row.payloadJson : {},
+      sourceRefs:safeArray(row.sourceRefsJson).map(sourceRef),
+      occurredAt:compactText(row.createdAt,120)
+    };
+  }
+  async function hydrateCarriedForwardContext(result={}){
+    const sessionId=compactText(result.session?.id,220);
+    if(!sessionId) return result;
+    const session=await getSession(sessionId);
+    if(!session) throw new Error('VAL opened Co-Work without a durable scoped session. Carried-forward context was not attached.');
+    const recipient=originCarryForwardRecipient(session);
+    const rows=await listCarryForwardForRecipient({...recipient,limit:50});
+    const events=rows
+      .filter((row)=>row.deliveryStatus === 'delivered' && row.sessionId !== session.id)
+      .map(carriedForwardContextItem)
+      .reverse();
+    session.workingBriefJson={
+      ...(session.workingBriefJson || {}),
+      carriedForwardContext:{
+        recipient,
+        order:'oldest_to_newest',
+        events,
+        durableEventCount:events.length
+      }
+    };
+    session.updatedAt=new Date().toISOString();
+    const saved=await saveSession(session);
+    return {
+      ...result,
+      session:{
+        ...result.session,
+        workingBrief:saved.workingBriefJson || {}
+      }
+    };
+  }
+  function witnessingRecord(item={}){
+    return {
+      id:compactText(item.id,220),
+      kind:compactText(item.kind,120),
+      category:compactText(item.category,160),
+      title:compactText(item.title,260),
+      summary:compactText(item.summary,900),
+      detail:compactText(item.detail || item.rawText || item.raw_text,2400),
+      reviewed:!!(item.reviewed || item.metadata?.reviewed),
+      source:compactText(item.metadata?.source || item.source,180),
+      createdAt:compactText(item.createdAt || item.created_at,120)
+    };
+  }
+  async function hydrateWitnessingContext(result={}){
+    const sessionId=compactText(result.session?.id,220);
+    if(!sessionId) return result;
+    const session=await getSession(sessionId);
+    if(!session) throw new Error('VAL opened Co-Work without a durable scoped session. Witnessing context was not attached.');
+    let records=[];
+    let status='available';
+    let unavailableReason='';
+    try{
+      records=safeArray(await loadWitnessingContext({limit:60})).slice(0,60).map(witnessingRecord);
+      if(!records.length) status='not_yet_available';
+    }catch(error){
+      status='temporarily_unavailable';
+      unavailableReason=compactText(error?.message || 'Witnessing context could not be loaded.',500);
+      logger.warn?.(`[val-cowork] Witnessing Steward context unavailable: ${unavailableReason}`);
+    }
+    const directAnswerCount=records.filter(item=>item.kind==='teach_val_witnessing_answer').length;
+    const reviewedMemoryCount=records.filter(item=>item.reviewed && item.kind!=='teach_val_witnessing_answer').length;
+    session.workingBriefJson={
+      ...(session.workingBriefJson || {}),
+      witnessingContext:{
+        observerId:'witnessing_steward',
+        status,
+        recordCount:records.length,
+        directAnswerCount,
+        reviewedMemoryCount,
+        records,
+        unavailableReason,
+        responsibility:"Protect the user's confirmed priorities, boundaries, relationships, voice, and operating commitments, and surface source-backed enactment gaps.",
+        noExternalAction:true
+      }
+    };
+    session.updatedAt=new Date().toISOString();
+    const saved=await saveSession(session);
+    return {
+      ...result,
+      session:{...result.session,workingBrief:saved.workingBriefJson || {}}
     };
   }
   async function openObserverConversation(entrypointId,input={}){
@@ -3878,7 +4386,7 @@ function createValCoworkService({
     const question=relationshipSectionQuestion(state,brief);
     return publicResult(session,workItem,`VAL prepared the ${brief.sectionLabel || 'selected'} update for ${brief.relationshipName || 'this relationship'} to review.`,question);
   }
-  async function openEntry(input={}){
+  async function openEntryScoped(input={}){
     const entrypointId=String(input.entrypointId || input.entrypoint_id || '').trim();
     const entry=COWORK_ENTRYPOINTS[entrypointId];
     if(!entry) throw new Error('This Co-Work entry point is not registered.');
@@ -3948,7 +4456,10 @@ function createValCoworkService({
     });
     return publicResult(session,workItem,question.question,question);
   }
-  async function respond(sessionId,input={}){
+  async function openEntry(input={}){
+    return hydrateWitnessingContext(await hydrateCarriedForwardContext(await openEntryScoped(input)));
+  }
+  async function respondScoped(sessionId,input={}){
     const answer=multilineText(input.answer || input.message || '',5000);
     if(!answer) throw new Error('VAL needs an answer before it can continue this scoped conversation.');
     const session=await getSession(sessionId);
@@ -4039,7 +4550,7 @@ function createValCoworkService({
     await saveWorkItem(workItem);
     return publicResult(session,workItem,message,question);
   }
-  async function applyWorkItem(workItemId){
+  async function applyWorkItemScoped(workItemId){
     const workItem=await getWorkItem(workItemId);
     if(!workItem) throw new Error('Prepared work item not found.');
     if(workItem.workType === 'relationship_section_update'){
@@ -4487,7 +4998,34 @@ function createValCoworkService({
     await saveWorkItem(workItem);
     return {...publicResult(session,workItem,receipt.summary,null,receipt),project};
   }
-  return {openEntry,respond,applyWorkItem,getSession,COWORK_ENTRYPOINTS};
+  async function respond(sessionId,input={}){
+    const answer=multilineText(input.answer || input.message || '',5000);
+    const result=await respondScoped(sessionId,input);
+    const session=await getSession(sessionId);
+    if(!session) throw new Error('VAL saved a Co-Work response without its scoped session. The result was not marked carried forward.');
+    const workItem=result.workItem?.id ? await getWorkItem(result.workItem.id) : null;
+    const carryForward=await recordCarryForward({
+      session,workItem,result,eventType:'conversation_turn',
+      summary:`User: ${compactText(answer,500)} VAL: ${compactText(result.message || result.session?.state?.messages?.at?.(-1)?.content || 'Response saved.',500)}`,
+      payload:{userMessage:answer,valResponse:result.message || '',sessionStatus:session.status,promotable:false},
+      sourceRefs:workItem?.sourceRefsJson || []
+    });
+    return {...result,carryForward};
+  }
+  async function applyWorkItem(workItemId){
+    const result=await applyWorkItemScoped(workItemId);
+    const workItem=await getWorkItem(workItemId);
+    const session=workItem ? await getSession(workItem.sessionId) : null;
+    if(!workItem || !session) throw new Error('VAL applied internal work without a complete Co-Work source chain. The result was not marked carried forward.');
+    const carryForward=await recordCarryForward({
+      session,workItem,receipt:result.receipt,result,eventType:'applied_update',
+      summary:result.receipt?.summary || result.message || `Applied ${workItem.title}.`,
+      payload:{action:result.receipt?.action || 'apply_internal_update',receiptId:result.receipt?.id || '',workItemStatus:workItem.status,promotable:true},
+      sourceRefs:workItem.sourceRefsJson || []
+    });
+    return {...result,carryForward};
+  }
+  return {openEntry,respond,applyWorkItem,getSession,listCarryForwardForRecipient,reconcileCarryForwardDeliveries,recordExternalActionCompletion,recordResearchCompletion,recordWorkProductPrepared,COWORK_ENTRYPOINTS};
 }
 
 module.exports={

@@ -7,6 +7,7 @@ Purpose: make every Co-Work entry point useful for the exact place from which th
 Companion specifications:
 
 - [VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md](./VAL_COWORK_WITH_VAL_V1_BUILD_SPEC.md)
+- [VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md](./VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md)
 - [VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md](./VAL_SYSTEM_WIDE_SOURCE_AND_CLICK_MAP.md)
 - [VAL_CONTEXT_REGISTRY.md](./VAL_CONTEXT_REGISTRY.md)
 - [HEARTH_PACKET_COMPLETENESS_CONTRACT.md](./HEARTH_PACKET_COMPLETENESS_CONTRACT.md)
@@ -29,6 +30,8 @@ visible button
 ```
 
 The user must never have to repeat which project, transcript, document, relationship, email, or card they clicked. VAL must never begin with a generic "How can I help?" when the initiating surface already defines the work.
+
+Every response and applied result must also pass through the system-wide carry-forward contract. A scoped session is not complete merely because its chat history was saved. It needs a durable event plus delivery receipts for the Chief of Staff, Round Table, originating packet and drawer, and every exact linked project and relationship.
 
 ## Canonical Entry Contract
 
@@ -292,6 +295,8 @@ Lead Intelligence has no Co-Work route. It continues to use the protected GOALL,
 | `val.teach` | Teach VAL correction or preference with its evidence. | Extract a reviewable learning candidate. | Candidate is ready for user review, not silently made durable. | Review-update record. |
 
 Witnessing and Teach VAL are structured flows, not generic Co-Work. Their current protected prompts remain the source of truth.
+
+Every registered Co-Work entry point is nevertheless hydrated with the current user's bounded `witnessingContext` before its first response. Every saved Co-Work event is delivered to `observer_packet:witnessing_steward`. This guarantees that project, relationship, transcript, email, Observer, and Chief of Staff conversations all receive confirmed Witnessing context and can be audited for enactment without duplicating the Witnessing flow itself.
 
 ## Home And Round Table Surfaces
 

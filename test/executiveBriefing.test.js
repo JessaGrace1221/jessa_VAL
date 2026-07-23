@@ -118,6 +118,6 @@ test('dashboard cards route to exact entities and drafts',()=>{
 test('chat receives executive briefing source context for why questions',()=>{
   assert.match(server,/executiveBriefingChatContext/);
   assert.match(server,/Executive Briefing source context/);
-  assert.match(server,/what VAL is worried about/);
+  assert.match(server,/What VAL is worried about/);
   assert.match(server,/relationship velocity/);
 });

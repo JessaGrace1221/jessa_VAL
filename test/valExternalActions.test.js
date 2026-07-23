@@ -42,6 +42,81 @@ test('external action routes are backend-only and mounted',()=>{
   assert.match(server,/https:\/\/www\.googleapis\.com\/gmail\/v1\/users\/me\/messages\/send/);
 });
 
+test('Postgres packet writes serialize structured JSON fields',async()=>{
+  let insertParams=[];
+  const service=createValExternalActionsService({
+    hasPg:()=>true,
+    dbQuery:async(sql,params)=>{
+      if(/insert into val_external_action_packets/i.test(sql)){
+        insertParams=params;
+        return {rows:[{id:'packet_pg',tenant_id:'tenant',user_id:'user',status:'draft'}]};
+      }
+      return {rows:[]};
+    },
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:()=> 'packet_pg'
+  });
+  const packet=await service.createEmailSendPacket({
+    to:'jessa@example.com',
+    subject:'VAL email test',
+    body:'This is VAL.',
+    sourceContext:{source:'send_gate'}
+  });
+  assert.equal(packet.id,'packet_pg');
+  assert.equal(typeof insertParams[7],'string');
+  assert.equal(typeof insertParams[8],'string');
+  assert.equal(typeof insertParams[32],'string');
+  assert.equal(insertParams[28],0);
+  assert.equal(JSON.parse(insertParams[7]).to,'jessa@example.com');
+  assert.ok(Array.isArray(JSON.parse(insertParams[8])));
+  assert.equal(JSON.parse(insertParams[32]).source,'send_gate');
+});
+
+test('Postgres receipt writes serialize receipt and reconciliation JSON fields',async()=>{
+  let receiptParams=[];
+  let eventParams=[];
+  const receiptService=createValExecutionReceiptService({
+    hasPg:()=>true,
+    dbQuery:async(sql,params)=>{
+      if(/insert into val_execution_receipts/i.test(sql)){
+        receiptParams=params;
+        return {rows:[{
+          id:params[0],tenant_id:params[1],user_id:params[2],packet_id:params[3],
+          action_type:params[4],target_system:params[5],provider_response_id:params[6],
+          status:params[11],source_refs_json:params[14],audit_refs_json:params[15],
+          reconciliation_status:params[16],provider_payload_json:params[18]
+        }]};
+      }
+      if(/insert into val_execution_reconciliation_events/i.test(sql)){
+        eventParams=params;
+        return {rows:[]};
+      }
+      if(/update val_external_action_packets/i.test(sql))return {rows:[]};
+      return {rows:[]};
+    },
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_pg`
+  });
+  const packet={
+    id:'packet_pg',tenantId:'tenant',userId:'user',status:'executed',
+    actionType:'send_email',targetSystem:'gmail',providerResponseId:'gmail_1',
+    providerResponseSummary:'Sent Gmail email.',executedAt:new Date().toISOString(),
+    sourceRefsJson:[{source_type:'send_gate',source_id:'test'}],sourceContextJson:{}
+  };
+  const receipt=await receiptService.createReceipt({packet,providerResult:{providerResponseId:'gmail_1',raw:{id:'gmail_1'}}});
+  assert.equal(receipt.status,'succeeded');
+  assert.equal(typeof receiptParams[14],'string');
+  assert.equal(typeof receiptParams[15],'string');
+  assert.equal(typeof receiptParams[18],'string');
+  assert.equal(JSON.parse(receiptParams[18]).id,'gmail_1');
+  const reconciliation=await receiptService.reconcile(receipt,{packet});
+  assert.equal(reconciliation.receipt.reconciliationStatus,'reconciled');
+  assert.equal(typeof eventParams[10],'string');
+  assert.equal(typeof eventParams[11],'string');
+});
+
 test('risk classifier keeps financial and representation actions high risk',()=>{
   const risk=riskFromText('Send proposal with pricing and contract language');
   assert.equal(risk.riskLevel,'high');
@@ -97,7 +172,7 @@ test('builds one-action packets from approved local candidates and review-only d
   for(const type of ['create_crm_note','create_crm_task','create_gmail_draft','create_outlook_draft','send_email','create_calendar_hold','send_proposal','publish_content','send_calendar_invite']){
     assert.ok(types.includes(type),`missing ${type}`);
   }
-  assert.ok(built.packets.every(p=>p.whatWillNotHappen.includes('No email')));
+  assert.ok(built.packets.every(p=>/no email|will not send/i.test(p.whatWillNotHappen)));
   assert.ok(built.packets.every(p=>p.sourceRefsJson.length));
   assert.ok(built.packets.find(p=>p.actionType==='send_proposal').approvalPolicy==='approval_required');
   const voiceAuthorized=built.packets.find(p=>p.sourceContextJson?.source==='executive_instruction'&&p.actionType==='send_email');
@@ -150,7 +225,13 @@ test('prepared artifact review creates exact packet before local approval',async
     preparedArtifact:{
       kind:'introduction_email_draft',
       title:'Intro: Greg and Lindsey',
-      recipients:[{contactId:'crm_greg'},{contactId:'crm_lindsey'}]
+      subject:'Introduction: Greg <> Lindsey',
+      body:'Hi Greg and Lindsey,\n\nYou are both working on relationship-first growth.\n\nNo pressure from either side.',
+      recipients:[
+        {name:'Greg',email:'greg@example.com',contactId:'crm_greg',relationshipId:'rel_greg'},
+        {name:'Lindsey',email:'lindsey@example.com',contactId:'crm_lindsey',relationshipId:'rel_lindsey'}
+      ],
+      relationshipIds:['rel_greg','rel_lindsey']
     },
     sourceRefs:[{source_type:'transcript',source_id:'tr_intro',quote_or_summary:'VAL, make that introduction.',confidence:0.9}]
   });
@@ -159,9 +240,50 @@ test('prepared artifact review creates exact packet before local approval',async
   assert.equal(packet.sourceContextJson.kind,'introduction_email_draft');
   assert.equal(packet.payloadPreviewJson.externalSend,false);
   assert.equal(packet.payloadPreviewJson.recipients.length,2);
+  assert.equal(packet.payloadPreviewJson.to,'greg@example.com, lindsey@example.com');
+  assert.equal(packet.payloadPreviewJson.body,'Hi Greg and Lindsey,\n\nYou are both working on relationship-first growth.\n\nNo pressure from either side.');
+  assert.deepEqual(packet.sourceContextJson.relationshipIds,['rel_greg','rel_lindsey']);
   const approved=await service.approve(packet.id,{note:'local approval only'});
   assert.equal(approved.status,'approved_local_only');
   assert.equal(store.valExternalActionAudit[0].externalActionTaken,false);
+});
+
+test('Transcript and Co-Work prepared artifacts map to exact GHL packets without losing source lineage',async()=>{
+  let store={valExternalActionPackets:[],valExternalActionAudit:[]};
+  const service=createValExternalActionsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_ghl_mapping`
+  });
+  const sourceRefs=[{source_type:'cowork',source_id:'cowork_1',quote_or_summary:'Please prepare these CRM changes.',confidence:0.95}];
+  const cases=[
+    {kind:'sms_draft',artifact:{contactId:'contact_1',message:'The revised time works for me.'},actionType:'send_sms'},
+    {kind:'contact_upsert',artifact:{contact:{firstName:'Aric',email:'aric@example.com'}},actionType:'upsert_contact'},
+    {kind:'contact_update',artifact:{contactId:'contact_1',contact:{companyName:'Frisson Consulting'}},actionType:'update_contact'},
+    {kind:'contact_tag_change',artifact:{contactId:'contact_1',operation:'add',tags:['VAL-follow-up']},actionType:'add_or_remove_tag'},
+    {kind:'opportunity_update',artifact:{opportunityId:'opp_1',opportunity:{pipelineStageId:'stage_2',status:'open'}},actionType:'update_opportunity'}
+  ];
+  for(const [index,item] of cases.entries()){
+    const packet=await service.preparePacketFromPreparedArtifact({
+      id:`prepared_${index}`,
+      title:`Prepared ${item.kind}`,
+      summary:'VAL prepared one reviewed HighLevel change.',
+      preparedArtifactKind:item.kind,
+      preparedArtifact:{kind:item.kind,...item.artifact},
+      sourceRefs,
+      metadata:{source:'cowork',sourceId:'cowork_1'}
+    });
+    assert.equal(packet.actionType,item.actionType);
+    assert.equal(packet.targetSystem,'GHL');
+    assert.equal(packet.sourceContextJson.source,'cowork');
+    assert.equal(packet.sourceContextJson.sourceId,'cowork_1');
+    assert.equal(packet.sourceContextJson.executionRequiresExplicitApproval,true);
+    assert.equal(packet.status,'draft');
+    assert.equal(packet.sourceRefsJson.length,1);
+  }
 });
 
 test('edit and reject keep execution unavailable',async()=>{
@@ -192,8 +314,53 @@ test('fresh risk check blocks expired, unsupported, ambiguous, and never-auto pa
   const sendPacket={...base,actionType:'send_email',payloadPreviewJson:{subject:'Hi',body:'Body',to:'aric@example.com'}};
   assert.ok(freshRiskCheck(sendPacket).errors.includes('final_send_confirmation_required'));
   assert.equal(freshRiskCheck(sendPacket,{finalConfirmation:true}).ok,true);
+  const incompleteIntroduction={...sendPacket,sourceContextJson:{kind:'introduction_email_draft',isIntroduction:true},payloadPreviewJson:{subject:'Intro',body:'Body',to:'aric@example.com',recipients:[{email:'aric@example.com'}],isIntroduction:true}};
+  assert.ok(freshRiskCheck(incompleteIntroduction,{finalConfirmation:true}).errors.includes('introduction_requires_two_verified_recipients'));
+  const duplicateIntroduction={...incompleteIntroduction,payloadPreviewJson:{...incompleteIntroduction.payloadPreviewJson,to:'aric@example.com, ARIC@example.com',recipients:[{email:'aric@example.com'},{email:'ARIC@example.com'}]}};
+  assert.ok(freshRiskCheck(duplicateIntroduction,{finalConfirmation:true}).errors.includes('introduction_requires_two_verified_recipients'));
+  const completeIntroduction={...incompleteIntroduction,payloadPreviewJson:{...incompleteIntroduction.payloadPreviewJson,to:'aric@example.com, greg@example.com',recipients:[{email:'aric@example.com'},{email:'greg@example.com'}]}};
+  assert.equal(freshRiskCheck(completeIntroduction,{finalConfirmation:true}).ok,true);
+  const smsPacket={...base,actionType:'send_sms',targetSystem:'GHL',targetId:'contact_1',payloadPreviewJson:{contactId:'contact_1',message:'The revised time works for me.'}};
+  assert.ok(freshRiskCheck(smsPacket).errors.includes('final_send_confirmation_required'));
+  assert.equal(freshRiskCheck(smsPacket,{finalConfirmation:true}).ok,true);
   assert.ok(freshRiskCheck({...base,approvalPolicy:'never_auto'}).errors.includes('blocked_action'));
   assert.ok(freshRiskCheck({...base,sourceContextJson:{authorization:{ambiguity:['target_identity_unresolved']}}}).errors.includes('ambiguous_packet'));
+});
+
+test('approved SMS executes once, records the provider message receipt, and reconciles the packet',async()=>{
+  let store={valExternalActionPackets:[
+    {id:'exec_sms',tenantId:'tenant',userId:'user',status:'approved_local_only',actionType:'send_sms',targetSystem:'GHL',targetId:'contact_1',payloadPreviewJson:{contactId:'contact_1',message:'The revised time works for me.'},sourceRefsJson:[{source_type:'cowork',source_id:'cowork_1',quote_or_summary:'Text Aric that the revised time works.',confidence:0.95}],whyThisActionExists:'Send the approved update.',whatWillHappen:'Send one SMS after final confirmation.',whatWillNotHappen:'No other record changes.',riskLevel:'medium',approvalPolicy:'approval_required',representationRisk:'high',financialOrLegalRisk:'low',relationshipRisk:'medium',expiresAt:new Date(Date.now()+86400000).toISOString(),sourceContextJson:{source:'cowork',sourceId:'cowork_1'},createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}
+  ],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
+  const packetService=createValExternalActionsService({hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},tenantId:()=>'tenant',userId:()=>'user',uuid:prefix=>`${prefix}_sms`});
+  const receiptService=createValExecutionReceiptService({hasPg:()=>false,getStore:()=>store,saveStore:s=>{store=s;},tenantId:()=>'tenant',userId:()=>'user',uuid:prefix=>`${prefix}_sms`});
+  let adapterCalls=0;
+  let completionInput=null;
+  const executor=createValExternalActionExecutor({
+    packetService,
+    receiptService,
+    executedBy:()=>'user',
+    onExecutionComplete:async input=>{completionInput=input;return {ok:true,event:{id:'cowork_event_1'}};},
+    adapters:{send_sms:async({payload})=>{adapterCalls++;return {providerResponseId:'ghl_message_1',providerResponseSummary:`SMS queued for ${payload.contactId}`};}}
+  });
+  const blocked=await executor.execute('exec_sms');
+  assert.equal(blocked.ok,false);
+  assert.ok(blocked.risk_check.errors.includes('final_send_confirmation_required'));
+  assert.equal(adapterCalls,0);
+  await packetService.updatePacket('exec_sms',{status:'approved_local_only',failureReason:''});
+  const sent=await executor.execute('exec_sms',{finalConfirmation:true});
+  assert.equal(sent.ok,true);
+  assert.equal(sent.packet.providerResponseId,'ghl_message_1');
+  assert.equal(sent.receipt.status,'succeeded');
+  assert.equal(sent.reconciliation.receipt.reconciliationStatus,'reconciled');
+  assert.equal(sent.reconciliation.events.some(event=>event.targetTable==='val_external_action_packets'),true);
+  assert.equal(completionInput.packet.id,'exec_sms');
+  assert.equal(completionInput.receipt.providerResponseId,'ghl_message_1');
+  assert.equal(sent.carry_forward.event.id,'cowork_event_1');
+  assert.equal(adapterCalls,1);
+  const duplicate=await executor.execute('exec_sms',{finalConfirmation:true});
+  assert.equal(duplicate.ok,false);
+  assert.ok(duplicate.risk_check.errors.includes('already_executed'));
+  assert.equal(adapterCalls,1);
 });
 
 test('executor runs one supported adapter once, creates receipt, and reconciles source objects',async()=>{
@@ -285,6 +452,60 @@ test('global email send gate creates one approved packet and requires final conf
   assert.equal(sent.executed,true);
   assert.equal(sent.packet.status,'executed');
   assert.equal(sent.packet.providerResponseId,'gmail_msg_1');
+  assert.equal(adapterCalls,1);
+  assert.equal(store.valExecutionReceipts[0].status,'succeeded');
+});
+
+test('calendar send gate creates one reviewed attendee appointment and requires final confirmation',async()=>{
+  let store={valExternalActionPackets:[],valExternalActionAudit:[],valExecutionReceipts:[],valExecutionReconciliationEvents:[]};
+  const packetService=createValExternalActionsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_calendar_gate`
+  });
+  const receiptService=createValExecutionReceiptService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    uuid:prefix=>`${prefix}_calendar_gate`
+  });
+  const packet=await packetService.createCalendarInvitePacket({
+    title:'Jessa Grace - Jessa Grace - VAL System Test',
+    description:'VAL calendar execution test.',
+    start:'2026-07-24T15:00:00-04:00',
+    end:'2026-07-24T15:30:00-04:00',
+    attendees:[{email:'jessa@jessagrace.com',name:'Jessa Grace'}],
+    provider:'auto'
+  });
+  assert.equal(packet.actionType,'send_calendar_invite');
+  assert.equal(packet.payloadPreviewJson.attendees[0].email,'jessa@jessagrace.com');
+  assert.equal(packet.payloadPreviewJson.externalCalendarWrite,true);
+  const approved=await packetService.approve(packet.id,{note:'Approved test appointment.'});
+  let adapterCalls=0;
+  const executor=createValExternalActionExecutor({
+    packetService,
+    receiptService,
+    executedBy:()=>'user',
+    adapters:{send_calendar_invite:async({payload})=>{
+      adapterCalls++;
+      assert.equal(payload.start,'2026-07-24T15:00:00-04:00');
+      return {providerResponseId:'calendar_event_1',providerResponseSummary:'Created Google appointment.'};
+    }}
+  });
+  const blocked=await executor.execute(approved.id);
+  assert.equal(blocked.ok,false);
+  assert.ok(blocked.risk_check.errors.includes('final_send_confirmation_required'));
+  assert.equal(adapterCalls,0);
+  await packetService.updatePacket(packet.id,{status:'approved_local_only',failureReason:''});
+  const created=await executor.execute(packet.id,{finalConfirmation:true});
+  assert.equal(created.ok,true);
+  assert.equal(created.packet.status,'executed');
+  assert.equal(created.packet.providerResponseId,'calendar_event_1');
   assert.equal(adapterCalls,1);
   assert.equal(store.valExecutionReceipts[0].status,'succeeded');
 });

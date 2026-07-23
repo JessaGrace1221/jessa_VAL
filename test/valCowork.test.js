@@ -63,7 +63,11 @@ function emailThread(){
     },
     classification:{executive_meaning:'protect_opportunity',why_now:'The MOU needs a clear response.',approval_policy:'approval_required',source_refs:[{source_type:'email_message',source_id:'email_mou',quote_or_summary:'MOU for Forever Freedom',confidence:0.9}]},
     readiness:{status:'needs_context',missing_context:['commercial_or_legal_specifics'],representation_risk:'high'},
-    draftBrief:{single_purpose:'Move the partnership decision forward.',must_include:[]}
+    draftBrief:{single_purpose:'Move the partnership decision forward.',must_include:[]},
+    linkedContexts:[
+      {targetType:'relationship',targetId:'rel_aric',targetName:'Aric'},
+      {targetType:'project',targetId:'project_forever_freedom',targetName:'Forever Freedom onboarding'}
+    ]
   };
 }
 
@@ -81,7 +85,7 @@ function documents(){
   ];
 }
 
-function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents(),hasPg=false,dbQuery,generateConversationReply=async()=>''}={}){
+function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loadedEmailThread=emailThread(),loadedRelationships=relationships(),loadedDocuments=documents(),loadedWitnessingContext=[{id:'witness_1',kind:'teach_val_witnessing_answer',category:'priorities',title:'Witnessing: priorities',summary:'Direct answer from the current Witnessing Session.',detail:'Protect trust and follow through on what matters.',metadata:{source:'teach_val_witnessing_session'}}],hasPg=false,dbQuery,generateConversationReply=async()=>''}={}){
   let store={};
   const applied=[];
   const appliedIdentities=[];
@@ -114,6 +118,7 @@ function serviceFor({loadedProject=project(),loadedTranscript=transcript(),loade
     userId:()=>'user',
     uuid:prefix=>`${prefix}_${Math.random().toString(36).slice(2,9)}`,
     generateConversationReply,
+    loadWitnessingContext:async()=>loadedWitnessingContext,
     loadProject:async id=>id===loadedProject?.projectId ? loadedProject : null,
     loadRelationships:async()=>loadedRelationships,
     loadDocuments:async()=>loadedDocuments,
@@ -222,7 +227,9 @@ function postgresCoworkDb(){
   const tables={
     val_cowork_sessions:new Map(),
     val_cowork_work_items:new Map(),
-    val_cowork_action_receipts:new Map()
+    val_cowork_action_receipts:new Map(),
+    val_cowork_events:new Map(),
+    val_cowork_event_deliveries:new Map()
   };
   const inserts=[];
   async function dbQuery(sql,params=[]){
@@ -234,6 +241,20 @@ function postgresCoworkDb(){
       tables[table].set(row.id,{...(tables[table].get(row.id)||{}),...row});
       inserts.push({table,row:{...tables[table].get(row.id)}});
       return {rows:[{...tables[table].get(row.id)}],rowCount:1};
+    }
+    if(/from val_cowork_event_deliveries where tenant_id=.*event_id=/i.test(sql)){
+      const rows=[...tables.val_cowork_event_deliveries.values()]
+        .filter(item=>String(item.tenant_id)===String(params[0]) && String(item.user_id)===String(params[1]) && String(item.event_id)===String(params[2]))
+        .sort((a,b)=>String(a.created_at || '').localeCompare(String(b.created_at || '')));
+      return {rows:rows.map(row=>({...row})),rowCount:rows.length};
+    }
+    if(/from val_cowork_events\s+where tenant_id=.*status in/i.test(sql)){
+      const statuses=new Set(['recorded','delivery_incomplete']);
+      const rows=[...tables.val_cowork_events.values()]
+        .filter(item=>String(item.tenant_id)===String(params[0]) && String(item.user_id)===String(params[1]) && statuses.has(String(item.status)))
+        .sort((a,b)=>String(a.created_at || '').localeCompare(String(b.created_at || '')))
+        .slice(0,Number(params[2]) || 100);
+      return {rows:rows.map(row=>({...row})),rowCount:rows.length};
     }
     if(/from val_cowork_sessions/i.test(sql)){
       const row=tables.val_cowork_sessions.get(params[0]);
@@ -253,16 +274,23 @@ function postgresCoworkDb(){
 }
 
 test('Co-Work schema and routes are mounted as a durable service',()=>{
-  for(const table of ['val_cowork_sessions','val_cowork_work_items','val_cowork_action_receipts']){
+  for(const table of ['val_cowork_sessions','val_cowork_work_items','val_cowork_action_receipts','val_cowork_events','val_cowork_event_deliveries']){
     assert.match(VAL_COWORK_SQL,new RegExp(`create table if not exists ${table}`));
   }
   assert.match(server,/ensureValCoworkTables/);
   assert.match(server,/registerValCoworkRoutes/);
+  assert.match(server,/valCoworkEvents/);
+  assert.match(server,/valCoworkEventDeliveries/);
+  assert.match(server,/cleanStartDeleteTable\(client,'val_cowork_event_deliveries'/);
+  assert.match(server,/cleanStartDeleteTable\(client,'val_cowork_events'/);
   assert.match(server,/const workstreams=Array\.isArray\(patch\.workstreams\)\?patch\.workstreams:\[\]/);
   assert.match(server,/desiredOutcome,/);
   assert.match(routes,/\/api\/val\/cowork\/entries\/open/);
   assert.match(routes,/\/api\/val\/cowork\/sessions\/:id\/respond/);
   assert.match(routes,/\/api\/val\/cowork\/work-items\/:id\/apply/);
+  assert.match(routes,/\/api\/val\/cowork\/carry-forward/);
+  assert.match(VAL_COWORK_SQL,/val_cowork_event_deliveries_unique_recipient_idx/);
+  assert.match(routes,/reconcileCarryForwardDeliveries/);
   assert.deepEqual(Object.keys(COWORK_ENTRYPOINTS),['project.overview','project.identity','project.onboarding','project.people','project.documents','project.milestones','project.monitoring','project.relationship_nurture','project.why_it_matters','project.risk','project.narrative','project.needs_next','project.sop','project.phase','project.prepared_work','project.workstreams','project.next_move','transcript.working_brief','transcript.action_item','email.thread','relationship.overview','relationship.section','observer.discussion','board.chief_of_staff']);
 });
 
@@ -283,6 +311,24 @@ test('Observer and Chief of Staff conversations resume their own durable message
   assert.equal(answered.session.state.messages.length,2);
   assert.equal(answered.session.state.messages[0].role,'user');
   assert.match(answered.session.state.messages[1].content,/carry that forward/i);
+  assert.equal(answered.carryForward.event.eventType,'conversation_turn');
+  assert.deepEqual(
+    answered.carryForward.deliveries.map((delivery)=>`${delivery.recipientType}:${delivery.recipientId}`).sort(),
+    [
+      'chief_of_staff_packet:chief_of_staff',
+      'drawer:observer_board',
+      'observer_packet:relationships',
+      'observer_packet:witnessing_steward',
+      'round_table:system'
+    ]
+  );
+  assert.equal(answered.carryForward.deliveries.every((delivery)=>delivery.status==='delivered'),true);
+  const observerCarryForward=await service.listCarryForwardForRecipient({recipientType:'observer_packet',recipientId:'relationships'});
+  assert.equal(observerCarryForward.length,1);
+  assert.equal(observerCarryForward[0].eventId,answered.carryForward.event.id);
+  assert.match(observerCarryForward[0].summary,/trust matters more than speed/i);
+  assert.equal(observerCarryForward[0].payloadJson.userMessage,'Remember that trust matters more than speed.');
+  assert.match(observerCarryForward[0].payloadJson.valResponse,/carry that forward/i);
 
   const reopened=await service.openEntry({
     entrypointId:'observer.discussion',
@@ -294,6 +340,9 @@ test('Observer and Chief of Staff conversations resume their own durable message
   assert.equal(reopened.session.id,opened.session.id);
   assert.equal(reopened.session.state.messages.length,2);
   assert.deepEqual(reopened.session.workingBrief.context.evidence,['Refreshed relationship packet']);
+  assert.equal(reopened.session.workingBrief.witnessingContext.status,'available');
+  assert.equal(reopened.session.workingBrief.witnessingContext.directAnswerCount,1);
+  assert.match(reopened.session.workingBrief.witnessingContext.records[0].detail,/Protect trust/i);
 
   const chief=await service.openEntry({
     entrypointId:'board.chief_of_staff',
@@ -301,10 +350,183 @@ test('Observer and Chief of Staff conversations resume their own durable message
     title:'Chat with Your Chief of Staff',
     context:{board:{observers:['Relationships','Projects']}}
   });
+  assert.equal(chief.session.workingBrief.carriedForwardContext.recipient.recipientType,'chief_of_staff_packet');
+  assert.equal(chief.session.workingBrief.carriedForwardContext.recipient.recipientId,'chief_of_staff');
+  assert.equal(chief.session.workingBrief.carriedForwardContext.events.length,1);
+  assert.match(chief.session.workingBrief.carriedForwardContext.events[0].summary,/trust matters more than speed/i);
+  assert.equal(chief.session.workingBrief.carriedForwardContext.events[0].payload.userMessage,'Remember that trust matters more than speed.');
   const chiefAnswered=await service.respond(chief.session.id,{answer:'What hidden opportunity should I notice?'});
   assert.notEqual(chief.session.id,opened.session.id);
   assert.match(chiefAnswered.message,/Board is holding/i);
+  assert.equal(chiefAnswered.carryForward.deliveries.some((delivery)=>delivery.recipientType==='chief_of_staff_packet'),true);
   assert.equal(replies.length,2);
+  assert.match(replies[1].workingBrief.carriedForwardContext.events[0].summary,/trust matters more than speed/i);
+  assert.equal(replies[1].workingBrief.carriedForwardContext.events[0].payload.userMessage,'Remember that trust matters more than speed.');
+});
+
+test('carry-forward reconciliation repairs an interrupted delivery exactly once',async()=>{
+  const harness=serviceFor({generateConversationReply:async()=> 'I will hold that across the system.'});
+  const opened=await harness.service.openEntry({
+    entrypointId:'observer.discussion',
+    scope:{entityType:'observer',entityId:'relationships',sectionId:'observer'},
+    title:'Talk with the Relationships Observer',
+    context:{observer:{name:'Relationships'}}
+  });
+  const answered=await harness.service.respond(opened.session.id,{answer:'Protect the trust in this relationship.'});
+  const event=answered.carryForward.event;
+  const intended=event.payloadJson.carryForwardRecipients;
+  const missingRecipient=intended.find(item=>item.recipientType==='round_table');
+  assert.ok(missingRecipient);
+
+  harness.store.coworkEventDeliveries=harness.store.coworkEventDeliveries.filter(delivery=>!(delivery.eventId===event.id && delivery.recipientType===missingRecipient.recipientType && delivery.recipientId===missingRecipient.recipientId));
+  const storedEvent=harness.store.coworkEvents.find(item=>item.id===event.id);
+  storedEvent.status='delivery_incomplete';
+
+  const repaired=await harness.service.reconcileCarryForwardDeliveries({limit:20});
+  assert.equal(repaired.checked,1);
+  assert.equal(repaired.repaired,1);
+  assert.deepEqual(repaired.incomplete,[]);
+  const deliveriesAfterRepair=harness.store.coworkEventDeliveries.filter(delivery=>delivery.eventId===event.id);
+  assert.equal(deliveriesAfterRepair.length,intended.length);
+  assert.equal(new Set(deliveriesAfterRepair.map(delivery=>`${delivery.recipientType}:${delivery.recipientId}`)).size,intended.length);
+  assert.equal(harness.store.coworkEvents.find(item=>item.id===event.id).status,'delivered');
+
+  const secondPass=await harness.service.reconcileCarryForwardDeliveries({limit:20});
+  assert.equal(secondPass.checked,0);
+  assert.equal(harness.store.coworkEventDeliveries.filter(delivery=>delivery.eventId===event.id).length,intended.length);
+});
+
+test('completed external actions carry provider evidence to every exact linked context',async()=>{
+  const harness=serviceFor();
+  const result=await harness.service.recordExternalActionCompletion({
+    packet:{
+      id:'packet_action_1',actionType:'send_sms',targetSystem:'GHL',
+      sourceContextJson:{projectId:'project_1',relationshipId:'relationship_1',transcriptId:'transcript_1',threadId:'thread_1'},
+      payloadPreviewJson:{contactId:'contact_1',message:'Confirmed.'},
+      sourceRefsJson:[{source_type:'cowork',source_id:'cowork_source_1',quote_or_summary:'Send the confirmed update.',confidence:0.98}]
+    },
+    receipt:{
+      id:'receipt_action_1',packetId:'packet_action_1',status:'succeeded',actionType:'send_sms',targetSystem:'GHL',
+      providerResponseId:'ghl_message_1',providerResponseSummary:'Sent the approved SMS.'
+    },
+    reconciliation:{ok:true},
+    providerResult:{providerResponseId:'ghl_message_1'}
+  });
+  assert.equal(result.event.eventType,'external_action_completed');
+  assert.equal(result.event.payloadJson.externalActionPreviouslyCompleted,true);
+  const recipients=new Set(result.deliveries.map(item=>`${item.recipientType}:${item.recipientId}`));
+  for(const expected of [
+    'chief_of_staff_packet:chief_of_staff','round_table:system','observer_packet:witnessing_steward',
+    'project_packet:project_1','relationship_packet:relationship_1','transcript_packet:transcript_1',
+    'email_thread_packet:thread_1','drawer:project_managers','drawer:relationships','drawer:transcripts','drawer:executive_inbox'
+  ]) assert.equal(recipients.has(expected),true,`missing ${expected}`);
+  const projectEvidence=await harness.service.listCarryForwardForRecipient({recipientType:'project_packet',recipientId:'project_1'});
+  assert.equal(projectEvidence.length,1);
+  assert.equal(projectEvidence[0].eventType,'external_action_completed');
+  assert.match(projectEvidence[0].summary,/approved SMS/i);
+});
+
+test('completed research carries verified evidence to every exact linked context',async()=>{
+  const harness=serviceFor();
+  const result=await harness.service.recordResearchCompletion({
+    candidate:{
+      id:'candidate_research_1',sourceId:'cowork_research_source_1',title:'Research Greg Zlevor',
+      contextJson:{projectId:'project_1',relationshipId:'relationship_1',transcriptId:'transcript_1',threadId:'thread_1',taskId:'task_1'}
+    },
+    artifact:{
+      kind:'research_handoff',completion_status:'complete_for_review',
+      identity:{person_name:'Greg Zlevor',verified_email:'gzlevor@westwoodintl.com'},
+      linked_context:{projectId:'project_1',relationshipId:'relationship_1',transcriptId:'transcript_1',threadId:'thread_1',taskId:'task_1'},
+      continuation_task:{id:'task_1'},
+      verified_findings:[{title:'Verified public profile',summary:'Greg is publicly associated with Westwood International.',source_url:'https://www.westwoodintl.com/about'}],
+      source_results:[{title:'Greg Zlevor',url:'https://www.westwoodintl.com/about',snippet:'President and Founder',identity_confidence:0.96}],
+      source_refs:[{source_type:'outscraper_google_search_result',source_id:'https://www.westwoodintl.com/about',quote_or_summary:'Greg Zlevor: President and Founder',confidence:0.96}]
+    }
+  });
+  assert.equal(result.event.eventType,'research_completed');
+  assert.equal(result.event.payloadJson.researchReady,true);
+  assert.equal(result.event.sourceRefsJson.every(ref=>/^https:\/\//.test(ref.source_id)),true);
+  const recipients=new Set(result.deliveries.map(item=>`${item.recipientType}:${item.recipientId}`));
+  for(const expected of [
+    'chief_of_staff_packet:chief_of_staff','round_table:system','observer_packet:witnessing_steward',
+    'project_packet:project_1','relationship_packet:relationship_1','transcript_packet:transcript_1',
+    'email_thread_packet:thread_1','commitment_packet:task_1',
+    'drawer:project_managers','drawer:relationships','drawer:transcripts','drawer:executive_inbox','drawer:tasks'
+  ]) assert.equal(recipients.has(expected),true,`missing ${expected}`);
+  const relationshipEvidence=await harness.service.listCarryForwardForRecipient({recipientType:'relationship_packet',recipientId:'relationship_1'});
+  assert.equal(relationshipEvidence.length,1);
+  assert.match(relationshipEvidence[0].summary,/Research ready for Greg Zlevor/i);
+  assert.equal(relationshipEvidence[0].payloadJson.sourceResults[0].url,'https://www.westwoodintl.com/about');
+});
+
+test('prepared engineering work carries its brief to Leverage and every exact linked context',async()=>{
+  const harness=serviceFor();
+  const result=await harness.service.recordWorkProductPrepared({
+    candidate:{
+      id:'candidate_code_1',sourceId:'cowork_code_source_1',title:'Build research handoff',
+      contextJson:{projectId:'project_1',relationshipId:'relationship_1',transcriptId:'transcript_1',threadId:'thread_1',taskId:'task_1'},
+      sourceRefsJson:[{source_type:'cowork',source_id:'cowork_code_source_1',quote_or_summary:'Build the research handoff.',confidence:0.98}]
+    },
+    artifact:{
+      kind:'engineering_brief',title:'Build research handoff',completion_status:'ready_for_implementation_review',
+      project:{id:'project_1',name:'VAL'},repository:{name:'JessaGrace1221/jessa_VAL',url:'https://github.com/JessaGrace1221/jessa_VAL',base_branch:'main'},
+      linked_context:{projectId:'project_1',relationshipId:'relationship_1',transcriptId:'transcript_1',threadId:'thread_1',taskId:'task_1'},
+      continuation_task:{id:'task_1'},objective:'Make research durable.',files:['services/valActionOrchestrator.js'],
+      acceptance_criteria:['Research is carried forward.'],test_plan:['Run orchestrator tests.'],missing_inputs:[],
+      github_runtime_connection:'not_connected',source_refs:[{source_type:'transcript',source_id:'transcript_1',quote_or_summary:'Build the research handoff.',confidence:0.95}]
+    }
+  });
+  assert.equal(result.event.eventType,'work_product_prepared');
+  assert.equal(result.event.payloadJson.codeBriefReady,true);
+  assert.equal(result.event.payloadJson.githubRuntimeConnection,'not_connected');
+  const recipients=new Set(result.deliveries.map(item=>`${item.recipientType}:${item.recipientId}`));
+  for(const expected of [
+    'chief_of_staff_packet:chief_of_staff','round_table:system','observer_packet:witnessing_steward',
+    'project_packet:project_1','relationship_packet:relationship_1','transcript_packet:transcript_1',
+    'email_thread_packet:thread_1','commitment_packet:task_1','prepared_work_packet:candidate_code_1',
+    'drawer:project_managers','drawer:relationships','drawer:transcripts','drawer:executive_inbox','drawer:tasks','drawer:leverage'
+  ]) assert.equal(recipients.has(expected),true,`missing ${expected}`);
+  const leverage=await harness.service.listCarryForwardForRecipient({recipientType:'drawer',recipientId:'leverage'});
+  assert.equal(leverage.length,1);
+  assert.match(leverage[0].summary,/ready for implementation review/i);
+  assert.equal(leverage[0].payloadJson.repository.name,'JessaGrace1221/jessa_VAL');
+});
+
+test('completed introductions carry the execution receipt to both linked relationships',async()=>{
+  const harness=serviceFor();
+  const result=await harness.service.recordExternalActionCompletion({
+    packet:{
+      id:'packet_intro_1',actionType:'send_email',targetSystem:'gmail',
+      sourceContextJson:{kind:'introduction_email_draft',isIntroduction:true,relationshipIds:['rel_greg','rel_lindsey']},
+      payloadPreviewJson:{
+        to:'greg@example.com, lindsey@example.com',subject:'Introduction: Greg <> Lindsey',body:'Hi Greg and Lindsey,',
+        recipients:[{email:'greg@example.com',relationshipId:'rel_greg'},{email:'lindsey@example.com',relationshipId:'rel_lindsey'}],
+        isIntroduction:true
+      },
+      sourceRefsJson:[{source_type:'relationship',source_id:'intro_candidate_1',quote_or_summary:'Jessa approved the two-person introduction.',confidence:1}]
+    },
+    receipt:{
+      id:'receipt_intro_1',packetId:'packet_intro_1',status:'succeeded',actionType:'send_email',targetSystem:'gmail',
+      providerResponseId:'gmail_message_1',providerResponseSummary:'Sent the approved introduction.'
+    },
+    reconciliation:{ok:true},
+    providerResult:{providerResponseId:'gmail_message_1'}
+  });
+  const recipients=new Set(result.deliveries.map(item=>`${item.recipientType}:${item.recipientId}`));
+  assert.equal(recipients.has('relationship_packet:rel_greg'),true);
+  assert.equal(recipients.has('relationship_packet:rel_lindsey'),true);
+  assert.equal(recipients.has('chief_of_staff_packet:chief_of_staff'),true);
+  assert.equal(recipients.has('round_table:system'),true);
+  assert.equal(recipients.has('observer_packet:witnessing_steward'),true);
+});
+
+test('production Chief of Staff prompt serializes carried-forward Co-Work context',()=>{
+  assert.match(server,/Durable context carried forward from earlier Co-Work conversations and applied internal work/);
+  assert.match(server,/workingBrief\.carriedForwardContext/);
+  assert.match(server,/event\.payload\?\.userMessage/);
+  assert.match(server,/event\.payload\?\.valResponse/);
+  assert.match(server,/Confirmed Witnessing context that must constrain this conversation/);
+  assert.match(server,/workingBrief\.witnessingContext/);
 });
 
 test('Hearth exposes unresolved tasks with source and prepared-work continuation paths',()=>{
@@ -325,6 +547,13 @@ test('Hearth opens Observer and Chief cards as resumable scoped Co-Work conversa
   assert.match(hearth,/data-observer-cowork="chief-of-staff"/);
   assert.match(hearth,/renderCoworkEntryResult\(result,\{hydrateConversation:true,suppressMessage:true\}\)/);
   assert.match(hearth,/observerButton\.dataset\.observerCowork/);
+  assert.match(hearth,/data-cowork-carry-forward/);
+  assert.match(hearth,/Carried forward/);
+  assert.match(hearthHtml,/data-drawer-carry-forward-projection/);
+  assert.match(hearth,/const \{deliveries = \[\], unavailable = false\} = state \|\| \{\};/);
+  assert.match(hearth,/DRAWER_CARRY_FORWARD_RECIPIENTS/);
+  assert.match(hearth,/\/api\/val\/cowork\/carry-forward\?recipientType=drawer/);
+  assert.match(hearth,/What VAL is carrying/);
 });
 
 test('Postgres Co-Work persistence serializes JSON payloads and restores the saved scoped session',async()=>{
@@ -419,6 +648,19 @@ test('project foundation onboarding is scoped, field-targeted, review-gated, and
   assert.equal(appliedIdentities.length,1);
   assert.equal(appliedIdentities[0].projectId,'project_forever_freedom');
   assert.equal(appliedIdentities[0].owner,'Jessa');
+  assert.equal(applied.carryForward.event.eventType,'applied_update');
+  assert.equal(applied.carryForward.deliveries.some((delivery)=>delivery.recipientType==='project_packet'&&delivery.recipientId==='project_forever_freedom'),true);
+  assert.equal(applied.carryForward.deliveries.some((delivery)=>delivery.recipientType==='drawer'&&delivery.recipientId==='project_managers'),true);
+  assert.equal(applied.carryForward.deliveries.some((delivery)=>delivery.recipientType==='chief_of_staff_packet'),true);
+
+  const reopened=await service.openEntry({
+    entrypointId:'project.identity',
+    scope:{entityType:'project_section',entityId:'project_forever_freedom',sectionId:'identity'}
+  });
+  assert.equal(reopened.session.workingBrief.carriedForwardContext.recipient.recipientType,'project_packet');
+  assert.equal(reopened.session.workingBrief.carriedForwardContext.recipient.recipientId,'project_forever_freedom');
+  assert.equal(reopened.session.workingBrief.carriedForwardContext.events.some((event)=>event.eventType==='applied_update'),true);
+  assert.equal(reopened.session.workingBrief.carriedForwardContext.events.some((event)=>/Applied the project foundation/i.test(event.summary)),true);
 });
 
 test('project people links only existing relationships, records their roles, and makes one owner explicit',async()=>{
@@ -991,6 +1233,8 @@ test('Executive Inbox Co-Work stays scoped to the selected durable thread and pr
   assert.equal(preparedEmailThreadDrafts[0].messageId,'email_mou');
   assert.equal(preparedEmailThreadDrafts[0].threadId,'thread_mou');
   assert.equal(preparedEmailThreadDrafts[0].conversationId,'conversation_mou');
+  assert.equal(ready.carryForward.deliveries.some((delivery)=>delivery.recipientType==='relationship_packet'&&delivery.recipientId==='rel_aric'),true);
+  assert.equal(ready.carryForward.deliveries.some((delivery)=>delivery.recipientType==='project_packet'&&delivery.recipientId==='project_forever_freedom'),true);
 });
 
 test('Executive Inbox Co-Work rejects a missing selected thread instead of borrowing inbox context',async()=>{

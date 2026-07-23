@@ -90,18 +90,25 @@ test('meeting prep resolves context from attendee transcripts without cross-atte
 test('meeting prep Outscraper LinkedIn lookup uses name and organization instead of raw email only',()=>{
   assert.match(server,/const usableDomain=domain&&!\/\(gmail\|googlemail\|yahoo\|outlook\|hotmail\|icloud\|me\|mac\|aol\|protonmail\)/);
   assert.doesNotMatch(server,/const endpointLooksCompany=\/linkedin-posts\/i\.test\(OUTSCRAPER_LINKEDIN_POSTS_URL\)/);
-  assert.match(server,/const query = personalLinkedIn \|\| \[name, organization \|\| usableDomain\]\.filter\(Boolean\)\.join\(' '\) \|\| name \|\| companyLinkedIn \|\| organization \|\| usableDomain \|\| email/);
-  assert.match(server,/OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS/);
-  assert.match(server,/fetchWithTimeout\(url\.toString\(\),\{headers:\{'X-API-KEY':outscraperKey\}\},OUTSCRAPER_LINKEDIN_POSTS_TIMEOUT_MS,'Outscraper LinkedIn posts'\)/);
-  assert.match(server,/filter\(post=>post\.text&&\/linkedin\\\.com\\\/\(posts\|feed\\\/update\|pulse\)\\\/\/i\.test\(post\.url\|\|''\)\)/);
-  assert.doesNotMatch(server,/const weekAgo = Date\.now\(\) - 7\*24\*60\*60\*1000/);
-  assert.match(server,/return \{configured:true, query, postsLastWeek:recentPosts, rawCount:posts\.length\}/);
-  assert.match(server,/await lookupOutscraperLinkedIn\(\{name,email,linkedinUrl:meetingPrepLinkedInKnownProfileUrl/);
+  assert.match(server,/async function resolveLinkedInPublicPost/);
+  assert.match(server,/identity\.name\?`site:linkedin\.com\/posts "\$\{identity\.name\}"`/);
+  assert.match(server,/identity\.slug\?`site:linkedin\.com\/posts "\$\{identity\.slug\}"`/);
+  assert.match(server,/meetingPrepLinkedInResultMatchesAttendee/);
+  assert.match(server,/fetchPublicLinkedInPost\(candidate\)/);
+  assert.match(server,/htmlMetaContent\(html,'og:description'\)/);
+  assert.match(server,/source:'outscraper_google_discovery_and_linkedin_public_post'/);
+  assert.match(server,/async function resolveMeetingPrepLinkedInPublicPost/);
+  assert.match(server,/const knownProfileUrl=meetingPrepLinkedInKnownProfileUrl/);
+  assert.match(server,/identitySource:'stewardship_linkedin_url'/);
+  assert.match(server,/resolveLinkedInProfileByEmail\(input\)/);
+  assert.match(server,/site:linkedin\.com\/in "\$\{email\}"/);
+  assert.match(server,/identitySource:'calendar_email_lookup'/);
+  assert.match(server,/No official LinkedIn profile exists with this attendee's email address/);
   assert.doesNotMatch(server,/cacheStatus:'deferred_to_recent_signal'/);
 });
 
 test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
-  assert.match(server,/const OUTSCRAPER_GOOGLE_SEARCH_URL = process\.env\.OUTSCRAPER_GOOGLE_SEARCH_URL \|\| 'https:\/\/api\.app\.outscraper\.com\/google-search-v3'/);
+  assert.match(server,/const OUTSCRAPER_GOOGLE_SEARCH_URL = process\.env\.OUTSCRAPER_GOOGLE_SEARCH_URL \|\| 'https:\/\/api\.outscraper\.com\/google-search'/);
   assert.match(server,/function meetingPrepPublicSearchQueries/);
   assert.match(server,/email \|\| ''/);
   assert.match(server,/email \? `"\$\{email\}"` : ''/);
@@ -109,7 +116,9 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/email&&name \? `"\$\{email\}" "\$\{name\}"` : ''/);
   assert.match(server,/name&&usableDomain \? `"\$\{name\}" \$\{usableDomain\}` : ''/);
   assert.match(server,/async function lookupOutscraperGoogleSearch/);
-  assert.match(server,/url\.searchParams\.set\('query',query\)/);
+  assert.match(server,/missing\.forEach\(query=>url\.searchParams\.append\('query',query\)\)/);
+  assert.match(server,/url\.searchParams\.set\('pagesPerQuery','1'\)/);
+  assert.match(server,/const batchQueries=Array\.from\(new Set/);
   assert.match(server,/sourceType:'outscraper_google_search_result'/);
   assert.match(server,/function meetingPrepRejectedPublicResult/);
   assert.match(server,/truepeoplesearch\|whitepages\|beenverified\|spokeo/);
@@ -124,12 +133,11 @@ test('meeting prep uses Outscraper Google Search for exact web evidence',()=>{
   assert.match(server,/\$\{name\} LinkedIn \$\{organization\}/);
   assert.match(server,/\$\{name\} LinkedIn posts/);
   assert.match(server,/async function lookupMeetingPrepLinkedInRecentSignal/);
-  assert.match(server,/queries\.slice\(0,4\)/);
+  assert.match(server,/const queries=Array\.from\(new Set\(/);
   assert.match(server,/function meetingPrepLinkedInResultMatchesAttendee/);
   assert.doesNotMatch(server,/meetingPrepSearchResultMatchesAttendee\(result,attendee,contact,profile\)\|\|\/linkedin\\\.com\\\/\(posts\|feed\\\/update\)/);
-  assert.match(server,/OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS/);
-  assert.match(server,/const OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS = Number\(process\.env\.OUTSCRAPER_LINKEDIN_RECENT_TIMEOUT_MS\) \|\| 45000/);
-  assert.match(server,/Meeting Prep LinkedIn recent search/);
+  assert.match(server,/VAL_LINKEDIN_POST_LOOKUP_TIMEOUT_MS/);
+  assert.match(server,/LinkedIn post discovery for/);
   assert.match(server,/OUTSCRAPER_MEETING_PREP_POLL_TIMEOUT_MS/);
   assert.match(server,/Meeting Prep public search/);
   assert.match(server,/function outscraperRequestId/);

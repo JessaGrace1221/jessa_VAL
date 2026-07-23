@@ -39,6 +39,8 @@ const workspaceInputPanel = document.querySelector('.workspace-input-panel');
 const workspacePacketReceipt = document.querySelector('[data-workspace-packet-receipt]');
 const calendarPacketReceipt = document.querySelector('[data-calendar-packet-receipt]');
 const drawerPacketReceipt = document.querySelector('[data-drawer-packet-receipt]');
+const drawerCarryForwardProjection = document.querySelector('[data-drawer-carry-forward-projection]');
+let drawerCarryForwardRequest = 0;
 let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
@@ -100,6 +102,10 @@ const correspondenceAttachmentView = document.querySelector('[data-correspondenc
 const correspondenceLoadingVeil = document.querySelector('[data-correspondence-loading-veil]');
 const correspondenceLoadingStatus = document.querySelector('[data-correspondence-loading-status]');
 const correspondenceSafety = document.querySelector('[data-correspondence-safety]');
+const correspondenceTriggerReceipt = document.querySelector('[data-correspondence-trigger-receipt]');
+const correspondenceTriggerLabel = document.querySelector('[data-correspondence-trigger-label]');
+const correspondenceTriggerStatus = document.querySelector('[data-correspondence-trigger-status]');
+const correspondenceTriggerSummary = document.querySelector('[data-correspondence-trigger-summary]');
 const correspondenceRuleStatus = document.querySelector('[data-correspondence-rule-status]');
 const correspondenceToolsToggle = document.querySelector('[data-correspondence-tools-toggle]');
 const correspondenceToolsPanel = document.querySelector('#correspondence-tools-panel');
@@ -269,7 +275,7 @@ let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connecti
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
-const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
+const selfCalendarEmails = [];
 
 function normalizeTimelineEmail(value = ''){
   const email = String(value || '').trim().toLowerCase();
@@ -544,57 +550,16 @@ function observeHearthClickContracts(){
   observer.observe(document.body, {childList:true, subtree:true});
 }
 
-const linkedinVisibilityItems = [
-  {
-    contact: 'Michele',
-    postPreview: 'Shared a reflection on sustaining creative momentum without overextending.',
-    whyItMatters: 'This is a natural support moment tied to the chapter feedback relationship.',
-    draftComment: 'This is such a clear framing of momentum as something protected, not forced. I especially appreciate the part about staying close to the work without letting it consume the whole day.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Aric',
-    postPreview: 'Posted about turning early ideas into visible traction before the strategy is perfect.',
-    whyItMatters: 'A thoughtful comment reinforces the partnership lane without creating a new ask.',
-    draftComment: 'This is exactly the kind of early visible momentum that helps people believe in a direction before every detail is settled. Strong signal here.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Allen',
-    postPreview: 'Shared assessment notes about founder clarity and operational follow-through.',
-    whyItMatters: 'This connects to the assessment notes already waiting in Velocity.',
-    draftComment: 'The distinction between clarity and follow-through is so useful. The best systems make the next right action easier to see and easier to take.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Lindsey',
-    postPreview: 'Posted a client success story that fits the current relationship-support circle.',
-    whyItMatters: 'Supporting wins keeps the relationship warm without asking for anything.',
-    draftComment: 'Love seeing this result. The care in the work really comes through here, and it is so good to see that effort becoming visible.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Greg',
-    postPreview: 'Shared a short note about proposal clarity and decision timing.',
-    whyItMatters: 'A light public comment can support the relationship while the proposal stays private.',
-    draftComment: 'This is a helpful reminder that clear timing often matters as much as clear language. The decision gets easier when the next step is explicit.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'Priya',
-    postPreview: 'Posted about community health partnerships and practical implementation.',
-    whyItMatters: 'This supports the HealthBridge context without opening a direct follow-up thread.',
-    draftComment: 'This is such a grounded view of partnership. The practical implementation lens is what makes the idea feel real.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  },
-  {
-    contact: 'D3Day',
-    postPreview: 'Announced a programming update that could use a warm visibility lift.',
-    whyItMatters: 'This supports current project visibility while keeping publishing manual.',
-    draftComment: 'This is exciting to see coming together. The programming update makes the event feel even more concrete and useful.',
-    postUrl: 'https://www.linkedin.com/feed/'
-  }
-];
+let linkedinVisibilityItems = [];
+let linkedinEngagementState = {
+  status:'idle',
+  run:null,
+  issues:[],
+  eligibleRelationshipCount:0,
+  preferences:{},
+  schedule:{hour:8,timeZone:'America/New_York'}
+};
+let linkedinEngagementPollTimer = null;
 
 const meetingPrep = {
   lens: 'Meeting Prep',
@@ -628,6 +593,7 @@ const observerBoardState = {
     next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
+    {name: 'Witnessing Steward', truth: 'Holding the Witnessing Session as the governing context for every VAL surface.', evidence: 'Requires direct Witnessing answers, reviewed Teach VAL memory, and delivery receipts before claiming that an instruction has been enacted.', stance: 'Governing context'},
     {name: 'Executive Inbox', truth: 'Not ready to advise from the Board.', evidence: 'Requires a live email packet with sender, thread, relationship, draft, and rule context.', stance: 'Needs packet'},
     {name: 'Relationships', truth: 'Not ready to advise from the Board.', evidence: 'Requires relationship packet evidence, recent signal, source, and missing-context notes.', stance: 'Needs packet'},
     {name: 'Projects', truth: 'Not ready to advise from the Board.', evidence: 'Requires project packet evidence, current phase, next move, owner, and source receipts.', stance: 'Needs packet'},
@@ -2032,6 +1998,32 @@ function stewardshipPersonById(id = ''){
   return stewardshipNetworkPeople().find((item) => item.id === id)?.profile || relationshipIndexSourceProfiles()[id] || relationshipIndexProfiles[id] || null;
 }
 
+function relationshipCoworkIdentifiers(profile = {}, fallback = ''){
+  const query = profile?.query || {};
+  return [
+    profile?.profileId,
+    query.targetId,
+    query.contactId,
+    profile?.contactId,
+    profile?.crmContactId,
+    profile?.personId,
+    profile?.id,
+    profile?.profileKey,
+    query.email,
+    profile?.email,
+    fallback
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+}
+
+function relationshipCoworkIdentifier(profile = {}, fallback = ''){
+  return relationshipCoworkIdentifiers(profile, fallback)[0] || '';
+}
+
+function relationshipCoworkProfileMatches(profile = {}, identifier = ''){
+  const selected = String(identifier || '').trim().toLowerCase();
+  return Boolean(selected && relationshipCoworkIdentifiers(profile).some((value) => value.toLowerCase() === selected));
+}
+
 function stewardshipCleanList(values = [], fallback = ''){
   const seen = new Set();
   const rows = (Array.isArray(values) ? values : [values]).map((item) => {
@@ -2735,6 +2727,7 @@ function renderStewardshipNetworkDetail(profile = null){
     stewardshipNetworkDetail.innerHTML = '<span>Select a person</span><p>VAL will show needs, offers, evidence, and best matches when you choose someone from the Network.</p>';
     return;
   }
+  activeRelationshipProfile = profile;
   const matches = stewardshipBestMatches(profile, 3);
   const enrichment = profile.relationshipEnrichment || profile.relationship_enrichment || {};
   const linkedinUrl = profile.linkedinUrl || profile.linkedin_url || profile.metadata?.linkedinUrl || profile.metadata?.linkedin_url || '';
@@ -2800,6 +2793,22 @@ function openStewardshipDraftReview(a = {}, b = {}, fit = stewardshipIntroFit(a,
     openWorkspaceShell('Introduction not draft-ready', {returnTarget:'relationship'});
     return;
   }
+  const contactA = relationshipContactPayload(a);
+  const contactB = relationshipContactPayload(b);
+  const subject = 'Introduction: ' + (a.name || 'Person A') + ' <> ' + (b.name || 'Person B');
+  const body = stewardshipDraftPreview(a, b, fit).replace(/^Subject:[^\n]*\n+/i, '');
+  const candidate = {
+    id:'intro_' + (contactA.contactId || contactA.email || 'person_a') + '_' + (contactB.contactId || contactB.email || 'person_b'),
+    type:'relationship_introduction_candidate',
+    personA:{name:a.name || contactA.name,email:contactA.email,contactId:contactA.contactId,relationshipId:a.personPacket?.packet_id || contactA.contactId},
+    personB:{name:b.name || contactB.name,email:contactB.email,contactId:contactB.contactId,relationshipId:b.personPacket?.packet_id || contactB.contactId},
+    whyThisMayMatter:fit.because,
+    evidence:fit.evidence || [],
+    requiresApproval:true,
+    noExternalAction:true,
+    draft:{subject,body}
+  };
+  activeIntroDraftCandidate = {profile:a,candidate,subject,draftBody:body};
   setWorkspaceContent({
     lens: 'Introduction Draft',
     title: 'Introduction draft held for review.',
@@ -2823,7 +2832,7 @@ function openStewardshipDraftReview(a = {}, b = {}, fit = stewardshipIntroFit(a,
     placeholder: 'VAL prepared draft language for review.',
     helper: 'Editing this text only changes the review draft. It does not send, expose recipients, write CRM, or create a calendar event.',
     mode: 'intro-draft',
-    value: stewardshipDraftPreview(a, b, fit)
+    value: body
   });
   openWorkspaceShell('Introduction draft review', {returnTarget:'relationship'});
 }
@@ -2909,8 +2918,8 @@ function stewardshipMiniList(title = '', rows = []){
 
 function stewardshipCoworkCard(sectionId = '', title = '', rows = [], profile = {}){
   const cleanRows = stewardshipCleanList(rows, 'Not enough evidence yet.');
-  const relationshipId = profile.id || profile.profileId || profile.profileKey || profile.query?.targetId || '';
-  const relationshipName = profile.name || 'this relationship';
+  const relationshipId = relationshipCoworkIdentifier(profile, stewardshipSelectedNetworkId);
+  const relationshipName = profile.name || profile.displayName || 'this relationship';
   return '<button type="button" class="stewardship-context-card" data-stewardship-cowork-field="' + escapeHtml(sectionId) + '" data-stewardship-cowork-person="' + escapeHtml(relationshipId) + '" title="Update ' + escapeHtml(title.toLowerCase()) + ' for ' + escapeHtml(relationshipName) + ' with VAL"><span class="stewardship-context-card-title">' + escapeHtml(title) + '</span><span class="stewardship-context-card-lines">' + cleanRows.map((line) => '<span>' + escapeHtml(line) + '</span>').join('') + '</span><span class="stewardship-context-card-action">Co-Work with VAL</span></button>';
 }
 
@@ -3449,6 +3458,7 @@ function setProjectCreateOpen(open){
   projectCreateForm.hidden = !open;
   projectCreateToggle.setAttribute('aria-expanded', String(open));
   if(open){
+    renderProjectCreateRelationshipOptions();
     projectCreateForm.querySelector('input[name="name"]')?.focus();
   } else if(projectCreateStatus){
     projectCreateStatus.textContent = '';
@@ -3977,7 +3987,16 @@ function projectRelationshipOptions(){
     if(seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 24);
+  }).slice(0, 200);
+}
+
+function renderProjectCreateRelationshipOptions(){
+  const datalist = document.querySelector('[data-project-create-relationship-options]');
+  if(!datalist) return;
+  datalist.innerHTML = projectRelationshipOptions().map((option) => {
+    const detail = [option.email, option.detail].filter(Boolean).join(' - ');
+    return '<option value="' + escapeHtml(option.name) + '" label="' + escapeHtml(detail) + '"></option>';
+  }).join('');
 }
 
 function projectRelationshipOptionById(id = ''){
@@ -4575,7 +4594,11 @@ function renderProjectRelationshipPicker(){
   const options = projectRelationshipOptions();
   return [
     '<div class="project-relationship-picker" aria-label="Choose relationships for this project">',
-      options.map((option) => '<button type="button" data-project-relationship-choice="' + escapeHtml(option.name) + '"><strong>' + escapeHtml(option.name) + '</strong>' + (option.detail ? '<span>' + escapeHtml(option.detail) + '</span>' : '') + '</button>').join(''),
+      '<input type="search" data-project-relationship-filter placeholder="Search people and relationships" autocomplete="off" aria-label="Search people and relationships">',
+      '<div class="project-relationship-results">',
+        options.map((option) => '<button type="button" data-project-relationship-choice="' + escapeHtml(option.name) + '" data-project-relationship-search="' + escapeHtml([option.name, option.detail].filter(Boolean).join(' ').toLowerCase()) + '"><strong>' + escapeHtml(option.name) + '</strong>' + (option.detail ? '<span>' + escapeHtml(option.detail) + '</span>' : '') + '</button>').join(''),
+        options.length ? '' : '<small>No relationships are available yet.</small>',
+      '</div>',
     '</div>'
   ].join('');
 }
@@ -4597,9 +4620,12 @@ function renderProjectOwnerControl(project = activeProjectProfile, owner = proje
         '<strong>' + escapeHtml(ownerName) + '</strong>',
         '<small>' + escapeHtml(ownerDetail) + '</small>',
       '</div>',
-      '<div class="project-owner-choices" aria-label="Change project owner">',
-        choiceButtons || '<small>No relationship options loaded yet.</small>',
-      '</div>',
+      '<details class="project-owner-options">',
+        '<summary>Change owner</summary>',
+        '<div class="project-owner-choices" aria-label="Change project owner">',
+          choiceButtons || '<small>No relationship options loaded yet.</small>',
+        '</div>',
+      '</details>',
       '<details class="project-owner-create">',
         '<summary>Create new relationship owner</summary>',
         '<form data-project-owner-create-form>',
@@ -4618,8 +4644,15 @@ function renderProjectPeopleAndOwner(project = activeProjectProfile, relationshi
   const owner = projectOwnerAssignment(project, relationships);
   const relationshipList = relationships.length
     ? '<ul>' + projectRelationshipPacketItems(project, relationships).map((person) => '<li><strong>' + escapeHtml(person.relationship_name || 'Relationship') + '</strong><small>' + escapeHtml(person.role_in_project || 'Connected to this work') + '</small></li>').join('') + '</ul>'
-    : renderProjectRelationshipPicker();
-  return renderProjectOwnerControl(project, owner) + relationshipList;
+    : '<p class="project-people-empty">No other people are attached yet.</p>';
+  return [
+    renderProjectOwnerControl(project, owner),
+    relationshipList,
+    '<details class="project-people-manage">',
+      '<summary>' + (relationships.length ? 'Add or change people' : 'Add people') + '</summary>',
+      renderProjectRelationshipPicker(),
+    '</details>'
+  ].join('');
 }
 
 function projectPinProjectKey(project = activeProjectProfile){
@@ -4700,7 +4733,6 @@ function renderProjectPinControl(project = activeProjectProfile){
   return [
     '<div class="project-manager-hero-actions">',
       '<button type="button" data-project-edit-open>Edit project</button>',
-      '<button type="button" data-project-cowork-scope="project_overview" aria-label="Co-Work with VAL on this project">Co-Work</button>',
       '<button type="button" data-project-pin-open>Put a pin in it</button>',
     '</div>',
     renderProjectEditForm(project),
@@ -4720,6 +4752,130 @@ function projectSpecificText(value, project = {}, fallback = ''){
 
 function projectHasSpecificSignal(value, project = {}){
   return Boolean(projectSpecificText(value, project, ''));
+}
+
+function projectManagerExecutiveSection({field = 'project_overview', eyebrow = '', title = '', summary = '', body = '', className = ''} = {}){
+  return [
+    '<section class="project-manager-executive-section ' + escapeHtml(className) + '" data-project-section="' + escapeHtml(field) + '">',
+      '<header>',
+        '<div>',
+          eyebrow ? '<span>' + escapeHtml(eyebrow) + '</span>' : '',
+          '<h5>' + escapeHtml(title) + '</h5>',
+          summary ? '<p>' + escapeHtml(summary) + '</p>' : '',
+        '</div>',
+        '<button type="button" data-project-cowork-field="' + escapeHtml(field) + '">Discuss with VAL</button>',
+      '</header>',
+      '<div class="project-manager-executive-grid">' + body + '</div>',
+    '</section>'
+  ].join('');
+}
+
+function projectCompletedWorkItems(project = {}){
+  const metadata = projectMetadataObject(project);
+  const values = [project.actionReceipts, project.deliveryReceipts, project.completedWork, metadata.actionReceipts, metadata.deliveryReceipts, metadata.completedWork];
+  return values.flatMap((value) => Array.isArray(value) ? value : []).map((item) => {
+    if(typeof item === 'string') return item;
+    return projectCleanText(item?.title || item?.summary || item?.action || item?.receipt || item?.message);
+  }).filter(Boolean);
+}
+
+function projectInterviewClarityItems(project = {}, packet = {}){
+  const identity = packet.project_identity_packet || {};
+  const next = packet.project_next_action_packet || {};
+  const interview = packet.project_interview_packet || {};
+  const relationships = Array.isArray(packet.project_relationships_packet) ? packet.project_relationships_packet : [];
+  const owner = projectOwnerAssignment(project, relationships.map((item) => item.relationship_name).filter(Boolean));
+  const items = [];
+  const outcome = projectCleanText(project.desiredOutcome || project.outcome || project.purpose || identity.purpose);
+  const nextMove = projectSpecificText(next.next_action, project, '');
+  if(!outcome) items.push('The outcome this project must create.');
+  if(!owner?.name) items.push('Who is accountable for moving it forward.');
+  if(!relationships.length) items.push('Which people or relationships belong in this work.');
+  if(!nextMove) items.push('The next concrete move and when it should happen.');
+  if(projectOnboardingIncomplete(project) && interview.current_question){
+    const question = projectCleanText(interview.current_question);
+    if(question && !items.some((item) => projectSimilarText(item, question))) items.unshift(question);
+  }
+  return [...new Set(items)].slice(0, 5);
+}
+
+function projectManagerReadoutItem(label = '', value = '', detail = ''){
+  return [
+    '<div class="project-manager-readout-item">',
+      '<span>' + escapeHtml(label) + '</span>',
+      '<strong>' + escapeHtml(value) + '</strong>',
+      detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
+    '</div>'
+  ].join('');
+}
+
+function projectManagerRecordList(items = [], empty = 'Nothing is recorded yet.'){
+  return '<ul>' + projectManagerList(items, empty) + '</ul>';
+}
+
+function projectManagerTaskItems(project = {}, packet = {}){
+  const values = [
+    ...(Array.isArray(project.tasks) ? project.tasks : []),
+    ...(Array.isArray(packet.project_commitments_packet) ? packet.project_commitments_packet : []),
+    ...(Array.isArray(project.openLoops) ? project.openLoops : [])
+  ];
+  if(!values.length && packet.project_next_action_packet?.next_action){
+    values.push({
+      title:packet.project_next_action_packet.next_action,
+      owner:packet.project_next_action_packet.owner,
+      due_at:packet.project_next_action_packet.due_at,
+      status:'open'
+    });
+  }
+  const seen = new Set();
+  return values.map((item) => {
+    const source = typeof item === 'string' ? {title:item} : (item || {});
+    const title = projectCleanText(source.title || source.task || source.action || source.description || source.commitment || source.summary || source.next_action);
+    const statusText = projectCleanText(source.status || source.state || source.task_status, 'open').toLowerCase();
+    const status = /complete|completed|done|resolved|closed/.test(statusText)
+      ? 'done'
+      : (/wait|blocked|pending|external/.test(statusText) ? 'waiting' : 'open');
+    const owner = projectCleanText(source.owner_name || source.owner || source.assignee || source.assignedTo || source.responsible, 'Owner not confirmed');
+    const due = projectCleanText(source.due_at || source.dueAt || source.due_date || source.dueDate || source.deadline);
+    return {title,status,owner,due};
+  }).filter((item) => {
+    const key = item.title.toLowerCase();
+    if(!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function projectManagerTaskList(project = {}, packet = {}){
+  const tasks = projectManagerTaskItems(project, packet);
+  const counts = tasks.reduce((summary, task) => {
+    summary[task.status] += 1;
+    return summary;
+  }, {open:0,waiting:0,done:0});
+  const rows = tasks.length ? tasks.map((task) => {
+    const due = task.due ? commitmentDueLabel(task.due) : 'No date set';
+    return [
+      '<li data-project-task-state="' + escapeHtml(task.status) + '">',
+        '<span class="project-manager-task-state" aria-label="' + escapeHtml(task.status) + '"></span>',
+        '<div><strong>' + escapeHtml(task.title) + '</strong><small>' + escapeHtml(task.owner) + ' · ' + escapeHtml(due) + '</small></div>',
+        '<span>' + escapeHtml(task.status === 'done' ? 'Done' : (task.status === 'waiting' ? 'Waiting' : 'Open')) + '</span>',
+      '</li>'
+    ].join('');
+  }).join('') : '<li class="project-manager-task-empty"><p>No project tasks are recorded yet. Tell VAL the next move in the Project Interview and it will appear here.</p></li>';
+  return [
+    '<section class="project-manager-tasks" aria-label="Project tasks">',
+      '<header>',
+        '<div><span>Project tasks</span><h5>What needs to move</h5><p>A clear working list drawn from this project\'s recorded tasks, commitments, and next move.</p></div>',
+        '<div class="project-manager-task-counts" aria-label="Task summary">',
+          '<span><strong>' + counts.open + '</strong>Open</span>',
+          '<span><strong>' + counts.waiting + '</strong>Waiting</span>',
+          '<span><strong>' + counts.done + '</strong>Done</span>',
+        '</div>',
+      '</header>',
+      '<ul class="project-manager-task-list">' + rows + '</ul>',
+      '<footer><p>Add, change, or close a task by telling VAL what changed.</p><button type="button" data-project-cowork-field="project_interview">Update tasks with VAL</button></footer>',
+    '</section>'
+  ].join('');
 }
 
 function renderProjectManagerProfile(project = {}){
@@ -4749,17 +4905,15 @@ function renderProjectManagerProfile(project = {}){
   const seasonLabel = needsOnboarding ? 'Blank until shaped' : (relationships.length ? 'Relationship attached' : 'Ready to shape');
   const nextMove = needsOnboarding ? PROJECT_ONBOARDING_FIRST_QUESTION : projectSpecificText(next.next_action, project, 'Define the first concrete outcome and next action.');
   const whyNext = needsOnboarding ? 'Answer this once, then VAL can turn the project into a clean manager packet.' : projectSpecificText(next.why_now, project, relationships.length ? 'Start by clarifying what this project should move for ' + relationships[0] + '.' : 'Start by giving VAL the outcome, owner, and next move.');
-  const detailCards = [
-    projectManagerDetailCard('people_involved', 'People involved', renderProjectPeopleAndOwner(project, relationships)),
-    projectManagerDetailCard('prepared_work', 'Prepared work', prepared.length ? '<ul>' + projectManagerList(prepared.map((item)=>item.title || item.kindName || item.kind || item.what_val_prepared || item.summary || 'Prepared work waiting for review')) + '</ul>' : '<p>No prepared work is proposed yet. Choose the next reviewable artifact VAL should prepare.</p>'),
-    projectManagerDetailCard('documents_sources', 'Documents / sources', documents.concat(graph).length ? '<ul>' + projectManagerList(documents.concat(graph)) + '</ul>' : '<p>No document evidence is linked yet. Link an existing receipt from Documents.</p>'),
-    projectManagerDetailCard('risk_blocker', 'Risk / blocker', projectManagerRiskCard(packet.project_risk_packet))
-  ].filter(Boolean);
+  const movement = packet.project_movement_packets || [];
+  const completed = projectCompletedWorkItems(project);
+  const preparedTitles = prepared.map((item) => item.title || item.kindName || item.kind || item.what_val_prepared || item.summary || 'Prepared work waiting for review');
+  const sourceItems = documents.concat(graph);
   if(projectTitle) projectTitle.textContent = identity.canonical_name || 'Project Managers';
   if(projectSubtitle) projectSubtitle.textContent = relationshipSubtitle
     ? 'Project manager view with ' + relationshipSubtitle + ' attached.'
     : 'Project manager view. Add the people, outcome, and first next move VAL should coordinate.';
-  projectManagerProfile.innerHTML = [
+  const hero = [
     '<section class="project-manager-hero" data-project-manager-family="' + escapeHtml(assignedProjectManager.family || 'white') + '" style="' + escapeHtml(projectManagerColorStyle(assignedProjectManager)) + '">',
       '<div class="project-mark" aria-hidden="true">' + escapeHtml(project.initials || initialsFromName(identity.canonical_name)) + '</div>',
       '<div>',
@@ -4777,49 +4931,75 @@ function renderProjectManagerProfile(project = {}){
         '</div>',
         renderProjectPinControl(project),
       '</div>',
-    '</section>',
-    renderProjectRoundTableFocus(overviewFocus),
-    onboardingIncomplete ? renderProjectOnboardingPanel(project, interview) : '',
-    renderProjectRoundTableOverview(packet, needsOnboarding),
-    '<section class="project-manager-operating-system" aria-label="Project operating system">',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="sop_fit">',
-        '<span>Operating System</span>',
-        '<strong>' + escapeHtml(sop.sop_name) + '</strong>',
-        '<p>' + escapeHtml(sop.fit_reason || sop.when_to_use) + '</p>',
-        sop.known_deviations?.length ? '<small>Deviations: ' + escapeHtml(sop.known_deviations.join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_phase">',
-        '<span>Current Phase</span>',
-        '<strong>' + escapeHtml(sop.current_phase) + '</strong>',
-        '<p>' + escapeHtml(sop.phase_evidence || (sop.default_phases || []).slice(0, 4).join(' -> ')) + '</p>',
-        sop.phase_exit_condition || sop.next_phase_trigger ? '<small>' + escapeHtml([sop.phase_exit_condition ? 'Exit: ' + sop.phase_exit_condition : '', sop.next_phase_trigger ? 'Next: ' + sop.next_phase_trigger : ''].filter(Boolean).join(' | ')) + '</small>' : '',
-        projectCoworkChip(),
-      '</article>',
-      '<article class="project-manager-clickable project-manager-os-card" tabindex="0" role="button" data-project-cowork-field="project_interview">',
-        '<span>Project Interview</span>',
-        '<strong>' + escapeHtml(interview.missing_fields.length ? 'Needs ' + interview.missing_fields.join(', ').replace(/_/g, ' ') : 'Ready to manage') + '</strong>',
-        '<p>' + escapeHtml(interview.current_question) + '</p>',
-        projectCoworkChip(),
-      '</article>',
-    '</section>',
-    '<section class="project-manager-judgment" aria-label="Project Manager judgment">',
-      projectManagerCard('What this is', identity.canonical_name, projectSummary),
-      projectManagerCard('Why it matters', needsOnboarding ? 'Needs executive outcome' : (importance.strategic_importance || 'Needs strategic judgment'), needsOnboarding ? 'Blank until onboarding answers define the stakes.' : (importance.why_it_matters || 'Name the concrete consequence or opportunity before VAL treats this as strategic.'), [importance.why_now ? 'Why now: ' + importance.why_now : '', importance.evidence_summary ? 'Basis: ' + importance.evidence_summary : '', importance.confidence ? 'Confidence: ' + importance.confidence : ''].filter(Boolean).join(' | ')),
-      projectManagerCard('Next move', nextMove, whyNext, next.due_at ? 'Due: ' + next.due_at : ''),
-    '</section>',
-    '<section class="project-manager-sop-grid" aria-label="SOP workstreams and monitoring">',
-      projectManagerDetailCard('workstreams', 'Workstreams', '<ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul>'),
-      projectManagerDetailCard('milestones', 'Milestones', '<ul>' + projectManagerMilestoneList(sop.standard_milestones, 'VAL needs the milestones for this project.') + '</ul>'),
-      projectManagerDetailCard('monitoring_rules', 'Monitoring after launch', '<ul>' + projectManagerMonitoringRuleList(packet.project_monitoring_packet) + '</ul>'),
-      projectManagerDetailCard('relationship_nurture', 'Relationship nurture', '<ul>' + projectManagerRelationshipNurtureList(packet.project_relationship_nurture_packet) + '</ul>'),
-    '</section>',
-    detailCards.length ? '<section class="project-manager-columns" aria-label="Project details">' + detailCards.join('') + '</section>' : '',
-    '<section class="project-manager-story" aria-label="Project story">',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="working_narrative"><span>Working narrative</span><p>' + escapeHtml(projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary)) + '</p>' + projectCoworkChip() + '</div>',
-      '<div class="project-manager-clickable" tabindex="0" role="button" data-project-cowork-field="what_val_needs_next"><span>What VAL needs next</span><p>' + escapeHtml(interview.current_question) + '</p>' + projectCoworkChip() + '</div>',
     '</section>'
   ].join('');
+  if(onboardingIncomplete){
+    projectManagerProfile.innerHTML = [
+      hero,
+      '<section class="project-manager-interview" aria-label="Project Interview">',
+        '<div><span>Project Interview</span><h5>Tell VAL what matters. VAL will structure the rest.</h5><p>Speak naturally about what is changing, what is already decided, or what still feels unclear. VAL will keep asking only what is needed and update this project for you.</p></div>',
+        renderProjectOnboardingPanel(project, interview),
+        sourceItems.length ? '<small>Evidence already attached: ' + escapeHtml(sourceItems.slice(0, 3).join(' | ')) + '</small>' : '<small>No source evidence is attached yet. You can add it during the interview.</small>',
+      '</section>'
+    ].join('');
+    return;
+  }
+  const clarityItems = projectInterviewClarityItems(project, packet);
+  const owner = projectOwnerAssignment(project, relationships);
+  const currentTruth = projectCleanText(packet.project_narrative_packet.current_reality || judgment.current_reality || projectSummary, projectSummary);
+  const witnessed = movement.map((item) => item.what_changed || item.why_it_may_matter).filter(Boolean);
+  const interviewPanel = [
+    '<section class="project-manager-interview" aria-label="Project Interview">',
+      '<div><span>Project Interview</span><h5>Your project manager starts here.</h5><p>Tell VAL what changed, ask a question, or correct the plan. VAL will update the project, keep needling toward clarity, and bring back only what needs your judgment.</p></div>',
+      '<button type="button" data-project-cowork-field="project_interview">Continue Project Interview</button>',
+      '<small>Voice and text are available. You do not need to maintain the sections below.</small>',
+    '</section>'
+  ].join('');
+  const atAGlance = [
+    '<section class="project-manager-readout" aria-label="Project at a glance">',
+      '<header><span>Project at a glance</span><h5>What VAL understands</h5></header>',
+      '<div class="project-manager-readout-grid">',
+        projectManagerReadoutItem('Current truth', currentTruth, overviewFocus.detail || ''),
+        projectManagerReadoutItem('Where it stands', sop.current_phase || statusLabel, sop.phase_evidence || sop.fit_reason || ''),
+        projectManagerReadoutItem('Next move', nextMove, whyNext),
+      '</div>',
+    '</section>'
+  ].join('');
+  const taskList = projectManagerTaskList(project, packet);
+  const workReadout = [
+    '<section class="project-manager-work-readout" aria-label="Handled by VAL">',
+      '<header><span>Handled by VAL</span><h5>What is already moving</h5><p>Prepared work remains private until review. Completed work appears only with a receipt.</p></header>',
+      '<div class="project-manager-work-columns">',
+        '<div><strong>Witnessed</strong>' + projectManagerRecordList(witnessed, 'VAL is watching this project. No meaningful change needs your attention right now.') + '</div>',
+        '<div><strong>Prepared</strong>' + projectManagerRecordList(preparedTitles, 'Nothing is waiting for your review.') + '</div>',
+        '<div><strong>Completed</strong>' + projectManagerRecordList(completed, 'No completed action receipt is attached yet.') + '</div>',
+      '</div>',
+    '</section>'
+  ].join('');
+  const clarity = [
+    '<section class="project-manager-clarity" aria-label="Still needs clarity">',
+      '<div><span>Still needs clarity</span><h5>' + (clarityItems.length ? 'A few things are not settled yet.' : 'VAL has enough context to coordinate this project.') + '</h5>',
+      clarityItems.length
+        ? '<ul>' + clarityItems.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul><p>You do not need to fill out this page. Continue the Project Interview and VAL will wrap these up with you.</p>'
+        : '<p>Nothing is waiting on you right now. Return to the interview whenever the project changes or you want to think something through.</p>',
+      '</div>',
+      '<button type="button" data-project-cowork-field="project_interview">' + (clarityItems.length ? 'Wrap this up with VAL' : 'Return to Project Interview') + '</button>',
+    '</section>'
+  ].join('');
+  const record = [
+    '<details class="project-manager-record">',
+      '<summary><span>Project record</span><strong>People, plan, evidence, and history</strong></summary>',
+      '<div class="project-manager-record-grid">',
+        '<section><span>Owner and people</span><strong>' + escapeHtml(owner?.name || 'Not confirmed') + '</strong>' + projectManagerRecordList(relationships, 'No additional people are attached yet.') + '</section>',
+        '<section><span>Workstreams</span><ul class="project-manager-workstream-list">' + projectManagerWorkstreamList(sop.default_workstreams) + '</ul></section>',
+        '<section><span>Milestones</span><ul>' + projectManagerMilestoneList(sop.standard_milestones) + '</ul></section>',
+        '<section><span>Sources</span>' + projectManagerRecordList(sourceItems, 'No document evidence is linked yet.') + '</section>',
+        '<section><span>Monitoring</span><ul>' + projectManagerMonitoringRuleList(packet.project_monitoring_packet) + '</ul></section>',
+        '<section><span>Operating approach</span><strong>' + escapeHtml(sop.sop_name) + '</strong><p>' + escapeHtml(sop.fit_reason || sop.when_to_use) + '</p></section>',
+      '</div>',
+    '</details>'
+  ].join('');
+  projectManagerProfile.innerHTML = [hero, interviewPanel, atAGlance, taskList, workReadout, clarity, record].join('');
 }
 
 function renderProjectManagerEmptyState(){
@@ -5517,6 +5697,38 @@ function renderCoworkEntryResult(result = {}, options = {}){
           ? renderCoworkEmailThreadItem(workItem)
         : renderCoworkWorkstreamsItem(workItem);
     if(item) response.insertAdjacentHTML('beforeend', item);
+  }
+  response?.querySelectorAll?.('[data-cowork-carry-forward]').forEach((node) => node.remove());
+  const deliveredTo = Array.isArray(result.carryForward?.deliveries)
+    ? result.carryForward.deliveries.filter((delivery) => delivery?.status === 'delivered')
+    : [];
+  if(response && deliveredTo.length){
+    const humanDestinations = [];
+    const destinationLabels = {
+      chief_of_staff_packet:'your Chief of Staff',
+      round_table:'the Round Table',
+      project_packet:'the linked project',
+      relationship_packet:'the linked relationship',
+      transcript_packet:'the transcript record',
+      email_thread_packet:'the email thread',
+      observer_packet:'this Observer',
+      prepared_work_packet:'Prepared Work',
+      commitment_packet:'your task list'
+    };
+    deliveredTo.forEach((delivery) => {
+      const label = destinationLabels[delivery.recipientType];
+      if(label && !humanDestinations.includes(label)) humanDestinations.push(label);
+    });
+    const visibleDestinations = humanDestinations.slice(0,4);
+    const remainder = Math.max(0,humanDestinations.length-visibleDestinations.length);
+    const destinationText = visibleDestinations.join(', ') + (remainder ? ' and ' + remainder + ' more relevant place' + (remainder === 1 ? '' : 's') : '');
+    response.insertAdjacentHTML('beforeend',[
+      '<p class="cowork-carry-forward" data-cowork-carry-forward role="status">',
+      '<span aria-hidden="true">&#10003;</span>',
+      '<strong>Carried forward</strong>',
+      destinationText ? '<small>Held by ' + escapeHtml(destinationText) + '.</small>' : '',
+      '</p>'
+    ].join(''));
   }
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
   const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
@@ -8153,8 +8365,34 @@ async function createProjectFromDrawer(event){
     projectCreateStatus.textContent = 'Project creation needs the local VAL server. The form has not saved anything yet.';
     return;
   }
-  projectCreateStatus.textContent = 'Creating project intake...';
+  projectCreateStatus.textContent = 'Creating the project shell...';
   try{
+    const ownerName = projectCreateFormValue(payload, 'ownerRelationship');
+    const selectedRelationship = projectCreateFormValue(payload, 'relationships');
+    const relationshipName = projectCreateFormValue(payload, 'relationshipName');
+    const relationshipEmail = projectCreateFormValue(payload, 'relationshipEmail');
+    const relationshipDetail = projectCreateFormValue(payload, 'relationshipDetail');
+    let createdRelationshipName = '';
+    if(relationshipName || relationshipEmail){
+      projectCreateStatus.textContent = 'Creating the relationship first...';
+      const created = await postJson('/api/relationships/create', {
+        name:relationshipName,
+        email:relationshipEmail,
+        detail:relationshipDetail,
+        summary:relationshipDetail || 'Created while starting a Project Manager interview.',
+        source:'project_creation',
+        noExternalAction:true
+      });
+      const option = created?.relationship ? rememberProjectOwnerRelationship(created.relationship) : null;
+      createdRelationshipName = option?.name || created?.relationship?.name || relationshipName || relationshipEmail;
+    }
+    const relationships = Array.from(new Set([ownerName, selectedRelationship, createdRelationshipName].map((value) => String(value || '').trim()).filter(Boolean)));
+    payload.set('ownerRelationship', ownerName || createdRelationshipName);
+    payload.set('relationships', relationships.join(', '));
+    payload.set('needsProjectOnboarding', 'true');
+    payload.set('createdFrom', 'hearth_project_interview');
+    payload.set('onboardingQuestion', PROJECT_ONBOARDING_FIRST_QUESTION);
+    projectCreateStatus.textContent = 'Creating the project and opening its interview...';
     const result = await postFormData('/api/projects/create', payload);
     const project = projectProfileFromIndexItem(result.project || result.dossier?.card || {});
     if(project.id){
@@ -8170,6 +8408,7 @@ async function createProjectFromDrawer(event){
       updateProjectFileReceipt();
       setProjectCreateOpen(false);
       if(projectCreateStatus) projectCreateStatus.textContent = '';
+      await openProjectOnboardingCowork(projectManagerProfile?.querySelector('[data-project-cowork-field="project_interview"]') || projectCreateToggle);
     }
   }catch(error){
     projectCreateStatus.textContent = 'Project was not created: ' + error.message;
@@ -8241,10 +8480,12 @@ function correspondenceThreadMessagesFromSource(source = {}, fallback = {}){
   const messages = conversation.messages || source.messages || source.threadMessages || source.thread_messages || [];
   if(Array.isArray(messages) && messages.length){
     return messages.slice(0, 8).map((message) => ({
+      messageId: message.messageId || message.message_id || message.id || '',
       from: message.from?.name || message.fromName || message.from_name || message.senderName || message.sender_name || message.sender || message.author || message.from?.email || 'Email',
       date: message.date || message.receivedAt || message.received_at || message.createdAt || message.created_at || '',
       bodyHtml: sanitizeCorrespondenceEmailHtml(message.bodyHtml || message.body_html || message.htmlBody || message.html_body || message.raw?.bodyHtml || ''),
-      body: correspondenceCompactText(message.body || message.bodyText || message.body_text || message.rawText || message.raw_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 3600)
+      body: correspondenceCompactText(message.body || message.bodyText || message.body_text || message.rawText || message.raw_text || message.bodyPreview || message.body_preview || message.snippet || message.preview || message.text || message.content || '', 3600),
+      triggerReceipt: message.triggerReceipt || message.trigger_receipt || {}
     })).filter((message) => message.body || message.bodyHtml);
   }
   const latest = conversation.latest_inbound || conversation.latestInbound || source.latestInbound || source.latest_inbound || {};
@@ -9316,11 +9557,15 @@ async function hydrateSelectedCorrespondenceThread(item = activeCorrespondenceIt
     if(token !== correspondenceThreadHydrationToken || correspondenceThreadIdentity(activeCorrespondenceItem) !== identity) return;
     const thread = result.thread || {};
     const messages = correspondenceThreadMessagesFromSource({messages:thread.messages || [], conversationContext:{messages:thread.messages || []}}, item);
+    const selectedSourceMessage = (thread.messages || []).find((message) => String(message.messageId || message.message_id || message.id || '') === String(thread.messageId || messageId))
+      || (thread.messages || [])[thread.messages?.length - 1]
+      || {};
     const existingDraft = thread.existingDraft || thread.existing_draft || {};
     const updated = {
       ...item,
       threadHydrated:true,
       threadMessages:messages.length ? messages : item.threadMessages,
+      triggerReceipt:selectedSourceMessage.triggerReceipt || selectedSourceMessage.trigger_receipt || item.triggerReceipt || {},
       draftBody:item.draftBody || existingDraft.body || '',
       draftId:item.draftId || existingDraft.id || '',
       raw:{...(item.raw || {}), selectedThread:thread}
@@ -9871,6 +10116,32 @@ function renderCorrespondenceIntelligence(item = activeCorrespondenceItem){
   if(correspondenceRulesPanel && !correspondenceRulesPanel.hidden) renderCorrespondenceRulesPanel();
 }
 
+function renderCorrespondenceTriggerReceipt(item = activeCorrespondenceItem){
+  if(!correspondenceTriggerReceipt) return;
+  const receipt = item?.triggerReceipt || {};
+  const status = String(receipt.status || '').trim();
+  if(!item || !status || status === 'not_applicable'){
+    correspondenceTriggerReceipt.hidden = true;
+    correspondenceTriggerReceipt.removeAttribute('data-state');
+    return;
+  }
+  const labels = {
+    no_action_needed:'No action needed',
+    action_detected:'Action detected',
+    needs_context:'Needs context',
+    prepared_for_review:'Prepared for review',
+    awaiting_approval:'Awaiting approval',
+    completed:'Completed',
+    failed:'Review incomplete',
+    not_reviewed:'Not reviewed yet'
+  };
+  correspondenceTriggerReceipt.hidden = false;
+  correspondenceTriggerReceipt.dataset.state = status;
+  if(correspondenceTriggerLabel) correspondenceTriggerLabel.textContent = status === 'failed' ? 'VAL review' : 'VAL reviewed';
+  if(correspondenceTriggerStatus) correspondenceTriggerStatus.textContent = labels[status] || 'Action review complete';
+  if(correspondenceTriggerSummary) correspondenceTriggerSummary.textContent = receipt.summary || 'VAL reviewed this email for anything that needs to move.';
+}
+
 function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   activeCorrespondenceItem = item || currentCorrespondenceItems[0] || null;
   renderCorrespondenceList();
@@ -9887,6 +10158,7 @@ function renderCorrespondenceBrief(item = activeCorrespondenceItem){
   setCorrespondenceField('source', sourceLabel);
   setCorrespondenceField('relationship-state', relationshipState);
   setCorrespondenceField('decision-summary', correspondenceConversationSummary(selected));
+  renderCorrespondenceTriggerReceipt(selected);
   const hasDraft = !!String(selected?.draftBody || '').trim();
   setCorrespondenceField('draft-title', selected && hasDraft ? 'Reply: ' + (selected.title || 'prepared draft') : 'Reply for review');
   setCorrespondenceField('draft-note', selected?.draftFailureMessage || (selected && hasDraft ? 'Editable private draft. Nothing sends until approved.' : 'No private draft is waiting for review.'));
@@ -12190,17 +12462,29 @@ function introDraftCandidates(profile = {}){
   return normalizedIntroCandidates([...(review.whoNeedsThisPerson || []), ...(review.whoThisPersonNeeds || [])]).slice(0, 3);
 }
 
+function introDraftSubject(profile = {}, candidate = {}){
+  const personA = candidate.personA || {};
+  const personB = candidate.personB || candidate.other || candidate.person || {};
+  const nameA = personA.name || profile.name || 'VAL relationship';
+  const nameB = personB.name || introCandidateName(candidate) || 'relationship';
+  return String(candidate.draft?.subject || 'Introduction: ' + nameA + ' <> ' + nameB).trim();
+}
+
 function introDraftBody(profile = {}, candidate = {}){
   const userName = 'Jessa';
-  const person = introCandidateName(candidate) || 'there';
-  const firstName = person.split(/\s+/)[0] || person;
+  const personA = candidate.personA || {};
+  const personB = candidate.personB || candidate.other || candidate.person || {};
+  const nameA = personA.name || profile.name || 'there';
+  const nameB = personB.name || introCandidateName(candidate) || 'there';
+  const firstA = nameA.split(/\s+/)[0] || nameA;
+  const firstB = nameB.split(/\s+/)[0] || nameB;
   const why = introCandidateReason(candidate) || 'I thought there may be useful overlap in what you are each carrying right now.';
+  const supplied = String(candidate.draft?.body || '').trim();
+  if(supplied) return supplied;
   return [
-    'Subject: Introduction: ' + (profile.name || 'VAL relationship') + ' <> ' + person,
+    'Hi ' + firstA + ' and ' + firstB + ',',
     '',
-    'Hi ' + firstName + ',',
-    '',
-    'I wanted to make a thoughtful introduction because I think there may be a useful reason for you and ' + (profile.name || 'this person') + ' to know one another.',
+    'I wanted to make a thoughtful introduction because I think there may be a useful reason for you to know one another.',
     '',
     why,
     '',
@@ -12208,6 +12492,26 @@ function introDraftBody(profile = {}, candidate = {}){
     '',
     userName
   ].join('\n');
+}
+
+function introDraftParts(value = '', fallbackSubject = ''){
+  const text = String(value || '').trim();
+  const lines = text.split(/\r?\n/);
+  const subjectLine = /^Subject:\s*(.+)$/i.exec(lines[0] || '');
+  return {
+    subject:String(subjectLine?.[1] || fallbackSubject || '').trim(),
+    body:(subjectLine ? lines.slice(1).join('\n') : text).trim()
+  };
+}
+
+function introRecipientRows(value = {}){
+  const recipients = Array.isArray(value.recipients) ? value.recipients : [];
+  return recipients.map((person) => ({
+    name:String(person?.name || '').trim(),
+    email:String(person?.email || person?.address || '').trim(),
+    contactId:String(person?.contactId || person?.contact_id || '').trim(),
+    relationshipId:String(person?.relationshipId || person?.relationship_id || '').trim()
+  })).filter((person) => person.name || person.email);
 }
 
 function relationshipIntroSourceContext(profile = {}){
@@ -12250,7 +12554,7 @@ function openIntroDraftReview(candidateIndex = 0){
     openWorkspaceShell('Stewardship move not draft-ready', {returnTarget:'relationship'});
     return;
   }
-  activeIntroDraftCandidate = {profile,candidate,draftBody:introDraftBody(profile,candidate)};
+  activeIntroDraftCandidate = {profile,candidate,subject:introDraftSubject(profile,candidate),draftBody:introDraftBody(profile,candidate)};
   setWorkspaceContent({
     lens: 'Stewardship Move Review',
     title: 'Introduction draft held for review.',
@@ -12434,10 +12738,26 @@ function openRelationshipFullFile(profile = {}){
 }
 
 async function openRelationshipOverviewCowork(profile = activeRelationshipProfile){
-  const selected = profile || activeRelationshipProfile || relationshipProfiles.aric;
-  const relationshipId = selected?.id || selected?.profileId || selected?.profileKey || selected?.contactId || selected?.crmContactId || '';
-  if(!relationshipId || !canUseApi) return;
+  const selected = profile || stewardshipPersonById(stewardshipSelectedNetworkId) || activeRelationshipProfile || null;
+  const relationshipId = relationshipCoworkIdentifier(selected, stewardshipSelectedNetworkId);
+  if(!selected || !relationshipId){
+    openContextualCoworkSession({
+      returnTarget:'relationship',
+      title:'Prepare next relationship move with VAL',
+      meaning:'VAL needs one selected Network relationship before opening this Co-Work.',
+      context:['Return to Stewardship and select the person whose relationship packet you want to discuss.'],
+      recommendation:'Choose one person so VAL can keep the conversation scoped and source-grounded.',
+      placeholder:'Select a person in Stewardship first...',
+      heading:'Select one relationship',
+      detail:'No relationship context was opened or changed.',
+      publicDetail:'Scoped to Stewardship: no person selected.',
+      lockContext:true
+    });
+    appendHomeCoworkMessage('val','Select one person in Stewardship, then open Co-Work with VAL again. Nothing was changed.',{replace:true});
+    return;
+  }
   const relationshipName = selected.name || selected.displayName || 'this relationship';
+  activeRelationshipProfile = selected;
   activeCoworkEntry = {entrypointId:'relationship.overview',sessionId:'',workItemId:'',relationshipId,status:'opening'};
   openContextualCoworkSession({
     returnTarget:'relationship',
@@ -12487,9 +12807,26 @@ function stewardshipRelationshipSectionValues(profile = {}, sectionId = ''){
 async function openStewardshipRelationshipSectionCowork(sectionId = '', relationshipId = ''){
   const section = String(sectionId || '').trim().toLowerCase();
   const sectionLabel = stewardshipRelationshipSectionLabels[section];
-  const selected = stewardshipPersonById(relationshipId) || activeRelationshipProfile || null;
-  const durableId = selected?.id || selected?.profileId || selected?.profileKey || selected?.query?.targetId || relationshipId || '';
-  if(!sectionLabel || !selected || !durableId || !canUseApi) return;
+  const selectedFromList = stewardshipPersonById(relationshipId) || stewardshipPersonById(stewardshipSelectedNetworkId);
+  const selectedFromDetail = relationshipCoworkProfileMatches(activeRelationshipProfile, relationshipId || stewardshipSelectedNetworkId) ? activeRelationshipProfile : null;
+  const selected = selectedFromList || selectedFromDetail || null;
+  const durableId = relationshipCoworkIdentifier(selected, relationshipId || stewardshipSelectedNetworkId);
+  if(!sectionLabel || !selected || !durableId){
+    openContextualCoworkSession({
+      returnTarget:'relationship',
+      title:'Update Stewardship context with VAL',
+      meaning:'VAL needs one selected person and one Stewardship card before opening this Co-Work.',
+      context:['Return to Network, select a person, and choose Needs, Offers, Relationship, or Evidence.'],
+      recommendation:'Choose the exact card you want to update so VAL does not blend relationship context.',
+      placeholder:'Select a person and Stewardship card first...',
+      heading:'Select one Stewardship card',
+      detail:'No relationship context was opened or changed.',
+      publicDetail:'Scoped to Stewardship: incomplete selection.',
+      lockContext:true
+    });
+    appendHomeCoworkMessage('val','Select one person and one Stewardship card, then open Co-Work with VAL again. Nothing was changed.',{replace:true});
+    return;
+  }
   const relationshipName = selected.name || selected.displayName || 'this relationship';
   const currentValues = stewardshipRelationshipSectionValues(selected, section).slice(0, 5);
   activeRelationshipProfile = selected;
@@ -12901,7 +13238,7 @@ async function openDrawerCoworkFromIcon(event){
   }
   if(mode === 'relationship'){
     drawerCoworkIcon.dataset.valVariablePacket = 'relationship_packet';
-    await openRelationshipOverviewCowork(activeRelationshipProfile);
+    await openRelationshipOverviewCowork(stewardshipPersonById(stewardshipSelectedNetworkId) || activeRelationshipProfile);
     return;
   }
   if(mode === 'project'){
@@ -13110,7 +13447,7 @@ function timelineTranscriptKnownTitle(transcript = {}){
 }
 
 function timelineTranscriptTitle(transcript = {}){
-  const rawTitle = String(transcript.meetingTitle || transcript.title || 'Transcript').trim();
+  const rawTitle = String(transcript.sourceTitle || transcript.meetingTitle || transcript.title || 'Transcript').trim();
   if(transcript.krispNative) return timelineCompactText(rawTitle || 'Transcript', 96);
   const summary = timelineSummaryObject(transcript);
   const fromSummary = timelineFirstSentence(summary.executiveSummary || summary.clientSummary || '', '');
@@ -13743,7 +14080,11 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
     resetTimelineTranscriptDetailScroll();
     if(openFirst && currentTimelineTranscriptItems[0]?.id) void openTimelineTranscript(currentTimelineTranscriptItems[0].id);
     const message = data.refresh?.message || data.refresh?.warning || '';
+    const automaticMessage = data.automaticSync?.lastCheckedAt
+      ? data.automaticSync.message + ' Last checked ' + timelineEventDateLabel(data.automaticSync.lastCheckedAt) + '.'
+      : data.automaticSync?.message || '';
     if(message) setTimelineTranscriptActionStatus(message, data.refresh?.warning ? 'danger' : 'success');
+    else if(automaticMessage) setTimelineTranscriptActionStatus(automaticMessage, data.automaticSync?.status === 'retrying' ? 'danger' : 'success');
   }catch(error){
     if(timelineStatusCount) timelineStatusCount.textContent = 'Transcript archive unavailable';
     if(timelineEventList) timelineEventList.innerHTML = '<article class="empty"><span>Unable to load transcripts</span><p>' + escapeHtml(error.message || 'Transcript archive unavailable.') + '</p></article>';
@@ -15586,6 +15927,7 @@ function setWorkspaceContent({lens,title,meaning,understanding,recommendation,ac
   if(!/home co-work/i.test(String(label || ''))) deskWorkspace.classList.remove('home-cowork-mode');
   if(!/board of observers/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('observer-board-mode');
   if(!/task workspace/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('task-workspace-mode');
+  if(!/linkedin visibility/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('linkedin-engagement-mode');
   const preserveHeldCoworkContext = /co-work|cowork/i.test(String(lens || '') + ' ' + String(title || ''));
   const normalizedWorkspace = (suppressClarityStandard || preserveHeldCoworkContext)
     ? {lens,title,meaning,understanding, recommendation, actions, sourceItem, cardType}
@@ -15675,6 +16017,104 @@ function renderCalendarPacketReceiptStrip(packet = null){
 
 function renderDrawerPacketReceiptStrip(packet = null){
   renderPacketReceiptInto(drawerPacketReceipt, packet);
+  if(!packet) renderDrawerCarryForwardProjection(null);
+}
+
+const DRAWER_CARRY_FORWARD_RECIPIENTS = Object.freeze({
+  'drawer:executive_inbox':'executive_inbox',
+  'drawer:projects':'project_managers',
+  'drawer:relationships':'relationships',
+  'drawer:timeline':'transcripts',
+  'drawer:tasks':'tasks'
+});
+
+function carryForwardSourceLabel(entrypointId = ''){
+  const entrypoint = String(entrypointId || '');
+  if(entrypoint.startsWith('project.')) return 'Project Managers Co-Work';
+  if(entrypoint.startsWith('relationship.')) return 'Stewardship Co-Work';
+  if(entrypoint.startsWith('transcript.')) return 'Transcript Co-Work';
+  if(entrypoint === 'email.thread') return 'Executive Inbox Co-Work';
+  if(entrypoint === 'board.chief_of_staff') return 'Chief of Staff';
+  if(entrypoint === 'observer.discussion') return 'Board of Observers';
+  return 'Co-Work with VAL';
+}
+
+function carryForwardDisplayText(delivery = {}){
+  const payload = delivery.payloadJson && typeof delivery.payloadJson === 'object' ? delivery.payloadJson : {};
+  const candidate = delivery.eventType === 'applied_update'
+    ? delivery.summary
+    : payload.valResponse || delivery.summary || payload.userMessage;
+  return String(candidate || 'VAL retained this context for the next useful decision.')
+    .replace(/^User:\s*.*?\s+VAL:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 320);
+}
+
+function carryForwardTime(value = ''){
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+function renderDrawerCarryForwardProjection(state = {}){
+  const {deliveries = [], unavailable = false} = state || {};
+  if(!drawerCarryForwardProjection) return;
+  const unique = [];
+  const seen = new Set();
+  for(const delivery of deliveries){
+    if(!delivery?.eventId || delivery.deliveryStatus !== 'delivered' || seen.has(delivery.eventId)) continue;
+    seen.add(delivery.eventId);
+    unique.push(delivery);
+  }
+  if(!unique.length && !unavailable){
+    drawerCarryForwardProjection.hidden = true;
+    drawerCarryForwardProjection.innerHTML = '';
+    return;
+  }
+  const recent = unique.slice(0,5);
+  const status = unavailable ? 'Refresh unavailable' : `${unique.length} held insight${unique.length === 1 ? '' : 's'}`;
+  drawerCarryForwardProjection.hidden = false;
+  drawerCarryForwardProjection.innerHTML = [
+    '<details>',
+      '<summary>',
+        '<span class="drawer-carry-forward-mark" aria-hidden="true"></span>',
+        '<span><strong>What VAL is carrying</strong><small>' + escapeHtml(status) + '</small></span>',
+        '<span class="drawer-carry-forward-chevron" aria-hidden="true"></span>',
+      '</summary>',
+      '<div class="drawer-carry-forward-body">',
+        unavailable
+          ? '<p>VAL could not refresh this drawer\'s carried context. Nothing was discarded; reopen the drawer to try again.</p>'
+          : recent.map((delivery) => [
+              '<article>',
+                '<div>',
+                  '<strong>' + escapeHtml(carryForwardSourceLabel(delivery.entrypointId)) + '</strong>',
+                  '<time>' + escapeHtml(carryForwardTime(delivery.createdAt)) + '</time>',
+                '</div>',
+                '<p>' + escapeHtml(carryForwardDisplayText(delivery)) + '</p>',
+              '</article>'
+            ].join('')).join(''),
+      '</div>',
+    '</details>'
+  ].join('');
+}
+
+async function hydrateDrawerCarryForwardProjection(drawerAction = ''){
+  const recipientId = DRAWER_CARRY_FORWARD_RECIPIENTS[drawerAction];
+  const requestId = ++drawerCarryForwardRequest;
+  if(!recipientId){
+    renderDrawerCarryForwardProjection(null);
+    return;
+  }
+  try{
+    const result = await getJson('/api/val/cowork/carry-forward?recipientType=drawer&recipientId=' + encodeURIComponent(recipientId) + '&limit=30');
+    if(requestId !== drawerCarryForwardRequest) return;
+    renderDrawerCarryForwardProjection({deliveries:Array.isArray(result.deliveries) ? result.deliveries : []});
+  }catch(error){
+    if(requestId !== drawerCarryForwardRequest) return;
+    console.warn('[hearth] carry-forward projection unavailable', error.message);
+    renderDrawerCarryForwardProjection({unavailable:true});
+  }
 }
 
 function lensSequenceLabels(workspace = {}, roomName = ''){
@@ -16660,10 +17100,15 @@ async function hydrateClientConfig(){
     return;
   }
   try{
-    const config = await getJson('/api/public-config', {cache:'no-store'}).catch(() => getJson('/api/config', {cache:'no-store'}));
+    const [config, auth] = await Promise.all([
+      getJson('/api/public-config', {cache:'no-store'}).catch(() => getJson('/api/config', {cache:'no-store'})),
+      getJson('/api/auth/me', {cache:'no-store'}).catch(() => null)
+    ]);
     const flags = config?.featureFlags || {};
     clientFeatureLocks.projectManagersComingSoon = Boolean(flags.projectManagersComingSoon);
     clientFeatureLocks.linkedinHomeComingSoon = Boolean(flags.linkedinHomeComingSoon);
+    const ownerEmail = String(auth?.user?.email || '').trim().toLowerCase();
+    if(ownerEmail && !selfCalendarEmails.includes(ownerEmail)) selfCalendarEmails.push(ownerEmail);
   }catch(error){
     console.warn('[hearth] client config unavailable', error.message);
   }
@@ -16773,6 +17218,7 @@ function drawerIndexPacketReceipt({node = null, packetName = '', action = '', la
   };
   lastHearthPacketReceipt = packet;
   renderDrawerPacketReceiptStrip(packet);
+  void hydrateDrawerCarryForwardProjection(action);
   return packet;
 }
 
@@ -17035,35 +17481,130 @@ function preparedArtifactHomeCopy(item){
 
 function updateLinkedInWidget(){
   if(linkedinReadyCount) linkedinReadyCount.textContent = String(linkedinVisibilityItems.length);
+  if(!linkedinWidget) return;
+  const copy = linkedinWidget.querySelector('.linkedin-widget-copy small');
+  if(!copy) return;
+  if(linkedinEngagementState.status === 'running') copy.textContent = 'VAL is checking today\'s public posts';
+  else if(linkedinVisibilityItems.length) copy.textContent = 'Thoughtful comments ready for review';
+  else if(linkedinEngagementState.eligibleRelationshipCount) copy.textContent = 'No verified new posts yet';
+  else copy.textContent = 'Add LinkedIn URLs in Stewardship';
+}
+
+function linkedinReviewLabel(){
+  const run = linkedinEngagementState.run || {};
+  if(linkedinEngagementState.status === 'running') return 'Reviewing public posts now';
+  if(run.completedAt){
+    const date = new Date(run.completedAt);
+    if(!Number.isNaN(date.getTime())) return 'Last reviewed ' + date.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }
+  return 'Daily review at 8:00 AM';
+}
+
+async function hydrateLinkedInEngagement({render = false} = {}){
+  const response = await fetch('/api/val/linkedin/engagement', {credentials:'same-origin'});
+  const data = await response.json().catch(() => ({}));
+  if(!response.ok || !data.ok) throw new Error(data.error || 'LinkedIn review could not load.');
+  linkedinVisibilityItems = Array.isArray(data.items) ? data.items : [];
+  linkedinEngagementState = {
+    status:data.run?.status || 'idle',
+    run:data.run || null,
+    issues:Array.isArray(data.issues) ? data.issues : [],
+    eligibleRelationshipCount:Number(data.eligibleRelationshipCount || 0),
+    preferences:data.preferences || {},
+    schedule:data.schedule || {hour:8,timeZone:'America/New_York'}
+  };
+  updateLinkedInWidget();
+  if(render) renderLinkedInEngagementList();
+  if(linkedinEngagementState.status === 'running') pollLinkedInEngagement();
+  return linkedinEngagementState;
+}
+
+function pollLinkedInEngagement(){
+  clearTimeout(linkedinEngagementPollTimer);
+  linkedinEngagementPollTimer = setTimeout(async () => {
+    try{
+      await hydrateLinkedInEngagement({render:true});
+    }catch(error){
+      linkedinEngagementState.status = 'failed';
+      linkedinEngagementState.issues = [{message:error.message}];
+      renderLinkedInEngagementList();
+    }
+  }, 5000);
+}
+
+function renderLinkedInStyleForm(){
+  const rules = linkedinEngagementState.preferences || {};
+  const field = (name, fallback = '') => escapeHtml(String(rules[name] || fallback));
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.add('linkedin-preview-list');
+  scraperPreviewList.innerHTML = [
+    '<section class="linkedin-style-shell">',
+      '<header class="linkedin-workspace-toolbar">',
+        '<div><span>Comment style</span><strong>Teach VAL how you join a conversation</strong><small>These rules shape every prepared comment. You will always review and post manually.</small></div>',
+        '<button type="button" data-linkedin-style-back>Back to posts</button>',
+      '</header>',
+      '<form class="linkedin-style-form" data-linkedin-style-form>',
+        '<label><span>How should your comments sound?</span><small>Describe the voice someone who knows you would recognize.</small><textarea name="tone" rows="3">' + field('tone') + '</textarea></label>',
+        '<label><span>What expertise should VAL naturally bring in?</span><small>Name the experience or point of view you can credibly add.</small><textarea name="expertise" rows="3">' + field('expertise') + '</textarea></label>',
+        '<div class="linkedin-style-row">',
+          '<label><span>Which emojis feel like you?</span><small>Leave blank if you rarely use them.</small><input name="emojis" value="' + field('emojis') + '" placeholder="For example: ✨ 💚"></label>',
+          '<label><span>How long should comments be?</span><small>VAL will stay within this range.</small><select name="length">' + ['1-2 sentences','2-4 sentences','Short paragraph'].map(option => '<option' + (String(rules.length || '2-4 sentences').toLowerCase() === option.toLowerCase() ? ' selected' : '') + '>' + option + '</option>').join('') + '</select></label>',
+        '</div>',
+        '<label><span>What should VAL never sound like?</span><small>Include words, habits, or tones that do not feel like you.</small><textarea name="avoid" rows="3">' + field('avoid') + '</textarea></label>',
+        '<label><span>Comments you have written that feel right</span><small>Paste a few examples. VAL learns the pattern, not just the wording.</small><textarea name="examples" rows="5">' + field('examples') + '</textarea></label>',
+        '<label><span>Anything else VAL should remember?</span><small>Add relationship boundaries, expertise rules, or personal preferences.</small><textarea name="additionalGuidance" rows="3">' + field('additionalGuidance') + '</textarea></label>',
+        '<div class="linkedin-style-actions"><button type="submit">Save comment style</button><span data-linkedin-style-status aria-live="polite"></span></div>',
+      '</form>',
+    '</section>'
+  ].join('');
 }
 
 function renderLinkedInEngagementList(){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.add('linkedin-preview-list');
+  const running = linkedinEngagementState.status === 'running';
+  const issues = linkedinEngagementState.issues || [];
+  const emptyMessage = !linkedinEngagementState.eligibleRelationshipCount
+    ? 'Add LinkedIn profile URLs to people in Stewardship. VAL will include them in the next daily review.'
+    : running
+      ? 'VAL is checking the latest public posts for your Stewardship relationships. This may take a minute or two.'
+      : 'No verified new public posts were found in the latest review. You can still open each person\'s LinkedIn activity from the notes below.';
   scraperPreviewList.innerHTML = [
-    '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
-      linkedinVisibilityItems.map((item, index) => (
+    '<section class="linkedin-engagement-shell">',
+      '<header class="linkedin-workspace-toolbar">',
+        '<div><span>Relationship visibility</span><strong>LinkedIn comments prepared with care</strong><small>' + escapeHtml(linkedinReviewLabel()) + ' · ' + linkedinEngagementState.eligibleRelationshipCount + ' Stewardship profile' + (linkedinEngagementState.eligibleRelationshipCount === 1 ? '' : 's') + ' connected</small></div>',
+        '<div><button type="button" data-linkedin-refresh' + (running ? ' disabled' : '') + '>' + (running ? 'Reviewing…' : 'Refresh now') + '</button><button type="button" data-linkedin-style-open>Comment style</button></div>',
+      '</header>',
+      running ? '<div class="linkedin-review-progress" aria-live="polite"><i></i><div><strong>VAL is reviewing today\'s public posts</strong><span>This may take a minute or two. You can leave this page and return when it is ready.</span></div></div>' : '',
+      !linkedinVisibilityItems.length ? '<div class="linkedin-engagement-empty"><strong>' + (running ? 'Gathering today\'s posts' : 'Nothing needs a comment right now') + '</strong><p>' + escapeHtml(emptyMessage) + '</p></div>' : '',
+      '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
+      linkedinVisibilityItems.map((item, index) => {
+        const hasDraft = Boolean(String(item.draftComment || '').trim());
+        return (
         '<article class="linkedin-engagement-item">' +
           '<div class="linkedin-engagement-head">' +
             '<span class="linkedin-logo small" aria-hidden="true">in</span>' +
             '<div><strong>' + escapeHtml(item.contact) + '</strong><small>' + escapeHtml(item.whyItMatters) + '</small></div>' +
           '</div>' +
-          '<p>' + escapeHtml(item.postPreview) + '</p>' +
-          '<blockquote>' + escapeHtml(item.draftComment) + '</blockquote>' +
+          '<div class="linkedin-post-excerpt"><span>Public post excerpt</span><p>' + escapeHtml(item.postPreview) + '</p></div>' +
+          '<div class="linkedin-comment-draft"><span>' + (hasDraft ? 'Prepared comment' : 'Draft needs attention') + '</span><blockquote>' + escapeHtml(hasDraft ? item.draftComment : 'VAL found the post, but the grounded comment draft did not finish. Open the post now or refresh the review to try the draft again.') + '</blockquote></div>' +
           '<div class="linkedin-engagement-actions">' +
-            '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' +
-            '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' +
+            (hasDraft ? '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' : '') +
+            '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open post</a>' +
           '</div>' +
         '</article>'
-      )).join(''),
-    '</div>'
+        );
+      }).join(''),
+      '</div>',
+      issues.length ? '<details class="linkedin-review-notes"><summary>' + issues.length + ' relationship' + (issues.length === 1 ? '' : 's') + ' without a verified new post</summary><div>' + issues.map(issue => '<p><strong>' + escapeHtml(issue.contact || 'Relationship') + '</strong><span>' + escapeHtml(issue.message || 'No recent public post was found.') + '</span>' + (issue.profileUrl ? '<a href="' + escapeHtml(issue.profileUrl) + '" target="_blank" rel="noopener">Open LinkedIn activity</a>' : '') + '</p>').join('') + '</div></details>' : '',
+    '</section>'
   ].join('');
 }
 
 function openLinkedInEngagementWorkspace(){
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
-    title: linkedinVisibilityItems.length + ' LinkedIn posts are ready for support.',
+    title: linkedinVisibilityItems.length ? linkedinVisibilityItems.length + ' LinkedIn comment' + (linkedinVisibilityItems.length === 1 ? ' is' : 's are') + ' ready for review.' : 'Stay present in the relationships that matter.',
     meaning: 'VAL prepared comments and visibility opportunities, but LinkedIn publishing remains manual to protect the account and the relationship.',
     understanding: [
       'Posts to comment on: ' + linkedinVisibilityItems.length,
@@ -17073,11 +17614,11 @@ function openLinkedInEngagementWorkspace(){
     recommendation: 'Copy only the comments that feel true, then open LinkedIn and paste manually.',
     actions: [
       {label: 'Co-Work with VAL', workflow: 'cowork:think'},
-      {label: 'Teach LinkedIn style', workflow: 'valOnboarding:linkedin_strategy'},
       {label: 'Back to Home', workflow: 'cancel:meeting'}
     ],
     label: 'LinkedIn visibility workspace'
   });
+  deskWorkspace.classList.add('linkedin-engagement-mode');
   renderLinkedInEngagementList();
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
 }
@@ -19042,10 +19583,6 @@ function updateValRoutingPanel({supportCircle = [], documentExamples = [], os = 
 
 async function hydrateValDrawer(){
   if(!valLiveStatus) return;
-  if(document.querySelector('.val-witnessing-entry')){
-    valLiveStatus.textContent = 'Nothing leaves this session. VAL will show what it notices before anything becomes memory.';
-    return;
-  }
   if(!canUseApi){
     valLiveStatus.textContent = 'Local preview: VAL can show onboarding routes here; live VAL OS counts appear when the local service is connected.';
     return;
@@ -19065,6 +19602,9 @@ async function hydrateValDrawer(){
     const supportCircle = dedupeOnboardingRouteItems(onboardingImportItems(onboarding, 'support_circle').concat(osRouteItems(os, 'support_circle')));
     const documentExamples = dedupeOnboardingRouteItems(onboardingImportItems(onboarding, 'documents_and_examples').concat(osRouteItems(os, 'documents_and_examples')));
     const onboardingCount = ['ai_history_import','current_projects','important_people','working_agreements','linkedin_strategy','support_circle','documents_and_examples'].filter((category) => importedCategories.has(category)).length;
+    const witnessingImports = imports.filter((row) => String(row.category || '').startsWith('witness_'));
+    const witnessingButton = document.querySelector('#val-detail [data-workflow-action="valWitnessingBegin"]');
+    if(witnessingButton) witnessingButton.textContent = witnessingImports.length ? 'Review or update Witnessing Session' : 'Begin Witnessing Session';
     setValStatusField(
       'onboarding',
       onboardingCount ? onboardingCount + ' context areas imported' : 'Context transfer ready',
@@ -19081,6 +19621,7 @@ async function hydrateValDrawer(){
       [supportCircle.length ? supportCircle.length + ' LinkedIn support item' + (supportCircle.length === 1 ? '' : 's') : '', documentExamples.length ? documentExamples.length + ' document/template reference' + (documentExamples.length === 1 ? '' : 's') : ''].filter(Boolean).join(' · ') || 'Approved onboarding memory and future corrections will appear here for review.'
     );
     valLiveStatus.textContent = [
+      witnessingImports.length ? witnessingImports.length + ' Witnessing section' + (witnessingImports.length === 1 ? '' : 's') + ' saved' : 'Witnessing Session ready',
       Number(os.counts?.draftBehaviors || 0) + ' behavior candidate' + (Number(os.counts?.draftBehaviors || 0) === 1 ? '' : 's'),
       Number(os.counts?.learningNeedsReview || 0) + ' learning approval' + (Number(os.counts?.learningNeedsReview || 0) === 1 ? '' : 's'),
       Number(os.counts?.approvedBehaviors || 0) + ' approved behavior' + (Number(os.counts?.approvedBehaviors || 0) === 1 ? '' : 's'),
@@ -19496,13 +20037,29 @@ function renderValWitnessingPhaseMap(index = 0){
         const isComplete = index > phase.end;
         const isActive = phase.id === activePhase.id;
         return [
-          '<span class="' + (isComplete ? 'complete ' : '') + (isActive ? 'active' : '') + '">',
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(valWitnessingCards[phase.start].id) + '" class="' + (isComplete ? 'complete ' : '') + (isActive ? 'active' : '') + '"' + (isActive ? ' aria-current="step"' : '') + '>',
             '<b>' + escapeHtml(phase.label) + '</b>',
             '<small>' + escapeHtml(phase.time) + '</small>',
-          '</span>'
+          '</button>'
         ].join('');
       }).join('<i aria-hidden="true"></i>'),
     '</div>'
+  ].join('');
+}
+
+function renderValWitnessingSectionNavigator(index = 0){
+  return [
+    '<details class="val-witnessing-section-navigator">',
+      '<summary>Choose a section to review or update</summary>',
+      '<div>',
+        valWitnessingCards.map((card, cardIndex) => [
+          '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(card.id) + '" class="' + (cardIndex === index ? 'active' : '') + '"' + (cardIndex === index ? ' aria-current="step"' : '') + '>',
+            '<span>' + String(cardIndex + 1) + '</span>',
+            '<b>' + escapeHtml(card.title) + '</b>',
+          '</button>'
+        ].join('')).join(''),
+      '</div>',
+    '</details>'
   ].join('');
 }
 
@@ -19626,7 +20183,11 @@ const valWitnessingConnectionCopy = {
   google: {keyLabel:'Google',fieldLabel:'',placeholder:'',actionLabel:'Connect Google'},
   microsoft: {keyLabel:'Outlook',fieldLabel:'',placeholder:'',actionLabel:'Connect Outlook'},
   krisp: {keyLabel:'Krisp transcripts',fieldLabel:'',placeholder:'',actionLabel:'Connect Krisp'},
-  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'}
+  openai: {keyLabel:'OpenAI',fieldLabel:'OpenAI API key',placeholder:'sk-...',actionLabel:'Connect OpenAI'},
+  outscraper: {keyLabel:'Outscraper',fieldLabel:'Outscraper API key',placeholder:'Paste API key',actionLabel:'Connect Outscraper'},
+  rocketreach: {keyLabel:'RocketReach',fieldLabel:'RocketReach API key',placeholder:'Paste API key',actionLabel:'Connect RocketReach'},
+  apollo: {keyLabel:'Apollo',fieldLabel:'Apollo API key',placeholder:'Paste API key',actionLabel:'Connect Apollo'},
+  custom: {keyLabel:'Custom API',fieldLabel:'API key or access token',placeholder:'Paste secure credential',actionLabel:'Add custom connection'}
 };
 
 function valWitnessingConnectionCard(connection = {}){
@@ -19721,6 +20282,59 @@ async function ensureOpenAIConnectionBeforeWitnessing(cardId = 'meeting_val', op
   }catch(error){
     valLiveStatus.textContent = 'Could not check the OpenAI connection: ' + error.message;
     return false;
+  }
+}
+
+function setValAccessGate(required, message = ''){
+  const gate = document.querySelector('[data-val-access-gate]');
+  if(!gate) return;
+  document.body.classList.remove('val-access-checking');
+  document.body.classList.toggle('val-openai-required', required);
+  gate.hidden = !required;
+  const form = gate.querySelector('[data-val-access-gate-form]');
+  if(form) form.hidden = !required;
+  if(required){
+    const title = gate.querySelector('[data-val-access-gate-title]');
+    const copy = gate.querySelector('[data-val-access-gate-copy]');
+    if(title) title.textContent = 'Connect OpenAI to enter VAL.';
+    if(copy) copy.textContent = 'OpenAI powers VAL\'s reasoning, Witnessing Session, drafts, and working conversations. Add this account\'s key before anything else is available.';
+    const status = gate.querySelector('[data-val-access-gate-status]');
+    if(status && message) status.textContent = message;
+    window.setTimeout(() => gate.querySelector('[data-val-access-gate-input]')?.focus(), 50);
+  }
+}
+
+async function checkValAccessGate(){
+  const gate = document.querySelector('[data-val-access-gate]');
+  if(!gate) return;
+  if(!canUseApi || mockScrapers){
+    setValAccessGate(false);
+    return;
+  }
+  try{
+    const readiness = await getJson('/api/val/witnessing/readiness', {cache:'no-store'});
+    setValAccessGate(!!readiness.requiresOpenAIKey);
+  }catch(error){
+    setValAccessGate(true, 'VAL could not verify this account\'s OpenAI connection. Reconnect the key or try again when the server is available.');
+  }
+}
+
+async function saveValAccessGateOpenAI(form){
+  const input = form.querySelector('[data-val-access-gate-input]');
+  const status = form.querySelector('[data-val-access-gate-status]');
+  const apiKey = input?.value.trim() || '';
+  if(!apiKey){
+    if(status) status.textContent = 'Paste the OpenAI API key before connecting.';
+    return;
+  }
+  if(status) status.textContent = 'Encrypting and testing the OpenAI connection...';
+  try{
+    await postJson('/api/val/witnessing/connections/openai', {apiKey});
+    if(input) input.value = '';
+    if(status) status.textContent = 'OpenAI is connected. Opening VAL...';
+    window.setTimeout(() => setValAccessGate(false), 250);
+  }catch(error){
+    if(status) status.textContent = error.message || 'OpenAI could not be connected.';
   }
 }
 
@@ -20060,6 +20674,7 @@ function renderValFirstLookConversation({state = 'ready', error = '', run = valF
         '<i style="--progress:' + (((index + 1) / total) * 100).toFixed(2) + '%"></i>',
       '</div>',
       renderValWitnessingPhaseMap(index),
+      renderValWitnessingSectionNavigator(index),
       '<section class="val-conversation-question" aria-label="The First Look">',
         '<span>Movement 8 · The First Look</span>',
         '<h3>Before we move on, VAL will show you exactly what it can see.</h3>',
@@ -20395,6 +21010,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
           '<i style="--progress:100%"></i>',
         '</div>',
         renderValWitnessingPhaseMap(total - 1),
+        renderValWitnessingSectionNavigator(total - 1),
         renderValWitnessingCompletion(witness || {}),
       '</div>'
     ].join('');
@@ -20409,6 +21025,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         '<i style="--progress:' + (((index + 1) / total) * 100).toFixed(2) + '%"></i>',
       '</div>',
       renderValWitnessingPhaseMap(index),
+      renderValWitnessingSectionNavigator(index),
       answered ? '<p class="val-conversation-memory-line">Before we began, VAL promised to understand you accurately before trying to sound intelligent.</p>' : '',
       '<section class="val-conversation-question" aria-label="Current question">',
         '<span>' + (index === 0 ? 'First question' : escapeHtml(card.movement)) + '</span>',
@@ -20427,6 +21044,7 @@ function renderValWitnessingConversation({card, rawResponse = '', state = 'quest
         valWitnessingContextTools(card),
         '<p class="val-conversation-helper">' + escapeHtml(card.helper) + '</p>',
         '<div class="val-conversation-actions">',
+          index > 0 ? '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingQuestion:' + escapeHtml(valWitnessingCards[index - 1].id) + '">Back</button>' : '',
           '<button type="button" data-val-witnessing-action="true" data-workflow-action="' + (card.id === 'connect_sources' ? 'valWitnessingSourcesContinue:' : 'valWitnessingSave:') + escapeHtml(card.category) + '">' + (card.id === 'connect_sources' ? 'Continue to First Look' : 'Continue') + '</button>',
         '</div>'
       ].join(''),
@@ -20535,13 +21153,16 @@ async function openValWitnessingSession(cardId = 'meeting_val', options = {}){
 
 async function openValWitnessingQuestion(cardId = 'meeting_val', options = {}){
   const card = valWitnessingCard(cardId);
+  if(canUseApi && !activeValWitnessingSessionId){
+    try{await resumeValWitnessingSession();}catch(_error){}
+  }
   if(card.id === 'source_review' && canUseApi && !mockScrapers){
     try{await loadValFirstLookRun();}
     catch(error){options.error = options.error || ('VAL could not check whether the First Look is ready: ' + error.message);}
   }
   renderValWitnessingConversation({
     card,
-    rawResponse: workspaceInputValue('val-witnessing-' + card.category),
+    rawResponse: valWitnessingState[card.category]?.rawResponse || workspaceInputValue('val-witnessing-' + card.category),
     state: 'question',
     error: options.error || ''
   });
@@ -21547,32 +22168,182 @@ async function handleWorkflowAction(action, node = null){
     return;
   }
   if(command === 'introApprove'){
-    const draftText = workspaceInputValue('intro-draft') || activeIntroDraftCandidate?.draftBody || '';
+    if(!activeIntroDraftCandidate?.candidate){
+      await openRelationshipIntroReview(activeRelationshipProfile || relationshipProfiles.aric);
+      return;
+    }
+    const draftText = workspaceInputValue('intro-draft') || activeIntroDraftCandidate.draftBody || '';
+    const parts = introDraftParts(draftText, activeIntroDraftCandidate.subject || introDraftSubject(activeIntroDraftCandidate.profile, activeIntroDraftCandidate.candidate));
+    if(!canUseApi){
+      activeIntroDraftCandidate = {...activeIntroDraftCandidate,subject:parts.subject,draftBody:parts.body};
+      setWorkspaceContent({
+        lens:'Relationship Leverage',
+        title:'Introduction draft held for review.',
+        meaning:'The local preview preserved the two-person draft. Nothing was sent.',
+        understanding:['Subject: ' + parts.subject, 'Live VAL will verify both recipients before the final send gate.'],
+        recommendation:'Open live VAL to create the durable review packet.',
+        actions:relationshipContextActions([{label:'Back to move review', workflow:'relationship:find_relationship_introductions'}]),
+        label:'Introduction review held locally'
+      });
+      openWorkspaceShell('Introduction review held locally', {returnTarget:'relationship'});
+      return;
+    }
+    workspacePapers.recommendation.textContent = 'Saving both people, the complete draft, and the relationship evidence to the review queue...';
+    try{
+      const candidate = {...activeIntroDraftCandidate.candidate,draft:{...(activeIntroDraftCandidate.candidate.draft || {}),subject:parts.subject,body:parts.body}};
+      const profile = activeIntroDraftCandidate.profile || activeRelationshipProfile || {};
+      const result = await postJson('/api/relationships/actions', {
+        action:'draft_intro_candidate',
+        contact:relationshipContactPayload(profile),
+        dossier:profile.dossier || null,
+        candidate,
+        subject:parts.subject,
+        body:parts.body,
+        sourceRefs:candidate.sourceRefs || candidate.evidence || []
+      });
+      const recipients = introRecipientRows(result);
+      activeIntroDraftCandidate = {...activeIntroDraftCandidate,candidate,subject:result.draft?.subject || parts.subject,draftBody:result.draft?.body || parts.body,result,recipients};
+      setWorkspaceContent({
+        lens:'Relationship Leverage',
+        title:'Introduction draft is ready for your final review.',
+        meaning:'VAL preserved the complete introduction and both relationship identities. It has not been sent.',
+        understanding:[
+          'To: ' + recipients.map((person) => (person.name ? person.name + ' <' + person.email + '>' : person.email)).join(' and '),
+          'Subject: ' + activeIntroDraftCandidate.subject,
+          'Review packet: ' + (result.externalActionPacket?.id || 'ready'),
+          'Nothing was sent, scheduled, posted, scraped, imported, or changed in CRM.'
+        ],
+        recommendation:recipients.filter((person) => person.email).length >= 2 ? 'Review the recipients and exact wording once more before sending.' : 'Add both verified email addresses before this introduction can be sent.',
+        actions:relationshipContextActions([
+          {label:'Review recipients and send', workflow:'introSendReview'},
+          {label:'Refine wording', workflow:'introRefine'},
+          {label:'Back to move review', workflow:'relationship:find_relationship_introductions'}
+        ], profile),
+        label:'Introduction draft ready for final review'
+      });
+      openWorkspaceShell('Introduction draft ready for final review', {returnTarget:'relationship'});
+    }catch(error){
+      workspacePapers.recommendation.textContent = error.message || 'VAL could not create the introduction review packet. Nothing was sent.';
+    }
+    return;
+  }
+  if(command === 'introSendReview'){
+    const recipients = introRecipientRows(activeIntroDraftCandidate?.result || activeIntroDraftCandidate || {});
     setWorkspaceContent({
-      lens: 'Relationship Leverage',
-      title: 'Introduction draft approved for the review queue.',
-      meaning: 'VAL recorded this draft as ready for a later email execution gate. It was not sent.',
-      understanding: [
-        'Draft held: ' + (activeIntroDraftCandidate?.candidate?.name || 'relationship introduction'),
-        'Review text preserved: ' + draftText.slice(0, 130).replace(/\s+/g, ' ') + (draftText.length > 130 ? '...' : ''),
-        'No email, LinkedIn message, calendar invite, scrape, import, or CRM write happened.'
+      lens:'Final Send Review',
+      title:'Confirm both people before this introduction leaves VAL.',
+      meaning:'This is the final external-action gate. Sending will email exactly the two people shown below.',
+      understanding:[
+        'Person one: ' + (recipients[0]?.name || 'Unverified') + (recipients[0]?.email ? ' <' + recipients[0].email + '>' : ' · email missing'),
+        'Person two: ' + (recipients[1]?.name || 'Unverified') + (recipients[1]?.email ? ' <' + recipients[1].email + '>' : ' · email missing'),
+        'Subject: ' + (activeIntroDraftCandidate?.subject || ''),
+        'Both relationships will receive the execution receipt if the send succeeds.'
       ],
-      recommendation: 'The next real step would be the external-action approval gate, where recipients and wording are confirmed again.',
-      actions: relationshipContextActions([{label:'Back to move review', workflow:'relationship:find_relationship_introductions'}]),
-      label: 'Introduction draft approved locally'
+      recommendation:recipients.filter((person) => person.email).length >= 2 ? 'Read the exact message, then send only if both names, addresses, and wording are right.' : 'This introduction cannot send until both verified email addresses are attached.',
+      actions:relationshipContextActions([
+        {label:'Send introduction', workflow:'introSend'},
+        {label:'Back to draft', workflow:'introRefine'},
+        {label:'Do not send', workflow:'introDismiss'}
+      ], activeIntroDraftCandidate?.profile),
+      label:'Introduction final send review'
     });
-    openWorkspaceShell('Introduction draft approved locally', {returnTarget:'relationship'});
+    renderWorkspaceInput({
+      label:'Exact message that will be sent',
+      placeholder:'Review the complete introduction.',
+      helper:'VAL will not alter this wording after you confirm the final send.',
+      mode:'intro-draft',
+      value:activeIntroDraftCandidate?.draftBody || ''
+    });
+    openWorkspaceShell('Introduction final send review', {returnTarget:'relationship'});
+    return;
+  }
+  if(command === 'introSend'){
+    const recipients = introRecipientRows(activeIntroDraftCandidate?.result || activeIntroDraftCandidate || {});
+    const verified = recipients.filter((person,index,list) => {
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email)) return false;
+      return list.findIndex((item) => String(item.email || '').trim().toLowerCase() === String(person.email || '').trim().toLowerCase()) === index;
+    });
+    if(verified.length < 2){
+      workspacePapers.recommendation.textContent = 'Two distinct verified email addresses are required. Nothing was sent.';
+      return;
+    }
+    const body = workspaceInputValue('intro-draft') || activeIntroDraftCandidate?.draftBody || '';
+    const subject = activeIntroDraftCandidate?.subject || '';
+    const recipientLabel = verified.map((person) => (person.name || person.email) + ' <' + person.email + '>').join(' and ');
+    if(!window.confirm('Send this introduction now to ' + recipientLabel + '?')) return;
+    workspacePapers.recommendation.textContent = 'Sending the approved introduction to both verified people...';
+    try{
+      const result = await postJson('/api/val/external-actions/email-send-now', {
+        provider:'auto',
+        to:verified.map((person) => person.email).join(', '),
+        recipients:verified,
+        subject,
+        body,
+        isIntroduction:true,
+        relationshipIds:activeIntroDraftCandidate?.result?.relationshipIds || verified.map((person) => person.relationshipId).filter(Boolean),
+        sourceContext:{
+          source:'relationship_introduction_final_send',
+          kind:'introduction_email_draft',
+          draftId:activeIntroDraftCandidate?.result?.draft?.id || '',
+          candidateId:activeIntroDraftCandidate?.candidate?.id || '',
+          relationshipIds:activeIntroDraftCandidate?.result?.relationshipIds || [],
+          recipients:verified,
+          isIntroduction:true
+        },
+        approvalNote:'User confirmed both introduction recipients and the exact final wording.'
+      });
+      if(!result?.executed) throw new Error(result?.error || 'The introduction did not send.');
+      setWorkspaceContent({
+        lens:'Relationship Leverage',
+        title:'Introduction sent.',
+        meaning:'The approved introduction was sent to both people and recorded with both relationships.',
+        understanding:[
+          'Recipients: ' + recipientLabel,
+          'Provider: ' + (result.provider_result?.raw?.provider || result.packet?.targetSystem || 'connected email'),
+          'Execution receipt: ' + (result.receipt?.id || result.packet?.id || 'recorded')
+        ],
+        recommendation:'VAL will carry this completed move into both relationship packets, the Round Table, observers, and Chief of Staff context.',
+        actions:relationshipContextActions([{label:'Return to Stewardship', workflow:'relationshipAllPeople'}], activeIntroDraftCandidate?.profile),
+        label:'Introduction sent and recorded'
+      });
+      openWorkspaceShell('Introduction sent and recorded', {returnTarget:'relationship'});
+    }catch(error){
+      workspacePapers.recommendation.textContent = (error.message || 'The introduction did not send.') + ' Nothing else was changed.';
+    }
     return;
   }
   if(command === 'introRefine'){
+    const currentDraft = workspaceInputValue('intro-draft') || activeIntroDraftCandidate?.draftBody || '';
+    const parts = introDraftParts(currentDraft, activeIntroDraftCandidate?.subject || '');
+    if(activeIntroDraftCandidate){
+      activeIntroDraftCandidate = {
+        ...activeIntroDraftCandidate,
+        subject:parts.subject,
+        draftBody:parts.body,
+        result:null,
+        recipients:null
+      };
+    }
+    setWorkspaceContent({
+      lens:'Relationship Leverage',
+      title:'Refine the introduction before review.',
+      meaning:'Editing reopened the draft. The earlier review packet is no longer treated as approval for this wording.',
+      understanding:['Both people remain attached to the draft.', 'Nothing has been sent.'],
+      recommendation:'Make the introduction useful to both people, then place this exact version in the review queue.',
+      actions:relationshipContextActions([
+        {label:'Approve draft for review queue', workflow:'introApprove'},
+        {label:'Do not make this introduction', workflow:'introDismiss'}
+      ], activeIntroDraftCandidate?.profile),
+      label:'Introduction draft reopened for editing'
+    });
     renderWorkspaceInput({
       label: 'Refine introduction draft',
       placeholder: 'Tighten the introduction language here.',
-      helper: 'This remains a local review edit. Nothing is sent or written anywhere.',
+      helper: 'This exact version must return through review before it can reach the final send gate.',
       mode: 'intro-draft',
-      value: workspaceInputValue('intro-draft') || activeIntroDraftCandidate?.draftBody || ''
+      value: parts.body
     });
-    workspacePapers.recommendation.textContent = 'Refine the wording, then approve it for the review queue only if the introduction still serves both people.';
+    openWorkspaceShell('Introduction draft reopened for editing', {returnTarget:'relationship'});
     return;
   }
   if(command === 'introDismiss'){
@@ -22159,7 +22930,17 @@ async function openLinkedInEngagementWorkspaceWithPacket(node = linkedinWidget){
     showFeatureComingSoon('LinkedIn');
     return;
   }
-  const item = linkedinVisibilityItems[0] || {};
+  try{
+    await hydrateLinkedInEngagement();
+  }catch(error){
+    linkedinEngagementState.status = 'failed';
+    linkedinEngagementState.issues = [{message:error.message}];
+  }
+  const item = linkedinVisibilityItems[0] || null;
+  if(!item){
+    openLinkedInEngagementWorkspace();
+    return;
+  }
   const preflight = await ensureHearthClickPacket({
     node,
     packetName:'relationship_packet',
@@ -24086,6 +24867,15 @@ projectManagerProfile?.addEventListener('keydown', async (event) => {
   else await openProjectFieldCowork(card.dataset.projectCoworkField, card);
 });
 
+projectManagerProfile?.addEventListener('input', (event) => {
+  const filter = event.target.closest('[data-project-relationship-filter]');
+  if(!filter) return;
+  const query = String(filter.value || '').trim().toLowerCase();
+  filter.closest('.project-relationship-picker')?.querySelectorAll('[data-project-relationship-search]').forEach((button) => {
+    button.hidden = Boolean(query) && !String(button.dataset.projectRelationshipSearch || '').includes(query);
+  });
+});
+
 projectManagerProfile?.addEventListener('submit', (event) => {
   if(event.target.matches('[data-project-edit-form]')){
     saveProjectEditFromForm(event);
@@ -24679,12 +25469,12 @@ drawerTray.addEventListener('click', async (event) => {
     await assignProjectOwnerById(projectOwnerChoice.dataset.projectOwnerChoice, projectOwnerChoice);
     return;
   }
-  const projectOwnerSummary = event.target.closest('.project-owner-create summary');
+  const projectOwnerSummary = event.target.closest('.project-owner-create summary, .project-owner-options summary, .project-people-manage summary');
   if(projectOwnerSummary){
     event.stopPropagation();
     return;
   }
-  const projectOwnerInteractive = event.target.closest('.project-owner-control input, .project-owner-control button');
+  const projectOwnerInteractive = event.target.closest('.project-owner-control input, .project-owner-control button, .project-people-manage input');
   if(projectOwnerInteractive){
     event.stopPropagation();
     return;
@@ -24835,6 +25625,10 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
     runCowork('think');
   }
 });
+document.querySelector('[data-val-access-gate-form]')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await saveValAccessGateOpenAI(event.currentTarget);
+});
 workspaceInputPanel.addEventListener('click', (event) => {
   const observerButton = event.target.closest('[data-observer-cowork]');
   if(!observerButton) return;
@@ -24915,7 +25709,11 @@ workspaceInputPanel.addEventListener('input', (event) => {
   if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;
   orientHomeCoworkFromInput();
 });
-updateLinkedInWidget();
+hydrateLinkedInEngagement().catch((error) => {
+  linkedinEngagementState.status = 'failed';
+  linkedinEngagementState.issues = [{message:error.message}];
+  updateLinkedInWidget();
+});
 void hydrateTaskCompanionCount();
 calendarTab.addEventListener('click', () => {
   if(hearth.classList.contains('calendar-open')){
@@ -25131,6 +25929,40 @@ deskWorkspace.addEventListener('click', async (event) => {
 });
 
 async function handleScraperPreviewClick(event){
+  const linkedinRefresh = event.target.closest('[data-linkedin-refresh]');
+  if(linkedinRefresh){
+    event.preventDefault();
+    event.stopPropagation();
+    linkedinRefresh.disabled = true;
+    try{
+      const response = await fetch('/api/val/linkedin/refresh', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'});
+      const data = await response.json().catch(() => ({}));
+      if(!response.ok || !data.ok) throw new Error(data.error || 'VAL could not begin the LinkedIn review.');
+      linkedinEngagementState.status = 'running';
+      renderLinkedInEngagementList();
+      updateLinkedInWidget();
+      pollLinkedInEngagement();
+    }catch(error){
+      linkedinEngagementState.status = 'failed';
+      linkedinEngagementState.issues = [{message:error.message}];
+      renderLinkedInEngagementList();
+    }
+    return;
+  }
+  const linkedinStyleOpen = event.target.closest('[data-linkedin-style-open]');
+  if(linkedinStyleOpen){
+    event.preventDefault();
+    event.stopPropagation();
+    renderLinkedInStyleForm();
+    return;
+  }
+  const linkedinStyleBack = event.target.closest('[data-linkedin-style-back]');
+  if(linkedinStyleBack){
+    event.preventDefault();
+    event.stopPropagation();
+    renderLinkedInEngagementList();
+    return;
+  }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -25175,6 +26007,33 @@ async function handleScraperPreviewClick(event){
 
 Array.from(new Set([scraperPreviewList, leadDrawerPreviewList].filter(Boolean))).forEach((previewList) => {
   previewList.addEventListener('click', handleScraperPreviewClick);
+});
+
+scraperPreviewList?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-linkedin-style-form]');
+  if(!form) return;
+  event.preventDefault();
+  const status = form.querySelector('[data-linkedin-style-status]');
+  const submit = form.querySelector('button[type="submit"]');
+  if(status) status.textContent = 'Saving…';
+  if(submit) submit.disabled = true;
+  try{
+    const preferences = Object.fromEntries(new FormData(form).entries());
+    const response = await fetch('/api/val/linkedin/preferences', {
+      method:'PUT',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(preferences)
+    });
+    const data = await response.json().catch(() => ({}));
+    if(!response.ok || !data.ok) throw new Error(data.error || 'Comment style could not be saved.');
+    linkedinEngagementState.preferences = data.preferences || preferences;
+    if(status) status.textContent = 'Saved. VAL will use this style for future drafts.';
+  }catch(error){
+    if(status) status.textContent = error.message || 'Comment style could not be saved.';
+  }finally{
+    if(submit) submit.disabled = false;
+  }
 });
 
 document.addEventListener('keydown', (event) => {
@@ -25296,6 +26155,7 @@ setState(hearth.dataset.state || 'quiet');
 hydrateClientConfig();
 hydrateHomePresence();
 hydrateCalendarPanel();
+checkValAccessGate();
 
 if(location.hash === '#valWitnessingResume'){
   setTimeout(() => {

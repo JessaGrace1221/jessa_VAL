@@ -74,6 +74,10 @@ Every Intelligence Pass output that updates context should use this shape:
 | `drafts` | Prepared replies, follow-ups, recaps, approval drafts. | existing |
 | `rules` | VIP, ignored, automation, user-approved rules. | existing/derived |
 | `val` | VAL's own confidence, uncertainty, safety gates, do-not-do list. | new/derived |
+| `cowork_events` | Append-only Co-Work turns, decisions, corrections, prepared work, and applied updates. | new |
+| `cowork_deliveries` | Recipient links and delivery state for Chief of Staff, Round Table, packets, drawers, projects, and relationships. | new |
+
+Co-Work events and deliveries follow [VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md](./VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md). They preserve chronology and provenance without copying raw chat into every packet or promoting uncertain language into fact.
 
 ## Event Variables
 
@@ -147,6 +151,8 @@ Dedicated onboarding prompt suite:
 | Voice interview summary | `{{teach_val.voice_interview.summary}}` | existing | object | Teach VAL summarizer | Compact user profile. |
 | Reviewed memory items | `{{teach_val.reviewed_memory}}` | existing/derived | array | Teach VAL commit | User-reviewed durable entries. |
 | Source imports | `{{teach_val.context_imports}}` | existing | array | Teach VAL import cards | Preserve provenance. |
+| Witnessing Steward context | `{{witnessing.steward_context}}` | derived | object | Direct Witnessing answers plus reviewed Teach VAL memory | Constrain every Co-Work instance with confirmed user context. |
+| Witnessing enactment audit | `{{witnessing.enactment_audit}}` | derived | object | Witnessing Steward observer | Surface source-backed gaps between what the user said matters and what the system is currently doing. |
 | Connected source readiness | `{{onboarding.connected_source_readiness}}` | new/derived | object | Evidence Source Readiness Prompt | Which evidence sources are connected, usable, limited, or skipped. |
 | AI history import | `{{onboarding.ai_history_import}}` | new/derived | object | AI History Import Prompt | ChatGPT/Claude/other AI recurring themes, people, projects, preferences, and conflicts. |
 | Round Table reading state | `{{onboarding.round_table_reading_state}}` | new/derived | array | Onboarding UI/orchestrator | Observer reading messages instead of a generic spinner. |

@@ -125,7 +125,9 @@ test('transcript follow-up candidates feed Ready For You only as review work',as
   const built=await ready.buildQueue();
   assert.equal(built.state,'has_items');
   assert.equal(built.items[0].metadataJson.source,'transcript_intelligence');
-  assert.equal(built.items[0].metadataJson.noTaskCreated,true);
+  assert.equal(built.items[0].metadataJson.noTaskCreated,false);
+  assert.equal(built.items[0].metadataJson.taskContinuationCreated,true);
+  assert.equal(built.items[0].metadataJson.noExternalAction,true);
   assert.equal(built.items[0].metadataJson.noMemoryCommitted,true);
 });
 
@@ -179,12 +181,16 @@ test('transcript intelligence prepares proposals pages invites and introductions
   const result=await service.intake({transcriptId:'tr_prepared_work'});
   const prepared=result.run.readyForYouCandidatesJson.filter(c=>c.category==='prepared_work');
   const kinds=prepared.map(c=>c.prepared_artifact.kind).sort();
-  assert.deepEqual(kinds,['calendar_invite_draft','html_page_draft','introduction_email_draft','proposal_draft']);
+  assert.deepEqual(kinds,['calendar_invite_draft','engineering_brief','introduction_email_draft','proposal_draft']);
   assert.equal(result.run.finalJson.counts.prepared_work_candidates,4);
   assert.ok(prepared.every(c=>c.requires_approval));
   assert.ok(prepared.every(c=>c.what_val_did.includes('Nothing was sent')));
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='introduction_email_draft').prepared_artifact.relationship_match_required,true);
-  assert.equal(prepared.find(c=>c.prepared_artifact.kind==='html_page_draft').prepared_artifact.externalPublish,false);
+  const engineering=prepared.find(c=>c.prepared_artifact.kind==='engineering_brief').prepared_artifact;
+  assert.equal(engineering.target_system,'github');
+  assert.equal(engineering.github_runtime_connection,'not_connected');
+  assert.equal(engineering.no_git_write,true);
+  assert.deepEqual(engineering.approval_checkpoints,['prepare_patch','run_tests','commit','push','open_pull_request','deploy']);
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='calendar_invite_draft').prepared_artifact.externalCalendarWrite,false);
 });
 
@@ -213,12 +219,12 @@ test('transcript intelligence classifies autonomous execution levels and creates
   });
   const result=await service.intake({transcriptId:'tr_exec_levels'});
   const prepared=result.run.readyForYouCandidatesJson.filter(c=>c.category==='prepared_work');
-  const page=prepared.find(c=>c.prepared_artifact.kind==='html_page_draft');
+  const page=prepared.find(c=>c.prepared_artifact.kind==='engineering_brief');
   const agreement=prepared.find(c=>c.prepared_artifact.kind==='agreement_draft');
   assert.equal(page.execution_level,'level_3_autonomous_build');
   assert.equal(agreement.execution_level,'level_2_autonomous_draft');
   assert.equal(page.completion_status,'partial_needs_context');
-  assert.ok(page.remaining_context_needed.some(x=>/repository|destination path|publish target/i.test(x)));
+  assert.ok(page.remaining_context_needed.some(x=>/repository/i.test(x)));
   assert.ok(page.linked_context.project.needs_creation);
   assert.ok(result.run.contextualTasksJson.some(t=>t.prepared_work_ids.includes(page.id)));
   assert.ok(result.run.contextualTasksJson.some(t=>t.linked_context?.project?.name));
@@ -230,6 +236,47 @@ test('transcript intelligence classifies autonomous execution levels and creates
   assert.ok(savedTaskItem);
   assert.ok(savedTaskItem.linkTargetsJson.some(t=>t.type==='project'));
   assert.ok(savedTaskItem.linkTargetsJson.some(t=>t.type==='task'));
+});
+
+test('transcript research instruction becomes a source-linked handoff with durable continuation context',async()=>{
+  let store={};
+  const service=createValTranscriptIntelligenceService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    getTranscript:async()=>({
+      id:'tr_research_handoff',
+      title:'Greg research planning',
+      rawText:[
+        'Greg: We should understand the newest public context before the next conversation.',
+        'Jessa: VAL, research Greg Zlevor before the next meeting.',
+        'Greg: The relationship history and current project should stay attached to whatever VAL finds.',
+        'Jessa: We will review the findings before they become an email, recommendation, or other external action.'
+      ].join('\n'),
+      source:'voice_session',
+      metadata:{calendarEventId:'cal_research',authenticatedUserNames:['Jessa'],channel:'voice'}
+    }),
+    resolveMeetingContext:async()=>({
+      meeting:{id:'cal_research',attendees:[{name:'Greg Zlevor',email:'greg@example.com'}]},
+      relationshipContext:{attendees:[{name:'Greg Zlevor',email:'greg@example.com'}]},
+      openLoops:[],
+      errors:[]
+    })
+  });
+  const result=await service.intake({transcriptId:'tr_research_handoff'});
+  const candidate=result.run.readyForYouCandidatesJson.find(c=>c.prepared_artifact?.kind==='research_handoff');
+  assert.ok(candidate);
+  assert.equal(candidate.prepared_artifact.completion_status,'ready_for_research');
+  assert.equal(candidate.prepared_artifact.identity.person_name,'Greg Zlevor');
+  assert.equal(candidate.prepared_artifact.identity.verified_email,'greg@example.com');
+  assert.equal(candidate.prepared_artifact.linked_context.transcript.id,'tr_research_handoff');
+  assert.equal(candidate.prepared_artifact.linked_context.project.needs_creation,true);
+  assert.equal(candidate.prepared_artifact.continuation_task.source,'transcript_execution_opportunity');
+  assert.equal(candidate.prepared_artifact.downstream_action_requires_separate_approval,true);
+  assert.equal(candidate.prepared_artifact.no_external_action,true);
+  assert.ok(store.transcriptIntelligenceItems.some(item=>item.category==='ready_for_you_candidate'&&item.metadataJson.preparedArtifact?.kind==='research_handoff'));
 });
 
 test('transcript intelligence suggests CRM-safe relationship introductions from transcript context',async()=>{

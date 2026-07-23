@@ -1,8 +1,16 @@
+const crypto=require('crypto');
+
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function normalizeEmail(value){const email=String(value||'').trim().toLowerCase();return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';}
 function normalizeName(value){return String(value||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();}
 function stableKey(parts=[]){return parts.map(v=>String(v||'').trim().toLowerCase()).filter(Boolean).join(':')||'unknown';}
+function stableId(prefix,parts=[]){return `${prefix}_${crypto.createHash('sha256').update(parts.map(v=>String(v||'')).join('|')).digest('hex').slice(0,48)}`;}
+function messageFingerprint(message={}){return crypto.createHash('sha256').update(JSON.stringify({
+  provider:message.provider||'',messageId:message.messageId||'',threadId:message.threadId||'',direction:message.direction||'',
+  sender:message.sender||message.from||{},recipients:message.recipients||message.to||[],cc:message.cc||[],subject:message.subject||'',
+  bodyText:message.bodyText||'',receivedAt:message.receivedAt||'',sentAt:message.sentAt||''
+})).digest('hex');}
 function iso(value){if(!value)return null;if(value instanceof Date)return value.toISOString();const d=new Date(value);return Number.isNaN(d.getTime())?null:d.toISOString();}
 function personRef(value={}){
   if(typeof value==='string')return {name:'',email:normalizeEmail(value)};
@@ -62,6 +70,7 @@ function rowToMessage(row={}){
     subject:row.subject,bodyPreview:row.body_preview||row.bodyPreview||'',bodyText:row.body_text||row.bodyText||'',bodyHtml:raw.bodyHtml||raw.body_html||'',
     snippet:row.snippet||'',labels:jsonValue(row.labels_json||row.labelsJson,[]),hasAttachments:!!(row.has_attachments??row.hasAttachments),
     webLink:row.web_link||row.webLink||'',receivedAt:row.received_at||row.receivedAt||'',sentAt:row.sent_at||row.sentAt||'',
+    triggerReceipt:jsonValue(row.trigger_receipt_json||row.triggerReceiptJson,{}),
     raw,
     createdAt:row.created_at||row.createdAt||'',updatedAt:row.updated_at||row.updatedAt||''
   };
@@ -78,6 +87,7 @@ function createValConversationIdentityService({
   fetchGmailMessages,
   fetchUnifiedOutlookEmails,
   resolveContactFromContext,
+  actionOrchestrator=null,
   logger=console
 }={}){
   function now(){return new Date().toISOString();}
@@ -86,10 +96,66 @@ function createValConversationIdentityService({
     for(const key of ['emailMessages','emailThreads','unifiedConversations','conversationClassifications'])if(!Array.isArray(s[key]))s[key]=[];
     return s;
   }
+  function orchestrator(){return typeof actionOrchestrator==='function'?actionOrchestrator():actionOrchestrator;}
+  async function findExistingMessage(message){
+    if(hasPg()){
+      const r=await dbQuery('select * from email_messages where tenant_id=$1 and user_id=$2 and provider=$3 and message_id=$4 limit 1',[tenantId(),userId(),message.provider,message.messageId]);
+      return r.rows?.[0]?rowToMessage(r.rows[0]):null;
+    }
+    const row=store().emailMessages.find(m=>m.tenantId===tenantId()&&m.userId===userId()&&m.provider===message.provider&&m.messageId===message.messageId);
+    return row?rowToMessage(row):null;
+  }
+  function receiptFromIngest(result={},fingerprint=''){
+    const candidates=safeArray(result.candidates);
+    const statuses=candidates.map(candidate=>candidate.status).filter(Boolean);
+    let status='action_detected';
+    if(!candidates.length)status='no_action_needed';
+    else if(statuses.some(value=>value==='failed'))status='failed';
+    else if(statuses.some(value=>value==='awaiting_approval'||value==='approved'))status='awaiting_approval';
+    else if(statuses.some(value=>value==='prepared'))status='prepared_for_review';
+    else if(candidates.some(candidate=>safeArray(candidate.ambiguityJson).length))status='needs_context';
+    const summary=status==='no_action_needed'
+      ?'VAL reviewed this email and found no action to prepare.'
+      :`VAL detected ${candidates.length} action${candidates.length===1?'':'s'} from this email. Nothing will happen externally without approval.`;
+    return {status,summary,sourceRecordId:result.source?.id||'',candidateIds:candidates.map(candidate=>candidate.id),candidateStatuses:statuses,fingerprint,reviewedAt:now()};
+  }
+  async function saveTriggerReceipt(message,receipt){
+    if(hasPg()){
+      const r=await dbQuery('update email_messages set trigger_receipt_json=$1,updated_at=now() where tenant_id=$2 and user_id=$3 and provider=$4 and message_id=$5 returning *',[JSON.stringify(receipt),tenantId(),userId(),message.provider,message.messageId]);
+      return r.rows?.[0]?rowToMessage(r.rows[0]):null;
+    }
+    const s=store();
+    const row=s.emailMessages.find(m=>m.tenantId===tenantId()&&m.userId===userId()&&m.provider===message.provider&&m.messageId===message.messageId);
+    if(!row)return null;
+    row.triggerReceiptJson=receipt;row.updatedAt=now();saveStore(s);return rowToMessage(row);
+  }
+  async function reviewIncomingMessage(message,unifiedConversation){
+    const fingerprint=messageFingerprint(message);
+    if(message.direction!=='inbound')return {status:'not_applicable',summary:'Outbound email is not reviewed as a new incoming request.',fingerprint,reviewedAt:now()};
+    const service=orchestrator();
+    if(!service?.ingest)return {status:'failed',summary:'VAL saved this email, but the action review service is unavailable.',error:'Action Orchestrator unavailable',fingerprint,reviewedAt:now()};
+    const senderName=String(message.sender?.name||'').trim();
+    const senderEmail=String(message.sender?.email||'').trim();
+    const from=senderName&&senderEmail?`${senderName} <${senderEmail}>`:senderName||senderEmail;
+    try{
+      const result=await service.ingest({
+        sourceChannel:'email',sourceType:'incoming_email',sourceId:unifiedConversation?.id||`${message.provider}:${message.threadId}`,
+        sourceEventId:`${message.provider}:${message.messageId}:${fingerprint.slice(0,20)}`,
+        title:message.subject,text:[`Subject: ${message.subject}`,from?`From: ${from}`:'',message.bodyText||message.bodyPreview].filter(Boolean).join('\n'),
+        occurredAt:message.receivedAt,
+        context:{provider:message.provider,messageId:message.messageId,threadId:message.threadId,unifiedConversationId:unifiedConversation?.id||'',direction:message.direction,sender:message.sender,recipients:message.recipients,cc:message.cc,receivedAt:message.receivedAt,hasAttachments:message.hasAttachments,approvalBoundary:'No external action without explicit user approval.'},
+        sourceRefs:[{source_type:'email_message',source_id:message.messageId,quote_or_summary:compactText([message.subject,message.bodyPreview].filter(Boolean).join(': '),700),confidence:1,created_at:message.receivedAt}]
+      });
+      return receiptFromIngest(result,fingerprint);
+    }catch(error){
+      logger.warn?.('[val-conversation-identity] incoming email action review failed',error.message);
+      return {status:'failed',summary:'VAL saved this email, but could not finish reviewing it for actions.',error:compactText(error.message,900),fingerprint,reviewedAt:now()};
+    }
+  }
   async function upsertUnifiedConversationForMessage(message){
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     const participantKeys=[...new Set(participants.map(p=>p.email||normalizeName(p.name)).filter(Boolean))];
-    const id='uc_'+Buffer.from(`${tenantId()}|${userId()}|${message.conversationKey}`).toString('base64url').slice(0,48);
+    const id=stableId('uc',[tenantId(),userId(),message.conversationKey]);
     if(hasPg()){
       const r=await dbQuery(`
         insert into unified_conversations (id,tenant_id,user_id,conversation_key,primary_provider,primary_thread_id,subject,participant_keys_json,participants_json,latest_message_at,latest_inbound_at,latest_outbound_at,message_count,metadata_json,updated_at)
@@ -113,6 +179,7 @@ function createValConversationIdentityService({
       row={id,tenantId:tenantId(),userId:userId(),conversationKey:message.conversationKey,primaryProvider:message.provider,primaryThreadId:message.threadId,subject:message.subject,participantKeysJson:participantKeys,participantsJson:participants,latestMessageAt:message.receivedAt,latestInboundAt:null,latestOutboundAt:null,messageCount:0,state:'unknown',relationshipTemperature:'unknown',unknownsJson:[],metadataJson:{source:'email_sync'},createdAt:now(),updatedAt:now()};
       s.unifiedConversations.unshift(row);
     }
+    row.id=id;
     row.subject=row.subject||message.subject;
     row.participantKeysJson=[...new Set([...(row.participantKeysJson||[]),...participantKeys])];
     row.participantsJson=participants;
@@ -124,7 +191,7 @@ function createValConversationIdentityService({
     return row;
   }
   async function upsertThread(message,unifiedId){
-    const id='eth_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.threadId}`).toString('base64url').slice(0,48);
+    const id=stableId('eth',[tenantId(),userId(),message.provider,message.threadId]);
     const participants=[message.sender,...message.recipients,...message.cc].filter(p=>p.email||p.name);
     if(hasPg()){
       await dbQuery(`
@@ -142,15 +209,22 @@ function createValConversationIdentityService({
       const s=store();
       let row=s.emailThreads.find(t=>t.tenantId===tenantId()&&t.userId===userId()&&t.provider===message.provider&&t.threadId===message.threadId);
       if(!row){row={id,tenantId:tenantId(),userId:userId(),provider:message.provider,threadId:message.threadId,unifiedConversationId:unifiedId,subject:message.subject,participantsJson:participants,messageCount:0,latestMessageAt:message.receivedAt,summaryJson:{},createdAt:now(),updatedAt:now()};s.emailThreads.unshift(row);}
-      row.unifiedConversationId=unifiedId;row.messageCount=Number(row.messageCount||0)+1;row.latestMessageAt=[row.latestMessageAt,message.receivedAt].filter(Boolean).sort().pop();row.updatedAt=now();saveStore(s);
+      row.id=id;row.unifiedConversationId=unifiedId;row.messageCount=Number(row.messageCount||0)+1;row.latestMessageAt=[row.latestMessageAt,message.receivedAt].filter(Boolean).sort().pop();row.updatedAt=now();saveStore(s);
     }
   }
   async function upsertEmailMessage(rawMessage){
     const message=normalizeMessage(rawMessage,ownerEmails);
     if(!message.messageId)return {saved:false,reason:'missing_message_id',message};
-    const unified=await upsertUnifiedConversationForMessage(message);
-    await upsertThread(message,unified.id);
-    const id='em_'+Buffer.from(`${tenantId()}|${userId()}|${message.provider}|${message.messageId}`).toString('base64url').slice(0,48);
+    const existing=await findExistingMessage(message);
+    const fingerprint=messageFingerprint(message);
+    const id=stableId('em',[tenantId(),userId(),message.provider,message.messageId]);
+    const expectedUnifiedId=stableId('uc',[tenantId(),userId(),message.conversationKey]);
+    const identityNeedsRepair=!!existing&&(existing.id!==id||existing.unifiedConversationId!==expectedUnifiedId);
+    const priorReceiptStatus=String(existing?.triggerReceipt?.status||'').trim();
+    const reviewNeedsRetry=priorReceiptStatus==='failed'||priorReceiptStatus==='not_reviewed';
+    if(existing&&!identityNeedsRepair&&messageFingerprint(existing)===fingerprint&&!reviewNeedsRetry)return {saved:false,unchanged:true,reason:'unchanged_message',message:existing,unifiedConversation:{id:existing.unifiedConversationId},triggerReceipt:existing.triggerReceipt||{}};
+    const unified=existing&&!identityNeedsRepair&&existing.unifiedConversationId?{id:existing.unifiedConversationId}:await upsertUnifiedConversationForMessage(message);
+    if(!existing||identityNeedsRepair)await upsertThread(message,unified.id);
     if(hasPg()){
       const r=await dbQuery(`
         insert into email_messages (id,tenant_id,user_id,provider,message_id,thread_id,unified_conversation_id,direction,sender_json,recipients_json,cc_json,bcc_json,subject,body_preview,body_text,snippet,labels_json,has_attachments,web_link,received_at,sent_at,raw_json,updated_at)
@@ -159,14 +233,19 @@ function createValConversationIdentityService({
           thread_id=excluded.thread_id,unified_conversation_id=excluded.unified_conversation_id,direction=excluded.direction,sender_json=excluded.sender_json,recipients_json=excluded.recipients_json,cc_json=excluded.cc_json,bcc_json=excluded.bcc_json,subject=excluded.subject,body_preview=excluded.body_preview,body_text=excluded.body_text,snippet=excluded.snippet,labels_json=excluded.labels_json,has_attachments=excluded.has_attachments,web_link=excluded.web_link,received_at=excluded.received_at,sent_at=excluded.sent_at,raw_json=excluded.raw_json,updated_at=now()
         returning *
       `,[id,tenantId(),userId(),message.provider,message.messageId,message.threadId,unified.id,message.direction,JSON.stringify(message.sender),JSON.stringify(message.recipients),JSON.stringify(message.cc),JSON.stringify(message.bcc),message.subject,message.bodyPreview,message.bodyText,message.snippet,JSON.stringify(message.labels),message.hasAttachments,message.webLink,message.receivedAt,message.sentAt,JSON.stringify(message.raw)]);
-      return {saved:true,message:rowToMessage(r.rows[0]),unifiedConversation:unified};
+      let savedMessage=rowToMessage(r.rows[0]);
+      const triggerReceipt=await reviewIncomingMessage(message,unified);
+      savedMessage=await saveTriggerReceipt(message,triggerReceipt)||savedMessage;
+      return {saved:true,updated:!!existing,message:savedMessage,unifiedConversation:unified,triggerReceipt};
     }
     const s=store();
     const record={id,tenantId:tenantId(),userId:userId(),provider:message.provider,messageId:message.messageId,threadId:message.threadId,unifiedConversationId:unified.id,direction:message.direction,senderJson:message.sender,recipientsJson:message.recipients,ccJson:message.cc,bccJson:message.bcc,subject:message.subject,bodyPreview:message.bodyPreview,bodyText:message.bodyText,snippet:message.snippet,labelsJson:message.labels,hasAttachments:message.hasAttachments,webLink:message.webLink,receivedAt:message.receivedAt,sentAt:message.sentAt,rawJson:message.raw,createdAt:now(),updatedAt:now()};
     const idx=s.emailMessages.findIndex(m=>m.tenantId===tenantId()&&m.userId===userId()&&m.provider===record.provider&&m.messageId===record.messageId);
     if(idx>=0)s.emailMessages[idx]={...s.emailMessages[idx],...record,createdAt:s.emailMessages[idx].createdAt}; else s.emailMessages.unshift(record);
     saveStore(s);
-    return {saved:true,message:rowToMessage(record),unifiedConversation:unified};
+    const triggerReceipt=await reviewIncomingMessage(message,unified);
+    const savedMessage=await saveTriggerReceipt(message,triggerReceipt)||rowToMessage(record);
+    return {saved:true,updated:!!existing,message:savedMessage,unifiedConversation:unified,triggerReceipt};
   }
   async function syncEmail({providers=['gmail','outlook'],limit=50,query='newer_than:30d'}={}){
     const unknowns=[], results={gmail:null,outlook:null}, saved=[];
@@ -190,7 +269,7 @@ function createValConversationIdentityService({
   }
   async function messagesForConversation({conversationId='',provider='',threadId='',messageId='',limit=80}={}){
     const lim=Math.max(1,Math.min(Number(limit)||80,200));
-    if(messageId&&!conversationId&&!threadId){
+    if(messageId){
       let one=[];
       if(hasPg()){
         const r=await dbQuery('select * from email_messages where tenant_id=$1 and user_id=$2 and message_id=$3 order by coalesce(received_at,sent_at,created_at) asc limit 1',[tenantId(),userId(),messageId]);
@@ -201,21 +280,33 @@ function createValConversationIdentityService({
       const found=one[0];
       if(found?.unifiedConversationId)return messagesForConversation({conversationId:found.unifiedConversationId,limit:lim});
       if(found?.provider&&found?.threadId)return messagesForConversation({provider:found.provider,threadId:found.threadId,limit:lim});
-      return one;
+      if(one.length)return one;
     }
     if(hasPg()){
       const params=[tenantId(),userId()];let where='tenant_id=$1 and user_id=$2';
-      if(conversationId){params.push(conversationId);where+=` and unified_conversation_id=$${params.length}`;}
-      else if(messageId){params.push(messageId);where+=` and message_id=$${params.length}`;}
-      else if(provider&&threadId){params.push(provider,threadId);where+=` and provider=$${params.length-1} and thread_id=$${params.length}`;}
+      if(provider&&threadId){params.push(provider,threadId);where+=` and provider=$${params.length-1} and thread_id=$${params.length}`;}
+      else if(conversationId){params.push(conversationId);where+=` and unified_conversation_id=$${params.length}`;}
       else throw new Error('conversationId, messageId, or provider+threadId is required.');
       const r=await dbQuery(`select * from email_messages where ${where} order by coalesce(received_at,sent_at,created_at) asc limit ${lim}`,params);
       return r.rows.map(rowToMessage);
     }
     const rows=store().emailMessages.filter(m=>m.tenantId===tenantId()&&m.userId===userId()&&(
-      conversationId?m.unifiedConversationId===conversationId:(messageId?m.messageId===messageId:(m.provider===provider&&m.threadId===threadId))
+      provider&&threadId?(m.provider===provider&&m.threadId===threadId):m.unifiedConversationId===conversationId
     ));
     return rows.sort((a,b)=>String(a.receivedAt||a.sentAt||a.createdAt).localeCompare(String(b.receivedAt||b.sentAt||b.createdAt))).slice(0,lim).map(rowToMessage);
+  }
+  async function triggerReceiptForMessage({messageId='',provider=''}={}){
+    if(!messageId)throw new Error('messageId is required.');
+    let message=null;
+    if(hasPg()){
+      const params=[tenantId(),userId(),messageId];let where='tenant_id=$1 and user_id=$2 and message_id=$3';
+      if(provider){params.push(provider);where+=` and provider=$${params.length}`;}
+      const r=await dbQuery(`select * from email_messages where ${where} order by updated_at desc limit 1`,params);message=r.rows?.[0]?rowToMessage(r.rows[0]):null;
+    }else{
+      const row=store().emailMessages.find(m=>m.tenantId===tenantId()&&m.userId===userId()&&m.messageId===messageId&&(!provider||m.provider===provider));message=row?rowToMessage(row):null;
+    }
+    if(!message)return null;
+    return {ok:true,messageId:message.messageId,provider:message.provider,triggerReceipt:message.triggerReceipt||{status:'not_reviewed',summary:'VAL has not reviewed this email for actions yet.'}};
   }
   function extractQuestions(messages=[]){
     return messages.flatMap(m=>String(m.bodyText||m.bodyPreview||m.snippet||'').split(/(?<=[?])\s+/).filter(s=>s.includes('?')).map(s=>({text:compactText(s,240),messageId:m.messageId,from:m.from}))).slice(-8);
@@ -349,7 +440,7 @@ function createValConversationIdentityService({
     }
     return {ok:true,person_key:email?`email:${email}`:(name?`name:${normalizeName(name)}`:''),crm_contact_id:best?.person?.contactId||best?.person?.id||'',match_status:matchStatus,match_confidence:best?.confidence||0,match_basis:best?.match_basis||[],recommended_action:recommendedAction,candidates,unknowns};
   }
-  return {normalizeMessage,upsertEmailMessage,syncEmail,buildConversationContext,listRecentConversationSummaries,getConversation,resolveIdentity};
+  return {normalizeMessage,upsertEmailMessage,syncEmail,buildConversationContext,listRecentConversationSummaries,getConversation,messagesForConversation,triggerReceiptForMessage,resolveIdentity};
 }
 
 module.exports={createValConversationIdentityService,normalizeEmail,normalizeMessage};

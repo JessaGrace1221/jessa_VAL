@@ -150,6 +150,12 @@ test('relationship introduction draft requires both CRM contact IDs and stays in
   assert.equal(draft.sourceContext.contactIds.personB,'crm_greg');
   assert.equal(draft.sourceContext.externalSend,false);
   assert.equal(draft.sourceContext.noExternalAction,true);
+  assert.deepEqual(draft.recipients,[
+    {name:'Aric Soyring',email:'aric@example.com',contactId:'crm_aric',relationshipId:'crm_aric'},
+    {name:'Greg Niesen',email:'greg@example.com',contactId:'crm_greg',relationshipId:'crm_greg'}
+  ]);
+  assert.deepEqual(draft.relationshipIds,['crm_aric','crm_greg']);
+  assert.match(draft.body,/Hi Aric and Greg,\n\n/);
   assert.match(draft.body,/No pressure/);
 });
 

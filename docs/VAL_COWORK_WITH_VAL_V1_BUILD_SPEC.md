@@ -9,8 +9,11 @@ Co-Work is not a small widget, chat bubble, or tucked-away input. It is the user
 Companion contract:
 
 - [VAL_COWORK_ENTRYPOINT_REGISTRY.md](./VAL_COWORK_ENTRYPOINT_REGISTRY.md): the required context, question sequence, completion condition, write target, and approval boundary for every active Co-Work entry point.
+- [VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md](./VAL_COWORK_SYSTEM_WIDE_CARRY_FORWARD_CONTRACT.md): the event ledger, recipient routing, delivery receipts, and no-orphan invariant for every response and applied result.
 
 No new `Co-Work` or `Co-Work with VAL` button may be added until it has a registry entry. No registered button may fall through to unscoped generic chat.
+
+Saving message history alone is not completion. Every response and applied result must create a durable carry-forward event, and the Chief of Staff, Round Table, originating packet and drawer, and every exact linked project and relationship must receive inspectable delivery receipts.
 
 ## Product Promise
 

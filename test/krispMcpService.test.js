@@ -5,6 +5,7 @@ const path=require('node:path');
 const {
   normalizeKrispDocumentId,
   isKrispDocumentId,
+  krispDocumentTimestamp,
   normalizeKrispDocument,
   sanitizeKrispDocumentInspection,
   krispSearchPhrasesFromInput,
@@ -25,6 +26,27 @@ test('normalizes Krisp document IDs for MCP get_document calls',()=>{
   assert.equal(normalizeKrispDocumentId(dashed),'1234567890abcdef1234567890abcdef');
   assert.equal(isKrispDocumentId(dashed),true);
   assert.equal(isKrispDocumentId('not-a-document'),false);
+});
+
+test('recovers the source timestamp from a time-ordered Krisp document ID',()=>{
+  assert.equal(krispDocumentTimestamp('019f6b746ab2757abce699fc157066ca'),'2026-07-16T15:03:39.442Z');
+  assert.equal(krispDocumentTimestamp('1234567890abcdef1234567890abcdef'),'');
+});
+
+test('exposes the source timestamp decoder on the Krisp service instance',()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const service=createKrispMcpService({resolveSecret:async()=>''});
+  assert.equal(typeof service.krispDocumentTimestamp,'function');
+  assert.equal(service.krispDocumentTimestamp('019f6b746ab2757abce699fc157066ca'),'2026-07-16T15:03:39.442Z');
+});
+
+test('uses the Krisp document timestamp when the document omits meeting metadata',()=>{
+  const payload=krispTranscriptPayloadFromDocument({
+    documentId:'019f6b746ab2757abce699fc157066ca',
+    title:'Thursday Touch Point w/Jessa',
+    transcript:'Jessa Grace | 00:01\nCompleted meeting notes.'
+  });
+  assert.equal(payload.timestamp,'2026-07-16T15:03:39.442Z');
 });
 
 test('extracts searchable meeting title from Krisp share links',()=>{
@@ -72,6 +94,36 @@ test('unwraps Krisp get_multiple_documents result wrappers',()=>{
   });
   assert.equal(normalized.documentId,'1234567890abcdef1234567890abcdef');
   assert.match(normalized.transcriptText,/exact transcript returned by Krisp/);
+});
+
+test('prefers Krisp meeting time over the later import-created timestamp',()=>{
+  const normalized=normalizeKrispDocument({
+    id:'1234567890abcdef1234567890abcdef',
+    title:'Exact Krisp meeting title',
+    meeting_date:'2026-07-08T14:30:00.000Z',
+    createdAt:'2026-07-20T12:00:00.000Z',
+    transcript:'Jessa: Preserve this transcript exactly.'
+  });
+  assert.equal(normalized.title,'Exact Krisp meeting title');
+  assert.equal(normalized.startedAt,'2026-07-08T14:30:00.000Z');
+});
+
+test('repairs generic Krisp metadata from the exact document heading and nested meeting fields',()=>{
+  const normalized=normalizeKrispDocument({
+    id:'abcdefabcdefabcdefabcdefabcdefab',
+    title:'Krisp meeting',
+    transcript:'# Monday Touch Point w/Jessa\n\n## Action Items\n- Jessa sends the recap.\n\n## Key Points\n- The team aligned on the next step.',
+    calendar_event:{
+      start_time:'2026-07-20T15:00:00.000Z',
+      attendees:[
+        {name:'Greg Zlevor',email:'gzlevor@westwoodintl.com'},
+        {name:'Ed Brown',email:'coachedbrown@gmail.com'}
+      ]
+    }
+  });
+  assert.equal(normalized.title,'Monday Touch Point w/Jessa');
+  assert.equal(normalized.startedAt,'2026-07-20T15:00:00.000Z');
+  assert.deepEqual(normalized.participants.map(person=>person.email),['gzlevor@westwoodintl.com','coachedbrown@gmail.com']);
 });
 
 test('sanitizes Krisp inspection output without leaking raw documents',()=>{
@@ -124,7 +176,7 @@ test('searches Krisp meetings with Krisp-native search and date parameters',asyn
       assert.equal(body.params.name,'search_meetings');
       assert.equal(body.params.arguments.search,'Frisson');
       assert.equal(body.params.arguments.after,'2026-07-01');
-      assert.equal(body.params.arguments.before,'2026-07-09');
+      assert.equal(body.params.arguments.before,'2026-07-10');
       return mcpResponse({jsonrpc:'2.0',id:body.id,result:{content:[{type:'text',text:JSON.stringify({meetings:[{documentId:'1234567890abcdef1234567890abcdef',title:'Frisson call'}]})}]}});
     }
     return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
@@ -155,7 +207,7 @@ test('verifies Krisp transcript receipts through the date-filtered meeting index
     ]}});
     if(body.method==='tools/call'&&body.params.name==='search_meetings'){
       assert.equal(body.params.arguments.after,'2026-04-16');
-      assert.equal(body.params.arguments.before,'2026-07-15');
+      assert.equal(body.params.arguments.before,'2026-07-16');
       return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[{meeting_id:'1234567890abcdef1234567890abcdef',name:'Krisp meeting'}]}}});
     }
     throw new Error('Unexpected MCP call: '+body.params?.name);
@@ -164,9 +216,47 @@ test('verifies Krisp transcript receipts through the date-filtered meeting index
     const discovery=await svc.discoverTranscriptReceipts({from:'2026-04-16T00:00:00.000Z',to:'2026-07-15T23:59:59.999Z',limit:50});
     assert.equal(discovery.status,'complete');
     assert.equal(discovery.documents.length,1);
-    assert.equal(discovery.probes[0].label,'Meetings available to this Krisp account');
+    assert.ok(discovery.probes.some(probe=>probe.label==='Meetings available to this Krisp account'&&probe.returned===1));
     assert.ok(calls.some(call=>call.params?.name==='search_meetings'));
     assert.equal(calls.some(call=>call.params?.name==='list_action_items'),false);
+  }finally{
+    global.fetch=originalFetch;
+  }
+});
+
+test('paginates Krisp meeting discovery in supported 50-record pages and returns newest first',async()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
+  const originalFetch=global.fetch;
+  const calls=[];
+  const meetings=Array.from({length:120},(_,index)=>({
+    meeting_id:(index+1).toString(16).padStart(32,'0'),
+    name:`Meeting ${index+1}`,
+    date:new Date(Date.UTC(2026,3,1+index)).toISOString()
+  }));
+  global.fetch=async(_url,options={})=>{
+    const body=JSON.parse(options.body||'{}');
+    calls.push(body);
+    if(body.method==='initialize')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'krisp-test',version:'1.0.0'}}},{headers:{'mcp-session-id':'test-session'}});
+    if(body.method==='notifications/initialized')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
+    if(body.method==='tools/list')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{tools:[
+      {name:'search_meetings',description:'Search meetings',inputSchema:{type:'object',properties:{after:{type:'string'},before:{type:'string'},limit:{type:'integer'},offset:{type:'integer'},fields:{type:'array'}}}}
+    ]}});
+    if(body.method==='tools/call'&&body.params.name==='search_meetings'){
+      const {limit,offset=0}=body.params.arguments;
+      assert.ok(limit<=50);
+      return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:meetings.slice(offset,offset+limit)}}});
+    }
+    throw new Error('Unexpected MCP call: '+body.params?.name);
+  };
+  try{
+    const discovery=await svc.discoverTranscriptReceipts({from:'2026-04-01T00:00:00.000Z',to:'2026-07-31T23:59:59.999Z',limit:120});
+    const searchCalls=calls.filter(call=>call.params?.name==='search_meetings');
+    assert.deepEqual(searchCalls.map(call=>call.params.arguments.offset),[0,50,100]);
+    assert.equal(discovery.documents.length,120);
+    assert.equal(discovery.documents[0].title,'Meeting 120');
+    assert.equal(discovery.documents.at(-1).title,'Meeting 1');
+    assert.equal(discovery.probes.find(probe=>probe.label==='Meetings available to this Krisp account')?.pages,3);
   }finally{
     global.fetch=originalFetch;
   }
@@ -257,7 +347,7 @@ test('falls back to the workspace-wide Krisp content index when metadata indexes
     if(body.method==='tools/call'&&body.params.name==='search_meeting_content'){
       assert.equal(body.params.arguments.search,'the');
       assert.equal(body.params.arguments.after,'2026-06-16');
-      assert.equal(body.params.arguments.before,'2026-07-16');
+      assert.equal(body.params.arguments.before,'2026-07-17');
       return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{documents:[{document_id:'1234567890abcdef1234567890abcdef',title:'Meeting recovered from content',date:'2026-07-14T14:00:00.000Z'}]}}});
     }
     throw new Error('Unexpected MCP call: '+body.params?.name);
@@ -275,7 +365,7 @@ test('falls back to the workspace-wide Krisp content index when metadata indexes
   }
 });
 
-test('falls back to meetings linked from recent Krisp activity when global indexes are empty',async()=>{
+test('checks recent Krisp activity before the meeting index and preserves its newer transcript receipt',async()=>{
   const {createKrispMcpService}=require('../services/krispMcpService');
   const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
   const originalFetch=global.fetch;
@@ -290,19 +380,56 @@ test('falls back to meetings linked from recent Krisp activity when global index
       {name:'list_action_items',description:'List action items',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}},
       {name:'list_activities',description:'List activities',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}}
     ]}});
-    if(body.method==='tools/call'&&body.params.name==='search_meetings')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[]}}});
-    if(body.method==='tools/call'&&body.params.name==='list_action_items')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{action_items:[]}}});
-    if(body.method==='tools/call'&&body.params.name==='list_activities')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{activities:[{meeting_id:'1234567890abcdef1234567890abcdef',title:'Meeting activity',created_at:'2026-07-14T14:00:00.000Z'}]}}});
+    if(body.method==='tools/call'&&body.params.name==='search_meetings')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[{meeting_id:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',title:'Older indexed meeting',date:'2026-07-14T14:00:00.000Z'}]}}});
+    if(body.method==='tools/call'&&body.params.name==='list_activities')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{activities:[{id:'ffffffffffffffffffffffffffffffff',meeting_id:'1234567890abcdef1234567890abcdef',title:'Fresh meeting activity',created_at:'2026-07-16T14:00:00.000Z'}]}}});
     throw new Error('Unexpected MCP call: '+body.params?.name);
   };
   try{
     const discovery=await svc.discoverTranscriptReceipts({from:'2026-06-16T00:00:00.000Z',to:'2026-07-16T23:59:59.999Z',limit:50});
     assert.equal(discovery.status,'complete');
-    assert.equal(discovery.documents.length,1);
+    assert.equal(discovery.documents.length,2);
     assert.equal(discovery.documents[0].documentId,'1234567890abcdef1234567890abcdef');
     assert.equal(discovery.documents[0].source,'list_activities');
-    assert.ok(calls.some(call=>call.params?.name==='list_activities'));
+    const toolCalls=calls.filter(call=>call.method==='tools/call').map(call=>call.params.name);
+    assert.ok(toolCalls.indexOf('list_activities')<toolCalls.indexOf('search_meetings'));
+    assert.equal(discovery.documents.some(document=>document.documentId==='ffffffffffffffffffffffffffffffff'),false);
     assert.ok(discovery.probes.some(probe=>probe.label==='Meetings linked from recent Krisp activity'&&probe.returned===1));
+  }finally{
+    global.fetch=originalFetch;
+  }
+});
+
+test('continues metadata-only meeting discovery when Krisp activity scope is unavailable',async()=>{
+  const {createKrispMcpService}=require('../services/krispMcpService');
+  const svc=createKrispMcpService({resolveSecret:async()=>'token',logger:{warn(){}},timeoutMs:1000});
+  const originalFetch=global.fetch;
+  const calls=[];
+  global.fetch=async(_url,options={})=>{
+    const body=JSON.parse(options.body||'{}');
+    calls.push(body);
+    if(body.method==='initialize')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'krisp-test',version:'1.0.0'}}},{headers:{'mcp-session-id':'test-session'}});
+    if(body.method==='notifications/initialized')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{}});
+    if(body.method==='tools/list')return mcpResponse({jsonrpc:'2.0',id:body.id,result:{tools:[
+      {name:'search_meetings',description:'Search meetings',inputSchema:{type:'object',properties:{after:{type:'string'},before:{type:'string'},limit:{type:'integer'},offset:{type:'integer'},fields:{type:'array'}}}},
+      {name:'list_activities',description:'List activities',inputSchema:{type:'object',properties:{limit:{type:'integer'}}}}
+    ]}});
+    if(body.method==='tools/call'&&body.params.name==='list_activities'){
+      return mcpResponse({jsonrpc:'2.0',id:body.id,result:{content:[{type:'text',text:'list_activities error: Request failed (403): {"error":"insufficient_scope","error_description":"Insufficient scope"}'}]}});
+    }
+    if(body.method==='tools/call'&&body.params.name==='search_meetings'){
+      return mcpResponse({jsonrpc:'2.0',id:body.id,result:{structuredContent:{meetings:[{meeting_id:'1234567890abcdef1234567890abcdef',name:'Fresh July 22 meeting',date:'2026-07-22T14:00:00-04:00'}]}}});
+    }
+    throw new Error('Unexpected MCP call: '+body.params?.name);
+  };
+  try{
+    const discovery=await svc.discoverTranscriptReceipts({from:'2026-07-22T00:00:00.000Z',to:'2026-07-23T00:00:00.000Z',limit:50});
+    assert.equal(discovery.status,'complete');
+    assert.equal(discovery.documents[0].title,'Fresh July 22 meeting');
+    const activityProbe=discovery.probes.find(probe=>probe.label==='Meetings linked from recent Krisp activity');
+    assert.equal(activityProbe.state,'unavailable');
+    assert.match(activityProbe.error,/insufficient_scope/i);
+    const searchCall=calls.find(call=>call.params?.name==='search_meetings');
+    assert.deepEqual(searchCall.params.arguments.fields,['name','date','duration_seconds','url','attendees','speakers']);
   }finally{
     global.fetch=originalFetch;
   }

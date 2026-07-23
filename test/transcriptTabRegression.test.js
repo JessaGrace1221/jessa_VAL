@@ -40,6 +40,7 @@ test('transcript ingress stays disabled until explicitly enabled and never expos
 
   assert.match(server,/function transcriptIngressEnabled\(\)/);
   assert.match(server,/VAL_TRANSCRIPT_INGEST_ENABLED/);
+  assert.match(server,/app\.post\('\/api\/val\/transcripts'[\s\S]*if\(!isValidTranscriptWebhookReq\(req\)\) return res\.status\(401\)/);
   assert.match(server,/if\(!transcriptIngressEnabled\(\)\) return false/);
   assert.doesNotMatch(webhookInfo,/\?token=/);
   assert.doesNotMatch(webhookInfo,/transcriptWebhookToken\(\)/);
@@ -221,6 +222,9 @@ test('transcript detail can map attendees/projects and prepare reviewed Key Poin
   assert.match(server,/transcriptCalendarEventForOverview\(transcript\)/);
   assert.match(server,/transcriptCalendarEventCompatible/);
   assert.match(server,/calendar invite does not match transcript title or attendees/);
+  assert.match(server,/calendar event occurs after transcript source receipt/);
+  assert.match(server,/eventTime<=sourceTime\+30\*60\*1000/);
+  assert.match(server,/meetingDatetime:meetingMatch\.startTime\|\|payload\.timestamp/);
   assert.match(server,/calendarInviteMismatch/);
   assert.match(server,/saveEvidenceLink\(\{/);
   assert.match(server,/attendee_in_transcript/);
@@ -264,10 +268,17 @@ test('transcript attendees and titles stay source-exact instead of guessed',()=>
   assert.match(clientInviteeSource,/Found in the Krisp transcript title/);
   assert.match(serverInviteeSource,/nameNearEmail/);
   assert.match(clientInviteeSource,/nameNearEmail/);
-  assert.match(server,/if\(isKrisp&&String\(rawPayloadTitle\|\|''\)\.trim\(\)\)return String\(rawPayloadTitle\)\.replace/);
+  assert.match(server,/if\(isKrisp&&String\(rawPayloadTitle\|\|''\)\.trim\(\)&&!\/\^\(\?:krisp meeting\|meeting\|transcript\)\$\/i\.test/);
+  assert.match(server,/title=krispReceiptHeadingTitle\(record\.rawText/);
   assert.match(server,/meetingTitle:title,calendarEventTitle:title/);
   assert.match(server,/const id=String\(record\.id\|\|record\.transcriptId/);
   assert.match(server,/transcript\.summary\?\.executiveSummary/);
+  assert.match(server,/function transcriptSourceIdentity/);
+  assert.match(server,/rawDocument\.title,rawDocument\.name,rawDocument\.meetingTitle/);
+  assert.match(server,/rawDocument\.startedAt,rawDocument\.started_at,rawDocument\.startTime/);
+  assert.match(server,/sourceTitle:sourceIdentity\.title/);
+  assert.match(server,/root\.meetingDate\|\|root\.meeting_date\|\|root\.date\|\|meeting\.startedAt/);
+  assert.match(hearthJs,/transcript\.sourceTitle \|\| transcript\.meetingTitle \|\| transcript\.title/);
 });
 
 test('Krisp transcript refresh does not promote content fragments into transcripts',()=>{
@@ -275,7 +286,7 @@ test('Krisp transcript refresh does not promote content fragments into transcrip
   assert.match(krispService,/if\(!documents\.length\) await runMeetingSearch\('Meetings shared with you in Krisp'/);
   assert.match(krispService,/if\(!documents\.length&&found\.listActionItems\?\.name\)/);
   assert.match(krispService,/if\(!documents\.length&&found\.searchMeetingContent\?\.name\)/);
-  assert.match(krispService,/if\(!documents\.length&&found\.listActivities\?\.name\)/);
+  assert.match(krispService,/if\(found\.listActivities\?\.name\)/);
   assert.match(server,/function isUsableKrispTranscriptRecord/);
   assert.match(server,/function krispReceiptHeadingTitle/);
   assert.match(server,/rawHeadingTitle/);
@@ -285,8 +296,32 @@ test('Krisp transcript refresh does not promote content fragments into transcrip
   assert.match(server,/Recording Download Link/);
   assert.match(server,/records\.filter\(isUsableKrispTranscriptRecord\)\.map\(transcriptIndexUiRecord\)/);
   assert.match(server,/status:'not_full_transcript_receipt'/);
-  assert.match(server,/alreadyPresent\+\+;/);
-  assert.match(server,/updateTranscriptIndexStatus\(transcriptId,\{meetingTitle:title/);
+  assert.match(server,/const alreadyPresent=await krispTranscriptAlreadyStored/);
+  assert.match(server,/select id from val_transcripts where id=\$1 and user_id=\$2 limit 1'\s*,\s*\[id,VAL_USER_ID\]/);
+  assert.match(server,/status:'already_present'/);
+  assert.match(server,/blocked_seconds\|rate limit/);
+  assert.match(server,/Math\.min\(Number\(limit\)\|\|250,250\)/);
+});
+
+test('transcript drawer preserves every distinct Krisp document and hydrates calendar attendees',()=>{
+  assert.match(server,/function transcriptDrawerRecordSignature[\s\S]*sourceDocumentId[\s\S]*return 'krisp-document\|'\+sourceDocumentId/);
+  assert.match(server,/krispId[\s\S]*return 'krisp-document\|'\+krispId/);
+  assert.match(server,/const hydrated=await Promise\.all\(records\.filter\(isUsableKrispTranscriptRecord\)/);
+  assert.match(server,/\.map\(transcriptWithCalendarInvitees\)/);
+  assert.match(server,/const calendarEventId=String\([\s\S]*record\?\.metadata\?\.calendarEventId/);
+  assert.match(server,/calendarEventId,\s*\n\s*meetingId:calendarEventId/);
+  assert.match(server,/function transcriptCalendarEventFromProvider/);
+  assert.match(server,/Google transcript calendar event/);
+  assert.match(server,/Outlook transcript calendar event/);
+  assert.match(server,/const meetingDatetime=\(compatible\?calendarEvent\?\.startTime\|\|'':\s*''\)\|\|sourceTimestamp\|\|sourceIdentity\.meetingDatetime/);
+  assert.match(server,/calendarEventId:compatible\?\(transcript\.calendarEventId\|\|calendarEvent\?\.id\|\|''\):''/);
+  assert.match(server,/const limit=Math\.max\(1,Math\.min\(250,Number\(req\.body\?\.limit\)\|\|250\)\)/);
+});
+
+test('authoritative Krisp refresh preserves existing calendar linkage metadata',()=>{
+  assert.match(server,/metadata=coalesce\(val_transcripts\.metadata,'\{\}'::jsonb\)\|\|excluded\.metadata/);
+  assert.match(server,/metadata:\{\.\.\.\(existing\.metadata\|\|\{\}\),\.\.\.metadata\}/);
+  assert.doesNotMatch(server,/metadata=excluded\.metadata,created_at=excluded\.created_at/);
 });
 
 test('transcripts drawer can refresh 30 or 90 days with the active frosted loading state',()=>{
@@ -307,21 +342,44 @@ test('transcripts drawer can refresh 30 or 90 days with the active frosted loadi
   assert.match(hearthCss,/backdrop-filter:blur\(18px\)/);
 });
 
+test('completed Krisp meetings are checked automatically without opening the transcript drawer',()=>{
+  assert.match(server,/const TRANSCRIPT_AUTO_SYNC_INTERVAL_MS/);
+  assert.match(server,/Number\(process\.env\.VAL_TRANSCRIPT_AUTO_SYNC_INTERVAL_MS\)\|\|5\*60\*1000/);
+  assert.match(server,/async function runTranscriptAutomaticSyncCheck/);
+  assert.match(server,/if\(transcriptAutomaticSyncRunning\)return/);
+  assert.match(server,/syncKrispTranscriptsForLastThirtyDays\(\{days:TRANSCRIPT_AUTO_SYNC_DAYS,limit:TRANSCRIPT_AUTO_SYNC_LIMIT\}\)/);
+  assert.match(server,/async function processCapturedKrispTranscript/);
+  assert.match(server,/processTranscriptPayload\(\{\.\.\.payload,source:'krisp_mcp',savedTranscriptId:transcriptId,meetingMatch\}\)/);
+  assert.match(server,/async function processPendingCapturedKrispTranscripts/);
+  assert.match(server,/source==='krisp_mcp'/);
+  assert.match(server,/status:processing\.ok\?'imported_and_processed'/);
+  assert.match(server,/processingIncomplete=Number\(intake\.processingFailed\)\|\|Number\(intake\.processingQueued\)/);
+  assert.match(server,/status:partial\?'partial':'current'/);
+  assert.match(server,/krisp_automatic_transcript_sync_completed/);
+  assert.match(server,/async function transcriptAutomaticSyncUser/);
+  assert.match(server,/from val_oauth_tokens o[\s\S]*o\.provider='krisp'/);
+  assert.match(server,/requestContext\.run\(\{user\},\(\)=>runTranscriptAutomaticSyncCheck\(\)\)/);
+  assert.match(server,/setInterval\(\(\)=>runTranscriptAutomaticSyncSchedulerCheck\(\)/);
+  assert.match(server,/automaticSync:transcriptAutomaticSyncPublicStatus\(\)/);
+  assert.match(hearthJs,/data\.automaticSync\?\.lastCheckedAt/);
+  assert.match(hearthJs,/Last checked/);
+});
+
 test('Hearth transcript index stays lightweight while the detail route retains the source transcript',()=>{
   assert.match(server,/function transcriptIndexUiRecord/);
   assert.match(server,/const sourceActions=/);
   assert.match(server,/summaryText=.*slice\(0,420\)/);
   assert.match(server,/\.map\(transcriptIndexUiRecord\)/);
   assert.match(server,/const \[participants,summaries,tasks,contactUpdates,actionLog\]=await Promise\.all/);
-  assert.match(server,/const indexedRecords=transcriptMigrationRecordsFromIndex\(data\)/);
-  assert.match(server,/const records=indexedRecords\.length\?indexedRecords:await transcriptArchiveRecords/);
+  assert.match(server,/const records=mergeTranscriptMigrationRecords\(archive,data\)/);
+  assert.match(server,/Date\.parse\(transcript\.meetingDatetime\|\|transcript\.receivedAt\|\|transcript\.createdAt/);
   assert.match(server,/sourceReceipt:transcriptSourceReceipt\(detail\)/);
   assert.match(server,/function transcriptSourceDownloadUrl/);
   assert.match(server,/downloadUrl:sourceUrl/);
   assert.match(server,/function transcriptCleanDisplayLine/);
   assert.match(server,/replace\(\/\^\\s\*#\{1,6\}\\s\*\//);
   assert.match(server,/line\.length>900/);
-  assert.match(server,/transcriptWithCalendarInvitees\(transcriptDetailFromIndex\(data,data\.transcripts\[0\]\)\)/);
+  assert.match(server,/transcriptWithCalendarInvitees\(transcriptDetailFromIndex\(data,indexedRow\)\)/);
   assert.match(hearthJs,/drawerTray\?\.scrollTo\?\.\(\{top:0, left:0\}\)/);
   assert.match(hearthJs,/let timelineTranscriptOpenRequest = 0/);
   assert.match(hearthJs,/function timelineTranscriptDownloadUrl/);

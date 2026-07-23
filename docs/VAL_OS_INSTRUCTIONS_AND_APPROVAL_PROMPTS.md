@@ -13,6 +13,9 @@ Companion specs:
 - [VAL_EMAIL_DRAFT_PROMPTS.md](./VAL_EMAIL_DRAFT_PROMPTS.md)
 - [VAL_CHAT_VOICE_CONTEXT_PROMPTS.md](./VAL_CHAT_VOICE_CONTEXT_PROMPTS.md)
 - [VAL_GHL_CRM_PROMPTS.md](./VAL_GHL_CRM_PROMPTS.md)
+- [VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md](./VAL_TRANSCRIPT_ACTION_CAPABILITY_AND_WORKFLOW_REGISTRY.md)
+
+The Transcript Action Capability and Workflow Registry is the authority for transcript-derived action types, provider capability states, execution adapters, and receipts. Standing instructions may narrow or authorize behavior within that contract; they may not make an unsupported action executable.
 
 ## Core Thesis
 

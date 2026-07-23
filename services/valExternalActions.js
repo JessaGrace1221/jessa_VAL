@@ -24,7 +24,7 @@ function normalizeSourceRef(ref={}){
 }
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9:_-]+/g,'_').slice(0,180);}
 function allowedAction(type){
-  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
+  return ['send_email','create_gmail_draft','create_outlook_draft','send_sms','create_crm_note','create_crm_task','send_proposal','send_invoice','create_calendar_hold','send_calendar_invite','upsert_contact','update_contact','update_opportunity','move_crm_stage','add_or_remove_tag','publish_content','no_external_action'].includes(type)?type:'no_external_action';
 }
 function externalActionForInstruction(action=''){
   const map={
@@ -49,11 +49,40 @@ function externalActionForInstruction(action=''){
 function packetForPreparedArtifact(candidate={},run={},uuid,scope){
   const artifact=candidate.prepared_artifact||candidate.preparedArtifact||{};
   const refs=candidate.source_refs||candidate.sourceRefs||run.evidenceRefsJson||run.evidence_refs_json||[];
-  const targetId=artifact.target||run.transcriptId||run.transcript_id||run.id;
-  if(artifact.kind==='proposal_draft')return basePacket({uuid,scope,source:'transcript_prepared_work',actionType:'send_proposal',targetSystem:'CRM',targetId,title:candidate.title||artifact.title,summary:candidate.summary||candidate.what_val_did,payload:{proposalDraft:artifact,externalSend:false,reviewRequired:true},refs,approvalPolicy:candidate.approval_policy||candidate.approvalPolicy,sourceContext:{transcriptIntelligenceRunId:run.id,transcriptId:run.transcriptId||run.transcript_id,preparedWorkId:candidate.id,kind:artifact.kind}});
-  if(artifact.kind==='html_page_draft')return basePacket({uuid,scope,source:'transcript_prepared_work',actionType:'publish_content',targetSystem:'VAL workspace',targetId,title:candidate.title||artifact.title,summary:candidate.summary||candidate.what_val_did,payload:{htmlDraft:artifact.html,filename:artifact.filename,externalPublish:false,reviewRequired:true},refs,approvalPolicy:candidate.approval_policy||candidate.approvalPolicy,sourceContext:{transcriptIntelligenceRunId:run.id,transcriptId:run.transcriptId||run.transcript_id,preparedWorkId:candidate.id,kind:artifact.kind}});
-  if(artifact.kind==='calendar_invite_draft')return basePacket({uuid,scope,source:'transcript_prepared_work',actionType:'send_calendar_invite',targetSystem:'calendar/CRM',targetId,title:candidate.title||artifact.title,summary:candidate.summary||candidate.what_val_did,payload:{calendarInviteDraft:artifact,externalCalendarWrite:false,reviewRequired:true},refs,approvalPolicy:candidate.approval_policy||candidate.approvalPolicy,sourceContext:{transcriptIntelligenceRunId:run.id,transcriptId:run.transcriptId||run.transcript_id,preparedWorkId:candidate.id,kind:artifact.kind}});
-  if(artifact.kind==='introduction_email_draft'||artifact.kind==='email_draft')return basePacket({uuid,scope,source:'transcript_prepared_work',actionType:'create_gmail_draft',targetSystem:'email',targetId,title:candidate.title||artifact.title,summary:candidate.summary||candidate.what_val_did,payload:{subject:artifact.title||candidate.title,bodyPreview:artifact.instruction||candidate.summary,recipients:artifact.recipients||[],externalDraftWrite:false,externalSend:false,reviewRequired:true},refs,approvalPolicy:candidate.approval_policy||candidate.approvalPolicy,sourceContext:{transcriptIntelligenceRunId:run.id,transcriptId:run.transcriptId||run.transcript_id,preparedWorkId:candidate.id,kind:artifact.kind}});
+  const source=run.source||'transcript_prepared_work';
+  const targetId=artifact.contactId||artifact.opportunityId||artifact.targetId||artifact.target||run.transcriptId||run.transcript_id||run.id;
+  const artifactSourceContext=jsonValue(artifact.sourceContext||artifact.source_context,{});
+  const recipients=safeArray(artifact.recipients).map(item=>typeof item==='string'?{email:compactText(item,320)}:{
+    name:compactText(item?.name||'',160),
+    email:compactText(item?.email||item?.address||'',320),
+    contactId:compactText(item?.contactId||item?.contact_id||'',220),
+    relationshipId:compactText(item?.relationshipId||item?.relationship_id||item?.personPacketId||'',220)
+  });
+  const relationshipIds=[...new Set(safeArray(artifact.relationshipIds||artifact.relationship_ids)
+    .concat(safeArray(artifactSourceContext.relationshipIds||artifactSourceContext.relationship_ids))
+    .concat(recipients.map(item=>item.relationshipId||item.contactId))
+    .map(item=>compactText(typeof item==='string'?item:item?.id||'',220)).filter(Boolean))];
+  const projectIds=[...new Set(safeArray(artifact.projectIds||artifact.project_ids)
+    .concat(safeArray(artifactSourceContext.projectIds||artifactSourceContext.project_ids))
+    .map(item=>compactText(typeof item==='string'?item:item?.id||'',220)).filter(Boolean))];
+  const sourceContext={...artifactSourceContext,transcriptIntelligenceRunId:run.id,transcriptId:run.transcriptId||run.transcript_id,preparedWorkId:candidate.id,kind:artifact.kind,sourceId:run.sourceId||'',recipients,relationshipIds,projectIds};
+  const common={uuid,scope,source,targetId,title:candidate.title||artifact.title,summary:candidate.summary||candidate.what_val_did,refs,approvalPolicy:candidate.approval_policy||candidate.approvalPolicy,sourceContext};
+  if(artifact.kind==='proposal_draft')return basePacket({...common,actionType:'send_proposal',targetSystem:'CRM',payload:{proposalDraft:artifact,externalSend:false,reviewRequired:true}});
+  if(artifact.kind==='html_page_draft')return basePacket({...common,actionType:'publish_content',targetSystem:'VAL workspace',payload:{htmlDraft:artifact.html,filename:artifact.filename,externalPublish:false,reviewRequired:true}});
+  if(artifact.kind==='calendar_invite_draft')return basePacket({...common,actionType:'send_calendar_invite',targetSystem:'calendar/CRM',payload:{calendarInviteDraft:artifact,externalCalendarWrite:false,reviewRequired:true}});
+  if(artifact.kind==='introduction_email_draft'){
+    const body=String(artifact.body||artifact.instruction||candidate.summary||'').trim();
+    const packet=basePacket({...common,actionType:'create_gmail_draft',targetSystem:'email',payload:{to:recipients.map(item=>item.email).filter(Boolean).join(', '),subject:artifact.subject||artifact.title||candidate.title,body,bodyPreview:compactText(body,1200),recipients,externalDraftWrite:false,externalSend:false,reviewRequired:true,isIntroduction:true}});
+    packet.whatWillHappen='After review, VAL may create one introduction draft addressed to both verified people. Sending still requires the separate final send gate.';
+    packet.whatWillNotHappen='VAL will not send the introduction, add recipients, expose either relationship, create a calendar event, or change CRM merely because this review packet exists.';
+    return packet;
+  }
+  if(artifact.kind==='email_draft')return basePacket({...common,actionType:'create_gmail_draft',targetSystem:'email',payload:{subject:artifact.title||candidate.title,bodyPreview:artifact.instruction||artifact.body||candidate.summary,recipients:artifact.recipients||[],externalDraftWrite:false,externalSend:false,reviewRequired:true}});
+  if(artifact.kind==='sms_draft')return basePacket({...common,actionType:'send_sms',targetSystem:'GHL',payload:{contactId:artifact.contactId||artifact.targetId||'',message:artifact.message||artifact.body||artifact.instruction||candidate.summary,reviewRequired:true}});
+  if(artifact.kind==='contact_upsert')return basePacket({...common,actionType:'upsert_contact',targetSystem:'GHL',payload:{contact:artifact.contact||artifact.fields||artifact,reviewRequired:true}});
+  if(artifact.kind==='contact_update')return basePacket({...common,actionType:'update_contact',targetSystem:'GHL',payload:{contactId:artifact.contactId||artifact.targetId||'',contact:artifact.contact||artifact.fields||artifact,reviewRequired:true}});
+  if(artifact.kind==='contact_tag_change')return basePacket({...common,actionType:'add_or_remove_tag',targetSystem:'GHL',payload:{contactId:artifact.contactId||artifact.targetId||'',operation:artifact.operation||artifact.mode,tags:artifact.tags||[],reviewRequired:true}});
+  if(artifact.kind==='opportunity_update'||artifact.kind==='pipeline_stage_update')return basePacket({...common,actionType:'update_opportunity',targetSystem:'GHL',payload:{opportunityId:artifact.opportunityId||artifact.targetId||'',opportunity:artifact.opportunity||artifact.fields||artifact,reviewRequired:true}});
   return null;
 }
 function riskFromText(text=''){
@@ -98,8 +127,8 @@ function basePacket({uuid,scope,source,actionType,targetSystem,targetId,title,su
     payloadPreviewJson:payload,
     sourceRefsJson:safeArray(refs).map(normalizeSourceRef),
     whyThisActionExists:compactText(summary||title,900),
-    whatWillHappen:'This packet will be available for future one-at-a-time execution review. Phase 9 approval does not execute it.',
-    whatWillNotHappen:'No email, SMS, CRM update, calendar change, proposal, invoice, tag, stage movement, publishing, or external write will happen in Phase 9.',
+    whatWillHappen:'After explicit approval and a fresh safety check, one verified provider adapter may execute this exact packet.',
+    whatWillNotHappen:'No email, SMS, CRM update, calendar change, proposal, invoice, tag, stage movement, publishing, or other external write happens merely because this packet exists or is edited.',
     riskLevel:risks.riskLevel,
     approvalPolicy:approvalPolicy||auth.authorizationPolicy||'approval_required',
     representationRisk:risks.representationRisk,
@@ -111,8 +140,9 @@ function basePacket({uuid,scope,source,actionType,targetSystem,targetId,title,su
     authenticatedUserConfirmed:auth.authenticatedUserConfirmed,
     speakerConfidence:auth.speakerConfidence,
     authorizationCreatedAt:auth.authorizationCreatedAt,
+    retryCount:0,
     expiresAt:expiresAt(risks.riskLevel==='high'?7:14),
-    sourceContextJson:{...sourceContext,source,noExternalExecution:true},
+    sourceContextJson:{...sourceContext,source,executionRequiresExplicitApproval:true},
     createdAt:new Date().toISOString(),
     updatedAt:new Date().toISOString(),
     reviewedAt:null
@@ -253,7 +283,8 @@ function createValExternalActionsService({
   async function upsertPacket(packet){
     if(hasPg()){
       const cols=['id','tenantId','userId','status','actionType','targetSystem','targetId','payloadPreviewJson','sourceRefsJson','whyThisActionExists','whatWillHappen','whatWillNotHappen','riskLevel','approvalPolicy','representationRisk','financialOrLegalRisk','relationshipRisk','authorizationSource','authorizationEventId','authorizationQuote','authenticatedUserConfirmed','speakerConfidence','authorizationCreatedAt','attemptedAt','executedAt','providerResponseId','providerResponseSummary','failureReason','retryCount','idempotencyKey','executedBy','expiresAt','sourceContextJson','createdAt','updatedAt','reviewedAt'];
-      const values=cols.map(c=>packet[c]);
+      const jsonCols=new Set(['payloadPreviewJson','sourceRefsJson','sourceContextJson']);
+      const values=cols.map(c=>jsonCols.has(c)&&packet[c]!=null?JSON.stringify(packet[c]):packet[c]);
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
       const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
@@ -295,6 +326,8 @@ function createValExternalActionsService({
     const run={
       id:meta.transcriptIntelligenceRunId||meta.transcript_intelligence_run_id||item.runId||item.id||sourceId,
       transcriptId:meta.transcriptId||meta.transcript_id||item.transcriptId||item.transcript_id||sourceId,
+      source:meta.source||item.source||'transcript_prepared_work',
+      sourceId:meta.sourceId||meta.source_id||sourceId,
       evidenceRefsJson:candidate.source_refs
     };
     const packet=packetForPreparedArtifact(candidate,run,uuid,scope());
@@ -346,28 +379,81 @@ function createValExternalActionsService({
     return after;
   }
   async function createEmailSendPacket(payload={}){
-    const to=compactText(payload.to||payload.recipientEmail||payload.recipient||'',320);
+    const recipients=safeArray(payload.recipients).map(item=>typeof item==='string'?{email:compactText(item,320)}:{
+      name:compactText(item?.name||'',160),
+      email:compactText(item?.email||item?.address||'',320),
+      contactId:compactText(item?.contactId||item?.contact_id||'',220),
+      relationshipId:compactText(item?.relationshipId||item?.relationship_id||item?.personPacketId||'',220)
+    }).filter(item=>item.email);
+    const explicitTo=String(payload.to||payload.recipientEmail||payload.recipient||'').split(/[;,]/).map(item=>compactText(item,320)).filter(Boolean);
+    const toEmails=[...new Set(explicitTo.concat(recipients.map(item=>item.email)).map(item=>item.toLowerCase()))];
+    const to=toEmails.join(', ');
     const subject=compactText(payload.subject||payload.title||'VAL email',320);
     const body=String(payload.body||payload.bodyText||payload.message||payload.bodyPreview||'').trim();
-    const provider=String(payload.provider||payload.targetSystem||'gmail').trim().toLowerCase();
-    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const provider=String(payload.provider||payload.targetSystem||'auto').trim().toLowerCase();
+    const suppliedSourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const isIntroduction=payload.isIntroduction===true||payload.kind==='introduction_email_draft'||suppliedSourceContext.kind==='introduction_email_draft';
+    const relationshipIds=[...new Set(safeArray(payload.relationshipIds||payload.relationship_ids)
+      .concat(safeArray(suppliedSourceContext.relationshipIds||suppliedSourceContext.relationship_ids))
+      .concat(recipients.map(item=>item.relationshipId||item.contactId))
+      .map(item=>compactText(typeof item==='string'?item:item?.id||'',220)).filter(Boolean))];
+    const projectIds=[...new Set(safeArray(payload.projectIds||payload.project_ids)
+      .concat(safeArray(suppliedSourceContext.projectIds||suppliedSourceContext.project_ids))
+      .map(item=>compactText(typeof item==='string'?item:item?.id||'',220)).filter(Boolean))];
+    const sourceContext={...suppliedSourceContext,kind:isIntroduction?'introduction_email_draft':suppliedSourceContext.kind,recipients,relationshipIds,projectIds,isIntroduction};
     const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
     const packet=basePacket({
       uuid,
       scope:scope(),
       source:'send_gate',
       actionType:'send_email',
-      targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':'gmail',
+      targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':provider.includes('gmail')||provider.includes('google')?'gmail':'email',
       targetId:payload.threadId||payload.messageId||to||subject,
       title:subject,
       summary:payload.why||payload.summary||`Send email to ${to||'recipient'}.`,
-      payload:{to,subject,body,bodyPreview:compactText(body,1200),provider,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true},
+      payload:{to,subject,body,bodyPreview:compactText(body,1200),recipients,provider,threadId:payload.threadId||'',messageId:payload.messageId||'',externalSend:true,requiresFreshApproval:true,isIntroduction},
       refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.draftId||sourceContext.docId||payload.id||'',quoteOrSummary:subject,confidence:0.9})],
       approvalPolicy:'approval_required',
       sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
     });
-    packet.whatWillHappen='After final approval, VAL will send exactly this email through the connected provider and save an execution receipt.';
+    packet.whatWillHappen=isIntroduction
+      ? 'After final approval, VAL will send exactly this introduction to both verified people through the connected provider and save one execution receipt linked to both relationships.'
+      : 'After final approval, VAL will send exactly this email through the connected provider and save an execution receipt.';
     packet.whatWillNotHappen='VAL will not send any other email, modify CRM, create calendar events, publish content, or change the draft contents beyond the fields shown in this send gate.';
+    return upsertPacket(packet);
+  }
+  async function createCalendarInvitePacket(payload={}){
+    const title=compactText(payload.title||payload.summary||payload.subject||'VAL appointment',320);
+    const description=String(payload.description||payload.body||payload.notes||'').trim();
+    const start=String(payload.start||payload.scheduledStart||'').trim();
+    const end=String(payload.end||payload.scheduledEnd||'').trim();
+    const attendees=safeArray(payload.attendees).map(attendee=>{
+      if(typeof attendee==='string')return {email:compactText(attendee,320)};
+      return {email:compactText(attendee?.email||attendee?.address||'',320),name:compactText(attendee?.name||'',160)};
+    }).filter(attendee=>attendee.email);
+    if(!attendees.length){
+      const fallback=compactText(payload.to||payload.recipientEmail||payload.recipient||'',320);
+      if(fallback)attendees.push({email:fallback});
+    }
+    const provider=String(payload.provider||payload.targetSystem||'auto').trim().toLowerCase();
+    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const packet=basePacket({
+      uuid,
+      scope:scope(),
+      source:'send_gate',
+      actionType:'send_calendar_invite',
+      targetSystem:provider.includes('outlook')||provider.includes('microsoft')?'outlook':provider.includes('google')?'google':'calendar',
+      targetId:payload.calendarId||attendees.map(attendee=>attendee.email).join(',')||title,
+      title,
+      summary:payload.why||`Create calendar appointment with ${attendees.map(attendee=>attendee.name||attendee.email).join(', ')||'attendee'}.`,
+      payload:{title,description,start,end,durationMinutes:Number(payload.durationMinutes||0)||undefined,attendees,provider,calendarId:payload.calendarId||'',timeZone:payload.timeZone||payload.timezone||'',externalCalendarWrite:true,requiresFreshApproval:true},
+      refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.calendarEventId||payload.id||'',quoteOrSummary:`${title} at ${start}`,confidence:0.9})],
+      approvalPolicy:'approval_required',
+      sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'calendar_send_gate'}
+    });
+    packet.whatWillHappen='After final approval, VAL will create exactly this appointment through the connected Google or Outlook calendar, invite only the listed attendees, and save an execution receipt.';
+    packet.whatWillNotHappen='VAL will not create a private task block, use GHL as a calendar fallback, invite anyone else, send unrelated email, or change any other calendar event.';
     return upsertPacket(packet);
   }
   async function auditForPacket(id,{limit=50}={}){
@@ -381,7 +467,7 @@ function createValExternalActionsService({
       .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
       .slice(0,lim);
   }
-  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,collectCandidates,preparePacketFromPreparedArtifact};
+  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,createCalendarInvitePacket,collectCandidates,preparePacketFromPreparedArtifact};
 }
 
 module.exports={createValExternalActionsService,allowedAction,riskFromText,approvalFor};
