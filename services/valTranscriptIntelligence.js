@@ -438,11 +438,13 @@ function createValTranscriptIntelligenceService({
   async function saveRun(row){
     const columns=['id','tenantId','userId','transcriptId','status','qualityGateJson','linkageJson','evidenceRefsJson','commitmentsJson','contextualTasksJson','relationshipSignalsJson','projectSignalsJson','capacityAndToneContextJson','courageSignalsJson','teachValCandidatesJson','readyForYouCandidatesJson','executiveInstructionsJson','chiefOfStaffSignalsJson','momentumSignalsJson','approvalPoliciesJson','unknownsJson','noActionNeededJson','finalJson','confidence','createdAt','updatedAt'];
     if(hasPg()){
-      const values=columns.map(c=>row[c]);
+      const jsonColumns=new Set(['qualityGateJson','linkageJson','evidenceRefsJson','commitmentsJson','contextualTasksJson','relationshipSignalsJson','projectSignalsJson','capacityAndToneContextJson','courageSignalsJson','teachValCandidatesJson','readyForYouCandidatesJson','executiveInstructionsJson','chiefOfStaffSignalsJson','momentumSignalsJson','approvalPoliciesJson','unknownsJson','noActionNeededJson','finalJson']);
+      const values=columns.map(c=>jsonColumns.has(c)?JSON.stringify(row[c]??(/Refs|Signals|Tasks|Candidates|Instructions|Policies|Unknowns/.test(c)?[]:{})):row[c]);
       const names=columns.map(toSnake);
       const params=columns.map((_,i)=>`$${i+1}`).join(',');
       const updates=names.filter(n=>!['id','created_at'].includes(n)).map(n=>`${n}=excluded.${n}`).join(',');
       const r=await dbQuery(`insert into transcript_intelligence_runs (${names.join(',')}) values (${params}) on conflict (id) do update set ${updates} returning *`,values);
+      if(!r?.rows?.[0])throw new Error('Transcript intelligence run was not saved.');
       return toCamelRow(r.rows[0]);
     }
     const s=store();const idx=s.transcriptIntelligenceRuns.findIndex(r=>r.id===row.id);
@@ -452,10 +454,12 @@ function createValTranscriptIntelligenceService({
   async function saveItem(row){
     if(hasPg()){
       const cols=['id','tenantId','userId','runId','transcriptId','category','itemType','title','summary','sourceQuote','sourceRefsJson','linkTargetsJson','approvalPolicy','requiresApproval','confidence','status','metadataJson','createdAt'];
-      const values=cols.map(c=>row[c]);
+      const jsonColumns=new Set(['sourceRefsJson','linkTargetsJson','metadataJson']);
+      const values=cols.map(c=>jsonColumns.has(c)?JSON.stringify(row[c]??(c==='metadataJson'?{}:[])):row[c]);
       const names=cols.map(toSnake);
       const params=cols.map((_,i)=>`$${i+1}`).join(',');
-      await dbQuery(`insert into transcript_intelligence_items (${names.join(',')}) values (${params})`,values);
+      const r=await dbQuery(`insert into transcript_intelligence_items (${names.join(',')}) values (${params})`,values);
+      if(!r?.rowCount)throw new Error('Transcript intelligence item was not saved.');
       return row;
     }
     const s=store();s.transcriptIntelligenceItems.unshift(row);saveStore(s);return row;
