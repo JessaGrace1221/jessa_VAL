@@ -105,6 +105,24 @@ test('Hearth voice and plain Co-Work use the low-latency chat lane',()=>{
   assert.match(hearth,/console\.warn\('VAL voice turn failed:', error\);/);
 });
 
+test('VAL system prompt includes Chief of Staff voice and Board handoff rules',()=>{
+  assert.match(server,/Home VAL and voice operating contract/);
+  assert.match(server,/Home VAL is the user's Chief of Staff/);
+  assert.match(server,/Function-specific chats stay scoped to their function/);
+  assert.match(server,/Voice rule book/);
+  assert.match(server,/Heavy prepared work belongs in VAL's dashboard/);
+  assert.match(server,/It will be ready for you in VAL when you're ready/);
+  assert.match(server,/External action contract/);
+  assert.match(server,/Gmail and Outlook handle email/);
+  assert.match(server,/GHL handles SMS/);
+  assert.match(server,/Board of Observers contract/);
+  assert.match(server,/Executive Inbox, Relationship, Project, Capacity, Courage, Delight, Opportunity, Momentum, Meaning, Synchronicity, Commitment, Calendar, Environment, and Witnessing/);
+  assert.match(server,/Observer handoff contract/);
+  assert.match(server,/hand the context back to Home VAL/);
+  assert.match(server,/Public information contract/);
+  assert.match(server,/what is the going rate for this kind of work/);
+});
+
 test('Home VAL can leave fast lane for system-wide email and Stewardship context',()=>{
   assert.match(hearth,/function homeCoworkNeedsFullValContext/);
   assert.match(hearth,/function homeCoworkNeedsActionPrep/);
