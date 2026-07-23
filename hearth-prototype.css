@@ -11792,6 +11792,18 @@ button.timeline-overview-receipt:focus-visible{
 .full-calendar-panel :is(p,li,small,dd){
   color:var(--frost-open-muted);
 }
+.drawer-tray :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail),
+.workspace-panel :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail){
+  color:var(--frost-open-ink);
+}
+.drawer-tray :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail) :is(h2,h3,h4,h5,strong,b),
+.workspace-panel :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail) :is(h2,h3,h4,h5,strong,b){
+  color:rgba(24,24,27,.94)!important;
+}
+.drawer-tray :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail) :is(p,li,small,dd),
+.workspace-panel :is(.correspondence-rulebar,.correspondence-queue,.correspondence-brief,.correspondence-thread,.correspondence-intelligence,.relationship-v1-panel,.relationship-dossier-layer,.lead-intelligence-hero,.lead-scraper-card,.project-manager-dossier,.project-manager-hero,.project-manager-grid article,.project-manager-columns article,.timeline-status-header,.timeline-detail) :is(p,li,small,dd){
+  color:rgba(39,39,42,.76)!important;
+}
 .drawer-tray :is(span,dt,.drawer-kicker,.home-packet-eyebrow),
 .workspace-panel :is(span,dt,.workspace-kicker,.home-packet-eyebrow),
 .full-calendar-panel :is(span,dt,.calendar-panel-kicker){
@@ -16010,6 +16022,25 @@ button.timeline-overview-receipt:focus-visible{
   border-radius:8px!important;
   background:rgba(255,255,255,.68)!important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.7)!important;
+}
+.drawer-tray.relationship-open .stewardship-network-search{
+  width:min(360px,100%)!important;
+  max-width:100%!important;
+  justify-self:start!important;
+}
+.drawer-tray.relationship-open .stewardship-network-search input{
+  padding-left:16px!important;
+  padding-right:16px!important;
+}
+.drawer-tray.timeline-open .timeline-status-header{
+  min-width:0!important;
+  flex-wrap:wrap!important;
+  row-gap:8px!important;
+}
+.drawer-tray.timeline-open .timeline-status-header strong{
+  min-width:0!important;
+  max-width:100%!important;
+  white-space:normal!important;
 }
 
 .retrieval-system:not(.open) .drawer-tray,
