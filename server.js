@@ -29627,7 +29627,8 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
   if(await cleanStartSourceIntakeLocked())return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,cleanStartProtected:true,message:'VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.'});
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
-  if(isValVoiceSelfTranscriptRecord({...payload,rawText:transcriptText})){
+  const rawWebhookPreview=transcriptWebhookBodyPreview(req.body);
+  if(isValVoiceSelfTranscriptRecord({...payload,source:[payload.source,rawWebhookPreview].filter(Boolean).join('\n'),title:[payload.title,rawWebhookPreview].filter(Boolean).join('\n'),rawText:[transcriptText,rawWebhookPreview].filter(Boolean).join('\n')})){
     await auditLog({req,action:'transcript_val_voice_self_capture_skipped',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',characters:transcriptText.length},success:true}).catch(()=>{});
     return res.status(200).json({ok:true,accepted:true,saved:false,processed:false,skipped:true,reason:'val_voice_self_capture',message:'VAL skipped this Krisp capture because it was the VAL voice interface, not a meeting transcript.'});
   }
