@@ -24230,7 +24230,7 @@ function isValVoiceSelfTranscriptRecord(record={}){
   const source=String(record.source||metadata.source||metadata.provider||metadata.importedVia||'');
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||record.transcript||record.text||'');
   const combined=`${title}\n${source}\n${raw}`;
-  const looksLikeKrispChrome=/\bkrisp\b/i.test(combined)&&(/\bGoogle Chrome meeting\b/i.test(combined)||/\bkrisp_mcp\b/i.test(source));
+  const looksLikeKrispChrome=/krisp/i.test(combined)&&(/\bGoogle Chrome meeting\b/i.test(combined)||/krisp_mcp/i.test(source));
   const looksLikeValVoice=/\bHey Jessa\b[\s\S]{0,80}\bWhat can I do\b/i.test(combined)
     || /\bGood morning Jessa\b[\s\S]{0,100}\bwhat would you like to discuss\b/i.test(combined)
     || /\bSpeak with VAL\b/i.test(combined)
