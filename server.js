@@ -33398,6 +33398,22 @@ function ghlVoiceBriefForSpeech(brief='',event={}){
     .join(' ');
   return `I ran Meeting Prep for ${ghlVoiceFormatEvent(event)}. ${first.slice(0,900)}`;
 }
+function ghlVoiceMeetingPrepFallbackFromContext(context={},event={}){
+  const attendeeNames=safeArray(context.attendees).map(attendee=>attendee.name||attendee.email).filter(Boolean).slice(0,3).join(', ');
+  const relationshipLines=safeArray(context.matchedRelationships).map(row=>row.summary).filter(Boolean).slice(0,2);
+  const projectLines=safeArray(context.relevantProjects).map(project=>[project.displayName||project.name,project.summary].filter(Boolean).join(': ')).filter(Boolean).slice(0,2);
+  const taskLines=safeArray(context.relevantTasks).map(task=>task.title).filter(Boolean).slice(0,2);
+  const memoryLines=safeArray(context.relevantMemory).map(item=>item.summary).filter(Boolean).slice(0,2);
+  const parts=[
+    `I ran Meeting Prep for ${ghlVoiceFormatEvent(event)}${attendeeNames?' with '+attendeeNames:''}.`,
+    relationshipLines.length?'Relationship context: '+relationshipLines.join(' '):'I did not find much saved relationship context yet.',
+    projectLines.length?'Project context: '+projectLines.join(' '):'',
+    taskLines.length?'Open loops: '+taskLines.join('; '):'',
+    memoryLines.length?'Relevant memory: '+memoryLines.join(' '):'',
+    'Opening move: start by naming the purpose of the meeting, then ask what would make this conversation most useful today.'
+  ].filter(Boolean);
+  return parts.join(' ').replace(/\s+/g,' ').slice(0,1200);
+}
 async function ghlVoiceNextAppointmentResponse({body,lastUser}){
   const supplied=ghlVoiceBodyEvents(body);
   const events=supplied.length?supplied:await ghlVoiceUpcomingCalendarEvents({days:14});
@@ -33422,13 +33438,19 @@ async function ghlVoiceMeetingPrepResponse({body,lastUser}){
     'No external action happens from this route. The answer is private preparation only.',
     'Voice output: lead with the most important context, then the opening move, risks, and questions. Keep it concise.'
   ].join('\n\n');
-  const brief=await callValModel({
-    system,
-    user:meetingPrepRebuildPrompt(context),
-    maxTokens:900,
-    temperature:0.25,
-    timeoutMs:25000
-  });
+  let brief='';
+  try{
+    brief=await callValModel({
+      system,
+      user:meetingPrepRebuildPrompt(context),
+      maxTokens:1800,
+      temperature:0.25,
+      timeoutMs:30000
+    });
+  }catch(error){
+    console.warn('GHL voice meeting prep model fallback:',error.message);
+    return ghlVoiceMeetingPrepFallbackFromContext(context,event);
+  }
   return ghlVoiceBriefForSpeech(brief,event);
 }
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
