@@ -63,6 +63,16 @@ test('converts a Krisp document into a real transcript payload',()=>{
   assert.match(payload.transcript,/Friday/);
 });
 
+test('server skips Krisp captures of VAL voice self-talk instead of saving them as transcripts',()=>{
+  assert.match(server,/function isValVoiceSelfTranscriptRecord/);
+  assert.match(server,/Google Chrome meeting/);
+  assert.match(server,/Hey Jessa/);
+  assert.match(server,/transcript_val_voice_self_capture_skipped/);
+  assert.match(server,/reason:'val_voice_self_capture'/);
+  assert.match(server,/if\(isValVoiceSelfTranscriptRecord\(\{\.\.\.payload,rawText:transcriptText\}\)\)/);
+  assert.match(server,/if\(isValVoiceSelfTranscriptRecord\(record\)\) return false;/);
+});
+
 test('unwraps Krisp get_multiple_documents result wrappers',()=>{
   const normalized=normalizeKrispDocument({
     results:[{
