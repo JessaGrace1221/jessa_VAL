@@ -33447,6 +33447,12 @@ function ghlVoiceMeetingPrepFallbackFromContext(context={},event={}){
   ].filter(Boolean);
   return parts.join(' ').replace(/\s+/g,' ').slice(0,1200);
 }
+function queueGhlVoiceMeetingPrep(event={}){
+  if(!valMeetingPrep||typeof valMeetingPrep.buildMeetingPrep!=='function')return;
+  valMeetingPrep.buildMeetingPrep({event}).catch(error=>{
+    console.warn('GHL voice deferred Meeting Prep failed:',error.message);
+  });
+}
 async function ghlVoiceNextAppointmentResponse({body,lastUser}){
   const supplied=ghlVoiceBodyEvents(body);
   const events=supplied.length?supplied:await ghlVoiceUpcomingCalendarEvents({days:14});
@@ -33461,30 +33467,10 @@ async function ghlVoiceMeetingPrepResponse({body,lastUser}){
   if(!event){
     return 'I can run Meeting Prep, but I need a calendar event with an external attendee. I do not see one in the context GHL sent me yet.';
   }
-  const context=await buildMeetingPrepRebuildContext(event,{includePublicLookup:false});
-  if(!context.attendees.length){
-    return `I found ${ghlVoiceFormatEvent(event)}, but it does not have an external attendee for Meeting Prep.`;
-  }
-  const system=[
-    VAL_SYSTEM_PROMPT,
-    'You are VAL in Meeting Mode. Produce a concise spoken meeting prep brief from the supplied hidden context.',
-    'No external action happens from this route. The answer is private preparation only.',
-    'Voice output: lead with the most important context, then the opening move, risks, and questions. Keep it concise.'
-  ].join('\n\n');
-  let brief='';
-  try{
-    brief=await callValModel({
-      system,
-      user:meetingPrepRebuildPrompt(context),
-      maxTokens:1800,
-      temperature:0.25,
-      timeoutMs:30000
-    });
-  }catch(error){
-    console.warn('GHL voice meeting prep model fallback:',error.message);
-    return ghlVoiceMeetingPrepFallbackFromContext(context,event);
-  }
-  return ghlVoiceBriefForSpeech(brief,event);
+  queueGhlVoiceMeetingPrep(event);
+  // GHL voice custom actions time out quickly. Heavy prepared work should be
+  // started in VAL and acknowledged immediately instead of keeping the call open.
+  return `I'm starting Meeting Prep for ${ghlVoiceFormatEvent(event)}. It will be ready for you in VAL when you're ready.`;
 }
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
