@@ -109,7 +109,7 @@ test('Home VAL can leave fast lane for system-wide email and Stewardship context
   assert.match(hearth,/function homeCoworkNeedsFullValContext/);
   assert.match(hearth,/function homeCoworkNeedsActionPrep/);
   assert.match(hearth,/homeCoworkNeedsFullValContext\(visiblePrompt\)/);
-  assert.match(hearth,/VAL is finding the right person and preparing the safest path/);
+  assert.match(hearth,/I’m finding the right person and preparing the safest path/);
   assert.match(hearth,/if\(valCoworkVoiceState\.active\) speakValCoworkMessage\(fullContextDetail\);/);
   assert.match(server,/Gmail and Outlook are the email execution layers for provider drafts and email sends/);
   assert.match(server,/&& !hearthFastNeedsFullValContext\(lastUser\)/);
@@ -131,9 +131,13 @@ test('Home VAL external actions use a dedicated fast prep lane',()=>{
 });
 
 test('Home VAL voice supports source questions and spoken approval handoff',()=>{
-  assert.match(hearth,/if\(\/\\b\(access\|see\|read\|have\|use\)\\b\[\\s\\S\]\{0,80\}\\bwitnessing\\b\/i\.test\(value\)\) return false;/);
+  assert.match(hearth,/if\(\/\\bwitnessing\\b\/i\.test\(value\)\) return false;/);
   assert.match(server,/function hearthFastWitnessingFallback/);
+  assert.match(server,/function hearthFastWitnessingSummary/);
+  assert.match(server,/function hearthFastCapabilityFallback/);
+  assert.match(server,/function hearthFastDefinitionFallback/);
   assert.match(server,/If your Witnessing Session has been completed and saved into VAL/);
+  assert.match(server,/A mic handoff is the moment Voice stops listening/);
   assert.match(hearth,/let pendingHomeCoworkActionPacket = null;/);
   assert.match(hearth,/function isHomeCoworkActionConfirmation/);
   assert.match(hearth,/confirmPendingHomeCoworkActionPacket\(visiblePrompt\)/);
