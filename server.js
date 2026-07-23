@@ -20681,8 +20681,7 @@ function publicRelationshipProfile(row={}){
   const metadata=evidenceJsonValue(row.metadataJson||row.metadata_json||row.metadata,{});
   const profileKey=row.profileKey||row.profile_key||'';
   const profileKeyEmail=String(profileKey||'').includes('@')?String(profileKey).replace(/^(person:)?email:/,''):'';
-  const packetEmail=metadata.personPacket?.person?.email_addresses?.[0]||'';
-  const email=normalizeContextEmail(metadata.email||row.email||row.contactEmail||row.contact_email||packetEmail||profileKeyEmail||'');
+  const email=relationshipProfilePrimaryEmail({...row,profileKey,email:row.email,contactEmail:row.contactEmail||row.contact_email,metadata,personPacket:metadata.personPacket})||normalizeContextEmail(profileKeyEmail||'');
   const linkedinUrl=String(metadata.linkedinUrl||metadata.linkedin_url||row.linkedinUrl||row.linkedin_url||'').trim();
   return {
     id:row.id,
@@ -21156,11 +21155,36 @@ function stewardshipExecutiveVisibilityForIndex(packetItem={},profile={}){
     hidden:state==='hidden'
   };
 }
-function relationshipProfilePrimaryEmail(profile={}){
+function relationshipProfileEmailCandidates(profile={}){
   const metadata=profile.metadata||{};
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
-  const packetEmail=profile.personPacket?.person?.email_addresses?.[0]||metadata.personPacket?.person?.email_addresses?.[0]||'';
-  return normalizeContextEmail(metadata.email||profile.email||packetEmail||profileKeyEmail||'');
+  const packetEmails=[
+    ...safeArray(profile.personPacket?.person?.email_addresses),
+    ...safeArray(metadata.personPacket?.person?.email_addresses)
+  ];
+  return [
+    metadata.email,
+    metadata.primaryEmail,
+    metadata.contactEmail,
+    metadata.ghlEmail,
+    metadata.emailAddress,
+    metadata.email_address,
+    profile.email,
+    profile.contactEmail,
+    profile.contact_email,
+    ...safeArray(metadata.emails),
+    ...safeArray(metadata.emailAddresses),
+    ...safeArray(metadata.email_addresses),
+    ...packetEmails,
+    profileKeyEmail
+  ];
+}
+function relationshipProfilePrimaryEmail(profile={}){
+  for(const candidate of relationshipProfileEmailCandidates(profile)){
+    const email=normalizeContextEmail(candidate||'');
+    if(email)return email;
+  }
+  return '';
 }
 function relationshipProfilePrimaryPhone(profile={}){
   const metadata=profile.metadata||{};
@@ -21685,7 +21709,7 @@ function networkCsvPerson(record={}){
     summary:networkCsvField(record,['notes','note','summary','detail','details','context'])
   };
 }
-async function saveStewardshipNetworkManualPerson({name='',email='',phone='',organization='',summary='',linkedinUrl='',source='network_manual_add',existingByEmail=null}={}){
+async function saveStewardshipNetworkManualPerson({name='',email='',phone='',organization='',summary='',linkedinUrl='',source='network_manual_add',existingByEmail=null,existingProfileId=''}={}){
   const displayName=firstLookCandidateCleanName(name);
   const cleanEmail=normalizeExecutiveEmailAddress(email);
   const rawPhone=String(phone||'').trim().slice(0,80);
@@ -21696,11 +21720,18 @@ async function saveStewardshipNetworkManualPerson({name='',email='',phone='',org
   if(!displayName||!cleanEmail)throw new Error('A name and real email address are required to add someone to Network.');
   if(!stewardshipNetworkNamedEmailAdmission({displayName,email:cleanEmail}))throw new Error('Use a real person name and email address. Your own email address cannot be added to Network.');
   if(rawPhone&&!cleanPhone)throw new Error('Use a real phone number with area code so GHL can read it.');
-  const existing=existingByEmail?.get(cleanEmail)||(await listRelationshipProfiles({limit:400})).find((profile)=>relationshipProfilePrimaryEmail(profile)===cleanEmail)||null;
+  const profiles=await listRelationshipProfiles({limit:800});
+  const cleanExistingProfileId=String(existingProfileId||'').trim();
+  const existing=(
+    cleanExistingProfileId
+      ? profiles.find((profile)=>[profile.id,profile.profileKey,profile.personId,profile.contactId,profile.crmContactId].filter(Boolean).map(String).includes(cleanExistingProfileId))
+      : null
+  )||existingByEmail?.get(cleanEmail)||profiles.find((profile)=>relationshipProfilePrimaryEmail(profile)===cleanEmail)||null;
   const existingPhone=relationshipProfilePrimaryPhone(existing||{});
   const savedPhone=cleanPhone||existingPhone||'';
   const existingPacket=existing?.metadata?.personPacket||existing?.personPacket||{};
   const existingPacketPerson=existingPacket.person||{};
+  const savedEmails=Array.from(new Set([cleanEmail,...safeArray(existingPacketPerson.email_addresses).map(normalizeContextEmail)].filter(Boolean)));
   const row=await saveRelationshipProfile({
     ...(existing||{}),
     profileType:'person',
@@ -21714,6 +21745,13 @@ async function saveStewardshipNetworkManualPerson({name='',email='',phone='',org
       source,
       networkAdmission:'manual',
       email:cleanEmail,
+      primaryEmail:cleanEmail,
+      contactEmail:cleanEmail,
+      ghlEmail:cleanEmail,
+      emailAddress:cleanEmail,
+      email_addresses:savedEmails,
+      emailAddresses:savedEmails,
+      emails:savedEmails,
       phone:savedPhone,
       phoneNumber:savedPhone,
       ghlPhone:savedPhone,
@@ -21725,6 +21763,7 @@ async function saveStewardshipNetworkManualPerson({name='',email='',phone='',org
         ...existingPacket,
         person:{
           ...existingPacketPerson,
+          email_addresses:savedEmails,
           phone_numbers:savedPhone?[savedPhone]:(Array.isArray(existingPacketPerson.phone_numbers)?existingPacketPerson.phone_numbers:[])
         }
       },
@@ -21984,7 +22023,7 @@ function relationshipIndexItemFromProfile(profile={}){
   const name=alias?.name||profile.displayName||profile.name||'Unnamed relationship';
   const contactId=realRelationshipContactId(profile.contactId||profile.contact_id||profile.crmContactId||profile.crm_contact_id||profile.personId||profile.person_id)||resolvedCrmContactId(profile)||'';
   const profileKeyEmail=profile.profileKey&&String(profile.profileKey).includes('@')?String(profile.profileKey).replace(/^(person:)?email:/,''):'';
-  const email=admission.email||metadata.email||profile.email||profileKeyEmail||'';
+  const email=admission.email||relationshipProfilePrimaryEmail(profile)||metadata.email||profile.email||profileKeyEmail||'';
   const phone=relationshipProfilePrimaryPhone(profile);
   const id=contactId||email||profile.profileKey||profile.id||stableKey(name);
   const packetItem=relationshipPersonPacketItemFromProfile(profile);
@@ -22064,7 +22103,7 @@ function relationshipPersonPacketItemFromProfile(profile={}){
   const relationshipManualContext=relationshipSavedManualContext(metadata);
   const admission=profile.relationshipAdmission||stewardshipRelationshipAdmission(profile);
   const alias=admission.alias||relationshipProfileKnownAlias(profile);
-  const email=admission.email||metadata.email||'';
+  const email=admission.email||relationshipProfilePrimaryEmail(profile)||metadata.email||'';
   const phone=relationshipProfilePrimaryPhone(profile);
   const relationshipEvidenceMap=metadata.relationshipEvidenceMap||metadata.relationship_evidence_map||profile.relationshipEvidenceMap||profile.relationship_evidence_map||{};
   const lastDirectCommunicationAt=relationshipEvidenceMap.lastDirectCommunicationAt||relationshipEvidenceMap.last_direct_communication_at||'';
@@ -32451,7 +32490,8 @@ app.post('/api/relationships/network/manual',async(req,res)=>{
       phone:req.body.phone||req.body.phoneNumber||req.body.phone_number||'',
       organization:req.body.organization||'',
       linkedinUrl:req.body.linkedinUrl||req.body.linkedin_url||'',
-      summary:req.body.summary||req.body.detail||''
+      summary:req.body.summary||req.body.detail||'',
+      existingProfileId:req.body.existingProfileId||req.body.relationshipId||req.body.profileId||req.body.personId||''
     });
     res.json({ok:true,relationship:saved.relationship,message:`${saved.profile.displayName} was added to Network. No CRM, email, task, calendar, or other external system changed.`,noExternalAction:true});
   }catch(e){
