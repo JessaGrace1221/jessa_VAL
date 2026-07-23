@@ -24191,10 +24191,26 @@ function isMeetingPrepMemoryText(text=''){
     || /\bUse all known attendees\. If the data is thin\b/i.test(raw)
     || /\bVAL:\s*I could not find a matching email\b/i.test(raw);
 }
+function isValVoiceSelfTranscriptRecord(record={}){
+  const metadata=record.metadata||{};
+  const title=String(record.title||record.meetingTitle||record.meeting_title||metadata.title||metadata.meetingTitle||'');
+  const source=String(record.source||metadata.source||metadata.provider||metadata.importedVia||'');
+  const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||record.transcript||record.text||'');
+  const combined=`${title}\n${source}\n${raw}`;
+  const looksLikeKrispChrome=/\bGoogle Chrome meeting\b/i.test(combined)&&/\bkrisp\b/i.test(combined);
+  const looksLikeValVoice=/\bHey Jessa\b[\s\S]{0,80}\bWhat can I do\b/i.test(combined)
+    || /\bGood morning Jessa\b[\s\S]{0,100}\bwhat would you like to discuss\b/i.test(combined)
+    || /\bSpeak with VAL\b/i.test(combined)
+    || /\bGHL Voice\b/i.test(combined)
+    || /\bVAL voice\b/i.test(combined)
+    || /\bone sec\b[\s\S]{0,160}\bRolodex|Rolodex[\s\S]{0,160}\bone sec\b/i.test(combined);
+  return looksLikeKrispChrome&&looksLikeValVoice;
+}
 function isUsableTranscriptArchiveRecord(record={}){
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   const type=record.type||record.kind||record.metadata?.type||'transcript';
   if(!raw) return false;
+  if(isValVoiceSelfTranscriptRecord(record)) return false;
   if(isNonTranscriptArtifact(record)) return false;
   if(String(type||'').toLowerCase()==='chat_memory') return false;
   if(!isTranscriptLikeType(type)) return false;
@@ -24211,6 +24227,7 @@ function isUsableKrispTranscriptRecord(record={}){
   const metadata=record.metadata||{};
   const source=String(record.source||metadata.source||metadata.provider||metadata.importedVia||'').toLowerCase();
   if(!/krisp/.test(source))return true;
+  if(isValVoiceSelfTranscriptRecord(record))return false;
   const title=String(record.title||record.meetingTitle||record.meeting_title||'').trim();
   const raw=String(record.rawText||record.raw_text||record.rawTranscript||record.transcriptText||'').trim();
   if(/\bDownload Link\b/i.test(title)&&!krispReceiptHeadingTitle(raw))return false;
@@ -24670,6 +24687,68 @@ async function conversationMessagesForContext(conversationId='',limit=10){
     console.warn('Conversation context lookup failed:',error.message);
     return [];
   }
+}
+function ghlVoiceLooksLikeEphemeralConversationId(value=''){
+  const id=String(value||'').trim();
+  if(!id)return false;
+  if(/^\d{10,17}$/.test(id))return true;
+  if(/^\d{4}-\d{2}-\d{2}[t\s]\d{2}:\d{2}/i.test(id))return true;
+  if(/^ghl[_-]?\d{10,17}$/i.test(id))return true;
+  return false;
+}
+function ghlVoiceActorKey(body={},contact={}){
+  return String(
+    body.contactId
+    || body.contact_id
+    || contact.id
+    || contact.contactId
+    || contact.contact_id
+    || contact.email
+    || contact.phone
+    || body.contactEmail
+    || body.contact_email
+    || body.contactPhone
+    || body.contact_phone
+    || body.phone
+    || body.email
+    || body.contactName
+    || body.contact_name
+    || contact.name
+    || contact.fullName
+    || contact.full_name
+    || ''
+  ).trim().toLowerCase();
+}
+async function recentGhlVoiceConversationIdForActor(actorKey='',windowMs=5*60*1000){
+  const key=String(actorKey||'').trim().toLowerCase();
+  if(!key)return '';
+  const since=new Date(Date.now()-windowMs).toISOString();
+  try{
+    if(DEMO_MODE){
+      const rows=requestContext.getStore()?.demoState?.savedConversations||[];
+      const found=rows.find(row=>row.source==='ghl_voice'&&String(row.metadata?.voiceActorKey||'').toLowerCase()===key&&new Date(row.updated_at||row.updatedAt||row.created_at||0)>=new Date(since));
+      return found?.id||'';
+    }
+    await valDbReady;
+    if(pgPool){
+      const result=await dbQuery("select id from val_conversations where user_id=$1 and source='ghl_voice' and metadata->>'voiceActorKey'=$2 and updated_at >= $3 order by updated_at desc limit 1",[VAL_USER_ID,key,since]);
+      return result.rows[0]?.id||'';
+    }
+    const found=(valStore().conversations||[]).find(row=>row.source==='ghl_voice'&&String(row.metadata?.voiceActorKey||'').toLowerCase()===key&&new Date(row.updatedAt||row.updated_at||row.createdAt||0)>=new Date(since));
+    return found?.id||'';
+  }catch(error){
+    console.warn('GHL voice rolling conversation lookup failed:',error.message);
+    return '';
+  }
+}
+async function ghlVoiceStableConversationId(body={},contact={}){
+  const supplied=String(body.conversationId||body.conversation_id||'').trim();
+  if(supplied&&!ghlVoiceLooksLikeEphemeralConversationId(supplied))return supplied;
+  const actorKey=ghlVoiceActorKey(body,contact);
+  const recent=await recentGhlVoiceConversationIdForActor(actorKey);
+  if(recent)return recent;
+  if(actorKey)return `ghl_voice_${stableKey(actorKey).slice(0,24)}_${Math.floor(Date.now()/(5*60*1000))}`;
+  return supplied||uuid('ghl_voice');
 }
 async function recentMemoryContext(query){
   await valDbReady;
@@ -29515,6 +29594,10 @@ app.post('/api/val/transcripts',express.raw({type:'*/*',limit:'50mb'}),async(req
   if(await cleanStartSourceIntakeLocked())return res.status(202).json({ok:true,accepted:true,saved:false,processed:false,cleanStartProtected:true,message:'VAL is waiting for the new Witnessing Session to reach First Look before it imports source material.'});
   const payload=normalizedTranscriptWebhookPayload(req.body||{}),transcriptText=payload.transcript||'';
   console.log('[transcripts] webhook received',{title:payload.title,source:payload.source,characters:transcriptText.length});
+  if(isValVoiceSelfTranscriptRecord({...payload,rawText:transcriptText})){
+    await auditLog({req,action:'transcript_val_voice_self_capture_skipped',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',characters:transcriptText.length},success:true}).catch(()=>{});
+    return res.status(200).json({ok:true,accepted:true,saved:false,processed:false,skipped:true,reason:'val_voice_self_capture',message:'VAL skipped this Krisp capture because it was the VAL voice interface, not a meeting transcript.'});
+  }
   if(!transcriptText.trim()){
     const parsedBody=parseTranscriptWebhookRequestBody(req.body||{});
     await auditLog({req,action:'transcript_webhook_received_without_text',resourceType:'transcript_webhook',metadata:{title:payload.title||'',source:payload.source||'',eventId:payload.id||payload.eventId||payload.event_id||'',krispDetected:!!payload.metadata?.krispDetected,contentType:req.headers['content-type']||'',contentLength:req.headers['content-length']||'',bodyType:Buffer.isBuffer(req.body)?'buffer':typeof req.body,keys:Object.keys(parsedBody||{}).slice(0,40),preview:transcriptWebhookBodyPreview(req.body)},success:true}).catch(()=>{});
@@ -33638,7 +33721,8 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const contact=req.body.contact&&typeof req.body.contact==='object'?req.body.contact:{};
     const contactId=String(req.body.contactId||contact.id||contact.contactId||'').trim();
     const contactName=String(req.body.contactName||contact.name||contact.fullName||contact.full_name||'').trim();
-    const conversationId=String(req.body.conversationId||req.body.conversation_id||contactId||'').trim()||uuid('ghl_voice');
+    const conversationId=await ghlVoiceStableConversationId(req.body,contact);
+    const voiceActorKey=ghlVoiceActorKey(req.body,contact);
     const priorMessages=await conversationMessagesForContext(conversationId,10);
     const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
@@ -33674,7 +33758,7 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       title,
       source:'ghl_voice',
       messages:savedMessages,
-      metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
+      metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,voiceActorKey,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
     }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
     return res.json({
       ok:true,
