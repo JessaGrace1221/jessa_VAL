@@ -7,6 +7,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
 const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
+const hearthCss=fs.readFileSync(path.join(root,'hearth-prototype.css'),'utf8');
 
 test('voice playback uses server-side Deepgram TTS proxy instead of browser-side token calls',()=>{
   assert.match(server,/const DEEPGRAM_API_KEY = process\.env\.DEEPGRAM_API_KEY/);
@@ -61,13 +62,21 @@ test('voice waits for Deepgram before falling back to browser speech',()=>{
   assert.match(dashboard,/curAudio\.onerror=function\(\)\{URL\.revokeObjectURL\(url\);curAudio=null;fallbackOnce\(\);\}/);
 });
 
-test('Hearth voice primes microphone access on click and keeps listening after silence',()=>{
-  assert.match(hearth,/function primeValCoworkVoiceRecognition\(\)/);
-  assert.match(hearth,/primeValCoworkVoiceRecognition\(\);\s*const greeting = valCoworkGreeting\(\);/);
-  assert.match(hearth,/recognition\.onresult = \(\) => \{\};/);
-  assert.match(hearth,/const errorName = String\(event\?\.error \|\| ''\);/);
-  assert.match(hearth,/setValCoworkVoiceMode\('listening', 'VAL is still listening\.'\);/);
-  assert.match(hearth,/valCoworkVoiceState\.listenAttempt === attempt/);
+test('Hearth voice opens the GHL voice agent through the VAL visual wrapper',()=>{
+  assert.match(hearth,/const VAL_GHL_VOICE_WIDGET_ID = '6a6253197742c156ecacd8ca'/);
+  assert.match(hearth,/const VAL_GHL_WIDGET_LOADER_SRC = 'https:\/\/widgets\.leadconnectorhq\.com\/loader\.js'/);
+  assert.match(hearth,/function valGhlVoiceWidgetApi/);
+  assert.match(hearth,/window\.leadConnector\?\.chatWidget/);
+  assert.match(hearth,/function ensureValGhlVoiceWidget/);
+  assert.match(hearth,/script\.setAttribute\('data-widget-id', VAL_GHL_VOICE_WIDGET_ID\)/);
+  assert.match(hearth,/script\.setAttribute\('data-resources-url', VAL_GHL_WIDGET_RESOURCE_SRC\)/);
+  assert.match(hearth,/function openValGhlVoiceWidget/);
+  assert.match(hearth,/api\.openWidget\(\)/);
+  assert.match(hearth,/function closeValGhlVoiceWidget/);
+  assert.match(hearth,/api\.closeWidget\(\)/);
+  assert.match(hearth,/valCoworkVoiceState\.ghlBridge = true/);
+  assert.match(hearthCss,/body\.val-ghl-voice-active \[data-val-ghl-voice-widget\]/);
+  assert.match(hearthCss,/opacity:\.015!important/);
 });
 
 test('Hearth voice never swallows spoken prompts into unopened scoped sessions',()=>{
