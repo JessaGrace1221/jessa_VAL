@@ -10,6 +10,7 @@ const DEFAULT_OBSERVERS = [
   {observerName:'Opportunity',promptKey:'crm'},
   {observerName:'Momentum',promptKey:'momentum'},
   {observerName:'Meaning',promptKey:'momentum'},
+  {observerName:'Synchronicity',promptKey:'chief_of_staff'},
   {observerName:'Commitment',promptKey:'transcript_intake'},
   {observerName:'Calendar',promptKey:'calendar_meeting_prep'},
   {observerName:'Environment',promptKey:'event_intelligence_pass'}
@@ -385,6 +386,18 @@ function createValIntelligenceSpine({
       attentionSignals=teach?['Teach VAL purpose memory','mission alignment']:[];
       confidence=teach?0.58:0.3;conviction=teach?0.6:0.25;
       closing=teach?'I believe meaning should quietly check whether movement still belongs to the life being built.':'I need more confirmed meaning context before weighing in strongly.';
+    }else if(kind==='synchronicity'){
+      const themes=[
+        ...(context.recentTranscripts||[]).map(t=>t.title||t.summary||'').filter(Boolean),
+        ...(context.relationshipsSummary||[]).map(r=>r.displayName||r.profileKey||'').filter(Boolean),
+        ...(context.projectsSummary||[]).map(p=>p.displayName||p.profileKey||'').filter(Boolean),
+        ...(context.calendarSummary?.events||[]).map(e=>e.title||'').filter(Boolean)
+      ].filter(Boolean);
+      const hasConvergence=themes.length>=3;
+      observation=hasConvergence?'Several independent sources are available for convergence checks across transcripts, relationships, projects, and calendar.':'Synchronicity has too little cross-context evidence to name a repeated arrival yet.';
+      attentionSignals=hasConvergence?['repeated arrivals','timing clusters','cross-context echoes']:[];
+      confidence=hasConvergence?0.5:0.25;conviction=hasConvergence?0.46:0.18;
+      closing=hasConvergence?'I can watch for convergence, but I will not call it fate, certainty, or causality.':'I will not create meaning from coincidence without repeated source-backed signals.';
     }else if(kind==='commitment'){
       observation=c.openTasks?`${c.openTasks} open tasks are visible as commitments.`:'No open task commitments are visible.';
       attentionSignals=c.openTasks?['open commitments','follow-through','task context']:[];

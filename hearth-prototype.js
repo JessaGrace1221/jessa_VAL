@@ -42,8 +42,11 @@ const drawerPacketReceipt = document.querySelector('[data-drawer-packet-receipt]
 let activeAutocorrectField = null;
 const retrievalSystem = document.querySelector('.retrieval-system');
 const drawerPull = document.querySelector('.drawer-pull');
+const drawerPullLabel = document.querySelector('.drawer-pull-label');
 const closeAllDrawersButton = document.querySelector('.close-all-drawers');
 const drawerTray = document.querySelector('#drawer-tray');
+const executiveCompassCore = document.querySelector('.executive-compass-core');
+const executiveCompassAxisNodes = document.querySelector('.executive-compass-axis-nodes');
 const drawerCoworkIcon = document.querySelector('[data-drawer-cowork-icon]');
 if(drawerCoworkIcon && drawerCoworkIcon.parentElement !== document.body){
   document.body.appendChild(drawerCoworkIcon);
@@ -72,6 +75,17 @@ const valRouteCopyFields = {
   documents_and_examples: document.querySelector('[data-val-route-copy="documents_and_examples"]'),
   connections: document.querySelector('[data-val-route-copy="connections"]')
 };
+
+function initCoworkChatbarFocus(){
+  document.addEventListener('click', (event) => {
+    const chatbar = event.target.closest?.('.home-cowork-chatbar');
+    if(!chatbar) return;
+    if(event.target.closest('button,input[type="file"],textarea,input,select,a')) return;
+    const field = chatbar.querySelector('textarea,input:not([type="hidden"]):not([type="file"])');
+    field?.focus({preventScroll:true});
+  });
+}
+
 const relationshipDrawerLink = document.querySelector('.relationship-drawer-link');
 const closeRelationshipDetail = document.querySelector('.close-relationship-detail');
 const projectDrawerLink = document.querySelector('.project-drawer-link');
@@ -262,6 +276,17 @@ let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
 let activeMeetingPrepAutoPrompt = false;
+let valCoworkVoiceState = {
+  active:false,
+  mode:'idle',
+  recognition:null,
+  pending:false,
+  lastTranscript:'',
+  restartTimer:null,
+  audio:null,
+  playbackToken:0,
+  audioCache:{}
+};
 let currentCalendarEvents = [];
 let currentMeetingEvents = [];
 let calendarPanelShouldScrollToCurrent = false;
@@ -270,6 +295,23 @@ const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
 let workspaceReturnTarget = 'home';
 
 const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
+
+function hearthTimePeriodFromDate(date = new Date()){
+  const hour = date.getHours();
+  if(hour >= 5 && hour < 11) return 'morning';
+  if(hour >= 11 && hour < 17) return 'afternoon';
+  if(hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
+function applyHearthTimePeriod(){
+  if(!hearth) return '';
+  const override = (prototypeParams.get('timePeriod') || '').trim().toLowerCase();
+  const allowed = new Set(['morning','afternoon','evening','night']);
+  const period = allowed.has(override) ? override : hearthTimePeriodFromDate();
+  hearth.dataset.timePeriod = period;
+  return period;
+}
 
 function normalizeTimelineEmail(value = ''){
   const email = String(value || '').trim().toLowerCase();
@@ -624,20 +666,151 @@ const meetingPrep = {
 const observerBoardState = {
   chiefOfStaff: {
     view: 'No live Board packet is loaded for this session yet.',
-    why: 'The Board should synthesize real drawer packets from Velocity, Alignment, Leverage, Relationships, Projects, Transcripts, Executive Inbox, and Commitments. This surface should not invent an executive recommendation when those packets are missing.',
+    why: 'The Board should synthesize the core Observer prompts, active drawer packets, and the user’s Witnessing Session context. This surface should not invent an executive recommendation when those packets are missing.',
     next: 'Use this as a readiness check only. Open the specific drawer you care about, or teach VAL what evidence the Board should review before it advises you.'
   },
   observers: [
-    {name: 'Executive Inbox', truth: 'Not ready to advise from the Board.', evidence: 'Requires a live email packet with sender, thread, relationship, draft, and rule context.', stance: 'Needs packet'},
-    {name: 'Relationships', truth: 'Not ready to advise from the Board.', evidence: 'Requires relationship packet evidence, recent signal, source, and missing-context notes.', stance: 'Needs packet'},
-    {name: 'Projects', truth: 'Not ready to advise from the Board.', evidence: 'Requires project packet evidence, current phase, next move, owner, and source receipts.', stance: 'Needs packet'},
-    {name: 'Transcripts', truth: 'Not ready to advise from the Board.', evidence: 'Requires transcript packet evidence with matched event, attendees, project, and review status.', stance: 'Needs packet'},
-    {name: 'Velocity', truth: 'Not ready to advise from the Board.', evidence: 'Requires confirmed changes since the user was away.', stance: 'Needs packet'},
-    {name: 'Alignment', truth: 'Not ready to advise from the Board.', evidence: 'Requires a ranked priority packet instead of a generic priority list.', stance: 'Needs packet'},
-    {name: 'Leverage', truth: 'Not ready to advise from the Board.', evidence: 'Requires prepared drafts or artifacts VAL actually made while the user was away.', stance: 'Needs packet'},
-    {name: 'Commitments', truth: 'Not ready to advise from the Board.', evidence: 'Requires who owes whom what, by when, and the source quote behind it.', stance: 'Needs packet'}
+    {name: 'Executive Inbox', truth: 'No important human should be accidentally neglected.', evidence: 'Communication attention, inbox trust risk, neglected humans.', stance: 'What communication deserves executive attention?', currentlySeeing:'A few threads may require judgment before speed.', watching:'Replies, drafts, silence, and anything that could make a person feel dropped.', evidenceItems:['8 conversations','4 waiting replies','2 prepared drafts'], concern:'A meaningful person may be waiting while lower-value noise feels louder.', explore:'Who needs judgment before another message is sent?', packetFrom:'Relationship', incomingObservation:'Trust risk is rising in two quiet threads.'},
+    {name: 'Relationship', truth: 'Trust compounds over time.', evidence: 'Relationship movement, trust, warmth, repair, presence.', stance: 'Which relationships are quietly changing?', currentlySeeing:'Trust and warmth are moving in small ways.', watching:'Changes in tone, repair opportunities, mutual value, and signs of distance.', evidenceItems:['6 conversations','3 relationship shifts','2 open loops'], concern:'A relationship may be changing before it becomes obvious.', explore:'Which relationship needs presence before strategy?', packetFrom:'Executive Inbox', incomingObservation:'One conversation has been quiet long enough to matter.'},
+    {name: 'Project', truth: 'Work that creates long-term value should continue moving.', evidence: 'Project momentum, blockers, dependencies, long-term value.', stance: 'Which projects are gaining, slowing, or blocked?', currentlySeeing:'Several workstreams are present, but only some are moving.', watching:'Dependencies, approvals, unclear ownership, and project packets that need structure.', evidenceItems:['4 project packets','3 dependencies','1 blocker'], concern:'Visible activity may be hiding stalled value.', explore:'Which project needs a cleaner next move?', packetFrom:'Momentum', incomingObservation:'Movement increased where ownership was explicit.'},
+    {name: 'Capacity', truth: 'The user’s decision quality matters more than today’s output.', evidence: 'Decision quality, energy, cognitive load, recovery constraints.', stance: 'Can the user make wise decisions right now?', currentlySeeing:'Decision load is part of the work.', watching:'Tradeoffs, recovery needs, timing, and whether judgment is being forced too early.', evidenceItems:['5 context signals','2 calendar pressures','3 open decisions'], concern:'A correct answer may still be poorly timed.', explore:'What decision should wait until capacity returns?', packetFrom:'Calendar', incomingObservation:'The schedule is narrowing the available judgment window.'},
+    {name: 'Courage', truth: 'Anxiety can disguise itself as productivity.', evidence: 'Avoidance, difficult decisions, safe productivity hiding important work.', stance: 'What important thing appears to be avoided?', currentlySeeing:'One uncomfortable move may be disguised as optional.', watching:'Avoidance, over-preparation, softened language, and work that feels safe but secondary.', evidenceItems:['3 delayed decisions','2 softened drafts','1 avoided ask'], concern:'Comfort may be protecting the wrong thing.', explore:'What needs to be said plainly?', packetFrom:'Meaning', incomingObservation:'The same avoidance pattern appeared across three projects.'},
+    {name: 'Delight', truth: 'Joy and connection are not distractions from effectiveness.', evidence: 'Joy, play, relief, family, grounding, connection.', stance: 'What could restore energy or deepen connection?', currentlySeeing:'Joy and grounding are active.', watching:'Small moments that restore energy, curiosity, and connection.', evidenceItems:['5 conversations','2 calendar events','3 recent interactions'], concern:'Joy and connection are beginning to disappear from your workday.', explore:'What could restore energy without reducing effectiveness?', packetFrom:'Meaning', incomingObservation:'This pattern has appeared across three projects.'},
+    {name: 'Opportunity', truth: 'Possibility can emerge quietly before it becomes obvious.', evidence: 'Emerging opportunity, revenue, partnership, timing windows.', stance: 'What opportunity is emerging?', currentlySeeing:'A few small openings may be becoming real.', watching:'Timing windows, partner interest, repeated signals, and dormant paths gaining energy.', evidenceItems:['4 external signals','2 partner mentions','1 timing window'], concern:'An opportunity may pass if it waits until it feels obvious.', explore:'Which opening deserves a lightweight test?', packetFrom:'Executive Inbox', incomingObservation:'Two replies point toward the same possible opening.'},
+    {name: 'Momentum', truth: 'Motion is not the same as momentum.', evidence: 'Meaningful movement versus activity.', stance: 'Where is real momentum increasing or slowing?', currentlySeeing:'Movement is uneven across the field.', watching:'Where work compounds, where it churns, and where perfect is delaying useful.', evidenceItems:['6 movement signals','3 stalled loops','2 approvals ready'], concern:'Activity may be mistaken for progress.', explore:'What would create real movement now?', packetFrom:'Project', incomingObservation:'One project moved when the next action became smaller.'},
+    {name: 'Meaning', truth: 'Memory stores. Meaning connects.', evidence: 'Themes, values, remembered lessons, emerging story.', stance: 'What does today’s situation remind us about becoming?', currentlySeeing:'A theme is repeating beneath the tasks.', watching:'Patterns, values, old lessons, and the larger story beneath operational details.', evidenceItems:['7 remembered themes','3 project echoes','2 relationship patterns'], concern:'The useful meaning may be missed if everything is treated as logistics.', explore:'What is this really about?', packetFrom:'Witnessing', incomingObservation:'The user has named this pattern before.'},
+    {name: 'Synchronicity', truth: 'Repeated arrivals deserve attention before they become certainty.', evidence: 'Repeated names, timing clusters, phrase echoes, unexpected overlaps, emotional convergence.', stance: 'What keeps arriving together?', currentlySeeing:'A pattern is appearing across separate contexts.', watching:'Repeated names, timing clusters, phrase echoes, emotional signals, and unrelated events that point toward the same theme.', evidenceItems:['3 repeated themes','2 unrelated sources','1 timing cluster'], concern:'A meaningful pattern may disappear if treated as coincidence too early.', explore:'What is repeating enough to deserve attention?', packetFrom:'Meaning', incomingObservation:'Separate signals are beginning to point toward the same relationship theme.', perspective:'Tracks convergence without overclaiming. Protects mystery, requires evidence, and never calls something fate.'},
+    {name: 'Commitment', truth: 'Tasks are software. Commitments are promises.', evidence: 'Promises, follow-ups, overdue commitments, trust obligations.', stance: 'What promises has this person made?', currentlySeeing:'Several promises are active in the system.', watching:'Follow-through, overdue loops, trust obligations, and promises hidden inside casual language.', evidenceItems:['5 commitments','3 follow-ups','2 aging loops'], concern:'A promise may be treated like an optional task.', explore:'Which promise protects trust if honored now?', packetFrom:'Executive Inbox', incomingObservation:'A waiting reply contains an implied promise.'},
+    {name: 'Calendar', truth: 'Time is a strategic asset.', evidence: 'Time, schedule realism, focus blocks, preparation windows.', stance: 'What does today’s schedule make possible?', currentlySeeing:'Time is shaping what is wise.', watching:'Preparation windows, recovery space, meeting load, and whether the day can hold the work.', evidenceItems:['4 calendar events','2 prep windows','1 capacity constraint'], concern:'The schedule may be asking for more judgment than the day can hold.', explore:'What should be moved, protected, or prepared?', packetFrom:'Capacity', incomingObservation:'Decision quality drops if this stays compressed.'},
+    {name: 'Environment', truth: 'The body and the environment are part of executive context.', evidence: 'Physical context, weather, travel, location, external constraints.', stance: 'What external conditions matter today?', currentlySeeing:'External context may affect judgment.', watching:'Location, physical conditions, travel, interruptions, and environmental friction.', evidenceItems:['3 context signals','2 location factors','1 external constraint'], concern:'The body may be absorbing context the plan has ignored.', explore:'What environmental friction should VAL account for?', packetFrom:'Capacity', incomingObservation:'Recovery context matters before the next hard call.'},
+    {name: 'Witnessing', truth: 'The user’s own words are foundational context.', evidence: 'VAL Witnessing Sessions, onboarding truth, preferences, values, operating context.', stance: 'What has the user directly revealed?', currentlySeeing:'The user’s own words are present as grounding context.', watching:'Stated values, operating preferences, boundaries, fears, desires, and self-knowledge.', evidenceItems:['9 witnessing notes','5 stated values','4 operating preferences'], concern:'A recommendation may drift if it forgets what the user already revealed.', explore:'What should VAL remember before advising?', packetFrom:'Meaning', incomingObservation:'A current pattern matches onboarding context.'}
   ]
 };
+
+const observerBoardPacketRoutingContract = [
+  {
+    source: 'Executive Inbox',
+    sourceSystems: ['gmail', 'sent_mail', 'drafts'],
+    packetTypes: ['email_attention_packet', 'draft_review_packet', 'reply_pressure_packet'],
+    routes: [
+      {to: 'Courage', label: 'Email', side: 'sage', reason: 'A reply, silence, or draft may require plain judgment.'},
+      {to: 'Relationship', label: 'Trust', side: 'sage', reason: 'A thread may change warmth, distance, repair, or trust.'},
+      {to: 'Commitment', label: 'Promise', side: 'sage', reason: 'An email may contain an implied promise or follow-up.'},
+      {to: 'Opportunity', label: 'Opening', side: 'rose', reason: 'A conversation may contain an emerging opening.'}
+    ]
+  },
+  {
+    source: 'Calendar',
+    sourceSystems: ['google_calendar', 'meeting_prep', 'availability'],
+    packetTypes: ['meeting_context_packet', 'capacity_window_packet', 'prep_timing_packet'],
+    routes: [
+      {to: 'Capacity', label: 'Time', side: 'sage', reason: 'The schedule determines whether judgment is available.'},
+      {to: 'Relationship', label: 'Meeting', side: 'rose', reason: 'Meetings can shift trust, repair, warmth, or presence.'},
+      {to: 'Commitment', label: 'Promise', side: 'sage', reason: 'Meetings create or reveal promises.'},
+      {to: 'Environment', label: 'Context', side: 'bridge', reason: 'Location, travel, and timing can change what is wise.'}
+    ]
+  },
+  {
+    source: 'Transcripts',
+    sourceSystems: ['krisp', 'uploaded_transcripts', 'meeting_notes'],
+    packetTypes: ['meeting_evidence_packet', 'decision_trace_packet', 'task_extraction_packet'],
+    routes: [
+      {to: 'Meaning', label: 'Transcript', side: 'rose', reason: 'The transcript may reveal repeated themes and values.'},
+      {to: 'Project', label: 'Project', side: 'sage', reason: 'Meeting evidence may become project movement or blockers.'},
+      {to: 'Momentum', label: 'Movement', side: 'sage', reason: 'A transcript may clarify the next real move.'},
+      {to: 'Witnessing', label: 'Memory', side: 'rose', reason: 'User language can confirm or refine Witnessing context.'}
+    ]
+  },
+  {
+    source: 'Witnessing',
+    sourceSystems: ['val_witnessing_session'],
+    packetTypes: ['identity_context_packet', 'relational_context_packet', 'operating_context_packet'],
+    routes: [
+      {to: 'Meaning', label: 'Meaning', side: 'rose', reason: 'Witnessing provides the larger story and remembered values.'},
+      {to: 'Capacity', label: 'Capacity', side: 'sage', reason: 'Witnessing names how the user makes good decisions.'},
+      {to: 'Delight', label: 'Relief', side: 'rose', reason: 'Witnessing protects aliveness, curiosity, and connection.'},
+      {to: 'Synchronicity', label: 'Pattern', side: 'bridge', reason: 'Witnessing gives repeated themes a known baseline.'},
+      {to: 'Courage', label: 'Courage', side: 'sage', reason: 'Witnessing reveals what must not be avoided.'}
+    ]
+  },
+  {
+    source: 'Synchronicity',
+    sourceSystems: ['board_packets', 'cross_context_memory', 'witnessing_echoes'],
+    packetTypes: ['convergence_packet', 'timing_cluster_packet', 'pattern_echo_packet'],
+    routes: [
+      {to: 'Meaning', label: 'Echo', side: 'rose', reason: 'A repeated arrival may reveal a larger theme.'},
+      {to: 'Opportunity', label: 'Timing', side: 'rose', reason: 'Convergence can indicate a narrow opening.'},
+      {to: 'Relationship', label: 'Repeat', side: 'bridge', reason: 'A repeated name or signal may belong to relationship context.'},
+      {to: 'Capacity', label: 'Discern', side: 'sage', reason: 'Convergence should be inspected without forcing action too early.'}
+    ]
+  },
+  {
+    source: 'VAL Action',
+    sourceSystems: ['co_work', 'approved_drafts', 'tasks', 'external_actions'],
+    packetTypes: ['approval_packet', 'task_packet', 'sent_action_packet', 'learning_packet'],
+    routes: [
+      {to: 'Momentum', label: 'Action', side: 'sage', reason: 'Approved work should create movement.'},
+      {to: 'Commitment', label: 'Follow-up', side: 'sage', reason: 'External actions can create promises that need protection.'},
+      {to: 'Executive Inbox', label: 'Sent', side: 'rose', reason: 'Sent work can create a reply loop.'},
+      {to: 'Meaning', label: 'Learning', side: 'rose', reason: 'What happened should teach VAL what matters.'}
+    ]
+  }
+];
+
+function observerBoardPrototypeConnections(){
+  const routeStyle = [
+    {bend: 1.8, duration: '18.5s', begin: '0s'},
+    {bend: -2.2, duration: '20.5s', begin: '-4.2s'},
+    {bend: 2.4, duration: '21.2s', begin: '-8.1s'},
+    {bend: -1.6, duration: '22s', begin: '-11.5s'},
+    {bend: 2.1, duration: '17.8s', begin: '-2.5s'},
+    {bend: -2.5, duration: '20.8s', begin: '-6.4s'},
+    {bend: 1.6, duration: '21.6s', begin: '-9.8s'},
+    {bend: -2, duration: '19.8s', begin: '-12.2s'},
+    {bend: 2.6, duration: '20.2s', begin: '-3.1s'},
+    {bend: -1.2, duration: '19.2s', begin: '-7.9s'}
+  ];
+  const contractRoutes = observerBoardPacketRoutingContract.flatMap((contract) => (
+    contract.routes.map((route) => ({
+      from: contract.source === 'Transcripts' ? 'Momentum' : contract.source === 'VAL Action' ? 'Delight' : contract.source,
+      to: route.to,
+      label: route.label,
+      side: route.side
+    }))
+  ));
+  const preferredDemoRoutes = contractRoutes.filter((route) => (
+    ['Executive Inbox','Calendar','Project','Commitment','Environment','Delight','Capacity','Relationship','Momentum','Opportunity','Synchronicity'].includes(route.from)
+    && ['Courage','Relationship','Capacity','Meaning','Opportunity','Executive Inbox','Witnessing','Project','Delight','Commitment','Synchronicity'].includes(route.to)
+  ));
+  const signatureDemoRoutes = [
+    {from:'Executive Inbox',to:'Relationship',label:'Trust',side:'sage'},
+    {from:'Executive Inbox',to:'Commitment',label:'Promise',side:'sage'},
+    {from:'Calendar',to:'Capacity',label:'Time',side:'sage'},
+    {from:'Calendar',to:'Environment',label:'Context',side:'bridge'},
+    {from:'Momentum',to:'Meaning',label:'Transcript',side:'rose'},
+    {from:'Momentum',to:'Project',label:'Project',side:'sage'},
+    {from:'Witnessing',to:'Delight',label:'Relief',side:'rose'},
+    {from:'Witnessing',to:'Meaning',label:'Memory',side:'rose'},
+    {from:'Delight',to:'Relationship',label:'Joy',side:'rose'},
+    {from:'Delight',to:'Capacity',label:'Energy',side:'bridge'},
+    {from:'Relationship',to:'Delight',label:'Warmth',side:'rose'},
+    {from:'Meaning',to:'Delight',label:'Aliveness',side:'rose'},
+    {from:'Meaning',to:'Synchronicity',label:'Echo',side:'bridge'},
+    {from:'Witnessing',to:'Synchronicity',label:'Pattern',side:'bridge'},
+    {from:'Synchronicity',to:'Opportunity',label:'Timing',side:'rose'},
+    {from:'Synchronicity',to:'Relationship',label:'Repeat',side:'bridge'},
+    {from:'Synchronicity',to:'Capacity',label:'Discern',side:'sage'},
+    {from:'Delight',to:'Executive Inbox',label:'Human',side:'bridge'},
+    {from:'Capacity',to:'Delight',label:'Recovery',side:'sage'},
+    {from:'Opportunity',to:'Courage',label:'Opening',side:'rose'},
+    {from:'Commitment',to:'Momentum',label:'Follow-up',side:'sage'}
+  ];
+  const demoRoutes = signatureDemoRoutes.length ? signatureDemoRoutes : (preferredDemoRoutes.length >= 10 ? preferredDemoRoutes.slice(0, 10) : contractRoutes.slice(0, 10));
+  return demoRoutes.map((route, index) => {
+    const style = routeStyle[index % routeStyle.length];
+    return [route.from, route.to, route.label, route.side, style.bend, style.duration, style.begin];
+  });
+}
 
 const coworkSession = {
   lens: 'Co-Work with VAL',
@@ -6074,7 +6247,7 @@ async function finalizeActiveCoworkResponse(entry = {}, result = {}){
   return applied;
 }
 
-async function submitActiveCoworkEntry(){
+async function submitActiveCoworkEntry(messageOverride = ''){
   const entry = activeCoworkEntry;
   if(!entry) return false;
   if(!entry.sessionId){
@@ -6087,7 +6260,7 @@ async function submitActiveCoworkEntry(){
     return true;
   }
   if(entry.status === 'applied') return true;
-  const input = workspaceInputValue('cowork');
+  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   if(!projectCleanText(input)) return true;
   appendHomeCoworkMessage('user',input);
   const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
@@ -9029,7 +9202,7 @@ function renderCorrespondenceList(){
     const empty = document.createElement('article');
     empty.className = 'empty' + (isChecking ? ' correspondence-checking-state' : '');
     empty.innerHTML = isChecking
-      ? '<div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div><span>Checking Executive Inbox</span><p>VAL is searching Gmail, sent history, saved contacts, and relationship context before showing the queue.</p><div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>'
+      ? '<span class="val-presence-mark val-loading-mark correspondence-checking-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Checking Executive Inbox</span><p>VAL is searching Gmail, sent history, saved contacts, and relationship context before showing the queue.</p><p class="correspondence-scan-status" data-correspondence-scan-status></p>'
       : '<span>No items in this view</span><p>' + (currentCorrespondenceItems.length ? 'This filter is clear. Choose another view to see the rest of the Executive Inbox.' : 'No Gmail conversation has been classified into Executive Inbox yet.') + '</p><div class="correspondence-scan-actions"><button type="button" data-correspondence-scan-days="30">Scan 30 days</button><button type="button" data-correspondence-scan-days="90">Scan 90 days</button></div><p class="correspondence-scan-status" data-correspondence-scan-status></p>';
     const status = empty.querySelector('[data-correspondence-scan-status]');
     if(status) status.textContent = currentCorrespondenceScanStatus || (isChecking ? 'This can take a few seconds when VAL checks sent history and known contacts.' : 'Only unresolved executive conversations appear here.');
@@ -12774,10 +12947,12 @@ async function loadRelationshipDossier(profileId = 'aric'){
 }
 
 function closeDrawer(){
+  retrievalSystem.classList.remove('compass-closing');
   retrievalSystem.classList.remove('open');
   retrievalSystem.removeAttribute('data-active-drawer');
   hearth.classList.remove('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'false');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'true');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
@@ -12800,9 +12975,54 @@ function closeDrawer(){
   updateCloseAllDrawersButton();
 }
 
+function returnToExecutiveCompass(){
+  retrievalSystem.classList.remove('compass-closing');
+  retrievalSystem.classList.add('open');
+  retrievalSystem.removeAttribute('data-active-drawer');
+  hearth.classList.add('drawer-open');
+  drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
+  drawerTray.setAttribute('aria-hidden', 'false');
+  drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
+  valDrawerLink?.setAttribute('aria-expanded', 'false');
+  relationshipDrawerLink.setAttribute('aria-expanded', 'false');
+  projectDrawerLink.setAttribute('aria-expanded', 'false');
+  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
+  correspondenceDrawerLink?.setAttribute('aria-expanded', 'false');
+  commitmentDrawerLink?.setAttribute('aria-expanded', 'false');
+  documentDrawerLink?.setAttribute('aria-expanded', 'false');
+  sourceDrawerLink.setAttribute('aria-expanded', 'false');
+  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#relationship-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#project-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
+  document.querySelector('#source-detail')?.setAttribute('aria-hidden', 'true');
+  renderDrawerPacketReceiptStrip(null);
+  drawerTray.scrollTo?.({top:0, left:0});
+  updateCloseAllDrawersButton();
+}
+
+function closeExecutiveCompassFromCore(){
+  if(!retrievalSystem.classList.contains('open')){
+    closeDrawer();
+    return;
+  }
+  retrievalSystem.classList.add('compass-closing');
+  window.setTimeout(closeDrawer, 520);
+}
+
 function updateCloseAllDrawersButton(){
   if(!closeAllDrawersButton) return;
   closeAllDrawersButton.hidden = !retrievalSystem.classList.contains('open');
+}
+
+function updateDrawerPullLabel(){
+  if(!drawerPullLabel || !drawerPull) return;
+  const isOpen = drawerPull.getAttribute('aria-expanded') === 'true';
+  drawerPullLabel.textContent = isOpen ? (drawerPullLabel.dataset.labelClose || 'Return to Home') : (drawerPullLabel.dataset.labelOpen || 'Open Executive Functions');
 }
 
 function ensureDrawerTrayOpen(){
@@ -12810,6 +13030,7 @@ function ensureDrawerTrayOpen(){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   updateCloseAllDrawersButton();
 }
@@ -13526,11 +13747,14 @@ function renderTimelineTranscriptList(activeId = ''){
     const summary = timelineSummaryObject(transcript);
     const tasks = Number(transcript.taskCount || transcript.openActionCount || 0);
     const active = String(activeId || '') === String(transcript.id || '');
+    const title = timelineTranscriptTitle(transcript);
+    const meta = timelineTranscriptMeta(transcript) || 'Transcript source';
+    const preview = timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summary || 'Open to review the transcript details.', 130);
     return [
       '<button type="button" class="timeline-transcript-row' + (active ? ' active' : '') + '" data-transcript-open="' + escapeHtml(transcript.id || '') + '">',
-      '<span>' + escapeHtml(timelineTranscriptMeta(transcript) || 'Transcript') + '</span>',
-      '<strong>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</strong>',
-      '<p>' + escapeHtml(timelineCompactText(summary.executiveSummary || summary.clientSummary || transcript.summary || 'Open to review the transcript details.', 170)) + '</p>',
+      '<strong>' + escapeHtml(title) + '</strong>',
+      '<span>' + escapeHtml(meta) + '</span>',
+      '<p>' + escapeHtml(preview) + '</p>',
       '<small>' + escapeHtml(tasks ? tasks + ' action item' + (tasks === 1 ? '' : 's') : 'No action items') + '</small>',
       '</button>'
     ].join('');
@@ -13632,11 +13856,13 @@ function renderTimelineTranscriptDetail(transcript = {}){
   const sourceText = timelineFullTranscriptText(transcript);
   const downloadUrl = timelineTranscriptDownloadUrl(transcript);
   const overviewDraft = timelineMeetingOverviewDraft(transcript, tasks);
-  timelineReviewCount.textContent = timelineTranscriptTitle(transcript);
+  const title = timelineTranscriptTitle(transcript);
+  const meta = timelineTranscriptMeta(transcript);
+  timelineReviewCount.textContent = title;
   timelineReviewCards.innerHTML = [
     '<article class="timeline-transcript-detail">',
     '<div class="timeline-transcript-titlebar">',
-    '<div><span>' + escapeHtml(timelineTranscriptMeta(transcript)) + '</span><h4>' + escapeHtml(timelineTranscriptTitle(transcript)) + '</h4>' + (rawTitle && rawTitle !== timelineTranscriptTitle(transcript) ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
+    '<div><span>Selected transcript</span><h4>' + escapeHtml(title) + '</h4><small>' + escapeHtml(meta || 'Source receipt available') + '</small>' + (rawTitle && rawTitle !== title ? '<small>Stored title: ' + escapeHtml(rawTitle) + '</small>' : '') + '</div>',
     '</div>',
     renderTimelineTranscriptMetricStrip(transcript, tasks, overviewDraft),
     renderTimelineTranscriptSourceSections(transcript, overviewDraft),
@@ -13691,7 +13917,7 @@ async function loadTimelineTranscripts({openFirst = true, days = transcriptSelec
     : 'VAL is reading transcript receipts from the last ' + timelineTranscriptRefreshDays + ' days.';
   setTimelineTranscriptsLoading(true, loadingMessage);
   renderTimelineTranscriptStats({counts:{}});
-  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><div class="correspondence-search-orbit" aria-hidden="true"><i></i><i></i><i></i></div><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p><div class="correspondence-search-skeleton" aria-hidden="true"><b></b><b></b><b></b></div></article>';
+  if(timelineEventList) timelineEventList.innerHTML = '<article class="empty timeline-transcript-loading-card"><span class="val-presence-mark val-loading-mark timeline-loading-val" aria-hidden="true"><span class="val-presence-orbit"></span><span class="val-presence-core">VAL</span></span><span>Loading transcripts</span><p>' + escapeHtml(loadingMessage) + '</p></article>';
   renderTimelineTranscriptEmpty();
   if(!canUseApi){
     setTimelineTranscriptsLoading(false);
@@ -15547,6 +15773,7 @@ async function runMeetingPrepExternalReview(event = activeMeetingPrepEvent || me
 
 function setWorkspaceContent({lens,title,meaning,understanding,recommendation,actions,label,packetReceipt,sourceItem,cardType,suppressClarityStandard}){
   activeHomeWorkspace = null;
+  deskWorkspace.classList.remove('alignment-function-mode', 'leverage-function-mode', 'linkedin-visibility-mode');
   if(!/home co-work/i.test(String(label || ''))) deskWorkspace.classList.remove('home-cowork-mode');
   if(!/board of observers/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('observer-board-mode');
   if(!/task workspace/i.test(String(label || lens || ''))) deskWorkspace.classList.remove('task-workspace-mode');
@@ -15984,7 +16211,244 @@ function appendToWorkspaceInput(text){
   textarea.focus();
 }
 
-function startWorkspaceVoiceInput(){
+function valCoworkGreeting(){
+  const hour = new Date().getHours();
+  const daypart = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+  return 'Good ' + daypart + ' Jessa, what would you like to discuss this ' + daypart + '?';
+}
+
+function valCoworkVoiceShell(){
+  return workspaceInputPanel.querySelector('[data-val-cowork-voice-shell]');
+}
+
+function setValCoworkVoiceMode(mode = 'idle', detail = ''){
+  valCoworkVoiceState.mode = mode;
+  const shell = valCoworkVoiceShell();
+  if(!shell) return;
+  shell.dataset.voiceMode = mode;
+  const status = shell.querySelector('[data-val-voice-mode-status]');
+  if(status) status.textContent = detail || (mode === 'speaking' ? 'VAL is speaking.' : mode === 'listening' ? 'VAL is listening.' : mode === 'thinking' ? 'VAL is thinking.' : 'VAL voice mode is ready.');
+}
+
+function renderValCoworkVoicePanel(){
+  const form = workspaceInputPanel.querySelector('[data-home-cowork-form]') || scraperPreviewList?.querySelector?.('[data-home-cowork-form]');
+  if(!form || valCoworkVoiceShell()) return;
+  workspaceInputPanel.insertAdjacentHTML('beforeend', [
+    '<section class="val-cowork-voice-shell" data-val-cowork-voice-shell data-voice-mode="idle" aria-live="polite">',
+      '<span class="sr-only" data-val-voice-mode-status>VAL voice mode is ready.</span>',
+      '<div class="val-cowork-voice-orb" aria-hidden="true">',
+        '<span class="val-presence-mark val-cowork-voice-mark">',
+          '<span class="val-presence-orbit"></span>',
+          '<span class="val-presence-core">VAL</span>',
+        '</span>',
+      '</div>',
+    '</section>',
+    '<button type="button" data-val-cowork-voice-end aria-label="End voice mode">×</button>'
+  ].join(''));
+}
+
+function clearValCoworkVoiceRestart(){
+  if(valCoworkVoiceState.restartTimer){
+    window.clearTimeout(valCoworkVoiceState.restartTimer);
+    valCoworkVoiceState.restartTimer = null;
+  }
+}
+
+function valCoworkSpeechText(text = ''){
+  return String(text || '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2000);
+}
+
+function fetchValCoworkDeepgramAudio(cleanText = ''){
+  const clean = valCoworkSpeechText(cleanText);
+  if(!clean) return Promise.reject(new Error('No text supplied for voice playback.'));
+  if(valCoworkVoiceState.audioCache[clean]) return valCoworkVoiceState.audioCache[clean];
+  let controller = null;
+  let timer = null;
+  if(window.AbortController){
+    controller = new AbortController();
+    timer = window.setTimeout(() => {
+      try{ controller.abort(); }catch(error){}
+    }, 6500);
+  }
+  valCoworkVoiceState.audioCache[clean] = fetch('/api/val/tts', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:clean}),
+    signal:controller ? controller.signal : undefined
+  }).then((response) => {
+    if(!response.ok){
+      return response.json().catch(() => ({})).then((data) => {
+        throw new Error(data.detail || data.error || 'Deepgram TTS failed: ' + response.status);
+      });
+    }
+    const contentType = response.headers.get('content-type') || '';
+    if(!contentType.includes('audio/')) throw new Error('Deepgram TTS did not return audio.');
+    return response.blob();
+  }).catch((error) => {
+    delete valCoworkVoiceState.audioCache[clean];
+    throw error;
+  }).finally(() => {
+    if(timer) window.clearTimeout(timer);
+  });
+  return valCoworkVoiceState.audioCache[clean];
+}
+
+function stopValCoworkVoiceMode(){
+  clearValCoworkVoiceRestart();
+  valCoworkVoiceState.active = false;
+  valCoworkVoiceState.pending = false;
+  valCoworkVoiceState.playbackToken += 1;
+  if(valCoworkVoiceState.audio){
+    try{ valCoworkVoiceState.audio.pause(); }catch(error){}
+    valCoworkVoiceState.audio = null;
+  }
+  try{ valCoworkVoiceState.recognition?.stop?.(); }catch(error){}
+  valCoworkVoiceState.recognition = null;
+  try{ window.speechSynthesis?.cancel?.(); }catch(error){}
+  workspaceInputPanel.classList.remove('val-cowork-voice-active');
+  deskWorkspace?.classList.remove('val-cowork-voice-active');
+  valCoworkVoiceShell()?.remove();
+}
+
+function closeValCoworkVoiceSession(){
+  closeWorkspace();
+}
+
+function speakValCoworkMessage(text = '', options = {}){
+  if(!valCoworkVoiceState.active) return;
+  const spoken = valCoworkSpeechText(text);
+  if(!spoken) return;
+  const token = ++valCoworkVoiceState.playbackToken;
+  let finished = false;
+  let fellBack = false;
+  setValCoworkVoiceMode('speaking', options.detail || 'VAL is answering out loud.');
+  try{ window.speechSynthesis.cancel(); }catch(error){}
+  if(valCoworkVoiceState.audio){
+    try{ valCoworkVoiceState.audio.pause(); }catch(error){}
+    valCoworkVoiceState.audio = null;
+  }
+  const finish = () => {
+    if(finished || token !== valCoworkVoiceState.playbackToken) return;
+    finished = true;
+    if(typeof options.onEnd === 'function') options.onEnd();
+    else if(valCoworkVoiceState.active) startValCoworkListening();
+  };
+  const fallbackSpeak = () => {
+    if(fellBack || finished || token !== valCoworkVoiceState.playbackToken) return;
+    fellBack = true;
+    setValCoworkVoiceMode('idle', 'Deepgram voice is not available in this local preview. VAL will not use a robot fallback.');
+    finish();
+  };
+  fetchValCoworkDeepgramAudio(spoken).then((blob) => {
+    if(fellBack || finished || token !== valCoworkVoiceState.playbackToken) return;
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    valCoworkVoiceState.audio = audio;
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      if(valCoworkVoiceState.audio === audio) valCoworkVoiceState.audio = null;
+      finish();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      if(valCoworkVoiceState.audio === audio) valCoworkVoiceState.audio = null;
+      fallbackSpeak();
+    };
+    audio.play().catch(() => {
+      URL.revokeObjectURL(url);
+      if(valCoworkVoiceState.audio === audio) valCoworkVoiceState.audio = null;
+      fallbackSpeak();
+    });
+  }).catch(() => fallbackSpeak());
+}
+
+async function sendValCoworkVoiceTranscript(transcript = ''){
+  const spoken = projectCleanText(transcript);
+  if(!spoken || valCoworkVoiceState.pending) return;
+  valCoworkVoiceState.pending = true;
+  valCoworkVoiceState.lastTranscript = spoken;
+  setValCoworkVoiceMode('thinking', 'VAL heard you. Holding the thread and preparing a response.');
+  try{
+    if(await submitActiveCoworkEntry(spoken)) return;
+    await runCowork('think', spoken);
+  }finally{
+    valCoworkVoiceState.pending = false;
+    if(valCoworkVoiceState.active && valCoworkVoiceState.mode === 'thinking'){
+      startValCoworkListening();
+    }
+  }
+}
+
+function startValCoworkListening(){
+  if(!valCoworkVoiceState.active || valCoworkVoiceState.pending) return;
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    setValCoworkVoiceMode('idle', 'Voice capture is not available in this browser. Typed co-work is still available.');
+    return;
+  }
+  clearValCoworkVoiceRestart();
+  try{ valCoworkVoiceState.recognition?.stop?.(); }catch(error){}
+  const recognition = new SpeechRecognition();
+  valCoworkVoiceState.recognition = recognition;
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.continuous = false;
+  recognition.maxAlternatives = 1;
+  setValCoworkVoiceMode('listening', 'Speak naturally. Nothing is being typed into the input.');
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results || [])
+      .map((result) => result[0]?.transcript || '')
+      .join(' ')
+      .trim();
+    void sendValCoworkVoiceTranscript(transcript);
+  };
+  recognition.onerror = () => {
+    if(!valCoworkVoiceState.active) return;
+    setValCoworkVoiceMode('idle', 'Voice paused. Check microphone permission, then click Voice again.');
+  };
+  recognition.onend = () => {
+    if(!valCoworkVoiceState.active || valCoworkVoiceState.pending || valCoworkVoiceState.mode === 'speaking') return;
+    valCoworkVoiceState.restartTimer = window.setTimeout(() => {
+      if(valCoworkVoiceState.active && !valCoworkVoiceState.pending) startValCoworkListening();
+    }, 600);
+  };
+  try{
+    recognition.start();
+  }catch(error){
+    setValCoworkVoiceMode('idle', 'Voice is already starting. Give VAL one breath, then speak.');
+  }
+}
+
+function startValCoworkVoiceMode(){
+  const form = workspaceInputPanel.querySelector('[data-home-cowork-form]') || scraperPreviewList?.querySelector?.('[data-home-cowork-form]');
+  if(!form){
+    startWorkspaceVoiceDictation();
+    return;
+  }
+  if(valCoworkVoiceState.active){
+    startValCoworkListening();
+    return;
+  }
+  valCoworkVoiceState.active = true;
+  valCoworkVoiceState.pending = false;
+  workspaceInputPanel.classList.add('val-cowork-voice-active');
+  deskWorkspace?.classList.add('val-cowork-voice-active');
+  renderValCoworkVoicePanel();
+  const greeting = valCoworkGreeting();
+  appendHomeCoworkMessage('val', greeting, {silentVoice:true});
+  speakValCoworkMessage(greeting, {
+    detail:'VAL is greeting you.',
+    onEnd:() => startValCoworkListening()
+  });
+}
+
+function startWorkspaceVoiceDictation(){
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SpeechRecognition){
     setWorkspaceToolStatus('Voice input is not available in this browser yet. Type here, or use upload/generate image as context.');
@@ -16013,6 +16477,59 @@ function startWorkspaceVoiceInput(){
     }
   };
   recognition.start();
+}
+
+function startWorkspaceVoiceInput(){
+  startValCoworkVoiceMode();
+}
+
+function activeWorkspaceFileInput(tool = null){
+  return tool?.closest?.('[data-home-cowork-form]')?.querySelector?.('[data-workspace-file-input]')
+    || workspaceInputPanel.querySelector('[data-workspace-file-input]')
+    || scraperPreviewList?.querySelector?.('[data-workspace-file-input]');
+}
+
+function handleHomeCoworkFormSubmit(event){
+  if(!event.target.matches('[data-home-cowork-form]')) return false;
+  event.preventDefault();
+  submitActiveCoworkEntry().then((handled) => {
+    if(!handled) runCowork('think');
+  });
+  return true;
+}
+
+function handleHomeCoworkInput(event){
+  if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return false;
+  orientHomeCoworkFromInput();
+  return true;
+}
+
+async function handleWorkspaceFileChange(event){
+  const input = event.target.closest('[data-workspace-file-input]');
+  if(!input) return false;
+  await appendWorkspaceFiles(input.files);
+  input.value = '';
+  return true;
+}
+
+function handleWorkspaceToolClick(event){
+  const tool = event.target.closest('[data-workspace-tool]');
+  if(!tool) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  if(tool.dataset.workspaceTool === 'voice'){
+    startWorkspaceVoiceInput();
+    return true;
+  }
+  if(tool.dataset.workspaceTool === 'upload'){
+    activeWorkspaceFileInput(tool)?.click();
+    return true;
+  }
+  if(tool.dataset.workspaceTool === 'image'){
+    appendWorkspaceImageRequest();
+    return true;
+  }
+  return true;
 }
 
 async function appendWorkspaceFiles(files = []){
@@ -16992,40 +17509,84 @@ function updateLinkedInWidget(){
   if(linkedinReadyCount) linkedinReadyCount.textContent = String(linkedinVisibilityItems.length);
 }
 
+function setLinkedInVisibilityPage(page = 'posts'){
+  if(!scraperPreviewList) return;
+  const activePage = page === 'instructions' ? 'instructions' : 'posts';
+  scraperPreviewList.querySelectorAll('[data-linkedin-page]').forEach((button) => {
+    const isActive = button.dataset.linkedinPage === activePage;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-selected', String(isActive));
+  });
+  scraperPreviewList.querySelectorAll('[data-linkedin-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.linkedinPanel !== activePage;
+  });
+}
+
 function renderLinkedInEngagementList(){
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.add('linkedin-preview-list');
   scraperPreviewList.innerHTML = [
-    '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
-      linkedinVisibilityItems.map((item, index) => (
-        '<article class="linkedin-engagement-item">' +
-          '<div class="linkedin-engagement-head">' +
-            '<span class="linkedin-logo small" aria-hidden="true">in</span>' +
-            '<div><strong>' + escapeHtml(item.contact) + '</strong><small>' + escapeHtml(item.whyItMatters) + '</small></div>' +
-          '</div>' +
-          '<p>' + escapeHtml(item.postPreview) + '</p>' +
-          '<blockquote>' + escapeHtml(item.draftComment) + '</blockquote>' +
-          '<div class="linkedin-engagement-actions">' +
-            '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' +
-            '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' +
-          '</div>' +
-        '</article>'
-      )).join(''),
+    '<div class="linkedin-engagement-shell" aria-label="LinkedIn visibility workspace">',
+      '<div class="linkedin-engagement-nav" role="tablist" aria-label="LinkedIn visibility sections">',
+        '<button type="button" class="active" role="tab" aria-selected="true" data-linkedin-page="posts">Posts</button>',
+        '<button type="button" role="tab" aria-selected="false" data-linkedin-page="instructions">Instructions</button>',
+      '</div>',
+      '<section class="linkedin-page linkedin-posts-page" data-linkedin-panel="posts" aria-label="Prepared LinkedIn posts">',
+        '<div class="linkedin-engagement-summary">',
+          '<span>Visibility Desk</span>',
+          '<strong>' + linkedinVisibilityItems.length + ' prepared drafts</strong>',
+          '<p>VAL prepared support, not publishing. Copy only what still feels true.</p>',
+        '</div>',
+        '<div class="linkedin-engagement-list" aria-label="Posts to comment on">',
+        linkedinVisibilityItems.map((item, index) => (
+          '<article class="linkedin-engagement-item">' +
+            '<div class="linkedin-engagement-head">' +
+              '<span class="linkedin-logo small" aria-hidden="true">in</span>' +
+              '<div><span>Support signal</span><strong>' + escapeHtml(item.contact) + '</strong><small>' + escapeHtml(item.whyItMatters) + '</small></div>' +
+            '</div>' +
+            '<div class="linkedin-post-preview"><span>Recent post</span><p>' + escapeHtml(item.postPreview) + '</p></div>' +
+            '<blockquote><span>Draft comment</span>' + escapeHtml(item.draftComment) + '</blockquote>' +
+            '<div class="linkedin-engagement-actions">' +
+              '<button type="button" data-linkedin-copy="' + index + '">Copy comment</button>' +
+              '<a href="' + escapeHtml(item.postUrl) + '" target="_blank" rel="noopener" data-linkedin-link="' + index + '">Open LinkedIn</a>' +
+            '</div>' +
+          '</article>'
+        )).join(''),
+        '</div>',
+      '</section>',
+      '<section class="linkedin-page linkedin-instructions-page" data-linkedin-panel="instructions" aria-label="LinkedIn instructions" hidden>',
+        '<article class="linkedin-instruction-lead">',
+          '<span>Manual Visibility</span>',
+          '<strong>VAL prepares the room. You decide what enters LinkedIn.</strong>',
+          '<p>These instructions keep LinkedIn human, relationship-aware, and safe. Drafts can move through VAL, but public action always waits for your hand.</p>',
+        '</article>',
+        '<div class="linkedin-instruction-grid">',
+          '<article class="linkedin-instruction-card"><span>Boundary</span><strong>No autoposting.</strong><p>VAL never publishes comments, reactions, posts, DMs, or connection requests on its own.</p></article>',
+          '<article class="linkedin-instruction-card"><span>Voice</span><strong>Specific, warm, brief.</strong><p>No generic applause. Each comment should sound like a real person who actually read the post.</p></article>',
+          '<article class="linkedin-instruction-card"><span>Support Circle</span><strong>Only chosen people.</strong><p>Prepared visibility should stay close to the relationships you have explicitly decided to support.</p></article>',
+          '<article class="linkedin-instruction-card"><span>Routing</span><strong>Signals become context.</strong><p>LinkedIn activity can inform Stewardship, Executive Inbox, meeting prep, and relationship memory.</p></article>',
+        '</div>',
+        '<article class="linkedin-instruction-note">',
+          '<span>Needs From You</span>',
+          '<p>Teach VAL examples of comments you would actually leave, phrases you would never use, and which relationships belong in the support circle.</p>',
+        '</article>',
+      '</section>',
     '</div>'
   ].join('');
+  setLinkedInVisibilityPage('posts');
 }
 
 function openLinkedInEngagementWorkspace(){
   setWorkspaceContent({
     lens: 'LinkedIn Visibility',
-    title: linkedinVisibilityItems.length + ' LinkedIn posts are ready for support.',
+    title: linkedinVisibilityItems.length + ' visibility drafts are ready.',
     meaning: 'VAL prepared comments and visibility opportunities, but LinkedIn publishing remains manual to protect the account and the relationship.',
     understanding: [
-      'Posts to comment on: ' + linkedinVisibilityItems.length,
-      'Each item includes the contact, post preview, why it matters, draft comment, copy button, and direct LinkedIn link.',
-      'VAL never auto-publishes LinkedIn posts, comments, or DMs.'
+      linkedinVisibilityItems.length + ' support opportunities are prepared.',
+      'Each draft includes the relationship signal, post context, and a comment to copy manually.',
+      'VAL never auto-publishes posts, comments, reactions, or DMs.'
     ],
-    recommendation: 'Copy only the comments that feel true, then open LinkedIn and paste manually.',
+    recommendation: 'Review for voice, copy only what feels true, then open LinkedIn manually.',
     actions: [
       {label: 'Co-Work with VAL', workflow: 'cowork:think'},
       {label: 'Teach LinkedIn style', workflow: 'valOnboarding:linkedin_strategy'},
@@ -17033,6 +17594,7 @@ function openLinkedInEngagementWorkspace(){
     ],
     label: 'LinkedIn visibility workspace'
   });
+  deskWorkspace.classList.add('linkedin-visibility-mode');
   renderLinkedInEngagementList();
   openWorkspaceShell('LinkedIn visibility workspace', {returnTarget:'home'});
 }
@@ -18436,8 +18998,8 @@ async function runMeetingPrepCoworkMayPrompt(briefing = activeMeetingPrepBriefin
   console.warn('Deprecated Meeting Prep Co-Work autoprompt blocked. Use /api/val/meeting-prep/rebuild.');
 }
 
-async function runCowork(mode){
-  const input = workspaceInputValue('cowork');
+async function runCowork(mode, messageOverride = ''){
+  const input = projectCleanText(messageOverride) || workspaceInputValue('cowork');
   const visiblePrompt = input || 'Help me think through the most useful next step from the Hearth.';
   const keepHomeCoworkOpen = Boolean(deskWorkspace?.classList.contains('home-cowork-mode') && homeCoworkResponseNode());
   const suppressVisibleUserPrompt = Boolean(mode === 'meeting_prep' && activeMeetingPrepAutoPrompt);
@@ -18449,6 +19011,8 @@ async function runCowork(mode){
     : '';
   if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
+    const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+    if(textarea) textarea.value = '';
   }
   if(mockScrapers || !canUseApi){
     if(keepHomeCoworkOpen){
@@ -18699,6 +19263,7 @@ function restoreRelationshipWindow(){
   retrievalSystem.dataset.activeDrawer = 'relationship';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('relationship-open');
   drawerTray.classList.remove('val-open', 'source-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
@@ -18724,8 +19289,10 @@ function restoreRelationshipWindow(){
 function restoreProjectWindow(projectId = ''){
   if(projectDrawerLink?.disabled) return;
   retrievalSystem.classList.add('open');
+  retrievalSystem.dataset.activeDrawer = 'project';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('project-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
@@ -18763,6 +19330,7 @@ function restoreTimelineWindow(){
   retrievalSystem.dataset.activeDrawer = 'timeline';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('timeline-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
@@ -18797,6 +19365,7 @@ function restoreCorrespondenceWindow(){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('correspondence-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'commitment-open', 'document-open', 'source-open');
@@ -18825,6 +19394,7 @@ function restoreLeadIntelligenceWindow(){
   retrievalSystem.dataset.activeDrawer = 'source';
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('source-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open');
@@ -18853,6 +19423,7 @@ function restoreValWindow(){
   retrievalSystem.classList.add('open');
   hearth.classList.add('drawer-open');
   drawerPull.setAttribute('aria-expanded', 'true');
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', 'false');
   drawerTray.classList.add('val-open');
   drawerTray.classList.remove('relationship-open', 'project-open', 'timeline-open', 'correspondence-open', 'commitment-open', 'document-open', 'source-open');
@@ -20231,6 +20802,7 @@ function renderValWitnessingCompletion(result = {}){
     '</section>',
     '<div class="val-conversation-actions">',
       '<button type="button" data-workflow-action="cancel:val">Back to VAL</button>',
+      '<button type="button" data-val-witnessing-action="true" data-workflow-action="valWitnessingOpenBoard">View Board of Observers</button>',
       '<button type="button" data-workflow-action="valConnections:review">Connect sources</button>',
     '</div>'
   ].join('');
@@ -21256,6 +21828,7 @@ const valWitnessingWorkflowCommands = new Set([
   'valWitnessingSourcesContinue',
   'valWitnessingFirstLookPrepare',
   'valWitnessingFirstLookContinue',
+  'valWitnessingOpenBoard',
   'valWitnessingImportKrisp',
   'valFirstLookBuildMap',
   'valFirstLookCandidateDecision',
@@ -21332,6 +21905,10 @@ async function handleValWitnessingWorkflowAction(command, type, rest = []){
   }
   if(command === 'valWitnessingFirstLookContinue'){
     await continueValWitnessingAfterFirstLook();
+    return;
+  }
+  if(command === 'valWitnessingOpenBoard'){
+    openObserverBoardAfterWitnessing();
     return;
   }
   if(command === 'valWitnessingImportKrisp'){
@@ -22557,6 +23134,202 @@ function openHomeCardCowork(workspace){
   });
 }
 
+function alignmentDraftFromWorkspace(workspace = {}){
+  const fields = workspace.packetFields || {};
+  const source = workspace.sourceItem || {};
+  const candidates = [
+    workspace.draftBody,
+    workspace.draft_body,
+    workspace.preparedDraft,
+    workspace.prepared_draft,
+    workspace.preparedArtifact?.body,
+    workspace.prepared_artifact?.body,
+    workspace.payload?.preparedArtifact?.body,
+    workspace.payload?.prepared_artifact?.body,
+    fields.draft_body,
+    fields.prepared_draft,
+    fields.preparedArtifact?.body,
+    fields.prepared_artifact?.body,
+    source.draftBody,
+    source.draft_body,
+    source.preparedDraft,
+    source.prepared_draft,
+    source.preparedArtifact?.body,
+    source.prepared_artifact?.body,
+    source.payload?.preparedArtifact?.body,
+    source.payload?.prepared_artifact?.body
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const body = candidates.find((value) => value.length > 20) || '';
+  if(!body) return null;
+  return {
+    title: workspace.draftTitle || workspace.draft_title || workspace.preparedArtifact?.subject || source.draftTitle || source.draft_title || source.preparedArtifact?.subject || 'Prepared draft',
+    body
+  };
+}
+
+function renderAlignmentFunctionWorkspace(workspace = {}){
+  const active = workspace || {};
+  const fields = active.packetFields || {};
+  const title = compactSentence(active.title || fields.what_changed || 'Alignment review', 'Alignment review');
+  const meaning = fields.why_it_matters || active.meaning || 'VAL is holding the signal, the context, and the recommended next move for review.';
+  const recommendation = fields.recommended_next_step || active.recommendation || 'Review the signal, then decide what should happen next.';
+  const visibleMeaning = compactSentence(
+    meaning
+      .replace(/^This came directly from[^.]*\.\s*/i, '')
+      .replace(/^The related supporting source is attached\.\s*/i, ''),
+    meaning
+  );
+  const visibleRecommendation = compactSentence(
+    recommendation
+      .replace(/^Use the attached source to confirm what changed,\s*then\s*/i, '')
+      .replace(/^Review the attached source,\s*then\s*/i, ''),
+    recommendation
+  );
+  const evidence = fields.evidence_summary || fields.source_type || active.coworkContext || 'No source evidence is exposed here until you choose to inspect it.';
+  const known = fields.what_val_now_knows || 'VAL is keeping the relevant context private until it is useful to show.';
+  const draft = alignmentDraftFromWorkspace(active);
+  const preparedDraftCount = Number(leveragePreparedCount?.dataset?.count || 0);
+  const canLoadDraft = Boolean(draft || preparedDraftCount > 0);
+  activeCoworkHeldContext = [
+    title,
+    'Why it matters: ' + meaning,
+    'What VAL now knows: ' + known,
+    'Evidence: ' + evidence,
+    'Recommended next step: ' + recommendation
+  ].filter(Boolean).join('\n');
+  activeCoworkContextLocked = false;
+  setWorkspaceContent({
+    lens: 'Alignment',
+    title,
+    meaning,
+    understanding: ['VAL is holding the context privately.', 'Nothing external happens without approval.'],
+    recommendation,
+    actions: [],
+    label: 'Alignment function workspace',
+    sourceItem: active.sourceItem,
+    cardType: active.cardType,
+    suppressClarityStandard: true
+  });
+  deskWorkspace.classList.add('home-cowork-mode', 'alignment-function-mode');
+  deskWorkspace.setAttribute('aria-label', 'Alignment function workspace');
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
+  scraperPreviewList.innerHTML = [
+    '<section class="alignment-room" aria-label="Alignment function">',
+      '<div class="alignment-room-feed" aria-hidden="true"><i></i><i></i><i></i></div>',
+      '<header class="alignment-room-header">',
+        '<span>Alignment</span>',
+      '</header>',
+      '<div class="alignment-room-board">',
+        '<section class="alignment-room-primary">',
+          '<div class="alignment-room-meta"><span>Current Signal</span></div>',
+          '<h3>' + escapeHtml(title) + '</h3>',
+          '<p>' + escapeHtml(visibleMeaning) + '</p>',
+          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (canLoadDraft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
+          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+        '</section>',
+      '</div>',
+      '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
+    '</section>'
+  ].join('');
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = [
+    '<form class="home-cowork-chatbar alignment-room-chatbar" data-home-cowork-form>',
+      '<span class="home-cowork-spark" aria-hidden="true"></span>',
+      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this alignment signal" placeholder="Frame the decision, draft the reply, create the task, or hold..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
+      '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
+      '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
+      '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
+      '<input type="file" data-workspace-file-input multiple hidden>',
+    '</form>'
+  ].join('');
+  enableValAutocorrect(workspaceInputPanel);
+  openWorkspaceShell('Alignment function workspace', {returnTarget:'home', keepDrawerOpen:true});
+}
+
+function renderLeverageFunctionWorkspace(workspace = {}){
+  const active = workspace || {};
+  const fields = active.packetFields || {};
+  const count = Number(leveragePreparedCount?.dataset?.count || 0);
+  const title = compactSentence(
+    active.title || fields.what_changed || (count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting' : 'No prepared work is waiting right now'),
+    'Leverage review'
+  );
+  const meaning = fields.why_it_matters || active.meaning || (count ? 'Review prepared work before anything leaves VAL.' : 'Leverage opens only real prepared work, not loose possibilities.');
+  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Load the draft when it is ready for review.' : 'Nothing needs approval from Leverage.');
+  const visibleMeaning = compactSentence(
+    meaning
+      .replace(/^VAL has counted prepared work,\s*but\s*/i, '')
+      .replace(/^Leverage only opens/i, 'Opens'),
+    meaning
+  );
+  const visibleRecommendation = compactSentence(
+    recommendation
+      .replace(/^Give VAL a moment to finish loading the reviewable prepared items,\s*then\s*/i, '')
+      .replace(/^Review the draft before/i, 'Review before'),
+    recommendation
+  );
+  const draft = alignmentDraftFromWorkspace(active);
+  activeCoworkHeldContext = [
+    title,
+    'Leverage context: ' + meaning,
+    'Recommended next step: ' + recommendation,
+    draft?.body ? 'Prepared draft:\n' + draft.body : ''
+  ].filter(Boolean).join('\n');
+  activeCoworkContextLocked = false;
+  setWorkspaceContent({
+    lens: 'Leverage',
+    title,
+    meaning,
+    understanding: ['VAL is holding prepared work privately.', 'Nothing is approved, sent, or changed without review.'],
+    recommendation,
+    actions: [],
+    label: 'Leverage function workspace',
+    sourceItem: active.sourceItem,
+    cardType: active.cardType,
+    suppressClarityStandard: true
+  });
+  deskWorkspace.classList.add('home-cowork-mode', 'alignment-function-mode', 'leverage-function-mode');
+  deskWorkspace.setAttribute('aria-label', 'Leverage function workspace');
+  if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
+  scraperPreviewList.innerHTML = [
+    '<section class="alignment-room leverage-room" aria-label="Leverage function">',
+      '<div class="alignment-room-feed" aria-hidden="true"><i></i><i></i><i></i></div>',
+      '<header class="alignment-room-header">',
+        '<span>Leverage</span>',
+      '</header>',
+      '<div class="alignment-room-board">',
+        '<section class="alignment-room-primary">',
+          '<div class="alignment-room-meta"><span>Prepared Work</span></div>',
+          '<h3>' + escapeHtml(title) + '</h3>',
+          '<p>' + escapeHtml(visibleMeaning) + '</p>',
+          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (draft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
+          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+        '</section>',
+      '</div>',
+      '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
+    '</section>'
+  ].join('');
+  workspaceInputPanel.hidden = false;
+  workspaceInputPanel.innerHTML = [
+    '<form class="home-cowork-chatbar alignment-room-chatbar" data-home-cowork-form>',
+      '<span class="home-cowork-spark" aria-hidden="true"></span>',
+      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this prepared work" placeholder="Review the draft, refine it, approve it, or hold..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
+      '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
+      '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
+      '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
+      '<input type="file" data-workspace-file-input multiple hidden>',
+    '</form>'
+  ].join('');
+  enableValAutocorrect(workspaceInputPanel);
+  openWorkspaceShell('Leverage function workspace', {returnTarget:'home', keepDrawerOpen:true});
+}
+
 function openVelocityAwarenessWorkspace(){
   const items = homeRoomQueues.velocity || [];
   setWorkspaceContent({
@@ -22597,7 +23370,7 @@ function openAlignmentExecutionWorkspace(){
   })();
   activeHomeWorkspace = {roomName:'alignment', workspace};
   activeClarityWorkspace = workspace;
-  openHomeCardCowork(workspace);
+  renderAlignmentFunctionWorkspace(workspace);
 }
 
 function openLeverageApprovalWorkspace(){
@@ -22606,25 +23379,18 @@ function openLeverageApprovalWorkspace(){
   if(firstWorkspace){
     activeHomeWorkspace = {roomName:'leverage', workspace:firstWorkspace};
     activeClarityWorkspace = firstWorkspace;
-    openHomeCardCowork(firstWorkspace);
+    renderLeverageFunctionWorkspace(firstWorkspace);
     return;
   }
   const count = Number(leveragePreparedCount?.dataset?.count || 0);
-  setWorkspaceContent({
-    lens: 'Leverage',
+  renderLeverageFunctionWorkspace({
     title: count ? count + ' prepared item' + (count === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-    meaning: count ? 'VAL has counted prepared work, but the review queue is still hydrating. Nothing has been approved or sent.' : 'Leverage only opens real prepared work, not loose possibilities.',
-    understanding: count
-      ? ['Prepared count: ' + count, 'The review queue has not finished loading in this view yet.', 'No prepared work has been hidden, dismissed, approved, or sent.']
-      : ['No prepared email, proposal, appointment, CRM update, task, document, or packet is currently loaded.'],
-    recommendation: count ? 'Give VAL a moment to finish loading the reviewable prepared items, then open Leverage again.' : 'Nothing needs approval from Leverage.',
-    actions: [{label: 'Close and return to desk', workflow: 'cancel:meeting'}],
-    label: 'Leverage approval workspace',
-    packetReceipt: {},
-    suppressClarityStandard: true
+    meaning: count ? 'Prepared work is still loading into review. Nothing has been approved or sent.' : 'Leverage opens only real prepared work, not loose possibilities.',
+    recommendation: count ? 'Open Leverage again once the review queue finishes loading.' : 'Nothing needs approval from Leverage.',
+    packetFields: {},
+    sourceItem: {},
+    cardType: 'prepared_work'
   });
-  renderHomePacketRows('leverage', items);
-  openWorkspaceShell('Leverage approval workspace', {returnTarget:'home'});
 }
 
 async function runHomeEmailAction(action){
@@ -23010,7 +23776,7 @@ function renderHomeCoworkPreview(options = {}){
   const historyMessage = options.historyMessage || 'No earlier project Co-Work thread is loaded in this view.';
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
-  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief', 'observer-cowork-overlay-panel');
   scraperPreviewList.innerHTML = [
     '<div class="home-cowork-workspace" aria-label="VAL workspace">',
       '<aside class="home-cowork-sidebar">',
@@ -23051,7 +23817,7 @@ function renderHomeCoworkPreview(options = {}){
     '<form class="home-cowork-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
       '<span class="home-cowork-divider" aria-hidden="true"></span>',
-      '<textarea data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" placeholder="' + escapeHtml(placeholder) + '" rows="3" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<textarea data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder) + '" placeholder="' + escapeHtml(placeholder) + '" rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
       '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
@@ -23149,6 +23915,9 @@ function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
   }
   response.scrollTop = response.scrollHeight;
   if(role === 'val') hideCoworkContextGathering();
+  if(role === 'val' && valCoworkVoiceState.active && !options.silentVoice){
+    speakValCoworkMessage(text);
+  }
   return response;
 }
 
@@ -23349,7 +24118,12 @@ function observerConversationContext(observer = null, role = 'observer'){
     name:observer.name,
     stance:observer.stance,
     truth:observer.truth,
-    evidence:observer.evidence
+    evidence:observer.evidence,
+    currentlySeeing:observer.currentlySeeing,
+    watching:observer.watching,
+    concern:observer.concern,
+    explore:observer.explore,
+    perspective:observer.perspective
   } : null;
   return {
     title:role === 'chief' ? 'Chat with Your Chief of Staff' : 'Talk with the ' + (observer?.name || 'Selected') + ' Observer',
@@ -23386,6 +24160,175 @@ function observerConversationContext(observer = null, role = 'observer'){
   };
 }
 
+function observerBoardCardMarkup(observer = null, position = {}){
+  const isChief = !observer;
+  const name = isChief ? 'Chief of Staff' : observer.name;
+  const observerId = isChief ? 'chief-of-staff' : observerConversationId(observer.name);
+  const role = isChief ? 'chief' : 'observer';
+  const currentlySeeing = isChief
+    ? 'The full Board is active.'
+    : observer.currentlySeeing || observer.truth;
+  const watching = isChief
+    ? 'Reading across the full observer field before VAL advises.'
+    : observer.watching || observer.evidence;
+  const evidenceItems = isChief
+    ? [observerBoardState.observers.length + ' observers','Active packet field','1 synthesis layer']
+    : observer.evidenceItems || [position.signals || observer.evidence];
+  const concern = isChief
+    ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
+    : observer.concern || observer.truth;
+  const explore = isChief
+    ? 'A clean executive synthesis only when the evidence supports it.'
+    : observer.explore || observer.stance;
+  const packetFrom = isChief ? 'Board' : observer.packetFrom || 'Chief of Staff';
+  const packetObservation = isChief
+    ? 'Several perspectives are converging around the same decision.'
+    : observer.incomingObservation || observer.stance;
+  const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
+  return [
+    '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
+      '<span>' + escapeHtml(name) + '</span>',
+      '<button type="button" aria-label="' + escapeHtml(chatLabel) + '" data-observer-cowork="' + escapeHtml(observerId) + '" data-observer-role="' + escapeHtml(role) + '">' + escapeHtml(chatLabel) + '</button>',
+      '<div><em>Currently Seeing</em><p>' + escapeHtml(currentlySeeing) + '</p></div>',
+      '<div><em>What I’m Watching</em><p>' + escapeHtml(watching) + '</p></div>',
+      '<div><em>Evidence</em><ul>' + evidenceItems.map((item) => '<li>' + escapeHtml(item) + '</li>').join('') + '</ul></div>',
+      '<div><em>My Concern</em><p>' + escapeHtml(concern) + '</p></div>',
+      '<div><em>What I’d Like to Explore</em><p>' + escapeHtml(explore) + '</p></div>',
+      '<figure class="observer-card-packet-note" aria-live="polite"><i></i><figcaption><span>New observation received from ' + escapeHtml(packetFrom) + '</span><p>' + escapeHtml(packetObservation) + '</p></figcaption></figure>',
+    '</aside>'
+  ].join('');
+}
+
+function updateObserverCardObscuredLabels(){
+  const slot = workspaceInputPanel?.querySelector?.('[data-observer-card-slot]');
+  const card = workspaceInputPanel?.querySelector?.('[data-observer-selected-card]');
+  const labels = workspaceInputPanel?.querySelectorAll?.('.observer-node-label');
+  if(!labels) return;
+  labels.forEach((label) => label.classList.remove('is-card-obscured'));
+  if(!slot || slot.hidden || !card) return;
+  const cardRect = card.getBoundingClientRect();
+  labels.forEach((label) => {
+    const labelRect = label.getBoundingClientRect();
+    const overlaps = !(
+      labelRect.right < cardRect.left ||
+      labelRect.left > cardRect.right ||
+      labelRect.bottom < cardRect.top ||
+      labelRect.top > cardRect.bottom
+    );
+    if(overlaps) label.classList.add('is-card-obscured');
+  });
+}
+
+function dismissObserverSelectedCard(){
+  const slot = workspaceInputPanel?.querySelector?.('[data-observer-card-slot]');
+  if(!slot || slot.hidden) return;
+  slot.hidden = true;
+  slot.innerHTML = '';
+  workspaceInputPanel.querySelector('.observer-graph-field')?.classList.remove('observer-card-open');
+  workspaceInputPanel.querySelectorAll('.observer-node.is-selected').forEach((item) => item.classList.remove('is-selected'));
+  workspaceInputPanel.querySelectorAll('.observer-node-label.is-card-obscured').forEach((item) => item.classList.remove('is-card-obscured'));
+}
+
+function maybeDismissObserverSelectedCard(event){
+  if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return false;
+  if(!workspaceInputPanel.querySelector?.('[data-observer-card-slot]:not([hidden])')) return false;
+  if(event.target.closest?.('[data-observer-selected-card],.observer-card-slot,.observer-node,.observer-val-node,[data-observer-cowork]')) return false;
+  if(!event.target.closest?.('.observer-live-board,.observer-graph-field,.workspace-input-panel')) return false;
+  dismissObserverSelectedCard();
+  return true;
+}
+
+function updateObserverSelectedCard(observerId = ''){
+  const slot = workspaceInputPanel?.querySelector?.('[data-observer-card-slot]');
+  const card = workspaceInputPanel?.querySelector?.('[data-observer-selected-card]');
+  const target = slot || card;
+  if(!target) return;
+  const observer = observerBoardState.observers.find((item) => observerConversationId(item.name) === observerId);
+  if(!observer) return;
+  const node = workspaceInputPanel.querySelector('[data-observer-cowork="' + CSS.escape(observerId) + '"]');
+  const position = {
+    signals: node?.dataset?.observerSignals || observer.evidence
+  };
+  const x = Number(node?.style?.getPropertyValue('--x') || 50);
+  const y = Number(node?.style?.getPropertyValue('--y') || 50);
+  workspaceInputPanel.querySelectorAll('.observer-node.is-selected').forEach((item) => item.classList.remove('is-selected'));
+  node?.classList?.add('is-selected');
+  if(slot){
+    slot.classList.remove('near-left','near-right','near-top','near-bottom');
+    slot.style.setProperty('--card-x', String(x));
+    slot.style.setProperty('--card-y', String(y));
+    if(x < 38) slot.classList.add('near-left');
+    if(x > 64) slot.classList.add('near-right');
+    if(y < 28) slot.classList.add('near-top');
+    if(y > 62) slot.classList.add('near-bottom');
+    slot.innerHTML = observerBoardCardMarkup(observer, position);
+    slot.hidden = false;
+    workspaceInputPanel.querySelector('.observer-graph-field')?.classList.add('observer-card-open');
+    requestAnimationFrame(updateObserverCardObscuredLabels);
+  }else{
+    card.outerHTML = observerBoardCardMarkup(observer, position);
+    requestAnimationFrame(updateObserverCardObscuredLabels);
+  }
+}
+
+function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage} = {}){
+  scraperPreviewList.hidden = false;
+  scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
+  scraperPreviewList.classList.add('observer-cowork-overlay-panel');
+  scraperPreviewList.innerHTML = [
+    '<section class="observer-cowork-overlay" aria-label="' + escapeHtml(title || 'Observer co-work') + '">',
+      '<div class="home-cowork-workspace observer-cowork-window" aria-label="VAL observer workspace">',
+        '<aside class="home-cowork-sidebar">',
+          '<div class="home-cowork-context" data-home-cowork-context>',
+            '<span>Board of Observers</span>',
+            '<strong>' + escapeHtml(title || 'Observer conversation') + '</strong>',
+            detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
+            '<small>Saved privately and carried forward when you return.</small>',
+          '</div>',
+          '<div class="home-cowork-history">',
+            '<span>Previous conversations</span>',
+            '<button type="button" aria-pressed="true">Current thread</button>',
+            '<small>' + escapeHtml(historyMessage || 'This observer thread is ready.') + '</small>',
+          '</div>',
+        '</aside>',
+        '<section class="home-cowork-main">',
+          '<div class="home-cowork-preview" aria-label="VAL">',
+            '<span class="val-presence-mark home-cowork-mark" aria-hidden="true">',
+              '<span class="val-presence-orbit"></span>',
+              '<span class="val-presence-core">VAL</span>',
+            '</span>',
+            '<div>',
+              '<p>VAL</p>',
+              '<small>Scoped observer conversation. Nothing external happens from here.</small>',
+            '</div>',
+          '</div>',
+          '<div class="home-cowork-thread" data-home-cowork-response>',
+            '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage || 'I am here with this Observer lens. What would you like to examine together?') + '</p></article>',
+          '</div>',
+          '<section class="observer-cowork-chatbar-shell" data-observer-cowork-chatbar>',
+            '<form class="home-cowork-chatbar observer-cowork-chatbar" data-home-cowork-form>',
+              '<span class="home-cowork-spark" aria-hidden="true"></span>',
+              '<span class="home-cowork-divider" aria-hidden="true"></span>',
+              '<textarea data-workspace-input="cowork" aria-label="' + escapeHtml(placeholder || 'Talk this through with this Observer') + '" placeholder="' + escapeHtml(placeholder || 'Talk this through with this Observer...') + '" rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+              '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
+              '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
+              '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
+              '<button type="button" data-workspace-tool="image" aria-label="Generate image">Image</button>',
+              '<input type="file" data-workspace-file-input multiple hidden>',
+            '</form>',
+          '</section>',
+        '</section>',
+        '<section class="home-cowork-context-gathering" data-cowork-context-gathering hidden aria-live="polite" aria-busy="true">',
+          '<span class="home-cowork-context-gathering-mark" aria-hidden="true"><i></i><i></i><i></i></span>',
+          '<div><span>VAL</span><strong>Gathering Context</strong><p data-cowork-context-gathering-detail>VAL is preparing the selected observer context.</p></div>',
+        '</section>',
+      '</div>',
+    '</section>'
+  ].join('');
+  enableValAutocorrect(workspaceInputPanel);
+  enableValAutocorrect(scraperPreviewList);
+}
+
 async function openObserverCowork(observerId = '', role = 'observer'){
   const isChief = role === 'chief';
   const observer = isChief ? null : observerBoardState.observers.find((item) => observerConversationId(item.name) === observerId);
@@ -23398,21 +24341,16 @@ async function openObserverCowork(observerId = '', role = 'observer'){
     : 'This Observer holds the ' + observer.name + ' lens and the evidence available to it.';
   const context = observerConversationContext(observer,isChief ? 'chief' : 'observer');
   closeCalendarPanel();
-  setWorkspaceContent({
-    lens:isChief ? 'Chief of Staff' : 'Board of Observers',
-    title,
-    meaning:detail,
-    understanding:[],
-    recommendation:'',
-    actions:[{label:'Close and return to desk',workflow:'cancel:board'}],
-    label:title,
-    suppressClarityStandard:true
-  });
-  deskWorkspace.classList.remove('observer-board-mode');
-  deskWorkspace.classList.add('home-cowork-mode');
+  if(!deskWorkspace.classList.contains('observer-board-mode') || !workspaceInputPanel.querySelector('.observer-live-board')){
+    openObserverBoard();
+  }
+  workspaceReturnTarget = 'board';
+  updateWorkspaceReturnButton();
+  deskWorkspace.classList.add('home-cowork-mode','observer-board-mode','observer-cowork-active');
+  deskWorkspace.setAttribute('aria-label', title);
   activeCoworkContextLocked = true;
   activeCoworkHeldContext = title;
-  renderHomeCoworkPreview({
+  renderObserverCoworkOverlay({
     heading:title,
     detail,
     placeholder:isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...',
@@ -23424,7 +24362,6 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'opening'};
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
-  openWorkspaceShell(title,{returnTarget:'board'});
   showCoworkContextGathering('VAL is restoring this saved conversation and refreshing its current evidence.',{noTimeout:true});
   try{
     const result = await postJson('/api/val/cowork/entries/open',{
@@ -23441,8 +24378,139 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   }
 }
 
-function openObserverBoard(){
+function observerBoardHasWitnessingContext(options = {}){
+  if(options?.afterWitnessing || options?.forceWitnessingComplete) return true;
+  const query = window.location.search || '';
+  if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=false\b|board-before-witnessing)/i.test(query)) return false;
+  if(/(?:[?&](?:witnessing|witnessing_complete|witnessed)=true\b|board-after-witnessing|stress=orbs|stress-orbs|hundreds-of-orbs)/i.test(query)) return true;
+  try{
+    return localStorage.getItem('valWitnessingComplete') === 'true';
+  }catch(error){
+    return false;
+  }
+}
+
+function markWitnessingCompleteForBoard(){
+  try{
+    localStorage.setItem('valWitnessingComplete','true');
+  }catch(error){
+    // Local storage is only a prototype convenience; the Board still opens when blocked.
+  }
+}
+
+function openObserverBoardAfterWitnessing(){
+  markWitnessingCompleteForBoard();
+  openObserverBoard({afterWitnessing:true});
+}
+
+function openObserverBoard(options = {}){
   const chief = observerBoardState.chiefOfStaff;
+  const observerPositions = {
+    'Capacity': {x:50,y:17,side:'bridge',visualName:'Capacity',signals:'Decision quality and load',pulseDur:'18.8s',pulseDelay:'6.6s'},
+    'Calendar': {x:36,y:24,side:'sage',visualName:'Calendar',signals:'Time and preparation windows',pulseDur:'17.4s',pulseDelay:'4.2s'},
+    'Momentum': {x:25,y:32,side:'sage',visualName:'Momentum',signals:'Meaningful movement',pulseDur:'19.2s',pulseDelay:'8.4s'},
+    'Executive Inbox': {x:20,y:46,side:'sage',visualName:'Executive Inbox',signals:'Important humans waiting',pulseDur:'18.2s',pulseDelay:'10.2s'},
+    'Project': {x:20,y:60,side:'sage',visualName:'Project',signals:'Momentum, blockers, dependencies',pulseDur:'19.8s',pulseDelay:'5.8s'},
+    'Commitment': {x:26,y:72,side:'sage',visualName:'Commitment',signals:'Promises and follow-through',pulseDur:'17.8s',pulseDelay:'11.2s'},
+    'Environment': {x:39,y:82,side:'sage',visualName:'Environment',signals:'External conditions',pulseDur:'18.6s',pulseDelay:'7.8s'},
+    'Witnessing': {x:61,y:82,side:'rose',visualName:'Witnessing',signals:'Onboarding truth and memory',pulseDur:'20.2s',pulseDelay:'13.8s'},
+    'Delight': {x:74,y:72,side:'rose',visualName:'Delight',signals:'Joy and grounding',pulseDur:'17.2s',pulseDelay:'3.8s'},
+    'Relationship': {x:83,y:60,side:'rose',visualName:'Relationship',signals:'Trust and warmth shifts',pulseDur:'18.8s',pulseDelay:'9.6s'},
+    'Opportunity': {x:83,y:46,side:'rose',visualName:'Opportunity',signals:'Emerging openings',pulseDur:'19.4s',pulseDelay:'2.6s'},
+    'Courage': {x:76,y:32,side:'rose',visualName:'Courage',signals:'Avoidance and hard choices',pulseDur:'18.4s',pulseDelay:'12.6s'},
+    'Meaning': {x:64,y:24,side:'rose',visualName:'Meaning',signals:'Themes and values',pulseDur:'17.6s',pulseDelay:'5.2s'},
+    'Synchronicity': {x:70,y:15,side:'bridge',visualName:'Synchronicity',signals:'Repeated arrivals and timing clusters',pulseDur:'18.1s',pulseDelay:'1.4s'}
+  };
+  const positionedObservers = observerBoardState.observers.map((observer,index) => {
+    const position = observerPositions[observer.name] || {x:50 + Math.cos(index) * 28,y:50 + Math.sin(index) * 28,side:index < 4 ? 'sage' : 'rose',visualName:observer.name,signals:observer.evidence};
+    return {observer,position,index,visualName:position.visualName || observer.name};
+  });
+  const witnessingComplete = observerBoardHasWitnessingContext(options);
+  const observerSideClass = (position) => String(position.side || '').includes('rose') ? 'rose' : String(position.side || '').includes('sage') ? 'sage' : 'bridge';
+  const centerPathFor = (position, bend = 0) => {
+    const dx = 50 - position.x;
+    const dy = 50 - position.y;
+    const mx = position.x + dx * .52 + bend;
+    const my = position.y + dy * .48 - bend * .42;
+    return 'M' + position.x + ' ' + position.y + ' C' + (position.x + dx * .22 + bend * .35).toFixed(1) + ' ' + (position.y + dy * .18).toFixed(1) + ' ' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' 50 50';
+  };
+  const pathBetweenObservers = (fromName, toName, bend = 0) => {
+    const from = observerPositions[fromName];
+    const to = observerPositions[toName];
+    if(!from || !to) return '';
+    const cx = ((from.x + to.x) / 2 + bend).toFixed(1);
+    const cy = ((from.y + to.y) / 2 - bend * .34).toFixed(1);
+    return 'M' + from.x + ' ' + from.y + ' C' + cx + ' ' + cy + ' ' + cx + ' ' + cy + ' ' + to.x + ' ' + to.y;
+  };
+  const baseObserverPaths = witnessingComplete ? positionedObservers.map(({position}) => {
+    const side = observerSideClass(position);
+    return '<path class="observer-path observer-path-' + side + (String(position.side || '').includes('selected') ? ' selected' : '') + '" d="' + centerPathFor(position, 0) + '" />';
+  }).join('') : '';
+  const observerFilaments = witnessingComplete ? positionedObservers.map(({position,index}) => {
+    const side = observerSideClass(position);
+    const bend = (index % 2 ? -1 : 1) * (1.4 + (index % 3) * .55);
+    return '<path class="observer-filament observer-filament-' + side + '" d="' + centerPathFor(position, bend) + '" />';
+  }).join('') : '';
+  const liveConnections = observerBoardPrototypeConnections();
+  const stressMode = witnessingComplete && /(?:[?&]stress=orbs\b|stress-orbs|hundreds-of-orbs)/i.test(window.location.search || '');
+  const stressLabels = ['Email','Draft','Task','Comment','Transcript','Packet','Signal','Context','Reply','Memory','Promise','Meeting','Source'];
+  const stressPairs = stressMode
+    ? Array.from({length:18}, (_, index) => {
+        const fromIndex = index % positionedObservers.length;
+        const hop = 1 + ((index * 7) % (positionedObservers.length - 1));
+        const toIndex = (fromIndex + hop) % positionedObservers.length;
+        const from = positionedObservers[fromIndex].observer.name;
+        const to = positionedObservers[toIndex].observer.name;
+        const fromSide = observerSideClass(positionedObservers[fromIndex].position);
+        const toSide = observerSideClass(positionedObservers[toIndex].position);
+        const side = fromSide === toSide ? fromSide : (index % 3 === 0 ? 'bridge' : index % 2 ? 'rose' : 'sage');
+        const bend = ((index % 9) - 4) * .58;
+        const duration = (15.8 + (index % 9) * .72).toFixed(2) + 's';
+        const begin = '-' + ((index * 0.91) % 14.8).toFixed(2) + 's';
+        const radius = (1.02 + (index % 5) * .08).toFixed(2);
+        const label = stressLabels[index % stressLabels.length];
+        return [from,to,label,side,bend,duration,begin,radius];
+      })
+    : [];
+  const allLiveConnections = witnessingComplete ? (stressMode ? liveConnections.concat(stressPairs) : liveConnections) : [];
+  const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius]) => {
+    const d = pathBetweenObservers(from,to,bend);
+    const orbRadius = radius || (stressMode ? '1.05' : '.62');
+    const orbRx = (Number(orbRadius) * .72).toFixed(2);
+    const hitRadius = stressMode ? '4.6' : '2.8';
+    const hitRx = (Number(hitRadius) * .72).toFixed(2);
+    if(!d) return '';
+    return [
+      '<path class="observer-live-thread observer-live-thread-' + side + (stressMode ? ' observer-live-thread-stress' : '') + '" d="' + d + '" />',
+      '<g class="observer-live-packet' + (stressMode ? ' observer-live-packet-stress' : '') + '" tabindex="0" aria-label="' + escapeHtml(label) + ' signal">',
+        '<ellipse class="observer-live-hit" rx="' + hitRx + '" ry="' + hitRadius + '"></ellipse>',
+        '<ellipse class="observer-live-orb observer-live-orb-' + side + '" rx="' + orbRx + '" ry="' + escapeHtml(orbRadius) + '"></ellipse>',
+        '<text class="observer-live-label" x="1.8" y="-1.8">' + escapeHtml(label) + '</text>',
+        '<animateMotion dur="' + duration + '" begin="' + begin + '" repeatCount="indefinite" path="' + d + '" />',
+      '</g>'
+    ].join('');
+  }).join('');
+  const observerNodes = positionedObservers.map(({observer,position,visualName}) => {
+    return [
+      '<button type="button" class="observer-truth-card observer-node observer-node-' + escapeHtml(position.side) + '" data-observer-cowork="' + escapeHtml(observerConversationId(observer.name)) + '" data-observer-role="observer" data-observer-signals="' + escapeHtml(position.signals || observer.evidence) + '" style="--x:' + position.x + ';--y:' + position.y + ';--receive-duration:' + escapeHtml(position.pulseDur || '10s') + ';--receive-delay:' + escapeHtml(position.pulseDelay || '0s') + ';" aria-label="Talk with the ' + escapeHtml(observer.name) + ' Observer">',
+        '<span class="observer-node-ring" aria-hidden="true">',
+          '<span class="observer-node-core"></span>',
+        '</span>',
+        '<strong class="observer-node-label">' + escapeHtml(visualName) + '</strong>',
+        '<span class="observer-node-card" aria-hidden="true">',
+          '<span>' + escapeHtml(visualName) + '</span>',
+          '<b>' + escapeHtml(visualName) + '</b>',
+          '<em>Recent signals</em>',
+          '<small>' + escapeHtml(position.signals) + '</small>',
+          '<em>Current focus</em>',
+          '<small>' + escapeHtml(observer.truth) + '</small>',
+        '</span>',
+      '</button>'
+    ].join('');
+  }).join('');
+  const boardStatus = witnessingComplete
+    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : 'Packet Field Active')
+    : 'Holding Space';
   closeCalendarPanel();
   setWorkspaceContent({
     lens: 'Board of Observers',
@@ -23460,35 +24528,67 @@ function openObserverBoard(){
   });
   deskWorkspace.classList.add('observer-board-mode');
   if(workspaceGrid) workspaceGrid.hidden = true;
+  scraperPreviewList.hidden = true;
+  scraperPreviewList.classList.remove('observer-cowork-overlay-panel');
+  scraperPreviewList.innerHTML = '';
   renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
-    '<button type="button" class="observer-chief-card" data-observer-cowork="chief-of-staff" data-observer-role="chief" aria-label="Chat with Your Chief of Staff">',
-      '<span>Chief of Staff</span>',
-      '<strong>' + escapeHtml(chief.view) + '</strong>',
-      '<p>' + escapeHtml(chief.why) + '</p>',
-      '<small>Chat with Your Chief of Staff</small>',
-    '</button>',
-    '<section class="observer-board-grid" aria-label="Observer packet readiness">',
-      observerBoardState.observers.map((observer) => [
-        '<button type="button" class="observer-truth-card" data-observer-cowork="' + escapeHtml(observerConversationId(observer.name)) + '" data-observer-role="observer">',
-          '<div>',
-            '<span>' + escapeHtml(observer.stance) + '</span>',
-            '<strong>' + escapeHtml(observer.name) + '</strong>',
-          '</div>',
-          '<p>' + escapeHtml(observer.truth) + '</p>',
-          '<small>Talk with this Observer</small>',
-        '</button>'
-      ].join('')).join(''),
-    '</section>',
-    '<p class="observer-board-note">If this view claims certainty without a packet, that is a bug. Teach VAL or open the source drawer before trusting the Board.</p>'
+    '<section class="observer-live-board ' + (witnessingComplete ? 'packets-active' : 'awaiting-witnessing') + '" aria-label="Live Board of Observers">',
+      '<aside class="observer-board-intro">',
+        '<span>VAL</span>',
+        '<h3>Board of Observers</h3>',
+        '<p>' + observerBoardState.observers.length + ' observers. One intelligence field. Every signal VAL receives can move through the Board before it becomes guidance.</p>',
+      '</aside>',
+      '<div class="observer-graph-field">',
+        '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',
+        witnessingComplete ? '' : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>',
+        '<svg class="observer-signal-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">',
+          baseObserverPaths,
+          observerFilaments,
+          liveThreads,
+        '</svg>',
+        '<button type="button" class="observer-card-dismiss-surface" data-observer-card-dismiss aria-label="Return to Board of Observers" onpointerdown="event.preventDefault();event.stopPropagation();const graph=this.closest(\'.observer-graph-field\');const slot=graph&&graph.querySelector(\'[data-observer-card-slot]\');if(slot){slot.hidden=true;slot.setAttribute(\'hidden\',\'\');slot.innerHTML=\'\';}graph&&graph.classList.remove(\'observer-card-open\');graph&&graph.querySelectorAll(\'.observer-node.is-selected,.observer-node-label.is-card-obscured\').forEach((item)=>item.classList.remove(\'is-selected\',\'is-card-obscured\'));"></button>',
+        '<button type="button" class="observer-chief-card observer-val-node" data-observer-cowork="chief-of-staff" data-observer-role="chief" aria-label="Chat with the Chief of Staff">',
+          '<span>Chief of Staff</span>',
+        '</button>',
+        observerNodes,
+        '<div class="observer-card-slot" data-observer-card-slot hidden></div>',
+      '</div>',
+    '</section>'
   ].join('');
+  const observerGraphField = workspaceInputPanel.querySelector('.observer-graph-field');
+  const observerDismissSurface = workspaceInputPanel.querySelector('[data-observer-card-dismiss]');
+  observerDismissSurface?.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dismissObserverSelectedCard();
+  }, true);
+  observerDismissSurface?.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dismissObserverSelectedCard();
+  }, true);
+  observerGraphField?.addEventListener('pointerdown', (event) => {
+    if(event.target.closest?.('[data-observer-selected-card],.observer-card-slot,[data-observer-cowork]')) return;
+    const slot = workspaceInputPanel.querySelector('[data-observer-card-slot]');
+    if(!slot || slot.hidden) return;
+    slot.hidden = true;
+    slot.setAttribute('hidden', '');
+    slot.innerHTML = '';
+    workspaceInputPanel.querySelector('.observer-graph-field')?.classList.remove('observer-card-open');
+    workspaceInputPanel.querySelectorAll('.observer-node.is-selected').forEach((item) => item.classList.remove('is-selected'));
+    workspaceInputPanel.querySelectorAll('.observer-node-label.is-card-obscured').forEach((item) => item.classList.remove('is-card-obscured'));
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
 }
 
 function orientHomeCoworkFromInput(){
+  if(deskWorkspace?.classList.contains('alignment-function-mode') || deskWorkspace?.classList.contains('leverage-function-mode')) return;
   const input = workspaceInputValue('cowork');
   const context = workspaceInputPanel.querySelector('[data-home-cowork-context]') || scraperPreviewList.querySelector('[data-home-cowork-context]');
   if(!input || !context) return;
@@ -23587,6 +24687,23 @@ async function handlePrimaryAction(button){
 }
 
 function closeWorkspace(){
+  stopValCoworkVoiceMode();
+  if(workspaceReturnTarget === 'board' && deskWorkspace?.classList.contains('observer-cowork-active')){
+    hideCoworkContextGathering();
+    activeCoworkEntry = null;
+    activeCoworkHeldContext = '';
+    activeCoworkContextLocked = false;
+    scraperPreviewList.hidden = true;
+    scraperPreviewList.classList.remove('observer-cowork-overlay-panel');
+    scraperPreviewList.innerHTML = '';
+    workspaceInputPanel.querySelector('[data-observer-cowork-chatbar]')?.remove();
+    deskWorkspace.classList.remove('home-cowork-mode','observer-cowork-active');
+    deskWorkspace.classList.add('observer-board-mode');
+    workspaceReturnTarget = 'home';
+    updateWorkspaceReturnButton();
+    updateDrawerCoworkIcon();
+    return;
+  }
   const projectReturnId = workspaceReturnTarget === 'project'
     ? (activeProjectCoworkTarget?.projectId || activeCoworkEntry?.projectId || '')
     : '';
@@ -23597,7 +24714,7 @@ function closeWorkspace(){
   hearth.dataset.distance = 'presence';
   hearth.classList.add('desk-settling');
   hearth.classList.remove('calendar-prep-open');
-  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
+  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode', 'observer-cowork-active');
   deskWorkspace.setAttribute('aria-hidden', 'true');
   if(workspaceReturnTarget === 'relationship') restoreRelationshipWindow();
   if(workspaceReturnTarget === 'project') restoreProjectWindow(projectReturnId);
@@ -23617,6 +24734,7 @@ function closeWorkspace(){
 }
 
 function hideWorkspaceForDrawerNavigation(){
+  stopValCoworkVoiceMode();
   hideCoworkContextGathering();
   const workspaceVisible = deskWorkspace?.getAttribute('aria-hidden') !== 'true';
   const hasCoworkShell = Boolean(deskWorkspace?.classList.contains('home-cowork-mode'));
@@ -23628,7 +24746,7 @@ function hideWorkspaceForDrawerNavigation(){
   activeCoworkEntry = null;
   hearth.dataset.distance = 'presence';
   hearth.classList.remove('calendar-prep-open');
-  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode');
+  deskWorkspace.classList.remove('home-cowork-mode', 'observer-board-mode', 'observer-cowork-active');
   deskWorkspace.setAttribute('aria-hidden', 'true');
   workspaceReturnTarget = 'home';
   updateWorkspaceReturnButton();
@@ -23667,10 +24785,12 @@ refreshPerspectiveButton?.addEventListener('click', refreshHomePerspective);
 
 drawerPull.addEventListener('click', () => {
   hideWorkspaceForDrawerNavigation();
+  retrievalSystem.classList.remove('compass-closing');
   const isOpen = retrievalSystem.classList.toggle('open');
   if(!isOpen) retrievalSystem.removeAttribute('data-active-drawer');
   hearth.classList.toggle('drawer-open', isOpen);
   drawerPull.setAttribute('aria-expanded', String(isOpen));
+  updateDrawerPullLabel();
   drawerTray.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
     drawerTray.scrollTo?.({top:0, left:0});
@@ -23680,6 +24800,35 @@ drawerPull.addEventListener('click', () => {
 });
 
 closeAllDrawersButton?.addEventListener('click', closeDrawer);
+executiveCompassCore?.addEventListener('click', closeExecutiveCompassFromCore);
+
+document.addEventListener('click', (event) => {
+  const closeButton = event.target.closest('.close-val-detail,.close-document-detail,.close-relationship-detail,.close-project-detail,.close-timeline-detail,.close-correspondence-detail,.close-commitment-detail,.close-source-detail');
+  if(!closeButton || !closeButton.closest('#drawer-tray')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  returnToExecutiveCompass();
+}, true);
+
+function openCompassAxisWorkspace(roomName){
+  closeDrawer();
+  if(roomName === 'alignment'){
+    openAlignmentExecutionWorkspace();
+    return;
+  }
+  if(roomName === 'leverage'){
+    openLeverageApprovalWorkspace();
+  }
+}
+
+executiveCompassAxisNodes?.addEventListener('click', (event) => {
+  const axisButton = event.target.closest('.axis-node[data-open-room]');
+  if(!axisButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openCompassAxisWorkspace(axisButton.dataset.openRoom || '');
+});
 
 valDrawerLink?.addEventListener('click', () => {
   ensureDrawerTrayOpen();
@@ -23702,10 +24851,12 @@ valDrawerLink?.addEventListener('click', () => {
   valDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#val-detail')?.setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
+    retrievalSystem.dataset.activeDrawer = 'val';
     drawerIndexPacketReceipt({node:valDrawerLink, packetName:'val_os_packet', action:'drawer:val_os', label:'VAL drawer', downstreamConsumers:['val_drawer','teach_val','connections','approval_gate']});
     hydrateValDrawer();
     bringDrawerTargetIntoView(document.querySelector('button[data-workflow-action="valWitnessingResume"]') || document.querySelector('#val-detail'));
   } else {
+    retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
 });
@@ -23839,9 +24990,11 @@ projectDrawerLink.addEventListener('click', () => {
   projectDrawerLink.setAttribute('aria-expanded', String(isOpen));
   document.querySelector('#project-detail').setAttribute('aria-hidden', String(!isOpen));
   if(isOpen){
+    retrievalSystem.dataset.activeDrawer = 'project';
     drawerIndexPacketReceipt({node:projectDrawerLink, packetName:'project_packet', action:'drawer:projects', label:'Project Managers drawer', downstreamConsumers:['project_drawer','relationship_packet','email_packet','home_source_packet']});
     openProjectIndex();
   } else {
+    retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
 });
@@ -23877,7 +25030,7 @@ timelineDrawerLink?.addEventListener('click', () => {
 });
 
 correspondenceDrawerLink?.addEventListener('click', () => {
-  ensureDrawerTrayOpen();
+  const willOpen = !drawerTray.classList.contains('correspondence-open');
   drawerTray.classList.remove('val-open', 'relationship-open', 'project-open', 'timeline-open', 'commitment-open', 'document-open', 'source-open');
   valDrawerLink?.setAttribute('aria-expanded', 'false');
   relationshipDrawerLink.setAttribute('aria-expanded', 'false');
@@ -23893,49 +25046,40 @@ correspondenceDrawerLink?.addEventListener('click', () => {
   document.querySelector('#commitment-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#document-detail')?.setAttribute('aria-hidden', 'true');
   document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
-  const isOpen = drawerTray.classList.toggle('correspondence-open');
-  if(isOpen) retrievalSystem.dataset.activeDrawer = 'correspondence';
-  else retrievalSystem.removeAttribute('data-active-drawer');
-  correspondenceDrawerLink.setAttribute('aria-expanded', String(isOpen));
-  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', String(!isOpen));
-  if(isOpen){
+  drawerTray.classList.toggle('correspondence-open', willOpen);
+  correspondenceDrawerLink.setAttribute('aria-expanded', String(willOpen));
+  document.querySelector('#correspondence-detail')?.setAttribute('aria-hidden', String(!willOpen));
+  if(willOpen){
+    retrievalSystem.dataset.activeDrawer = 'correspondence';
+    ensureDrawerTrayOpen();
     drawerIndexPacketReceipt({node:correspondenceDrawerLink, packetName:'email_packet', action:'drawer:executive_inbox', label:'Executive Inbox drawer', downstreamConsumers:['executive_inbox','relationship_packet','project_packet','commitment_packet']});
     hydrateCorrespondenceDrawer();
   } else {
+    retrievalSystem.removeAttribute('data-active-drawer');
     renderDrawerPacketReceiptStrip(null);
   }
 });
 
-closeRelationshipDetail.addEventListener('click', () => {
-  const detail = document.querySelector('#relationship-detail');
-  if(detail?.classList.contains('show-index')){
-    drawerTray.classList.remove('relationship-open');
-    retrievalSystem.removeAttribute('data-active-drawer');
-    relationshipDrawerLink.setAttribute('aria-expanded', 'false');
-    detail.setAttribute('aria-hidden', 'true');
-    return;
-  }
-  drawerTray.classList.add('relationship-open');
-  retrievalSystem.dataset.activeDrawer = 'relationship';
-  relationshipDrawerLink.setAttribute('aria-expanded', 'true');
-  detail?.setAttribute('aria-hidden', 'false');
-  openRelationshipIndex();
+closeRelationshipDetail.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  returnToExecutiveCompass();
 });
 
-closeProjectDetail.addEventListener('click', () => {
-  drawerTray.classList.remove('project-open');
-  projectDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#project-detail').setAttribute('aria-hidden', 'true');
+closeProjectDetail.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  returnToExecutiveCompass();
 });
 
-closeTimelineDetail?.addEventListener('click', () => {
-  drawerTray.classList.remove('timeline-open');
-  timelineDrawerLink?.setAttribute('aria-expanded', 'false');
-  document.querySelector('#timeline-detail')?.setAttribute('aria-hidden', 'true');
+closeTimelineDetail?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  returnToExecutiveCompass();
 });
 
 function closeCorrespondenceDrawer(){
-  closeDrawer();
+  returnToExecutiveCompass();
 }
 
 closeCorrespondenceDetail?.addEventListener('click', (event) => {
@@ -23944,10 +25088,10 @@ closeCorrespondenceDetail?.addEventListener('click', (event) => {
   closeCorrespondenceDrawer();
 });
 
-closeValDetail?.addEventListener('click', () => {
-  drawerTray.classList.remove('val-open');
-  valDrawerLink?.setAttribute('aria-expanded', 'false');
-  document.querySelector('#val-detail')?.setAttribute('aria-hidden', 'true');
+closeValDetail?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  returnToExecutiveCompass();
 });
 
 documentList?.addEventListener('click', async (event) => {
@@ -24727,11 +25871,10 @@ document.addEventListener('click', (event) => {
   }
 });
 
-closeSourceDetail.addEventListener('click', () => {
-  drawerTray.classList.remove('source-open');
-  retrievalSystem.removeAttribute('data-active-drawer');
-  sourceDrawerLink.setAttribute('aria-expanded', 'false');
-  document.querySelector('#source-detail').setAttribute('aria-hidden', 'true');
+closeSourceDetail.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  returnToExecutiveCompass();
 });
 
 nextMeetingCard.addEventListener('click', () => openMeetingPrepWithPacket(nextMeetingCard, 0));
@@ -24765,20 +25908,45 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
     await saveValWitnessingCredential(credentialForm.dataset.valWitnessingCredentialForm);
     return;
   }
-  if(event.target.matches('[data-home-cowork-form]')){
-    event.preventDefault();
-    if(await submitActiveCoworkEntry()) return;
-    runCowork('think');
-  }
+  handleHomeCoworkFormSubmit(event);
 });
 workspaceInputPanel.addEventListener('click', (event) => {
+  const observerDismissButton = event.target.closest('[data-observer-card-dismiss]');
+  if(observerDismissButton){
+    event.preventDefault();
+    event.stopPropagation();
+    dismissObserverSelectedCard();
+    return;
+  }
   const observerButton = event.target.closest('[data-observer-cowork]');
-  if(!observerButton) return;
+  if(!observerButton){
+    maybeDismissObserverSelectedCard(event);
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
+  if(observerButton.classList.contains('observer-node')){
+    updateObserverSelectedCard(observerButton.dataset.observerCowork || '');
+    return;
+  }
   void openObserverCowork(observerButton.dataset.observerCowork || '',observerButton.dataset.observerRole || 'observer');
 });
 scraperPreviewList?.addEventListener('click', async (event) => {
+  const alignmentDraftButton = event.target.closest('[data-alignment-load-draft]');
+  if(alignmentDraftButton){
+    event.preventDefault();
+    event.stopPropagation();
+    const draftPanel = scraperPreviewList.querySelector('[data-alignment-draft-preview]');
+    if(draftPanel){
+      draftPanel.hidden = false;
+      alignmentDraftButton.setAttribute('aria-expanded', 'true');
+      alignmentDraftButton.textContent = 'Draft Loaded';
+      draftPanel.focus({preventScroll:true});
+    }else{
+      openLeverageApprovalWorkspace();
+    }
+    return;
+  }
   const taskTranscript = event.target.closest('[data-task-open-transcript]');
   if(taskTranscript){
     event.preventDefault();
@@ -24847,10 +26015,7 @@ scraperPreviewList?.addEventListener('click', async (event) => {
   if(transcriptOverviewApply) await applyActiveCoworkTranscriptOverview(transcriptOverviewApply.dataset.coworkApplyTranscriptOverview, transcriptOverviewApply);
   if(transcriptActionItemApply) await applyActiveCoworkTranscriptActionItem(transcriptActionItemApply.dataset.coworkApplyTranscriptActionItem, transcriptActionItemApply);
 });
-workspaceInputPanel.addEventListener('input', (event) => {
-  if(!event.target.matches('[data-home-cowork-form] [data-workspace-input="cowork"]')) return;
-  orientHomeCoworkFromInput();
-});
+workspaceInputPanel.addEventListener('input', handleHomeCoworkInput);
 updateLinkedInWidget();
 void hydrateTaskCompanionCount();
 calendarTab.addEventListener('click', () => {
@@ -24946,7 +26111,11 @@ function routeValWitnessingActionClick(event){
   });
 }
 document.addEventListener('click', routeValWitnessingActionClick, true);
+document.addEventListener('pointerdown', (event) => {
+  maybeDismissObserverSelectedCard(event);
+}, true);
 document.addEventListener('click', async (event) => {
+  if(maybeDismissObserverSelectedCard(event)) return;
   const projectActionButton = event.target.closest('#desk-workspace .workspace-actions [data-project-action]');
   if(!projectActionButton) return;
   event.preventDefault();
@@ -24978,6 +26147,13 @@ document.addEventListener('focusout', (event) => {
   }
 });
 workspaceInputPanel.addEventListener('click', (event) => {
+  const voiceEndButton = event.target.closest('[data-val-cowork-voice-end]');
+  if(voiceEndButton){
+    event.preventDefault();
+    event.stopPropagation();
+    closeValCoworkVoiceSession();
+    return;
+  }
   const googleButton = event.target.closest('[data-google-oauth]');
   if(googleButton){
     event.preventDefault();
@@ -24992,21 +26168,7 @@ workspaceInputPanel.addEventListener('click', (event) => {
     handleWorkflowAction(actionButton.dataset.workflowAction, actionButton);
     return;
   }
-  const tool = event.target.closest('[data-workspace-tool]');
-  if(!tool) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if(tool.dataset.workspaceTool === 'voice'){
-    startWorkspaceVoiceInput();
-    return;
-  }
-  if(tool.dataset.workspaceTool === 'upload'){
-    workspaceInputPanel.querySelector('[data-workspace-file-input]')?.click();
-    return;
-  }
-  if(tool.dataset.workspaceTool === 'image'){
-    appendWorkspaceImageRequest();
-  }
+  handleWorkspaceToolClick(event);
 });
 workspaceInputPanel.addEventListener('change', async (event) => {
   const witnessingInput = event.target.closest('[data-val-witnessing-file-input]');
@@ -25015,13 +26177,35 @@ workspaceInputPanel.addEventListener('change', async (event) => {
     witnessingInput.value = '';
     return;
   }
-  const input = event.target.closest('[data-workspace-file-input]');
-  if(!input) return;
-  await appendWorkspaceFiles(input.files);
-  input.value = '';
+  await handleWorkspaceFileChange(event);
+});
+
+scraperPreviewList?.addEventListener('submit', (event) => {
+  handleHomeCoworkFormSubmit(event);
+});
+scraperPreviewList?.addEventListener('input', handleHomeCoworkInput);
+scraperPreviewList?.addEventListener('change', (event) => {
+  void handleWorkspaceFileChange(event);
+});
+scraperPreviewList?.addEventListener('click', (event) => {
+  const voiceEndButton = event.target.closest('[data-val-cowork-voice-end]');
+  if(voiceEndButton){
+    event.preventDefault();
+    event.stopPropagation();
+    closeValCoworkVoiceSession();
+    return;
+  }
+  handleWorkspaceToolClick(event);
 });
 
 deskWorkspace.addEventListener('click', async (event) => {
+  const linkedinPageButton = event.target.closest('[data-linkedin-page]');
+  if(linkedinPageButton){
+    event.preventDefault();
+    event.stopPropagation();
+    setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
+    return;
+  }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -25067,6 +26251,13 @@ deskWorkspace.addEventListener('click', async (event) => {
 });
 
 async function handleScraperPreviewClick(event){
+  const linkedinPageButton = event.target.closest('[data-linkedin-page]');
+  if(linkedinPageButton){
+    event.preventDefault();
+    event.stopPropagation();
+    setLinkedInVisibilityPage(linkedinPageButton.dataset.linkedinPage || 'posts');
+    return;
+  }
   const linkedinCopy = event.target.closest('[data-linkedin-copy]');
   if(linkedinCopy){
     event.preventDefault();
@@ -25227,7 +26418,10 @@ returnButton.addEventListener('click', (event) => {
 });
 
 enableValAutocorrect(document);
+initCoworkChatbarFocus();
 observeHearthClickContracts();
+applyHearthTimePeriod();
+window.setInterval(applyHearthTimePeriod, 5 * 60 * 1000);
 setState(hearth.dataset.state || 'quiet');
 hydrateClientConfig();
 hydrateHomePresence();

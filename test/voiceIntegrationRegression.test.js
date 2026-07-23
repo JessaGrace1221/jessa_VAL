@@ -6,6 +6,7 @@ const path=require('node:path');
 const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const dashboard=fs.readFileSync(path.join(root,'dashboard.html'),'utf8');
+const hearth=fs.readFileSync(path.join(root,'hearth-prototype.js'),'utf8');
 
 test('voice playback uses server-side Deepgram TTS proxy instead of browser-side token calls',()=>{
   assert.match(server,/const DEEPGRAM_API_KEY = process\.env\.DEEPGRAM_API_KEY/);
@@ -13,7 +14,10 @@ test('voice playback uses server-side Deepgram TTS proxy instead of browser-side
   assert.match(server,/https:\/\/api\.deepgram\.com\/v1\/speak\?model=/);
   assert.match(server,/X-VAL-TTS-Provider/);
   assert.match(dashboard,/\/api\/val\/tts/);
+  assert.match(hearth,/fetch\('\/api\/val\/tts'/);
+  assert.match(hearth,/fetchValCoworkDeepgramAudio/);
   assert.doesNotMatch(dashboard,/fetch\('https:\/\/api\.deepgram\.com\/v1\/speak/);
+  assert.doesNotMatch(hearth,/fetch\('https:\/\/api\.deepgram\.com\/v1\/speak/);
 });
 
 test('voice status exposes safe diagnostics without leaking the Deepgram key',()=>{
@@ -28,8 +32,8 @@ test('voice status exposes safe diagnostics without leaking the Deepgram key',()
   assert.doesNotMatch(server,/apiKey:DEEPGRAM_API_KEY/);
 });
 
-test('voice defaults to Deepgram Aura 2 Cora without provider-facing fallback warnings',()=>{
-  assert.match(server,/aura-2-cora-en/);
+test('voice defaults to Deepgram Aura 2 Vesta without provider-facing fallback warnings',()=>{
+  assert.match(server,/aura-2-vesta-en/);
   assert.match(dashboard,/VAL voice is using temporary browser audio for this turn/);
   assert.match(dashboard,/\/api\/val\/voice\/test/);
   assert.match(dashboard,/VAL voice is ready/);
