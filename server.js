@@ -33251,14 +33251,14 @@ async function hearthFastWitnessingSummary(lastUser=''){
   return `I can see your Witnessing context. The strongest saved threads I see right now are ${themes.join(', ') || 'your story and operating context'}.`;
 }
 async function hearthFastChatContent({messages,lastUser,dashboard,voiceMode=false}){
-  const capabilityFallback=hearthFastCapabilityFallback(lastUser);
-  if(capabilityFallback)return capabilityFallback;
-  const definitionFallback=hearthFastDefinitionFallback(lastUser);
-  if(definitionFallback)return definitionFallback;
   const witnessingSummary=await hearthFastWitnessingSummary(lastUser);
   if(witnessingSummary)return witnessingSummary;
   const witnessingFallback=hearthFastWitnessingFallback(lastUser);
   if(witnessingFallback)return witnessingFallback;
+  const capabilityFallback=hearthFastCapabilityFallback(lastUser);
+  if(capabilityFallback)return capabilityFallback;
+  const definitionFallback=hearthFastDefinitionFallback(lastUser);
+  if(definitionFallback)return definitionFallback;
   const immediateCalendarAnswer=hearthFastCalendarFallback(lastUser,dashboard);
   if(immediateCalendarAnswer && /\b(next|upcoming|appointment|calendar|meeting|schedule|today|tomorrow)\b/i.test(lastUser)){
     return immediateCalendarAnswer;
