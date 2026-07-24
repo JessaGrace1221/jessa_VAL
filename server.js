@@ -34104,6 +34104,102 @@ function chatContextIntent(lastUser=''){
   if(/\b(update|change|correct)\b[\s\S]{0,80}\b(memory|context|profile|relationship|project)\b/i.test(text))return {type:'context_update',content:text};
   return null;
 }
+function collectSelectedSourceIds(value,result={transcriptIds:new Set(),evidenceIds:new Set(),observationIds:new Set()},depth=0){
+  if(!value||depth>7)return result;
+  if(Array.isArray(value)){
+    value.forEach(item=>collectSelectedSourceIds(item,result,depth+1));
+    return result;
+  }
+  if(typeof value!=='object')return result;
+  const sourceType=String(value.source_type||value.sourceType||value.type||value.kind||'').toLowerCase();
+  const id=String(value.source_id||value.sourceId||value.id||value.transcriptId||value.transcript_id||'').trim();
+  if(value.transcriptId||value.transcript_id||/transcript/.test(sourceType)){
+    const transcriptId=String(value.transcriptId||value.transcript_id||id||'').trim();
+    if(transcriptId)result.transcriptIds.add(transcriptId);
+  }
+  for(const key of ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids']){
+    safeArray(value[key]).forEach(item=>item&&result.evidenceIds.add(String(item)));
+  }
+  for(const key of ['sourceObservationIds','sourceObservationIdsJson','observationIds','observation_ids']){
+    safeArray(value[key]).forEach(item=>item&&result.observationIds.add(String(item)));
+  }
+  for(const key of Object.keys(value)){
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|target|sourceItem|payload)$/i.test(key)){
+      collectSelectedSourceIds(value[key],result,depth+1);
+    }
+  }
+  return result;
+}
+function selectedTranscriptText(transcript={}){
+  return String(
+    transcript.rawTranscript||
+    transcript.raw_transcript||
+    transcript.transcriptText||
+    transcript.transcript_text||
+    transcript.rawText||
+    transcript.raw_text||
+    transcript.transcript||
+    transcript.text||
+    transcript.sourceReceipt?.body||
+    transcript.summary?.executiveSummary||
+    transcript.executiveSummary||
+    transcript.summaryPreview||
+    ''
+  ).trim();
+}
+async function selectedHearthSourcePrompt(selectedSourceContext={}){
+  if(!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const ids=collectSelectedSourceIds(selectedSourceContext);
+  const transcriptIds=new Set(ids.transcriptIds);
+  const evidenceIds=new Set(ids.evidenceIds);
+  if(evidenceIds.size||ids.observationIds.size){
+    const evidence=await listDashboardEvidenceItems({limit:300}).catch(()=>[]);
+    for(const item of evidence){
+      const itemId=String(item.id||item.sourceId||item.source_id||'');
+      if(!evidenceIds.has(itemId)&&!ids.observationIds.has(itemId))continue;
+      const sourceType=String(item.sourceType||item.source_type||'').toLowerCase();
+      const sourceId=String(item.sourceId||item.source_id||'').trim();
+      if(/transcript/.test(sourceType)&&sourceId)transcriptIds.add(sourceId);
+    }
+  }
+  const transcripts=[];
+  for(const id of Array.from(transcriptIds).slice(0,4)){
+    const transcript=await loadTranscriptForCowork(id).catch(error=>{
+      console.warn('[hearth cowork] selected transcript load failed:',id,error.message);
+      return null;
+    });
+    if(transcript){
+      const text=selectedTranscriptText(transcript);
+      transcripts.push({
+        id,
+        title:transcript.title||transcript.meetingTitle||transcript.transcriptTitle||'Selected transcript',
+        text:text.slice(0,10000),
+        actionItems:safeArray(transcript.sourceReceipt?.actionItems).slice(0,12),
+        keyPoints:safeArray(transcript.sourceReceipt?.keyPoints).slice(0,12)
+      });
+    }
+  }
+  const sourceItem=selectedSourceContext.sourceItem&&typeof selectedSourceContext.sourceItem==='object'?selectedSourceContext.sourceItem:{};
+  const sourceRefs=safeArray(selectedSourceContext.sourceRefs).slice(0,10);
+  const promptParts=[
+    selectedSourceContext.cardTitle?'Selected Home card: '+selectedSourceContext.cardTitle:'',
+    selectedSourceContext.cardMeaning?'Why Home surfaced it: '+selectedSourceContext.cardMeaning:'',
+    Object.keys(sourceItem).length?'Selected source item JSON:\n'+JSON.stringify(sourceItem,null,2).slice(0,6000):'',
+    sourceRefs.length?'Selected source references:\n'+JSON.stringify(sourceRefs,null,2).slice(0,4000):'',
+    transcripts.length?'Selected transcript source text:\n'+transcripts.map(t=>[
+      `Transcript: ${t.title} (${t.id})`,
+      t.keyPoints.length?'Key points:\n- '+t.keyPoints.join('\n- '):'',
+      t.actionItems.length?'Action items:\n- '+t.actionItems.join('\n- '):'',
+      t.text?'Text:\n'+t.text:''
+    ].filter(Boolean).join('\n')).join('\n\n---\n\n'):''
+  ].filter(Boolean);
+  if(!promptParts.length)return '';
+  return [
+    'Selected Hearth source context is the source behind the current Home card.',
+    'Use it as the thing the user is referring to. If it contains a transcript/spec, do not ask what "this" is; build from the selected source.',
+    ...promptParts
+  ].join('\n\n');
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
@@ -34316,6 +34412,10 @@ app.post('/api/val/chat',async(req,res)=>{
         `Google Drive is only needed if you want me to create or update a Google Doc output. For reading and editorial review, I can use the uploaded VAL manuscript.`
       ].join('\n'));
     }
+    const selectedSourcePrompt=await selectedHearthSourcePrompt(req.body.selectedSourceContext).catch(error=>{
+      console.warn('[hearth cowork] selected source context failed:',error.message);
+      return '';
+    });
     const [uploadedDocs,linkedAttachmentDocs]=await Promise.all([
       uploadedValDocumentContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`),
       linkedGmailAttachmentContextForQuery(lastUser+'\n'+memoryQuery,projectContext).catch(error=>{
@@ -34368,8 +34468,9 @@ app.post('/api/val/chat',async(req,res)=>{
       latestObserverReflections:observerReflections
     } : null;
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use dashboard context, live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
-    const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use selected Hearth source context, dashboard context, live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Selected Hearth source context is present, treat it as the exact source behind the card the user clicked. If the user says "this", use that selected source context. Do not ask the user to send a screenshot, link, layout, or description when the selected source already contains the needed transcript/spec.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',selectedSourcePrompt?'Selected Hearth source context:\n'+selectedSourcePrompt:'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed)\b/i.test(lastUser);
+    const content=await callOpenAIResponses({system,messages,maxTokens:artifactRequest?3600:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
     return sendChat(finalContent,{createdTasks,ghlContextAvailable:!!ghlContext});

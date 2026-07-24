@@ -3581,10 +3581,11 @@ button.observer-node:focus-visible{
   padding:18px;
 }
 .home-cowork-message{
+  position:relative;
   display:grid;
   gap:6px;
   max-width:min(680px,92%);
-  padding:12px 13px;
+  padding:12px 42px 12px 13px;
   border:1px solid rgba(91,105,79,.12);
   border-radius:12px;
   background:rgba(255,255,252,.82);
@@ -3592,8 +3593,63 @@ button.observer-node:focus-visible{
 }
 .home-cowork-message.user{
   justify-self:end;
+  padding:12px 13px;
   border-color:rgba(77,95,69,.2);
   background:rgba(232,241,220,.58);
+}
+.home-cowork-copy-output{
+  position:absolute;
+  top:8px;
+  right:8px;
+  width:26px;
+  height:26px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(91,105,79,.16);
+  border-radius:7px;
+  background:linear-gradient(135deg,rgba(232,241,220,.68),rgba(244,217,219,.56));
+  color:rgba(63,78,58,.82);
+  box-shadow:0 8px 18px rgba(34,19,15,.06);
+  cursor:pointer;
+  opacity:.72;
+  transition:opacity .16s ease, transform .16s ease, border-color .16s ease;
+}
+.home-cowork-copy-output:hover,
+.home-cowork-copy-output:focus-visible{
+  opacity:1;
+  transform:translateY(-1px);
+  border-color:rgba(91,105,79,.3);
+}
+.home-cowork-copy-output span{
+  width:12px;
+  height:14px;
+  border:1.5px solid currentColor;
+  border-radius:3px;
+  position:relative;
+  letter-spacing:0;
+}
+.home-cowork-copy-output span:before{
+  content:"";
+  position:absolute;
+  width:9px;
+  height:11px;
+  border:1.5px solid currentColor;
+  border-radius:3px;
+  left:-5px;
+  top:3px;
+  opacity:.42;
+}
+.home-cowork-copy-output.is-copied span{
+  width:13px;
+  height:8px;
+  border:0;
+  border-left:2px solid currentColor;
+  border-bottom:2px solid currentColor;
+  border-radius:0;
+  transform:rotate(-45deg) translate(1px,-1px);
+}
+.home-cowork-copy-output.is-copied span:before{
+  display:none;
 }
 .home-cowork-message span{
   color:rgba(82,98,74,.76);
@@ -3601,6 +3657,15 @@ button.observer-node:focus-visible{
   font-weight:850;
   letter-spacing:.08em;
   text-transform:uppercase;
+}
+.home-cowork-copy-output > span{
+  width:12px;
+  height:14px;
+  color:inherit;
+  font-size:0;
+  font-weight:400;
+  letter-spacing:0;
+  text-transform:none;
 }
 .home-cowork-message p{
   margin:0;
@@ -13055,7 +13120,7 @@ button.timeline-overview-receipt:focus-visible{
 }
 .alignment-room-thread .home-cowork-message{
   max-width:min(760px,92%);
-  padding:10px 0;
+  padding:10px 34px 10px 0;
   border:0;
   border-radius:0!important;
   background:transparent;
@@ -13075,6 +13140,10 @@ button.timeline-overview-receipt:focus-visible{
 .alignment-room-thread .home-cowork-message p{
   color:rgba(39,39,42,.82)!important;
   font:400 .9rem/1.5 var(--body)!important;
+}
+.alignment-room-thread .home-cowork-copy-output{
+  top:7px;
+  right:0;
 }
 .desk-workspace.home-cowork-mode.alignment-function-mode:has(.alignment-room) .workspace-input-panel{
   width:min(720px,100%);
