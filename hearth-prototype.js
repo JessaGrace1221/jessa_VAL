@@ -17059,8 +17059,12 @@ function activeWorkspaceFileInput(tool = null){
 function handleHomeCoworkFormSubmit(event){
   if(!event.target.matches('[data-home-cowork-form]')) return false;
   event.preventDefault();
-  submitActiveCoworkEntry().then((handled) => {
-    if(!handled) runCowork('think');
+  const observerLane = Boolean(deskWorkspace?.classList.contains('observer-cowork-active'));
+  const textarea = event.target.querySelector('[data-workspace-input="cowork"]');
+  const message = observerLane ? projectCleanText(textarea?.value || '') : '';
+  if(observerLane && textarea) textarea.value = '';
+  submitActiveCoworkEntry(message).then((handled) => {
+    if(!handled) runCowork('think', message);
   });
   return true;
 }
@@ -19811,6 +19815,7 @@ async function runCowork(mode, messageOverride = ''){
   const progressTimers = [];
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
+  const observerCoworkLane = Boolean(deskWorkspace?.classList.contains('observer-cowork-active') || activeCoworkEntry?.entrypointId === 'observer.discussion' || activeCoworkEntry?.entrypointId === 'board.chief_of_staff');
   const calendarContextLines = calendarCoworkContextLines();
   const hasSelectedCoworkSource = Boolean(activeCoworkSelectedSourceContext && typeof activeCoworkSelectedSourceContext === 'object' && Object.keys(activeCoworkSelectedSourceContext).length);
   const actionPrepLane = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep(visiblePrompt));
@@ -19822,13 +19827,22 @@ async function runCowork(mode, messageOverride = ''){
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
     : '';
   const heldSystemPrompt = [
-    heldContext ? 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext : '',
+    heldContext ? (observerCoworkLane
+      ? 'You are answering from the selected Board Observer card, not from generic Home VAL. Use the loaded observer context first. If the user asks for evidence, context, what this observer noticed, or which relationship/person is implicated, answer only from the loaded observer card. If names are not attached, say that plainly and do not invent names.\n\n' + heldContext
+      : 'Use this held context silently. Do not quote, dump, summarize, or expose it unless the user explicitly asks to see context. Refer to it only by producing useful judgment and next steps.\n\n' + heldContext) : '',
     calendarContext
   ].filter(Boolean).join('\n\n');
   if(keepHomeCoworkOpen && input && !suppressVisibleUserPrompt){
     appendHomeCoworkMessage('user', input);
     const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
     if(textarea) textarea.value = '';
+  }
+  if(keepHomeCoworkOpen && observerCoworkLane){
+    const cardAnswer = observerCoworkCardAnswer(visiblePrompt, activeCoworkEntry?.context || {});
+    if(cardAnswer){
+      appendHomeCoworkMessage('val', cardAnswer);
+      return;
+    }
   }
   if(mockScrapers || !canUseApi){
     if(keepHomeCoworkOpen){
@@ -19871,7 +19885,7 @@ async function runCowork(mode, messageOverride = ''){
       textarea.placeholder = 'Add the next thought...';
     }
     if(mode !== 'meeting_prep'){
-      if(voiceFastLane){
+      if(observerCoworkLane || voiceFastLane){
         hideCoworkContextGathering();
       }else if(actionPrepLane){
         const actionDetail = homeCoworkFullContextDetail(visiblePrompt);
@@ -19914,6 +19928,9 @@ async function runCowork(mode, messageOverride = ''){
     const requestOptions = hasSelectedCoworkSource ? {
       timeoutMs: 65000,
       timeoutMessage: 'I’m still reading the selected source. Ask me one smaller piece and I’ll stay with that source.'
+    } : observerCoworkLane ? {
+      timeoutMs: 18000,
+      timeoutMessage: 'The observer answer took too long. Ask one direct question about the loaded card and I will answer from that card only.'
     } : conversationFastLane ? {
       timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
       timeoutMessage: actionPrepLane
@@ -19927,8 +19944,8 @@ async function runCowork(mode, messageOverride = ''){
     } : {});
     const result = await postJson('/api/val/chat', {
       channel: 'hearth_cowork',
-      title: 'Co-Work from Hearth',
-      latencyMode: actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context')),
+      title: observerCoworkLane ? (activeCoworkEntry?.title || 'Observer Co-Work') : 'Co-Work from Hearth',
+      latencyMode: observerCoworkLane ? 'observer_card' : (actionPrepLane ? 'action_fast' : (voiceFastLane ? 'voice_fast' : (conversationFastLane ? 'chat_fast' : 'full_context'))),
       voiceMode: Boolean(voiceFastLane || (actionPrepLane && valCoworkVoiceState.active)),
       messages: [
         ...(heldSystemPrompt ? [{role: 'system', content: heldSystemPrompt}] : []),
@@ -25389,6 +25406,48 @@ function observerCoworkHeldContext(context = {}){
   ].join('\n');
 }
 
+function observerCoworkCardAnswer(prompt = '', context = {}){
+  const observer = context.selectedObserver || {};
+  if(!observer.name) return '';
+  const text = projectCleanText(prompt).toLowerCase();
+  if(!text) return '';
+  const asksEvidence = /\bevidence|proof|source|where.*come from|what.*have\b/i.test(text);
+  const asksRelationshipRepair = /\bwhich relationships?|who|repair|presence|distance|open loops?|warmth|trust\b/i.test(text);
+  const asksContext = /\bcontext|card|currently seeing|watching|concern|explore|mean|noticed\b/i.test(text);
+  if(!asksEvidence && !asksRelationshipRepair && !asksContext) return '';
+  const evidence = Array.isArray(observer.evidenceItems) ? observer.evidenceItems : [];
+  const lines = [
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'Watching: ' + observer.watching : '',
+    evidence.length ? 'Evidence: ' + evidence.join(', ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    observer.concern ? 'Concern: ' + observer.concern : '',
+    observer.explore ? 'Question: ' + observer.explore : '',
+    observer.incomingObservation ? 'Newest packet: ' + observer.incomingObservation : ''
+  ].filter(Boolean);
+  if(asksRelationshipRepair && observer.name === 'Relationship'){
+    return [
+      'Relationship is not naming a specific person to repair from this card yet. That matters.',
+      '',
+      'What this card actually proves is narrower:',
+      '',
+      evidence.length ? '- ' + evidence.join('\n- ') : '- Relationship evidence is present, but the named people are not attached to this card.',
+      '',
+      observer.currentlySeeing ? 'Current read: ' + observer.currentlySeeing : '',
+      observer.watching ? 'What I am watching: ' + observer.watching : '',
+      observer.concern ? 'Concern: ' + observer.concern : '',
+      '',
+      'So my honest answer is: I can see that Relationship is watching trust, warmth, tone, distance, and open loops. I cannot responsibly name which relationship needs repair until the underlying conversation/person records are attached here. That is the context gap to fix.'
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    observer.name + ' is holding this card context:',
+    '',
+    ...lines.map((line) => '- ' + line),
+    '',
+    'The useful question is: ' + (observer.explore || 'What should this Observer inspect next?')
+  ].join('\n');
+}
+
 function observerCoworkContextMarkup(context = {}){
   const lines = observerCoworkContextLines(context);
   if(!lines.length) return '';
@@ -25604,10 +25663,10 @@ async function openObserverCowork(observerId = '', role = 'observer'){
     historyMessage:'This conversation is saved and will be here when you return.',
     context
   });
-  activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'opening'};
+  activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'ready'};
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
-  showCoworkContextGathering('VAL is restoring this saved conversation and refreshing its current evidence.',{noTimeout:true});
+  hideCoworkContextGathering();
   try{
     const result = await postJson('/api/val/cowork/entries/open',{
       entrypointId,
@@ -25618,9 +25677,8 @@ async function openObserverCowork(observerId = '', role = 'observer'){
     const userAlreadyStarted = Boolean(homeCoworkResponseNode()?.querySelector?.('.home-cowork-message.user'));
     renderCoworkEntryResult(result,{hydrateConversation:!userAlreadyStarted,suppressMessage:true});
   }catch(error){
-    activeCoworkEntry = null;
     hideCoworkContextGathering();
-    appendHomeCoworkMessage('val','I could not open this saved conversation yet. Nothing was lost. ' + error.message,{replace:true});
+    console.warn('Observer saved conversation unavailable:', error);
   }
 }
 
