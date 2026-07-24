@@ -13,6 +13,7 @@ test('commitment owner and due-date helpers classify executive promises', () => 
   assert.equal(ownerFromText('I will send Michele chapter feedback tomorrow', 'outbound'), 'user');
   assert.equal(ownerFromText('Can you send the signed proposal Friday?', 'inbound'), 'user');
   assert.equal(ownerFromText("We'll approve after legal reviews it", 'inbound'), 'contact');
+  assert.equal(ownerFromText('Greg to compile member asks before Tuesday', 'inbound'), 'contact');
 
   const due = new Date(parseDueHint('please follow up Friday', new Date('2026-07-05T12:00:00Z')));
   assert.equal(due.getUTCDay(), 5);
@@ -37,6 +38,10 @@ test('commitment admission rejects transcript noise and keeps accountable follow
   }), false);
   assert.equal(hasExecutiveCommitmentShape({
     title: 'I want you to not hold back and be as vulgar as you need to be.',
+    confidence: 0.72
+  }), false);
+  assert.equal(hasExecutiveCommitmentShape({
+    title: 'Before we get started, I have to say that this is not legal advice, and I strongly recommend against you doing any of the things I am about to tell you.',
     confidence: 0.72
   }), false);
   assert.equal(hasExecutiveCommitmentShape({
