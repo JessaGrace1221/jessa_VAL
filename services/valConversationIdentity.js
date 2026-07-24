@@ -186,7 +186,7 @@ function createValConversationIdentityService({
         for(const email of outlook.emails||[])saved.push(await upsertEmailMessage(email));
       }else unknowns.push({source:'outlook',reason:'Outlook fetch helper unavailable.'});
     }
-    return {ok:true,saved:saved.filter(r=>r.saved).length,skipped:saved.filter(r=>!r.saved).length,providers:results,unknowns};
+    return {ok:true,saved:saved.filter(r=>r.saved).length,skipped:saved.filter(r=>!r.saved).length,providers:results,unknowns,savedMessages:saved.filter(r=>r.saved).map(r=>r.message).filter(Boolean)};
   }
   async function messagesForConversation({conversationId='',provider='',threadId='',messageId='',limit=80}={}){
     const lim=Math.max(1,Math.min(Number(limit)||80,200));

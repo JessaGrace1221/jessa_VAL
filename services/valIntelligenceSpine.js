@@ -13,7 +13,8 @@ const DEFAULT_OBSERVERS = [
   {observerName:'Synchronicity',promptKey:'chief_of_staff'},
   {observerName:'Commitment',promptKey:'transcript_intake'},
   {observerName:'Calendar',promptKey:'calendar_meeting_prep'},
-  {observerName:'Environment',promptKey:'event_intelligence_pass'}
+  {observerName:'Environment',promptKey:'event_intelligence_pass'},
+  {observerName:'Witnessing',promptKey:'chief_of_staff'}
 ];
 
 function safeArray(value){ return Array.isArray(value) ? value : []; }
@@ -210,6 +211,14 @@ function createValIntelligenceSpine({
     const addUnknown=(source,reason)=>unknowns.push({source,reason,recorded_at:now()});
 
     try{
+      context.boardPackets=await (loaders.listBoardPackets ? loaders.listBoardPackets({limit:60}) : Promise.resolve([]));
+      if(!context.boardPackets.length)addUnknown('board_packets','No live Board packets have been created yet.');
+    }catch(e){
+      context.boardPackets=[];
+      addUnknown('board_packets',e.message);
+    }
+
+    try{
       context.teachVal=await (loaders.listTeachValCoreMemory ? loaders.listTeachValCoreMemory({limit:40}) : Promise.resolve([]));
       if(!context.teachVal.length)addUnknown('teach_val','No Teach VAL core memory available yet.');
     }catch(e){context.teachVal=[];addUnknown('teach_val',e.message);}
@@ -302,7 +311,8 @@ function createValIntelligenceSpine({
       ...sourceRefsFromRows(context.conversationsSummary?.conversations||[],'unified_conversation','subject','id',6),
       ...sourceRefsFromRows(context.highSignalConversationClassifications||[],'conversation_classification','whyNow','id',6),
       ...sourceRefsFromRows(context.tasksSummary.open,'task','title','id',6),
-      ...sourceRefsFromRows(context.calendarSummary.events,'calendar_event','title','id',4)
+      ...sourceRefsFromRows(context.calendarSummary.events,'calendar_event','title','id',4),
+      ...sourceRefsFromRows(context.boardPackets,'board_packet','summary','id',10)
     ];
     context.unknowns=unknowns;
     context.sourceRefs=refs;
@@ -318,7 +328,8 @@ function createValIntelligenceSpine({
     const projects=context.projectsSummary?.length||0;
     const transcripts=context.recentTranscripts?.length||0;
     const calendar=context.calendarSummary?.events?.length||0;
-    return {openTasks,overdue,relationships,projects,transcripts,calendar,unknowns:context.unknowns?.length||0};
+    const boardPackets=context.boardPackets?.length||0;
+    return {openTasks,overdue,relationships,projects,transcripts,calendar,boardPackets,unknowns:context.unknowns?.length||0};
   }
   function buildObserverOutput(observerName,context){
     const kind=observerKind(observerName);
@@ -413,6 +424,16 @@ function createValIntelligenceSpine({
       attentionSignals=['weather','location','travel','external conditions'];
       confidence=0.2;conviction=0.2;
       closing='I cannot responsibly infer environment without a connected source.';
+    }else if(kind==='witnessing'){
+      const witnessingPackets=safeArray(context.boardPackets).filter(packet=>String(packet.packetType||packet.packet_type||'').includes('context')||String(packet.sourceType||packet.source_type||'')==='witnessing');
+      const teach=context.teachVal?.[0];
+      observation=witnessingPackets.length
+        ? `${witnessingPackets.length} Witnessing or context packet${witnessingPackets.length===1?' is':'s are'} available as direct user-revealed evidence.`
+        : (teach?`Teach VAL memory is available for Witnessing grounding: ${teach.title||teach.summary}`:'No direct Witnessing packet is available yet.');
+      attentionSignals=witnessingPackets.length?['direct user language','operating context','self-revealed truth']:(teach?['Teach VAL memory','user revealed context']:[]);
+      confidence=witnessingPackets.length?0.72:(teach?0.58:0.28);
+      conviction=witnessingPackets.length?0.7:(teach?0.5:0.2);
+      closing=witnessingPackets.length?'I will keep the user’s own words in the room before any recommendation becomes confident.':'I need direct Witnessing evidence before I should shape advice from this lens.';
     }
     return {
       observer:observerName,
