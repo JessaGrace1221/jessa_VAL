@@ -18010,6 +18010,50 @@ function preparedArtifactKind(item){
   ).toLowerCase();
 }
 
+function preparedArtifactForHomeItem(item = {}){
+  const metadata = itemMetadata(item);
+  return item.preparedArtifact ||
+    item.prepared_artifact ||
+    metadata.preparedArtifact ||
+    metadata.prepared_artifact ||
+    item.payload?.preparedArtifact ||
+    item.payload?.prepared_artifact ||
+    {};
+}
+
+function reviewOnlyLeverageKind(kind = ''){
+  return /\b(commitment_bundle|transcript_follow_up|relationship_project_update_candidate|transcript_follow_up_bundle|task_context|email_draft_readiness)\b/i.test(String(kind || ''));
+}
+
+function concretePreparedWorkProduct(item = {}){
+  const metadata = itemMetadata(item);
+  const artifact = preparedArtifactForHomeItem(item);
+  const packet = item.preparedWorkPacket || item.prepared_work_packet || metadata.preparedWorkPacket || metadata.prepared_work_packet || {};
+  const kind = preparedArtifactKind(item);
+  const category = String(item.category || metadata.category || '').toLowerCase();
+  if(reviewOnlyLeverageKind(kind) || reviewOnlyLeverageKind(item.type) || reviewOnlyLeverageKind(item.itemType)) return '';
+  const productCandidates = [
+    artifact.body,
+    artifact.content,
+    artifact.html,
+    artifact.instruction,
+    Array.isArray(artifact.sections) ? artifact.sections.join('\n') : '',
+    Array.isArray(artifact.recipients) && artifact.recipients.length ? JSON.stringify(artifact.recipients) : '',
+    Array.isArray(artifact.attendees) && artifact.attendees.length ? JSON.stringify(artifact.attendees) : '',
+    item.draftBody,
+    item.draft_body,
+    item.preparedDraft,
+    item.prepared_draft,
+    packet.work_product,
+    packet.prepared_work,
+    item.externalActionPacket ? JSON.stringify(item.externalActionPacket) : '',
+    metadata.externalActionPacket ? JSON.stringify(metadata.externalActionPacket) : ''
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const product = productCandidates.find((value) => value.length >= 8) || '';
+  const preparedCategory = category === 'prepared_work' || Boolean(kind && preparedArtifactHomeCopy(item)) || Boolean(artifact.kind || artifact.body || artifact.html || artifact.content);
+  return preparedCategory ? product : '';
+}
+
 function preparedArtifactHomeCopy(item){
   const kind = preparedArtifactKind(item);
   const subject = primaryPortalPhrase(item) || itemTitle(item, 'Prepared work');
@@ -18981,12 +19025,13 @@ function hasCompleteWhyNowPacket(item = {}){
 function preparedWorkPacketForHomeItem(item = {}){
   const metadata = homeAdmissionMetadata(item);
   const artifactKind = preparedArtifactKind(item);
-  const artifact = item.preparedArtifact || item.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const artifact = preparedArtifactForHomeItem(item);
   const canAct = item.canValAct || item.can_val_act || metadata.canValAct || metadata.can_val_act || item.canValActStatus || metadata.canValActStatus || '';
+  const workProduct = concretePreparedWorkProduct(item);
   return {
     prepared_work_type: artifactKind || artifact.kind || item.preparedArtifactKind || metadata.preparedArtifactKind || '',
     trigger_source_id: item.sourceId || item.source_id || item.id || item.target?.id || metadata.sourceId || metadata.source_id || '',
-    work_product: artifact.body || artifact.content || item.draftBody || item.summary || item.title || '',
+    work_product: workProduct,
     approval_needed: item.approvalNeeded ?? metadata.approvalNeeded ?? true,
     execution_path: item.executionPath || item.execution_path || metadata.executionPath || metadata.execution_path || item.target?.type || artifact.kind || '',
     can_val_act_status: String(canAct || (artifactKind || artifact.kind ? 'approval_required' : '')).toLowerCase()
@@ -18994,12 +19039,16 @@ function preparedWorkPacketForHomeItem(item = {}){
 }
 
 function hasPreparedWorkPacketAndActionStatus(item = {}){
+  const kind = preparedArtifactKind(item) || item.type || item.itemType;
+  if(reviewOnlyLeverageKind(kind)) return false;
+  const workProduct = concretePreparedWorkProduct(item);
+  if(!workProduct) return false;
   if(homeAdmissionExplicitPass(item, 'preparedWorkPacketComplete')) return true;
   const packet = item.preparedWorkPacket || item.prepared_work_packet || preparedWorkPacketForHomeItem(item);
   return Boolean(
     packet.prepared_work_type &&
     packet.trigger_source_id &&
-    packet.work_product &&
+    workProduct &&
     packet.can_val_act_status
   );
 }
@@ -19207,10 +19256,10 @@ function updatePreparedCount(count){
 function hydrateLeverageFromReadyForYou(result = {}){
   const items = Array.isArray(result.items) ? result.items : [];
   const allBuilt = Array.isArray(result.allBuilt) ? result.allBuilt : [];
-  const queueItems = (items.length ? items : allBuilt).map(normalizeReadyForYouItem).filter((item) => item?.id);
+  const queueItems = (allBuilt.length ? allBuilt : items).map(normalizeReadyForYouItem).filter((item) => item?.id);
   const admittedQueueItems = homeAdmissionFilter('leverage', queueItems);
   setHomeRoomQueue('leverage', admittedQueueItems);
-  const preparedCount = Number(result.preparedCount != null ? result.preparedCount : (allBuilt.length || items.length));
+  const preparedCount = admittedQueueItems.length;
   updatePreparedCount(preparedCount);
   const ready = firstBriefingItem(admittedQueueItems);
   if(!ready || !ready.id){
@@ -24124,6 +24173,45 @@ function alignmentDraftFromWorkspace(workspace = {}){
   };
 }
 
+function leverageDraftFromWorkspace(workspace = {}){
+  const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
+  const artifact = preparedArtifactForHomeItem(source);
+  const activeArtifact = workspace.preparedArtifact || workspace.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || {};
+  const candidates = [
+    workspace.draftBody,
+    workspace.draft_body,
+    workspace.preparedDraft,
+    workspace.prepared_draft,
+    workspace.payload?.draftBody,
+    workspace.payload?.draft_body,
+    activeArtifact.body,
+    activeArtifact.content,
+    activeArtifact.html,
+    activeArtifact.instruction,
+    Array.isArray(activeArtifact.sections) ? activeArtifact.sections.join('\n\n') : '',
+    artifact.body,
+    artifact.content,
+    artifact.html,
+    artifact.instruction,
+    Array.isArray(artifact.sections) ? artifact.sections.join('\n\n') : '',
+    source.draftBody,
+    source.draft_body,
+    source.preparedDraft,
+    source.prepared_draft,
+    metadata.preparedArtifact?.body,
+    metadata.prepared_artifact?.body,
+    metadata.preparedArtifact?.html,
+    metadata.prepared_artifact?.html
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  const body = candidates.find((value) => value.length >= 8) || '';
+  if(!body) return null;
+  return {
+    title: workspace.draftTitle || workspace.draft_title || activeArtifact.subject || activeArtifact.title || artifact.subject || artifact.title || source.draftTitle || source.draft_title || source.title || 'Prepared work',
+    body
+  };
+}
+
 function leverageDraftActionLabel(workspace = {}){
   const item = workspace.sourceItem || {};
   const verb = preparedApprovalVerb(item);
@@ -24263,7 +24351,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
       .replace(/^Review the draft before/i, 'Review before'),
     recommendation
   );
-  const draft = alignmentDraftFromWorkspace(active);
+  const draft = leverageDraftFromWorkspace(active);
   const approvalLabel = leverageDraftActionLabel(active);
   const executiveFacts = leverageExecutiveFacts(active, draft);
   activeCoworkHeldContext = [

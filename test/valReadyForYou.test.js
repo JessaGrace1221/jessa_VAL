@@ -305,3 +305,49 @@ test('meeting overview drafts preserve their reviewable email artifact for Lever
   assert.equal(item.metadataJson.canValAct,'approval_required');
   assert.equal(item.metadataJson.executionPath,'create_provider_draft_then_human_send');
 });
+
+test('transcript commitment review bundles do not count as prepared Leverage work',async()=>{
+  let store={readyForYouItems:[]};
+  const ready=createValReadyForYouService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_test`,
+    tenantId:()=> 'tenant',
+    userId:()=> 'user',
+    executiveInboxService:{reviewDrafts:async()=>({drafts:[]}),listReadyForYouDraftCandidates:async()=>[]},
+    meetingPrepService:{listReadyForYouCandidates:async()=>[]},
+    transcriptIntelligenceService:{
+      listReadyForYouCandidates:async()=>[{
+        source:'transcript_intelligence',
+        id:'followup_tr_1_commitments',
+        transcriptId:'tr_1',
+        status:'ready_for_review',
+        title:'Review 12 transcript commitments',
+        summary:'VAL extracted commitments before turning anything into tasks.',
+        handoff:{
+          id:'followup_tr_1_commitments',
+          category:'transcript_follow_up',
+          type:'commitment_bundle',
+          title:'Review 12 transcript commitments',
+          summary:'VAL extracted commitments before turning anything into tasks.',
+          why_user_is_seeing_this:'This transcript changed what someone may be waiting on.',
+          why_now:'Commitments lose value when they are not clarified soon after the conversation.',
+          what_val_did:'Extracted commitments, source quotes, and task context. No task was created automatically.',
+          what_only_user_can_do:'Confirm which commitments are real and how they should move forward.',
+          approval_policy:'approval_required',
+          requires_approval:true,
+          source_refs:[{source_type:'transcript',source_id:'tr_1',quote_or_summary:'I have one more thing I want to accomplish today.',confidence:0.74}]
+        },
+        run:{id:'run_1',transcriptId:'tr_1',confidence:0.74,createdAt:'2026-07-24T10:00:00Z'}
+      }]
+    },
+    listDrafts:async()=>[]
+  });
+  const built=await ready.buildQueue({limit:5});
+  const item=built.allBuilt.find(row=>row.title==='Review 12 transcript commitments');
+  assert.ok(item);
+  assert.equal(item.metadataJson.preparedArtifactKind,'');
+  assert.equal(item.metadataJson.preparedWorkCount,0);
+  assert.equal(built.preparedCount,0);
+});
