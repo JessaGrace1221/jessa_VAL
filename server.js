@@ -23009,16 +23009,18 @@ function buildFreshTranscriptDailyWitness(transcript={},packet={}){
   const summary=transcriptHomeSummary(transcript);
   const nextMove=transcriptHomeNextMove(transcript);
   const text=[summary,nextMove].join(' ');
-  let second='VAL read the transcript and the work is moving.';
+  let second='The Chief of Staff saw one source-backed thread rise to the top.';
   if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
-    second='Missed-call textback, email aliases, Apollo, and the call-center path all look like they moved forward.';
+    second='The agency systems thread is asking for a cleaner handoff.';
   }else if(/happy|good|resolved|ready|complete/i.test(text)){
-    second='The conversation looks like it moved in the right direction.';
+    second='The conversation looks ready for a clean next move.';
   }
-  const third=nextMove;
+  const third=/projection|dashboard|Mike/i.test(text)
+    ? 'The GOALL dashboard handoff is the source-backed signal at the top.'
+    : 'The source stays attached if you want to work it through.';
   return {
-    display_greeting:[`${label} moved forward.`,second,third].filter(Boolean).join('\n'),
-    greeting_lines:[`${label} moved forward.`,second,third].filter(Boolean),
+    display_greeting:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean).join('\n'),
+    greeting_lines:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean),
     permission_line:packet.readyDraft?'I also found the meeting overview draft for review.':'Keep the flow going while the context is fresh.',
     moment_type:'fresh_transcript',
     what_was_witnessed:summary,

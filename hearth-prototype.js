@@ -18496,16 +18496,21 @@ function homePerspectiveUserName(){
   const directName = titleText.match(/^([A-Z][a-z]+),/);
   if(directName?.[1]) return directName[1];
   const fromGreeting = titleText.match(/,\s*([A-Z][a-z]+)\./);
-  return fromGreeting?.[1] || 'there';
+  return fromGreeting?.[1] || 'Jessa';
 }
 
 function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   const text = compactSentence(String(value || '')
     .replace(/\*\*/g, '')
+    .replace(/\[[ x]\]/gi, '')
     .replace(/^[-–—]\s*/, '')
     .replace(/\s+/g, ' ')
     .trim(), '');
   if(!text) return '';
+  if(/\b(Action Items?|Key Points|Meeting Overview)\b/i.test(text)) return '';
+  if(/\b(Jessa to|Assigned to|Due\s*:|Due date)\b/i.test(text)) return '';
+  if(/\bsource before letting this enter Home\b/i.test(text)) return '';
+  if(/^(finish|fix|send|create|draft|review|confirm|follow up|prepare)\b/i.test(text)) return '';
   if(/^\d{1,2}:\d{2}\s*(AM|PM)\b/i.test(text)) return '';
   if(/\b(Messages meeting|meeting July|processed and changed|Home should update|Velocity, Alignment, and Leverage)\b/i.test(text)) return '';
   if(/\b(moved forward|review the meeting overview|transcript|meeting overview|prepared work packet|can val act|no prepared work)\b/i.test(text)) return '';
@@ -18515,6 +18520,27 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   if(text.length <= maxLength) return text;
   const shortened = text.slice(0, maxLength).replace(/\s+\S*$/, '').trim();
   return shortened ? shortened + '.' : '';
+}
+
+function homePriorityWitnessLine(briefing = {}){
+  const item = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || {};
+  const raw = compactSentence(item.title || item.summary || item.why || '', '');
+  const lower = raw.toLowerCase();
+  if(/\bgoall?\b|\bgoal agency\b|\bprojection|\bdashboard|\bmike\b/.test(lower)){
+    return 'The GOALL dashboard handoff is the source-backed signal at the top.';
+  }
+  if(/\btags?\b|\bpipeline\b|\bautomation\b|\bcolumns?\b/.test(lower)){
+    return 'The pipeline automation handoff is asking for one clean correction.';
+  }
+  if(/\bemail\b|\breply\b|\binbox\b|\bmessage\b/.test(lower)){
+    return 'One relationship message needs judgment before it moves.';
+  }
+  if(/\bmeeting\b|\bappointment\b|\bfollow[- ]?up\b/.test(lower)){
+    return 'One meeting thread is asking for a cleaner next move.';
+  }
+  const clean = cleanVelocityPerspectiveLine(raw, 118);
+  if(clean) return clean;
+  return 'One source-backed move has risen to the top.';
 }
 
 function homeObserverSignalText(briefing = {}){
@@ -18596,11 +18622,12 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
   const selectedName = observer?.name || 'Meaning';
   const observerLine = observer?.currentlySeeing || observer?.truth || 'One signal is asking for discernment.';
+  const priorityWitness = homePriorityWitnessLine(briefing);
   return {
-    headline: lines[0] || 'Good morning, ' + name + '.',
-    witness: lines[1] || 'The Chief of Staff is listening across the Board of Observers.',
-    orientation: lines[2] || selectedName + ' is the Observer I would listen to first: ' + observerLine,
-    permission: lines[3] || (evidenceCount
+    headline: 'Good morning, ' + name + '.',
+    witness: lines[0] || priorityWitness,
+    orientation: selectedName + ' is the Observer I would listen to first: ' + observerLine,
+    permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
       ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
       : 'If no Observer has earned the room, I will keep the desk quiet.')
   };
