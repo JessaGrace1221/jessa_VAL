@@ -52,6 +52,143 @@ function sourceRefsFromRows(rows=[],sourceType='unknown',summaryKey='summary',id
     createdAt:row.createdAt||row.created_at||row.updatedAt||row.updated_at||''
   }));
 }
+const OBSERVER_PACKET_LENSES = {
+  'Executive Inbox':{
+    lens:'attention and reply judgment',
+    sees:'whether this creates a reply, draft, or inbox decision',
+    concern:'communication loops could remain unowned',
+    question:'Does this need human judgment?'
+  },
+  Relationship:{
+    lens:'trust and relational warmth',
+    sees:'whether this changes trust, warmth, distance, or repair',
+    concern:'relationship context could be flattened into a task',
+    question:'What changed between people?'
+  },
+  Project:{
+    lens:'project movement and dependencies',
+    sees:'whether this changes progress, blockers, ownership, or scope',
+    concern:'work could move without a clear project anchor',
+    question:'What project does this move?'
+  },
+  Capacity:{
+    lens:'tradeoffs and decision quality',
+    sees:'whether this adds load, pressure, recovery need, or timing strain',
+    concern:'the system could protect output while degrading judgment',
+    question:'What does this cost?'
+  },
+  Courage:{
+    lens:'truth without comfort',
+    sees:'whether this reveals avoidance, directness, or a needed challenge',
+    concern:'the hard truth could be softened into politeness',
+    question:'What is being avoided?'
+  },
+  Delight:{
+    lens:'aliveness and restoration',
+    sees:'whether this protects curiosity, energy, joy, or human connection',
+    concern:'life could disappear from an otherwise effective day',
+    question:'Where is life here?'
+  },
+  Opportunity:{
+    lens:'openings and mutual value',
+    sees:'whether this creates timing, demand, introduction, or revenue signal',
+    concern:'an opening could be missed because it arrived quietly',
+    question:'What opening is present?'
+  },
+  Momentum:{
+    lens:'movement over perfection',
+    sees:'whether this creates real movement, friction, or next-step clarity',
+    concern:'activity could be mistaken for progress',
+    question:'What is moving now?'
+  },
+  Meaning:{
+    lens:'purpose and wider pattern',
+    sees:'whether this connects to values, story, purpose, or recurring themes',
+    concern:'execution could drift from what actually matters',
+    question:'Why does this matter?'
+  },
+  Synchronicity:{
+    lens:'cross-context convergence',
+    sees:'whether this echoes another signal, timing cluster, or repeated arrival',
+    concern:'a meaningful pattern could be dismissed as coincidence',
+    question:'What is repeating?'
+  },
+  Commitment:{
+    lens:'promises and follow-through',
+    sees:'whether this creates, fulfills, or threatens a promise',
+    concern:'trust could leak through small unclosed loops',
+    question:'What was promised?'
+  },
+  Calendar:{
+    lens:'time reality',
+    sees:'whether this affects schedule, prep, availability, or timing',
+    concern:'time could be treated as flexible when it is not',
+    question:'When does this matter?'
+  },
+  Environment:{
+    lens:'conditions around the work',
+    sees:'whether this depends on location, travel, body, interruption, or external condition',
+    concern:'context outside the screen could be ignored',
+    question:'What condition changes this?'
+  },
+  Witnessing:{
+    lens:'direct user-revealed truth',
+    sees:'whether this aligns with or updates what the user has revealed about herself',
+    concern:'VAL could advise from data while forgetting the person',
+    question:'What did she already tell us?'
+  }
+};
+function packetRouteForObserver(packet={},observerName=''){
+  return safeArray(packet.routeObserversJson||packet.route_observers_json).find(route=>route.observerName===observerName)||null;
+}
+function packetPrimaryForObserver(packet={},observerName=''){
+  const primary=safeArray(packet.primaryObserversJson||packet.primary_observers_json);
+  return primary.includes(observerName)||!!packetRouteForObserver(packet,observerName)?.primary;
+}
+function buildPacketReview(observerName,packet={},context={}){
+  const lens=OBSERVER_PACKET_LENSES[observerName]||{
+    lens:`${observerName} lens`,
+    sees:'whether this packet changes the observer perspective',
+    concern:'the signal could be missed',
+    question:'What does this change?'
+  };
+  const packetId=String(packet.id||packet.packetId||'');
+  const sourceType=String(packet.sourceType||packet.source_type||'unknown');
+  const packetType=String(packet.packetType||packet.packet_type||'learning_packet');
+  const title=compactText(packet.title||packetType.replace(/_/g,' '),180);
+  const summary=compactText(packet.summary||packet.description||'',520);
+  const route=packetRouteForObserver(packet,observerName);
+  const primary=packetPrimaryForObserver(packet,observerName);
+  const triggered=safeArray(context.event?.packetIds).includes(packetId);
+  const baseConfidence=primary?0.72:0.56;
+  const evidenceBoost=summary?0.08:0;
+  const triggerBoost=triggered?0.06:0;
+  return {
+    packetId,
+    sourceType,
+    sourceId:String(packet.sourceId||packet.source_id||''),
+    packetType,
+    title,
+    summary,
+    observerName,
+    lens:lens.lens,
+    primary,
+    triggered,
+    routeReason:route?.reason||`${observerName} can use this packet as shared Board context.`,
+    seeing:`${observerName} is checking ${lens.sees}.`,
+    concern:lens.concern,
+    question:lens.question,
+    confidence:Math.max(0.2,Math.min(0.92,baseConfidence+evidenceBoost+triggerBoost)),
+    reviewedAt:context.generatedAt||new Date().toISOString(),
+    reflectionMode:'deterministic_lens_v1'
+  };
+}
+function buildPacketReviews(observerName,context={}){
+  return safeArray(context.boardPackets)
+    .filter(packet=>packet&&!packet.prototype)
+    .slice(0,60)
+    .map(packet=>buildPacketReview(observerName,packet,context));
+}
 function rowToObject(row={}){
   const out={};
   for(const [k,v] of Object.entries(row||{})) out[k]=v instanceof Date?v.toISOString():v;
@@ -334,6 +471,7 @@ function createValIntelligenceSpine({
   function buildObserverOutput(observerName,context){
     const kind=observerKind(observerName);
     const c=countSignals(context);
+    const packetReviews=buildPacketReviews(observerName,context);
     const baseUnknowns=safeArray(context.unknowns).filter(u=>{
       if(kind==='executive_inbox')return /email/i.test(u.source);
       if(kind==='calendar')return /calendar/i.test(u.source);
@@ -442,6 +580,11 @@ function createValIntelligenceSpine({
       evidence:sourceRefsFromRows(context.sourceRefs||[],'source_ref','quote_or_summary','source_id',6),
       confidence,
       conviction,
+      packet_review_count:packetReviews.length,
+      packet_reviews:packetReviews,
+      packetReviews,
+      primary_packet_ids:packetReviews.filter(review=>review.primary).map(review=>review.packetId),
+      triggered_packet_ids:packetReviews.filter(review=>review.triggered).map(review=>review.packetId),
       supports:[],
       conflicts_with:[],
       attention_signals:attentionSignals,
@@ -493,6 +636,11 @@ function createValIntelligenceSpine({
       .sort((a,b)=>Number(b.conviction||0)-Number(a.conviction||0))
       .slice(0,6)
       .map(r=>({observer:r.observerName,signal:r.outputJson.attention_signals[0],conviction:Number(r.conviction||0),confidence:Number(r.confidence||0)}));
+    const reviewedPacketIds=[...new Set(runs.flatMap(run=>safeArray(run.outputJson?.packetReviews||run.outputJson?.packet_reviews).map(review=>review.packetId).filter(Boolean)))];
+    const observerPacketReviewCounts=Object.fromEntries(runs.map(run=>[
+      run.observerName,
+      safeArray(run.outputJson?.packetReviews||run.outputJson?.packet_reviews).length
+    ]));
     const opposingViews=candidateTensions.slice(1,4).map(t=>({observer:t.observer,view:`${t.observer} would prioritize ${t.signal}.`,conviction:t.conviction}));
     const uncertainty=low.concat(runs.flatMap(r=>safeArray(r.unknownsJson).map(u=>({observer:r.observerName,...u})))).slice(0,12);
     return {
@@ -501,7 +649,9 @@ function createValIntelligenceSpine({
       candidate_tensions:candidateTensions,
       opposing_views:opposingViews,
       uncertainty,
-      synthesis:`${candidateTensions.length} candidate attention signals surfaced from ${runs.length} observers.`
+      reviewed_packet_ids:reviewedPacketIds,
+      observer_packet_review_counts:observerPacketReviewCounts,
+      synthesis:`${candidateTensions.length} candidate attention signals surfaced from ${runs.length} observers; ${reviewedPacketIds.length} live packet${reviewedPacketIds.length===1?' was':'s were'} reviewed by the Board.`
     };
   }
   async function runRoundTable({eventRunId='',observerRuns=[]}={}){
