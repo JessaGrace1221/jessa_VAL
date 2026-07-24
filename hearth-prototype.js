@@ -18650,6 +18650,31 @@ function dailyWitnessEvidenceLabel(item = {}){
   return titleText;
 }
 
+function executiveEvidenceLine(item = {}){
+  const identity = sourceIdentityForItem(item);
+  const source = compactSentence(identity.label || item.title || item.name || item.source_type || 'Supporting source', 'Supporting source')
+    .replace(/\.+$/, '');
+  const rawSignal = compactSentence(
+    item.reason_it_matters ||
+    item.why ||
+    item.recommendation ||
+    item.summary ||
+    item.detail ||
+    ''
+  );
+  const cleanSignal = rawSignal
+    .replace(/\s*-\s*\[\s*\]\s*/g, ' ')
+    .replace(/\s+-\s+Due:\s*[\d/:-]*\s*$/i, '')
+    .replace(/\s+-\s+Jessa Grace\s*/i, ' ')
+    .replace(/^Action Items?\s*:?\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(cleanSignal && cleanSignal.toLowerCase() !== source.toLowerCase()){
+    return 'Source: ' + source + '. Signal: ' + compactSentence(cleanSignal).slice(0, 160);
+  }
+  return 'Source: ' + source + '.';
+}
+
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   if(!evidence) return;
   const velocityCount = homeAdmittedCount('velocity');
@@ -18673,38 +18698,39 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   const sensitiveWithheld = (briefing?.dailyWitness?.internalUnderstanding?.things_intentionally_not_mentioned || [])
     .some((item) => /sensitive/i.test(String(item.topic || item.reason || '')));
   const generatedLine = status === 'loaded'
-    ? 'Briefing refreshed at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
+    ? 'Last checked at ' + briefingRefreshLabel(briefing?.generatedAt || briefing?.dailyWitness?.generatedAt) + '.'
     : status === 'unavailable'
-      ? 'Live briefing is unavailable, so Home is using fallback copy.'
-      : 'Waiting for the executive briefing payload.';
+      ? 'I cannot refresh the live read right now, so I am showing the last available Home read.'
+      : 'I am still gathering the Home read.';
   const boardCount = Number(briefing?.quietlyHandled?.observations || 0) + Number(briefing?.quietlyHandled?.agencyMoves || 0);
-  const watchingCount = briefingItems(briefing?.watching).length + briefingItems(briefing?.ignored).length;
+  const activeCount = alignmentCount + leverageCount + velocityCount;
+  const firstSourceLine = sourceEvidence.length ? executiveEvidenceLine(sourceEvidence[0]) : '';
   evidence.innerHTML = [
     '<div>',
-      '<p class="evidence-label">Chief of Staff</p>',
+      '<p class="evidence-label">Why this earned Home</p>',
       '<ul>',
         '<li>' + escapeHtml(generatedLine) + '</li>',
-        '<li>Home admitted ' + (alignmentCount + leverageCount + velocityCount) + ' item' + ((alignmentCount + leverageCount + velocityCount) === 1 ? '' : 's') + ' for attention.</li>',
-        boardCount ? '<li>' + escapeHtml(boardCount + ' background signal' + (boardCount === 1 ? '' : 's') + ' stayed with the Board instead of becoming Home noise.') + '</li>' : '',
-        watchingCount ? '<li>' + escapeHtml(watchingCount + ' signal' + (watchingCount === 1 ? '' : 's') + ' are being watched, not assigned.') + '</li>' : '',
-        '<li>Alignment is for what you may do. Leverage is for what VAL prepared. Home is the larger read.</li>',
+        activeCount ? '<li>I found ' + activeCount + ' thing' + (activeCount === 1 ? '' : 's') + ' worth your attention now.</li>' : '<li>Nothing is asking for action right now.</li>',
+        boardCount ? '<li>The Board is holding the wider pattern so Home only shows what is useful today.</li>' : '',
+        firstSourceLine ? '<li>' + escapeHtml(firstSourceLine) + '</li>' : '',
+        '<li>If you want the proof, inspect the Board or open the exact action lane below.</li>',
       '</ul>',
       '<div class="hearth-evidence-actions">',
-        '<button type="button" data-home-evidence-action="board">Open Board</button>',
-        alignmentCount ? '<button type="button" data-home-evidence-action="alignment">Inspect Alignment</button>' : '',
-        leverageCount ? '<button type="button" data-home-evidence-action="leverage">Review Leverage</button>' : '',
+        '<button type="button" data-home-evidence-action="board">See Board Signals</button>',
+        alignmentCount ? '<button type="button" data-home-evidence-action="alignment">Open Action</button>' : '',
+        leverageCount ? '<button type="button" data-home-evidence-action="leverage">Open Prepared Work</button>' : '',
       '</div>',
     '</div>',
     '<div>',
-      '<p class="evidence-label">Evidence Trail</p>',
+      '<p class="evidence-label">Evidence</p>',
       '<ul>',
         sensitiveWithheld ? '<li>Sensitive details were intentionally withheld from Home.</li>' : '',
         sourceEvidence.length
-          ? sourceEvidence.map((item) => '<li>' + escapeHtml(dailyWitnessEvidenceLabel(item)) + '</li>').join('')
-          : '<li>No source evidence is exposed until a signal earns the room.</li>',
-        '<li>Nothing sends, imports, or changes externally without approval.</li>',
+          ? sourceEvidence.slice(0, 4).map((item) => '<li>' + escapeHtml(executiveEvidenceLine(item)) + '</li>').join('')
+          : '<li>No inspectable source has earned Home yet.</li>',
+        '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
       '</ul>',
-      '<button class="fresh-desk-button" type="button">Clear Home marks</button>',
+      '<button class="fresh-desk-button" type="button">Clear seen marks</button>',
     '</div>'
   ].join('');
   evidence.querySelector('.fresh-desk-button')?.addEventListener('click', clearRoomAttendance);
