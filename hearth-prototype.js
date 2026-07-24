@@ -6571,6 +6571,9 @@ async function finalizeActiveCoworkResponse(entry = {}, result = {}){
 async function submitActiveCoworkEntry(messageOverride = ''){
   const entry = activeCoworkEntry;
   if(!entry) return false;
+  if(entry.entrypointId === 'observer.discussion' || entry.entrypointId === 'board.chief_of_staff'){
+    return false;
+  }
   if(!entry.sessionId){
     if(entry.status === 'opening'){
       const submit = workspaceInputPanel.querySelector('[data-home-cowork-submit]');
@@ -25348,6 +25351,52 @@ function observerConversationContext(observer = null, role = 'observer'){
   };
 }
 
+function observerCoworkContextLines(context = {}){
+  const observer = context.selectedObserver || {};
+  if(context.role === 'chief'){
+    return [
+      'Lens: Chief of Staff',
+      observerBoardState.chiefOfStaff?.view ? 'Currently seeing: ' + observerBoardState.chiefOfStaff.view : '',
+      observerBoardState.chiefOfStaff?.why ? 'What I am watching: ' + observerBoardState.chiefOfStaff.why : '',
+      observerBoardState.chiefOfStaff?.next ? 'What I would like to explore: ' + observerBoardState.chiefOfStaff.next : '',
+      context.home ? 'Home lanes: ' + JSON.stringify(context.home).slice(0, 1200) : ''
+    ].filter(Boolean);
+  }
+  return [
+    observer.name ? 'Lens: ' + observer.name : '',
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'What I am watching: ' + observer.watching : '',
+    Array.isArray(observer.evidenceItems) && observer.evidenceItems.length ? 'Evidence: ' + observer.evidenceItems.join('; ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    observer.concern ? 'My concern: ' + observer.concern : '',
+    observer.explore ? 'What I would like to explore: ' + observer.explore : '',
+    observer.packetFrom || observer.incomingObservation ? 'Latest packet: ' + [observer.packetFrom ? 'from ' + observer.packetFrom : '', observer.incomingObservation || ''].filter(Boolean).join(' - ') : ''
+  ].filter(Boolean);
+}
+
+function observerCoworkHeldContext(context = {}){
+  const lines = observerCoworkContextLines(context);
+  return [
+    'Selected Board of Observers context.',
+    'Use these exact observer-card details as source truth. If the user asks about "this", "the context", "currently seeing", "watching", "evidence", "my concern", or "what to explore", answer from these details directly.',
+    'Do not say the observer has no context if these lines are present.',
+    '',
+    ...lines
+  ].join('\n');
+}
+
+function observerCoworkContextMarkup(context = {}){
+  const lines = observerCoworkContextLines(context);
+  if(!lines.length) return '';
+  return [
+    '<div class="observer-cowork-source" data-observer-cowork-source>',
+      '<span>Loaded Observer Context</span>',
+      '<ul>',
+        lines.slice(0, 7).map((line) => '<li>' + escapeHtml(line) + '</li>').join(''),
+      '</ul>',
+    '</div>'
+  ].join('');
+}
+
 function observerBoardCardMarkup(observer = null, position = {}){
   const isChief = !observer;
   const name = isChief ? 'Chief of Staff' : observer.name;
@@ -25459,7 +25508,8 @@ function updateObserverSelectedCard(observerId = ''){
   }
 }
 
-function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage} = {}){
+function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage, historyMessage, context} = {}){
+  const sourceMarkup = observerCoworkContextMarkup(context || {});
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief');
   scraperPreviewList.classList.add('observer-cowork-overlay-panel');
@@ -25473,6 +25523,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
             detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
             '<small>Saved privately and carried forward when you return.</small>',
           '</div>',
+          sourceMarkup,
           '<div class="home-cowork-history">',
             '<span>Previous conversations</span>',
             '<button type="button" aria-pressed="true">Current thread</button>',
@@ -25537,15 +25588,16 @@ async function openObserverCowork(observerId = '', role = 'observer'){
   deskWorkspace.classList.add('home-cowork-mode','observer-board-mode','observer-cowork-active');
   deskWorkspace.setAttribute('aria-label', title);
   activeCoworkContextLocked = true;
-  activeCoworkHeldContext = title;
+  activeCoworkHeldContext = observerCoworkHeldContext(context);
   renderObserverCoworkOverlay({
-    heading:title,
+    title,
     detail,
     placeholder:isChief ? 'Talk this through with your Chief of Staff...' : 'Talk this through with this Observer...',
     initialMessage:isChief
       ? 'I am here with the full Board context. What would you like us to notice, pressure-test, or move forward?'
       : 'I am here with the ' + observer.name + ' lens. What would you like to examine together?',
-    historyMessage:'This conversation is saved and will be here when you return.'
+    historyMessage:'This conversation is saved and will be here when you return.',
+    context
   });
   activeCoworkEntry = {entrypointId,observerId:stableId,title,context,sessionId:'',workItemId:'',status:'opening'};
   hearth.dataset.distance = 'judgment';
@@ -25558,7 +25610,8 @@ async function openObserverCowork(observerId = '', role = 'observer'){
       title,
       context
     },{timeoutMs:15000,timeoutMessage:'VAL could not open this saved conversation yet.'});
-    renderCoworkEntryResult(result,{hydrateConversation:true,suppressMessage:true});
+    const userAlreadyStarted = Boolean(homeCoworkResponseNode()?.querySelector?.('.home-cowork-message.user'));
+    renderCoworkEntryResult(result,{hydrateConversation:!userAlreadyStarted,suppressMessage:true});
   }catch(error){
     activeCoworkEntry = null;
     hideCoworkContextGathering();
