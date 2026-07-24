@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   createValCommitmentsService,
+  hasExecutiveCommitmentShape,
   normalizeCommitment,
   ownerFromText,
   parseDueHint
@@ -27,6 +28,22 @@ test('unknown contact-owned commitments are held for resolution', () => {
 
   assert.equal(commitment.status, 'needs_resolution');
   assert.equal(commitment.owner_name, 'Allen');
+});
+
+test('commitment admission rejects transcript noise and keeps accountable follow-through', () => {
+  assert.equal(hasExecutiveCommitmentShape({
+    title: 'Your calendar has a restraining order, and even your coffee takes a deep breath before dealing with your morning face.',
+    confidence: 0.72
+  }), false);
+  assert.equal(hasExecutiveCommitmentShape({
+    title: 'I want you to not hold back and be as vulgar as you need to be.',
+    confidence: 0.72
+  }), false);
+  assert.equal(hasExecutiveCommitmentShape({
+    title: 'Jessa to finish the projections dashboard handoff with Mike before Monday.',
+    source_quote: 'Jessa to finish the projections dashboard handoff with Mike before Monday.',
+    confidence: 0.91
+  }), true);
 });
 
 test('commitments ledger normalizes transcript and email commitments into one accountable list', async () => {

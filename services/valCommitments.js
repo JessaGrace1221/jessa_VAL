@@ -37,6 +37,40 @@ function priorityFor(commitment={}){
   return 'normal';
 }
 
+function commitmentSeedText(seed={}){
+  return compactText([
+    seed.title,
+    seed.summary,
+    seed.description,
+    seed.text,
+    seed.source_quote,
+    seed.sourceQuote,
+    seed.evidence_quote,
+    seed.evidenceQuote
+  ].filter(Boolean).join(' '),1200);
+}
+
+function looksLikeTranscriptNoise(text=''){
+  const value=String(text||'').trim();
+  if(!value)return true;
+  if(value.length<12)return true;
+  if(/^\s*(?:i'?m going to|i am going to|we'?re going to|we are going to)\s*(?:\.{0,3})?\s*$/i.test(value))return true;
+  return /\b(vulgar|coffee takes a deep breath|morning face|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
+}
+
+function hasExecutiveCommitmentShape(seed={}){
+  const text=commitmentSeedText(seed);
+  if(looksLikeTranscriptNoise(text))return false;
+  const explicit=String(seed.owner||seed.owner_type||seed.ownerType||seed.assignedToName||seed.owner_name||seed.ownerName||'').trim();
+  const actionVerb=/\b(send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|circle back|respond|reply|set up|connect|meet with)\b/i.test(text);
+  const commitmentLanguage=/\b(i will|i'll|i need to|i have to|jessa to|jessa will|we will|we'll|we need to|we have to|val should|val needs to|[^.]{2,40}\bto\s+(?:send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|respond|reply|set up|connect|meet with))\b/i.test(text);
+  const hasTarget=/\b(to|with|for|about|before|by|on)\b\s+[A-Z0-9][A-Za-z0-9@._-]{2,}/.test(text)
+    || /\b(send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|reply|set up)\s+[A-Z0-9][A-Za-z0-9@._-]{2,}/.test(text)
+    || /\b(proposal|dashboard|handoff|email|meeting|call|draft|contract|calendar|pipeline|crm|transcript|document|introduction|follow[- ]?up|legal|chapter|feedback)\b/i.test(text);
+  const confident=Number(seed.confidence_score||seed.confidenceScore||seed.confidence||0);
+  return Boolean(((explicit&&actionVerb)||(commitmentLanguage&&(hasTarget||actionVerb))||(actionVerb&&hasTarget)) && (!confident || confident>=0.6));
+}
+
 function riskFor(commitment={}){
   const text=[commitment.title,commitment.description,commitment.evidence_quote].join(' ').toLowerCase();
   if(/\bcontract|legal|pricing|proposal|signed|approval|client|deadline|overdue\b/.test(text))return 'high';
@@ -123,7 +157,7 @@ function transcriptSeeds(runs=[]){
     const linkage=jsonValue(run.linkageJson||run.linkage_json,{});
     const people=safeArray(linkage.linked_people||linkage.linkedPeople);
     const counterparty=firstParticipantName(people);
-    return safeArray(commitments).map((c,index)=>({
+    return safeArray(commitments).filter(hasExecutiveCommitmentShape).map((c,index)=>({
       ...c,
       id:stableKey(['commitment','transcript',run.transcriptId||run.transcript_id||run.id,c.id||index].join(':')),
       source_type:'transcript',
@@ -143,7 +177,7 @@ function emailSeeds(classifications=[]){
     const context=jsonValue(row.contextJson||row.context_json||row.context,{});
     const latest=context.latest_inbound||context.latestInbound||context.current_message||context.currentMessage||{};
     const counterparty=latest.from?.name||latest.from?.email||'';
-    return safeArray(commitments).map((c,index)=>({
+    return safeArray(commitments).filter(hasExecutiveCommitmentShape).map((c,index)=>({
       ...c,
       id:stableKey(['commitment','email',row.unifiedConversationId||row.unified_conversation_id||row.id,c.messageId||index,c.text||c.summary].join(':')),
       title:c.title||c.text||c.summary,
@@ -276,4 +310,4 @@ function createValCommitmentsService({
   return {list,get,updateStatus,draftEmail,createTask,normalizeCommitment,commitmentSummary};
 }
 
-module.exports={createValCommitmentsService,normalizeCommitment,transcriptSeeds,emailSeeds,parseDueHint,ownerFromText,commitmentSummary};
+module.exports={createValCommitmentsService,normalizeCommitment,transcriptSeeds,emailSeeds,parseDueHint,ownerFromText,commitmentSummary,hasExecutiveCommitmentShape};
