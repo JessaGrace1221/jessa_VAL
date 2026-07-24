@@ -82,3 +82,67 @@ test('in-memory intelligence pass records observers, round table, recommendation
   assert.ok(store.roundTableRuns.length);
   assert.ok(store.chiefOfStaffRecommendations.length);
 });
+
+test('every Board observer reviews every live packet through its own lens',async()=>{
+  let store={tasks:[]};
+  const packet={
+    id:'board_packet_michele_email',
+    sourceType:'email',
+    sourceId:'email_michele_1',
+    packetType:'email_attention_packet',
+    title:'Michele introduction',
+    summary:'Michele may need an introduction email and relationship context.',
+    primaryObserversJson:['Executive Inbox','Relationship','Commitment'],
+    routeObserversJson:[
+      {observerName:'Executive Inbox',primary:true,reason:'Inbox judgment'},
+      {observerName:'Relationship',primary:true,reason:'Relationship warmth'},
+      {observerName:'Project',primary:false,reason:'Project context'},
+      {observerName:'Capacity',primary:false,reason:'Capacity tradeoff'},
+      {observerName:'Courage',primary:false,reason:'Courage truth'},
+      {observerName:'Delight',primary:false,reason:'Delight signal'},
+      {observerName:'Opportunity',primary:false,reason:'Opportunity signal'},
+      {observerName:'Momentum',primary:false,reason:'Momentum signal'},
+      {observerName:'Meaning',primary:false,reason:'Meaning signal'},
+      {observerName:'Synchronicity',primary:false,reason:'Convergence signal'},
+      {observerName:'Commitment',primary:true,reason:'Follow-through'},
+      {observerName:'Calendar',primary:false,reason:'Timing reality'},
+      {observerName:'Environment',primary:false,reason:'Conditions'},
+      {observerName:'Witnessing',primary:false,reason:'User revealed context'}
+    ],
+    sourceRefsJson:[{source_type:'email',source_id:'email_michele_1',quote_or_summary:'Need to email Michele.',confidence:0.8}],
+    prototype:false,
+    createdAt:new Date().toISOString()
+  };
+  const spine=createValIntelligenceSpine({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_test_${Math.random().toString(36).slice(2,7)}`,
+    tenantId:()=>'test-tenant',
+    userId:()=>'test-user',
+    logger:{log(){},warn(){}},
+    loaders:{
+      listBoardPackets:async()=>[packet],
+      loadTasks:async()=>[],
+      listTeachValCoreMemory:async()=>[],
+      listRelationshipProfiles:async()=>[]
+    }
+  });
+  const result=await spine.runIntelligencePass({event:{type:'board_packet_received',sourceType:'email',sourceId:'email_michele_1',packetIds:[packet.id]}});
+  assert.equal(result.observerRuns.length,14);
+  for(const run of result.observerRuns){
+    const reviews=run.outputJson.packetReviews;
+    assert.equal(reviews.length,1,`${run.observerName} should review the packet`);
+    assert.equal(reviews[0].packetId,packet.id);
+    assert.equal(reviews[0].triggered,true);
+    assert.ok(reviews[0].lens);
+    assert.ok(reviews[0].seeing.includes(run.observerName));
+    assert.ok(reviews[0].question);
+  }
+  const inboxRun=result.observerRuns.find(run=>run.observerName==='Executive Inbox');
+  const delightRun=result.observerRuns.find(run=>run.observerName==='Delight');
+  assert.equal(inboxRun.outputJson.packetReviews[0].primary,true);
+  assert.equal(delightRun.outputJson.packetReviews[0].primary,false);
+  assert.deepEqual(result.roundTable.outputJson.reviewed_packet_ids,[packet.id]);
+  assert.equal(result.roundTable.outputJson.observer_packet_review_counts.Delight,1);
+});

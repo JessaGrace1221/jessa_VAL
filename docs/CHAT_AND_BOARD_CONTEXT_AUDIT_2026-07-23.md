@@ -7,7 +7,9 @@ Repo: jessa_VAL-home-page-ui-clean
 
 VAL's scoped text chat architecture is real enough to describe carefully to users.
 
-The Board of Observers visual is not yet safe to describe as live telemetry for every email, transcript, draft, task, document, and action. The visual Board is beautiful and now has the right product language, but the packet orbs are still prototype/demo motion after Witnessing. The backend Intelligence Spine exists and stores observer runs, round table runs, Chief of Staff recommendations, momentum snapshots, and Ready For You items, but live event ingestion is not wired everywhere yet.
+The Board of Observers is now safe to describe as live packet telemetry for the source families that are explicitly registered as live: email sync, transcripts, saved calendar events, Witnessing, Co-Work, external action packets, and Home VAL email action preparation. It is not yet safe to describe every possible future VAL source as live Board telemetry until that source has its own packet hook and regression coverage.
+
+Every live packet is visible to every Board Observer. The packet system still marks primary observers so VAL knows which lenses should speak first, but no Observer is excluded from shared Board context. The Intelligence Spine now stores per-observer packet reviews so the claim "every Observer looked at this packet through its own lens" is backed by saved output, not just by a route label.
 
 ## What Is Confirmed
 
@@ -79,19 +81,22 @@ Relevant implementation:
 
 ## What Is Not Yet Confirmed
 
-### The Board Is Not Yet Live Telemetry
+### Source Families Still Not Fully Live
 
 Not confirmed:
 
-- Every email automatically becomes one or more Board packets.
-- Every transcript automatically becomes one or more Board packets.
-- Every draft, task, document, calendar event, approved action, SMS, email sent, or Co-Work conversation automatically becomes a packet.
-- Every packet is persisted with `Source -> Packet Type -> Observer(s) -> Reason`.
-- The front-end packet orbs are being driven by live database packet rows.
+- SMS packets from the GHL/VAL SMS bridge.
+- LinkedIn visibility packets from the updated LinkedIn function.
+- Document/upload packets outside transcript and Home VAL source handling.
+- Task mutation packets for every task creation/completion path.
+- Relationship profile mutation packets from every Stewardship save path.
+- Project profile mutation packets from every Project Managers save path.
+- Public research packets from Apollo, Outscraper, web research, and LinkedIn research receipts.
+- GHL Voice completed-turn packets.
 
-The repo's own Board packet routing contract states that after Witnessing, the active packet field is prototype/demo and "not yet live telemetry."
+These are intentionally registered as pending in the Board source registry so VAL does not overclaim them.
 
-### Witnessing Is Missing From the Backend Default Observer Suite
+### Witnessing Is Backend-Live
 
 The visual Board currently has 14 observers:
 
@@ -110,15 +115,13 @@ The visual Board currently has 14 observers:
 - Environment
 - Witnessing
 
-The backend `DEFAULT_OBSERVERS` currently has 13 observers and does not include Witnessing.
-
-This means Witnessing exists visually and in prompt/contract language, but it is not yet a first-class backend observer in the default Intelligence Spine run.
+The backend `DEFAULT_OBSERVERS` now also has all 14 observers, including Witnessing and Synchronicity.
 
 ### Observer "Lenses" Are Not Yet Independent LLM Reasoners
 
-The backend currently builds deterministic observer outputs from one shared context packet. It does store prompt metadata, but each observer is not yet independently running its full observer prompt against each incoming item.
+The backend currently builds deterministic observer outputs from one shared context packet. It now stores a `packetReviews` record for every Observer against every live packet, including lens, concern, question, primary status, triggered status, and confidence. It does store prompt metadata, but each observer is not yet independently running a separate full LLM prompt against each incoming item.
 
-That is acceptable as a Phase 1 reasoning scaffold, but it should not be described as every observer deeply reading every item through its own live prompt yet.
+That is acceptable as a Phase 1 reasoning scaffold, but it should be described accurately: every Observer reviews every live packet through its deterministic lens today; future work can upgrade those reviews to full model-backed observer prompts if needed.
 
 ## Test Results
 
@@ -280,5 +283,34 @@ No source may be described as live Board telemetry unless it appears in the regi
 Still not safe to overclaim:
 
 - Do not say every possible future source in VAL is live until that source has an explicit packet hook.
-- Do not say every Observer independently runs a full LLM prompt against every packet yet. The current Intelligence Spine is a durable deterministic observer/round-table scaffold with source refs and stored outputs.
+- Do not say every Observer independently runs a full LLM prompt against every packet yet. The current Intelligence Spine is a durable deterministic observer/round-table scaffold with source refs, stored outputs, and per-observer packet reviews for every live packet.
 - Do not describe raw `file://` prototype previews as live packet telemetry; live packet context requires the served app/backend.
+
+## Implementation Update: Every Observer Reviews Every Packet
+
+Completed after the source registry pass:
+
+- Added per-observer `packetReviews` to Intelligence Spine observer outputs.
+- Every non-prototype Board packet in the shared context is reviewed by every Observer in the default Board suite.
+- Each review stores:
+  - packet id
+  - source type and packet type
+  - observer lens
+  - whether this Observer is primary for the packet
+  - whether the packet triggered the current intelligence pass
+  - what the Observer is seeing
+  - concern
+  - question
+  - confidence
+  - review mode
+- Round Table outputs now include reviewed packet ids and per-observer packet-review counts.
+- Home VAL and Board Observer Co-Work chats now receive recent observer packet reflections in addition to raw packet context.
+
+New focused verification:
+
+- `node --test test/valIntelligenceSpine.test.js`
+
+Focused result:
+
+- 5 passing
+- 0 failing

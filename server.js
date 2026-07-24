@@ -31346,13 +31346,39 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
   const isChief=entrypointId==='board.chief_of_staff';
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
   const selectedObserver=String(context.selectedObserver?.name||workingBrief.title||scopeId||'').replace(/\s+Observer$/i,'').trim();
-  const liveBoardContext=await valBoardPackets?.boardContext({
-    limit:80,
-    observerName:isChief?'':selectedObserver
-  }).catch(error=>{
-    console.warn('[val-board] observer chat context lookup failed:',error.message);
-    return null;
-  });
+  const [liveBoardContext,latestObserverRuns]=await Promise.all([
+    valBoardPackets?.boardContext({
+      limit:80,
+      observerName:isChief?'':selectedObserver
+    }).catch(error=>{
+      console.warn('[val-board] observer chat context lookup failed:',error.message);
+      return null;
+    }),
+    valIntelligenceSpine?.listObserverRuns({
+      limit:isChief?42:10,
+      observerName:isChief?'':selectedObserver
+    }).catch(error=>{
+      console.warn('[val-board] observer reflection lookup failed:',error.message);
+      return [];
+    })
+  ]);
+  const observerReflections=safeArray(latestObserverRuns).flatMap(run=>
+    safeArray(run.outputJson?.packetReviews||run.outputJson?.packet_reviews).map(review=>({
+      observerName:run.observerName,
+      packetId:review.packetId,
+      sourceType:review.sourceType,
+      packetType:review.packetType,
+      title:review.title,
+      primary:!!review.primary,
+      triggered:!!review.triggered,
+      lens:review.lens,
+      seeing:review.seeing,
+      concern:review.concern,
+      question:review.question,
+      confidence:review.confidence,
+      reviewedAt:review.reviewedAt
+    }))
+  ).slice(0,isChief?80:35);
   const packetContext=liveBoardContext ? {
     livePacketCount:liveBoardContext.livePacketCount,
     observers:liveBoardContext.observers,
@@ -31367,7 +31393,8 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
       routeObservers:safeArray(packet.routeObserversJson).map(route=>({observerName:route.observerName,primary:!!route.primary,reason:route.reason})),
       sourceRefs:packet.sourceRefsJson,
       createdAt:packet.createdAt
-    }))
+    })),
+    latestObserverReflections:observerReflections
   } : null;
   const mergedContext={
     ...context,
@@ -34131,7 +34158,7 @@ app.post('/api/val/chat',async(req,res)=>{
         return '';
       })
     ]);
-    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext]=await Promise.all([
+    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext,latestObserverRuns]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
       uploadedDocs||linkedAttachmentDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
@@ -34139,8 +34166,29 @@ app.post('/api/val/chat',async(req,res)=>{
       valBoardPackets?.boardContext({limit:80}).catch(error=>{
         console.warn('[val-board] home chat context lookup failed:',error.message);
         return null;
+      }),
+      valIntelligenceSpine?.listObserverRuns({limit:42}).catch(error=>{
+        console.warn('[val-board] home chat observer reflection lookup failed:',error.message);
+        return [];
       })
     ]);
+    const observerReflections=safeArray(latestObserverRuns).flatMap(run=>
+      safeArray(run.outputJson?.packetReviews||run.outputJson?.packet_reviews).map(review=>({
+        observerName:run.observerName,
+        packetId:review.packetId,
+        sourceType:review.sourceType,
+        packetType:review.packetType,
+        title:review.title,
+        primary:!!review.primary,
+        triggered:!!review.triggered,
+        lens:review.lens,
+        seeing:review.seeing,
+        concern:review.concern,
+        question:review.question,
+        confidence:review.confidence,
+        reviewedAt:review.reviewedAt
+      }))
+    ).slice(0,80);
     const boardContextForPrompt=boardContext ? {
       livePacketCount:boardContext.livePacketCount,
       observers:boardContext.observers,
@@ -34151,7 +34199,8 @@ app.post('/api/val/chat',async(req,res)=>{
         summary:packet.summary,
         primaryObservers:packet.primaryObserversJson,
         createdAt:packet.createdAt
-      }))
+      })),
+      latestObserverReflections:observerReflections
     } : null;
     const babyStudioContext=await babyStudioPromptContext();
     const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use dashboard context, live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
