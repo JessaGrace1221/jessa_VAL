@@ -25138,6 +25138,42 @@ function hideCoworkContextGathering(){
   if(panel) panel.hidden = true;
 }
 
+function normalizeTaskWorkspaceItem(item = {}){
+  if(item.__workspaceKind === 'commitment') return item;
+  if(item.source_type || item.owner_type || item.evidence_quote){
+    const status = String(item.status || '').toLowerCase();
+    const owner = item.owner_type === 'user'
+      ? (item.counterparty_name || item.owner_name || '')
+      : (item.owner_name || item.counterparty_name || '');
+    return {
+      id:item.id || '',
+      __workspaceKind:'commitment',
+      title:item.title || item.description || 'Untitled commitment',
+      notes:item.evidence_summary || item.description || item.evidence_quote || '',
+      contactName:owner,
+      dueDate:item.due_at || '',
+      completed:['complete','completed','dismissed'].includes(status),
+      schedulingStatus:status === 'drafted' ? 'Draft ready' : (status === 'needs_resolution' ? 'Needs context' : (item.status || 'Open')),
+      sourceType:'commitment',
+      sourceId:item.source_id || '',
+      sourceCommitmentId:item.id || '',
+      relatedTranscriptId:item.source_type === 'transcript' ? item.source_id || '' : '',
+      relatedEmailId:item.source_type === 'email' ? item.source_id || '' : '',
+      details:[{
+        text:item.evidence_quote || item.evidence_summary || item.description || '',
+        sourceType:item.source_type || '',
+        sourceId:item.source_id || '',
+        sourceTitle:item.source_title || '',
+        transcriptId:item.source_type === 'transcript' ? item.source_id || '' : '',
+        emailId:item.source_type === 'email' ? item.source_id || '' : '',
+        commitmentId:item.id || ''
+      }].filter((detail) => detail.text || detail.sourceId),
+      rawCommitment:item
+    };
+  }
+  return item;
+}
+
 function taskWorkspaceDetails(task = {}){
   return Array.isArray(task.details) ? task.details : (task.details ? [task.details] : []);
 }
@@ -25209,7 +25245,8 @@ function setTaskCompanionOpenCount(count = 0){
 }
 
 function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
-  currentTaskWorkspaceTasks = Array.isArray(tasks) ? tasks : [];
+  tasks = (Array.isArray(tasks) ? tasks : []).map(normalizeTaskWorkspaceItem);
+  currentTaskWorkspaceTasks = tasks;
   currentTaskWorkspaceDrafts = Array.isArray(drafts) ? drafts : [];
   currentTaskWorkspaceReadyItems = Array.isArray(readyItems) ? readyItems : [];
   currentTaskWorkspacePreparedByTask = {};
@@ -25257,8 +25294,9 @@ function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
 async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
-    const tasks = await getJson('/api/val/tasks', {cache:'no-store'});
-    setTaskCompanionOpenCount((Array.isArray(tasks)?tasks:[]).filter((task) => !task.completed).length);
+    const result = await getJson('/api/val/commitments?limit=200', {cache:'no-store'});
+    const items = Array.isArray(result?.commitments) ? result.commitments.map(normalizeTaskWorkspaceItem) : [];
+    setTaskCompanionOpenCount(items.filter((task) => !task.completed).length);
   }catch(error){
     setTaskCompanionOpenCount(0);
   }
@@ -25280,12 +25318,12 @@ async function openTaskWorkspace(){
   deskWorkspace.setAttribute('aria-hidden','false');
   openWorkspaceShell('Commitments',{returnTarget:'home'});
   try{
-    const [tasksResult,draftsResult,readyResult] = await Promise.all([
-      getJson('/api/val/tasks',{cache:'no-store'}),
+    const [commitmentsResult,draftsResult,readyResult] = await Promise.all([
+      getJson('/api/val/commitments?limit=200',{cache:'no-store'}),
       getJson('/api/val/drafts',{cache:'no-store'}),
       getJson('/api/val/ready-for-you?limit=5&includeSnoozed=true',{cache:'no-store'})
     ]);
-    renderTaskWorkspace(Array.isArray(tasksResult)?tasksResult:[],draftsResult?.drafts || [],readyResult?.items || []);
+    renderTaskWorkspace(Array.isArray(commitmentsResult?.commitments)?commitmentsResult.commitments:[],draftsResult?.drafts || [],readyResult?.items || []);
     if(window.matchMedia('(max-width: 720px), (max-height: 720px)').matches){
       window.requestAnimationFrame(() => {
         deskWorkspace.scrollTop = 0;
@@ -25319,7 +25357,11 @@ async function completeTaskFromWorkspace(taskId = ''){
   if(row) row.classList.add('is-completing');
   try{
     if(canUseApi && taskId){
-      await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
+      if(task?.__workspaceKind === 'commitment'){
+        await postJson('/api/val/commitments/' + encodeURIComponent(taskId) + '/status', {status:'complete', reason:'Marked done from Home commitments.'});
+      }else{
+        await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
+      }
     }
     currentTaskWorkspaceTasks = currentTaskWorkspaceTasks.map((item) => String(item.id || '') === String(taskId || '') ? {...item, completed:true, completedAt:new Date().toISOString(), completedBy:'you'} : item);
     if(row){
