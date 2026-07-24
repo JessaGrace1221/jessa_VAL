@@ -1004,10 +1004,14 @@ async function loadLiveObserverBoardContext(){
     if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
     observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
     observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
+    observerBoardState.sourceSummary = result?.sourceSummary || null;
+    observerBoardState.sources = Array.isArray(result?.sources) ? result.sources : [];
     return result || null;
   }catch(error){
     observerBoardState.livePackets = [];
     observerBoardState.livePacketCount = 0;
+    observerBoardState.sourceSummary = null;
+    observerBoardState.sources = [];
     observerBoardState.livePacketError = error.message;
     return null;
   }finally{
@@ -25144,8 +25148,12 @@ async function openObserverBoard(options = {}){
       '</button>'
     ].join('');
   }).join('');
+  const sourceSummary = observerBoardState.sourceSummary || {};
+  const sourceReadinessLabel = sourceSummary.live
+    ? sourceSummary.live + ' Live Source Hook' + (sourceSummary.live === 1 ? '' : 's') + (sourceSummary.pending ? ' · ' + sourceSummary.pending + ' Pending' : '')
+    : '';
   const boardStatus = showPacketField
-    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets')
+    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets' + (sourceReadinessLabel ? ' · ' + sourceReadinessLabel : ''))
     : 'Holding Space';
   closeCalendarPanel();
   setWorkspaceContent({
