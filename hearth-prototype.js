@@ -920,29 +920,29 @@ function observerBoardPacketSourceObserver(packet = {}){
 
 function observerBoardPacketLabel(packet = {}){
   const labels = {
-    email_attention_packet:'Email',
-    draft_review_packet:'Draft',
-    reply_pressure_packet:'Reply',
-    meeting_context_packet:'Meeting',
-    capacity_window_packet:'Time',
-    prep_timing_packet:'Prep',
-    meeting_evidence_packet:'Transcript',
-    decision_trace_packet:'Decision',
-    task_extraction_packet:'Task',
-    identity_context_packet:'Identity',
-    relational_context_packet:'Trust',
-    operating_context_packet:'Context',
-    convergence_packet:'Pattern',
-    timing_cluster_packet:'Timing',
-    pattern_echo_packet:'Echo',
-    approval_packet:'Approval',
-    task_packet:'Task',
-    sent_action_packet:'Sent',
-    learning_packet:'Learning',
-    cowork_packet:'Co-Work',
-    document_packet:'Source',
-    relationship_packet:'Relationship',
-    project_packet:'Project'
+    email_attention_packet: 'Email',
+    draft_review_packet: 'Draft',
+    reply_pressure_packet: 'Reply',
+    meeting_context_packet: 'Meeting',
+    capacity_window_packet: 'Time',
+    prep_timing_packet: 'Prep',
+    meeting_evidence_packet: 'Transcript',
+    decision_trace_packet: 'Decision',
+    task_extraction_packet: 'Task',
+    identity_context_packet: 'Identity',
+    relational_context_packet: 'Trust',
+    operating_context_packet: 'Context',
+    convergence_packet: 'Pattern',
+    timing_cluster_packet: 'Timing',
+    pattern_echo_packet: 'Echo',
+    approval_packet: 'Approval',
+    task_packet: 'Task',
+    sent_action_packet: 'Sent',
+    learning_packet: 'Learning',
+    cowork_packet: 'Co-Work',
+    document_packet: 'Source',
+    relationship_packet: 'Relationship',
+    project_packet: 'Project'
   };
   return labels[packet.packetType || packet.packet_type] || compactSentence(packet.title || 'Packet', 'Packet', 16);
 }
@@ -24809,7 +24809,7 @@ function observerBoardCardMarkup(observer = null, position = {}){
     ? 'Reading across the full observer field before VAL advises.'
     : observer.watching || observer.evidence;
   const evidenceItems = isChief
-    ? [observerBoardState.observers.length + ' observers','Active packet field','1 synthesis layer']
+    ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
     : observer.evidenceItems || [position.signals || observer.evidence];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'

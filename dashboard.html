@@ -6511,6 +6511,8 @@ function updateDynamicSuggestions(){
   else if(dueToday.length) suggestions.push({label:'Due today: '+taskDisplayTitle(dueToday[0]), prompt:'Help me complete this task today: '+taskDisplayTitle(dueToday[0])+'. Give me the next step and any message or follow-up I should draft.'});
   if(dashData.followups>0) suggestions.push({label:'Draft replies', prompt:'Review my unread conversations and draft the replies that should go out now. Put anything sensitive in the Approval Queue.'});
   suggestions.push({label:'Lead Scrape', prompt:'Lead scrape'});
+  suggestions.push({label:'Context check', prompt:'Tell me what I should understand, what I got wrong, or what you want moved forward'});
+  suggestions.push({label:'Remember context', prompt:'Remember the important context from this conversation'});
   suggestions.push({label:'Relationship Radar', prompt:'Open Relationship Radar. Who needs attention now based on my calendar, tasks, follow-ups, and pipeline?'});
   if(drafts.length) suggestions.push({label:'Review '+drafts.length+' drafts', prompt:'Open my Approval Queue and help me decide what to approve, revise, or send first.'});
   suggestions.push({label:'Use saved time', prompt:'What high-impact thing should I do with the time VAL has saved me today?'});
