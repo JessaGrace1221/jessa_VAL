@@ -11604,7 +11604,8 @@ function openContextualCoworkSession({returnTarget = 'home', title, meaning, con
     heading: heading || contextualCoworkHeading(safeTitle),
     detail: publicDetail || detail || coworkPublicDetail(returnTarget),
     placeholder: placeholder || 'What should VAL help you think through here?',
-    initialMessage
+    initialMessage,
+    selectedSourceContext
   });
   openWorkspaceShell('Home Co-Work with VAL approval workspace', {returnTarget, keepDrawerOpen:true});
   if(showGathering) showCoworkContextGathering('VAL is gathering the selected source packet, Project Managers section, relationships, and evidence.');
@@ -18680,6 +18681,56 @@ function executiveEvidenceLine(item = {}){
   return 'Source: ' + source + '.';
 }
 
+function homeExpectedRiskCount(briefing = {}){
+  const why = compactSentence(briefing?.todayTheme?.why || '', '');
+  const match = why.match(/\b(\d+)\s+risk signal/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function homeRiskSignalLine(item = {}){
+  const title = compactSentence(item.title || item.name || 'Risk signal', 'Risk signal')
+    .replace(/^(Review|Protect|Prepare|Close loop|Draft reply)\s*:\s*/i, '');
+  const summary = compactSentence(item.reason_it_matters || item.why || item.summary || item.ifIgnored || '', '');
+  const source = sourceIdentityForItem(item);
+  return {
+    title,
+    summary,
+    source: compactSentence(source.label || source.type || '', '')
+  };
+}
+
+function homeRiskSignalsMarkup(briefing = {}){
+  const riskSignals = Array.isArray(briefing?.riskSignals) ? briefing.riskSignals : [];
+  const expectedCount = homeExpectedRiskCount(briefing);
+  const count = Math.max(expectedCount, riskSignals.length);
+  if(!count) return '';
+  if(!riskSignals.length){
+    return [
+      '<div class="home-risk-signals">',
+        '<p class="evidence-label">Risk Signals (' + count + ')</p>',
+        '<p class="home-risk-empty">This Home read names ' + count + ' risk signal' + (count === 1 ? '' : 's') + ', but the inspectable list did not arrive with the briefing. VAL should not ask you to solve a number without proof.</p>',
+      '</div>'
+    ].join('');
+  }
+  return [
+    '<div class="home-risk-signals">',
+      '<p class="evidence-label">Risk Signals (' + riskSignals.length + ')</p>',
+      '<ol>',
+        riskSignals.slice(0, 100).map((item) => {
+          const signal = homeRiskSignalLine(item);
+          return [
+            '<li>',
+              '<strong>' + escapeHtml(signal.title) + '</strong>',
+              signal.summary ? '<span>' + escapeHtml(signal.summary) + '</span>' : '',
+              signal.source ? '<small>' + escapeHtml(signal.source) + '</small>' : '',
+            '</li>'
+          ].join('');
+        }).join(''),
+      '</ol>',
+    '</div>'
+  ].join('');
+}
+
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   if(!evidence) return;
   const velocityCount = homeAdmittedCount('velocity');
@@ -18710,6 +18761,7 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   const boardCount = Number(briefing?.quietlyHandled?.observations || 0) + Number(briefing?.quietlyHandled?.agencyMoves || 0);
   const activeCount = alignmentCount + leverageCount + velocityCount;
   const firstSourceLine = sourceEvidence.length ? executiveEvidenceLine(sourceEvidence[0]) : '';
+  const riskSignalsMarkup = homeRiskSignalsMarkup(briefing);
   evidence.innerHTML = [
     '<div>',
       '<p class="evidence-label">Why this earned Home</p>',
@@ -18735,6 +18787,7 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
           : '<li>No inspectable source has earned Home yet.</li>',
         '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
       '</ul>',
+      riskSignalsMarkup,
       '<button class="fresh-desk-button" type="button">Clear seen marks</button>',
     '</div>'
   ].join('');
@@ -23964,6 +24017,10 @@ function collectHomeCoworkSourceIds(value, result = {transcriptIds:new Set(), ev
     const id = value.transcriptId || value.transcript_id || sourceId;
     if(id) result.transcriptIds.add(String(id));
   }
+  ['source_ids','sourceIds'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list) && /transcript/.test(sourceType)) list.forEach((id) => id && result.transcriptIds.add(String(id)));
+  });
   ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids'].forEach((key) => {
     const list = value[key];
     if(Array.isArray(list)) list.forEach((id) => id && result.evidenceIds.add(String(id)));
@@ -23973,7 +24030,7 @@ function collectHomeCoworkSourceIds(value, result = {transcriptIds:new Set(), ev
     if(Array.isArray(list)) list.forEach((id) => id && result.observationIds.add(String(id)));
   });
   Object.keys(value).forEach((key) => {
-    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|target|sourceItem|payload)$/i.test(key)){
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|evidence_refs|whyNowPacket|why_now_packet|target|sourceItem|payload|preparedPayloadJson|prepared_payload_json)$/i.test(key)){
       collectHomeCoworkSourceIds(value[key], result, depth + 1);
     }
   });
@@ -24776,6 +24833,59 @@ function openCoworkSession(){
   });
 }
 
+function homeCoworkSourceReceiptMarkup(selectedSourceContext = null){
+  if(!selectedSourceContext || typeof selectedSourceContext !== 'object') return '';
+  const sourceItem = selectedSourceContext.sourceItem || {};
+  const identity = selectedSourceContext.sourceIdentity || sourceIdentityForItem(sourceItem);
+  const sourceRefs = Array.isArray(selectedSourceContext.sourceRefs) ? selectedSourceContext.sourceRefs : [];
+  const evidence = Array.isArray(sourceItem.evidence) ? sourceItem.evidence : [];
+  const sourceTitle = compactSentence(
+    identity.label ||
+    sourceItem.target?.label ||
+    sourceItem.source_title ||
+    sourceItem.sourceTitle ||
+    sourceItem.title ||
+    selectedSourceContext.cardTitle ||
+    'Selected source',
+    'Selected source'
+  );
+  const sourceType = compactSentence(
+    identity.type ||
+    sourceItem.target?.type ||
+    sourceItem.source_type ||
+    sourceItem.sourceType ||
+    'source',
+    'source'
+  ).replace(/_/g, ' ');
+  const sourceId = compactSentence(
+    identity.id ||
+    sourceItem.target?.id ||
+    sourceItem.source_id ||
+    sourceItem.sourceId ||
+    '',
+    ''
+  );
+  const lines = [
+    selectedSourceContext.cardMeaning,
+    sourceItem.whyNowPacket?.decision_needed,
+    sourceItem.whyNowPacket?.cost_if_delayed,
+    sourceItem.reason_it_matters,
+    sourceItem.why,
+    sourceItem.summary,
+    ...sourceRefs.map((ref) => typeof ref === 'string' ? ref : (ref.quote_or_summary || ref.quoteOrSummary || ref.summary || ref.title || '')),
+    ...evidence.map((item) => typeof item === 'string' ? item : (item.summary || item.title || ''))
+  ].map((line) => compactSentence(projectCleanText(line), '')).filter(Boolean);
+  const uniqueLines = Array.from(new Set(lines)).slice(0,4);
+  return [
+    '<div class="home-cowork-source-receipt" data-home-cowork-source-receipt>',
+      '<span>Source loaded</span>',
+      '<strong>' + escapeHtml(sourceTitle) + '</strong>',
+      '<small>' + escapeHtml(sourceType + (sourceId ? ' · ' + sourceId : '')) + '</small>',
+      uniqueLines.length ? '<ul>' + uniqueLines.map((line) => '<li>' + escapeHtml(line) + '</li>').join('') + '</ul>' : '',
+    '</div>'
+  ].join('');
+}
+
 function renderHomeCoworkPreview(options = {}){
   const heading = options.heading || 'What shall we accomplish together?';
   const detail = options.detail || '';
@@ -24783,6 +24893,7 @@ function renderHomeCoworkPreview(options = {}){
   const initialMessage = options.initialMessage || heading;
   const historyMessage = options.historyMessage || 'No earlier project Co-Work thread is loaded in this view.';
   const speakerDetail = options.speakerDetail || 'VAL can prepare drafts, decisions, and next steps. Anything external still asks for approval.';
+  const sourceReceiptMarkup = homeCoworkSourceReceiptMarkup(options.selectedSourceContext);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief', 'observer-cowork-overlay-panel');
@@ -24794,6 +24905,7 @@ function renderHomeCoworkPreview(options = {}){
           '<strong>' + escapeHtml(heading) + '</strong>',
           detail ? '<p>' + escapeHtml(detail) + '</p>' : '',
         '</div>',
+        sourceReceiptMarkup,
         '<div class="home-cowork-history">',
           '<span>Previous conversations</span>',
           '<button type="button" aria-pressed="true">Current thread</button>',

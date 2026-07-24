@@ -474,6 +474,47 @@ button,a{font:inherit}
   color:var(--paper);
   outline:none;
 }
+.home-risk-signals{
+  margin-top:16px;
+  border-top:1px solid rgba(245,239,228,.17);
+  padding-top:12px;
+}
+.home-risk-signals ol{
+  display:grid;
+  gap:8px;
+  max-height:156px;
+  margin:0;
+  padding:0 8px 0 0;
+  overflow:auto;
+  list-style:none;
+}
+.home-risk-signals li{
+  display:grid;
+  gap:3px;
+  padding:8px 9px;
+  border:1px solid rgba(245,239,228,.12);
+  border-radius:14px;
+  background:linear-gradient(110deg,rgba(125,141,111,.11),rgba(239,185,173,.09));
+}
+.home-risk-signals strong{
+  color:rgba(255,249,239,.9);
+  font-size:.78rem;
+  font-weight:620;
+  line-height:1.28;
+}
+.home-risk-signals span,
+.home-risk-empty{
+  margin:0;
+  color:rgba(255,249,239,.72);
+  font-size:.76rem;
+  line-height:1.42;
+}
+.home-risk-signals small{
+  color:rgba(245,239,228,.48);
+  font:.58rem var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
 .fresh-desk-button{
   margin-top:14px;
   min-height:31px;
@@ -12567,6 +12608,38 @@ button.timeline-overview-receipt:focus-visible{
 .desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-history{
   gap:7px;
   padding:0;
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt{
+  display:grid;
+  gap:7px;
+  padding:12px 0;
+  border-top:1px solid rgba(63,55,49,.07);
+  border-bottom:1px solid rgba(63,55,49,.07);
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt>span,
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt small{
+  font:500 .56rem/1 var(--mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:rgba(97,116,86,.72);
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt strong{
+  color:rgba(45,36,31,.88);
+  font:430 .88rem/1.32 var(--body);
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt small{
+  color:rgba(164,108,117,.68);
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt ul{
+  display:grid;
+  gap:6px;
+  margin:2px 0 0;
+  padding:0;
+  list-style:none;
+}
+.desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-source-receipt li{
+  color:rgba(58,51,47,.68);
+  font:.78rem/1.38 var(--body);
 }
 .desk-workspace.home-cowork-mode.alignment-function-mode .home-cowork-history{
   padding-top:12px;
