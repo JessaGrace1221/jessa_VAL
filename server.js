@@ -23195,7 +23195,7 @@ function executiveThemeFromMoves(moves=[],profiles=[]){
   const relationship=profiles.filter(p=>p.profileType==='person'&&(p.openLoopCount||p.riskCount||p.opportunityCount)).length;
   const meetings=active.filter(m=>['schedule_meeting','prepare_meeting'].includes(m.moveType)).length;
   if(close>=Math.max(risk,meetings,2))return {title:'Close Open Loops',why:`${close} relationship or commitment loops are asking for closure.`};
-  if(risk>0)return {title:'Protect Trust',why:`${risk} risk signal${risk===1?'':'s'} should be reviewed before they grow quietly.`};
+  if(risk>0)return {title:'Protect Trust',why:'Relationship is watching trust risk before it grows quietly.'};
   if(relationship>0)return {title:'Relationship Velocity',why:`${relationship} people have relationship momentum, risk, or opportunity signals.`};
   if(meetings>0)return {title:'Prepare Conversations',why:`${meetings} meeting-related move${meetings===1?'':'s'} are ready for preparation.`};
   return {title:'Discern, Then Move',why:'VAL is watching the evidence and keeping noisy items out of your way.'};
