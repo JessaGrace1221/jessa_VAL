@@ -18656,15 +18656,25 @@ function dailyWitnessEvidenceLabel(item = {}){
 }
 
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
-  return;
   if(!evidence) return;
   const velocityCount = homeAdmittedCount('velocity');
   const alignmentCount = homeAdmittedCount('alignment');
   const leverageCount = homeAdmittedCount('leverage');
-  const sourceEvidence = (briefing?.dailyWitness?.evidence || []).filter((item) => {
+  const sourceEvidence = [
+    ...(briefing?.dailyWitness?.evidence || []),
+    ...(briefing?.highestLeverageMove ? [briefing.highestLeverageMove] : []),
+    ...briefingItems(briefing?.alsoImportant).slice(0, 3),
+    ...briefingItems(briefing?.watching).slice(0, 3)
+  ].filter((item, index, list) => {
     const text = [item.title, item.summary].filter(Boolean).join(' ');
-    return text && !/Email may contain a risk, blocker, or relationship concern/i.test(text);
-  }).slice(0, 3);
+    if(!text || /Email may contain a risk, blocker, or relationship concern/i.test(text)) return false;
+    const identity = sourceIdentityForItem(item);
+    const key = identity.id || text.toLowerCase();
+    return list.findIndex((candidate) => {
+      const candidateIdentity = sourceIdentityForItem(candidate);
+      return (candidateIdentity.id || [candidate.title, candidate.summary].filter(Boolean).join(' ').toLowerCase()) === key;
+    }) === index;
+  }).slice(0, 5);
   const sensitiveWithheld = (briefing?.dailyWitness?.internalUnderstanding?.things_intentionally_not_mentioned || [])
     .some((item) => /sensitive/i.test(String(item.topic || item.reason || '')));
   const generatedLine = status === 'loaded'
@@ -18672,23 +18682,31 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
     : status === 'unavailable'
       ? 'Live briefing is unavailable, so Home is using fallback copy.'
       : 'Waiting for the executive briefing payload.';
+  const boardCount = Number(briefing?.quietlyHandled?.observations || 0) + Number(briefing?.quietlyHandled?.agencyMoves || 0);
+  const watchingCount = briefingItems(briefing?.watching).length + briefingItems(briefing?.ignored).length;
   evidence.innerHTML = [
     '<div>',
-      '<p class="evidence-label">Live briefing</p>',
+      '<p class="evidence-label">Chief of Staff</p>',
       '<ul>',
         '<li>' + escapeHtml(generatedLine) + '</li>',
-        '<li>Velocity: ' + velocityCount + ' admitted change' + (velocityCount === 1 ? '' : 's') + '.</li>',
-        '<li>Alignment: ' + (alignmentCount ? alignmentCount + ' priority packet' + (alignmentCount === 1 ? '' : 's') : 'no priority packet admitted') + '.</li>',
-        '<li>Leverage: ' + leverageCount + ' prepared item' + (leverageCount === 1 ? '' : 's') + ' admitted.</li>',
+        '<li>Home admitted ' + (alignmentCount + leverageCount + velocityCount) + ' item' + ((alignmentCount + leverageCount + velocityCount) === 1 ? '' : 's') + ' for attention.</li>',
+        boardCount ? '<li>' + escapeHtml(boardCount + ' background signal' + (boardCount === 1 ? '' : 's') + ' stayed with the Board instead of becoming Home noise.') + '</li>' : '',
+        watchingCount ? '<li>' + escapeHtml(watchingCount + ' signal' + (watchingCount === 1 ? '' : 's') + ' are being watched, not assigned.') + '</li>' : '',
+        '<li>Alignment is for what you may do. Leverage is for what VAL prepared. Home is the larger read.</li>',
       '</ul>',
+      '<div class="hearth-evidence-actions">',
+        '<button type="button" data-home-evidence-action="board">Open Board</button>',
+        alignmentCount ? '<button type="button" data-home-evidence-action="alignment">Inspect Alignment</button>' : '',
+        leverageCount ? '<button type="button" data-home-evidence-action="leverage">Review Leverage</button>' : '',
+      '</div>',
     '</div>',
     '<div>',
-      '<p class="evidence-label">Source evidence</p>',
+      '<p class="evidence-label">Evidence Trail</p>',
       '<ul>',
         sensitiveWithheld ? '<li>Sensitive details were intentionally withheld from Home.</li>' : '',
         sourceEvidence.length
           ? sourceEvidence.map((item) => '<li>' + escapeHtml(dailyWitnessEvidenceLabel(item)) + '</li>').join('')
-          : '<li>No specific source evidence strong enough to explain the greeting.</li>',
+          : '<li>No source evidence is exposed until a signal earns the room.</li>',
         '<li>Nothing sends, imports, or changes externally without approval.</li>',
       '</ul>',
       '<button class="fresh-desk-button" type="button">Clear Home marks</button>',
@@ -25908,6 +25926,20 @@ leanButton?.addEventListener('click', () => {
   const isOpen = evidence.classList.toggle('open');
   hearth.classList.toggle('evidence-open', isOpen);
   leanButton.setAttribute('aria-expanded', String(isOpen));
+});
+
+evidence?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-home-evidence-action]');
+  if(!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const action = button.dataset.homeEvidenceAction;
+  evidence.classList.remove('open');
+  hearth.classList.remove('evidence-open');
+  leanButton?.setAttribute('aria-expanded', 'false');
+  if(action === 'board') return openObserverBoard();
+  if(action === 'alignment') return openAlignmentExecutionWorkspace();
+  if(action === 'leverage') return openLeverageApprovalWorkspace();
 });
 
 freshDeskButton?.addEventListener('click', clearRoomAttendance);
