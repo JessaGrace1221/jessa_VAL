@@ -17954,6 +17954,17 @@ function compactSentence(value, fallback = ''){
   return String(value || fallback || '').replace(/\s+/g, ' ').trim();
 }
 
+function alignmentCoworkQuestion(title = ''){
+  const clean = compactSentence(title, 'this action').replace(/[.!?]+$/, '');
+  const lower = clean.toLowerCase();
+  if(/\bdashboard\b/.test(lower)) return 'How can I help you finish this dashboard?';
+  if(/\bhandoff\b/.test(lower)) return 'How can I help you finish this handoff?';
+  if(/\bdraft\b|\bemail\b|\breply\b/.test(lower)) return 'How can I help you finish this message?';
+  if(/\bintro(?:duction)?\b/.test(lower)) return 'How can I help you finish this introduction?';
+  if(/\bmeeting prep\b|\bprep\b/.test(lower)) return 'How can I help you prepare for this?';
+  return 'How can I help you finish this?';
+}
+
 function firstBriefingItem(items){
   return Array.isArray(items) ? items.filter(Boolean)[0] || null : null;
 }
@@ -23880,6 +23891,7 @@ function openHomeCardCowork(workspace){
   const isAlignment = /alignment/i.test(String(active.lens || active.cardType || ''));
   activeClarityWorkspace = active;
   const cardTitle = compactSentence(active.title, 'this action');
+  const alignmentQuestion = alignmentCoworkQuestion(cardTitle);
   openContextualCoworkSession({
     returnTarget: 'home',
     title: isAlignment ? 'Work through this action' : 'Co-Work with VAL: ' + cardTitle,
@@ -23889,16 +23901,17 @@ function openHomeCardCowork(workspace){
       active.packetFields?.why_it_matters ? 'Why it matters: ' + active.packetFields.why_it_matters : '',
       active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
-      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
+      active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : '',
+      isAlignment ? 'Alignment Co-Work rule: help the user finish the actual task. If they ask for an artifact such as HTML, copy, a draft, a checklist, or a working plan, produce the artifact directly in the chat. Do not narrate process, expose backend context, or send them to another page unless they ask.' : ''
     ].filter(Boolean),
     recommendation: isAlignment ? 'Finish it, change it, delegate it, or ask VAL to prepare the next move.' : active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
     placeholder: isAlignment ? 'Tell VAL what you need to finish this...' : 'Tell VAL what you need from this card...',
     helper: isAlignment ? 'VAL has the action context loaded. If this needs to become a draft, task, email, or appointment, VAL will prepare it and ask before anything external happens.' : 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
     initialValue: '',
-    heading: isAlignment ? 'Current action' : '',
+    heading: isAlignment ? alignmentQuestion : '',
     detail: isAlignment ? cardTitle : '',
     publicDetail: isAlignment ? 'Work it through here, then mark it done when it is complete.' : '',
-    initialMessage: isAlignment ? 'I have this action loaded. Tell me what changed, or what you want me to prepare.' : '',
+    initialMessage: isAlignment ? alignmentQuestion : '',
     backWorkflow: 'cancel:meeting',
     showGathering: !isAlignment
   });
