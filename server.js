@@ -23009,15 +23009,13 @@ function buildFreshTranscriptDailyWitness(transcript={},packet={}){
   const summary=transcriptHomeSummary(transcript);
   const nextMove=transcriptHomeNextMove(transcript);
   const text=[summary,nextMove].join(' ');
-  let second='The Chief of Staff saw one source-backed thread rise to the top.';
+  let second='The Chief of Staff is watching the larger pattern, not just the next task.';
   if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
-    second='The agency systems thread is asking for a cleaner handoff.';
+    second='The operating system wants cleaner pathways and fewer carried details.';
   }else if(/happy|good|resolved|ready|complete/i.test(text)){
-    second='The conversation looks ready for a clean next move.';
+    second='The room feels lighter because one thread is no longer asking to be carried.';
   }
-  const third=/projection|dashboard|Mike/i.test(text)
-    ? 'The GOALL dashboard handoff is the source-backed signal at the top.'
-    : 'The source stays attached if you want to work it through.';
+  const third='Alignment will hold the action. Home will hold the meaning.';
   return {
     display_greeting:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean).join('\n'),
     greeting_lines:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean),
@@ -34363,6 +34361,28 @@ app.post('/api/val/chat',async(req,res)=>{
           extra:{voiceMode:!!req.body.voiceMode,...prepared.extra}
         });
       }
+    }
+    if(hasSelectedSourceContext&&selectedSourcePrompt){
+      const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed|outline|elements?|sections?|layout)\b/i.test(lastUser);
+      const selectedSystem=[
+        'You are Home VAL in focused Co-Work mode.',
+        selectedSourceGuard,
+        'Answer from the selected source first. Do not describe the Hearth dashboard, sidebar, calendar card, Welcome message, or visible UI unless the user explicitly asks about the VAL interface.',
+        'If the user asks for an outline, elements, structure, HTML, CSS, iframe, draft, or plan, use the selected transcript/spec directly and produce the useful working artifact or outline. Do not ask what "this" is when the selected source contains the needed context.',
+        'Keep the answer executive-useful: concise first, then concrete sections or code when asked. No backend status, no source-loading narration, no apologies unless something is genuinely missing.',
+        'Selected source:\n'+selectedSourcePrompt
+      ].filter(Boolean).join('\n\n');
+      const content=await callOpenAIResponses({
+        system:selectedSystem,
+        messages,
+        maxTokens:artifactRequest?3600:1800,
+        temperature:0.45,
+        timeoutMs:45000
+      });
+      return sendChat(content||'I could not produce a useful answer from the selected source yet.',{
+        selectedSourceFocused:true,
+        noExternalAction:true
+      });
     }
     if(hearthFastChatEnabled(req.body)){
       if(hasSelectedSourceContext){
