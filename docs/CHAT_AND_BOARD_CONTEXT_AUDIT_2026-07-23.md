@@ -222,6 +222,7 @@ Completed after the audit:
 - Home VAL now receives live Board packet context as the Chief of Staff lane.
 - Board Observer and Chief of Staff Co-Work chats now receive live Board packet context and are instructed not to invent activity when live packets are missing.
 - The Board UI now prefers live Board packet records. It only shows prototype/stress packet motion when explicitly opened in a stress/demo mode; otherwise it shows “Holding space for Analytical and Relational Context.”
+- Added a Board source registry/readiness contract so VAL can report which source families are live, which are pending, and whether it is safe to claim all sources are Board-aware.
 
 New focused verification:
 
@@ -244,6 +245,37 @@ Focused suite result:
 Updated safe language:
 
 "VAL’s function chats are scoped to the source/function they open from, and Home VAL is the broader Chief of Staff lane. The Board of Observers now has durable live packet records for the highest-value source events: email sync, transcripts, calendar events, Witnessing, Co-Work, and external action packets. Each packet is visible to every Observer with primary Observer lenses marked, and the Board UI now prefers those live packets instead of pretending demo motion is telemetry."
+
+## Source Registry Contract
+
+Live Board-aware sources:
+
+- `email`
+- `transcript`
+- `calendar_event`
+- `witnessing`
+- `cowork`
+- `external_action`
+- `home_email_action`
+
+Pending Board-aware sources:
+
+- `sms`
+- `linkedin_visibility`
+- `document`
+- `task`
+- `relationship_profile`
+- `project_profile`
+- `public_research`
+- `ghl_voice`
+
+The Board source readiness API is:
+
+- `GET /api/val/board/sources`
+
+The rule going forward:
+
+No source may be described as live Board telemetry unless it appears in the registry with `status: "live"`, has a concrete hook name, and has passing regression coverage proving packet creation or source readiness behavior.
 
 Still not safe to overclaim:
 
