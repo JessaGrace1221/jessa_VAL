@@ -25205,17 +25205,25 @@ function taskWorkspaceIdentityValues(task = {}){
 }
 
 function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
-  const identities = taskWorkspaceIdentityValues(task);
-  const transcriptId = taskWorkspaceTranscriptId(task);
-  const matchesIdentity = (value) => {
-    const text = JSON.stringify(value || {});
-    if(transcriptId && text.includes(transcriptId)) return true;
-    return Array.from(identities).some((identity) => identity.length > 5 && text.includes(identity));
+  const commitmentId = String(task.sourceCommitmentId || task.rawCommitment?.id || task.id || '');
+  const matchesCommitment = (value) => {
+    if(!commitmentId) return false;
+    const sourceContext = value?.sourceContext || value?.source_context || value?.preparedArtifact?.sourceContext || value?.prepared_artifact?.source_context || {};
+    const ids = [
+      value?.commitmentId,
+      value?.sourceCommitmentId,
+      value?.source_commitment_id,
+      sourceContext.commitmentId,
+      sourceContext.commitment_id,
+      sourceContext.sourceCommitmentId,
+      sourceContext.source_commitment_id
+    ].filter(Boolean).map(String);
+    return ids.includes(commitmentId);
   };
-  const attachedDrafts = drafts.filter((draft) => matchesIdentity(draft)).slice(0,4).map((draft) => ({
+  const attachedDrafts = drafts.filter((draft) => matchesCommitment(draft)).slice(0,2).map((draft) => ({
     kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
   }));
-  const attachedReady = readyItems.filter(matchesIdentity).slice(0,4).map((item) => ({
+  const attachedReady = readyItems.filter(matchesCommitment).slice(0,2).map((item) => ({
     kind:'prepared',id:item.id || '',title:item.title || item.whatValPrepared || 'Prepared work',status:item.status || item.itemStatus || 'ready',body:item.whatValPrepared || item.summary || item.whatUserNeedsToDo || ''
   }));
   return [...attachedDrafts,...attachedReady].filter((item,index,list) => list.findIndex((candidate) => candidate.kind === item.kind && candidate.id === item.id) === index);
