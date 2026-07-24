@@ -58,7 +58,7 @@ function looksLikeTranscriptNoise(text=''){
   if(!value)return true;
   if(value.length<12)return true;
   if(/^\s*(?:i'?m going to|i am going to|we'?re going to|we are going to)\s*(?:\.{0,3})?\s*$/i.test(value))return true;
-  return /\b(vulgar|coffee takes a deep breath|morning face|will do the things|not legal advice|recommend against you doing|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
+  return /\b(vulgar|coffee takes a deep breath|morning face|will do the things|we'?ll email you when it'?s ready|you'?ll see everything that has happened|so if they call,? nobody answers|not legal advice|recommend against you doing|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
 }
 
 function ownerNameHintFromText(text=''){
