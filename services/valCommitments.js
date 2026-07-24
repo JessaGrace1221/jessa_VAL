@@ -71,13 +71,13 @@ function hasExecutiveCommitmentShape(seed={}){
   const text=commitmentSeedText(seed);
   if(looksLikeTranscriptNoise(text))return false;
   const explicit=String(seed.owner||seed.owner_type||seed.ownerType||seed.assignedToName||seed.owner_name||seed.ownerName||'').trim();
-  const actionVerb=/\b(send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|circle back|respond|reply|set up|connect|meet with)\b/i.test(text);
+  const actionVerb=/\b(send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|circle back|respond|reply|set up|connect|meet with|compile|find)\b/i.test(text);
   const commitmentLanguage=/\b(i will|i'll|i need to|i have to|jessa to|jessa will|we will|we'll|we need to|we have to|val should|val needs to|[^.]{2,40}\bto\s+(?:send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|respond|reply|set up|connect|meet with))\b/i.test(text);
   const hasTarget=/\b(to|with|for|about|before|by|on)\b\s+[A-Z0-9][A-Za-z0-9@._-]{2,}/.test(text)
     || /\b(send|email|text|call|reach out|follow up|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|reply|set up)\s+[A-Z0-9][A-Za-z0-9@._-]{2,}/.test(text)
     || /\b(proposal|dashboard|handoff|email|meeting|call|draft|contract|calendar|pipeline|crm|transcript|document|introduction|follow[- ]?up|legal|chapter|feedback)\b/i.test(text);
   const confident=Number(seed.confidence_score||seed.confidenceScore||seed.confidence||0);
-  return Boolean(((explicit&&actionVerb)||(commitmentLanguage&&(hasTarget||actionVerb))||(actionVerb&&hasTarget)) && (!confident || confident>=0.6));
+  return Boolean(((explicit&&actionVerb&&hasTarget)||(commitmentLanguage&&actionVerb&&hasTarget)||(actionVerb&&hasTarget)) && (!confident || confident>=0.6));
 }
 
 function riskFor(commitment={}){
