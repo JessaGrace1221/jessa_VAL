@@ -25785,6 +25785,10 @@ async function openObserverBoard(options = {}){
   hearth.dataset.distance = 'judgment';
   deskWorkspace.setAttribute('aria-hidden', 'false');
   openWorkspaceShell('Board of Observers', {returnTarget:'home'});
+  const selectedObserverName = options.selectedObserverName || options.observerName || '';
+  if(selectedObserverName){
+    requestAnimationFrame(() => updateObserverSelectedCard(observerConversationId(selectedObserverName)));
+  }
 }
 
 function orientHomeCoworkFromInput(){
@@ -26037,7 +26041,10 @@ evidence?.addEventListener('click', (event) => {
   evidence.classList.remove('open');
   hearth.classList.remove('evidence-open');
   leanButton?.setAttribute('aria-expanded', 'false');
-  if(action === 'board') return openObserverBoard();
+  if(action === 'board'){
+    const observer = selectHomeObserverSignal(executiveBriefingState || {});
+    return openObserverBoard({selectedObserverName:observer?.name || ''});
+  }
   if(action === 'alignment') return openAlignmentExecutionWorkspace();
   if(action === 'leverage') return openLeverageApprovalWorkspace();
 });
