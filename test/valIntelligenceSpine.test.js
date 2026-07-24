@@ -68,9 +68,10 @@ test('in-memory intelligence pass records observers, round table, recommendation
   });
   const result=await spine.runIntelligencePass({event:{type:'smoke_test',sourceType:'test'}});
   assert.equal(result.ok,true);
-  assert.equal(result.observerRuns.length,13);
+  assert.equal(result.observerRuns.length,14);
   assert.ok(result.observerRuns.some(run=>run.observerName==='Synchronicity'));
-  assert.ok(result.roundTable.outputJson.synthesis.includes('13 observers'));
+  assert.ok(result.observerRuns.some(run=>run.observerName==='Witnessing'));
+  assert.ok(result.roundTable.outputJson.synthesis.includes('14 observers'));
   assert.ok(result.roundTable.id);
   assert.ok(result.recommendation.id);
   assert.ok(result.momentumSnapshot.id);

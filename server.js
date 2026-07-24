@@ -16,6 +16,8 @@ const {createKrispMcpService} = require('./services/krispMcpService');
 const {ensureValIntelligenceSpineTables} = require('./services/valIntelligenceSpineSchema');
 const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligenceSpineRoutes');
 const {DEFAULT_OBSERVERS} = require('./services/valIntelligenceSpine');
+const {ensureValBoardPacketTables} = require('./services/valBoardPacketsSchema');
+const {registerValBoardPacketsRoutes} = require('./services/valBoardPacketsRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
@@ -52,6 +54,8 @@ const {
 } = require('./services/leadContactValidation');
 const app     = express();
 const execFileAsync = promisify(execFile);
+let valBoardPackets = null;
+let valIntelligenceSpine = null;
 
 function safeArray(value){
   return Array.isArray(value) ? value : [];
@@ -7623,6 +7627,7 @@ async function initValDb(){
     create index if not exists hearth_packet_receipts_packet_idx on hearth_packet_receipts(tenant_id,user_id,packet_name,status,created_at desc);
   `);
   await ensureValIntelligenceSpineTables({dbQuery,logger:console});
+  await ensureValBoardPacketTables({dbQuery,logger:console});
   await ensureValConversationIdentityTables({dbQuery,logger:console});
   await ensureValMeetingPrepTables({dbQuery,logger:console});
   await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
@@ -8508,6 +8513,21 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId',async(req,res)
       reviewed:isSourceConnectionStep,
       status:isSourceConnectionStep?'Confirmed':'Witnessed'
     });
+    const boardPackets=await valBoardPackets?.recordWitnessingAnswer({
+      id:saved.id,
+      sessionId:session.id,
+      category:card.category,
+      title:card.title,
+      rawResponse,
+      summary:structuredSummary.integrityChain?.O?.claim || rawResponse,
+      structuredSummary,
+      status:saved.status,
+      createdAt:saved.createdAt
+    }).catch(error=>{
+      console.warn('[val-board] witnessing packet creation failed:',error.message);
+      return [];
+    });
+    if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_answer_saved',sourceType:'witnessing',sourceId:saved.id});
     const state=normalizeTeachValState(session.state);
     state.progress[card.category]='Witnessed';
     state.stage=card.category;
@@ -8575,6 +8595,22 @@ app.post('/api/teach-val/onboarding/:id/witnessing-cards/:cardId/confirm',async(
       reviewed:confirmation.status==='confirmed',
       status:confirmation.status==='confirmed'?'Confirmed':'Needs Clarification'
     });
+    const boardPackets=await valBoardPackets?.recordWitnessingAnswer({
+      id:saved.id,
+      sessionId:session.id,
+      category:card.category,
+      title:card.title,
+      rawResponse:saved.rawResponse,
+      summary:structuredSummary.integrityChain?.O?.claim || saved.rawResponse,
+      structuredSummary,
+      confirmation,
+      status:saved.status,
+      createdAt:saved.createdAt
+    }).catch(error=>{
+      console.warn('[val-board] witnessing confirmation packet failed:',error.message);
+      return [];
+    });
+    if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_answer_confirmed',sourceType:'witnessing',sourceId:saved.id});
     res.json({ok:true,card,confirmation,nextQuestion,import:teachValPublicImport(saved),state:await teachValStateResponse(session.id)});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
@@ -8852,6 +8888,19 @@ app.post('/api/teach-val/onboarding/:id/commit',async(req,res)=>{
         });
       }
       promotion=await promoteTeachValOnboardingToCoreMemory({session,imports,items:included,payload});
+      const boardPackets=await valBoardPackets?.createPackets(included.map(item=>({
+        sourceType:'witnessing',
+        sourceId:item.id||`${session.id}:${item.category}:${item.title}`,
+        packetType:String(item.category||'').match(/relationship|people|contact/i)?'relational_context_packet':String(item.category||'').match(/capacity|operating|energy|boundary|schedule/i)?'operating_context_packet':'identity_context_packet',
+        title:item.title||item.category||'Witnessing context',
+        summary:item.summary||item.title||'Witnessing context committed into VAL.',
+        sourceRefs:[{sourceType:'witnessing',sourceId:session.id,quoteOrSummary:item.summary||item.title||'',confidence:item.confidence||0.86}],
+        payload:{sessionId:session.id,category:item.category,source:item.source,data:item.data}
+      }))).catch(error=>{
+        console.warn('[val-board] witnessing commit packet creation failed:',error.message);
+        return [];
+      });
+      if(boardPackets?.length)void triggerBoardIntelligenceForPackets(boardPackets,{type:'witnessing_session_committed',sourceType:'witnessing',sourceId:session.id});
       const url=process.env.TEACH_VAL_WEBHOOK_URL||process.env.VAL_ONBOARDING_WEBHOOK_URL||'';
       if(url){
         try{
@@ -24583,7 +24632,13 @@ async function saveValCalendarEvent(event){
     if(idx>=0)store.calendarEvents[idx]={...store.calendarEvents[idx],...record}; else store.calendarEvents.unshift(record);
     saveValStore(store);
   }
-  return {id:record.id,title:record.title,summary:record.title,startTime:record.startTime,endTime:record.endTime,attendees:record.attendees,source:'val',calendarName:'VAL Retroactive Meetings',metadata:record.metadata};
+  const saved={id:record.id,title:record.title,summary:record.title,startTime:record.startTime,endTime:record.endTime,attendees:record.attendees,source:'val',calendarName:'VAL Retroactive Meetings',metadata:record.metadata};
+  const boardPackets=await valBoardPackets?.recordCalendarEvent(saved).catch(error=>{
+    console.warn('[val-board] calendar packet creation failed:',error.message);
+    return [];
+  });
+  void triggerBoardIntelligenceForPackets(boardPackets,{type:'calendar_event_saved',sourceType:'calendar_event',sourceId:record.id});
+  return saved;
 }
 async function fetchValCalendarEvents(start,end){
   await valDbReady;
@@ -29136,7 +29191,13 @@ async function processTranscriptPayload(payload){
     await logTranscriptAction(sourceId,'email_draft_created',saved.id||'','completed');
   }
   await updateTranscriptIndexStatus(sourceId,{processingStatus:'complete',summaryStatus:modelFailed?'fallback_complete':'complete'});
-  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,counts:{participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length}};
+  const counts={participants:participants.length,observations:observations.length,identityLinks:canonicalPipeline?.counts?.identityLinks||0,decisions:canonicalPipeline?.counts?.decisions||0,tasksExtracted:stagedTasks.length,tasksCreated:createdTasks.length,reviewItems:participants.filter(p=>p.needsReview).length+stagedTasks.filter(t=>t.needsApproval).length};
+  const boardPackets=await valBoardPackets?.recordTranscriptProcessed({sourceId,title,summary,analysis:parsed,counts,createdDrafts,stagedTasks,createdTasks}).catch(error=>{
+    console.warn('[val-board] transcript packet creation failed:',error.message);
+    return [];
+  });
+  void triggerBoardIntelligenceForPackets(boardPackets,{type:'transcript_processed',sourceType:'transcript',sourceId});
+  return {analysis:parsed,summary,participants,observations,canonicalPipeline,stagedTasks,createdTasks,createdDrafts,boardPackets,counts};
 }
 function transcriptUiRecord(record,{includeText=false}={}){
   const metadata=record.metadata||{};
@@ -30090,6 +30151,36 @@ app.get('/api/val/context-debug',async(req,res)=>{
     res.json({ok:true,client:CLIENT_CONFIG.clientSlug,days,counts:{tasks:tasks.length,openTasks:tasks.filter(t=>!t.completed).length,transcripts:transcripts.length,memoryItems:memory.length,meetingTranscriptLinks:links,drafts:drafts.length,calendarEvents:calendar.events.length,proposedTranscriptReviews:proposedTranscriptReviews.length},calendarErrors:calendar.errors||[],timelineEvents,unmatchedTranscripts,proposedTranscriptReviews,sample:{latestTranscript:transcripts[0]||null,latestMemory:memory[0]||null,latestTask:tasks[0]||null}});
   }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
+async function triggerBoardIntelligenceForPackets(packets=[],event={}){
+  const livePackets=safeArray(packets).filter(packet=>packet&&!packet.prototype);
+  if(!livePackets.length||!valIntelligenceSpine?.runIntelligencePass)return null;
+  const first=livePackets[0];
+  return valIntelligenceSpine.runIntelligencePass({
+    event:{
+      type:event.type||'board_packet_received',
+      sourceType:event.sourceType||first.sourceType||'board_packet',
+      sourceId:event.sourceId||first.sourceId||first.id,
+      packetIds:livePackets.map(packet=>packet.id).slice(0,20)
+    }
+  }).catch(error=>{
+    console.warn('[val-board] intelligence pass deferred:',error.message);
+    return null;
+  });
+}
+
+valBoardPackets = registerValBoardPacketsRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady,
+  auditLog,
+  logger:console
+});
+
 const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -30102,6 +30193,13 @@ const valConversationIdentity = registerValConversationIdentityRoutes(app,{
   fetchGmailMessages,
   fetchUnifiedOutlookEmails,
   resolveContactFromContext,
+  afterEmailSync:async(result)=>{
+    const packets=await valBoardPackets?.recordEmailSync(result).catch(error=>{
+      console.warn('[val-board] email packet creation failed:',error.message);
+      return [];
+    });
+    void triggerBoardIntelligenceForPackets(packets,{type:'email_sync',sourceType:'email_sync'});
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31247,6 +31345,34 @@ async function applyCoworkRelationshipSection({relationshipId,relationshipName='
 async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBrief={},messages=[]}={}){
   const isChief=entrypointId==='board.chief_of_staff';
   const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const selectedObserver=String(context.selectedObserver?.name||workingBrief.title||scopeId||'').replace(/\s+Observer$/i,'').trim();
+  const liveBoardContext=await valBoardPackets?.boardContext({
+    limit:80,
+    observerName:isChief?'':selectedObserver
+  }).catch(error=>{
+    console.warn('[val-board] observer chat context lookup failed:',error.message);
+    return null;
+  });
+  const packetContext=liveBoardContext ? {
+    livePacketCount:liveBoardContext.livePacketCount,
+    observers:liveBoardContext.observers,
+    packets:safeArray(liveBoardContext.packets).slice(0,30).map(packet=>({
+      id:packet.id,
+      sourceType:packet.sourceType,
+      sourceId:packet.sourceId,
+      packetType:packet.packetType,
+      title:packet.title,
+      summary:packet.summary,
+      primaryObservers:packet.primaryObserversJson,
+      routeObservers:safeArray(packet.routeObserversJson).map(route=>({observerName:route.observerName,primary:!!route.primary,reason:route.reason})),
+      sourceRefs:packet.sourceRefsJson,
+      createdAt:packet.createdAt
+    }))
+  } : null;
+  const mergedContext={
+    ...context,
+    liveBoardPackets:packetContext
+  };
   const conversation=safeArray(messages).slice(-18).map((message)=>({
     role:message.role==='assistant'?'assistant':'user',
     content:String(message.content||'').slice(0,5000)
@@ -31257,14 +31383,15 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
       ? 'You are the user\'s Chief of Staff. You may synthesize the full Board of Observers context supplied here.'
       : `You are the ${workingBrief.title||scopeId||'selected'} Observer. Stay inside this Observer's named lens.`,
     'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
-    'Use only the supplied Board packet and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
+    'Use only the supplied Board packet, live Board packet context, and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
+    'Live Board packets are real system records. If no live packets are supplied, say what is missing instead of inventing activity.',
     'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
     'Never claim an external action happened. Nothing leaves VAL from this conversation.',
     'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
   ].join('\n');
   const packetMessage={
     role:'user',
-    content:'Current private packet context:\n'+JSON.stringify(context).slice(0,24000)
+    content:'Current private packet context:\n'+JSON.stringify(mergedContext).slice(0,28000)
   };
   return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:750,temperature:0.35,timeoutMs:15000});
 }
@@ -31305,6 +31432,26 @@ const valCowork = registerValCoworkRoutes(app,{
   applyRelationshipOverview:applyCoworkRelationshipOverview,
   applyRelationshipSection:applyCoworkRelationshipSection,
   generateConversationReply:generateObserverCoworkReply,
+  afterCoworkEvent:async({phase,result,request}={})=>{
+    const session=result?.session||{};
+    const entrypoint=result?.entrypoint||{};
+    const workItem=result?.workItem||{};
+    const packet=await valBoardPackets?.recordCoworkEvent({
+      sessionId:session.id,
+      workItemId:workItem.id,
+      entrypointId:entrypoint.id,
+      title:entrypoint.id||session.title||'Co-Work conversation',
+      summary:[phase,workItem.question||workItem.detail||'',request?.message||request?.answer||''].filter(Boolean).join(': '),
+      sourceRefs:workItem.sourceRefsJson||workItem.source_refs_json||[],
+      phase,
+      scope:session.scope,
+      noExternalAction:true
+    }).catch(error=>{
+      console.warn('[val-board] cowork packet creation failed:',error.message);
+      return null;
+    });
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:'cowork_'+phase,sourceType:'cowork',sourceId:session.id});
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -31412,6 +31559,18 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
   userId:currentUserId,
   valDbReady:()=>valDbReady,
   executedBy:()=>currentUserId(),
+  afterExternalActionPacket:async(packetsOrPacket)=>{
+    const sourcePackets=safeArray(packetsOrPacket).length?safeArray(packetsOrPacket):(packetsOrPacket?[packetsOrPacket]:[]);
+    const packets=[];
+    for(const packet of sourcePackets){
+      const created=await valBoardPackets?.recordExternalActionPacket(packet).catch(error=>{
+        console.warn('[val-board] external action packet creation failed:',error.message);
+        return null;
+      });
+      if(created)packets.push(created);
+    }
+    void triggerBoardIntelligenceForPackets(packets,{type:'external_action_packet',sourceType:'external_action'});
+  },
   executionAdapters:{
     create_gmail_draft:executeGmailDraftPacket,
     create_outlook_draft:executeOutlookDraftPacket,
@@ -31427,7 +31586,7 @@ registerValExecutiveInstructionRoutes(app,{
   valDbReady:()=>valDbReady,
   auditLog
 });
-const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
+valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
   getStore:valStore,
@@ -31446,7 +31605,8 @@ const valIntelligenceSpine = registerValIntelligenceSpineRoutes(app,{
     buildConversationContext:valConversationIdentity.buildConversationContext,
     resolveIdentity:valConversationIdentity.resolveIdentity,
     listHighSignalClassifications:valExecutiveInbox.listHighSignalClassifications,
-    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates
+    listReadyForYouDraftCandidates:valExecutiveInbox.listReadyForYouDraftCandidates,
+    listBoardPackets:({limit=60}={})=>valBoardPackets?.listPackets({limit})||[]
   }
 });
 
@@ -33433,6 +33593,11 @@ async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,conte
       summary:`Prepare email to ${contactName}.`,
       sourceContext:{source:'hearth_home_action',relationshipProfileId:contact.profile?.id||'',relationshipName:contactName}
     });
+    const boardActionPacket=await valBoardPackets?.recordExternalActionPacket(packet).catch(error=>{
+      console.warn('[val-board] home email action packet creation failed:',error.message);
+      return null;
+    });
+    if(boardActionPacket)void triggerBoardIntelligenceForPackets([boardActionPacket],{type:'home_email_action_packet',sourceType:'external_action',sourceId:packet.id});
     const subject=packet.payloadPreviewJson?.subject||hearthActionSubject(lastUser,contactName);
     const bodyPreview=voiceMode ? hearthActionSpokenSentence(packet.payloadPreviewJson?.body||body) : hearthActionPreviewText(packet.payloadPreviewJson?.body||body,700);
     return {
@@ -33966,14 +34131,30 @@ app.post('/api/val/chat',async(req,res)=>{
         return '';
       })
     ]);
-    const [memory,ghlContext,googleDocs,executiveBriefing]=await Promise.all([
+    const [memory,ghlContext,googleDocs,executiveBriefing,boardContext]=await Promise.all([
       recentMemoryContext(lastUser+'\n'+memoryQuery),
       ghlPlatformContext(lastUser+'\n'+memoryQuery,dashboard),
       uploadedDocs||linkedAttachmentDocs?Promise.resolve(''):googleDocsContextForQuery(lastUser+'\n'+memoryQuery).catch(e=>`Google Docs lookup failed: ${e.message}`),
-      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null)
+      isBookEditorProject()?Promise.resolve(null):buildExecutiveBriefing().catch(()=>null),
+      valBoardPackets?.boardContext({limit:80}).catch(error=>{
+        console.warn('[val-board] home chat context lookup failed:',error.message);
+        return null;
+      })
     ]);
+    const boardContextForPrompt=boardContext ? {
+      livePacketCount:boardContext.livePacketCount,
+      observers:boardContext.observers,
+      packets:safeArray(boardContext.packets).slice(0,28).map(packet=>({
+        sourceType:packet.sourceType,
+        packetType:packet.packetType,
+        title:packet.title,
+        summary:packet.summary,
+        primaryObservers:packet.primaryObserversJson,
+        createdAt:packet.createdAt
+      }))
+    } : null;
     const babyStudioContext=await babyStudioPromptContext();
-    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','Use dashboard context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
+    const system=[VAL_SYSTEM_PROMPT,babyStudioContext?'Dashboard Studio settings:\n'+babyStudioContext:'',presenceMode?presenceContractPrompt():'','You are Home VAL, the Chief of Staff lane. This is the only general VAL chat lane that may synthesize across Hearth, Executive Functions, the Board of Observers, memory, documents, CRM, calendar, email, and external action packets. Function-specific Co-Work chats stay inside their function lens.','Use dashboard context, live Board of Observers packet context, Executive Briefing source context, linked VAL attachment source text, uploaded VAL document source text, Google Docs source text, platform-wide GHL MCP context, task state, project context, relationship context, and saved memory when relevant. Do not pretend to know facts that are not present. When project context is supplied, keep the answer organized around that project and do not flatten it into generic chat history.','Board packets are real system records. If live Board context is empty, say what has not been loaded yet instead of inventing observer activity.','When Relevant linked VAL attachment source is present, use it directly as the requested document. Do not say the attachment is unavailable, and do not ask for Google Drive, Google Docs, pasted chunks, or a re-upload. Do not begin ordinary document-review responses with source/access status.','When Relevant uploaded VAL document source is present, use it directly. Do not ask for Google Drive, Google Docs, pasted chunks, or uploads. Say plainly that the manuscript is available in VAL only if the user asks whether you can read or access it. Do not begin ordinary editorial responses with source/upload/readability status.','For Michele book/editor responses, every time you name work the user should do, include a "To-do list" section with only the 1 to 5 highest-priority new or updated actions. Do not repeat the entire existing task list. Each to-do must be one concrete action line with enough context to understand why it matters, such as chapter, section, reason, or source. Do not leave recommendations only in prose. For priority/next-step requests, keep the whole chat answer short and let the task board hold the longer list.','When Recent saved VAL memory contains knowledge_document, processed_transcript, or transcript entries, the text after the colon is available source content. Use it directly. Do not say the document or transcript text is not visible unless no relevant memory entries are present.','When Relevant Google Docs source is present, use it directly. Do not ask the user to paste the document or send it in chunks. If Google Docs says reconnect is required, tell the user to reconnect Google from Integration Status and approve Drive/Docs permissions.','When Platform-wide GHL MCP context is present, use GHL contacts, opportunities, tasks, conversations, notes, and call transcripts as current CRM source context.',projectContext?'Active project context:\n'+JSON.stringify(projectContext,null,2).slice(0,4000):'',boardContextForPrompt?'Live Board of Observers packet context:\n'+JSON.stringify(boardContextForPrompt,null,2).slice(0,12000):'',executiveBriefing?'Executive Briefing source context:\n'+executiveBriefingChatContext(executiveBriefing):'',memory?'Recent saved VAL memory:\n'+memory:'',linkedAttachmentDocs?'Relevant linked VAL attachment source:\n'+linkedAttachmentDocs:'',uploadedDocs?'Relevant uploaded VAL document source:\n'+uploadedDocs:'',googleDocs?'Relevant Google Docs source:\n'+googleDocs:'',ghlContext?'Platform-wide GHL MCP context:\n'+ghlContext:''].filter(Boolean).join('\n\n');
     const content=await callOpenAIResponses({system,messages,maxTokens:1900,temperature:0.7});
     const finalContent=content||'I could not process that.';
     const createdTasks=await persistAutoTasksFromValResponse({content:finalContent,userQuery:lastUser,action:'chat',source:'val_chat'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});

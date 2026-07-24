@@ -904,6 +904,117 @@ function observerBoardPrototypeConnections(){
   });
 }
 
+function observerBoardPacketSourceObserver(packet = {}){
+  const source = String(packet.sourceType || packet.source_type || '').toLowerCase();
+  const type = String(packet.packetType || packet.packet_type || '').toLowerCase();
+  if(source.includes('email') || source.includes('conversation')) return 'Executive Inbox';
+  if(source.includes('calendar') || type.includes('meeting_context') || type.includes('capacity_window')) return 'Calendar';
+  if(source.includes('transcript') || type.includes('meeting_evidence') || type.includes('decision_trace')) return 'Momentum';
+  if(source.includes('witness')) return 'Witnessing';
+  if(source.includes('project')) return 'Project';
+  if(source.includes('relationship') || source.includes('contact')) return 'Relationship';
+  if(source.includes('cowork')) return 'Chief of Staff';
+  if(source.includes('external_action') || type.includes('sent_action') || type.includes('approval')) return 'Delight';
+  return 'Chief of Staff';
+}
+
+function observerBoardPacketLabel(packet = {}){
+  const labels = {
+    email_attention_packet:'Email',
+    draft_review_packet:'Draft',
+    reply_pressure_packet:'Reply',
+    meeting_context_packet:'Meeting',
+    capacity_window_packet:'Time',
+    prep_timing_packet:'Prep',
+    meeting_evidence_packet:'Transcript',
+    decision_trace_packet:'Decision',
+    task_extraction_packet:'Task',
+    identity_context_packet:'Identity',
+    relational_context_packet:'Trust',
+    operating_context_packet:'Context',
+    convergence_packet:'Pattern',
+    timing_cluster_packet:'Timing',
+    pattern_echo_packet:'Echo',
+    approval_packet:'Approval',
+    task_packet:'Task',
+    sent_action_packet:'Sent',
+    learning_packet:'Learning',
+    cowork_packet:'Co-Work',
+    document_packet:'Source',
+    relationship_packet:'Relationship',
+    project_packet:'Project'
+  };
+  return labels[packet.packetType || packet.packet_type] || compactSentence(packet.title || 'Packet', 'Packet', 16);
+}
+
+function observerBoardPacketSide(from = '', to = ''){
+  const sage = new Set(['Executive Inbox','Project','Capacity','Momentum','Commitment','Calendar','Environment']);
+  const rose = new Set(['Relationship','Courage','Delight','Opportunity','Meaning','Witnessing']);
+  if(sage.has(from) && sage.has(to)) return 'sage';
+  if(rose.has(from) && rose.has(to)) return 'rose';
+  return 'bridge';
+}
+
+function observerBoardConnectionsFromPackets(packets = []){
+  const routeStyle = [
+    {bend: 1.4, duration: '18.5s', begin: '0s'},
+    {bend: -1.9, duration: '20.2s', begin: '-3.8s'},
+    {bend: 2.3, duration: '21.4s', begin: '-7.5s'},
+    {bend: -1.3, duration: '19.6s', begin: '-10.2s'},
+    {bend: 1.8, duration: '22.2s', begin: '-5.1s'},
+    {bend: -2.4, duration: '20.8s', begin: '-12.4s'}
+  ];
+  const connections = [];
+  (Array.isArray(packets) ? packets : []).slice(0, 80).forEach((packet, packetIndex) => {
+    const routes = Array.isArray(packet.routeObserversJson) ? packet.routeObserversJson : [];
+    const primary = routes.filter((route) => route.primary).map((route) => route.observerName).filter(Boolean);
+    const visibleTargets = (primary.length ? primary : routes.map((route) => route.observerName)).filter(Boolean).slice(0, 5);
+    const sourceObserver = observerBoardPacketSourceObserver(packet);
+    const from = sourceObserver === 'Chief of Staff' ? 'Delight' : sourceObserver;
+    visibleTargets.forEach((to, routeIndex) => {
+      if(!to || to === from) return;
+      const style = routeStyle[(packetIndex + routeIndex) % routeStyle.length];
+      connections.push([
+        from,
+        to,
+        observerBoardPacketLabel(packet),
+        observerBoardPacketSide(from, to),
+        style.bend + ((packetIndex % 5) - 2) * .2,
+        style.duration,
+        style.begin,
+        '1.08'
+      ]);
+    });
+  });
+  return connections.slice(0, 36);
+}
+
+async function loadLiveObserverBoardContext(){
+  let timeoutId = null;
+  try{
+    const controller = window.AbortController ? new AbortController() : null;
+    timeoutId = controller ? window.setTimeout(() => controller.abort(), 7000) : null;
+    const response = await fetch('/api/val/board/context?limit=80', {
+      method:'GET',
+      credentials:'same-origin',
+      headers:{'Accept':'application/json'},
+      signal:controller?.signal
+    });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || result.ok === false) throw new Error(result.error || 'Board context could not load yet.');
+    observerBoardState.livePackets = Array.isArray(result?.packets) ? result.packets : [];
+    observerBoardState.livePacketCount = Number(result?.livePacketCount || observerBoardState.livePackets.length || 0);
+    return result || null;
+  }catch(error){
+    observerBoardState.livePackets = [];
+    observerBoardState.livePacketCount = 0;
+    observerBoardState.livePacketError = error.message;
+    return null;
+  }finally{
+    if(timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
 const coworkSession = {
   lens: 'Co-Work with VAL',
   title: 'Co-Work w/ VAL',
@@ -24925,8 +25036,9 @@ function openObserverBoardAfterWitnessing(){
   openObserverBoard({afterWitnessing:true});
 }
 
-function openObserverBoard(options = {}){
+async function openObserverBoard(options = {}){
   const chief = observerBoardState.chiefOfStaff;
+  await loadLiveObserverBoardContext();
   const observerPositions = {
     'Capacity': {x:50,y:17,side:'bridge',visualName:'Capacity',signals:'Decision quality and load',pulseDur:'18.8s',pulseDelay:'6.6s'},
     'Calendar': {x:36,y:24,side:'sage',visualName:'Calendar',signals:'Time and preparation windows',pulseDur:'17.4s',pulseDelay:'4.2s'},
@@ -24948,6 +25060,9 @@ function openObserverBoard(options = {}){
     return {observer,position,index,visualName:position.visualName || observer.name};
   });
   const witnessingComplete = observerBoardHasWitnessingContext(options);
+  const stressMode = witnessingComplete && /(?:[?&]stress=orbs\b|stress-orbs|hundreds-of-orbs)/i.test(window.location.search || '');
+  const livePacketConnections = observerBoardConnectionsFromPackets(observerBoardState.livePackets || []);
+  const showPacketField = witnessingComplete && (livePacketConnections.length > 0 || stressMode);
   const observerSideClass = (position) => String(position.side || '').includes('rose') ? 'rose' : String(position.side || '').includes('sage') ? 'sage' : 'bridge';
   const centerPathFor = (position, bend = 0) => {
     const dx = 50 - position.x;
@@ -24964,17 +25079,16 @@ function openObserverBoard(options = {}){
     const cy = ((from.y + to.y) / 2 - bend * .34).toFixed(1);
     return 'M' + from.x + ' ' + from.y + ' C' + cx + ' ' + cy + ' ' + cx + ' ' + cy + ' ' + to.x + ' ' + to.y;
   };
-  const baseObserverPaths = witnessingComplete ? positionedObservers.map(({position}) => {
+  const baseObserverPaths = showPacketField ? positionedObservers.map(({position}) => {
     const side = observerSideClass(position);
     return '<path class="observer-path observer-path-' + side + (String(position.side || '').includes('selected') ? ' selected' : '') + '" d="' + centerPathFor(position, 0) + '" />';
   }).join('') : '';
-  const observerFilaments = witnessingComplete ? positionedObservers.map(({position,index}) => {
+  const observerFilaments = showPacketField ? positionedObservers.map(({position,index}) => {
     const side = observerSideClass(position);
     const bend = (index % 2 ? -1 : 1) * (1.4 + (index % 3) * .55);
     return '<path class="observer-filament observer-filament-' + side + '" d="' + centerPathFor(position, bend) + '" />';
   }).join('') : '';
-  const liveConnections = observerBoardPrototypeConnections();
-  const stressMode = witnessingComplete && /(?:[?&]stress=orbs\b|stress-orbs|hundreds-of-orbs)/i.test(window.location.search || '');
+  const liveConnections = livePacketConnections;
   const stressLabels = ['Email','Draft','Task','Comment','Transcript','Packet','Signal','Context','Reply','Memory','Promise','Meeting','Source'];
   const stressPairs = stressMode
     ? Array.from({length:18}, (_, index) => {
@@ -24994,7 +25108,7 @@ function openObserverBoard(options = {}){
         return [from,to,label,side,bend,duration,begin,radius];
       })
     : [];
-  const allLiveConnections = witnessingComplete ? (stressMode ? liveConnections.concat(stressPairs) : liveConnections) : [];
+  const allLiveConnections = showPacketField ? (stressMode && !liveConnections.length ? observerBoardPrototypeConnections().concat(stressPairs) : liveConnections.concat(stressPairs)) : [];
   const liveThreads = allLiveConnections.map(([from,to,label,side,bend,duration,begin,radius]) => {
     const d = pathBetweenObservers(from,to,bend);
     const orbRadius = radius || (stressMode ? '1.05' : '.62');
@@ -25030,8 +25144,8 @@ function openObserverBoard(options = {}){
       '</button>'
     ].join('');
   }).join('');
-  const boardStatus = witnessingComplete
-    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : 'Packet Field Active')
+  const boardStatus = showPacketField
+    ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets')
     : 'Holding Space';
   closeCalendarPanel();
   setWorkspaceContent({
@@ -25056,7 +25170,7 @@ function openObserverBoard(options = {}){
   renderJudgmentSequence({lens:'Board of Observers'}, 'Board of Observers');
   workspaceInputPanel.hidden = false;
   workspaceInputPanel.innerHTML = [
-    '<section class="observer-live-board ' + (witnessingComplete ? 'packets-active' : 'awaiting-witnessing') + '" aria-label="Live Board of Observers">',
+    '<section class="observer-live-board ' + (showPacketField ? 'packets-active' : 'awaiting-witnessing') + '" aria-label="Live Board of Observers">',
       '<aside class="observer-board-intro">',
         '<span>VAL</span>',
         '<h3>Board of Observers</h3>',
@@ -25064,7 +25178,7 @@ function openObserverBoard(options = {}){
       '</aside>',
       '<div class="observer-graph-field">',
         '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',
-        witnessingComplete ? '' : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>',
+        showPacketField ? '' : '<div class="observer-holding-space" role="status">Holding space for Analytical and Relational Context</div>',
         '<svg class="observer-signal-paths" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">',
           baseObserverPaths,
           observerFilaments,
