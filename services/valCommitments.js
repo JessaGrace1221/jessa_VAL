@@ -25,6 +25,8 @@ function ownerFromText(text='',direction='',explicitOwner=''){
   const owner=String(explicitOwner||'').toLowerCase();
   if(owner==='user_or_team')return 'user';
   if(owner==='other')return 'contact';
+  if(/\bjessa\s+to\s+\w+|\bjessa\s+(?:will|needs?|has)\s+to\b/.test(s))return 'user';
+  if(/(?:^|\n|\s[-•]\s*)[a-z][a-z]+(?:\s+[a-z][a-z]+)?\s+to\s+(?:send|email|text|call|reach|follow|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|respond|reply|set|connect|compile|find)\b/.test(s))return 'contact';
   if(/\b(i will|i'll|we will|we'll|i can|we can|i need to|we need to)\b/.test(s))return direction==='inbound'?'contact':'user';
   if(/\b(can you|could you|please|you will|you'll|need you to)\b/.test(s))return direction==='outbound'?'contact':'user';
   return 'unknown';
@@ -55,7 +57,14 @@ function looksLikeTranscriptNoise(text=''){
   if(!value)return true;
   if(value.length<12)return true;
   if(/^\s*(?:i'?m going to|i am going to|we'?re going to|we are going to)\s*(?:\.{0,3})?\s*$/i.test(value))return true;
-  return /\b(vulgar|coffee takes a deep breath|morning face|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
+  return /\b(vulgar|coffee takes a deep breath|morning face|not legal advice|recommend against you doing|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
+}
+
+function ownerNameHintFromText(text=''){
+  const cleaned=String(text||'').replace(/^\s*[-•]\s*/,'').trim();
+  const match=cleaned.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+to\s+(?:send|email|text|call|reach|follow|schedule|book|confirm|approve|review|finish|fix|create|draft|prepare|introduce|share|deliver|update|check|research|organize|build|scrape|handoff|hand off|respond|reply|set|connect|compile|find)\b/);
+  const name=match?.[1]||'';
+  return /^Jessa\b/i.test(name)?'Jessa':name;
 }
 
 function hasExecutiveCommitmentShape(seed={}){
@@ -114,7 +123,8 @@ function normalizeCommitment(seed={},contacts=[],overrides={}){
   const dueAt=seed.due_at||seed.dueAt||parseDueHint(seed.due_hint||evidence);
   const ownerType=seed.owner_type||seed.ownerType||ownerFromText(evidence,seed.direction,seed.owner);
   const counterpartyName=seed.counterparty_name||seed.counterpartyName||seed.counterpartyNameHint||'';
-  const ownerName=seed.owner_name||seed.ownerName||(ownerType==='user'?'Jessa':seed.ownerNameHint||(ownerType==='contact'?counterpartyName:''));
+  const ownerNameHint=seed.ownerNameHint||ownerNameHintFromText(evidence);
+  const ownerName=seed.owner_name||seed.ownerName||(ownerType==='user'?'Jessa':ownerNameHint||(ownerType==='contact'?counterpartyName:''));
   const ownerContact=findContactByName(ownerName,contacts);
   const counterpartyContact=findContactByName(counterpartyName,contacts);
   const id=seed.id||stableKey(['commitment',seed.source_type||seed.sourceType,seed.source_id||seed.sourceId,evidence].join(':'));
@@ -164,6 +174,7 @@ function transcriptSeeds(runs=[]){
       source_id:run.transcriptId||run.transcript_id||run.id,
       source_title:run.finalJson?.title||run.final_json?.title||'Transcript',
       evidence_quote:c.source_quote||c.summary||c.title,
+      ownerNameHint:ownerNameHintFromText(c.source_quote||c.summary||c.title),
       counterpartyNameHint:counterparty,
       created_at:run.createdAt||run.created_at,
       updated_at:run.updatedAt||run.updated_at
@@ -248,6 +259,7 @@ function createValCommitmentsService({
     const byId=new Map();
     for(const seed of seeds){
       const commitment=normalizeCommitment(seed,contacts,over);
+      if(commitment.owner_type==='unknown')continue;
       if(!byId.has(commitment.id))byId.set(commitment.id,commitment);
     }
     let commitments=Array.from(byId.values()).sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
