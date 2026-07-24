@@ -12872,6 +12872,130 @@ function splitPeopleFromText(text){
   const seen=new Set();
   return emails.concat(names).filter(p=>{const k=personKey(p.name,p.email);if(seen.has(k))return false;seen.add(k);return true;});
 }
+const AI_CONTEXT_DIGEST_KIND='ai_context_digest';
+const AI_CONTEXT_COMPACTION_AFTER_DAYS=Math.max(1,Number(process.env.VAL_AI_CONTEXT_COMPACTION_AFTER_DAYS)||3);
+const AI_CONTEXT_COMPACTION_INTERVAL_MS=Math.max(60*60*1000,Number(process.env.VAL_AI_CONTEXT_COMPACTION_INTERVAL_MS)||24*60*60*1000);
+const AI_CONTEXT_COMPACTION_SCAN_LIMIT=Math.max(100,Math.min(Number(process.env.VAL_AI_CONTEXT_COMPACTION_SCAN_LIMIT)||900,3000));
+function aiContextCreatedAt(row={}){
+  return row.createdAt||row.created_at||row.deliveredAt||row.delivered_at||row.updatedAt||row.updated_at||'';
+}
+function aiContextCompactLine(row={}){
+  const kind=row.kind||row.packetType||row.packet_type||row.sourceType||row.source_type||'source';
+  const summary=row.summary||row.title||'';
+  const raw=row.rawText||row.raw_text||row.content||'';
+  return `[${kind}] ${String(summary||raw).replace(/\s+/g,' ').trim().slice(0,520)}`;
+}
+function aiContextSourceFamily(value=''){
+  const source=String(value||'').toLowerCase();
+  if(/email|gmail|outlook|unified_conversation|inbox/.test(source))return 'email';
+  if(/transcript|krisp|meeting_evidence/.test(source))return 'transcript';
+  if(/calendar|appointment|meeting_context/.test(source))return 'calendar';
+  if(/witness|teach_val|onboarding|identity_context|relational_context|operating_context/.test(source))return 'witnessing';
+  if(/cowork|co_work|chat|voice|ghl_voice/.test(source))return 'conversation';
+  if(/relationship|contact|stewardship|rolodex/.test(source))return 'relationship';
+  if(/project/.test(source))return 'project';
+  if(/document|upload|google_doc|attachment|file/.test(source))return 'document';
+  if(/task|commitment|approval|external_action|sent_action/.test(source))return 'action';
+  if(/linkedin|public|apollo|outscraper|research/.test(source))return 'public_context';
+  if(source)return source.replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,80)||'general';
+  return 'general';
+}
+function aiContextFamilyForRow(row={}){
+  const metadata=typeof row.metadata==='string'?(()=>{try{return JSON.parse(row.metadata);}catch(e){return {};}})():(row.metadata||row.metadataJson||row.metadata_json||{});
+  return aiContextSourceFamily(metadata.sourceFamily||metadata.source||row.sourceType||row.source_type||row.kind||row.packetType||row.packet_type);
+}
+function aiContextBucketKey(dateValue){
+  const date=new Date(dateValue||0);
+  if(isNaN(date.getTime()))return 'undated';
+  const bucket=Math.floor(date.getTime()/(AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000));
+  const start=new Date(bucket*AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000).toISOString().slice(0,10);
+  const end=new Date((bucket+1)*AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000-1).toISOString().slice(0,10);
+  return `${start}_${end}`;
+}
+function buildAiContextDigest({family,bucket,rows=[]}={}){
+  const sorted=rows.slice().sort((a,b)=>(Number(b.importance||2)-Number(a.importance||2))||String(aiContextCreatedAt(b)).localeCompare(String(aiContextCreatedAt(a))));
+  const sourceIds=sorted.map(row=>String(row.id||row.sourceId||row.source_id||'')).filter(Boolean);
+  const fingerprint=crypto.createHash('sha256').update([family,bucket,sourceIds.join('|')].join('|')).digest('hex').slice(0,24);
+  const highlights=sorted.slice(0,55).map(aiContextCompactLine).filter(Boolean).join('\n');
+  return {
+    id:`ai_digest_${family}_${bucket}_${fingerprint}`.replace(/[^a-zA-Z0-9:_-]+/g,'_').slice(0,240),
+    kind:AI_CONTEXT_DIGEST_KIND,
+    summary:`AI-usable ${family.replace(/_/g,' ')} context digest for ${bucket.replace('_',' to ')} (${rows.length} source item${rows.length===1?'':'s'}).`,
+    rawText:highlights||`No high-signal ${family} context lines were available.`,
+    importance:4,
+    metadata:{
+      aiUsableContext:true,
+      sourceFamily:family,
+      bucket,
+      compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS,
+      sourceIds,
+      sourceCount:rows.length,
+      fingerprint,
+      keptOriginals:true,
+      retentionContract:'Original source receipts are retained. Prompts retrieve this digest for speed and recent direct sources for evidence.'
+    }
+  };
+}
+async function compactAiUsableContext(){
+  await valDbReady;
+  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+  const cutoff=new Date(Date.now()-AI_CONTEXT_COMPACTION_AFTER_DAYS*24*60*60*1000).toISOString();
+  const rows=[];
+  if(pgPool){
+    const memory=await dbQuery("select id,kind,summary,raw_text,importance,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind not in ($3,'memory_condensation') order by created_at desc limit $4",[VAL_USER_ID,cutoff,AI_CONTEXT_DIGEST_KIND,AI_CONTEXT_COMPACTION_SCAN_LIMIT]).catch(()=>({rows:[]}));
+    rows.push(...(memory.rows||[]));
+    const packets=await dbQuery("select id,source_type,source_id,packet_type,title,summary,primary_observers_json,source_refs_json,payload_json,created_at from val_board_packets where user_id=$1 and created_at < $2 and prototype=false order by created_at desc limit $3",[VAL_USER_ID,cutoff,AI_CONTEXT_COMPACTION_SCAN_LIMIT]).catch(()=>({rows:[]}));
+    rows.push(...(packets.rows||[]).map(packet=>({
+      id:packet.id,
+      kind:`board_packet:${packet.packet_type}`,
+      sourceType:packet.source_type,
+      summary:packet.title||packet.summary||'Board packet',
+      raw_text:[packet.summary,`Primary observers: ${safeArray(packet.primary_observers_json).join(', ')}`].filter(Boolean).join('\n'),
+      importance:4,
+      metadata:{source:'board_packet',sourceFamily:packet.source_type,packetType:packet.packet_type,sourceId:packet.source_id,sourceRefs:packet.source_refs_json||[]},
+      created_at:packet.created_at
+    })));
+  }else{
+    const store=valStore();
+    rows.push(...(store.memoryItems||[]).filter(row=>new Date(row.createdAt||0)<new Date(cutoff)&&![AI_CONTEXT_DIGEST_KIND,'memory_condensation'].includes(row.kind)));
+    rows.push(...(store.valBoardPackets||[]).filter(packet=>new Date(packet.createdAt||0)<new Date(cutoff)&&packet.prototype!==true).map(packet=>({
+      id:packet.id,
+      kind:`board_packet:${packet.packetType}`,
+      sourceType:packet.sourceType,
+      summary:packet.title||packet.summary||'Board packet',
+      rawText:[packet.summary,`Primary observers: ${safeArray(packet.primaryObserversJson).join(', ')}`].filter(Boolean).join('\n'),
+      importance:4,
+      metadata:{source:'board_packet',sourceFamily:packet.sourceType,packetType:packet.packetType,sourceId:packet.sourceId,sourceRefs:packet.sourceRefsJson||[]},
+      createdAt:packet.createdAt
+    })));
+  }
+  if(!rows.length)return {ok:true,created:0,sourceItems:0,keptOriginals:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+  const existing=await recentMemoryItems(3650,2000).catch(()=>[]);
+  const existingFingerprints=new Set(existing.filter(item=>item.kind===AI_CONTEXT_DIGEST_KIND).map(item=>item.metadata?.fingerprint).filter(Boolean));
+  const groups={};
+  for(const row of rows){
+    const family=aiContextFamilyForRow(row);
+    const bucket=aiContextBucketKey(aiContextCreatedAt(row));
+    const key=`${family}|${bucket}`;
+    (groups[key]=groups[key]||{family,bucket,rows:[]}).rows.push(row);
+  }
+  let created=0;
+  for(const group of Object.values(groups)){
+    const digest=buildAiContextDigest(group);
+    if(existingFingerprints.has(digest.metadata.fingerprint))continue;
+    let saved=true;
+    await saveMemoryItem(digest).catch(error=>{
+      if(/duplicate key|unique/i.test(String(error?.message||error))){
+        saved=false;
+        return;
+      }
+      throw error;
+    });
+    existingFingerprints.add(digest.metadata.fingerprint);
+    if(saved) created++;
+  }
+  return {ok:true,created,sourceItems:rows.length,groups:Object.keys(groups).length,keptOriginals:true,compactEveryDays:AI_CONTEXT_COMPACTION_AFTER_DAYS};
+}
 async function recentMemoryItems(days=30,limit=120){
   if(DEMO_MODE){
     const state=requestContext.getStore()?.demoState || {};
@@ -12889,13 +13013,14 @@ async function recentMemoryItems(days=30,limit=120){
 }
 async function condenseOlderMemory(){
   await valDbReady;
+  const aiContext=await compactAiUsableContext();
   const cutoff=new Date(Date.now()-30*24*60*60*1000),items=[];
-  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true};
+  if(DEMO_MODE)return {ok:true,created:0,keptOriginals:true,demo:true,aiContext};
   if(pgPool){
-    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind <> 'memory_condensation' order by created_at asc limit 500",[VAL_USER_ID,cutoff.toISOString()]);
+    const r=await dbQuery("select id,kind,summary,raw_text,metadata,created_at from val_memory_items where user_id=$1 and created_at < $2 and kind not in ('memory_condensation',$3) order by created_at asc limit 500",[VAL_USER_ID,cutoff.toISOString(),AI_CONTEXT_DIGEST_KIND]);
     items.push(...r.rows.map(x=>({id:x.id,kind:x.kind,summary:x.summary||'',rawText:x.raw_text||'',metadata:x.metadata||{},createdAt:x.created_at?.toISOString()||''})));
-  }else items.push(...(valStore().memoryItems||[]).filter(x=>new Date(x.createdAt||0)<cutoff&&x.kind!=='memory_condensation').slice(0,500));
-  if(!items.length)return {ok:true,created:0,keptOriginals:true};
+  }else items.push(...(valStore().memoryItems||[]).filter(x=>new Date(x.createdAt||0)<cutoff&&!['memory_condensation',AI_CONTEXT_DIGEST_KIND].includes(x.kind)).slice(0,500));
+  if(!items.length)return {ok:true,created:0,keptOriginals:true,aiContext};
   const groups={};items.forEach(item=>{const d=new Date(item.createdAt||0),key=isNaN(d)?'undated':d.toISOString().slice(0,7);(groups[key]=groups[key]||[]).push(item);});
   let created=0;
   for(const [month,rows] of Object.entries(groups)){
@@ -12904,7 +13029,7 @@ async function condenseOlderMemory(){
     const highlights=rows.sort((a,b)=>Number(b.importance||1)-Number(a.importance||1)).slice(0,40).map(x=>`[${x.kind}] ${x.summary||String(x.rawText||'').slice(0,240)}`).join('\n');
     await saveMemoryItem({kind:'memory_condensation',summary:`Condensed VAL memory for ${month} (${rows.length} original items retained)`,rawText:highlights,importance:4,metadata:{fingerprint,month,sourceIds,sourceCount:rows.length,keptOriginals:true,condensedAt:new Date().toISOString()}});created++;
   }
-  return {ok:true,created,sourceItems:items.length,keptOriginals:true};
+  return {ok:true,created,sourceItems:items.length,keptOriginals:true,aiContext};
 }
 function relationshipScore(contact){
   const ev=contact.evidence||[];
@@ -23112,11 +23237,14 @@ async function buildExecutiveBriefing(){
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
+  const worriedAbout=[...(briefing.watching||[]),...(briefing.ignored||[])].slice(0,4).map(m=>m.title).filter(Boolean);
   const relationshipDossiers=(briefing.people||[]).map(p=>p.relationshipDossier).filter(Boolean).slice(0,4).map(relationshipDossierPromptContext).filter(Boolean);
   return [
     briefing.dailyWitness?.display_greeting?`Daily Witness Greeting: ${briefing.dailyWitness.display_greeting.replace(/\n/g,' / ')}`:'',
     `Executive Briefing Theme: ${briefing.todayTheme?.title||''} — ${briefing.todayTheme?.why||''}`,
     briefing.highestLeverageMove?`Highest Leverage Move: ${briefing.highestLeverageMove.title}. Why: ${briefing.highestLeverageMove.why}. Confidence: ${Math.round((briefing.highestLeverageMove.confidence||0)*100)}%. If ignored: ${briefing.highestLeverageMove.ifIgnored||''}`:'',
+    worriedAbout.length?'what VAL is worried about: '+worriedAbout.join('; '):'',
+    briefing.people?.length?'relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
     briefing.people?.length?'Relationship velocity: '+briefing.people.slice(0,6).map(p=>`${p.name} (${p.state})`).join('; '):'',
     relationshipDossiers.length?'Relationship Dossiers:\n'+relationshipDossiers.join('\n\n'):'',
     briefing.alsoImportant?.length?'Also important: '+briefing.alsoImportant.slice(0,5).map(m=>m.title).join('; '):'',
@@ -28909,6 +29037,8 @@ Tool governance: GHL is the execution layer for CRM, contacts, pipelines, CRM ap
 
 Home VAL and voice operating contract: Home VAL is the user's Chief of Staff. Home VAL may reason across the full system, including Executive Inbox, Calendar, Transcripts, Projects, Relationship packets, Tasks, Witnessing Session context, prepared work, and the Board of Observers. Function-specific chats stay scoped to their function. If the user veers outside a function-specific chat, tell them to use Home VAL for full-system context.
 
+Deep conversational standard for every user-facing voice or chat response: Sound like a present, emotionally intelligent partner. First show that you understood the human meaning. If the user corrects you, respond relationally before operationally. Avoid generic receipt language.
+
 Voice rule book: voice is best for quick, human-facing work: brainstorming, thinking through decisions, conceptualizing, reminders, quick calendar answers, to-do list review, drafting intent, and lightweight external actions. Heavy prepared work belongs in VAL's dashboard. When the user asks voice for heavyweight prepared work such as full Meeting Prep, deep research, broad public-rate analysis, project audits, transcript synthesis, or a Board-level recommendation, acknowledge it quickly and trigger or queue the work rather than holding the voice call open. Use language like: "I'm starting that now. It will be ready for you in VAL when you're ready." Do not expose backend details, API names, database names, or internal route names.
 
 External action contract: small useful actions are central to VAL. If the user asks to send an email, send an SMS, create a reminder, create or change an appointment, update a CRM contact, or create a task, use the proper connected execution layer when available. Gmail and Outlook handle email. GHL handles SMS, CRM tasks, CRM appointments, contacts, pipelines, workflows, and phone-system actions. Calendar providers handle calendar availability and external invites. Before sending, scheduling, publishing, texting, or making a commitment externally, confirm the essential details and ask for approval. In voice, once a draft/action is clear, the user saying "send", "schedule it", "do it", or an equivalent phrase counts as approval.
@@ -28981,6 +29111,7 @@ function actionPrompt(action){
 }
 
 app.post('/api/val/memory',async(req,res)=>{try{res.json({ok:true,...await saveMemoryItem(req.body||{})});}catch(e){res.status(500).json({error:e.message});}});
+app.post('/api/val/memory/compact',async(req,res)=>{try{res.json(await compactAiUsableContext());}catch(e){res.status(500).json({ok:false,error:e.message});}});
 app.get('/api/val/memory/search',async(req,res)=>{
   try{
     await valDbReady;
@@ -29424,13 +29555,18 @@ function normalizedTranscriptWebhookPayload(body={}){
   const title=transcriptDisplayTitleFromPayload({...body,...root,title:rawTitle,metadata},transcriptText);
   return {...body,...root,title,source,transcript:transcriptText,attendees:participants,metadata,receivedAt:new Date().toISOString(),timestamp:root.timestamp||root.startedAt||root.started_at||root.startTime||root.start_time||root.createdAt||root.created_at||root.date||meeting.startedAt||meeting.startTime||body.timestamp||null};
 }
-async function transcriptDrawerListPayload({days=90,limit=50}={}){
+async function transcriptDrawerListPayload({days=90,limit=50,migrationRecords=null}={}){
   const safeLimit=Math.max(1,Math.min(250,Number(limit)||50));
   const safeDays=Math.max(1,Math.min(3650,Number(days)||90));
   const cutoff=Date.now()-safeDays*24*60*60*1000;
-  const data=await transcriptIndexData();
-  const indexedRecords=transcriptMigrationRecordsFromIndex(data);
-  const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
+  let records=Array.isArray(migrationRecords)?migrationRecords:null;
+  if(!records){
+    const data=await transcriptIndexData();
+    const indexedRecords=transcriptMigrationRecordsFromIndex(data);
+    const records=indexedRecords.length?indexedRecords:await transcriptArchiveRecords(safeDays,safeLimit);
+    migrationRecords=mergeTranscriptMigrationRecords(records,data);
+  }
+  records=records||migrationRecords||[];
   const mapped=dedupeTranscriptDrawerRecords(records.filter(isUsableKrispTranscriptRecord).map(transcriptIndexUiRecord))
     .filter(transcript=>{
       const time=Date.parse(transcript.receivedAt||transcript.createdAt||'');
@@ -29443,8 +29579,12 @@ app.get('/api/val/transcripts',async(req,res)=>{
   try{
     res.set('Cache-Control','no-store, max-age=0');
     void purgeJessaRecoveredNonKrispTranscripts().catch(e=>console.error('[transcripts] purge failed',e.message));
-    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days:req.query.days||'all',limit:req.query.limit||'default'});
-    const payload=await transcriptDrawerListPayload({days:req.query.days||90,limit:req.query.limit||50});
+    const days=Math.max(1,Math.min(3650,Number(req.query.days)||90));
+    const limit=Math.max(1,Math.min(250,Number(req.query.limit)||50));
+    console.log('[transcripts] retrieval requested',{userId:VAL_USER_ID,days,limit});
+    const [archive,data]=await Promise.all([transcriptArchiveRecords(days,limit),transcriptIndexData().catch(()=>({transcripts:[]}))]);
+    const migrationRecords=mergeTranscriptMigrationRecords(archive,data);
+    const payload=await transcriptDrawerListPayload({days,limit,migrationRecords});
     res.json({ok:true,...payload});
   }catch(e){console.error('[transcripts] retrieval failed',e);res.status(500).json({ok:false,error:e.message});}
 });
@@ -33949,6 +34089,20 @@ async function ghlVoiceContactLookupResponse({lastUser,contextText=''}={}){
   if(contact.phone)return `I found ${contactName} in VAL and I have a phone number available. I can prepare a text for your approval.`;
   return `I checked VAL for ${contactName}, but I do not have a safe email address or phone number yet.`;
 }
+function chatContextCorrection(lastUser=''){
+  const text=String(lastUser||'').trim();
+  if(!/\b(no|not quite|actually|that's wrong|thats wrong|you missed|correction|wrong person|not them|my bad)\b/i.test(text))return null;
+  return {
+    type:'correction',
+    content:'Oh. I should have known that. Thank you for correcting me. I will hold the correction before I try to move anything forward.\n\nAnd for the record, you are still the most important person on any list.'
+  };
+}
+function chatContextIntent(lastUser=''){
+  const text=String(lastUser||'').trim();
+  if(/\b(remember this|save this|note this|keep this in mind)\b/i.test(text))return {type:'memory',content:text};
+  if(/\b(update|change|correct)\b[\s\S]{0,80}\b(memory|context|profile|relationship|project)\b/i.test(text))return {type:'context_update',content:text};
+  return null;
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
@@ -34050,6 +34204,16 @@ app.post('/api/val/chat',async(req,res)=>{
       return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
+    const correction=chatContextCorrection(lastUser);
+    if(correction){
+      await saveMemoryItem({kind:'chat_context_correction',summary:'User corrected VAL context.',rawText:lastUser,importance:4,metadata:{source:'home_val_chat',correction:true}}).catch(()=>{});
+      return sendChat(correction.content,{chatContextCorrection:true,noExternalAction:true});
+    }
+    const intent=chatContextIntent(lastUser);
+    if(intent?.type==='memory'){
+      await saveMemoryItem({kind:'user_requested_memory',summary:'User asked VAL to remember context.',rawText:intent.content,importance:4,metadata:{source:'home_val_chat',explicitUserMemory:true}});
+      return sendChat('I will hold that in VAL context and use it going forward.',{chatContextIntent:intent,noExternalAction:true});
+    }
     const presenceMode=presenceModeEnabledFromRequest(req),presenceIntent=presenceMode?classifyPresenceIntent(lastUser,{currentSession:true}):null;
     if(presenceIntent?.requiresConfirmation){
       return sendChat([
@@ -34300,5 +34464,5 @@ const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{
   console.log(`VAL proxy running on port ${PORT}`);
   setTimeout(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),15000);
-  setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),24*60*60*1000).unref();
+  setInterval(()=>condenseOlderMemory().catch(e=>console.error('Memory condensation failed:',e.message)),AI_CONTEXT_COMPACTION_INTERVAL_MS).unref();
 });
