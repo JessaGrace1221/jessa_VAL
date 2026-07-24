@@ -23940,6 +23940,7 @@ function openHomeCardCowork(workspace){
   activeClarityWorkspace = active;
   const cardTitle = compactSentence(active.title, 'this action');
   const alignmentQuestion = alignmentCoworkQuestion(cardTitle);
+  const selectedSourceContext = homeCoworkSelectedSourceContext(active);
   openContextualCoworkSession({
     returnTarget: 'home',
     title: isAlignment ? 'Work through this action' : 'Co-Work with VAL: ' + cardTitle,
@@ -23950,6 +23951,7 @@ function openHomeCardCowork(workspace){
       active.packetFields?.what_val_now_knows ? 'What VAL now knows: ' + active.packetFields.what_val_now_knows : '',
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
       active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : '',
+      isAlignment ? 'Selected source context JSON: ' + JSON.stringify(selectedSourceContext).slice(0, 7000) : '',
       isAlignment ? 'Alignment Co-Work rule: help the user finish the actual task. If they ask for an artifact such as HTML, copy, a draft, a checklist, or a working plan, produce the artifact directly in the chat. Do not narrate process, expose backend context, or send them to another page unless they ask.' : ''
     ].filter(Boolean),
     recommendation: isAlignment ? 'Finish it, change it, delegate it, or ask VAL to prepare the next move.' : active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
@@ -23960,7 +23962,7 @@ function openHomeCardCowork(workspace){
     detail: isAlignment ? cardTitle : '',
     publicDetail: isAlignment ? 'Work it through here, then mark it done when it is complete.' : '',
     initialMessage: isAlignment ? alignmentQuestion : '',
-    selectedSourceContext: homeCoworkSelectedSourceContext(active),
+    selectedSourceContext,
     backWorkflow: 'cancel:meeting',
     showGathering: !isAlignment
   });
