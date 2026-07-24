@@ -8,12 +8,14 @@ function registerValConversationIdentityRoutes(app,deps={}){
   const service=deps.service||createValConversationIdentityService(deps);
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
+  const afterEmailSync=typeof deps.afterEmailSync==='function'?deps.afterEmailSync:async()=>{};
 
   app.post('/api/val/email/sync',async(req,res)=>{
     try{
       await waitForDb();
       const providers=Array.isArray(req.body?.providers)?req.body.providers:String(req.body?.provider||'gmail,outlook').split(',').map(v=>v.trim()).filter(Boolean);
       const result=await service.syncEmail({providers,limit:parseLimit(req.body?.limit,50),query:req.body?.query||'newer_than:30d'});
+      await afterEmailSync(result,{req,providers}).catch(error=>{result.boardPacketWarning=error.message;});
       await auditLog({req,action:'val_email_sync',resourceType:'email_messages',metadata:{saved:result.saved,providers:result.providers,unknowns:result.unknowns},success:true}).catch(()=>{});
       res.json(result);
     }catch(e){

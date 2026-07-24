@@ -52,6 +52,8 @@ test('email sync stores messages, threads, unified conversations, and context',a
   const synced=await service.syncEmail({providers:['gmail','outlook'],limit:10});
   assert.equal(synced.ok,true);
   assert.equal(synced.saved,2);
+  assert.equal(synced.savedMessages.length,2);
+  assert.equal(synced.savedMessages[0].subject,'Partner workflow');
   assert.equal(store.emailMessages.length,2);
   assert.equal(store.emailThreads.length,2);
   assert.equal(store.unifiedConversations.length,2);
