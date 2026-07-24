@@ -18522,25 +18522,13 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   return shortened ? shortened + '.' : '';
 }
 
-function homePriorityWitnessLine(briefing = {}){
-  const item = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || {};
-  const raw = compactSentence(item.title || item.summary || item.why || '', '');
-  const lower = raw.toLowerCase();
-  if(/\bgoall?\b|\bgoal agency\b|\bprojection|\bdashboard|\bmike\b/.test(lower)){
-    return 'The GOALL dashboard handoff is the source-backed signal at the top.';
-  }
-  if(/\btags?\b|\bpipeline\b|\bautomation\b|\bcolumns?\b/.test(lower)){
-    return 'The pipeline automation handoff is asking for one clean correction.';
-  }
-  if(/\bemail\b|\breply\b|\binbox\b|\bmessage\b/.test(lower)){
-    return 'One relationship message needs judgment before it moves.';
-  }
-  if(/\bmeeting\b|\bappointment\b|\bfollow[- ]?up\b/.test(lower)){
-    return 'One meeting thread is asking for a cleaner next move.';
-  }
-  const clean = cleanVelocityPerspectiveLine(raw, 118);
-  if(clean) return clean;
-  return 'One source-backed move has risen to the top.';
+function homeBigPictureWitnessLine(briefing = {}){
+  const theme = briefing.todayTheme || {};
+  const themeTitle = cleanVelocityPerspectiveLine(theme.title, 90);
+  const themeWhy = cleanVelocityPerspectiveLine(theme.why, 130);
+  if(themeTitle && themeWhy) return themeTitle + ': ' + themeWhy;
+  if(themeWhy) return themeWhy;
+  return 'The Chief of Staff is watching the larger pattern, not just the next task.';
 }
 
 function homeObserverSignalText(briefing = {}){
@@ -18622,10 +18610,9 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
   const selectedName = observer?.name || 'Meaning';
   const observerLine = observer?.currentlySeeing || observer?.truth || 'One signal is asking for discernment.';
-  const priorityWitness = homePriorityWitnessLine(briefing);
   return {
     headline: 'Good morning, ' + name + '.',
-    witness: lines[0] || priorityWitness,
+    witness: lines[0] || homeBigPictureWitnessLine(briefing),
     orientation: selectedName + ' is the Observer I would listen to first: ' + observerLine,
     permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
       ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
@@ -19763,10 +19750,11 @@ async function runCowork(mode, messageOverride = ''){
   const clearProgressTimers = () => progressTimers.splice(0).forEach((timer) => window.clearTimeout(timer));
   const heldContext = activeCoworkHeldContext || '';
   const calendarContextLines = calendarCoworkContextLines();
+  const hasSelectedCoworkSource = Boolean(activeCoworkSelectedSourceContext && typeof activeCoworkSelectedSourceContext === 'object' && Object.keys(activeCoworkSelectedSourceContext).length);
   const actionPrepLane = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsActionPrep(visiblePrompt));
   const needsFullValContext = Boolean(mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && homeCoworkNeedsFullValContext(visiblePrompt));
   const voiceFastLane = Boolean(valCoworkVoiceState.active && mode !== 'meeting_prep' && !needsFullValContext && !actionPrepLane);
-  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !needsFullValContext && !actionPrepLane);
+  const chatFastLane = Boolean(keepHomeCoworkOpen && mode !== 'meeting_prep' && !heldContext && !activeProjectCoworkTarget && !hasSelectedCoworkSource && !needsFullValContext && !actionPrepLane);
   const conversationFastLane = Boolean(voiceFastLane || chatFastLane || actionPrepLane);
   const calendarContext = calendarContextLines.length
     ? 'Current calendar context from the Hearth sidebar. Use this when the user asks about calendar, meetings, schedule, or what is next. Do not invent events beyond this list.\n' + calendarContextLines.join('\n')
@@ -19861,7 +19849,10 @@ async function runCowork(mode, messageOverride = ''){
     });
   }
   try{
-    const requestOptions = conversationFastLane ? {
+    const requestOptions = hasSelectedCoworkSource ? {
+      timeoutMs: 65000,
+      timeoutMessage: 'I’m still reading the selected source. Ask me one smaller piece and I’ll stay with that source.'
+    } : conversationFastLane ? {
       timeoutMs: actionPrepLane ? 14000 : (voiceFastLane ? 22000 : 28000),
       timeoutMessage: actionPrepLane
         ? 'I heard you, but preparing that action took too long. Ask again with the person and the action in one sentence.'
