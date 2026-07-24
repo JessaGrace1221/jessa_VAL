@@ -16298,12 +16298,12 @@ function renderWorkspaceActionButtons(actions = []){
 function contextualCoworkHeading(title = ''){
   const clean = compactSentence(String(title || '').replace(/^Co-Work with VAL:?/i, ''), '');
   if(!clean) return 'What shall we accomplish together?';
-  return 'How can I help with ' + clean.replace(/\.$/, '') + '?';
+  return 'Work through this with VAL';
 }
 
 function coworkPublicDetail(returnTarget = 'home'){
   const labels = {
-    home: 'VAL is ready to work with what you choose next.',
+    home: 'VAL has the useful context loaded.',
     relationship: 'VAL is holding this relationship privately.',
     project: 'VAL is holding this project privately.',
     timeline: 'VAL is holding the timeline privately.',
@@ -23879,10 +23879,11 @@ function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
   const isAlignment = /alignment/i.test(String(active.lens || active.cardType || ''));
   activeClarityWorkspace = active;
+  const cardTitle = compactSentence(active.title, 'this action');
   openContextualCoworkSession({
     returnTarget: 'home',
-    title: 'Co-Work with VAL: ' + compactSentence(active.title, 'Home card'),
-    meaning: 'How can I help with ' + compactSentence(active.title, 'this Home card') + '?',
+    title: isAlignment ? 'Work through this action' : 'Co-Work with VAL: ' + cardTitle,
+    meaning: isAlignment ? cardTitle : 'Work through this card with VAL.',
     context: [
       active.packetFields?.what_changed ? 'What happened: ' + active.packetFields.what_changed : '',
       active.packetFields?.why_it_matters ? 'Why it matters: ' + active.packetFields.why_it_matters : '',
@@ -23890,11 +23891,16 @@ function openHomeCardCowork(workspace){
       active.packetFields?.evidence_summary ? 'Evidence: ' + active.packetFields.evidence_summary : '',
       active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
     ].filter(Boolean),
-    recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
-    placeholder: isAlignment ? 'Ask VAL to help you complete this action...' : 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
-    helper: isAlignment ? 'VAL already has the Alignment context. Work through the action, then mark it Done.' : 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
+    recommendation: isAlignment ? 'Finish it, change it, delegate it, or ask VAL to prepare the next move.' : active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
+    placeholder: isAlignment ? 'Tell VAL what you need to finish this...' : 'Tell VAL what you need from this card...',
+    helper: isAlignment ? 'VAL has the action context loaded. If this needs to become a draft, task, email, or appointment, VAL will prepare it and ask before anything external happens.' : 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
     initialValue: '',
-    backWorkflow: 'cancel:meeting'
+    heading: isAlignment ? 'Current action' : '',
+    detail: isAlignment ? cardTitle : '',
+    publicDetail: isAlignment ? 'Work it through here, then mark it done when it is complete.' : '',
+    initialMessage: isAlignment ? 'I have this action loaded. Tell me what changed, or what you want me to prepare.' : '',
+    backWorkflow: 'cancel:meeting',
+    showGathering: !isAlignment
   });
 }
 
@@ -24649,6 +24655,7 @@ function renderHomeCoworkPreview(options = {}){
   const placeholder = options.placeholder || 'Tell VAL what you want to accomplish';
   const initialMessage = options.initialMessage || heading;
   const historyMessage = options.historyMessage || 'No earlier project Co-Work thread is loaded in this view.';
+  const speakerDetail = options.speakerDetail || 'VAL can prepare drafts, decisions, and next steps. Anything external still asks for approval.';
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list', 'meeting-prep-brief', 'observer-cowork-overlay-panel');
@@ -24674,7 +24681,7 @@ function renderHomeCoworkPreview(options = {}){
           '</span>',
           '<div>',
             '<p>VAL</p>',
-            '<small>Scoped conversation. No external action happens from here.</small>',
+            '<small>' + escapeHtml(speakerDetail) + '</small>',
           '</div>',
         '</div>',
         '<div class="home-cowork-thread" data-home-cowork-response>',
@@ -24811,7 +24818,7 @@ function showCoworkContextGathering(detail = '', options = {}){
     const currentPanel = scraperPreviewList?.querySelector?.('[data-cowork-context-gathering]');
     if(!currentPanel || currentPanel.hidden) return;
     hideCoworkContextGathering();
-    appendHomeCoworkMessage('val', 'VAL could not finish gathering this context in time. Nothing was changed. Try opening the source again when you are ready.');
+    appendHomeCoworkMessage('val', 'I have the action. The deeper source context is taking longer than it should, but we can keep working from what is already here.');
   }, 18000);
 }
 
