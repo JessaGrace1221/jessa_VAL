@@ -60,8 +60,39 @@ function approvalActions(item){
   if(item.metadataJson?.preparedArtifactKind||item.metadata?.preparedArtifactKind) actions.unshift({key:'review_prepared_work',label:'Review prepared work',external_action:false});
   return actions;
 }
+function readyItemPreparedArtifact(item = {}){
+  const metadata=jsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  return metadata.preparedArtifact||metadata.prepared_artifact||item.preparedArtifact||item.prepared_artifact||null;
+}
+function readyItemPreparedArtifactKind(item = {}){
+  const metadata=jsonValue(item.metadataJson||item.metadata_json||item.metadata,{})||{};
+  const readiness=jsonValue(item.readinessJson||item.readiness_json||item.readiness,{})||{};
+  const artifact=readyItemPreparedArtifact(item)||{};
+  return compactText(artifact.kind||metadata.preparedArtifactKind||metadata.prepared_artifact_kind||readiness.prepared_artifact_kind||item.preparedArtifactKind||item.prepared_artifact_kind||'',120);
+}
+function readyItemHasConcretePreparedWork(item = {}){
+  const artifact=readyItemPreparedArtifact(item)||{};
+  const kind=readyItemPreparedArtifactKind(item);
+  if(!kind)return false;
+  if(/\b(commitment_bundle|transcript_follow_up|relationship_project_update_candidate|transcript_follow_up_bundle|task_context|email_draft_readiness)\b/i.test(kind))return false;
+  const text=[
+    artifact.body,
+    artifact.content,
+    artifact.html,
+    artifact.instruction,
+    Array.isArray(artifact.sections)?artifact.sections.join('\n'):'',
+    Array.isArray(artifact.recipients)&&artifact.recipients.length?JSON.stringify(artifact.recipients):'',
+    Array.isArray(artifact.attendees)&&artifact.attendees.length?JSON.stringify(artifact.attendees):'',
+    item.whatValPrepared,
+    item.what_val_prepared
+  ].map(v=>String(v||'').trim()).find(v=>v.length>=8);
+  return Boolean(text);
+}
 function preparedWorkCount(rows=[]){
-  return safeArray(rows).filter(row=>['ready','ready_for_review','needs_context'].includes(row.status||'ready_for_review')).length;
+  return safeArray(rows)
+    .filter(row=>['ready','ready_for_review','needs_context'].includes(row.status||'ready_for_review'))
+    .filter(readyItemHasConcretePreparedWork)
+    .length;
 }
 function draftToCandidate(draft,uuid,scope){
   const source=draft.sourceContext||{};
@@ -243,7 +274,7 @@ function transcriptCandidate(candidate,uuid,scope){
   const handoff=candidate.handoff||{};
   const run=candidate.run||{};
   const artifact=handoff.prepared_artifact||handoff.preparedArtifact||null;
-  const artifactKind=artifact?.kind||handoff.type||'';
+  const artifactKind=artifact?.kind||'';
   const linkedContext=handoff.linked_context||artifact?.linked_context||{};
   const remainingContext=safeArray(handoff.remaining_context_needed||artifact?.remaining_context_needed);
   const completedByVal=safeArray(handoff.completed_by_val||artifact?.completed_by_val);
@@ -297,7 +328,7 @@ function transcriptCandidate(candidate,uuid,scope){
       continuationTask:handoff.continuation_task||artifact?.continuation_task||null,
       projectId:linkedContext.project?.id||'',
       projectName:linkedContext.project?.name||'',
-      preparedWorkCount:1
+      preparedWorkCount:artifactKind?1:0
     },
     decisionJson:{},
     createdAt:candidate.createdAt||run.createdAt||new Date().toISOString(),
