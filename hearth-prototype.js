@@ -302,6 +302,10 @@ let currentMeetingEvents = [];
 let calendarPanelShouldScrollToCurrent = false;
 let valOnboardingRouteState = {supportCircle: [], documentExamples: [], connections: []};
 const homeRoomQueues = {velocity: [], alignment: [], leverage: []};
+let currentTaskWorkspaceTasks = [];
+let currentTaskWorkspaceDrafts = [];
+let currentTaskWorkspaceReadyItems = [];
+let currentTaskWorkspacePreparedByTask = {};
 let workspaceReturnTarget = 'home';
 
 const selfCalendarEmails = ['jessa@jessagrace.com','jessa@goallprogram.com','jessa@goalprogram.com','jessa.grace@gmail.com'];
@@ -629,7 +633,7 @@ const hearthClickContractRegistry = [
   {selector:'.teach-pen', contract:'home.teach_val_companion', packet:'val_os_packet', rule:'Teach VAL extraction/review prompt', actions:'Review what I taught VAL', never:'Do not save durable memory without review'},
   {selector:'.linkedin-widget,[data-linkedin-copy],[data-linkedin-link]', contract:'home.linkedin_visibility', packet:'relationship_packet', rule:'LinkedIn visibility preparation rule', actions:'Copy manually, open source link', never:'Do not post to LinkedIn'},
   {selector:'.living-room .room-action[data-open-room="velocity"]', contract:'home.velocity_card', packet:'home_source_packet', rule:'Homepage Momentum/Velocity observer + workspace rule', actions:'Open source, Review evidence, source-specific action', never:'Do not blend in unrelated Home items'},
-  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Highest Leverage / Alignment judge prompt', actions:'Open source, Draft reply/Create task for email, Review evidence', never:'Do not open a different relationship/project than the card named'},
+  {selector:'.living-room .room-action[data-open-room="alignment"]', contract:'home.alignment_card', packet:'home_source_packet', rule:'Chief of Staff Alignment action rule', actions:'Co-work with VAL on the current action only', never:'Do not draft, send, create tasks, or expose Leverage prepared work from Alignment'},
   {selector:'.living-room .room-action[data-open-room="leverage"]', contract:'home.leverage_card', packet:'home_source_packet', rule:'Ready For You / Prepared Work prompt suite', actions:'Open prepared draft, refine prepared work, approve prepared work', never:'Do not expose queue rows as extra CTAs'},
   {selector:'[data-home-room-source]', contract:'home.source_row', packet:'source_display_packet', rule:'Source receipt display rule', actions:'None; evidence row only', never:'Do not act from source rows'},
   {selector:'[data-home-action]', contract:'home.dynamic_action', packet:'home_source_packet', rule:'Home action posture or source-specific action rule', actions:'Only actions listed in active workspace', never:'Do not use stale active source'},
@@ -14884,11 +14888,13 @@ function setRoomCopy(state){
     room.querySelector('.room-copy').textContent = content.card.summary;
     const existingList = room.querySelector('.room-item-list');
     if(existingList) existingList.remove();
+    const existingDone = room.querySelector('.alignment-card-done');
+    if(existingDone) existingDone.remove();
     const queue = homeRoomQueues[name] || [];
     if(queue.length && (name === 'velocity' || name === 'leverage')){
       const list = document.createElement('div');
       list.className = 'room-item-list';
-      list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared drafts');
+      list.setAttribute('aria-label', name === 'velocity' ? 'Velocity items' : 'Prepared by VAL');
       list.innerHTML = queue.map((item, index) => (
         '<div role="listitem" data-home-room-source="' + name + '" data-home-room-index="' + index + '"' +
           ' data-source-type="' + escapeHtml(item.sourceType || '') + '"' +
@@ -14902,6 +14908,15 @@ function setRoomCopy(state){
       room.insertBefore(list, actionButton);
     }
     actionButton.innerHTML = content.card.action + ' <b>&rarr;</b>';
+    if(name === 'alignment'){
+      const doneButton = document.createElement('button');
+      doneButton.className = 'alignment-card-done';
+      doneButton.type = 'button';
+      doneButton.dataset.homeCardCommand = 'alignment_done';
+      doneButton.textContent = 'Done';
+      doneButton.setAttribute('aria-label', 'Mark Alignment action done');
+      room.insertBefore(doneButton, actionButton);
+    }
     actionButton.dataset.actionType = content.card.primaryAction?.type || 'workspace';
     actionButton.setAttribute('aria-label', content.card.primaryAction?.ariaLabel || content.card.action);
     if(content.card.primaryAction?.target){
@@ -14986,7 +15001,7 @@ function homePacketDisplayFields(item = {}, roomName = 'velocity'){
   const actionLabel = roomName === 'leverage'
     ? (artifactKind ? 'Open and approve ' + artifactKind.replace(/_/g, ' ') : 'Open prepared work')
     : roomName === 'alignment'
-      ? (isEmailSourceItem(item) ? 'Draft reply or create task' : 'Do this priority now')
+      ? 'Do this action'
       : sourceActionLabel(item, 'Open ' + sourceTypeLabel + ' source');
   return {
     what_changed: roomName === 'leverage'
@@ -15062,9 +15077,14 @@ function homeWorkspaceFromQueueItem(roomName, index){
           {label: fields.primary_action_label, homeAction: 'open_prepared'},
           {label: 'Approve and execute', homeAction: 'approve_prepared'}
         ]
-      : [
-          {label: fields.primary_action_label, homeAction: 'open_source'}
-        ],
+      : roomName === 'alignment'
+        ? [
+            {label: 'Done', homeAction: 'alignment_done'},
+            {label: 'Co-work with VAL', homeAction: 'cowork_card_context'}
+          ]
+        : [
+            {label: fields.primary_action_label, homeAction: 'open_source'}
+          ],
     sourceItem: item,
     cardType: roomName === 'leverage' ? 'ready_for_you' : roomName === 'alignment' ? 'highest_leverage' : 'what_changed',
     coworkContext: fields.cowork_context,
@@ -15135,6 +15155,7 @@ function executiveHomeUnderstanding(item = {}, fallbackTitle = 'Supporting sourc
 }
 
 function executiveHomeRecommendation(item = {}, roomName = ''){
+  if(roomName === 'alignment') return 'Do this, or co-work with VAL if you need help completing it.';
   if(isEmailSourceItem(item)) return 'Open the email only if you need more context, then draft the reply or create a follow-up task with a due date.';
   const title = itemTitle(item, '');
   if(/VAL learned \d+/i.test(title)) return 'Do one live spot-check now: open the source evidence, verify the memory change is useful, then teach VAL the correction if the next recommendation is wrong.';
@@ -18483,32 +18504,97 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   return shortened ? shortened + '.' : '';
 }
 
-function velocityPerspectiveFromBriefing(briefing = {}){
+function homeObserverSignalText(briefing = {}){
+  const daily = briefing.dailyWitness || {};
+  return [
+    daily.observer,
+    daily.observerName,
+    daily.selectedObserver,
+    daily.perspective,
+    daily.velocityPerspective,
+    daily.what_was_witnessed,
+    daily.what_it_cost_or_represented,
+    daily.permission_line,
+    briefing.todayTheme?.title,
+    briefing.todayTheme?.why,
+    briefing.highestLeverageMove?.title,
+    briefing.highestLeverageMove?.summary,
+    briefing.highestLeverageMove?.why,
+    briefing.highestLeverageMove?.reason_it_matters,
+    briefing.highestLeverageMove?.ifIgnored,
+    firstBriefingItem(briefing.readyForYou)?.title,
+    firstBriefingItem(briefing.whatChanged)?.title,
+    firstBriefingItem(briefing.momentum)?.title
+  ].filter(Boolean).join(' ');
+}
+
+function homeObserverKeywordScore(observerName = '', text = ''){
+  const lower = String(text || '').toLowerCase();
+  const name = String(observerName || '').toLowerCase();
+  let score = lower.includes(name) ? 12 : 0;
+  const keywordMap = {
+    'executive inbox': ['email','inbox','reply','draft','message','gmail','outlook','thread'],
+    relationship: ['relationship','trust','warmth','person','contact','repair','introduction','michele'],
+    project: ['project','blocker','dependency','proposal','workstream','packet','deliverable'],
+    capacity: ['capacity','schedule','calendar','decision quality','tradeoff','timing','recovery','compressed','load'],
+    courage: ['courage','avoid','plainly','uncomfortable','challenge','anxiety','over-preparation'],
+    delight: ['delight','joy','connection','energy','curiosity','boys','family','relief','aliveness'],
+    opportunity: ['opportunity','opening','pipeline','revenue','partner','timing window'],
+    momentum: ['momentum','movement','moved','progress','stalled','approval','next action'],
+    meaning: ['meaning','theme','values','story','pattern','really about','reminds'],
+    synchronicity: ['synchronicity','repeated','arriving','coincidence','echo','cluster','convergence'],
+    commitment: ['commitment','promise','follow-up','overdue','task','open loop','owe'],
+    calendar: ['calendar','meeting','appointment','prep','agenda','time'],
+    environment: ['environment','body','location','travel','weather','physical','friction'],
+    witnessing: ['witnessing','onboarding','own words','values','preference','boundary','revealed']
+  };
+  (keywordMap[name] || []).forEach((keyword) => {
+    if(lower.includes(keyword)) score += 2;
+  });
+  return score;
+}
+
+function selectHomeObserverSignal(briefing = {}){
+  const daily = briefing.dailyWitness || {};
+  const explicitName = daily.observerName || daily.selectedObserver || daily.observer;
+  const observers = observerBoardState?.observers || [];
+  const text = homeObserverSignalText(briefing);
+  const explicit = explicitName
+    ? observers.find((observer) => String(observer.name).toLowerCase() === String(explicitName).toLowerCase())
+    : null;
+  const selected = explicit || observers
+    .map((observer) => ({observer, score: homeObserverKeywordScore(observer.name, text)}))
+    .sort((a, b) => b.score - a.score)[0]?.observer;
+  return selected || observers.find((observer) => observer.name === 'Meaning') || null;
+}
+
+function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const daily = briefing.dailyWitness || {};
   const name = homePerspectiveUserName();
-  const headlineLines = [
-    daily.velocityPerspective,
-    daily.perspective
-  ].filter(Boolean);
-  const supportLines = [
+  const observer = selectHomeObserverSignal(briefing);
+  const lines = [
+    daily.perspective,
     daily.what_was_witnessed,
     daily.what_it_cost_or_represented,
     daily.permission_line
-  ].filter(Boolean);
-  const lines = [...headlineLines, ...supportLines]
-    .map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
+  ].map((line, index) => cleanVelocityPerspectiveLine(line, index === 0 ? 118 : 150))
     .filter(Boolean)
     .filter((line, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index);
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
-  const verifiedLine = evidenceCount
-    ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before bringing this to Home.'
-    : "I'm watching the live signals and keeping anything unproven out of your way.";
+  const selectedName = observer?.name || 'Meaning';
+  const observerLine = observer?.currentlySeeing || observer?.truth || 'One signal is asking for discernment.';
   return {
-    headline: lines[0] || name + ", I'm here watching and protecting every important relationship.",
-    witness: lines[1] || verifiedLine,
-    orientation: lines[2] || 'I will surface the next real move only when there is enough context to trust it.',
-    permission: lines[3] || 'Nothing moves without your approval.'
+    headline: lines[0] || 'Good morning, ' + name + '.',
+    witness: lines[1] || 'The Chief of Staff is listening across the Board of Observers.',
+    orientation: lines[2] || selectedName + ' is the Observer I would listen to first: ' + observerLine,
+    permission: lines[3] || (evidenceCount
+      ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
+      : 'If no Observer has earned the room, I will keep the desk quiet.')
   };
+}
+
+function velocityPerspectiveFromBriefing(briefing = {}){
+  return chiefOfStaffPerspectiveFromBriefing(briefing);
 }
 
 function applyVelocityPerspective(briefing = executiveBriefingState || {}){
@@ -18629,38 +18715,38 @@ function clearHomeRoomForAdmission(roomName){
     },
     alignment: {
       card: {
-        observation: 'No priority needs your judgment first.',
-        implication: 'Nothing has a complete Why Now Packet right now.',
+        observation: 'No action needs you right now.',
+        implication: 'The Chief of Staff is not asking you to do anything until one move earns the room.',
         invitation: 'Keep attention unbroken',
-        title: 'No priority needs your judgment first.',
-        summary: 'Nothing has a complete Why Now Packet right now.',
-        action: 'Open Alignment'
+        title: 'Nothing to do right now.',
+        summary: 'The Chief of Staff will name one move when action is actually needed.',
+        action: 'Co-work'
       },
       workspace: {
         lens: 'Alignment',
-        title: 'No Alignment item passed the v1 admission gate.',
-        meaning: 'VAL is not promoting a priority without complete Why Now reasoning.',
-        understanding: ['Alignment needs why now, decision/action needed, cost if delayed or timing basis, evidence refs, and confidence.'],
-        recommendation: 'Keep judgment free until one priority earns the top slot.',
+        title: 'No action is being assigned.',
+        meaning: 'Alignment is the human action lane. It should tell you what to do only when there is one source-backed move worth your attention.',
+        understanding: ['The Chief of Staff has not selected an Observer signal that requires your action.'],
+        recommendation: 'Keep the desk clear until VAL can name the exact move and why it matters now.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }
     },
     leverage: {
       card: {
-        observation: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        implication: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        invitation: leverageCount ? 'Open when the queue finishes loading' : 'Nothing to approve',
-        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No prepared work is waiting right now.',
-        summary: leverageCount ? 'The count is live; the review queue is still hydrating.' : 'Nothing has both a Prepared Work Packet and Can VAL Act status.',
-        action: 'Open Leverage'
+        observation: leverageCount ? leverageCount + ' prepared by VAL.' : 'Nothing drafted yet.',
+        implication: leverageCount ? 'These are waiting for approval, sending, or editing.' : 'VAL has not created anything reviewable.',
+        invitation: leverageCount ? 'Review the list' : 'Nothing to approve',
+        title: leverageCount ? leverageCount + ' prepared by VAL.' : 'Nothing drafted yet.',
+        summary: leverageCount ? 'Waiting for approval, sending, or editing.' : 'VAL has not created anything reviewable.',
+        action: 'Review list'
       },
       workspace: {
         lens: 'Leverage',
-        title: leverageCount ? leverageCount + ' prepared item' + (leverageCount === 1 ? ' is' : 's are') + ' waiting.' : 'No Leverage item passed the v1 admission gate.',
-        meaning: leverageCount ? 'VAL has counted prepared work, but the review queue has not finished loading in this view yet.' : 'VAL is not showing loose opportunities as prepared work.',
-        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Open Leverage again after the review queue finishes hydrating.'] : ['Leverage needs prepared work, trigger source, work product, and Can VAL Act status.'],
-        recommendation: leverageCount ? 'Wait for the prepared work queue to finish loading before approving anything.' : 'Prepared work will appear here only when it is real enough to review or approve.',
+        title: leverageCount ? leverageCount + ' prepared by VAL.' : 'No prepared work is waiting.',
+        meaning: leverageCount ? 'Leverage is the prepared-work lane: drafts, packets, replies, and artifacts VAL has already shaped for your review.' : 'Leverage should stay empty unless VAL has actually created something reviewable.',
+        understanding: leverageCount ? ['Prepared count: ' + leverageCount, 'Nothing has been approved or sent.', 'Every item needs approval, sending, or editing.'] : ['Loose ideas, possibilities, and evidence do not belong in Leverage.'],
+        recommendation: leverageCount ? 'Review only the prepared items. Approve, edit, send, or hold each one.' : 'Nothing needs approval from Leverage.',
         actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
         suppressClarityStandard: true
       }
@@ -18864,19 +18950,69 @@ function setHomeRoomQueue(roomName, items){
   homeRoomQueues[roomName] = admittedItems.map((item, index) => homeQueueItem(item, index, roomName));
 }
 
+function updateAlignmentRoomFromQueue(){
+  const queueItem = homeRoomQueues.alignment?.[0];
+  if(!queueItem?.sourceItem){
+    clearHomeRoomForAdmission('alignment');
+    setRoomCopy(currentState);
+    return;
+  }
+  const item = queueItem.sourceItem;
+  const titleText = itemTitle(item, 'Next aligned action');
+  const meaningText = itemMeaning(item, 'This is the one source-backed action the Chief of Staff is asking you to take.');
+  const cardTitle = roomCardObservation(item, titleText, 'alignment');
+  const cardSummary = roomCardImplication(item, meaningText, 'alignment');
+  updateRoomFromBriefing('alignment', {
+    card: {
+      observation: cardTitle,
+      implication: cardSummary,
+      invitation: 'Do it, or ask VAL to work through it with you.',
+      title: cardTitle,
+      summary: cardSummary,
+      action: 'Co-work with VAL'
+    },
+    workspace: briefingWorkspace({
+      lens: 'Alignment',
+      title: titleText,
+      meaning: meaningText,
+      understanding: workspaceUnderstanding(item, [
+        item?.ifIgnored ? 'If ignored: ' + item.ifIgnored : '',
+      ]),
+      recommendation: workspaceRecommendation(item, 'Do this, or co-work with VAL if you need help getting it done.'),
+      actions: [
+        {label: 'Done', homeAction: 'alignment_done'},
+        {label: 'Co-work with VAL', homeAction: 'cowork_card_context'}
+      ],
+      confidence: item?.confidence,
+      restraintReason: 'Alignment owns the human next action only. Drafts and prepared artifacts belong to Leverage.',
+      sourceItem: item,
+      cardType: 'highest_leverage'
+    })
+  });
+  setRoomCopy(currentState);
+}
+
 function hydrateRoomsFromBriefing(briefing){
   const velocityItems = briefingItems(briefing.whatChanged).concat(briefingItems(briefing.momentum));
   const admittedVelocityItems = homeAdmissionFilter('velocity', velocityItems);
   const changed = firstBriefingItem(admittedVelocityItems);
   const highest = briefing.highestLeverageMove || firstBriefingItem(briefing.alsoImportant) || null;
+  const alignmentCandidates = [highest]
+    .concat(briefingItems(briefing.alsoImportant))
+    .filter(Boolean)
+    .filter((item, index, list) => list.findIndex((candidate) => {
+      const a = sourceIdentityForItem(candidate);
+      const b = sourceIdentityForItem(item);
+      return (a.id && b.id && a.id === b.id) || itemTitle(candidate, '') === itemTitle(item, '');
+    }) === index);
   const leverageItems = briefingItems(briefing.readyForYou).concat(briefingItems(briefing.watching));
-  const admittedAlignmentItems = homeAdmissionFilter('alignment', highest ? [highest] : []);
+  const admittedAlignmentItems = homeAdmissionFilter('alignment', alignmentCandidates);
   const admittedLeverageItems = homeAdmissionFilter('leverage', leverageItems);
   const admittedHighest = firstBriefingItem(admittedAlignmentItems);
   const ready = firstBriefingItem(admittedLeverageItems) || null;
   const theme = briefing.todayTheme || {};
   setHomeRoomQueue('velocity', admittedVelocityItems);
-  setHomeRoomQueue('alignment', admittedHighest ? [admittedHighest] : []);
+  setHomeRoomQueue('alignment', admittedAlignmentItems);
   setHomeRoomQueue('leverage', admittedLeverageItems);
   if(!changed) clearHomeRoomForAdmission('velocity');
   if(!admittedHighest) clearHomeRoomForAdmission('alignment');
@@ -18912,38 +19048,7 @@ function hydrateRoomsFromBriefing(briefing){
     });
   }
 
-  if(admittedHighest){
-    const titleText = itemTitle(admittedHighest, 'Protected attention');
-    const meaningText = itemMeaning(admittedHighest, 'This is where your judgment appears most valuable.');
-    const cardTitle = roomCardObservation(admittedHighest, titleText, 'alignment');
-    const cardSummary = roomCardImplication(admittedHighest, meaningText, 'alignment');
-    const sourceLabel = sourceActionLabel(admittedHighest, 'Open the thing needing attention');
-    const actions = suggestedHomeActionsForItem(admittedHighest, 'alignment', sourceLabel);
-    updateRoomFromBriefing('alignment', {
-      card: {
-        observation: cardTitle,
-        implication: cardSummary,
-        invitation: 'Does this still feel true?',
-        title: cardTitle,
-        summary: cardSummary,
-        action: 'Review the decision'
-      },
-      workspace: briefingWorkspace({
-        lens: 'Alignment',
-        title: titleText,
-        meaning: meaningText,
-        understanding: workspaceUnderstanding(admittedHighest, [
-          admittedHighest?.ifIgnored ? 'If ignored: ' + admittedHighest.ifIgnored : theme.why,
-        ]),
-        recommendation: workspaceRecommendation(admittedHighest, 'Does this still feel true to you? If not, teach VAL what it missed.'),
-        actions,
-        confidence: admittedHighest?.confidence,
-        restraintReason: 'Alignment owns the judgment question, not every supporting detail.',
-        sourceItem: admittedHighest,
-        cardType: 'highest_leverage'
-      })
-    });
-  }
+  if(admittedHighest) updateAlignmentRoomFromQueue();
 
   if(ready){
     const artifactCopy = preparedArtifactHomeCopy(ready);
@@ -18951,15 +19056,16 @@ function hydrateRoomsFromBriefing(briefing){
     const meaningText = artifactCopy?.workspaceMeaning || itemMeaning(ready, 'VAL has prepared something for review.');
     const cardTitle = artifactCopy?.observation || roomCardObservation(ready, titleText, 'leverage');
     const cardSummary = artifactCopy?.implication || roomCardImplication(ready, meaningText, 'leverage');
+    const preparedTotal = admittedLeverageItems.length || 1;
     const sourceLabel = sourceActionLabel(ready, 'Open prepared work');
     updateRoomFromBriefing('leverage', {
       card: {
-        observation: cardTitle,
-        implication: cardSummary,
-        invitation: artifactCopy?.invitation || 'Would you like to review what is ready?',
-        title: cardTitle,
-        summary: cardSummary,
-        action: artifactCopy?.action || "Review what's ready"
+        observation: preparedTotal + ' waiting for approval.',
+        implication: cardTitle + '. Nothing has been sent.',
+        invitation: 'Review, edit, send, or hold.',
+        title: preparedTotal + ' waiting for approval.',
+        summary: cardTitle + '. Nothing has been sent.',
+        action: artifactCopy?.action || 'Open draft'
       },
       workspace: briefingWorkspace({
         lens: 'Leverage',
@@ -19031,14 +19137,15 @@ function hydrateLeverageFromReadyForYou(result = {}){
   const cardTitle = artifactCopy?.observation || roomCardObservation(ready, titleText, 'leverage');
   const cardSummary = artifactCopy?.implication || roomCardImplication(ready, meaningText, 'leverage');
   const sourceLabel = sourceActionLabel(ready, 'Open prepared work');
+  const preparedTotal = admittedQueueItems.length || preparedCount || 1;
   updateRoomFromBriefing('leverage', {
     card: {
-      observation: cardTitle,
-      implication: cardSummary,
-      invitation: artifactCopy?.invitation || 'Would you like to review what is ready?',
-      title: cardTitle,
-      summary: cardSummary,
-      action: artifactCopy?.action || "Review what's ready"
+      observation: preparedTotal + ' prepared by VAL.',
+      implication: cardSummary || cardTitle,
+      invitation: artifactCopy?.invitation || 'Review the list',
+      title: preparedTotal + ' prepared by VAL.',
+      summary: 'Waiting for approval, sending, or editing.',
+      action: 'Review list'
     },
     workspace: briefingWorkspace({
       lens: 'Leverage',
@@ -19120,8 +19227,29 @@ function prototypeBriefing(){
       target: {type: 'opportunity', id: 'demo-acme-opportunity', name: 'Acme proposal'},
       opportunityId: 'demo-acme-opportunity',
       opportunityName: 'Acme proposal',
+      sourceRefs: [{source_type:'opportunity',source_id:'demo-acme-opportunity',quote_or_summary:'Proposal decision is blocking the next move.',confidence:.88}],
+      homeAdmission: {whyNowPacketComplete:true},
       portalPhrases: ['Acme proposal']
     },
+    alsoImportant: [{
+      title: 'Ask Marcus who owns procurement before the 2 PM demo.',
+      summary: 'The pilot can stall if vendor approval remains unnamed.',
+      ifIgnored: 'The meeting may end with enthusiasm but no executable buying path.',
+      confidence: 0.84,
+      target: {type:'email', id:'demo-thread-1', name:'Marcus procurement thread'},
+      sourceRefs: [{source_type:'email',source_id:'demo-thread-1',quote_or_summary:'Marcus named procurement and onboarding as the main remaining questions.',confidence:.84}],
+      homeAdmission: {whyNowPacketComplete:true},
+      portalPhrases: ['Marcus','procurement']
+    }, {
+      title: 'Decide what not to start this week.',
+      summary: 'Capacity is tighter than the open loops make it look.',
+      ifIgnored: 'Too many useful threads will compete for the same judgment window.',
+      confidence: 0.81,
+      target: {type:'commitment', id:'demo-task-6', name:'Capacity commitment'},
+      sourceRefs: [{source_type:'commitment',source_id:'demo-task-6',quote_or_summary:'Five relationship loops and three revenue conversations are competing for attention.',confidence:.81}],
+      homeAdmission: {whyNowPacketComplete:true},
+      portalPhrases: ['capacity','open loops']
+    }],
     readyForYou: [{
       title: 'Frisson introduction draft',
       summary: 'The relationship IDs are attached, and nothing has been sent.',
@@ -19131,7 +19259,15 @@ function prototypeBriefing(){
       draftId: 'demo-frisson-introduction',
       metadataJson: {
         preparedArtifactKind: 'introduction_email_draft',
-        preparedArtifact: {kind: 'introduction_email_draft', id: 'demo-frisson-introduction'}
+        preparedArtifact: {
+          kind: 'introduction_email_draft',
+          id: 'demo-frisson-introduction',
+          subject: 'Introduction: Michele + Aric',
+          to: 'michele@example.com',
+          cc: 'aric@example.com',
+          body: 'Hi Michele,\n\nI wanted to introduce you to Aric. He is thinking carefully about how Frisson can become more visible without becoming louder, and your perspective on language, trust, and audience resonance feels unusually aligned.\n\nAric, Michele has a strong eye for the difference between polished messaging and messaging that actually lands in the body. I think a short conversation between the two of you could clarify the next public-facing move.\n\nNo pressure for either of you. I simply saw a useful overlap and wanted to put you in the same room.\n\nWarmly,\nJessa',
+          reviewBoundary: 'Confirm both people should be connected before sending. Nothing leaves VAL without approval.'
+        }
       },
       portalPhrases: ['Frisson introduction']
     }, {
@@ -19143,7 +19279,13 @@ function prototypeBriefing(){
       draftId: 'demo-d3day-page-copy',
       metadataJson: {
         preparedArtifactKind: 'copy_draft',
-        preparedArtifact: {kind: 'copy_draft', id: 'demo-d3day-page-copy'}
+        preparedArtifact: {
+          kind: 'copy_draft',
+          id: 'demo-d3day-page-copy',
+          title: 'D3Day page copy',
+          body: 'Headline\nA day for the decisions that keep getting postponed.\n\nOpening\nD3Day is built for leaders who are carrying too many important threads in their head. The day turns scattered context into clean decisions, sequenced next moves, and work VAL can hold for you afterward.\n\nPrimary promise\nYou leave with fewer open loops, clearer ownership, and a system that remembers what matters without making you manage another workspace.\n\nCTA\nReserve the decision day.',
+          reviewBoundary: 'Review tone, claim strength, and pricing language before publishing.'
+        }
       },
       portalPhrases: ['D3Day page copy']
     }, {
@@ -19155,7 +19297,14 @@ function prototypeBriefing(){
       draftId: 'demo-client-follow-up',
       metadataJson: {
         preparedArtifactKind: 'email_draft',
-        preparedArtifact: {kind: 'email_draft', id: 'demo-client-follow-up'}
+        preparedArtifact: {
+          kind: 'email_draft',
+          id: 'demo-client-follow-up',
+          subject: 'Next step from our conversation',
+          to: 'client@example.com',
+          body: 'Hi there,\n\nI’ve been thinking about the thread we opened around capacity, momentum, and what needs to become simpler before the next decision can be clean.\n\nThe next useful move feels small: choose the one outcome that would make the next two weeks easier to trust. Once that is named, I can help turn the rest into a sequence instead of a cloud.\n\nIf it helps, send me the one decision that feels most expensive to keep carrying.\n\nWarmly,\nJessa',
+          reviewBoundary: 'Confirm recipient, relationship tone, and timing before sending.'
+        }
       },
       portalPhrases: ['Client follow-up']
     }],
@@ -19174,6 +19323,7 @@ async function hydrateHomePresence(options = {}){
     hydrateGreetingFromBriefing(briefing);
     hydrateRoomsFromBriefing(briefing);
     updatePreparedCount(Array.isArray(briefing.readyForYou) ? briefing.readyForYou.length : 0);
+    setTaskCompanionOpenCount(6);
     renderWhyTodayPanel(briefing, 'loaded');
     return;
   }
@@ -23727,6 +23877,7 @@ function openHomeSourceDrawerDestination(workspace = {}){
 
 function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
+  const isAlignment = /alignment/i.test(String(active.lens || active.cardType || ''));
   activeClarityWorkspace = active;
   openContextualCoworkSession({
     returnTarget: 'home',
@@ -23740,8 +23891,8 @@ function openHomeCardCowork(workspace){
       active.packetFields?.recommended_next_step ? 'Recommended next step: ' + active.packetFields.recommended_next_step : ''
     ].filter(Boolean),
     recommendation: active.recommendation || active.packetFields?.recommended_next_step || 'Use this card packet to decide the next move.',
-    placeholder: 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
-    helper: 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
+    placeholder: isAlignment ? 'Ask VAL to help you complete this action...' : 'How can I help with ' + compactSentence(active.title, 'this card') + '?',
+    helper: isAlignment ? 'VAL already has the Alignment context. Work through the action, then mark it Done.' : 'VAL already has the card context. Ask for a decision, reply, task, draft, or next move.',
     initialValue: '',
     backWorkflow: 'cancel:meeting'
   });
@@ -23750,8 +23901,9 @@ function openHomeCardCowork(workspace){
 function alignmentDraftFromWorkspace(workspace = {}){
   const fields = workspace.packetFields || {};
   const source = workspace.sourceItem || {};
+  const metadata = itemMetadata(source);
   const packet = workspace.preparedWorkPacket || workspace.prepared_work_packet || source.preparedWorkPacket || source.prepared_work_packet || workspace.payload?.preparedWorkPacket || workspace.payload?.prepared_work_packet || source.payload?.preparedWorkPacket || source.payload?.prepared_work_packet || {};
-  const artifact = workspace.preparedArtifact || workspace.prepared_artifact || source.preparedArtifact || source.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || source.payload?.preparedArtifact || source.payload?.prepared_artifact || {};
+  const artifact = workspace.preparedArtifact || workspace.prepared_artifact || source.preparedArtifact || source.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || workspace.payload?.preparedArtifact || workspace.payload?.prepared_artifact || source.payload?.preparedArtifact || source.payload?.prepared_artifact || {};
   const candidates = [
     workspace.draftBody,
     workspace.draft_body,
@@ -23771,6 +23923,8 @@ function alignmentDraftFromWorkspace(workspace = {}){
     source.prepared_draft,
     source.preparedArtifact?.body,
     source.prepared_artifact?.body,
+    metadata.preparedArtifact?.body,
+    metadata.prepared_artifact?.body,
     source.payload?.preparedArtifact?.body,
     source.payload?.prepared_artifact?.body
   ].map((value) => String(value || '').trim()).filter(Boolean);
@@ -23804,6 +23958,44 @@ function alignmentDraftFromWorkspace(workspace = {}){
   };
 }
 
+function leverageDraftActionLabel(workspace = {}){
+  const item = workspace.sourceItem || {};
+  const verb = preparedApprovalVerb(item);
+  if(verb === 'sent') return 'Approve and send';
+  if(verb === 'scheduled') return 'Approve and schedule';
+  if(verb === 'created') return 'Approve and create';
+  if(verb === 'updated') return 'Approve and update';
+  if(verb === 'attached') return 'Approve and attach';
+  return 'Approve';
+}
+
+function leverageExecutiveFacts(workspace = {}, draft = null){
+  const active = workspace || {};
+  const source = active.sourceItem || {};
+  const fields = active.packetFields || homePacketDisplayFields(source, 'leverage');
+  const metadata = itemMetadata(source);
+  const artifact = active.preparedArtifact || active.prepared_artifact || source.preparedArtifact || source.prepared_artifact || metadata.preparedArtifact || metadata.prepared_artifact || {};
+  const identity = sourceIdentityForItem(source);
+  const verb = preparedApprovalVerb(source);
+  const prepared = compactSentence(draft?.title || artifact.subject || artifact.title || fields.what_changed || active.title, 'Prepared work');
+  const decision = compactSentence(artifact.reviewBoundary || artifact.review_boundary || active.recommendation || fields.recommended_next_step, 'Review, edit, approve, or hold.');
+  const consequenceMap = {
+    sent:'The message leaves VAL.',
+    scheduled:'The calendar changes.',
+    created:'The item is created.',
+    updated:'The record is updated.',
+    attached:'The prepared packet is attached.',
+    approved:'The work is marked approved.'
+  };
+  const sourceLabel = compactSentence(fields.source_label || identity.label || source.title || active.title, 'Prepared source');
+  return [
+    {label:'Prepared',value:prepared},
+    {label:'Decision',value:decision},
+    {label:'If approved',value:consequenceMap[verb] || consequenceMap.approved},
+    {label:'Source',value:sourceLabel}
+  ];
+}
+
 function renderAlignmentFunctionWorkspace(workspace = {}){
   const active = workspace || {};
   const fields = active.packetFields || {};
@@ -23824,8 +24016,6 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   );
   const evidence = fields.evidence_summary || fields.source_type || active.coworkContext || 'No source evidence is exposed here until you choose to inspect it.';
   const known = fields.what_val_now_knows || 'VAL is keeping the relevant context private until it is useful to show.';
-  const draft = alignmentDraftFromWorkspace(active);
-  const canLoadDraft = true;
   activeCoworkHeldContext = [
     title,
     'Why it matters: ' + meaning,
@@ -23859,11 +24049,11 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
       '</header>',
       '<div class="alignment-room-board">',
         '<section class="alignment-room-primary">',
-          '<div class="alignment-room-meta"><span>Current Signal</span></div>',
+          '<div class="alignment-room-meta"><span>Next Action</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
-          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p>' + (canLoadDraft ? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button>' : '') + '</div>',
-          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+          '<div class="alignment-room-recommendation"><span>Why this is here</span><p>' + escapeHtml(visibleRecommendation) + '</p></div>',
+          '<div class="alignment-room-actions"><button type="button" data-home-action="alignment_done">Done</button><button type="button" data-home-action="cowork_card_context">Co-work with VAL</button></div>',
         '</section>',
       '</div>',
       '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
@@ -23873,7 +24063,7 @@ function renderAlignmentFunctionWorkspace(workspace = {}){
   workspaceInputPanel.innerHTML = [
     '<form class="home-cowork-chatbar alignment-room-chatbar" data-home-cowork-form>',
       '<span class="home-cowork-spark" aria-hidden="true"></span>',
-      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this alignment signal" placeholder="Frame the decision, draft the reply, create the task, or hold..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
+      '<textarea data-workspace-input="cowork" aria-label="Ask VAL about this alignment action" placeholder="Help me complete this action..." rows="1" autocomplete="on" autocorrect="on" spellcheck="true"></textarea>',
       '<button type="submit" data-home-cowork-submit aria-label="Send to VAL">Send</button>',
       '<button type="button" data-workspace-tool="voice" aria-label="Voice">Voice</button>',
       '<button type="button" data-workspace-tool="upload" aria-label="Upload">Upload</button>',
@@ -23894,7 +24084,7 @@ function renderLeverageFunctionWorkspace(workspace = {}){
     'Leverage review'
   );
   const meaning = fields.why_it_matters || active.meaning || (count ? 'Review prepared work before anything leaves VAL.' : 'Leverage opens only real prepared work, not loose possibilities.');
-  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Load the draft when it is ready for review.' : 'Nothing needs approval from Leverage.');
+  const recommendation = fields.recommended_next_step || active.recommendation || (count ? 'Review the prepared work, edit what needs editing, then approve or hold.' : 'Nothing needs approval from Leverage.');
   const visibleMeaning = compactSentence(
     meaning
       .replace(/^VAL has counted prepared work,\s*but\s*/i, '')
@@ -23908,6 +24098,8 @@ function renderLeverageFunctionWorkspace(workspace = {}){
     recommendation
   );
   const draft = alignmentDraftFromWorkspace(active);
+  const approvalLabel = leverageDraftActionLabel(active);
+  const executiveFacts = leverageExecutiveFacts(active, draft);
   activeCoworkHeldContext = [
     title,
     'Leverage context: ' + meaning,
@@ -23943,8 +24135,8 @@ function renderLeverageFunctionWorkspace(workspace = {}){
           '<div class="alignment-room-meta"><span>Prepared Work</span></div>',
           '<h3>' + escapeHtml(title) + '</h3>',
           '<p>' + escapeHtml(visibleMeaning) + '</p>',
-          '<div class="alignment-room-recommendation"><span>Recommended</span><p>' + escapeHtml(visibleRecommendation) + '</p><button type="button" class="alignment-room-draft-button" data-alignment-load-draft aria-expanded="false">Load Draft</button></div>',
-          draft ? '<section class="alignment-room-draft" data-alignment-draft-preview hidden tabindex="-1"><span>' + escapeHtml(draft.title) + '</span><pre>' + escapeHtml(draft.body) + '</pre></section>' : '',
+          '<div class="leverage-review-facts">' + executiveFacts.map((fact) => '<article><span>' + escapeHtml(fact.label) + '</span><p>' + escapeHtml(fact.value) + '</p></article>').join('') + '</div>',
+          draft ? '<section class="alignment-room-draft leverage-draft-review" data-alignment-draft-preview tabindex="-1"><label><span>' + escapeHtml(draft.title) + '</span><textarea data-leverage-draft-editor aria-label="Edit prepared work">' + escapeHtml(draft.body) + '</textarea></label><div class="leverage-draft-actions"><button type="button" data-home-action="approve_prepared">' + escapeHtml(approvalLabel) + '</button><button type="button" data-home-action="save_prepared_edits">Save edits</button><button type="button" data-home-action="hold_prepared">Hold</button></div></section>' : '',
         '</section>',
       '</div>',
       '<section class="alignment-room-thread home-cowork-thread" data-home-cowork-response aria-label="VAL response"></section>',
@@ -24007,6 +24199,31 @@ function openAlignmentExecutionWorkspace(){
   activeHomeWorkspace = {roomName:'alignment', workspace};
   activeClarityWorkspace = workspace;
   renderAlignmentFunctionWorkspace(workspace);
+}
+
+function currentAlignmentWorkspace(){
+  return activateHomeQueueItem('alignment', 0) || (() => {
+    const content = currentState.rooms?.alignment?.workspace || {};
+    const item = content.sourceItem || {};
+    const fields = homePacketDisplayFields(item, 'alignment');
+    return {
+      ...content,
+      title: fields.what_changed || content.title || 'Alignment action',
+      meaning: fields.why_it_matters || content.meaning || 'The Chief of Staff selected this as the next action.',
+      recommendation: fields.recommended_next_step || content.recommendation || 'Complete this action, or co-work with VAL if you need help.',
+      packetFields: fields,
+      coworkContext: fields.cowork_context,
+      sourceItem: item,
+      cardType: 'highest_leverage'
+    };
+  })();
+}
+
+function openAlignmentCoworkDirect(){
+  const workspace = currentAlignmentWorkspace();
+  activeHomeWorkspace = {roomName:'alignment', workspace};
+  activeClarityWorkspace = workspace;
+  openHomeCardCowork(workspace);
 }
 
 function openLeverageApprovalWorkspace(){
@@ -24284,6 +24501,10 @@ async function handleHomeRoomAction(action, node = null){
   if(node?.dataset?.homeRoomItemAction){
     activateHomeQueueItem(node.dataset.homeRoomItemAction, node.dataset.homeRoomIndex);
   }
+  if(action === 'alignment_done'){
+    markAlignmentCardDone();
+    return;
+  }
   if(action === 'cowork_card_context'){
     openHomeCardCowork(activeHomeWorkspace?.workspace || activeClarityWorkspace);
     return;
@@ -24294,6 +24515,24 @@ async function handleHomeRoomAction(action, node = null){
   }
   if(action === 'approve_prepared'){
     renderPreparedApprovalReceipt();
+    return;
+  }
+  if(action === 'save_prepared_edits'){
+    const editor = scraperPreviewList?.querySelector('[data-leverage-draft-editor]');
+    if(activeHomeWorkspace?.workspace){
+      activeHomeWorkspace.workspace.draftBody = editor?.value || activeHomeWorkspace.workspace.draftBody || '';
+    }
+    renderHomeActionResult(action, {
+      status: 'edits_saved',
+      message: 'VAL saved the edited prepared work locally for review.'
+    });
+    return;
+  }
+  if(action === 'hold_prepared'){
+    renderHomeActionResult(action, {
+      status: 'held',
+      message: 'VAL held this prepared work. Nothing was sent, scheduled, or changed.'
+    });
     return;
   }
   if(action === 'complete_project_pin'){
@@ -24600,7 +24839,7 @@ function taskWorkspaceTranscriptId(task = {}){
 }
 
 function taskWorkspaceIdentityValues(task = {}){
-  const values = new Set([task.id,task.sourceId,task.relatedTranscriptId,task.transcriptId,task.relatedEmailId,task.relatedContactId].filter(Boolean).map(String));
+  const values = new Set([task.id,task.sourceId,task.relatedTranscriptId,task.transcriptId,task.relatedEmailId,task.relatedContactId,task.contactId,task.personId].filter(Boolean).map(String));
   taskWorkspaceDetails(task).forEach((detail) => {
     if(!detail || typeof detail !== 'object') return;
     ['id','taskId','sourceId','transcriptId','transcriptTaskId','emailId','projectId','draftId'].forEach((key) => {
@@ -24618,7 +24857,7 @@ function taskWorkspaceAttachments(task = {}, drafts = [], readyItems = []){
     if(transcriptId && text.includes(transcriptId)) return true;
     return Array.from(identities).some((identity) => identity.length > 5 && text.includes(identity));
   };
-  const attachedDrafts = drafts.filter((draft) => matchesIdentity(draft.sourceContext || draft)).slice(0,4).map((draft) => ({
+  const attachedDrafts = drafts.filter((draft) => matchesIdentity(draft)).slice(0,4).map((draft) => ({
     kind:'draft',id:draft.id || '',title:draft.subject || draft.title || 'Prepared draft',status:draft.status || 'draft',body:draft.body || draft.bodyPreview || ''
   }));
   const attachedReady = readyItems.filter(matchesIdentity).slice(0,4).map((item) => ({
@@ -24645,40 +24884,58 @@ function taskWorkspaceSourceLabel(task = {}){
   return 'Manual';
 }
 
+function setTaskCompanionOpenCount(count = 0){
+  const safeCount = Math.max(0, Number(count) || 0);
+  if(taskCompanionCount) taskCompanionCount.textContent = String(safeCount);
+  if(taskCompanionButton){
+    taskCompanionButton.dataset.openCount = String(safeCount);
+    taskCompanionButton.setAttribute('aria-label', 'Open commitments: ' + safeCount + ' open');
+    taskCompanionButton.title = safeCount + ' open commitments';
+  }
+}
+
 function renderTaskWorkspace(tasks = [], drafts = [], readyItems = []){
+  currentTaskWorkspaceTasks = Array.isArray(tasks) ? tasks : [];
+  currentTaskWorkspaceDrafts = Array.isArray(drafts) ? drafts : [];
+  currentTaskWorkspaceReadyItems = Array.isArray(readyItems) ? readyItems : [];
+  currentTaskWorkspacePreparedByTask = {};
   const openTasks = tasks.filter((task) => !task.completed).sort((a,b) => {
     if(!a.dueDate && !b.dueDate) return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
     if(!a.dueDate) return 1;
     if(!b.dueDate) return -1;
     return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
   });
-  if(taskCompanionCount) taskCompanionCount.textContent = String(openTasks.length);
+  setTaskCompanionOpenCount(openTasks.length);
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
   scraperPreviewList.classList.remove('linkedin-preview-list','meeting-prep-brief');
   scraperPreviewList.innerHTML = [
-    '<section class="task-workspace" aria-label="Unresolved tasks">',
-      '<header class="task-workspace-header"><div><span>Tasks</span><strong>' + escapeHtml(openTasks.length) + ' unresolved</strong></div><p>Due soonest first. Prepared work stays attached to the task that needs it.</p></header>',
+    '<section class="task-workspace" aria-label="Open commitments">',
+      '<header class="task-workspace-header"><div><span>Commitments</span><strong>' + escapeHtml(openTasks.length) + ' open</strong></div><p>Check off what is done. Co-work only when you need help. Drafts appear only when VAL has actually prepared one.</p></header>',
       openTasks.length ? '<div class="task-workspace-list">' + openTasks.map((task) => {
         const transcriptId = taskWorkspaceTranscriptId(task);
         const attachments = taskWorkspaceAttachments(task,drafts,readyItems);
+        if(task.id) currentTaskWorkspacePreparedByTask[String(task.id)] = attachments;
         const owner = task.contactName || task.assignedToName || 'Unassigned';
         const status = task.schedulingStatus && task.schedulingStatus !== 'unscheduled' ? task.schedulingStatus : 'Open';
+        const hasPrepared = attachments.length > 0;
+        const state = hasPrepared ? 'VAL Ready' : 'Needs You';
         return [
-          '<article class="task-workspace-row">',
+          '<article class="task-workspace-row" data-task-workspace-row="' + escapeHtml(task.id || '') + '">',
             '<div class="task-workspace-row-main">',
-              '<div class="task-workspace-check" aria-hidden="true"></div>',
-              '<div><span>' + escapeHtml(taskWorkspaceSourceLabel(task)) + '</span><h3>' + escapeHtml(task.title || 'Untitled task') + '</h3><p>' + escapeHtml(task.notes || '') + '</p></div>',
+              '<button type="button" class="task-workspace-check" data-task-done="' + escapeHtml(task.id || '') + '" aria-label="Mark done: ' + escapeHtml(task.title || 'Untitled commitment') + '"></button>',
+              '<div><span>' + escapeHtml(state) + '</span><h3>' + escapeHtml(task.title || 'Untitled commitment') + '</h3><p>' + escapeHtml(task.notes || '') + '</p></div>',
             '</div>',
             '<dl class="task-workspace-meta"><div><dt>Due</dt><dd>' + escapeHtml(taskWorkspaceDueLabel(task.dueDate)) + '</dd></div><div><dt>Owner</dt><dd>' + escapeHtml(owner) + '</dd></div><div><dt>Status</dt><dd>' + escapeHtml(status) + '</dd></div></dl>',
-            attachments.length ? '<div class="task-workspace-prepared"><span>VAL has work ready here</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(compactSentence(item.body,'Prepared work is attached.')) + '</p><small>' + escapeHtml(item.status) + '</small></div>').join('') + '</div>' : '',
+            attachments.length ? '<div class="task-workspace-prepared"><span>Prepared by VAL</span>' + attachments.map((item) => '<div><strong>' + escapeHtml(item.title) + '</strong><p>' + escapeHtml(compactSentence(item.body,'Prepared work is attached.')) + '</p><small>' + escapeHtml(item.status) + '</small></div>').join('') + '</div>' : '',
             '<div class="task-workspace-actions">',
               transcriptId ? '<button type="button" data-task-open-transcript="' + escapeHtml(transcriptId) + '">Open source transcript</button>' : '',
-              attachments.length ? '<button type="button" class="primary" data-task-open-prepared="' + escapeHtml(task.id || '') + '">Continue prepared work</button>' : '',
+              '<button type="button" data-task-cowork="' + escapeHtml(task.id || '') + '">Co-work</button>',
+              attachments.length ? '<button type="button" class="primary" data-task-open-prepared="' + escapeHtml(task.id || '') + '">Review draft</button>' : '',
             '</div>',
           '</article>'
         ].join('');
-      }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>Nothing unresolved.</strong><p>VAL will place new commitments here with their source and any prepared work.</p></div>',
+      }).join('') + '</div>' : '<div class="task-workspace-empty"><strong>No open commitments.</strong><p>VAL will place promises, follow-through, and source-backed open loops here when they need attention.</p></div>',
     '</section>'
   ].join('');
 }
@@ -24687,27 +24944,27 @@ async function hydrateTaskCompanionCount(){
   if(!canUseApi || !taskCompanionCount) return;
   try{
     const tasks = await getJson('/api/val/tasks', {cache:'no-store'});
-    taskCompanionCount.textContent = String((Array.isArray(tasks)?tasks:[]).filter((task) => !task.completed).length);
+    setTaskCompanionOpenCount((Array.isArray(tasks)?tasks:[]).filter((task) => !task.completed).length);
   }catch(error){
-    taskCompanionCount.textContent = '0';
+    setTaskCompanionOpenCount(0);
   }
 }
 
 async function openTaskWorkspace(){
   closeCalendarPanel();
   setWorkspaceContent({
-    lens:'Tasks',title:'Tasks',meaning:'Every unresolved commitment, with its source and prepared work.',
+    lens:'Commitments',title:'Commitments',meaning:'Every open promise, follow-through item, and source-backed loop with its evidence and prepared work.',
     understanding:[],recommendation:'',actions:[{label:'Close and return to desk',workflow:'cancel:meeting'}],
-    label:'Task workspace',suppressClarityStandard:true
+    label:'Commitment workspace',suppressClarityStandard:true
   });
   deskWorkspace.classList.add('task-workspace-mode');
   if(workspaceGrid) workspaceGrid.hidden = true;
   scraperPreviewList.hidden = false;
-  scraperPreviewList.innerHTML = '<section class="task-workspace-loading" aria-live="polite"><span></span><strong>Opening tasks</strong><p>VAL is connecting each task to its source and prepared work.</p></section>';
+  scraperPreviewList.innerHTML = '<section class="task-workspace-loading" aria-live="polite"><span></span><strong>Opening commitments</strong><p>VAL is connecting each promise to its source and prepared work.</p></section>';
   workspaceInputPanel.hidden = true;
   hearth.dataset.distance='judgment';
   deskWorkspace.setAttribute('aria-hidden','false');
-  openWorkspaceShell('Tasks',{returnTarget:'home'});
+  openWorkspaceShell('Commitments',{returnTarget:'home'});
   try{
     const [tasksResult,draftsResult,readyResult] = await Promise.all([
       getJson('/api/val/tasks',{cache:'no-store'}),
@@ -24722,7 +24979,7 @@ async function openTaskWorkspace(){
       });
     }
   }catch(error){
-    scraperPreviewList.innerHTML = '<section class="task-workspace-empty"><strong>Tasks could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
+    scraperPreviewList.innerHTML = '<section class="task-workspace-empty"><strong>Commitments could not load.</strong><p>' + escapeHtml(error.message || 'Try again in a moment.') + '</p></section>';
   }
 }
 
@@ -24733,9 +24990,97 @@ async function openTaskSourceTranscript(transcriptId = ''){
   await openTimelineTranscript(transcriptId);
 }
 
-async function openTaskPreparedWork(){
-  await hydratePreparedWorkQueue();
-  openLeverageApprovalWorkspace();
+function taskById(taskId = ''){
+  return (currentTaskWorkspaceTasks || []).find((task) => String(task.id || '') === String(taskId || '')) || null;
+}
+
+function cssEscape(value = ''){
+  if(window.CSS?.escape) return window.CSS.escape(String(value || ''));
+  return String(value || '').replace(/["\\]/g, '\\$&');
+}
+
+async function completeTaskFromWorkspace(taskId = ''){
+  const task = taskById(taskId);
+  const row = scraperPreviewList?.querySelector('[data-task-workspace-row="' + cssEscape(taskId) + '"]');
+  if(row) row.classList.add('is-completing');
+  try{
+    if(canUseApi && taskId){
+      await postJson('/api/val/tasks/' + encodeURIComponent(taskId) + '/complete', {completedBy:'you'});
+    }
+    currentTaskWorkspaceTasks = currentTaskWorkspaceTasks.map((item) => String(item.id || '') === String(taskId || '') ? {...item, completed:true, completedAt:new Date().toISOString(), completedBy:'you'} : item);
+    if(row){
+      row.classList.remove('is-completing');
+      row.classList.add('is-complete');
+      row.querySelector('.task-workspace-actions')?.remove();
+      window.setTimeout(() => {
+        renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
+      }, 520);
+    }else{
+      renderTaskWorkspace(currentTaskWorkspaceTasks, currentTaskWorkspaceDrafts, currentTaskWorkspaceReadyItems);
+    }
+  }catch(error){
+    if(row) row.classList.remove('is-completing');
+    appendHomeCoworkMessage('val', 'I could not mark that commitment done yet. Nothing else changed. ' + (error.message || ''));
+  }
+}
+
+function openTaskCowork(taskId = ''){
+  const task = taskById(taskId) || {};
+  activeCoworkHeldContext = [
+    'Commitment: ' + (task.title || 'Untitled commitment'),
+    task.notes ? 'Why it matters: ' + task.notes : '',
+    task.contactName ? 'Owner/contact: ' + task.contactName : '',
+    task.dueDate ? 'Due: ' + taskWorkspaceDueLabel(task.dueDate) : '',
+    task.details ? 'Evidence: ' + taskWorkspaceDetails(task).map((detail) => typeof detail === 'string' ? detail : detail.text || JSON.stringify(detail)).filter(Boolean).join(' | ') : ''
+  ].filter(Boolean).join('\n');
+  activeCoworkContextLocked = true;
+  openContextualCoworkSession({
+    returnTarget:'home',
+    title:'Co-work with VAL: ' + compactSentence(task.title || 'Commitment', 'Commitment'),
+    meaning:'Work through this commitment without leaving the context behind.',
+    context:activeCoworkHeldContext.split('\n'),
+    recommendation:'Clarify the next move, draft only if needed, or mark it done when it is complete.',
+    placeholder:'Help me finish this commitment...',
+    helper:'VAL has this commitment, due date, owner, and source details loaded.',
+    initialValue:'',
+    backWorkflow:'cancel:meeting'
+  });
+}
+
+async function openTaskPreparedWork(taskId = ''){
+  const task = taskById(taskId) || {};
+  const attachments = currentTaskWorkspacePreparedByTask[String(taskId || '')] || [];
+  const prepared = attachments[0];
+  if(!prepared){
+    openTaskCowork(taskId);
+    return;
+  }
+  const workspace = {
+    lens:'Leverage',
+    title:prepared.title || task.title || 'Prepared work',
+    meaning:task.notes || 'VAL prepared work for this commitment.',
+    recommendation:'Review the prepared work, edit it if needed, then approve or hold.',
+    draftTitle:prepared.title || 'Prepared draft',
+    draftBody:prepared.body || '',
+    sourceItem:{
+      id:prepared.id || task.id || '',
+      title:prepared.title || task.title || 'Prepared work',
+      summary:task.notes || prepared.body || '',
+      target:{type:prepared.kind || 'draft', id:prepared.id || task.id || '', name:prepared.title || task.title || 'Prepared work'},
+      preparedArtifactKind:prepared.kind === 'draft' ? 'email_draft' : 'prepared_work',
+      preparedArtifact:{kind:prepared.kind === 'draft' ? 'email_draft' : 'prepared_work', id:prepared.id || task.id || '', title:prepared.title || 'Prepared draft', body:prepared.body || ''}
+    },
+    packetFields:{
+      what_changed:prepared.title || task.title || 'Prepared work',
+      why_it_matters:task.notes || 'This prepared work is attached to a commitment.',
+      recommended_next_step:'Review, edit, approve, or hold.',
+      evidence_summary:'Commitment: ' + (task.title || 'Untitled commitment')
+    },
+    cardType:'prepared_work'
+  };
+  activeHomeWorkspace = {roomName:'leverage', workspace};
+  activeClarityWorkspace = workspace;
+  renderLeverageFunctionWorkspace(workspace);
 }
 
 function observerConversationId(value = ''){
@@ -25293,7 +25638,7 @@ async function handlePrimaryAction(button){
     return;
   }
   if(roomName === 'alignment'){
-    openAlignmentExecutionWorkspace();
+    openAlignmentCoworkDirect();
     return;
   }
   if(roomName === 'leverage'){
@@ -25328,6 +25673,54 @@ async function handlePrimaryAction(button){
     return;
   }
   openWorkspace(button.dataset.openRoom);
+}
+
+function markAlignmentCardDone(){
+  const queue = homeRoomQueues.alignment || [];
+  const handledTitle = itemTitle(queue[0]?.sourceItem || queue[0] || {}, 'Alignment action');
+  if(queue.length) queue.shift();
+  homeRoomQueues.alignment = queue.map((item, index) => ({...item, priority:index + 1}));
+  if(homeRoomQueues.alignment.length){
+    updateAlignmentRoomFromQueue();
+  }else{
+    updateRoomFromBriefing('alignment', {
+      card: {
+        observation: 'Alignment handled.',
+        implication: 'No other action is asking for the room right now.',
+        invitation: 'The Chief of Staff will surface the next move only when it earns Home.',
+        title: 'Alignment handled.',
+        summary: 'No other action is asking for the room right now.',
+        action: 'Co-work'
+      },
+      workspace: {
+        lens: 'Alignment',
+        title: 'Alignment handled.',
+        meaning: 'The current human action has been marked done in this Home session.',
+        understanding: [
+          'No email, task, CRM update, calendar change, or external action was taken from this click.',
+          'The Chief of Staff will select the next source-backed move when one earns Home.'
+        ],
+        recommendation: 'Return to the desk. If this should become durable system memory, teach VAL the completed outcome.',
+        actions: [{label:'Close and return to desk', workflow:'cancel:meeting'}],
+        suppressClarityStandard: true
+      }
+    });
+    setRoomCopy(currentState);
+  }
+  const alignmentRoom = document.querySelector('.living-room.alignment');
+  if(alignmentRoom){
+    alignmentRoom.querySelector('[data-alignment-done-confirmation]')?.remove();
+    const confirmation = document.createElement('p');
+    confirmation.className = 'alignment-done-confirmation';
+    confirmation.dataset.alignmentDoneConfirmation = 'true';
+    confirmation.textContent = compactSentence(handledTitle, 'Alignment action') + ' marked done.';
+    const actionButton = alignmentRoom.querySelector('.room-action');
+    alignmentRoom.insertBefore(confirmation, actionButton || null);
+    window.setTimeout(() => confirmation.remove(), 2600);
+  }
+  markRoomAttended('alignment', 'done');
+  hearth.classList.add('desk-settling');
+  window.setTimeout(() => hearth.classList.remove('desk-settling'), 620);
 }
 
 function closeWorkspace(){
@@ -25458,7 +25851,7 @@ document.addEventListener('click', (event) => {
 function openCompassAxisWorkspace(roomName){
   closeDrawer();
   if(roomName === 'alignment'){
-    openAlignmentExecutionWorkspace();
+    openAlignmentCoworkDirect();
     return;
   }
   if(roomName === 'leverage'){
@@ -26497,8 +26890,16 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('click', (event) => {
+  const homeCardCommand = event.target.closest('[data-home-card-command]');
+  if(homeCardCommand){
+    event.preventDefault();
+    event.stopPropagation();
+    if(homeCardCommand.dataset.homeCardCommand === 'alignment_done') markAlignmentCardDone();
+    return;
+  }
   const launchTarget = event.target.closest([
     '[data-open-room]',
+    '[data-home-card-command]',
     '.cowork-notebook',
     '.task-companion-button',
     '.next-meeting-card',
@@ -26612,6 +27013,20 @@ scraperPreviewList?.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await openTaskSourceTranscript(taskTranscript.dataset.taskOpenTranscript || '');
+    return;
+  }
+  const taskDone = event.target.closest('[data-task-done]');
+  if(taskDone){
+    event.preventDefault();
+    event.stopPropagation();
+    await completeTaskFromWorkspace(taskDone.dataset.taskDone || '');
+    return;
+  }
+  const taskCowork = event.target.closest('[data-task-cowork]');
+  if(taskCowork){
+    event.preventDefault();
+    event.stopPropagation();
+    openTaskCowork(taskCowork.dataset.taskCowork || '');
     return;
   }
   const taskPrepared = event.target.closest('[data-task-open-prepared]');
