@@ -23119,7 +23119,11 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
-  return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest}};
+  const riskSignals=dashboardDedupeCardItems(dashboardNormalizeCardCollection('highest_leverage',conclusions
+    .filter(m=>!['ignored','quiet'].includes(m.priorityBand))
+    .filter(m=>m.moveType==='review_risk'||Number(m.riskScore)>=20)
+    .slice(0,100)));
+  return {people:normalizedPeople,projects:normalizedProjects,whatChanged,highestLeverageMove:highest,momentum,readyForYou:ready,riskSignals,alsoImportant:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='also_important').slice(0,8)),watching:dashboardNormalizeCardCollection('highest_leverage',conclusions.filter(m=>m.priorityBand==='watching').slice(0,8)),ignored:conclusions.filter(m=>m.priorityBand==='ignored').slice(0,8),dashboardEntities:{people:normalizedPeople,projects:normalizedProjects,momentum,readyForYou:ready,whatChanged,highestLeverageMove:highest,riskSignals}};
 }
 function teachValOnboardingReflection(items=[]){
   const memories=Array.isArray(items)?items:[];
@@ -23227,7 +23231,7 @@ async function buildExecutiveBriefing(){
   const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
   const dailyWitness=buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
     || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
-  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
+  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
@@ -34110,6 +34114,11 @@ function collectSelectedSourceIds(value,result={transcriptIds:new Set(),evidence
     const transcriptId=String(value.transcriptId||value.transcript_id||id||'').trim();
     if(transcriptId)result.transcriptIds.add(transcriptId);
   }
+  for(const key of ['source_ids','sourceIds']){
+    if(Array.isArray(value[key])&&/transcript/.test(sourceType)){
+      value[key].forEach(item=>item&&result.transcriptIds.add(String(item)));
+    }
+  }
   for(const key of ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids']){
     safeArray(value[key]).forEach(item=>item&&result.evidenceIds.add(String(item)));
   }
@@ -34117,7 +34126,7 @@ function collectSelectedSourceIds(value,result={transcriptIds:new Set(),evidence
     safeArray(value[key]).forEach(item=>item&&result.observationIds.add(String(item)));
   }
   for(const key of Object.keys(value)){
-    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|target|sourceItem|payload)$/i.test(key)){
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|evidence_refs|whyNowPacket|why_now_packet|target|sourceItem|payload|preparedPayloadJson|prepared_payload_json)$/i.test(key)){
       collectSelectedSourceIds(value[key],result,depth+1);
     }
   }
