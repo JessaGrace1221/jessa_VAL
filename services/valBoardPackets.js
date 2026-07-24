@@ -41,6 +41,133 @@ const PRIMARY_ROUTES = Object.freeze({
   project_packet:['Project','Momentum','Capacity','Commitment']
 });
 
+const BOARD_SOURCE_REGISTRY = Object.freeze([
+  {
+    sourceType:'email',
+    label:'Email sync',
+    status:'live',
+    hook:'valConversationIdentity.syncEmail.afterEmailSync',
+    packetTypes:['email_attention_packet','reply_pressure_packet','draft_review_packet'],
+    claim:'Synced Gmail/Outlook messages become Board packets.'
+  },
+  {
+    sourceType:'transcript',
+    label:'Transcripts',
+    status:'live',
+    hook:'processTranscriptPayload.recordTranscriptProcessed',
+    packetTypes:['meeting_evidence_packet','decision_trace_packet','task_extraction_packet'],
+    claim:'Processed transcripts become evidence, decision, and task packets.'
+  },
+  {
+    sourceType:'calendar_event',
+    label:'Calendar events',
+    status:'live',
+    hook:'saveValCalendarEvent.recordCalendarEvent',
+    packetTypes:['meeting_context_packet','capacity_window_packet'],
+    claim:'Saved VAL calendar events become meeting and capacity packets.'
+  },
+  {
+    sourceType:'witnessing',
+    label:'Witnessing Session',
+    status:'live',
+    hook:'teach-val/onboarding witnessing save/confirm/commit',
+    packetTypes:['identity_context_packet','relational_context_packet','operating_context_packet'],
+    claim:'Witnessing answers and committed onboarding memory become foundational Board packets.'
+  },
+  {
+    sourceType:'cowork',
+    label:'Co-Work conversations',
+    status:'live',
+    hook:'valCoworkRoutes.afterCoworkEvent',
+    packetTypes:['cowork_packet'],
+    claim:'Co-Work open, response, and apply events become Board packets.'
+  },
+  {
+    sourceType:'external_action',
+    label:'External action packets',
+    status:'live',
+    hook:'valExternalActionsRoutes.afterExternalActionPacket',
+    packetTypes:['approval_packet','task_packet','sent_action_packet'],
+    claim:'Prepared, approved, and executed external action packets become Board packets.'
+  },
+  {
+    sourceType:'home_email_action',
+    label:'Home VAL email preparation',
+    status:'live',
+    hook:'hearthActionPrepContent.recordExternalActionPacket',
+    packetTypes:['sent_action_packet','approval_packet'],
+    claim:'Home VAL email preparation becomes an approval/action packet before anything is sent.'
+  },
+  {
+    sourceType:'sms',
+    label:'SMS',
+    status:'pending',
+    hook:'',
+    packetTypes:['sent_action_packet','relationship_packet'],
+    claim:'SMS should become Board packets when the GHL/VAL SMS bridge is attached to this registry.'
+  },
+  {
+    sourceType:'linkedin_visibility',
+    label:'LinkedIn Visibility',
+    status:'pending',
+    hook:'',
+    packetTypes:['relationship_packet','learning_packet'],
+    claim:'LinkedIn drafts and support-circle activity should become Board packets once the LinkedIn function writes source records.'
+  },
+  {
+    sourceType:'document',
+    label:'Documents and uploads',
+    status:'pending',
+    hook:'',
+    packetTypes:['document_packet','learning_packet'],
+    claim:'Uploaded, linked, or generated documents should become Board packets when document save/update hooks are attached.'
+  },
+  {
+    sourceType:'task',
+    label:'Tasks and commitments',
+    status:'pending',
+    hook:'',
+    packetTypes:['task_packet'],
+    claim:'Created or completed tasks should become Board packets when task mutation hooks are attached.'
+  },
+  {
+    sourceType:'relationship_profile',
+    label:'Stewardship profiles',
+    status:'pending',
+    hook:'',
+    packetTypes:['relationship_packet'],
+    claim:'Relationship profile changes should become Board packets when Stewardship save hooks are attached.'
+  },
+  {
+    sourceType:'project_profile',
+    label:'Project profiles',
+    status:'pending',
+    hook:'',
+    packetTypes:['project_packet'],
+    claim:'Project profile changes should become Board packets when Project Managers save hooks are attached.'
+  },
+  {
+    sourceType:'public_research',
+    label:'Public research',
+    status:'pending',
+    hook:'',
+    packetTypes:['document_packet','relationship_packet','project_packet'],
+    claim:'Apollo, Outscraper, public web, and LinkedIn research should become Board packets after source receipts are persisted through this registry.'
+  },
+  {
+    sourceType:'ghl_voice',
+    label:'GHL Voice',
+    status:'pending',
+    hook:'',
+    packetTypes:['cowork_packet','relationship_packet','sent_action_packet'],
+    claim:'GHL voice turns should become Board packets after the voice webhook sends completed turn receipts back into VAL.'
+  }
+]);
+
+function boardSourceByType(sourceType=''){
+  return BOARD_SOURCE_REGISTRY.find(source=>source.sourceType===sourceType)||null;
+}
+
 function safeArray(value){return Array.isArray(value)?value:[];}
 function compactText(value,limit=900){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
 function jsonValue(value,fallback){
@@ -104,6 +231,24 @@ function observerRoutes(packetType='',sourceType=''){
 }
 function packetId(uuid,scope,sourceType,sourceId,packetType,title){
   return stableKey(`board_${scope.tenantId}_${scope.userId}_${sourceType}_${sourceId}_${packetType}_${title}`)||uuid('boardpacket');
+}
+function registrySourceKey(packetSourceType=''){
+  const source=String(packetSourceType||'').toLowerCase();
+  if(source==='email'||source==='email_sync'||source==='gmail'||source==='outlook'||source==='unified_conversation')return 'email';
+  if(source==='transcript'||source==='krisp'||source==='uploaded_transcript')return 'transcript';
+  if(source==='calendar_event'||source==='calendar'||source==='google_calendar'||source==='outlook_calendar')return 'calendar_event';
+  if(source==='witnessing'||source==='teach_val_onboarding')return 'witnessing';
+  if(source==='cowork'||source==='co_work'||source==='observer_chat')return 'cowork';
+  if(source==='external_action'||source==='home_email_action')return 'external_action';
+  if(source==='sms'||source==='ghl_sms')return 'sms';
+  if(source==='linkedin'||source==='linkedin_visibility')return 'linkedin_visibility';
+  if(source==='document'||source==='upload'||source==='google_doc'||source==='attachment')return 'document';
+  if(source==='task'||source==='commitment')return 'task';
+  if(source==='relationship'||source==='relationship_profile'||source==='contact')return 'relationship_profile';
+  if(source==='project'||source==='project_profile')return 'project_profile';
+  if(source==='public_research'||source==='apollo'||source==='outscraper'||source==='web_research')return 'public_research';
+  if(source==='ghl_voice'||source==='voice')return 'ghl_voice';
+  return source;
 }
 function createValBoardPacketsService({
   dbQuery,
@@ -296,8 +441,11 @@ function createValBoardPacketsService({
   }
   async function boardContext({limit=80,observerName=''}={}){
     const packets=await listPackets({limit,observerName});
+    const sourceReadiness=sourceReadinessFromPackets(packets);
     return {
       observers:BOARD_OBSERVERS,
+      sources:sourceReadiness.sources,
+      sourceSummary:sourceReadiness.summary,
       livePacketCount:packets.length,
       packets,
       byObserver:Object.fromEntries(BOARD_OBSERVERS.map(observer=>[
@@ -306,9 +454,46 @@ function createValBoardPacketsService({
       ]))
     };
   }
+  function sourceReadinessFromPackets(packets=[]){
+    const bySource=new Map();
+    for(const packet of safeArray(packets)){
+      const key=registrySourceKey(packet.sourceType||packet.source_type);
+      const current=bySource.get(key)||{packetCount:0,lastPacketAt:'',packetTypes:new Set()};
+      current.packetCount+=1;
+      current.packetTypes.add(packet.packetType||packet.packet_type);
+      const created=packet.createdAt||packet.created_at||'';
+      if(created && String(created)>String(current.lastPacketAt||''))current.lastPacketAt=created;
+      bySource.set(key,current);
+    }
+    const sources=BOARD_SOURCE_REGISTRY.map(source=>{
+      const activity=bySource.get(source.sourceType)||{packetCount:0,lastPacketAt:'',packetTypes:new Set()};
+      const packetCount=activity.packetCount||0;
+      return {
+        ...source,
+        live:source.status==='live',
+        claimSafe:source.status==='live',
+        packetCount,
+        lastPacketAt:activity.lastPacketAt||'',
+        observedPacketTypes:[...activity.packetTypes].filter(Boolean).sort()
+      };
+    });
+    return {
+      sources,
+      summary:{
+        total:sources.length,
+        live:sources.filter(source=>source.status==='live').length,
+        pending:sources.filter(source=>source.status==='pending').length,
+        activeLive:sources.filter(source=>source.status==='live'&&source.packetCount>0).length,
+        claimAllSourcesSafe:sources.every(source=>source.status==='live')
+      }
+    };
+  }
   return {
     BOARD_OBSERVERS,
+    BOARD_SOURCE_REGISTRY,
     PRIMARY_ROUTES,
+    boardSourceByType,
+    registrySourceKey,
     normalizeSourceRef,
     observerRoutes,
     createPacket,
@@ -320,8 +505,9 @@ function createValBoardPacketsService({
     recordCoworkEvent,
     recordWitnessingAnswer,
     listPackets,
-    boardContext
+    boardContext,
+    sourceReadiness:async({limit=300}={})=>sourceReadinessFromPackets(await listPackets({limit}))
   };
 }
 
-module.exports={createValBoardPacketsService,BOARD_OBSERVERS,PRIMARY_ROUTES};
+module.exports={createValBoardPacketsService,BOARD_OBSERVERS,PRIMARY_ROUTES,BOARD_SOURCE_REGISTRY,boardSourceByType};

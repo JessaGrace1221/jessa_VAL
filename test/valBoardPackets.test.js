@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {createValBoardPacketsService,BOARD_OBSERVERS}=require('../services/valBoardPackets');
+const {createValBoardPacketsService,BOARD_OBSERVERS,BOARD_SOURCE_REGISTRY}=require('../services/valBoardPackets');
 const {VAL_BOARD_PACKETS_SQL}=require('../services/valBoardPacketsSchema');
 
 const root=path.join(__dirname,'..');
@@ -18,6 +18,7 @@ test('Board packet schema and routes are mounted',()=>{
   assert.match(server,/registerValBoardPacketsRoutes/);
   assert.match(routes,/\/api\/val\/board\/packets/);
   assert.match(routes,/\/api\/val\/board\/context/);
+  assert.match(routes,/\/api\/val\/board\/sources/);
 });
 
 test('Board packet service routes each packet to every observer with primary lenses marked',async()=>{
@@ -47,6 +48,40 @@ test('Board packet service routes each packet to every observer with primary len
   assert.ok(packet.primaryObserversJson.includes('Relationship'));
   assert.ok(packet.primaryObserversJson.includes('Capacity'));
   assert.ok(packet.routeObserversJson.every(route=>route.reason));
+});
+
+test('Board source registry names live and pending sources so VAL cannot overclaim',()=>{
+  const byType=Object.fromEntries(BOARD_SOURCE_REGISTRY.map(source=>[source.sourceType,source]));
+  for(const sourceType of ['email','transcript','calendar_event','witnessing','cowork','external_action','home_email_action']){
+    assert.equal(byType[sourceType]?.status,'live',sourceType);
+    assert.ok(byType[sourceType]?.hook,sourceType);
+  }
+  for(const sourceType of ['sms','linkedin_visibility','document','task','relationship_profile','project_profile','public_research','ghl_voice']){
+    assert.equal(byType[sourceType]?.status,'pending',sourceType);
+    assert.ok(byType[sourceType]?.claim,sourceType);
+  }
+});
+
+test('Board source readiness calculates honest claim boundaries from packet records',async()=>{
+  let store={};
+  const service=createValBoardPacketsService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    uuid:prefix=>`${prefix}_test`,
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    logger:{log(){}}
+  });
+  await service.recordEmailSync({savedMessages:[{messageId:'e1',subject:'Intro',bodyPreview:'Please send the intro.',direction:'inbound'}]});
+  await service.recordWitnessingAnswer({id:'w1',category:'identity',rawResponse:'I need VAL to protect my judgment.'});
+  const readiness=await service.sourceReadiness();
+  assert.equal(readiness.summary.claimAllSourcesSafe,false);
+  assert.ok(readiness.summary.live>0);
+  assert.ok(readiness.summary.pending>0);
+  assert.ok(readiness.sources.find(source=>source.sourceType==='email').packetCount>0);
+  assert.ok(readiness.sources.find(source=>source.sourceType==='witnessing').packetCount>0);
+  assert.equal(readiness.sources.find(source=>source.sourceType==='sms').claimSafe,false);
 });
 
 test('email, transcript, calendar, Witnessing, and Co-Work sources create live non-prototype Board packets',async()=>{
@@ -91,6 +126,8 @@ test('email, transcript, calendar, Witnessing, and Co-Work sources create live n
 
   const context=await service.boardContext({limit:80,observerName:'Delight'});
   assert.equal(context.observers.length,BOARD_OBSERVERS.length);
+  assert.ok(context.sources.length>=BOARD_SOURCE_REGISTRY.length);
+  assert.equal(context.sourceSummary.claimAllSourcesSafe,false);
   assert.ok(context.livePacketCount>0);
   assert.ok(context.byObserver.Delight.length>0);
 });
@@ -99,5 +136,6 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/loadLiveObserverBoardContext/);
   assert.match(frontend,/observerBoardConnectionsFromPackets/);
   assert.match(frontend,/observerBoardState\.livePackets/);
+  assert.match(frontend,/observerBoardState\.sourceSummary/);
   assert.match(frontend,/Holding space for Analytical and Relational Context/);
 });
