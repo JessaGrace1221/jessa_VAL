@@ -18510,6 +18510,7 @@ function cleanVelocityPerspectiveLine(value = '', maxLength = 190){
   if(/^\d{1,2}:\d{2}\s*(AM|PM)\b/i.test(text)) return '';
   if(/\b(Messages meeting|meeting July|processed and changed|Home should update|Velocity, Alignment, and Leverage)\b/i.test(text)) return '';
   if(/\b(moved forward|review the meeting overview|transcript|meeting overview|prepared work packet|can val act|no prepared work)\b/i.test(text)) return '';
+  if(/\b\d+\s+risk signals?\b/i.test(text)) return '';
   if(/\b(Meet w\/|Meeting with|Discovery|Invitation:|Updated invitation:)\b/i.test(text)) return '';
   if(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return '';
   if(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b/i.test(text)) return '';
@@ -18525,6 +18526,19 @@ function homeBigPictureWitnessLine(briefing = {}){
   if(themeTitle && themeWhy) return themeTitle + ': ' + themeWhy;
   if(themeWhy) return themeWhy;
   return 'The Chief of Staff is watching the larger pattern, not just the next task.';
+}
+
+function homeObserverWatchingLine(observer = null, briefing = {}){
+  const name = observer?.name || 'Meaning';
+  const watching = cleanVelocityPerspectiveLine(
+    observer?.currentlySeeing ||
+    observer?.watching ||
+    observer?.truth ||
+    firstBriefingItem(briefing?.momentum)?.title ||
+    'the larger pattern',
+    120
+  ) || 'the larger pattern';
+  return name + ' is watching ' + watching.replace(/[.!?]+$/, '') + ' for you.';
 }
 
 function homeObserverSignalText(briefing = {}){
@@ -18606,9 +18620,10 @@ function chiefOfStaffPerspectiveFromBriefing(briefing = {}){
   const evidenceCount = Array.isArray(daily.evidence) ? daily.evidence.length : 0;
   const selectedName = observer?.name || 'Meaning';
   const observerLine = observer?.currentlySeeing || observer?.truth || 'One signal is asking for discernment.';
+  const witnessLine = lines.find((line) => !/\b\d+\s+risk signals?\b/i.test(line));
   return {
     headline: 'Good morning, ' + name + '.',
-    witness: lines[0] || homeBigPictureWitnessLine(briefing),
+    witness: witnessLine || homeObserverWatchingLine(observer, briefing) || homeBigPictureWitnessLine(briefing),
     orientation: selectedName + ' is the Observer I would listen to first: ' + observerLine,
     permission: lines.find((line) => /\bverified\b|\bsource\b/i.test(line)) || (evidenceCount
       ? 'I verified ' + evidenceCount + ' source' + (evidenceCount === 1 ? '' : 's') + ' before letting this enter Home.'
@@ -18676,56 +18691,6 @@ function executiveEvidenceLine(item = {}){
   return 'Source: ' + source + '.';
 }
 
-function homeExpectedRiskCount(briefing = {}){
-  const why = compactSentence(briefing?.todayTheme?.why || '', '');
-  const match = why.match(/\b(\d+)\s+risk signal/i);
-  return match ? Number(match[1]) : 0;
-}
-
-function homeRiskSignalLine(item = {}){
-  const title = compactSentence(item.title || item.name || 'Risk signal', 'Risk signal')
-    .replace(/^(Review|Protect|Prepare|Close loop|Draft reply)\s*:\s*/i, '');
-  const summary = compactSentence(item.reason_it_matters || item.why || item.summary || item.ifIgnored || '', '');
-  const source = sourceIdentityForItem(item);
-  return {
-    title,
-    summary,
-    source: compactSentence(source.label || source.type || '', '')
-  };
-}
-
-function homeRiskSignalsMarkup(briefing = {}){
-  const riskSignals = Array.isArray(briefing?.riskSignals) ? briefing.riskSignals : [];
-  const expectedCount = homeExpectedRiskCount(briefing);
-  const count = Math.max(expectedCount, riskSignals.length);
-  if(!count) return '';
-  if(!riskSignals.length){
-    return [
-      '<div class="home-risk-signals">',
-        '<p class="evidence-label">Risk Signals (' + count + ')</p>',
-        '<p class="home-risk-empty">This Home read names ' + count + ' risk signal' + (count === 1 ? '' : 's') + ', but the inspectable list did not arrive with the briefing. VAL should not ask you to solve a number without proof.</p>',
-      '</div>'
-    ].join('');
-  }
-  return [
-    '<div class="home-risk-signals">',
-      '<p class="evidence-label">Risk Signals (' + riskSignals.length + ')</p>',
-      '<ol>',
-        riskSignals.slice(0, 100).map((item) => {
-          const signal = homeRiskSignalLine(item);
-          return [
-            '<li>',
-              '<strong>' + escapeHtml(signal.title) + '</strong>',
-              signal.summary ? '<span>' + escapeHtml(signal.summary) + '</span>' : '',
-              signal.source ? '<small>' + escapeHtml(signal.source) + '</small>' : '',
-            '</li>'
-          ].join('');
-        }).join(''),
-      '</ol>',
-    '</div>'
-  ].join('');
-}
-
 function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   if(!evidence) return;
   const velocityCount = homeAdmittedCount('velocity');
@@ -18756,33 +18721,30 @@ function renderWhyTodayPanel(briefing = null, status = 'loaded'){
   const boardCount = Number(briefing?.quietlyHandled?.observations || 0) + Number(briefing?.quietlyHandled?.agencyMoves || 0);
   const activeCount = alignmentCount + leverageCount + velocityCount;
   const firstSourceLine = sourceEvidence.length ? executiveEvidenceLine(sourceEvidence[0]) : '';
-  const riskSignalsMarkup = homeRiskSignalsMarkup(briefing);
+  const observer = selectHomeObserverSignal(briefing || {});
+  const observerWatchingLine = homeObserverWatchingLine(observer, briefing || {});
   evidence.innerHTML = [
     '<div>',
-      '<p class="evidence-label">Why this earned Home</p>',
+      '<p class="evidence-label">What VAL is holding</p>',
       '<ul>',
         '<li>' + escapeHtml(generatedLine) + '</li>',
-        activeCount ? '<li>I found ' + activeCount + ' thing' + (activeCount === 1 ? '' : 's') + ' worth your attention now.</li>' : '<li>Nothing is asking for action right now.</li>',
-        boardCount ? '<li>The Board is holding the wider pattern so Home only shows what is useful today.</li>' : '',
-        firstSourceLine ? '<li>' + escapeHtml(firstSourceLine) + '</li>' : '',
-        '<li>If you want the proof, inspect the Board or open the exact action lane below.</li>',
+        '<li>' + escapeHtml(observerWatchingLine) + '</li>',
+        activeCount ? '<li>Home is only showing the action or prepared work that needs a clean decision.</li>' : '<li>Nothing is asking for action right now.</li>',
+        boardCount ? '<li>The rest stays with the Board until you want the full context.</li>' : '',
       '</ul>',
       '<div class="hearth-evidence-actions">',
-        '<button type="button" data-home-evidence-action="board">See Board Signals</button>',
+        '<button type="button" data-home-evidence-action="board">Full Context</button>',
         alignmentCount ? '<button type="button" data-home-evidence-action="alignment">Open Action</button>' : '',
         leverageCount ? '<button type="button" data-home-evidence-action="leverage">Open Prepared Work</button>' : '',
       '</div>',
     '</div>',
     '<div>',
-      '<p class="evidence-label">Evidence</p>',
+      '<p class="evidence-label">Source Trail</p>',
       '<ul>',
         sensitiveWithheld ? '<li>Sensitive details were intentionally withheld from Home.</li>' : '',
-        sourceEvidence.length
-          ? sourceEvidence.slice(0, 4).map((item) => '<li>' + escapeHtml(executiveEvidenceLine(item)) + '</li>').join('')
-          : '<li>No inspectable source has earned Home yet.</li>',
+        firstSourceLine ? '<li>' + escapeHtml(firstSourceLine) + '</li>' : '<li>The Board has the full context when you want to inspect it.</li>',
         '<li>Nothing sends, imports, or changes externally unless you approve it.</li>',
       '</ul>',
-      riskSignalsMarkup,
       '<button class="fresh-desk-button" type="button">Clear seen marks</button>',
     '</div>'
   ].join('');
