@@ -1,6 +1,7 @@
 function safeArray(value){return Array.isArray(value)?value:[];}
 function jsonValue(value,fallback){if(value==null)return fallback;if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return fallback;}}return value;}
 function compactText(value='',limit=400){return String(value||'').replace(/\s+/g,' ').trim().slice(0,limit);}
+function cleanCommitmentText(value='',limit=400){return compactText(value,limit).replace(/^\s*[-•]\s*/,'').trim();}
 function stableKey(value=''){return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,180)||'commitment';}
 function nowIso(){return new Date().toISOString();}
 
@@ -57,7 +58,7 @@ function looksLikeTranscriptNoise(text=''){
   if(!value)return true;
   if(value.length<12)return true;
   if(/^\s*(?:i'?m going to|i am going to|we'?re going to|we are going to)\s*(?:\.{0,3})?\s*$/i.test(value))return true;
-  return /\b(vulgar|coffee takes a deep breath|morning face|not legal advice|recommend against you doing|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
+  return /\b(vulgar|coffee takes a deep breath|morning face|will do the things|not legal advice|recommend against you doing|stop watching everything|that was my child|sorry,? that was|i don'?t like it|unintelligible audio|recording download link)\b/i.test(value);
 }
 
 function ownerNameHintFromText(text=''){
@@ -130,8 +131,8 @@ function normalizeCommitment(seed={},contacts=[],overrides={}){
   const id=seed.id||stableKey(['commitment',seed.source_type||seed.sourceType,seed.source_id||seed.sourceId,evidence].join(':'));
   const commitment={
     id,
-    title:compactText(seed.title||evidence||'Commitment',120),
-    description:compactText(seed.description||seed.summary||evidence,500),
+    title:cleanCommitmentText(seed.title||evidence||'Commitment',120),
+    description:cleanCommitmentText(seed.description||seed.summary||evidence,500),
     owner_type:ownerType,
     owner_contact_id:seed.owner_contact_id||seed.ownerContactId||ownerContact?.contactId||ownerContact?.id||'',
     owner_name:ownerName||ownerContact?.name||ownerContact?.email||'Unknown',
@@ -140,8 +141,8 @@ function normalizeCommitment(seed={},contacts=[],overrides={}){
     source_type:seed.source_type||seed.sourceType||'manual',
     source_id:seed.source_id||seed.sourceId||'',
     source_title:seed.source_title||seed.sourceTitle||'',
-    evidence_quote:evidence,
-    evidence_summary:compactText(seed.evidence_summary||seed.evidenceSummary||seed.description||evidence,500),
+    evidence_quote:cleanCommitmentText(evidence,900),
+    evidence_summary:cleanCommitmentText(seed.evidence_summary||seed.evidenceSummary||seed.description||evidence,500),
     status:seed.status||(!dueAt?'open':(new Date(dueAt)<new Date()?'overdue':'waiting')),
     priority:seed.priority||priorityFor(seed),
     risk_level:seed.risk_level||seed.riskLevel||riskFor(seed),
