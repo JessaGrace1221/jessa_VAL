@@ -279,6 +279,7 @@ let valWitnessingConnectionState = null;
 let activeWorkspacePromptCards = [];
 let activeCoworkHeldContext = '';
 let activeCoworkContextLocked = false;
+let activeCoworkSelectedSourceContext = null;
 let activeMeetingPrepAutoPrompt = false;
 let valCoworkVoiceState = {
   active:false,
@@ -11583,10 +11584,11 @@ function openProjectCoworkSession(node = null){
   return openProjectOverviewCowork(node);
 }
 
-function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = ''}){
+function openContextualCoworkSession({returnTarget = 'home', title, meaning, context = [], recommendation, placeholder, helper, backWorkflow, initialValue = '', heading, detail, publicDetail, lockContext = false, showGathering = true, initialMessage = '', selectedSourceContext = null}){
   const safeTitle = title || 'VAL workspace';
   activeCoworkHeldContext = [initialValue, safeTitle, meaning, recommendation, helper, ...context].filter(Boolean).join('\n');
   activeCoworkContextLocked = Boolean(lockContext);
+  activeCoworkSelectedSourceContext = selectedSourceContext || null;
   setWorkspaceContent({
     lens: 'Co-Work with VAL',
     title: safeTitle,
@@ -19854,6 +19856,7 @@ async function runCowork(mode, messageOverride = ''){
       ],
       heldContext,
       projectContext: workspaceReturnTarget === 'project' ? activeProjectChatContext() : null,
+      selectedSourceContext: activeCoworkSelectedSourceContext,
       dashboard: {
         hearth: title.textContent,
         witness: witness.textContent,
@@ -23886,6 +23889,51 @@ function openHomeSourceDrawerDestination(workspace = {}){
   restoreLeadIntelligenceWindow();
 }
 
+function collectHomeCoworkSourceIds(value, result = {transcriptIds:new Set(), evidenceIds:new Set(), observationIds:new Set()}, depth = 0){
+  if(!value || depth > 6) return result;
+  if(Array.isArray(value)){
+    value.forEach((item) => collectHomeCoworkSourceIds(item, result, depth + 1));
+    return result;
+  }
+  if(typeof value !== 'object') return result;
+  const sourceType = String(value.source_type || value.sourceType || value.type || value.kind || '').toLowerCase();
+  const sourceId = value.source_id || value.sourceId || value.id || value.transcriptId || value.transcript_id || '';
+  if(value.transcriptId || value.transcript_id || /transcript/.test(sourceType)){
+    const id = value.transcriptId || value.transcript_id || sourceId;
+    if(id) result.transcriptIds.add(String(id));
+  }
+  ['sourceEvidenceIds','sourceEvidenceIdsJson','evidenceIds','evidence_ids'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list)) list.forEach((id) => id && result.evidenceIds.add(String(id)));
+  });
+  ['sourceObservationIds','sourceObservationIdsJson','observationIds','observation_ids'].forEach((key) => {
+    const list = value[key];
+    if(Array.isArray(list)) list.forEach((id) => id && result.observationIds.add(String(id)));
+  });
+  Object.keys(value).forEach((key) => {
+    if(/^(metadata|metadataJson|sourceRefs|source_refs|sourceRefsJson|evidence|target|sourceItem|payload)$/i.test(key)){
+      collectHomeCoworkSourceIds(value[key], result, depth + 1);
+    }
+  });
+  return result;
+}
+
+function homeCoworkSelectedSourceContext(active = {}){
+  const sourceItem = active.sourceItem || active.packetFields?.sourceItem || {};
+  const sourceRefs = sourceItem.sourceRefsJson || sourceItem.source_refs || sourceItem.sourceRefs || sourceItem.metadata?.sourceRefs || sourceItem.metadataJson?.sourceRefs || sourceItem.evidence || [];
+  const ids = collectHomeCoworkSourceIds({active, sourceItem, sourceRefs});
+  return {
+    cardTitle: compactSentence(active.title || sourceItem.title || '', ''),
+    cardMeaning: compactSentence(active.meaning || active.summary || sourceItem.summary || sourceItem.reason_it_matters || '', ''),
+    sourceIdentity: sourceIdentityForItem(sourceItem),
+    sourceRefs,
+    transcriptIds: Array.from(ids.transcriptIds),
+    evidenceIds: Array.from(ids.evidenceIds),
+    observationIds: Array.from(ids.observationIds),
+    sourceItem
+  };
+}
+
 function openHomeCardCowork(workspace){
   const active = workspace || activeHomeWorkspace?.workspace || activeClarityWorkspace || {};
   const isAlignment = /alignment/i.test(String(active.lens || active.cardType || ''));
@@ -23912,6 +23960,7 @@ function openHomeCardCowork(workspace){
     detail: isAlignment ? cardTitle : '',
     publicDetail: isAlignment ? 'Work it through here, then mark it done when it is complete.' : '',
     initialMessage: isAlignment ? alignmentQuestion : '',
+    selectedSourceContext: homeCoworkSelectedSourceContext(active),
     backWorkflow: 'cancel:meeting',
     showGathering: !isAlignment
   });
@@ -24643,6 +24692,7 @@ function openCoworkSession(){
   closeCalendarPanel();
   activeCoworkHeldContext = '';
   activeCoworkContextLocked = false;
+  activeCoworkSelectedSourceContext = null;
   setWorkspaceContent({
     lens: coworkSession.lens,
     title: coworkSession.title,
@@ -24698,7 +24748,7 @@ function renderHomeCoworkPreview(options = {}){
           '</div>',
         '</div>',
         '<div class="home-cowork-thread" data-home-cowork-response>',
-          '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage) + '</p></article>',
+          renderHomeCoworkMessage('val', initialMessage),
         '</div>',
       '</section>',
       '<section class="home-cowork-context-gathering" data-cowork-context-gathering hidden aria-live="polite" aria-busy="true">',
@@ -24798,7 +24848,10 @@ function renderHomeCoworkMessage(role = 'val', text = '', options = {}){
   const body = options.meetingPrep && role === 'val'
     ? renderHomeCoworkMeetingPrepText(text)
     : '<p>' + escapeHtml(text || '') + '</p>';
-  return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + '</article>';
+  const copyButton = role === 'val'
+    ? '<button type="button" class="home-cowork-copy-output" data-cowork-copy-output="' + escapeHtml(text || '') + '" aria-label="Copy VAL response" title="Copy response"><span aria-hidden="true"></span></button>'
+    : '';
+  return '<article class="home-cowork-message ' + escapeHtml(role) + (options.meetingPrep ? ' meeting-prep-cowork-message' : '') + '"><span>' + escapeHtml(label) + '</span>' + body + copyButton + '</article>';
 }
 
 function appendHomeCoworkMessage(role = 'val', text = '', options = {}){
@@ -25305,7 +25358,7 @@ function renderObserverCoworkOverlay({title, detail, placeholder, initialMessage
             '</div>',
           '</div>',
           '<div class="home-cowork-thread" data-home-cowork-response>',
-            '<article class="home-cowork-message val"><span>VAL</span><p>' + escapeHtml(initialMessage || 'I am here with this Observer lens. What would you like to examine together?') + '</p></article>',
+            renderHomeCoworkMessage('val', initialMessage || 'I am here with this Observer lens. What would you like to examine together?'),
           '</div>',
           '<section class="observer-cowork-chatbar-shell" data-observer-cowork-chatbar>',
             '<form class="home-cowork-chatbar observer-cowork-chatbar" data-home-cowork-form>',
@@ -26992,6 +27045,32 @@ workspaceInputPanel.addEventListener('submit', async (event) => {
   handleHomeCoworkFormSubmit(event);
 });
 workspaceInputPanel.addEventListener('click', (event) => {
+  const copyOutputButton = event.target.closest('[data-cowork-copy-output]');
+  if(copyOutputButton){
+    event.preventDefault();
+    event.stopPropagation();
+    const value = copyOutputButton.dataset.coworkCopyOutput || '';
+    const done = () => {
+      copyOutputButton.classList.add('is-copied');
+      copyOutputButton.setAttribute('aria-label', 'Copied');
+      window.setTimeout(() => {
+        copyOutputButton.classList.remove('is-copied');
+        copyOutputButton.setAttribute('aria-label', 'Copy VAL response');
+      }, 1200);
+    };
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(value).then(done).catch(() => {
+        const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+        if(textarea) textarea.value = value;
+        done();
+      });
+    }else{
+      const textarea = workspaceInputPanel.querySelector('[data-workspace-input="cowork"]');
+      if(textarea) textarea.value = value;
+      done();
+    }
+    return;
+  }
   const observerDismissButton = event.target.closest('[data-observer-card-dismiss]');
   if(observerDismissButton){
     event.preventDefault();
