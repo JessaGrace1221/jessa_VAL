@@ -45,6 +45,14 @@ test('commitment admission rejects transcript noise and keeps accountable follow
     confidence: 0.72
   }), false);
   assert.equal(hasExecutiveCommitmentShape({
+    title: 'We will have a meeting of the minds, and if it is still a good fit, I will try again.',
+    confidence: 0.72
+  }), false);
+  assert.equal(hasExecutiveCommitmentShape({
+    title: 'Can you share screen for.',
+    confidence: 0.72
+  }), false);
+  assert.equal(hasExecutiveCommitmentShape({
     title: 'Jessa to finish the projections dashboard handoff with Mike before Monday.',
     source_quote: 'Jessa to finish the projections dashboard handoff with Mike before Monday.',
     confidence: 0.91
