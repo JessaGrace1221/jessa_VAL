@@ -18,6 +18,8 @@ const {registerValIntelligenceSpineRoutes} = require('./services/valIntelligence
 const {DEFAULT_OBSERVERS} = require('./services/valIntelligenceSpine');
 const {ensureValBoardPacketTables} = require('./services/valBoardPacketsSchema');
 const {registerValBoardPacketsRoutes} = require('./services/valBoardPacketsRoutes');
+const {ensureValEnvelopeTables} = require('./services/valEnvelopesSchema');
+const {registerValEnvelopesRoutes} = require('./services/valEnvelopesRoutes');
 const {ensureValConversationIdentityTables} = require('./services/valConversationIdentitySchema');
 const {registerValConversationIdentityRoutes} = require('./services/valConversationIdentityRoutes');
 const {registerValExecutiveInboxRoutes} = require('./services/valExecutiveInboxRoutes');
@@ -27,6 +29,7 @@ const {registerValMeetingPrepRoutes} = require('./services/valMeetingPrepRoutes'
 const {ensureValTranscriptIntelligenceTables} = require('./services/valTranscriptIntelligenceSchema');
 const {registerValTranscriptIntelligenceRoutes} = require('./services/valTranscriptIntelligenceRoutes');
 const {registerValCommitmentsRoutes} = require('./services/valCommitmentsRoutes');
+const {ensureValCommitmentTables} = require('./services/valCommitmentsSchema');
 const {registerValDocumentsRoutes} = require('./services/valDocumentsRoutes');
 const {ensureValReviewUpdatesTables} = require('./services/valReviewUpdatesSchema');
 const {registerValReviewUpdatesRoutes} = require('./services/valReviewUpdatesRoutes');
@@ -56,6 +59,7 @@ const app     = express();
 const execFileAsync = promisify(execFile);
 let valBoardPackets = null;
 let valIntelligenceSpine = null;
+let valEnvelopes = null;
 
 function safeArray(value){
   return Array.isArray(value) ? value : [];
@@ -4108,6 +4112,18 @@ const PARTNERSHIP_PROTOCOL_CARDS = [
     futureConsumers:['val_os','morning_briefing','review_queue']
   },
   {
+    id:'chief_priorities',
+    category:'witness_chief_priorities',
+    title:'Chief of Staff Priorities',
+    visibleQuestion:'When the Board sees everything, what should your Chief of Staff optimize for first?',
+    questionGoal:'Capture the three priority lenses the Chief of Staff should use when ordering Observer responses into Home, Alignment, and Leverage.',
+    whyThisCardExistsNow:'The Board can observe from every lens, but the Chief of Staff needs the user-specific ordering rule before deciding what deserves attention first.',
+    permanenceProfile:'constitution',
+    creates:['chief_of_staff.optimization_priorities','home_briefing_ordering_rules','alignment_priority_rules','decision_weighting'],
+    immediateConsumers:['witness_response','chief_of_staff_synthesis','morning_briefing'],
+    futureConsumers:['home_welcome','alignment_queue','leverage_queue','board_packet_ranking']
+  },
+  {
     id:'connect_sources',
     category:'witness_connect_sources',
     title:'Connect Your World',
@@ -7629,9 +7645,11 @@ async function initValDb(){
   `);
   await ensureValIntelligenceSpineTables({dbQuery,logger:console});
   await ensureValBoardPacketTables({dbQuery,logger:console});
+  await ensureValEnvelopeTables({dbQuery,logger:console});
   await ensureValConversationIdentityTables({dbQuery,logger:console});
   await ensureValMeetingPrepTables({dbQuery,logger:console});
   await ensureValTranscriptIntelligenceTables({dbQuery,logger:console});
+  await ensureValCommitmentTables({dbQuery,logger:console});
   await ensureValReviewUpdatesTables({dbQuery,logger:console});
   await ensureValSourceProcessingTables({dbQuery,logger:console});
   await ensureValProjectPinsTables({dbQuery,logger:console});
@@ -12568,10 +12586,12 @@ async function collectContextContactCandidates(input={}){
       const metadata=profile.metadata||{};
       const relationshipEnrichment=relationshipSavedPublicEnrichment(metadata);
       addCandidate({
-        id:`relationship-profile:${profile.id}`,
+        id:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||'')||`relationship-profile:${profile.id}`,
+        contactId:realRelationshipContactId(profile.personId||profile.person_id||metadata.contactId||metadata.crmContactId||''),
         relationshipProfileId:profile.id,
         name:profile.displayName||profile.name||'',
         email:relationshipProfilePrimaryEmail(profile),
+        phone:relationshipProfilePrimaryPhone(profile),
         company:metadata.company||metadata.organization||relationshipEnrichment?.organization||'',
         summary:profile.summary||'',
         relationshipProfile:profile,
@@ -12682,6 +12702,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
   if(!email||OWNER_EMAILS.has(email))return null;
   if(/^(no.?reply|notifications?|mailer-daemon)@/i.test(email))return null;
   const name=cleanPersonName(attendee.name||contact.name||contact.contactName||'',email);
+  const phone=normalizeContextPhone(contact.phone||contact.contactPhone||contact.phoneNumber||contact.raw?.phone||contact.raw?.contactPhone||'');
   const title=String(event.title||event.summary||'Calendar meeting').trim()||'Calendar meeting';
   const start=event.startTime||event.start||event.date||new Date().toISOString();
   const eventId=String(event.id||event.eventId||event.calendarEventId||stableKey([title,start].join(' ')));
@@ -12689,6 +12710,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
   const metadata={
     source:'calendar_attendee_auto_packet',
     email,
+    phone,
     networkAdmission:'calendar_attendee',
     calendarAttendeeAutoContact:true,
     calendarAttendeeLastSeenAt:start,
@@ -12753,6 +12775,7 @@ async function ensureRelationshipPacketFromCalendarAttendee({attendee={},event={
       source:'relationship_profile',
       name:name||email,
       email,
+      phone,
       company:contact.company||contact.companyName||contact.organization||'',
       relationshipEnrichment:contact.relationshipEnrichment||relationshipSavedPublicEnrichment(profile?.metadataJson||profile?.metadata||{})||null,
       raw:{...(contact.raw||{}),relationshipProfileId:profile?.id||'',metadata:profile?.metadataJson||profile?.metadata||{},calendarAttendeeAutoContact:true}
@@ -20502,6 +20525,19 @@ function relationshipObservationBucket(type){
   if(type==='relationship_signal')return 'relationshipSignals';
   return '';
 }
+async function recordRelationshipProfileBoardPacket(profile={},eventType='profile_updated'){
+  if(!profile||!valBoardPackets?.recordProfileEvent)return null;
+  const packet=await valBoardPackets.recordProfileEvent({eventType,profile}).catch(error=>{
+    console.warn('[val-board] relationship/profile packet failed:',error.message);
+    return null;
+  });
+  if(packet)void triggerBoardIntelligenceForPackets([packet],{
+    type:eventType,
+    sourceType:packet.sourceType,
+    sourceId:packet.sourceId
+  });
+  return packet;
+}
 async function saveRelationshipProfile(target={}){
   const now=new Date().toISOString();
   const row={id:target.id||uuid('relprof'),tenantId:target.tenantId||tenantId(),profileType:target.profileType,profileKey:target.profileKey||relationshipProfileKeyForTarget(target),personId:target.personId||'',organizationId:target.organizationId||'',projectId:target.projectId||'',displayName:String(target.displayName||target.name||'Unknown'),summary:String(target.summary||''),relationshipStatus:target.relationshipStatus||'observed',confidence:Math.max(0,Math.min(1,Number(target.confidence)||0)),lastObservedAt:target.lastObservedAt||null,metadataJson:target.metadataJson||target.metadata||{},createdAt:now,updatedAt:now};
@@ -20512,7 +20548,9 @@ async function saveRelationshipProfile(target={}){
     const i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
     if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
     else rows.push(row);
-    return i>=0?rows[i]:row;
+    const saved=i>=0?rows[i]:row;
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+    return saved;
   }
   await valDbReady;
   if(pgPool){
@@ -20520,13 +20558,17 @@ async function saveRelationshipProfile(target={}){
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
       on conflict (tenant_id,profile_type,profile_key) do update set person_id=coalesce(nullif(excluded.person_id,''),relationship_profiles.person_id), organization_id=coalesce(nullif(excluded.organization_id,''),relationship_profiles.organization_id), project_id=coalesce(nullif(excluded.project_id,''),relationship_profiles.project_id), display_name=coalesce(nullif(excluded.display_name,''),relationship_profiles.display_name), metadata_json=relationship_profiles.metadata_json||excluded.metadata_json, updated_at=now()
       returning *`,[row.id,row.tenantId,row.profileType,row.profileKey,row.personId,row.organizationId,row.projectId,row.displayName,row.summary,row.relationshipStatus,row.confidence,row.lastObservedAt,JSON.stringify(row.metadataJson)]);
-    return transcriptPgRow(r.rows[0]);
+    const saved=transcriptPgRow(r.rows[0]);
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+    return saved;
   }
   const store=valStore(),rows=transcriptFileArray(store,'relationshipProfiles'),i=rows.findIndex(x=>x.tenantId===row.tenantId&&x.profileType===row.profileType&&x.profileKey===row.profileKey);
   if(i>=0)rows[i]={...rows[i],...row,id:rows[i].id,createdAt:rows[i].createdAt||row.createdAt};
   else rows.push(row);
   saveValStore(store);
-  return i>=0?rows[i]:row;
+  const saved=i>=0?rows[i]:row;
+  void recordRelationshipProfileBoardPacket(saved,'relationship_profile_saved');
+  return saved;
 }
 async function relationshipTimelineRows(profileType,profileKey){
   if(DEMO_MODE)return (transcriptDemoArray('relationshipTimelineEvents')||[]).filter(row=>row.tenantId===tenantId()&&row.profileType===profileType&&row.profileKey===profileKey);
@@ -20566,10 +20608,14 @@ async function recalculateRelationshipProfile(profileType,profileKey){
   if(DEMO_MODE||!pgPool){
     if(profile)Object.assign(profile,payload,{metadataJson:packetMetadata,updatedAt:new Date().toISOString()});
     if(storeForProfile)saveValStore(storeForProfile);
-    return profile||payload;
+    const saved=profile||{...payload,profileType,profileKey,metadataJson:packetMetadata};
+    void recordRelationshipProfileBoardPacket(saved,'relationship_profile_recalculated');
+    return saved;
   }
   const r=await dbQuery(`update relationship_profiles set summary=$3,relationship_status=$4,confidence=$5,last_observed_at=$6,observation_count=$7,open_loop_count=$8,promise_count=$9,risk_count=$10,opportunity_count=$11,preference_count=$12,emotional_context_json=$13,relationship_signals_json=$14,risks_json=$15,opportunities_json=$16,preferences_json=$17,open_loops_json=$18,metadata_json=relationship_profiles.metadata_json||$20::jsonb,updated_at=now() where tenant_id=$1 and profile_type=$2 and profile_key=$19 returning *`,[tenantId(),profileType,payload.summary,payload.relationshipStatus,payload.confidence,payload.lastObservedAt,payload.observationCount,payload.openLoopCount,payload.promiseCount,payload.riskCount,payload.opportunityCount,payload.preferenceCount,JSON.stringify(payload.emotionalContextJson),JSON.stringify(payload.relationshipSignalsJson),JSON.stringify(payload.risksJson),JSON.stringify(payload.opportunitiesJson),JSON.stringify(payload.preferencesJson),JSON.stringify(payload.openLoopsJson),profileKey,JSON.stringify(packetMetadata)]);
-  return transcriptPgRow(r.rows[0]);
+  const saved=transcriptPgRow(r.rows[0]);
+  void recordRelationshipProfileBoardPacket(saved,'relationship_profile_recalculated');
+  return saved;
 }
 async function saveRelationshipTimelineEvent({target,evidenceItem,observation}={}){
   const profile=await saveRelationshipProfile({...target,confidence:observation.confidence||0,metadataJson:{source:'relationship_engine',targetMetadata:target.metadata||{}}});
@@ -22940,6 +22986,20 @@ function transcriptHomeNextMove(transcript={}){
   if(/Grace AI|calendar/i.test(summary+question))return 'Confirm the Grace AI calendar path before the follow-up goes out.';
   return dashboardShortText(question,'Review the meeting overview and confirm the next follow-up.',180);
 }
+function transcriptHomeProjectEnvelope(transcript={}){
+  const text=[transcript.title,transcript.summary?.executiveSummary,transcript.summary?.clientSummary,transcript.summaryPreview,transcript.preview].filter(Boolean).join(' ');
+  if(/\bGOALL\b|Goal Agency|agency work|projections\/?dashboard|projections dashboard|dashboard handoff|Mike/i.test(text)){
+    return {envelopeType:'project',displayName:'GOALL',projectName:'GOALL',managerColorName:'Taffy',managerColorHex:'#ee78bf',reason:'Project context wins before relationship context.'};
+  }
+  return null;
+}
+function transcriptHomeObserverName(transcript={},nextMove=''){
+  const text=[transcript.title,transcript.summary?.executiveSummary,transcript.summary?.clientSummary,transcript.summaryPreview,nextMove].filter(Boolean).join(' ');
+  if(/\bGOALL\b|project|dashboard|handoff|artifact|build|proposal|deliverable/i.test(text))return 'Project';
+  if(/\btrust|warmth|repair|relationship|tone|distance|presence/i.test(text))return 'Relationship';
+  if(/\bdeadline|calendar|appointment|meeting|Monday|Friday|timing/i.test(text))return 'Calendar';
+  return 'Meaning';
+}
 function transcriptMeetingOverviewFallbackDraft(transcript={},sourceRef={}){
   const summary=transcriptHomeSummary(transcript);
   if(!transcript?.id||!summary)return null;
@@ -22982,18 +23042,24 @@ function buildFreshTranscriptHomePacket(transcript={},drafts=[]){
   const summary=transcriptHomeSummary(transcript);
   if(!summary)return null;
   const createdAt=transcript.createdAt||transcript.receivedAt||new Date().toISOString();
-  const sourceRef={source_type:'transcript',source_id:transcript.id,quote_or_summary:summary,confidence:0.9,created_at:createdAt};
+  const envelope=transcriptHomeProjectEnvelope(transcript);
+  const sourceRef={source_type:'transcript',source_id:transcript.id,quote_or_summary:summary,confidence:0.9,created_at:createdAt,projectName:envelope?.projectName||'',managerColorName:envelope?.managerColorName||''};
   const recapDraft=drafts.find(d=>d.draftType==='meeting_recap'&&String(d.sourceContext?.transcriptId||'')===String(transcript.id));
   const nextMove=transcriptHomeNextMove(transcript);
+  const observerName=transcriptHomeObserverName(transcript,nextMove);
   const base={
     id:`home_transcript_${transcript.id}`,
     sourceType:'transcript',
     sourceId:transcript.id,
     sourceRefs:[sourceRef],
+    envelope,
+    projectName:envelope?.projectName||'',
+    managerColorName:envelope?.managerColorName||'',
     evidence:[{id:transcript.id,sourceType:'transcript',title:label,summary,occurredAt:createdAt}],
     createdAt,
     confidence:0.9,
     target:{type:'transcript',id:transcript.id,label},
+    observerName,
     homeAdmission:{velocityRoundTablePassed:true,whyNowPacketComplete:true},
     velocityRoundTablePassed:true
   };
@@ -23008,18 +23074,31 @@ function buildFreshTranscriptDailyWitness(transcript={},packet={}){
   const label=transcriptHomeLabel(transcript);
   const summary=transcriptHomeSummary(transcript);
   const nextMove=transcriptHomeNextMove(transcript);
+  const observerName=transcriptHomeObserverName(transcript,nextMove);
+  const envelope=transcriptHomeProjectEnvelope(transcript);
   const text=[summary,nextMove].join(' ');
-  let second='The Chief of Staff is watching the larger pattern, not just the next task.';
+  let first=`${label} changed what deserves attention today.`;
+  let second='The useful move is to decide the next clean step while the context is fresh.';
   if(/missed.?call|email aliases|Apollo|call center/i.test(text)){
+    first='The operating system is asking for a cleaner path.';
     second='The operating system wants cleaner pathways and fewer carried details.';
+  }else if(/\bGOALL\b|Goal Agency|dashboard|projections|Mike/i.test(text)){
+    first='GOALL is the thing to settle today.';
+    second='Mike needs the dashboard/projections handoff clarified before Monday turns it into another open loop.';
   }else if(/happy|good|resolved|ready|complete/i.test(text)){
+    first='One thread is no longer asking to be carried.';
     second='The room feels lighter because one thread is no longer asking to be carried.';
   }
-  const third='Alignment will hold the action. Home will hold the meaning.';
+  const sourceLabel=`Source: ${label}.`;
+  const third=`${observerName} has the proof; open Full Context if you want to inspect the source before acting.`;
   return {
-    display_greeting:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean).join('\n'),
-    greeting_lines:['The Chief of Staff is watching the live evidence.',second,third].filter(Boolean),
-    permission_line:packet.readyDraft?'I also found the meeting overview draft for review.':'Keep the flow going while the context is fresh.',
+    display_greeting:[first,second,third].filter(Boolean).join('\n'),
+    greeting_lines:[first,second,third].filter(Boolean),
+    perspective:first,
+    observerName,
+    permission_line:packet.readyDraft
+      ? `${sourceLabel} I also prepared the meeting overview for review in Leverage.`
+      : `${sourceLabel} Nothing external happens unless you approve it.`,
     moment_type:'fresh_transcript',
     what_was_witnessed:summary,
     what_it_cost_or_represented:nextMove,
@@ -23030,6 +23109,7 @@ function buildFreshTranscriptDailyWitness(transcript={},packet={}){
       greeting_context:'Fresh transcript processed and promoted to Home.',
       current_day_state:'fresh_transcript',
       observed_pattern:summary,
+      envelope,
       confidence:0.9,
       evidence:[packet.velocity],
       prepared_work:packet.readyDraft?[packet.readyDraft]:[],
@@ -23098,7 +23178,7 @@ function dashboardDedupeCardItems(items=[]){
   }
   return out;
 }
-function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],freshTranscriptPacket=null}={}){
+function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceItems=[],drafts=[],readyForYouItems=[],freshTranscriptPacket=null}={}){
   const profilesById=new Map();
   for(const p of profiles){profilesById.set(p.id,p);profilesById.set(p.personId,p);profilesById.set(p.projectId,p);}
   const evidenceById=dashboardEvidenceLookupMap(evidenceItems);
@@ -23122,7 +23202,8 @@ function buildDashboardIntelligence({moves=[],profiles=[],onboarding,evidenceIte
     return dashboardNormalizeCardItem('momentum',{id:e.id,title,summary:detail,detail,state,entity_type:e.target?.type||e.profileType||'entity',entity_id:e.id,momentum_direction:state,reason:detail,evidence:e.evidence||[],target:e.target||{type:'entity',id:e.id},createdAt:e.lastObservedAt});
   }).slice(0,4);
   const readyDrafts=drafts.map(dashboardReadyDraft).filter(Boolean).slice(0,5);
-  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...(onboarding?.ready||[]),...readyDrafts].filter(Boolean).slice(0,8))).slice(0,5);
+  const readyQueueItems=dashboardNormalizeCardCollection('ready_for_you',safeArray(readyForYouItems));
+  const ready=dashboardDedupeCardItems(dashboardNormalizeCardCollection('ready_for_you',[freshTranscriptPacket?.readyDraft,...(onboarding?.ready||[]),...readyQueueItems,...readyDrafts].filter(Boolean).slice(0,10))).slice(0,5);
   const normalizedPeople=dashboardNormalizeCardCollection('people',people.map(p=>({...p,relationshipDossier:canonicalRelationshipDossierForEntity(p),relationship_status:p.state||'Observed',momentum_direction:/down|risk|waiting/i.test(p.state||'')?'down':(/up|opportunity|front|observed/i.test(p.state||'')?'up':'stable'),reason_shown:p.summary||p.state||'',last_interaction:p.lastObservedAt||'',open_loops:p.openLoops||[],sourceType:'relationship_profile',sourceId:p.id||p.profileKey||p.email||p.name})));
   const normalizedProjects=dashboardNormalizeCardCollection('projects',projects.map(p=>({...p,project_id:p.id||p.profileKey||p.name,project_name:p.name,status:p.state||'Watched',reason_shown:p.summary||p.state||'',latest_evidence:(p.evidence||[])[0]||null,open_tasks_count:Number(p.openLoopCount||p.openLoops?.length||0),stalled_items:p.risks||[],next_suggested_action:(p.openLoops||p.opportunities||[])[0]||p.summary||'',sourceType:'project_profile',sourceId:p.id||p.profileKey||p.name})));
   const highest=top?dashboardNormalizeCardItem('highest_leverage',{...top,sourceType:top.moveType||'agency_move',sourceId:top.id,reason_it_matters:top.why||top.ifIgnored||top.summary,target:top.target||{type:'move',id:top.id}}):null;
@@ -23206,12 +23287,108 @@ function profileVelocity(profile={}){
   if(profile.openLoopCount>0)return 'Waiting on closure';
   return 'Observed';
 }
+function chiefRecommendationEnvelope(recommendation={}){
+  const text=[
+    recommendation.title,
+    recommendation.recommendation,
+    recommendation.why,
+    recommendation.opposingView,
+    JSON.stringify(recommendation.nextCandidatesJson||[]),
+    JSON.stringify(recommendation.sourceRefsJson||[])
+  ].filter(Boolean).join(' ');
+  if(/\bGOALL\b|Goal Agency|dashboard|projections|Mike|handoff/i.test(text)){
+    return {envelopeType:'project',displayName:'GOALL',projectName:'GOALL',managerColorName:'Taffy',managerColorHex:'#ee78bf',reason:'Project context wins before relationship context.'};
+  }
+  return null;
+}
+function homeNormalizeSourceRef(ref={}){
+  return {
+    source_type:String(ref.source_type||ref.sourceType||ref.type||'unknown'),
+    source_id:String(ref.source_id||ref.sourceId||ref.id||''),
+    quote_or_summary:dashboardShortText(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.quote||'', '', 900),
+    confidence:Math.max(0,Math.min(1,Number(ref.confidence)||0.65)),
+    created_at:ref.created_at||ref.createdAt||new Date().toISOString()
+  };
+}
+function chiefCompletedPacketIds(recommendation={}){
+  const feedback=evidenceJsonValue(recommendation.userFeedbackJson||recommendation.user_feedback_json,{});
+  return new Set(safeArray(feedback.completedPacketIds||feedback.completed_packet_ids).map(String).filter(Boolean));
+}
+function chiefPacketCandidateFromRecommendation(recommendation={}){
+  return evidenceJsonValue(recommendation.anxietyVsMomentumJson||recommendation.anxiety_vs_momentum_json,{})?.current_packet || null;
+}
+function chiefCandidateSourceRefs(candidate={},fallbackRefs=[]){
+  const refs=safeArray(candidate.evidence||candidate.sourceRefs||candidate.source_refs).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary);
+  return refs.length?refs:fallbackRefs;
+}
+function chiefCandidateHomeItem(recommendation={},candidate={},index=0,fallbackRefs=[]){
+  if(!candidate)return null;
+  const packetId=String(candidate.packetId||candidate.packet_id||'');
+  const sourceRefs=chiefCandidateSourceRefs(candidate,fallbackRefs);
+  const title=dashboardShortText(candidate.title||recommendation.title||'Chief of Staff recommendation','Chief of Staff recommendation',180);
+  const summary=dashboardShortText(candidate.summary||recommendation.recommendation||recommendation.why||title,title,260);
+  const observerLine=safeArray(candidate.primaryObservers||candidate.primary_observers||candidate.triggeredObservers||candidate.triggered_observers).slice(0,3).join(', ');
+  const why=dashboardShortText([
+    summary,
+    observerLine?`Board lens: ${observerLine}.`:'',
+    recommendation.why||''
+  ].filter(Boolean).join(' '), summary, 320);
+  const envelope=chiefRecommendationEnvelope({...recommendation,nextCandidatesJson:[candidate]});
+  const confidence=Number(recommendation.confidence||0.72);
+  return {
+    id:`chief_alignment_${recommendation.id}_${packetId||index}`,
+    chiefRecommendationId:recommendation.id,
+    chiefQueuePacketId:packetId,
+    sourceType:'chief_of_staff_recommendation',
+    sourceId:recommendation.id,
+    sourceRefs,
+    envelope,
+    projectName:envelope?.projectName||'',
+    managerColorName:envelope?.managerColorName||'',
+    title:index===0?dashboardShortText(recommendation.recommendation||title,title,180):title,
+    summary:index===0?dashboardShortText(recommendation.recommendation||summary,summary,220):summary,
+    why,
+    reason_it_matters:why,
+    ifIgnored:dashboardShortText(recommendation.opposingView||recommendation.anxietyVsMomentumJson?.anxiety_signal||'', '', 180),
+    target:{type:'chief_of_staff_recommendation',id:recommendation.id,label:recommendation.title||title},
+    observerName:'Chief of Staff',
+    confidence,
+    whyNowPacket:{
+      why_now:index===0?(recommendation.recommendation||title):title,
+      decision_needed:recommendation.anxietyVsMomentumJson?.momentum_signal || summary,
+      action_needed:index===0?(recommendation.recommendation||title):summary,
+      cost_if_delayed:recommendation.anxietyVsMomentumJson?.anxiety_signal || 'This Board-selected move may remain an open loop.',
+      evidence_refs:sourceRefs.length?sourceRefs:[{source_type:'chief_of_staff_recommendation',source_id:recommendation.id,quote_or_summary:why,confidence}],
+      confidence
+    },
+    homeAdmission:{whyNowPacketComplete:true},
+    metadata:{source:'chief_of_staff_recommendation',chiefRecommendationId:recommendation.id,chiefQueuePacketId:packetId,roundTableRunId:recommendation.roundTableRunId||recommendation.round_table_run_id||'',eventRunId:recommendation.eventRunId||recommendation.event_run_id||'',chiefQueueIndex:index}
+  };
+}
+function chiefRecommendationHomeItems(recommendation={}){
+  if(!recommendation||!recommendation.id)return null;
+  const sourceRefs=safeArray(recommendation.sourceRefsJson||recommendation.source_refs_json).map(homeNormalizeSourceRef).filter(ref=>ref.source_id||ref.quote_or_summary);
+  const completed=chiefCompletedPacketIds(recommendation);
+  const current=chiefPacketCandidateFromRecommendation(recommendation);
+  const candidates=[current,...safeArray(recommendation.nextCandidatesJson||recommendation.next_candidates_json)]
+    .filter(item=>item&&(item.packetId||item.packet_id||item.title))
+    .filter(item=>!completed.has(String(item.packetId||item.packet_id||'')));
+  if(candidates.length){
+    return candidates.map((candidate,index)=>chiefCandidateHomeItem(recommendation,candidate,index,sourceRefs)).filter(Boolean);
+  }
+  return [chiefCandidateHomeItem(recommendation,{title:recommendation.title,summary:recommendation.recommendation,evidence:sourceRefs,packetId:''},0,sourceRefs)].filter(Boolean);
+}
 async function buildExecutiveBriefing(){
-  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[])]);
+  const [moves,profiles,counts,onboardingMemory,evidenceItems,drafts,recentTranscriptRows,chiefRecommendations,readyForYouQueue]=await Promise.all([listAgencyMoves({limit:100}),listRelationshipProfiles({limit:120}),executiveBriefingCounts(),listTeachValCoreMemory({limit:80}).catch(()=>[]),listDashboardEvidenceItems({limit:180}).catch(()=>[]),listDrafts('draft').catch(()=>[]),transcriptArchiveRecords(2,12).catch(()=>[]),valIntelligenceSpine?.listChiefRecommendations?valIntelligenceSpine.listChiefRecommendations({limit:12}).catch(()=>[]):Promise.resolve([]),valReadyForYou?.buildQueue?valReadyForYou.buildQueue({limit:5}).catch(error=>{console.warn('[ready-for-you] Home briefing queue build failed:',error.message);return null;}):Promise.resolve(null)]);
   const onboarding=teachValOnboardingReflection(onboardingMemory);
   const recentTranscriptsForHome=recentTranscriptRows.map(record=>cleanTranscriptForUi(transcriptUiRecord(record))).filter(t=>transcriptHomeSummary(t));
   const freshTranscriptPacket=buildFreshTranscriptHomePacket(recentTranscriptsForHome[0],drafts);
-  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,freshTranscriptPacket});
+  const readyForYouItems=safeArray(readyForYouQueue?.preparedItems).length
+    ? safeArray(readyForYouQueue.preparedItems)
+    : (safeArray(readyForYouQueue?.prepared_items).length
+      ? safeArray(readyForYouQueue.prepared_items)
+      : safeArray(readyForYouQueue?.items));
+  const dashboard=buildDashboardIntelligence({moves,profiles,onboarding,evidenceItems,drafts,readyForYouItems,freshTranscriptPacket});
   const top=dashboard.highestLeverageMove?[dashboard.highestLeverageMove]:[];
   const also=dashboard.alsoImportant;
   const watching=dashboard.watching;
@@ -23223,7 +23400,12 @@ async function buildExecutiveBriefing(){
   const down=profiles.filter(p=>p.riskCount>0||p.openLoopCount>1).slice(0,5).map(p=>p.displayName);
   const whatChanged=dashboard.whatChanged;
   const theme=executiveThemeFromMoves(moves,profiles);
-  const highest=top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
+  const chiefHomeItems=chiefRecommendations
+    .filter(item=>['active','pending','ready'].includes(String(item.status||'active').toLowerCase()))
+    .flatMap(chiefRecommendationHomeItems)
+    .filter(Boolean);
+  const chiefHomeItem=chiefHomeItems[0]||null;
+  const highest=chiefHomeItem||top[0]||onboarding.recommendedMove||also[0]||watching[0]||null;
   const momentum=dashboard.momentum.length?dashboard.momentum:(onboarding.momentum.length?onboarding.momentum:[
     up.length?{title:'Momentum Increasing',detail:up.slice(0,3).join(', '),state:'up'}:null,
     down.length?{title:'Momentum Needs Attention',detail:down.slice(0,3).join(', '),state:'risk'}:null,
@@ -23238,7 +23420,7 @@ async function buildExecutiveBriefing(){
   const homeEvidenceItems=freshTranscriptPacket?.velocity?[freshTranscriptPacket.velocity,...evidenceItems]:evidenceItems;
   const dailyWitness=buildFreshTranscriptDailyWitness(recentTranscriptsForHome[0],freshTranscriptPacket)
     || buildDailyWitnessGreeting({moves:moves.filter(m=>!dashboardSuppressedHomeSignal(m)),profiles,onboardingMemory,evidenceItems:homeEvidenceItems,drafts,clientName:CLIENT_CONFIG.clientName,now:new Date()});
-  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
+  return {ok:true,generatedAt:new Date().toISOString(),dailyWitness,freshTranscript:recentTranscriptsForHome[0]||null,whatChanged,todayTheme:theme,highestLeverageMove:highest,chiefRecommendation:chiefHomeItem||null,chiefAlignmentQueue:chiefHomeItems,people,projects,momentum,onboardingReflection:onboarding,valNoticed,riskSignals:dashboard.riskSignals,quietlyHandled:{count:quiet.length,items:quiet.slice(0,5),evidenceItems:counts.evidenceItems,observations:counts.observations,agencyMoves:counts.agencyMoves,ignored:ignored.length},alsoImportant:also,watching,ignored,readyForYou:dashboard.readyForYou,dashboardEntities:dashboard.dashboardEntities};
 }
 function executiveBriefingChatContext(briefing={}){
   if(!briefing?.ok)return '';
@@ -30313,6 +30495,86 @@ async function triggerBoardIntelligenceForPackets(packets=[],event={}){
   });
 }
 
+function conversationTurnSourceRefs({selectedSourceContext={},sourceRefs=[]}={}){
+  const refs=[
+    ...safeArray(sourceRefs),
+    ...safeArray(selectedSourceContext?.sourceRefs),
+    ...safeArray(selectedSourceContext?.source_refs),
+    ...safeArray(selectedSourceContext?.sourceRefsJson),
+    ...safeArray(selectedSourceContext?.source_refs_json),
+    ...safeArray(selectedSourceContext?.evidence)
+  ].filter(Boolean);
+  if(refs.length)return refs.slice(0,12);
+  const sourceType=selectedSourceContext?.sourceType||selectedSourceContext?.source_type;
+  const sourceId=selectedSourceContext?.sourceId||selectedSourceContext?.source_id||selectedSourceContext?.id;
+  const quoteOrSummary=selectedSourceContext?.sourceBrief||selectedSourceContext?.summary||selectedSourceContext?.detail||selectedSourceContext?.title;
+  if(sourceType||sourceId||quoteOrSummary){
+    return [{
+      sourceType:sourceType||'conversation',
+      sourceId:sourceId||'selected_source',
+      quoteOrSummary:quoteOrSummary||'Selected source context was loaded for this chat turn.',
+      confidence:0.82
+    }];
+  }
+  return [];
+}
+
+function compactConversationTurn(messages=[],limit=2400){
+  return safeArray(messages)
+    .slice(-8)
+    .map(message=>`${message?.role==='assistant'?'VAL':'User'}: ${String(message?.content||'').replace(/\s+/g,' ').trim()}`)
+    .filter(Boolean)
+    .join('\n')
+    .slice(0,limit);
+}
+
+function boardConversationSourceType(channel='',fallback='cowork'){
+  const value=String(channel||'').trim().toLowerCase();
+  if(value==='ghl_voice')return 'ghl_voice';
+  if(value==='ghl_text'||value==='ghl_chat'||value==='ghl_conversation')return 'ghl_text';
+  if(value==='ghl_sms'||value==='sms')return 'sms';
+  return fallback;
+}
+
+async function recordValConversationTurnPacket({conversationId,title,sourceType='cowork',channel='',messages=[],lastUser='',assistantContent='',metadata={},sourceRefs=[]}={}){
+  if(!valBoardPackets?.recordCoworkEvent)return null;
+  const source=boardConversationSourceType(sourceType||channel,'cowork');
+  const id=String(conversationId||'').trim()||uuid('chat_turn');
+  const summary=compactConversationTurn(messages.length?messages:[
+    {role:'user',content:lastUser},
+    {role:'assistant',content:assistantContent}
+  ]);
+  const packet=await valBoardPackets.recordCoworkEvent({
+    sourceType:source,
+    conversationId:id,
+    sessionId:id,
+    title:title||`${source.replace(/_/g,' ')} turn`,
+    summary:summary||assistantContent||lastUser||'VAL conversation turn.',
+    sourceRefs,
+    channel:channel||source,
+    lastUser,
+    assistantContent,
+    metadata,
+    noExternalAction:metadata?.noExternalAction!==false
+  }).catch(error=>{
+    console.warn('[val-board] conversation turn packet creation failed:',error.message);
+    return null;
+  });
+  if(packet)void triggerBoardIntelligenceForPackets([packet],{type:'conversation_turn',sourceType:source,sourceId:id});
+  return packet;
+}
+
+valEnvelopes = registerValEnvelopesRoutes(app,{
+  dbQuery,
+  hasPg:()=>!!pgPool,
+  getStore:valStore,
+  saveStore:saveValStore,
+  uuid,
+  tenantId,
+  userId:currentUserId,
+  valDbReady:()=>valDbReady
+});
+
 valBoardPackets = registerValBoardPacketsRoutes(app,{
   dbQuery,
   hasPg:()=>!!pgPool,
@@ -30321,8 +30583,12 @@ valBoardPackets = registerValBoardPacketsRoutes(app,{
   uuid,
   tenantId,
   userId:currentUserId,
+  envelopeService:valEnvelopes,
   valDbReady:()=>valDbReady,
   auditLog,
+  afterSourceEvent:async({packet,sourceType,sourceId}={})=>{
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:'source_event',sourceType,sourceId});
+  },
   logger:console
 });
 
@@ -30392,6 +30658,13 @@ const valMeetingPrep = registerValMeetingPrepRoutes(app,{
   enrichRelationshipPublicContext:enrichMeetingPrepAttendeePublicContext,
   ensureRelationshipPacketFromAttendee:ensureRelationshipPacketFromCalendarAttendee,
   saveCalendarProjectLink,
+  afterPublicContextEvent:async(event)=>{
+    const packet=await valBoardPackets?.recordSourceEvent(event.sourceType||'public_research',event).catch(error=>{
+      console.warn('[val-board] meeting prep public context packet failed:',error.message);
+      return null;
+    });
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:'meeting_prep_public_context',sourceType:packet.sourceType,sourceId:packet.sourceId});
+  },
   ownerEmails:Array.from(OWNER_EMAILS||[]),
   valDbReady:()=>valDbReady,
   auditLog,
@@ -30438,6 +30711,13 @@ const valCommitments = registerValCommitmentsRoutes(app,{
   listRelationshipContacts:listRelationshipContactsForTranscript,
   saveDraft:saveInternalDraft,
   saveTask,
+  afterCommitmentEvent:async(event)=>{
+    const packet=await valBoardPackets?.recordCommitmentEvent(event).catch(error=>{
+      console.warn('[val-board] commitment packet creation failed:',error.message);
+      return null;
+    });
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:'commitment_'+(event.eventType||'updated'),sourceType:'task',sourceId:event.commitmentId||event.commitment?.id});
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -30453,6 +30733,14 @@ const valDocuments = registerValDocumentsRoutes(app,{
   searchGoogleDocs,
   tenantId,
   userId:currentUserId,
+  afterDocumentEvent:async(event)=>{
+    const packet=await valBoardPackets?.recordSourceEvent('document',event).catch(error=>{
+      console.warn('[val-board] document packet failed:',error.message);
+      return null;
+    });
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:event.eventType||'document_event',sourceType:packet.sourceType,sourceId:packet.sourceId});
+    return packet;
+  },
   valDbReady:()=>valDbReady,
   auditLog,
   logger:console
@@ -30497,6 +30785,14 @@ const valSourceProcessing = registerValSourceProcessingRoutes(app,{
   reviewUpdatesService:valReviewUpdates,
   readyForYouService:valReadyForYou,
   listProjectProfiles,
+  afterDocumentEvent:async(event)=>{
+    const packet=await valBoardPackets?.recordSourceEvent('document',event).catch(error=>{
+      console.warn('[val-board] source-processing document packet failed:',error.message);
+      return null;
+    });
+    if(packet)void triggerBoardIntelligenceForPackets([packet],{type:event.eventType||'document_event',sourceType:packet.sourceType,sourceId:packet.sourceId});
+    return packet;
+  },
   allowRelationshipDocumentEmailPost:()=>!requestContext.getStore()?.publicHearthTest,
   valDbReady:()=>valDbReady,
   auditLog,
@@ -31557,6 +31853,9 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
     'This is a durable private conversation for one tenant and one user. Carry forward prior corrections, decisions, and stated preferences from the supplied conversation.',
     'Use only the supplied Board packet, live Board packet context, and conversation. Clearly separate verified fact, reasonable inference, and what remains unknown.',
     'Live Board packets are real system records. If no live packets are supplied, say what is missing instead of inventing activity.',
+    'Answer the user like a specific Board member, not like a generic assistant. First answer the exact question in plain language. Then give the evidence you are using. Then name the open question or unknown only if it matters.',
+    'When the user asks what relationship, project, risk, opportunity, capacity issue, or repair is involved, name the person/project/source if the packet context names one. If the packet only contains categories and no names, say that the named source is not attached yet instead of pretending.',
+    'Every useful claim should point to a packet title, source type, source id, source reference, or observer packet review. Do not use vague phrases like "some things", "open loops", or "trust shifts" without the source that made you say it.',
     'Be conversational, perceptive, and useful. Do not paste the packet back. Help the user notice patterns, opportunities, risks, and the next clear thought.',
     'Never claim an external action happened. Nothing leaves VAL from this conversation.',
     'If the user corrects VAL, acknowledge the correction plainly and use it from then on.'
@@ -31565,7 +31864,7 @@ async function generateObserverCoworkReply({entrypointId='',scopeId='',workingBr
     role:'user',
     content:'Current private packet context:\n'+JSON.stringify(mergedContext).slice(0,28000)
   };
-  return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:750,temperature:0.35,timeoutMs:15000});
+  return callOpenAIResponses({system,messages:[packetMessage,...conversation],maxTokens:950,temperature:0.32,timeoutMs:20000});
 }
 const valCowork = registerValCoworkRoutes(app,{
   dbQuery,
@@ -31691,6 +31990,25 @@ async function executeEmailSendPacket({packet,payload}){
   if(!r.ok)throw new Error(d.error?.message||`Gmail send failed (${r.status})`);
   return {providerResponseId:d.id||'',providerResponseSummary:`Sent Gmail email to ${to}.`,raw:d};
 }
+async function executeSmsPacket({packet,payload}){
+  const contactId=String(payload.contactId||payload.contact_id||packet.targetId||'').trim();
+  const conversationId=String(payload.conversationId||payload.conversation_id||'').trim();
+  const message=String(payload.message||payload.body||payload.text||payload.bodyPreview||'').trim();
+  if(!contactId&&!conversationId)throw new Error('SMS send requires a GHL contact or conversation id.');
+  if(!message)throw new Error('SMS send requires a message body.');
+  const data=await ghlStrict('POST','/conversations/messages',compactObject({
+    type:'SMS',
+    contactId:contactId||undefined,
+    conversationId:conversationId||undefined,
+    message,
+    attachments:safeArray(payload.attachments).length?safeArray(payload.attachments):undefined
+  }));
+  return {
+    providerResponseId:data.message?.id||data.id||data.conversationId||conversationId||contactId,
+    providerResponseSummary:`Sent GHL SMS${contactId?` to ${contactId}`:''}.`,
+    raw:data
+  };
+}
 async function executeCrmNotePacket({packet,payload}){
   const contactId=String(packet.targetId||payload.contactId||'').trim();
   const body=String(payload.note||payload.body||packet.whyThisActionExists||'').trim();
@@ -31743,11 +32061,12 @@ const valExternalActions = registerValExternalActionsRoutes(app,{
     }
     void triggerBoardIntelligenceForPackets(packets,{type:'external_action_packet',sourceType:'external_action'});
   },
-  executionAdapters:{
-    create_gmail_draft:executeGmailDraftPacket,
-    create_outlook_draft:executeOutlookDraftPacket,
-    send_email:executeEmailSendPacket,
-    create_crm_note:executeCrmNotePacket,
+	  executionAdapters:{
+	    create_gmail_draft:executeGmailDraftPacket,
+	    create_outlook_draft:executeOutlookDraftPacket,
+	    send_email:executeEmailSendPacket,
+	    send_sms:executeSmsPacket,
+	    create_crm_note:executeCrmNotePacket,
     create_crm_task:executeCrmTaskPacket,
     create_calendar_hold:executeCalendarHoldPacket
   },
@@ -33534,10 +33853,50 @@ app.post('/api/homepage-cards/action',async(req,res)=>{
     res.status(500).json({ok:false,error:e.message});
   }
 });
+function valEndpointContract({status='complete',speak='',functionRan='chat',requiresApproval=false,approvalToken=null}={}){
+  const normalizedStatus=['complete','needs_approval','needs_information','failed'].includes(status)?status:'complete';
+  const approvalRequired=normalizedStatus==='needs_approval'||requiresApproval===true;
+  return {
+    status:normalizedStatus,
+    speak:String(speak||'').trim()||(normalizedStatus==='failed'?'I could not complete that, so nothing changed.':'I could not process that.'),
+    functionRan:String(functionRan||'chat').trim()||'chat',
+    requiresApproval:approvalRequired,
+    approvalToken:approvalRequired?(approvalToken||null):null
+  };
+}
+
+function valChatFunctionRan(extra={}){
+  if(extra.functionRan)return extra.functionRan;
+  if(extra.presenceIntent?.action)return extra.presenceIntent.action;
+  if(extra.externalActionPacket)return extra.externalActionPacket.actionType||extra.externalActionPacket.capability||'prepare_external_action';
+  if(extra.inboxCommand)return 'executive_inbox';
+  if(extra.openLoops)return 'open_loops';
+  if(extra.taskScheduling)return 'task_scheduling';
+  if(extra.ghlContact)return 'ghl_contact';
+  if(extra.googleDocRewrite)return 'google_doc_rewrite';
+  if(extra.createdTasks?.length)return 'task_capture';
+  if(extra.fastHearthChat)return 'hearth_fast_chat';
+  return 'chat';
+}
+
+function valChatStatus(extra={}){
+  if(extra.status)return extra.status;
+  if(extra.presenceIntent?.requiresConfirmation||extra.externalActionPacket)return 'needs_approval';
+  if(extra.inboxCommand?.needsChoice||extra.needsInformation)return 'needs_information';
+  return 'complete';
+}
+
+function valApprovalToken(extra={}){
+  return extra.approvalToken||extra.externalActionPacket?.id||extra.presenceIntent?.approvalToken||null;
+}
+
 app.post('/api/val/intelligence',async(req,res)=>{
   try{
     const action=req.body.action||'what_now',query=req.body.query||'',dashboard=req.body.dashboard||{},tasks=Array.isArray(req.body.tasks)?req.body.tasks:[];
-    if(DEMO_MODE){const s=demoState(req,res);return res.json({ok:true,action,content:demoIntelligenceResponse(action,query,s),demo:true});}
+    if(DEMO_MODE){
+      const s=demoState(req,res),content=demoIntelligenceResponse(action,query,s);
+      return res.json({ok:true,action,content,demo:true,...valEndpointContract({speak:content,functionRan:action})});
+    }
     const uploadedDocs=await uploadedValDocumentContextForQuery(`${action} ${query}`).catch(e=>`Uploaded VAL document lookup failed: ${e.message}`);
     const [memory,ghlContext,googleDocs]=await Promise.all([
       recentMemoryContext(`${action} ${query}`),
@@ -33549,8 +33908,11 @@ app.post('/api/val/intelligence',async(req,res)=>{
     const actionMaxTokens=/^(book_next_steps|editorial_next_steps)$/i.test(action)?650:1800;
     const content=await callValModel({system,user,maxTokens:actionMaxTokens,temperature:0.35});
     const createdTasks=await persistAutoTasksFromValResponse({content,userQuery:query||action,action,source:'val_intelligence'}).catch(e=>{console.warn('Auto task capture failed:',e.message);return [];});
-    res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext});
-  }catch(e){res.status(500).json({error:e.message});}
+    res.json({ok:true,action,content,createdTasks,ghlContextAvailable:!!ghlContext,...valEndpointContract({speak:content,functionRan:action})});
+  }catch(e){
+    const speak=`I could not run ${String(req.body?.action||'that request').replace(/_/g,' ')}, so nothing changed.`;
+    res.status(500).json({ok:false,error:e.message,...valEndpointContract({status:'failed',speak,functionRan:req.body?.action||'val_intelligence'})});
+  }
 });
 function hearthFastNeedsFullValContext(text=''){
   if(/\bwitnessing\b/i.test(String(text||'')))return false;
@@ -33644,6 +34006,25 @@ function hearthActionSpokenSentence(value=''){
 function hearthActionProfilePhone(profile={}){
   return relationshipProfilePrimaryPhone(profile);
 }
+function hearthActionProfileContactId(profile={}){
+  const metadata=profile.metadata||{};
+  const packet=profile.personPacket||metadata.personPacket||{};
+  return realRelationshipContactId(
+    profile.personId||
+    profile.person_id||
+    profile.contactId||
+    profile.contact_id||
+    profile.crmContactId||
+    profile.crm_contact_id||
+    metadata.contactId||
+    metadata.contact_id||
+    metadata.crmContactId||
+    metadata.crm_contact_id||
+    packet.person?.crm_contact_id||
+    packet.person?.crmContactId||
+    ''
+  );
+}
 function hearthActionProfileCompany(profile={}){
   const metadata=profile.metadata||{};
   const enrichment=metadata.relationshipEnrichment||metadata.relationship_enrichment||profile.relationshipEnrichment||null;
@@ -33712,6 +34093,7 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
     const display=String(profile.displayName||profile.display_name||profile.name||'').trim();
     const email=hearthActionUsableEmail(relationshipProfilePrimaryEmail(profile));
     const phone=hearthActionProfilePhone(profile);
+    const contactId=hearthActionProfileContactId(profile);
     const company=hearthActionProfileCompany(profile);
     const comparable=hearthActionComparableName(display);
     let score=0;
@@ -33723,27 +34105,29 @@ async function resolveHearthActionContact(nameOrEmail='',contextText=''){
     if(cleanNeedle&&looseScore>=0.5)score+=0.62*looseScore;
     if(cleanNeedle&&email&&email.includes(cleanNeedle.replace(/\s+/g,'.')))score+=0.42;
     if(cleanCompanyHint&&hearthActionLooseNameScore(cleanCompanyHint,company)>=0.5)score+=0.22;
-    return {profile,display,email,phone,company,score};
+    return {profile,display,email,phone,contactId,company,score};
   }).filter(row=>row.score>0).sort((a,b)=>b.score-a.score);
   const best=scored[0]||null;
   const broader=await resolveContactFromContext({name:needle,email:directEmail,company:companyHint}).catch(()=>null);
   const broaderContact=broader?.contact||null;
   const broaderEmail=hearthActionUsableEmail(broaderContact?.email||'');
   const broaderPhone=normalizePhoneNumber(broaderContact?.phone||'');
+  const broaderContactId=resolvedCrmContactId(broaderContact);
   if(best){
     return {
       ...best,
       email:best.email||broaderEmail,
       phone:best.phone||broaderPhone,
+      contactId:best.contactId||broaderContactId,
       status:best.score>=0.65?'matched':'possible_match',
       contactSource:best.email?'relationship_profile':(broaderEmail?'broader_contact_context':'relationship_profile'),
       matches:scored.slice(0,5)
     };
   }
   if(broaderContact&&(broaderEmail||broaderPhone||broader.status==='matched'||broader.status==='possible_match')){
-    return {profile:null,display:broaderContact.name||needle,email:broaderEmail||directEmail,phone:broaderPhone,score:Number(broader.confidence||0),status:broader.status||'possible_match',contactSource:broaderContact.source||'broader_contact_context',matches:broader.matches||[]};
+    return {profile:null,display:broaderContact.name||needle,email:broaderEmail||directEmail,phone:broaderPhone,contactId:broaderContactId,score:Number(broader.confidence||0),status:broader.status||'possible_match',contactSource:broaderContact.source||'broader_contact_context',matches:broader.matches||[]};
   }
-  return {profile:null,email:directEmail,phone:'',status:directEmail?'direct_email':'not_found',matches:[]};
+  return {profile:null,email:directEmail,phone:'',contactId:'',status:directEmail?'direct_email':'not_found',matches:[]};
 }
 async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,contextText=''}={}){
   const actionText=[contextText,lastUser].filter(Boolean).join('\n');
@@ -33783,7 +34167,27 @@ async function hearthActionPrepContent({lastUser,dashboard,voiceMode=false,conte
     if(!nameCandidate)return {content:'Who should I text?',extra:{hearthActionPrep:true,actionKind:'sms',needs:'recipient'}};
     if(!contact.phone)return {content:`I can prepare that, but I need a safe phone number for ${contactName} first.`,extra:{hearthActionPrep:true,actionKind:'sms',contactResolution:contact.status,needs:'phone_number'}};
     const body=hearthActionMessageBody(lastUser);
-    return {content:body?`I found ${contactName}. I can prepare that SMS for approval before anything sends.`:`I found ${contactName}. What should the text say?`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone},needs:body?'approval_packet':'message_body',noExternalAction:true}};
+    if(!body)return {content:`I found ${contactName}. What should the text say?`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone,contactId:contact.contactId||''},needs:'message_body',noExternalAction:true}};
+    if(!contact.contactId)return {content:`I found ${contactName}'s phone number, but I do not have the linked GHL contact yet. Add or link this person in Stewardship before I prepare the SMS send.`,extra:{hearthActionPrep:true,actionKind:'sms',contact:{name:contactName,phone:contact.phone},needs:'ghl_contact_link',noExternalAction:true}};
+    const packet=await valExternalActions.createSmsSendPacket({
+      contactId:contact.contactId,
+      recipientName:contactName,
+      message:body,
+      summary:`Prepare SMS to ${contactName}.`,
+      sourceContext:{source:'hearth_home_action',relationshipProfileId:contact.profile?.id||'',relationshipName:contactName,contactId:contact.contactId}
+    });
+    const boardActionPacket=await valBoardPackets?.recordExternalActionPacket(packet).catch(error=>{
+      console.warn('[val-board] home SMS action packet creation failed:',error.message);
+      return null;
+    });
+    if(boardActionPacket)void triggerBoardIntelligenceForPackets([boardActionPacket],{type:'home_sms_action_packet',sourceType:'external_action',sourceId:packet.id});
+    const bodyPreview=voiceMode ? hearthActionSpokenSentence(packet.payloadPreviewJson?.message||body) : hearthActionPreviewText(packet.payloadPreviewJson?.message||body,700);
+    return {
+      content:voiceMode
+        ? `I found ${contactName}. I’ll text: ${bodyPreview}. Say “Send” when you want me to send it.`
+        : [`I found ${contactName} and prepared the SMS for approval.`, `Message: ${bodyPreview}`, 'Say “Send” when you want me to send it. Nothing has been sent yet.'].join('\n'),
+      extra:{hearthActionPrep:true,actionKind:'sms',externalActionPacket:packet,noExternalAction:true}
+    };
   }
   if(intent.kind==='reminder'){
     return {content:'I can create that reminder. What should it remind you to do, and when?',extra:{hearthActionPrep:true,actionKind:'reminder',needs:'task_and_time',noExternalAction:true}};
@@ -33909,6 +34313,16 @@ function sendFastHearthChatNow(res,{content,messages,conversationId,conversation
     messages:fullMessages,
     metadata:{channel:channel||'hearth_cowork',savedBy:'fast_hearth_chat_route',projectContext:projectContext||undefined,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',deferredPersistence:true}
   }).catch(error=>console.warn('Fast Hearth chat deferred save failed:',error.message));
+  void recordValConversationTurnPacket({
+    conversationId,
+    title:conversationTitle,
+    sourceType:boardConversationSourceType(channel,'cowork'),
+    channel:channel||'hearth_cowork',
+    messages:fullMessages,
+    lastUser:[...messages].reverse().find(message=>message?.role==='user')?.content||'',
+    assistantContent:content,
+    metadata:{...extra,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',fastHearthChat:true,noExternalAction:extra.noExternalAction!==false}
+  });
 }
 function ghlVoiceUserMessage(body={}){
   return String(
@@ -34156,6 +34570,44 @@ function selectedTranscriptText(transcript={}){
     ''
   ).trim();
 }
+function selectedSourceWorkingBrief({selectedSourceContext={},transcripts=[]}={}){
+  const lines=[];
+  const source=selectedSourceContext?.sourceItem&&typeof selectedSourceContext.sourceItem==='object'?selectedSourceContext.sourceItem:{};
+  const envelope=selectedSourceContext?.envelope&&typeof selectedSourceContext.envelope==='object'?selectedSourceContext.envelope:{};
+  [
+    envelope.displayName ? `Envelope: ${envelope.envelopeType || 'context'} ${envelope.displayName}` : '',
+    selectedSourceContext.cardTitle ? `Action: ${selectedSourceContext.cardTitle}` : '',
+    selectedSourceContext.cardMeaning ? `Why: ${selectedSourceContext.cardMeaning}` : '',
+    source.projectName ? `Project: ${source.projectName}` : '',
+    source.managerColorName ? `Project manager color: ${source.managerColorName}` : ''
+  ].filter(Boolean).forEach(line=>lines.push(line));
+  safeArray(selectedSourceContext.contextLines)
+    .map(value=>compactText(value,360))
+    .filter(Boolean)
+    .slice(0,14)
+    .forEach(line=>lines.push(line));
+  String(selectedSourceContext.sourceBrief||'')
+    .split(/\n+/)
+    .map(value=>compactText(value,360))
+    .filter(Boolean)
+    .slice(0,14)
+    .forEach(line=>lines.push(line));
+  const keyword=/\b(GOALL|Goal Agency|dashboard|projections?|Mike|handoff|iframe|HTML|CRM|GHL|agency work|next step|proposal|pricing|timeline|owner|action item)\b/i;
+  for(const transcript of Array.isArray(transcripts)?transcripts:[]){
+    const structured=[
+      ...(Array.isArray(transcript.keyPoints)?transcript.keyPoints:[]),
+      ...(Array.isArray(transcript.actionItems)?transcript.actionItems:[])
+    ].map(value=>String(value||'').trim()).filter(Boolean);
+    structured.filter(line=>keyword.test(line)).slice(0,10).forEach(line=>lines.push(line));
+    const textLines=String(transcript.text||'')
+      .split(/(?:\n+|(?<=[.!?])\s+)/)
+      .map(line=>line.trim())
+      .filter(line=>line.length>=28&&line.length<=340&&keyword.test(line))
+      .slice(0,10);
+    textLines.forEach(line=>lines.push(line));
+  }
+  return Array.from(new Set(lines.map(line=>line.replace(/\s+/g,' ').trim()).filter(Boolean))).slice(0,18);
+}
 async function selectedHearthSourcePrompt(selectedSourceContext={}){
   if(!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
   const ids=collectSelectedSourceIds(selectedSourceContext);
@@ -34182,7 +34634,7 @@ async function selectedHearthSourcePrompt(selectedSourceContext={}){
       transcripts.push({
         id,
         title:transcript.title||transcript.meetingTitle||transcript.transcriptTitle||'Selected transcript',
-        text:text.slice(0,10000),
+        text:text.slice(0,6000),
         actionItems:safeArray(transcript.sourceReceipt?.actionItems).slice(0,12),
         keyPoints:safeArray(transcript.sourceReceipt?.keyPoints).slice(0,12)
       });
@@ -34190,11 +34642,15 @@ async function selectedHearthSourcePrompt(selectedSourceContext={}){
   }
   const sourceItem=selectedSourceContext.sourceItem&&typeof selectedSourceContext.sourceItem==='object'?selectedSourceContext.sourceItem:{};
   const sourceRefs=safeArray(selectedSourceContext.sourceRefs).slice(0,10);
+  const envelope=selectedSourceContext.envelope&&typeof selectedSourceContext.envelope==='object'?selectedSourceContext.envelope:{};
+  const workingBrief=selectedSourceWorkingBrief({selectedSourceContext,transcripts});
   const promptParts=[
+    envelope.displayName||envelope.envelopeType?'Selected envelope: '+JSON.stringify(envelope,null,2).slice(0,1800):'',
     selectedSourceContext.cardTitle?'Selected Home card: '+selectedSourceContext.cardTitle:'',
     selectedSourceContext.cardMeaning?'Why Home surfaced it: '+selectedSourceContext.cardMeaning:'',
-    Object.keys(sourceItem).length?'Selected source item JSON:\n'+JSON.stringify(sourceItem,null,2).slice(0,6000):'',
-    sourceRefs.length?'Selected source references:\n'+JSON.stringify(sourceRefs,null,2).slice(0,4000):'',
+    workingBrief.length?'Selected working brief:\n- '+workingBrief.join('\n- '):'',
+    Object.keys(sourceItem).length?'Selected source item JSON:\n'+JSON.stringify(sourceItem,null,2).slice(0,3500):'',
+    sourceRefs.length?'Selected source references:\n'+JSON.stringify(sourceRefs,null,2).slice(0,2200):'',
     transcripts.length?'Selected transcript source text:\n'+transcripts.map(t=>[
       `Transcript: ${t.title} (${t.id})`,
       t.keyPoints.length?'Key points:\n- '+t.keyPoints.join('\n- '):'',
@@ -34209,6 +34665,227 @@ async function selectedHearthSourcePrompt(selectedSourceContext={}){
     ...promptParts
   ].join('\n\n');
 }
+
+function selectedSourceContextEvidenceLines(value,result=[],depth=0){
+  if(!value||depth>5||result.length>60)return result;
+  if(typeof value==='string'||typeof value==='number'){
+    const text=compactText(value,320);
+    if(text&&text.length>8)result.push(text);
+    return result;
+  }
+  if(Array.isArray(value)){
+    value.slice(0,24).forEach(item=>selectedSourceContextEvidenceLines(item,result,depth+1));
+    return result;
+  }
+  if(typeof value!=='object')return result;
+  for(const [key,item] of Object.entries(value)){
+    if(!/^(title|name|label|summary|meaning|description|project|projectName|project_name|relationshipName|relationship_name|contactName|contact_name|personName|person_name|counterpartyName|counterparty_name|what_changed|why_it_matters|what_val_now_knows|evidence_summary|recommended_next_step|reason_it_matters|why|detail|sourceBrief|source_brief|contextLines|context_lines|sourceRefs|source_refs|sourceRefsJson|sourceContext|source_context|workingBrief|working_brief|metadata|metadataJson|payload|packetFields|sourceItem|preparedArtifact|prepared_artifact|target)$/i.test(key))continue;
+    selectedSourceContextEvidenceLines(item,result,depth+1);
+  }
+  return result;
+}
+
+function selectedSourceEvidenceBundle({selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const source=selectedSourceContext&&typeof selectedSourceContext==='object'?selectedSourceContext:{};
+  const promptLines=String(selectedSourcePrompt||'')
+    .split(/\n+/)
+    .map(line=>line.trim())
+    .filter(Boolean)
+    .map(line=>line.replace(/^[-*]\s*/,'').trim())
+    .filter(Boolean);
+  const contextLines=safeArray(source.contextLines || source.context_lines)
+    .concat(String(source.sourceBrief || source.source_brief || '').split(/\n+/))
+    .concat(selectedSourceContextEvidenceLines(source))
+    .map(line=>compactText(line,260))
+    .filter(Boolean);
+  const refs=safeArray(source.sourceRefs || source.source_refs || source.sourceRefsJson || source.source_refs_json)
+    .map(ref=>typeof ref==='string'?ref:(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.title||ref.sourceTitle||ref.source_title||''))
+    .map(line=>compactText(line,260))
+    .filter(Boolean);
+  const transcriptLines=promptLines.filter(line=>
+    !/^Selected (Hearth|source|working|transcript|envelope|card|source references|source item JSON)/i.test(line) &&
+    /\b(GOALL|Goal Agency|dashboard|projection|handoff|Mike|agency|CRM|GHL|iframe|HTML|pipeline|column|tag|automation|proposal|price|pricing|timeline|owner|next step|action item|agreed|decided|needs|should|must)\b/i.test(line)
+  );
+  const all=Array.from(new Set([...contextLines,...refs,...transcriptLines]
+    .map(line=>line.replace(/^Text:\s*/i,'').replace(/^Action items?:\s*/i,'').replace(/^Key points?:\s*/i,'').trim())
+    .filter(line=>line.length>10)));
+  const buckets={
+    project:[],
+    decision:[],
+    build:[],
+    blocker:[],
+    next:[],
+    people:[]
+  };
+  for(const line of all){
+    if(/\b(GOALL|Goal Agency|project|agency work|dashboard handoff|projections?\/dashboard)\b/i.test(line))buckets.project.push(line);
+    if(/\b(agreed|decided|decision|price|pricing|timeline|scope|proposal|approval|confirmed)\b/i.test(line))buckets.decision.push(line);
+    if(/\b(dashboard|HTML|CSS|iframe|CRM|GHL|pipeline|column|tag|automation|metric|field|stage)\b/i.test(line))buckets.build.push(line);
+    if(/\b(block|blocked|unclear|waiting|loose|fuzzy|risk|issue|missing|needs|must|should)\b/i.test(line))buckets.blocker.push(line);
+    if(/\b(next step|handoff|owner|send|finish|create|build|review|follow|action item)\b/i.test(line))buckets.next.push(line);
+    if(/\b(Mike|Jessa|Aric|Mark|Greg|Ed|Michele|Michelle|Ashley|client|agency)\b/i.test(line))buckets.people.push(line);
+  }
+  const topLines=all.slice(0,10);
+  const uniqueBucket=(items)=>Array.from(new Set(items)).slice(0,4);
+  return {
+    all:topLines,
+    project:uniqueBucket(buckets.project),
+    decision:uniqueBucket(buckets.decision),
+    build:uniqueBucket(buckets.build),
+    blocker:uniqueBucket(buckets.blocker),
+    next:uniqueBucket(buckets.next),
+    people:uniqueBucket(buckets.people)
+  };
+}
+
+function selectedSourceSection(title,lines=[]){
+  const cleaned=Array.from(new Set(safeArray(lines).map(line=>compactText(line,220)).filter(Boolean))).slice(0,3);
+  if(!cleaned.length)return '';
+  return [title,...cleaned.map(line=>'- '+line)].join('\n');
+}
+
+function selectedSourceHtmlEscape(value=''){
+  return String(value||'')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function selectedSourceIframeDraft({title='',envelopeLabel='',bundle={},evidence=[]}={}){
+  const titleText=compactText(title||'Dashboard handoff',90)||'Dashboard handoff';
+  const projectLine=compactText(envelopeLabel||'selected source',140)||'selected source';
+  const allEvidence=safeArray(evidence).concat(safeArray(bundle.all)).map(line=>compactText(line,220)).filter(Boolean);
+  const purpose=safeArray(bundle.project)[0]||allEvidence[0]||'Source context is loaded from the selected packet.';
+  const next=safeArray(bundle.next)[0]||allEvidence.find(line=>/\b(next|handoff|owner|action|finish|send|review)\b/i.test(line))||'One clear next step needs an owner.';
+  const watch=safeArray(bundle.blocker)[0]||allEvidence.find(line=>/\b(risk|block|loose|waiting|unclear|trust|relationship)\b/i.test(line))||'Open questions stay visible until resolved.';
+  return [
+    'I have the selected packet loaded, so I am not going to ask what "this" is.',
+    '',
+    'Here is a clean iframe-ready first version based on the loaded context:',
+    '',
+    '```html',
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '  <meta charset="utf-8" />',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+    '  <title>'+selectedSourceHtmlEscape(titleText)+'</title>',
+    '  <style>',
+    '    :root { --sage:#6f806c; --rose:#c98995; --ink:#232521; --muted:#6f726a; --line:rgba(111,128,108,.22); --glass:rgba(255,255,255,.78); }',
+    '    * { box-sizing:border-box; }',
+    '    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif; color:var(--ink); background:linear-gradient(135deg,rgba(111,128,108,.11),rgba(201,137,149,.12)); }',
+    '    .dashboard { min-height:100vh; padding:24px; background:var(--glass); }',
+    '    .eyebrow { margin:0 0 10px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--sage); }',
+    '    h1 { margin:0; max-width:760px; font-size:clamp(28px,4vw,48px); line-height:1.04; font-weight:520; letter-spacing:0; }',
+    '    .context { margin:14px 0 28px; max-width:760px; color:var(--muted); font-size:15px; line-height:1.55; }',
+    '    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }',
+    '    .card { min-height:156px; padding:18px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.82); box-shadow:0 18px 45px rgba(36,35,30,.08); }',
+    '    .label { margin:0 0 18px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--sage); }',
+    '    .value { margin:0; font-size:18px; line-height:1.35; font-weight:460; }',
+    '    .next { border-color:rgba(201,137,149,.28); background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(201,137,149,.10)); }',
+    '    @media (max-width:760px) { .dashboard{padding:18px;} .grid{grid-template-columns:1fr;} }',
+    '  </style>',
+    '</head>',
+    '<body>',
+    '  <main class="dashboard">',
+    '    <p class="eyebrow">VAL prepared context</p>',
+    '    <h1>'+selectedSourceHtmlEscape(titleText)+'</h1>',
+    '    <p class="context">'+selectedSourceHtmlEscape(projectLine)+'</p>',
+    '    <section class="grid" aria-label="Dashboard context">',
+    '      <article class="card"><p class="label">Purpose</p><p class="value">'+selectedSourceHtmlEscape(purpose)+'</p></article>',
+    '      <article class="card"><p class="label">Next Move</p><p class="value">'+selectedSourceHtmlEscape(next)+'</p></article>',
+    '      <article class="card next"><p class="label">Watch Point</p><p class="value">'+selectedSourceHtmlEscape(watch)+'</p></article>',
+    '    </section>',
+    '  </main>',
+    '</body>',
+    '</html>',
+    '```',
+    '',
+    'Use this as the first iframe pass. The next refinement should be visual polish or live CRM fields, not rebuilding the context.'
+  ].join('\n');
+}
+
+function selectedHearthSourceFallbackAnswer({lastUser='',selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const source=selectedSourceContext&&typeof selectedSourceContext==='object'?selectedSourceContext:{};
+  const envelope=source.envelope&&typeof source.envelope==='object'?source.envelope:{};
+  const envelopeLabel=envelope.displayName
+    ? `${String(envelope.envelopeType||'context').replace(/_/g,' ')}: ${envelope.displayName}`
+    : 'the selected source';
+  const title=String(source.cardTitle||source.sourceItem?.title||source.sourceItem?.summary||'this item').trim();
+  const meaning=String(source.cardMeaning||source.sourceItem?.summary||source.sourceItem?.reason_it_matters||'').trim();
+  const refs=safeArray(source.sourceRefs).map(ref=>typeof ref==='string'?ref:(ref.quote_or_summary||ref.quoteOrSummary||ref.summary||ref.title||'')).filter(Boolean);
+  const promptLines=String(selectedSourcePrompt||'').split(/\n+/).map(line=>line.trim()).filter(Boolean);
+  const workingBriefStart=promptLines.findIndex(line=>/^Selected working brief:?$/i.test(line));
+  const workingBriefLines=workingBriefStart>=0
+    ? promptLines.slice(workingBriefStart+1).filter(line=>/^[-*]\s+/.test(line)).map(line=>line.replace(/^[-*]\s+/,'')).slice(0,12)
+    : [];
+  const usefulLines=Array.from(new Set((workingBriefLines.length?workingBriefLines:promptLines).filter(line=>
+    /dashboard|handoff|agreed|needs|should|action|next|build|html|iframe|source|project|relationship|proposal|pricing|timing|Mike|GOALL/i.test(line)
+  ).map(line=>line.replace(/^[-*]\s*/,'').slice(0,220)))).slice(0,8);
+  const contextLines=Array.from(new Set(selectedSourceContextEvidenceLines(source)
+    .filter(line=>/dashboard|handoff|agreed|needs|should|action|next|build|html|iframe|source|project|relationship|proposal|pricing|timing|Mike|GOALL|owner|decision/i.test(line))
+    .map(line=>line.replace(/^[-*]\s*/,'').slice(0,220))))
+    .slice(0,8);
+  const bundle=selectedSourceEvidenceBundle({selectedSourceContext,selectedSourcePrompt});
+  const asksForStructure=/\b(outline|elements?|sections?|structure|dashboard|html|css|iframe|build|create|map)\b/i.test(lastUser);
+  const asksForIframeArtifact=/\b(html|css|iframe|embed|code|build|create|draft|template|page|full page|complete version)\b/i.test(lastUser);
+  const evidence=usefulLines.length?usefulLines:(bundle.all.length?bundle.all:(refs.length?refs.slice(0,6):contextLines));
+  if(asksForIframeArtifact&&/\b(html|css|iframe|embed|dashboard|page|template|code|build|create)\b/i.test(lastUser)){
+    return selectedSourceIframeDraft({title,envelopeLabel,bundle,evidence});
+  }
+  if(asksForStructure){
+    const sections=[
+      selectedSourceSection('What this is',bundle.project.length?bundle.project:[title,meaning].filter(Boolean)),
+      selectedSourceSection('What the dashboard needs to contain',bundle.build),
+      selectedSourceSection('Decisions already in the source',bundle.decision),
+      selectedSourceSection('What is still loose',bundle.blocker),
+      selectedSourceSection('Next move',bundle.next),
+      selectedSourceSection('People/context named in the packet',bundle.people)
+    ].filter(Boolean);
+    return [
+      `I have ${envelopeLabel} loaded for "${title}".`,
+      '',
+      sections.length
+        ? 'Here is the working outline from the loaded packet:'
+        : 'The loaded packet is thin, so I can only give the safest first outline:',
+      '',
+      ...(sections.length ? sections : [
+        'What this is\n- The selected Home action is the working object.',
+        'What it needs\n- A clear dashboard purpose, visible metrics, current blocker, owner, and next step.',
+        'Next move\n- Tell me what format you want and I will draft the first version.'
+      ]),
+      evidence.length?'':'',
+      evidence.length?'Loaded evidence I can use next:':'',
+      ...evidence.map(line=>' - '+line),
+      '',
+      'If you want, tell me “draft the iframe HTML” and I will turn this loaded context into a clean first version.'
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    `I have ${envelopeLabel} loaded for "${title}".`,
+    meaning?`The reason it is here: ${meaning}`:'',
+    evidence.length?'':'',
+    evidence.length?'What I can already use from the source:':'',
+    ...evidence.map(line=>' - '+line),
+    '',
+    'Ask me for the draft, the decision, the next message, or the exact structure and I will work from this context.'
+  ].filter(Boolean).join('\n');
+}
+
+function selectedHearthSourceDirectAnswer({lastUser='',selectedSourceContext={},selectedSourcePrompt=''}={}){
+  const text=String(lastUser||'').trim();
+  if(!text||!selectedSourceContext||typeof selectedSourceContext!=='object')return '';
+  const asksForFullArtifact=/\b(write|draft|generate|build|create|code|html|css|javascript|iframe|template|full page|complete version)\b/i.test(text);
+  if(asksForFullArtifact&&/\b(html|css|iframe|embed|dashboard|page|template|code|build|create)\b/i.test(text)){
+    return selectedHearthSourceFallbackAnswer({lastUser:text,selectedSourceContext,selectedSourcePrompt});
+  }
+  if(asksForFullArtifact)return '';
+  const asksForLoadedContext=/\b(outline|elements?|sections?|structure|what.*context|what.*source|why.*priority|why.*here|evidence|proof|source|where.*come from|what.*changed|what.*know|tell me.*about this|explain this)\b/i.test(text);
+  if(!asksForLoadedContext)return '';
+  return selectedHearthSourceFallbackAnswer({lastUser:text,selectedSourceContext,selectedSourcePrompt});
+}
 app.post('/api/val/ghl/voice-turn',async(req,res)=>{
   try{
     const lastUser=ghlVoiceUserMessage(req.body);
@@ -34222,7 +34899,7 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
     const priorMessagesText=ghlVoiceMessagesText(priorMessages);
     if(!lastUser){
       const speak='I heard the voice action, but GHL did not pass me the user’s words yet. Check the Custom Action body variable for the current utterance.';
-      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance'});
+      return res.json({ok:true,speak,val_response:speak,reply:speak,conversationId,needs:'user_utterance',...valEndpointContract({status:'needs_information',speak,functionRan:'voice_input'})});
     }
     const messages=[...priorMessages,{role:'user',content:lastUser}].slice(-12);
     const dashboard=req.body.dashboard&&typeof req.body.dashboard==='object'?req.body.dashboard:{calendar:Array.isArray(req.body.calendar)?req.body.calendar:[]};
@@ -34255,6 +34932,18 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       messages:savedMessages,
       metadata:{channel:'ghl_voice',savedBy:'ghl_voice_turn',contactId,contactName,voiceActorKey,deferredPersistence:true,noExternalAction:!prepared?.extra?.externalActionPacket}
     }).catch(error=>console.warn('GHL voice turn deferred save failed:',error.message));
+    void recordValConversationTurnPacket({
+      conversationId,
+      title,
+      sourceType:'ghl_voice',
+      channel:'ghl_voice',
+      messages:savedMessages,
+      lastUser,
+      assistantContent:content,
+      sourceRefs:conversationTurnSourceRefs({sourceRefs:req.body.sourceRefs}),
+      metadata:{contactId,contactName,voiceActorKey,functionRan,noExternalAction:!prepared?.extra?.externalActionPacket}
+    });
+    const extra=prepared?.extra||{};
     return res.json({
       ok:true,
       speak:content,
@@ -34265,12 +34954,19 @@ app.post('/api/val/ghl/voice-turn',async(req,res)=>{
       saved:false,
       saveDeferred:true,
       functionRan,
-      ...(prepared?.extra||{})
+      ...extra,
+      ...valEndpointContract({
+        status:valChatStatus(extra),
+        speak:content,
+        functionRan:functionRan||valChatFunctionRan(extra)||'voice_turn',
+        requiresApproval:!!extra.externalActionPacket,
+        approvalToken:valApprovalToken(extra)
+      })
     });
   }catch(error){
     console.warn('GHL voice turn failed:',error.message);
     const speak='I heard you, but VAL could not complete that voice turn. Try that one more time in a shorter sentence.';
-    res.status(200).json({ok:true,speak,val_response:speak,reply:speak,error:error.message});
+    res.status(200).json({ok:false,speak,val_response:speak,reply:speak,error:error.message,...valEndpointContract({status:'failed',speak,functionRan:'voice_turn'})});
   }
 });
 app.post('/api/val/chat',async(req,res)=>{
@@ -34278,10 +34974,18 @@ app.post('/api/val/chat',async(req,res)=>{
     const messages=Array.isArray(req.body.messages)?req.body.messages:[],lastUser=[...messages].reverse().find(m=>m.role==='user')?.content||'',memoryQuery=messages.slice(-10).map(m=>m.content||'').join('\n').slice(-6000),dashboard=req.body.dashboard||{};
     const projectContext=req.body.projectContext&&typeof req.body.projectContext==='object'?req.body.projectContext:null;
     const hasSelectedSourceContext=!!(req.body.selectedSourceContext&&typeof req.body.selectedSourceContext==='object'&&Object.keys(req.body.selectedSourceContext).length);
-    const selectedSourcePrompt=await selectedHearthSourcePrompt(req.body.selectedSourceContext).catch(error=>{
-      console.warn('[hearth cowork] selected source context failed:',error.message);
-      return '';
-    });
+    const cheapSelectedSourceAnswer=hasSelectedSourceContext?selectedHearthSourceDirectAnswer({
+      lastUser,
+      selectedSourceContext:req.body.selectedSourceContext,
+      selectedSourcePrompt:''
+    }):'';
+    let selectedSourcePrompt='';
+    if(hasSelectedSourceContext&&!cheapSelectedSourceAnswer){
+      selectedSourcePrompt=await selectedHearthSourcePrompt(req.body.selectedSourceContext).catch(error=>{
+        console.warn('[hearth cowork] selected source context failed:',error.message);
+        return '';
+      });
+    }
     const selectedSourceGuard=hasSelectedSourceContext
       ? 'Current Co-Work focus: use the selected card/function source as the object of the user request. If the user says "this dashboard", "this email", "this transcript", "this project", or "this", they mean the selected source, not the visible Hearth dashboard shell. Do not describe the Hearth page, calendar sidebar, witness, orientation, or permission boundary unless the user explicitly asks about the VAL interface itself.'
       : '';
@@ -34315,7 +35019,25 @@ app.post('/api/val/chat',async(req,res)=>{
       }catch(saveError){
         saveWarning=saveError.message||'Chat could not be saved because Postgres is not connected. In Railway, confirm your Postgres service is attached and DATABASE_URL exists in Variables.';
       }
-      return res.json({message:{role:'assistant',content},conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra});
+      const contract=valEndpointContract({
+        status:valChatStatus(extra),
+        speak:extra.speak||content,
+        functionRan:valChatFunctionRan(extra),
+        requiresApproval:extra.requiresApproval===true||!!extra.presenceIntent?.requiresConfirmation||!!extra.externalActionPacket,
+        approvalToken:valApprovalToken(extra)
+      });
+      void recordValConversationTurnPacket({
+        conversationId:saved?.id||conversationId,
+        title:conversationTitle,
+        sourceType:boardConversationSourceType(req.body.channel,'cowork'),
+        channel:req.body.channel||'chat',
+        messages:fullMessages,
+        lastUser,
+        assistantContent:content,
+        sourceRefs:conversationTurnSourceRefs({selectedSourceContext:req.body.selectedSourceContext,sourceRefs:req.body.sourceRefs}),
+        metadata:{...extra,projectId:projectContext?.projectId||'',projectName:projectContext?.projectName||'',selectedSourceFocused:!!hasSelectedSourceContext,noExternalAction:extra.noExternalAction!==false}
+      });
+      return res.json({message:{role:'assistant',content},content,conversationId:saved?.id||conversationId,saved:!saveWarning,saveWarning,...extra,...contract});
     }
     if(DEMO_MODE){const s=demoState(req,res);return sendChat(demoChatResponse(lastUser,s),{demo:true});}
     const correction=chatContextCorrection(lastUser);
@@ -34371,25 +35093,58 @@ app.post('/api/val/chat',async(req,res)=>{
         });
       }
     }
-    if(hasSelectedSourceContext&&selectedSourcePrompt){
+    if(hasSelectedSourceContext){
       const artifactRequest=/\b(html|css|iframe|code|build|create|template|page|dashboard|embed|outline|elements?|sections?|layout)\b/i.test(lastUser);
+      if(cheapSelectedSourceAnswer){
+        return sendChat(cheapSelectedSourceAnswer,{
+          selectedSourceFocused:true,
+          selectedSourceDirect:true,
+          selectedSourceFastPacket:true,
+          noExternalAction:true
+        });
+      }
+      const directSelectedAnswer=selectedHearthSourceDirectAnswer({
+        lastUser,
+        selectedSourceContext:req.body.selectedSourceContext,
+        selectedSourcePrompt
+      });
+      if(directSelectedAnswer){
+        return sendChat(directSelectedAnswer,{
+          selectedSourceFocused:true,
+          selectedSourceDirect:true,
+          noExternalAction:true
+        });
+      }
       const selectedSystem=[
         'You are Home VAL in focused Co-Work mode.',
         selectedSourceGuard,
         'Answer from the selected source first. Do not describe the Hearth dashboard, sidebar, calendar card, Welcome message, or visible UI unless the user explicitly asks about the VAL interface.',
         'If the user asks for an outline, elements, structure, HTML, CSS, iframe, draft, or plan, use the selected transcript/spec directly and produce the useful working artifact or outline. Do not ask what "this" is when the selected source contains the needed context.',
         'Keep the answer executive-useful: concise first, then concrete sections or code when asked. No backend status, no source-loading narration, no apologies unless something is genuinely missing.',
-        'Selected source:\n'+selectedSourcePrompt
+        selectedSourcePrompt?'Selected source:\n'+selectedSourcePrompt:'Selected source context JSON:\n'+JSON.stringify(req.body.selectedSourceContext,null,2).slice(0,6000)
       ].filter(Boolean).join('\n\n');
-      const content=await callOpenAIResponses({
-        system:selectedSystem,
-        messages,
-        maxTokens:artifactRequest?3600:1800,
-        temperature:0.45,
-        timeoutMs:45000
+      let content='';
+      let fallbackUsed=false;
+      try{
+        content=await callOpenAIResponses({
+          system:selectedSystem,
+          messages,
+          maxTokens:artifactRequest?3200:1500,
+          temperature:0.42,
+          timeoutMs:artifactRequest?12000:9000
+        });
+      }catch(error){
+        fallbackUsed=true;
+        console.warn('[hearth cowork] selected source model response failed:',error.message);
+      }
+      const fallback=selectedHearthSourceFallbackAnswer({
+        lastUser,
+        selectedSourceContext:req.body.selectedSourceContext,
+        selectedSourcePrompt
       });
-      return sendChat(content||'I could not produce a useful answer from the selected source yet.',{
+      return sendChat(content||fallback,{
         selectedSourceFocused:true,
+        selectedSourceFallback:fallbackUsed||!content,
         noExternalAction:true
       });
     }
@@ -34519,7 +35274,7 @@ app.post('/api/val/chat',async(req,res)=>{
     const message=/OPENAI_KEY not configured|OPENAI_API_KEY|api key/i.test(raw)
       ? 'Chat is not working because your AI API key is missing. Go to Railway → Variables and add OPENAI_API_KEY. Then redeploy Baby VAL.'
       : raw;
-    res.status(500).json({error:message});
+    res.status(500).json({ok:false,error:message,...valEndpointContract({status:'failed',speak:message,functionRan:'chat'})});
   }
 });
 

@@ -36,6 +36,192 @@ function sourceRef(input={}){
     confidence:Math.max(0,Math.min(1,Number(input.confidence) || 0.8))
   };
 }
+function observerConversationReviewLine(review={}){
+  const evidence=review.evidence || {};
+  const title=compactText(evidence.packetTitle || evidence.packetType || review.title || review.packetType || 'Board packet',180);
+  const sourceType=compactText(evidence.sourceType || review.sourceType || 'source',80).replace(/_/g,' ');
+  const sourceId=compactText(evidence.sourceId || review.sourceId || '',120);
+  const names=safeArray(review.people).filter(Boolean).slice(0,4);
+  const projects=safeArray(review.projects).filter(Boolean).slice(0,3);
+  const objects=safeArray(review.decisionObjects).filter(Boolean).slice(0,3);
+  const named=[names.length?'People: '+names.join(', '):'',projects.length?'Projects: '+projects.join(', '):'',objects.length?'Work: '+objects.join(', '):''].filter(Boolean).join(' | ');
+  const observation=compactText(review.lensFinding || review.observation || review.seeing || review.concern || evidence.quoteOrSummary || evidence.quote_or_summary || review.summary || '',420);
+  return [named,title,sourceType + (sourceId ? ' #' + sourceId : ''),observation].filter(Boolean).join(': ');
+}
+const OBSERVER_ENTITY_STOPWORDS=new Set([
+  'VAL','Board','Observer','Observers','Chief','Staff','Relationship','Relationships','Project','Projects','Capacity','Courage','Delight',
+  'Meaning','Momentum','Commitment','Calendar','Environment','Witnessing','Executive','Inbox','Currently','Seeing','Watching','Evidence',
+  'Concern','Question','Source','Trail','Home','GHL','CRM','HTML','CSS','SMS','Tone','Transcript','Calendar','The',
+  'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'
+]);
+function observerConversationEntityText(...values){
+  return values.flat().map((value)=>typeof value === 'string' ? value : JSON.stringify(value||'')).join(' ');
+}
+function observerConversationNamedPeople(text=''){
+  const raw=String(text||'');
+  const matches=raw.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?\b/g)||[];
+  const seen=new Set();
+  return matches
+    .map((name)=>compactText(name,80))
+    .filter((name)=>name&&!OBSERVER_ENTITY_STOPWORDS.has(name.split(/\s+/)[0])&&!OBSERVER_ENTITY_STOPWORDS.has(name))
+    .filter((name)=>{
+      const key=name.toLowerCase();
+      if(seen.has(key))return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0,5);
+}
+function observerConversationProjects(text=''){
+  const raw=String(text||'');
+  const projects=[];
+  if(/\bGOALL\b/i.test(raw))projects.push('GOALL');
+  if(/\bdashboard|handoff|projection/i.test(raw))projects.push('dashboard handoff');
+  if(/\bproposal|payment|pricing/i.test(raw))projects.push('proposal or payment decision');
+  const seen=new Set();
+  return projects.filter((item)=>{
+    const key=item.toLowerCase();
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  }).slice(0,4);
+}
+function observerConversationReviewFromCard(observer={},sourceTrail=[]){
+  const text=observerConversationEntityText(
+    observer.currentlySeeing,
+    observer.watching,
+    safeArray(observer.evidenceItems).join(' '),
+    observer.evidence,
+    observer.concern,
+    observer.explore,
+    observer.incomingObservation,
+    safeArray(sourceTrail).map(item=>item.line||item.title||item.summary||'')
+  );
+  const line=compactText([
+    observer.currentlySeeing,
+    observer.concern,
+    observer.explore
+  ].filter(Boolean).join(' '),700);
+  const evidenceLine=compactText([
+    safeArray(observer.evidenceItems).join('; '),
+    observer.evidence,
+    safeArray(sourceTrail).map(item=>item.line||item.title||item.summary||'').filter(Boolean).join(' | ')
+  ].filter(Boolean).join(' | '),900);
+  if(!line&&!evidenceLine)return null;
+  return {
+    status:'observed',
+    observerName:observer.name||'Observer',
+    people:observerConversationNamedPeople(text),
+    projects:observerConversationProjects(text),
+    decisionObjects:observerConversationProjects(text),
+    lensFinding:line||evidenceLine,
+    observation:line||evidenceLine,
+    evidence:{quoteOrSummary:evidenceLine||line}
+  };
+}
+function observerConversationHumanReply({observerName='Observer',answer='',meaningful=[],sourceTrail=[]}={}){
+  const text=compactText(answer,900);
+  const lower=text.toLowerCase();
+  const first=meaningful[0] || {};
+  const people=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.people)).filter(Boolean))).slice(0,4);
+  const projects=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.projects)).filter(Boolean))).slice(0,3);
+  const objects=Array.from(new Set(meaningful.flatMap(review=>safeArray(review.decisionObjects)).filter(Boolean))).slice(0,3);
+  const observation=compactText(first.lensFinding || first.observation || first.seeing || first.concern || observerConversationReviewLine(first),520);
+  const evidence=compactText(first.evidenceLine || first.line || first.evidence?.quoteOrSummary || first.evidence?.quote_or_summary || sourceTrail[0] || '',520);
+  const wantsRepair=observerName==='Relationship' && /\b(repair|which relationship|who|person|tone|warmth|trust|distance|friction)\b/i.test(lower);
+  const lead=wantsRepair
+    ? (people.length ? `I would look at ${people[0]} first.` : 'I am not ready to name one relationship yet.')
+    : `${observerName} would start here.`;
+  const whyParts=[
+    observation,
+    people.length>1 ? `Other names in the same signal: ${people.slice(1).join(', ')}.` : '',
+    projects.length ? `Project context: ${projects.join(', ')}.` : '',
+    objects.length ? `Work involved: ${objects.join(', ')}.` : ''
+  ].filter(Boolean);
+  return [
+    lead,
+    '',
+    'Why I am saying that:',
+    ...whyParts.map(line=>'- '+line),
+    '',
+    'Evidence I can point to:',
+    evidence ? '- '+evidence : '- The loaded packet did not attach a clean quote. I should not make a stronger claim without one.',
+    sourceTrail.length>1 ? sourceTrail.slice(1,4).map(line=>'- '+line).join('\n') : '',
+    '',
+    wantsRepair
+      ? 'What I would explore next: what would make this feel clear, respectful, and not dragged out?'
+      : 'What I would explore next: what changed, what matters, and what should stay out of your way?'
+  ].filter(Boolean).join('\n');
+}
+function observerConversationDirectReply({entrypointId='',workingBrief={},answer=''}={}){
+  const text=compactText(answer,900).toLowerCase();
+  if(!text)return '';
+  const asksLoadedContext=/\b(evidence|proof|source|where.*come from|context|card|currently seeing|watching|concern|explore|why|what changed|how.*changed|tone changed|repair|which relationship|who|which person|which project)\b/i.test(text);
+  if(!asksLoadedContext)return '';
+  const isChief=entrypointId==='board.chief_of_staff';
+  const context=workingBrief.context&&typeof workingBrief.context==='object'?workingBrief.context:{};
+  const observer=context.selectedObserver || {};
+  const chiefRead=context.chiefOfStaffRead || {};
+  const sourceTrail=safeArray(context.sourceTrail).map(item=>compactText(item.line || item.title || item.summary || '',320)).filter(Boolean);
+  const proofReviews=safeArray(context.observerProofReviews).map(review=>({
+    ...review,
+    status:review.status || 'observed',
+    lensFinding:review.lensFinding || review.observation || review.line || '',
+    observation:review.observation || review.lensFinding || review.line || '',
+    evidence:{quoteOrSummary:review.evidenceLine || review.line || review.observation || review.lensFinding || ''}
+  }));
+  const sourceTrailReviews=safeArray(context.sourceTrail).map(item=>compactText(item.line || item.title || item.summary || '',320)).filter(Boolean);
+  const cardReview=observerConversationReviewFromCard(observer,context.sourceTrail);
+  const meaningful=(safeArray(observer.meaningfulReviews).length ? safeArray(observer.meaningfulReviews) : proofReviews)
+    .filter(review=>review.status==='observed')
+    .slice(0,5);
+  const fallbackMeaningful=meaningful.length ? meaningful : (cardReview ? [cardReview] : []);
+  const checked=(safeArray(observer.liveReviews).length ? safeArray(observer.liveReviews) : proofReviews).slice(0,6);
+  if(isChief){
+    const lines=[
+      chiefRead.witness ? 'Chief of Staff read: ' + chiefRead.witness : '',
+      chiefRead.orientation ? 'Board lens in front: ' + chiefRead.orientation : '',
+      sourceTrail.length ? 'Evidence I can show:\n' + sourceTrail.map(line=>'- '+line).join('\n') : ''
+    ].filter(Boolean);
+    if(!lines.length)return '';
+    return [
+      'Here is the inspectable basis for this Chief of Staff read:',
+      '',
+      ...lines,
+      '',
+      'If the source trail is too thin, the right fix is to attach the originating packet, not ask you to trust a vague summary.'
+    ].join('\n');
+  }
+	  const observerName=compactText(observer.name || workingBrief.title || 'this Observer',80).replace(/\s+Observer$/i,'');
+		  if(fallbackMeaningful.length){
+		    return observerConversationHumanReply({observerName,answer,meaningful:fallbackMeaningful,sourceTrail:sourceTrailReviews.length?sourceTrailReviews:sourceTrail});
+		  }
+  const cardLines=[
+    observer.currentlySeeing ? 'Currently seeing: ' + observer.currentlySeeing : '',
+    observer.watching ? 'Watching: ' + observer.watching : '',
+    safeArray(observer.evidenceItems).length ? 'Evidence: ' + safeArray(observer.evidenceItems).join('; ') : (observer.evidence ? 'Evidence: ' + observer.evidence : ''),
+    observer.concern ? 'Concern: ' + observer.concern : '',
+    observer.explore ? 'Question: ' + observer.explore : '',
+    sourceTrail.length ? 'Source trail:\n' + sourceTrail.slice(0,4).map(line=>'- '+line).join('\n') : ''
+  ].filter(Boolean);
+  if(!cardLines.length&&checked.length){
+    return [
+      observerName + ' checked the current Board packets and is not claiming a meaningful signal yet.',
+      '',
+      ...checked.slice(0,5).map(review=>'- '+observerConversationReviewLine(review)),
+      '',
+      'That is a real answer: this lens checked the packet and did not find enough signal to make a claim.'
+    ].join('\n');
+  }
+  if(!cardLines.length)return '';
+  return [
+    observerName + ' is answering from the loaded Observer card, not a fresh search:',
+    '',
+    ...cardLines.map(line=>line.includes('\n')?line:'- '+line),
+    '',
+    sourceTrail.length ? 'If you want a sharper answer, ask me to inspect one source from that trail.' : 'The missing piece is the named source trail. I should not invent names without it.'
+  ].join('\n');
+}
 function simpleWorkstreamName(value=''){
   return compactText(value,160).replace(/^[-*\d.\s]+/,'').replace(/\s*[\-:]+\s*(owner|first move|milestone|dependency|monitor)\s*:.*/i,'').trim();
 }
@@ -2969,14 +3155,20 @@ function createValCoworkService({
   async function respondObserverConversation(session,answer){
     const state={...(session.stateJson || {}),stage:'conversation',messages:safeArray(session.stateJson?.messages)};
     state.messages.push({role:'user',content:answer,at:new Date().toISOString()});
-    let reply='';
+    let reply=observerConversationDirectReply({
+      entrypointId:session.entrypointId,
+      workingBrief:session.workingBriefJson || {},
+      answer
+    });
     try{
-      reply=multilineText(await generateConversationReply({
-        entrypointId:session.entrypointId,
-        scopeId:session.scopeId,
-        workingBrief:session.workingBriefJson || {},
-        messages:state.messages
-      }),6000);
+      if(!reply){
+        reply=multilineText(await generateConversationReply({
+          entrypointId:session.entrypointId,
+          scopeId:session.scopeId,
+          workingBrief:session.workingBriefJson || {},
+          messages:state.messages
+        }),6000);
+      }
     }catch(error){
       reply='I have saved what you said with this conversation, but I could not finish a thoughtful response yet. Nothing was lost.';
     }

@@ -640,6 +640,7 @@ function createValMeetingPrepService({
   enrichRelationshipPublicContext=null,
   ensureRelationshipPacketFromAttendee=null,
   saveCalendarProjectLink=null,
+  afterPublicContextEvent=null,
   ownerEmails=[],
   logger=console
 }={}){
@@ -879,6 +880,35 @@ function createValMeetingPrepService({
     }
     return saved;
   }
+  async function notifyBoardOfPublicContext(attendeeIntel=[],event={}){
+    if(typeof afterPublicContextEvent!=='function')return;
+    for(const attendee of safeArray(attendeeIntel)){
+      const profile=attendee.public_profile||{};
+      const status=attendee.public_context_status||{};
+      const refs=safeArray(attendee.source_refs).filter(ref=>/public|linkedin|outscraper|web|research/i.test(String(ref.sourceType||ref.source_type||ref.type||ref.sourceId||ref.source_id||ref.quoteOrSummary||ref.quote_or_summary||'')));
+      const hasPublicSignal=Boolean(
+        profile.summary || profile.latest_linkedin_post || profile.latest_linkedin_url || profile.website ||
+        status.summary || refs.length
+      );
+      if(!hasPublicSignal)continue;
+      await afterPublicContextEvent({
+        sourceType:profile.latest_linkedin_post||profile.latest_linkedin_url?'linkedin_visibility':'public_research',
+        eventType:'meeting_prep_public_context',
+        id:`meeting_prep:${eventIdOf(event)||'event'}:${attendee.attendee_key||attendee.email||attendee.name||uuid('attendee')}`,
+        title:[attendee.name||attendee.email||'Attendee','public context'].filter(Boolean).join(' - '),
+        summary:compactText([
+          profile.summary,
+          profile.latest_linkedin_post?`Latest LinkedIn signal: ${profile.latest_linkedin_post}`:'',
+          profile.website?`Website: ${profile.website}`:'',
+          status.summary
+        ].filter(Boolean).join(' '),900),
+        attendee,
+        event:{id:eventIdOf(event),title:eventTitle(event),startTime:eventStart(event)},
+        sourceRefs:refs.length?refs:attendee.source_refs||[],
+        noExternalAction:true
+      }).catch(error=>logger.warn?.('[val-meeting-prep] Board public context event failed:',error.message));
+    }
+  }
   async function saveAttendeeRows(briefId,eventId,attendeeIntel=[]){
     const rows=[];
     for(const a of attendeeIntel){
@@ -946,6 +976,7 @@ function createValMeetingPrepService({
       }
     }
     await saveExternalResearchPlans(attendeeIntel);
+    await notifyBoardOfPublicContext(attendeeIntel,event);
     const stakes=meetingStakes(event,attendees,internal);
     const role=classifyRole(event,attendees);
     const firstFive=firstFiveMinutes({event,role,stakes,attendees});

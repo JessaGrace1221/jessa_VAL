@@ -370,6 +370,39 @@ function createValExternalActionsService({
     packet.whatWillNotHappen='VAL will not send any other email, modify CRM, create calendar events, publish content, or change the draft contents beyond the fields shown in this send gate.';
     return upsertPacket(packet);
   }
+  async function createSmsSendPacket(payload={}){
+    const message=String(payload.message||payload.body||payload.text||payload.bodyPreview||'').trim();
+    const contactId=compactText(payload.contactId||payload.contact_id||payload.targetId||'',240);
+    const conversationId=compactText(payload.conversationId||payload.conversation_id||'',240);
+    const recipient=compactText(payload.recipientName||payload.recipient||payload.to||contactId||conversationId||'recipient',320);
+    const sourceContext=jsonValue(payload.sourceContext||payload.source_context,{});
+    const refs=safeArray(payload.sourceRefs||payload.source_refs||payload.sourceRefsJson||payload.source_refs_json);
+    const packet=basePacket({
+      uuid,
+      scope:scope(),
+      source:'send_gate',
+      actionType:'send_sms',
+      targetSystem:'GHL',
+      targetId:contactId||conversationId||recipient,
+      title:payload.title||`Text ${recipient}`,
+      summary:payload.why||payload.summary||`Send SMS to ${recipient}.`,
+      payload:{
+        contactId,
+        conversationId,
+        recipient,
+        message,
+        bodyPreview:compactText(message,1200),
+        externalSend:true,
+        requiresFreshApproval:true
+      },
+      refs:refs.length?refs:[normalizeSourceRef({sourceType:sourceContext.source||'send_gate',sourceId:sourceContext.contactId||contactId||conversationId||payload.id||'',quoteOrSummary:compactText(message||recipient,300),confidence:0.9})],
+      approvalPolicy:'approval_required',
+      sourceContext:{...sourceContext,source:'send_gate',finalApprovalSurface:payload.finalApprovalSurface||'global_send_gate'}
+    });
+    packet.whatWillHappen='After final approval, VAL will send exactly this SMS through GHL and save an execution receipt.';
+    packet.whatWillNotHappen='VAL will not send any other SMS, email, CRM update, calendar event, tag, stage movement, publishing, or external write from this packet.';
+    return upsertPacket(packet);
+  }
   async function auditForPacket(id,{limit=50}={}){
     const lim=Math.max(1,Math.min(Number(limit)||50,200));
     if(hasPg()){
@@ -381,7 +414,7 @@ function createValExternalActionsService({
       .sort((a,b)=>String(a.createdAt||'').localeCompare(String(b.createdAt||'')))
       .slice(0,lim);
   }
-  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,collectCandidates,preparePacketFromPreparedArtifact};
+  return {build,list,get,updatePacket,audit,auditForPacket,approve,reject,edit,createEmailSendPacket,createSmsSendPacket,collectCandidates,preparePacketFromPreparedArtifact};
 }
 
 module.exports={createValExternalActionsService,allowedAction,riskFromText,approvalFor};

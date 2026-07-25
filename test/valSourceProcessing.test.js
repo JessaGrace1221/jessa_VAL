@@ -12,7 +12,7 @@ const root=path.join(__dirname,'..');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 const routes=fs.readFileSync(path.join(root,'services','valSourceProcessingRoutes.js'),'utf8');
 
-function servicesFor(store){
+function servicesFor(store,overrides={}){
   const deps={
     hasPg:()=>false,
     getStore:()=>store,
@@ -23,7 +23,7 @@ function servicesFor(store){
   };
   const reviewUpdates=createValReviewUpdatesService(deps);
   const readyForYou=createValReadyForYouService({...deps,executiveInboxService:{reviewDrafts:async()=>({drafts:[]}),listReadyForYouDraftCandidates:async()=>[]},listDrafts:async()=>[]});
-  const sourceProcessing=createValSourceProcessingService({...deps,reviewUpdatesService:reviewUpdates,readyForYouService:readyForYou,listProjectProfiles:async()=>store.relationshipProfiles?.filter(p=>p.profileType==='project')||[]});
+  const sourceProcessing=createValSourceProcessingService({...deps,reviewUpdatesService:reviewUpdates,readyForYouService:readyForYou,listProjectProfiles:async()=>store.relationshipProfiles?.filter(p=>p.profileType==='project')||[],...overrides});
   return {reviewUpdates,readyForYou,sourceProcessing,getStore:()=>store};
 }
 
@@ -84,6 +84,9 @@ test('live email document intake routes admitted relationship attachments throug
   assert.match(server,/documentCandidates=candidates\.reduce/);
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|result\.what_val_did_receipt/);
   assert.match(server,/whatValDidReceipt:result\.whatValDidReceipt\|\|null/);
+  assert.match(server,/afterDocumentEvent:async\(event\)=>\{/);
+  assert.match(server,/recordSourceEvent\('document',event\)/);
+  assert.match(server,/triggerBoardIntelligenceForPackets\(\[packet\],\{type:event\.eventType\|\|'document_event'/);
 });
 
 test('calendar invite attachments do not count as Project Managers document evidence',async()=>{
@@ -112,7 +115,8 @@ test('calendar invite attachments do not count as Project Managers document evid
 
 test('relationship-sent documents create Project Managers and Leverage review surfaces',async()=>{
   const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
-  const {sourceProcessing}=servicesFor(store);
+  const documentEvents=[];
+  const {sourceProcessing}=servicesFor(store,{afterDocumentEvent:async(event)=>{documentEvents.push(event);return {id:`packet_${event.id}`};}});
   const result=await sourceProcessing.processRelationshipDocumentEmail({
     relationship:{admitted:true,id:'rel_anthony',name:'Anthony',email:'anthony@example.com'},
     source:{sourceType:'email_message',sourceId:'email_anthony_scope',subject:'Frisson partner scope',receivedAt:'2026-07-12T10:00:00Z'},
@@ -146,6 +150,29 @@ test('relationship-sent documents create Project Managers and Leverage review su
   assert.equal(result.readyForYouItem.metadataJson.whatValDidReceipt.summary,result.sourceProcessingRecord.whatValDidReceipt.summary);
   assert.equal(projectSurface.metadataJson.assignedProjectManager.name,result.projectSuggestion.proposedValueJson.assignedProjectManager.name);
   assert.equal(store.relationshipProfiles.length,0);
+  assert.equal(documentEvents.length,1);
+  assert.equal(documentEvents[0].eventType,'document_project_review_prepared');
+  assert.equal(documentEvents[0].sourceType,'document');
+  assert.equal(documentEvents[0].projectName,'Frisson Partner Scope');
+  assert.equal(documentEvents[0].noExternalAction,true);
+});
+
+test('source-only document receipts still notify the Board without creating project work',async()=>{
+  const store={relationshipProfiles:[],valReviewUpdates:[],readyForYouItems:[],sourceProcessingRecords:[],preparedArtifactRecords:[],surfaceRegistrations:[]};
+  const documentEvents=[];
+  const {sourceProcessing}=servicesFor(store,{afterDocumentEvent:async(event)=>{documentEvents.push(event);return {id:`packet_${event.id}`};}});
+  const result=await sourceProcessing.processRelationshipDocumentEmail({
+    relationship:{admitted:false,name:'Unknown Sender',email:'unknown@example.com'},
+    source:{sourceType:'gmail_email',sourceId:'msg_unknown_doc',subject:'Random attachment'},
+    documents:[{id:'doc_unknown_packet',title:'Random Proposal.pdf',type:'proposal',summary:'Proposal came from an unadmitted sender.'}]
+  });
+  assert.equal(result.sourceProcessingRecord.status,'no_action');
+  assert.equal(result.projectSuggestion,null);
+  assert.equal(result.readyForYouItem,null);
+  assert.equal(documentEvents.length,1);
+  assert.equal(documentEvents[0].eventType,'document_source_no_action');
+  assert.equal(documentEvents[0].title,'Random Proposal.pdf');
+  assert.equal(documentEvents[0].noExternalAction,true);
 });
 
 test('Google Drive shares count as relationship document evidence',async()=>{

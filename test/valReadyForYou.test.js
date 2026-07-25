@@ -350,4 +350,5 @@ test('transcript commitment review bundles do not count as prepared Leverage wor
   assert.equal(item.metadataJson.preparedArtifactKind,'');
   assert.equal(item.metadataJson.preparedWorkCount,0);
   assert.equal(built.preparedCount,0);
+  assert.deepEqual(built.preparedItems,[]);
 });
