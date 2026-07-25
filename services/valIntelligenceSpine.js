@@ -200,8 +200,8 @@ function buildPacketReview(observerName,packet={},context={}){
   const baseConfidence=observed ? (primary?0.72:0.56) : 0.22;
   const evidenceBoost=summary?0.08:0;
   const triggerBoost=triggered?0.06:0;
-  const lensFinding=compactText(packetObserverReview?.lensFinding||packetObserverReview?.lens_finding||packetObserverReview?.observation||'',720);
-  const observation=compactText(packetObserverReview?.observation||packetObserverReview?.lensFinding||packetObserverReview?.lens_finding||'',900);
+  const lensFinding=compactText(packetObserverReview?.lensFinding||packetObserverReview?.lens_finding||packetObserverReview?.observation||'',240);
+  const observation=compactText(packetObserverReview?.observation||packetObserverReview?.lensFinding||packetObserverReview?.lens_finding||'',420);
   return {
     packetId,
     sourceType,
@@ -222,8 +222,8 @@ function buildPacketReview(observerName,packet={},context={}){
     projects:safeArray(packetObserverReview?.projects).slice(0,6),
     decisionObjects:safeArray(packetObserverReview?.decisionObjects||packetObserverReview?.decision_objects).slice(0,6),
     matchedTerms:safeArray(packetObserverReview?.matchedTerms||packetObserverReview?.matched_terms).slice(0,6),
-    concern:lens.concern,
-    question:lens.question,
+    concern:compactText(packetObserverReview?.concern||lens.concern,240),
+    question:compactText(packetObserverReview?.question||packetObserverReview?.explore||lens.question,200),
     confidence:Math.max(0.18,Math.min(0.92,baseConfidence+(observed?evidenceBoost:0)+triggerBoost)),
     reviewedAt:context.generatedAt||new Date().toISOString(),
     reflectionMode:'evidence_qualified_lens_v2'

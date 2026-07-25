@@ -94,20 +94,24 @@ test('model-backed Observer reviews replace fallback reviews only with packet-gr
     status:observerName==='Relationship'?'observed':'no_signal',
     lensFinding:observerName==='Relationship'?'Mike shows a possible repair signal after frustration in the GOALL handoff.':'',
     observation:observerName==='Relationship'?'Mike sounded frustrated when the GOALL dashboard handoff stayed vague.':'',
+    concern:observerName==='Relationship'?'The vague handoff may keep eroding trust if it stays unresolved.':'',
+    question:observerName==='Relationship'?'What repair would make the next handoff feel clear?':'',
     people:observerName==='Relationship'?['Mike','Invented Person']:[],
     projects:observerName==='Relationship'?['GOALL','Invented Project']:[],
     decisionObjects:['dashboard handoff'],
     confidence:0.86
   }));
   const saved=await service.applyModelObserverReviews(packet.id,reviews);
-  assert.equal(saved.payloadJson.observerReviewVersion,3);
-  assert.equal(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v1');
+  assert.equal(saved.payloadJson.observerReviewVersion,4);
+  assert.equal(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v2');
   assert.equal(saved.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
   const relationship=saved.payloadJson.observerReviews.find(review=>review.observerName==='Relationship');
   assert.equal(relationship.status,'observed');
   assert.deepEqual(relationship.people,['Mike']);
   assert.deepEqual(relationship.projects,['GOALL']);
   assert.deepEqual(relationship.decisionObjects,['dashboard handoff']);
+  assert.match(relationship.concern,/eroding trust/i);
+  assert.match(relationship.question,/what repair/i);
   assert.equal(saved.payloadJson.observerReviews.find(review=>review.observerName==='Capacity').status,'no_signal');
 });
 
@@ -138,7 +142,7 @@ test('an incomplete model review suite cannot masquerade as a full Board review'
   );
   const saved=(await service.listPackets({limit:20})).find(item=>item.id===packet.id);
   assert.equal(saved.payloadJson.observerReviewVersion,2);
-  assert.notEqual(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v1');
+  assert.notEqual(saved.payloadJson.observerReviewMode,'model_backed_observer_suite_v2');
   assert.equal(saved.payloadJson.observerReviews.length,BOARD_OBSERVERS.length);
 });
 
@@ -554,8 +558,12 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/wireWitnessingResumeButtons\(workspaceInputPanel\)/);
   assert.match(frontend,/function observerLiveReviews/);
   assert.match(frontend,/function observerMeaningfulLiveReviews/);
+  assert.match(frontend,/function observerReviewIsCompletedDeduction/);
+  assert.match(frontend,/function observerReviewIsCompletedCheck/);
+  assert.match(frontend,/completed source-backed review/);
+  assert.match(frontend,/A concise source-backed deduction has not completed yet/);
   assert.match(frontend,/function observerReviewEvidenceLine/);
-  assert.match(frontend,/Live packets through this lens/);
+  assert.match(frontend,/Open any Observer to inspect what it received and why it responded/);
   assert.match(frontend,/Holding space for Analytical and Relational Context/);
 });
 
@@ -564,4 +572,7 @@ test('Witnessing completion automatically reconciles every historical Board pack
   assert.match(server,/backfillBoardPackets\(\{days:3650,limit:300\}\)/);
   assert.doesNotMatch(server,/triggerBoardIntelligenceForPackets\(createdPackets\.slice\(0,80\)/);
   assert.match(server,/triggerBoardIntelligenceForPackets\(createdPackets,/);
+  assert.match(server,/board_packet_witnessing_complete_/);
+  assert.match(server,/triggerBoardIntelligenceForPackets\(\[completeSessionPacket\]/);
+  assert.match(frontend,/await openObserverBoardAfterWitnessing\(\)/);
 });

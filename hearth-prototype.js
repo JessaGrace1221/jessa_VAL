@@ -22630,6 +22630,10 @@ async function confirmValWitnessingCard(category, confirmation = 'yes'){
         completionResult = {error:error.message};
       }
     }
+    if(!completionResult?.error){
+      await openObserverBoardAfterWitnessing();
+      return;
+    }
     renderValWitnessingConversation({card, rawResponse, state:'complete', witness: completionResult || witness});
   }
   openWorkspaceShell('VAL Witnessing Session workspace', {returnTarget:'val'});
@@ -26791,23 +26795,52 @@ function observerLiveReviews(observerName = '', limit = 8){
     .slice(0, limit);
 }
 
+function observerReviewIsCompletedDeduction(review = {}){
+  const version = Number(review.reviewVersion || review.review_version || 0);
+  const mode = String(review.reviewMode || review.review_mode || '');
+  return review.status === 'observed' && version >= 3 && /^model_backed_observer_suite_/.test(mode);
+}
+
+function observerReviewIsCompletedCheck(review = {}){
+  const version = Number(review.reviewVersion || review.review_version || 0);
+  const mode = String(review.reviewMode || review.review_mode || '');
+  return version >= 3 && /^model_backed_observer_suite_/.test(mode);
+}
+
+function observerCompletedLiveReviews(observerName = '', limit = 6){
+  return observerLiveReviews(observerName, 80)
+    .filter(observerReviewIsCompletedCheck)
+    .slice(0, limit);
+}
+
 function observerMeaningfulLiveReviews(observerName = '', limit = 6){
   return observerLiveReviews(observerName, 24)
-    .filter((review) => review.status === 'observed')
+    .filter(observerReviewIsCompletedDeduction)
     .slice(0, limit);
+}
+
+function observerCompactLine(value = '', fallback = '', limit = 220){
+  const clean = String(value || fallback || '')
+    .replace(/\b(?:Source|Evidence):\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(clean.length <= limit) return clean;
+  const clipped = clean.slice(0, limit + 1);
+  const sentence = clipped.match(/^(.{40,}?[.!?])(?:\s|$)/)?.[1];
+  const boundary = sentence || clipped.slice(0, Math.max(clipped.lastIndexOf(' '), limit - 24));
+  return boundary.replace(/[,:;\s]+$/, '') + '…';
 }
 
 function observerReviewEvidenceLine(review = {}){
   const evidence = review.evidence || {};
   const title = evidence.packetTitle || evidence.packetType || 'Board packet';
   const sourceType = String(evidence.sourceType || 'source').replace(/_/g, ' ');
-  const sourceId = evidence.sourceId ? ' #' + evidence.sourceId : '';
   const quote = evidence.quoteOrSummary || review.observation || '';
-  return compactSentence(title + ' · ' + sourceType + sourceId + (quote ? ': ' + quote : ''), title, 260);
+  return observerCompactLine(title + ' · ' + sourceType + (quote ? ': ' + quote : ''), title, 210);
 }
 
 function observerReviewSummaryLine(review = {}){
-  return compactSentence(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 340);
+  return observerCompactLine(review.lensFinding || review.observation || observerReviewEvidenceLine(review), 'No meaningful signal from this lens.', 240);
 }
 
 function observerReviewNamedLine(review = {}){
@@ -27211,31 +27244,56 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const observerId = isChief ? 'chief-of-staff' : observerConversationId(observer.name);
   const role = isChief ? 'chief' : 'observer';
   const meaningfulReviews = isChief ? [] : observerMeaningfulLiveReviews(name, 4);
+  const completedReviews = isChief ? [] : observerCompletedLiveReviews(name, 5);
   const checkedReviews = isChief ? [] : observerLiveReviews(name, 5);
+  const receivedCount = isChief ? 0 : observerLiveReviews(name, 80).length;
   const hasLiveReviews = Boolean(meaningfulReviews.length || checkedReviews.length);
+  const latestDeduction = meaningfulReviews[0] || null;
   const currentlySeeing = isChief
     ? 'The full Board is active.'
-    : meaningfulReviews[0]?.lensFinding || meaningfulReviews[0]?.observation || (hasLiveReviews ? 'This Observer checked the live packets and has no meaningful signal to claim yet.' : 'No source-backed signal is loaded for this lens yet.');
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.lensFinding || latestDeduction.observation, '', 220)
+      : completedReviews.length
+        ? name + ' completed its review and found no meaningful signal in the latest source packets.'
+      : hasLiveReviews
+        ? name + ' received ' + receivedCount + ' packet' + (receivedCount === 1 ? '' : 's') + '. A concise source-backed deduction has not completed yet.'
+        : 'No source-backed signal is loaded for this lens yet.';
   const watching = isChief
     ? 'Reading across the full observer field before VAL advises.'
-    : meaningfulReviews.length ? 'Live packets through this lens, with no claim made unless evidence is attached.' : hasLiveReviews ? observer.watching || observer.evidence : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.observation, 'Watching the evidence attached to this deduction.', 220)
+      : completedReviews.length
+        ? 'No pattern, concern, or decision from these packets crossed this Observer’s evidence threshold.'
+      : hasLiveReviews
+        ? 'Waiting for the Observer review to distinguish a real signal from ordinary source material.'
+        : 'Waiting for reviewed packets from transcripts, email, calendar, chat, voice, or source events.';
   const evidenceItems = isChief
     ? [observerBoardState.observers.length + ' observers','Packet Field Active','1 synthesis layer']
     : meaningfulReviews.length
       ? meaningfulReviews.map(observerReviewEvidenceLine)
+      : completedReviews.length
+        ? completedReviews.slice(0, 3).map((review) => 'Checked: ' + observerReviewEvidenceLine(review))
       : checkedReviews.length
-        ? checkedReviews.slice(0, 3).map((review) => 'Checked: ' + observerReviewEvidenceLine(review))
+        ? checkedReviews.slice(0, 3).map((review) => 'Received: ' + observerReviewEvidenceLine(review))
         : [observerBoardState.livePacketError ? 'Live packet context could not load: ' + observerBoardState.livePacketError : 'No live packet review is attached to this Observer yet.'];
   const concern = isChief
     ? 'A recommendation may look simple before the Board has finished comparing perspectives.'
-    : meaningfulReviews[0]?.status === 'observed' ? compactSentence(meaningfulReviews[0].lensFinding || meaningfulReviews[0].observation, observer.concern || observer.truth, 180) : hasLiveReviews ? 'No concern rose from the packets this Observer checked.' : 'No concern should be claimed until a source-backed review exists.';
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.concern, 'No separate concern rose from this deduction.', 200)
+      : completedReviews.length ? 'No concern rose from the packets this Observer completed.'
+      : hasLiveReviews ? 'No concern is being claimed before the deduction is complete.' : 'No concern should be claimed until a source-backed review exists.';
   const explore = isChief
     ? 'A clean executive synthesis only when the evidence supports it.'
-    : hasLiveReviews ? observer.explore || observer.stance : 'Open or ingest a source packet, then ask this Observer what it noticed.';
-  const packetFrom = isChief ? 'Board' : String(meaningfulReviews[0]?.evidence?.sourceType || (hasLiveReviews ? observer.packetFrom : 'No live source')).replace(/_/g, ' ');
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.question, observer.explore || observer.stance, 180)
+      : completedReviews.length ? 'No question needs executive attention from these packets.'
+      : hasLiveReviews ? 'What, if anything, becomes meaningful through this lens?' : 'Open or ingest a source packet, then ask this Observer what it noticed.';
+  const packetFrom = isChief ? 'Board' : String(latestDeduction?.evidence?.sourceType || checkedReviews[0]?.evidence?.sourceType || 'No live source').replace(/_/g, ' ');
   const packetObservation = isChief
     ? 'Several perspectives are converging around the same decision.'
-    : meaningfulReviews[0]?.observation || (hasLiveReviews ? observer.incomingObservation || observer.stance : 'This card is waiting for proof before it makes a claim.');
+    : latestDeduction
+      ? observerCompactLine(latestDeduction.observation || latestDeduction.lensFinding, '', 210)
+      : completedReviews.length ? 'Review complete. No meaningful signal was found through this lens.' : hasLiveReviews ? 'Packet received. The Observer has not stored a completed deduction yet.' : 'This card is waiting for proof before it makes a claim.';
   const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
   return [
     '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
@@ -27474,9 +27532,15 @@ function markWitnessingCompleteForBoard(){
   }
 }
 
-function openObserverBoardAfterWitnessing(){
+async function openObserverBoardAfterWitnessing(){
   markWitnessingCompleteForBoard();
-  openObserverBoard({afterWitnessing:true});
+  await openObserverBoard({afterWitnessing:true});
+  window.setTimeout(async() => {
+    if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
+    await loadLiveObserverBoardContext();
+    if(!deskWorkspace?.classList.contains('observer-board-mode') || deskWorkspace?.classList.contains('observer-cowork-active')) return;
+    await openObserverBoard({afterWitnessing:true,skipLiveLoad:true});
+  }, 4200);
 }
 
 async function openObserverBoard(options = {}){
@@ -27599,15 +27663,32 @@ async function openObserverBoard(options = {}){
     ].join('');
   }).join('');
   const sourceSummary = observerBoardState.sourceSummary || {};
+  const completedObserverNames = observerBoardState.observers.filter((observer) =>
+    observerCompletedLiveReviews(observer.name, 1).length > 0
+  );
+  const deductionObserverNames = observerBoardState.observers.filter((observer) =>
+    observerMeaningfulLiveReviews(observer.name, 1).length > 0
+  );
+  const completedObserverCount = completedObserverNames.length;
+  const deductionObserverCount = deductionObserverNames.length;
   const sourceReadinessLabel = sourceSummary.live
     ? sourceSummary.live + ' Live Source Hook' + (sourceSummary.live === 1 ? '' : 's') + (sourceSummary.pending ? ' · ' + sourceSummary.pending + ' Pending' : '')
     : '';
   const boardStatus = showPacketField
     ? (stressMode ? 'Packet Stress: ' + allLiveConnections.length + ' Active Packets' : observerBoardState.livePacketCount + ' Live Packets' + (sourceReadinessLabel ? ' · ' + sourceReadinessLabel : ''))
-    : observerBoardState.witnessingSessionId
+    : witnessingComplete
+      ? 'Context Receipt Pending'
+      : observerBoardState.witnessingSessionId
       ? 'First Look Needed'
       : 'Holding Space';
-  const boardHoldingMessage = observerBoardState.witnessingSessionId
+  const boardHoldingMessage = witnessingComplete
+    ? [
+        '<div class="observer-holding-space" role="status">',
+          '<strong>Your Witnessing Session is complete.</strong>',
+          '<span>The Board packet receipt has not loaded yet, so no Observer conclusion is being shown.</span>',
+        '</div>'
+      ].join('')
+    : observerBoardState.witnessingSessionId
     ? [
         '<div class="observer-holding-space" role="status">',
           '<strong>Your Witnessing Session is paused.</strong>',
@@ -27643,7 +27724,13 @@ async function openObserverBoard(options = {}){
       '<aside class="observer-board-intro">',
         '<span>VAL</span>',
         '<h3>Board of Observers</h3>',
-        '<p>' + observerBoardState.observers.length + ' observers. One intelligence field. Every signal VAL receives can move through the Board before it becomes guidance.</p>',
+        '<p>' + (showPacketField
+          ? completedObserverCount
+            ? completedObserverCount + ' of ' + observerBoardState.observers.length + ' Observers completed source-backed review; ' + deductionObserverCount + ' found a meaningful signal. Open any Observer to inspect what it received and why it responded.'
+            : observerBoardState.observers.length + ' Observers received the live packets. Their concise deductions are still processing, so VAL is not presenting conclusions yet.'
+          : witnessingComplete
+            ? 'Your Witnessing Session is complete. The Board is waiting for its source packet receipt before presenting any conclusion.'
+            : observerBoardState.observers.length + ' Observers are waiting for a completed Witnessing Session before presenting conclusions.') + '</p>',
       '</aside>',
       '<div class="observer-graph-field">',
         '<small class="observer-board-status"><i></i> ' + boardStatus + '</small>',

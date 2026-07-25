@@ -19,7 +19,7 @@ test('Teach VAL commit promotes onboarding into core memory and evidence',()=>{
   assert.match(server,/await saveEvidenceItem\(\{/);
   assert.match(server,/runObservationEngine\(evidence,\{candidates:teachValEvidenceCandidates\(included\),replace:true\}\)/);
   assert.match(server,/promotion=await promoteTeachValOnboardingToCoreMemory\(\{session,imports,items:included,payload\}\)/);
-  assert.match(server,/res\.json\(\{ok:true,payload,webhook,promotion,operationalInsights/);
+  assert.match(server,/res\.json\(\{ok:true,payload,webhook,promotion,boardReceipt,operationalInsights/);
 });
 
 test('Teach VAL onboarding categories map into universal observation types',()=>{

@@ -15,7 +15,7 @@ const BOARD_OBSERVERS = [
   'Witnessing'
 ];
 const OBSERVER_REVIEW_VERSION = 2;
-const MODEL_OBSERVER_REVIEW_VERSION = 3;
+const MODEL_OBSERVER_REVIEW_VERSION = 4;
 
 const PRIMARY_ROUTES = Object.freeze({
   email_attention_packet:['Courage','Relationship','Commitment','Opportunity','Executive Inbox'],
@@ -583,7 +583,10 @@ function createValBoardPacketsService({
     const fallback=observerReviewsForPacket(packet).find(review=>review.observerName===observerName);
     if(!raw||String(raw.observerName||raw.observer||'').trim()!==observerName)return fallback;
     const requestedStatus=String(raw.status||'').toLowerCase()==='observed'?'observed':'no_signal';
-    const finding=compactText(raw.lensFinding||raw.lens_finding||raw.observation||'',900);
+    const finding=compactText(raw.lensFinding||raw.lens_finding||raw.observation||'',240);
+    const observation=compactText(raw.observation||finding,420);
+    const concern=compactText(raw.concern||'',240);
+    const question=compactText(raw.question||raw.explore||'',200);
     const evidence=observerEvidence(packet);
     const observed=requestedStatus==='observed'&&finding.length>=12;
     const people=safeArray(raw.people).filter(value=>packetModelEntityAllowed(value,packet)).map(value=>compactText(value,120)).slice(0,8);
@@ -592,7 +595,7 @@ function createValBoardPacketsService({
     const noSignal=`No meaningful ${observerName} signal in ${String(packet.sourceType||'source').replace(/_/g,' ')} "${compactText(packet.title||packet.packetType,120)}".`;
     return {
       reviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
-      reviewMode:'model_backed_observer_suite_v1',
+      reviewMode:'model_backed_observer_suite_v2',
       observerName,
       status:observed?'observed':'no_signal',
       primary:!!fallback?.primary,
@@ -601,7 +604,9 @@ function createValBoardPacketsService({
       projects:observed?projects:[],
       decisionObjects:observed?decisionObjects:[],
       lensFinding:observed?finding:noSignal,
-      observation:observed?compactText(raw.observation||finding,1200):noSignal,
+      observation:observed?observation:noSignal,
+      concern:observed?concern:'',
+      question:observed?question:'',
       evidence,
       confidence:observed?Math.max(0,Math.min(1,Number(raw.confidence)||0.58)):Math.max(0,Math.min(0.49,Number(raw.confidence)||0.2)),
       reviewedAt:new Date().toISOString()
@@ -619,7 +624,7 @@ function createValBoardPacketsService({
       payloadJson:{
         ...(packet.payloadJson||{}),
         observerReviewVersion:MODEL_OBSERVER_REVIEW_VERSION,
-        observerReviewMode:'model_backed_observer_suite_v1',
+        observerReviewMode:'model_backed_observer_suite_v2',
         observerReviews:normalized
       },
       updatedAt:new Date().toISOString()
