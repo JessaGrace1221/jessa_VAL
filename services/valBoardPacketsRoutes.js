@@ -8,6 +8,7 @@ function registerValBoardPacketsRoutes(app,deps={}){
   const service=deps.service||createValBoardPacketsService(deps);
   const waitForDb=typeof deps.valDbReady==='function'?deps.valDbReady:async()=>{};
   const auditLog=typeof deps.auditLog==='function'?deps.auditLog:async()=>{};
+  const afterSourceEvent=typeof deps.afterSourceEvent==='function'?deps.afterSourceEvent:async()=>{};
 
   app.get('/api/val/board/packets',async(req,res)=>{
     try{
@@ -45,6 +46,20 @@ function registerValBoardPacketsRoutes(app,deps={}){
       res.json({ok:true,packet});
     }catch(e){
       await auditLog({req,action:'val_board_packet_create_failed',resourceType:'val_board_packet',metadata:{error:e.message},success:false}).catch(()=>{});
+      res.status(500).json({ok:false,error:e.message});
+    }
+  });
+
+  app.post('/api/val/board/events/:sourceType',async(req,res)=>{
+    try{
+      await waitForDb();
+      if(typeof service.recordSourceEvent!=='function')throw new Error('Board source event ingress is not available.');
+      const packet=await service.recordSourceEvent(String(req.params.sourceType||''),req.body||{});
+      await afterSourceEvent({packet,sourceType:packet.sourceType,sourceId:packet.sourceId,request:req.body||{}}).catch(()=>{});
+      await auditLog({req,action:'val_board_source_event_created',resourceType:'val_board_packet',resourceId:packet.id,metadata:{sourceType:packet.sourceType,sourceId:packet.sourceId,packetType:packet.packetType},success:true}).catch(()=>{});
+      res.json({ok:true,packet});
+    }catch(e){
+      await auditLog({req,action:'val_board_source_event_failed',resourceType:'val_board_packet',metadata:{sourceType:req.params.sourceType,error:e.message},success:false}).catch(()=>{});
       res.status(500).json({ok:false,error:e.message});
     }
   });

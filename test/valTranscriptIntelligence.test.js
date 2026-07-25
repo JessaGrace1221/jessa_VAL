@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {VAL_TRANSCRIPT_INTELLIGENCE_SQL}=require('../services/valTranscriptIntelligenceSchema');
-const {createValTranscriptIntelligenceService,qualityGate,commitmentExtractor,taskContextBuilder,capacityAndTone,preparedWorkCandidates,introCandidatesFromMatches}=require('../services/valTranscriptIntelligence');
+const {createValTranscriptIntelligenceService,qualityGate,commitmentExtractor,taskContextBuilder,capacityAndTone,preparedWorkCandidates,preparedWorkCandidatesFromTasks,introCandidatesFromMatches}=require('../services/valTranscriptIntelligence');
 const {createValReadyForYouService}=require('../services/valReadyForYou');
 
 const root=path.join(__dirname,'..');
@@ -218,13 +218,86 @@ test('transcript intelligence prepares proposals pages invites and introductions
   const result=await service.intake({transcriptId:'tr_prepared_work'});
   const prepared=result.run.readyForYouCandidatesJson.filter(c=>c.category==='prepared_work');
   const kinds=prepared.map(c=>c.prepared_artifact.kind).sort();
-  assert.deepEqual(kinds,['calendar_invite_draft','html_page_draft','introduction_email_draft','proposal_draft']);
-  assert.equal(result.run.finalJson.counts.prepared_work_candidates,4);
+  assert.deepEqual(kinds,['calendar_invite_draft','html_page_draft','introduction_email_draft','meeting_overview_email_draft','proposal_draft']);
+  assert.equal(result.run.finalJson.counts.prepared_work_candidates,5);
   assert.ok(prepared.every(c=>c.requires_approval));
   assert.ok(prepared.every(c=>c.what_val_did.includes('Nothing was sent')));
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='introduction_email_draft').prepared_artifact.relationship_match_required,true);
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='html_page_draft').prepared_artifact.externalPublish,false);
   assert.equal(prepared.find(c=>c.prepared_artifact.kind==='calendar_invite_draft').prepared_artifact.externalCalendarWrite,false);
+});
+
+test('usable transcripts with action items create a reviewable meeting overview draft for Leverage',async()=>{
+  let store={};
+  const service=createValTranscriptIntelligenceService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    getTranscript:async()=>({
+      id:'tr_overview_ready',
+      title:'Monday client handoff',
+      rawText:[
+        'Jessa: I will send the meeting overview to Mike after this call.',
+        'Mike: The key point is that the dashboard should show owner, next step, and open risk.',
+        'Jessa: We agreed that nothing should move until the agency has a clean handoff.'
+      ].join('\n'),
+      source:'transcript',
+      metadata:{channel:'krisp'}
+    }),
+    resolveMeetingContext:async()=>({meeting:{id:'cal_overview',attendees:[{name:'Mike',email:'mike@example.com'}]},relationshipContext:{attendees:[{name:'Mike',email:'mike@example.com'}]},openLoops:[],errors:[]})
+  });
+  const result=await service.intake({transcriptId:'tr_overview_ready'});
+  const overview=result.run.readyForYouCandidatesJson.find(c=>c.category==='prepared_work'&&c.prepared_artifact?.kind==='meeting_overview_email_draft');
+  assert.ok(overview);
+  assert.match(overview.prepared_artifact.body,/Action items/);
+  assert.match(overview.prepared_artifact.body,/Key points/);
+  assert.match(overview.prepared_artifact.body,/dashboard should show owner/);
+  assert.equal(overview.prepared_artifact.externalSend,false);
+  assert.equal(overview.linked_context.relationships[0].email,'mike@example.com');
+});
+
+test('GOALL dashboard handoff tasks create reviewable Leverage prepared work',async()=>{
+  let store={};
+  const service=createValTranscriptIntelligenceService({
+    hasPg:()=>false,
+    getStore:()=>store,
+    saveStore:s=>{store=s;},
+    tenantId:()=>'tenant',
+    userId:()=>'user',
+    getTranscript:async()=>({
+      id:'tr_goall_dashboard_handoff',
+      title:'GOALL dashboard handoff with Mike',
+      rawText:[
+        'Jessa: I will finish the GOALL dashboard handoff with Mike so the agency has a clean next step.',
+        'Mike: The dashboard needs to show pipeline projections, open follow-up, owner, and whether the team has enough context to move.',
+        'Jessa: We need it in HTML and CSS so it can be embedded as an iframe in the CRM dashboard.'
+      ].join('\n'),
+      source:'transcript',
+      metadata:{channel:'krisp'}
+    }),
+    resolveMeetingContext:async()=>({meeting:{id:'cal_goall',attendees:[{name:'Mike',email:'mike@example.com'}]},relationshipContext:{attendees:[{name:'Mike',email:'mike@example.com'}]},openLoops:[],errors:[]})
+  });
+  const result=await service.intake({transcriptId:'tr_goall_dashboard_handoff'});
+  const prepared=result.run.readyForYouCandidatesJson.find(c=>c.category==='prepared_work'&&c.prepared_artifact?.kind==='html_page_draft');
+  assert.ok(prepared);
+  assert.match(prepared.summary,/task packet/i);
+  assert.equal(prepared.linked_context.project.name,'GOALL');
+  assert.equal(prepared.linked_context.task.id,result.run.contextualTasksJson[0].id);
+  assert.match(prepared.prepared_artifact.source_quote,/GOALL dashboard handoff with Mike/i);
+  assert.match(prepared.prepared_artifact.html,/GOALL Dashboard Handoff/i);
+  assert.match(prepared.prepared_artifact.html,/pipeline projections/i);
+  assert.match(prepared.prepared_artifact.html,/iframe/i);
+  assert.doesNotMatch(prepared.prepared_artifact.html,/placeholder/i);
+  assert.equal(result.run.contextualTasksJson[0].prepared_work_ids.includes(prepared.id),true);
+  assert.ok(result.run.readyForYouCandidatesJson.some(c=>c.prepared_artifact?.kind==='meeting_overview_email_draft'));
+  assert.equal(result.run.finalJson.counts.prepared_work_candidates,2);
+});
+
+test('task-derived prepared work stays narrow to concrete build or draft tasks',()=>{
+  const tasks=taskContextBuilder({id:'tr_plain',rawText:'Jessa: I will call Dennis tomorrow. Dennis: Thank you.'},commitmentExtractor({id:'tr_plain',rawText:'Jessa: I will call Dennis tomorrow. Dennis: Thank you.'},[]));
+  assert.equal(preparedWorkCandidatesFromTasks({id:'tr_plain',rawText:'Jessa: I will call Dennis tomorrow. Dennis: Thank you.'},tasks,{},[]).length,0);
 });
 
 test('transcript intelligence classifies autonomous execution levels and creates continuation tasks',async()=>{
@@ -261,8 +334,10 @@ test('transcript intelligence classifies autonomous execution levels and creates
   assert.ok(page.linked_context.project.needs_creation);
   assert.ok(result.run.contextualTasksJson.some(t=>t.prepared_work_ids.includes(page.id)));
   assert.ok(result.run.contextualTasksJson.some(t=>t.linked_context?.project?.name));
-  assert.equal(result.run.finalJson.counts.execution_continuation_tasks,prepared.length);
-  assert.equal(result.run.finalJson.counts.persisted_continuation_tasks,prepared.length);
+  const continuationPrepared=prepared.filter(c=>c.continuation_task);
+  assert.ok(prepared.some(c=>c.prepared_artifact.kind==='meeting_overview_email_draft'&&!c.continuation_task));
+  assert.equal(result.run.finalJson.counts.execution_continuation_tasks,continuationPrepared.length);
+  assert.equal(result.run.finalJson.counts.persisted_continuation_tasks,continuationPrepared.length);
   assert.ok(savedTasks.some(t=>t.source==='transcript_prepared_work'&&t.noExternalAction===true));
   assert.ok(savedTasks.some(t=>/Context needed to finish/.test(t.notes)));
   const savedTaskItem=store.transcriptIntelligenceItems.find(i=>i.category==='contextual_task'&&i.metadataJson.executionLevel==='level_3_autonomous_build');

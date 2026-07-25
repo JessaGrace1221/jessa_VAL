@@ -569,6 +569,7 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   for(const category of [
     'witness_support_style',
     'witness_partnership_useful',
+    'witness_chief_priorities',
     'witness_connect_sources',
     'witness_source_review',
     'witness_key_relationships',
@@ -581,6 +582,8 @@ test('Witnessing Session stores Living Executive Graph fields behind conversatio
   assert.match(server,/documents_templates/);
   assert.match(server,/import_context/);
   assert.match(server,/partnership_agreement/);
+  assert.match(server,/chief_of_staff\.optimization_priorities/);
+  assert.match(server,/home_briefing_ordering_rules/);
   assert.match(server,/app\.post\('\/api\/teach-val\/onboarding\/:id\/witnessing-cards\/:cardId'/);
   assert.match(server,/living_executive_graph_v1/);
   assert.match(server,/livingExecutiveGraph:graph/);

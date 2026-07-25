@@ -1568,7 +1568,7 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function appendHomeCoworkMessage/);
   assert.match(hearthJs, /function showCoworkContextGathering/);
   assert.match(hearthJs, /coworkContextGatheringTimeoutId/);
-  assert.match(hearthJs, /VAL could not finish gathering this context in time/);
+  assert.match(hearthJs, /I took too long to answer this chat turn\. Try one narrower question\./);
   assert.match(hearthJs, /const workspaceVisible = deskWorkspace\?\.getAttribute\('aria-hidden'\) !== 'true'/);
   assert.match(hearthJs, /function hideWorkspaceForDrawerNavigation\(\)\{\s*stopValCoworkVoiceMode\(\);\s*hideCoworkContextGathering\(\);/);
   assert.match(hearthJs, /Gathering Context/);
@@ -1584,7 +1584,8 @@ test('Hearth desk companions connect to safe Co-Work and Teach VAL contracts', (
   assert.match(hearthJs, /function orientHomeCoworkFromInput/);
   assert.match(hearthJs, /VAL is finding the right context/);
   assert.match(hearthJs, /data-home-cowork-submit/);
-  assert.match(hearthJs, /runCowork\('think'\)/);
+  assert.match(hearthJs, /runCowork\(/);
+  assert.match(hearthJs, /selectedSourceContext/);
   assert.match(hearthJs, /const observerBoardState/);
   assert.match(hearthJs, /function openObserverBoard/);
   assert.match(hearthJs, /title: 'Your Board of Observers'/);
@@ -1748,7 +1749,8 @@ test('Hearth source actions open the most specific executive surface available',
   assert.match(hearthJs, /Open prepared draft/);
   assert.match(hearthJs, /Open relationship file/);
   assert.match(hearthJs, /Open project dossier/);
-  assert.match(hearthJs, /Open the thing needing attention/);
+  assert.match(hearthJs, /Open source behind this judgment/);
+  assert.match(hearthJs, /Do this action/);
   assert.match(hearthJs, /pipeline record where the next decision lives/);
   assert.match(hearthJs, /prepared language is ready for human judgment/);
   assert.match(hearthJs, /relationship context explains why this person is appearing on Home/);
@@ -2196,16 +2198,19 @@ test('Hearth Home applies v1 admission before rendering Velocity Alignment and L
     /missing_why_now_packet/,
     /missing_prepared_work_or_action_status/,
     /homeAdmissionFilter\('velocity', velocityItems\)/,
-    /homeAdmissionFilter\('alignment', highest \? \[highest\] : \[\]\)/,
+    /const chiefAlignmentQueue = briefingItems\(briefing\.chiefAlignmentQueue\)/,
+    /const highest = firstBriefingItem\(chiefAlignmentQueue\) \|\| briefing\.highestLeverageMove/,
+    /const alignmentCandidates = \(chiefAlignmentQueue\.length \? chiefAlignmentQueue : \[highest\]\.concat\(briefingItems\(briefing\.alsoImportant\)\)\)/,
+    /homeAdmissionFilter\('alignment', alignmentCandidates\)/,
     /homeAdmissionFilter\('leverage', leverageItems\)/,
     /setHomeRoomQueue\('velocity', admittedVelocityItems\)/,
-    /setHomeRoomQueue\('alignment', admittedHighest \? \[admittedHighest\] : \[\]\)/,
+    /setHomeRoomQueue\('alignment', admittedAlignmentItems\)/,
     /setHomeRoomQueue\('leverage', admittedLeverageItems\)/,
     /if\(!changed\) clearHomeRoomForAdmission\('velocity'\)/,
     /if\(!admittedHighest\) clearHomeRoomForAdmission\('alignment'\)/,
     /if\(!ready\) clearHomeRoomForAdmission\('leverage'\)/,
     /No meaningful movement earned Home/,
-    /No priority needs your judgment first/,
+    /No action needs you right now/,
     /No prepared work is waiting right now/
   ].forEach((pattern) => assert.match(hearthJs, pattern));
   assert.doesNotMatch(hearthJs, /scopedItems\.length \? scopedItems : allItems/);
@@ -2233,10 +2238,10 @@ test('Hearth room cards use target-aware witnessed copy instead of generic dashb
     primaryActionBody.indexOf("if(roomName === 'velocity')") < primaryActionBody.indexOf('ensureHearthClickPacket({'),
     'Home executive modes must open before server packet preflight'
   );
-  assert.doesNotMatch(hearthJs, /data-home-action="cowork_card_context"/);
+  assert.match(hearthJs, /data-home-action="cowork_card_context">Co-work with VAL/);
   assert.match(hearthJs, /mode === 'workspace'/);
   assert.match(hearthJs, /Velocity is awareness, not action/);
-  assert.match(hearthJs, /How can I help with /);
+  assert.match(hearthJs, /How can I help you finish/);
   assert.match(hearthJs, /Approved and ' \+ verb/);
   assert.match(hearthJs, /data-home-room-source/);
   assert.doesNotMatch(hearthJs, /Co-Work with VAL about/);
@@ -2413,7 +2418,10 @@ test('Hearth keeps the Home greeting direct instead of adding an explainer panel
   assert.match(hearthJs, /const freshDeskButton/);
   assert.match(hearthJs, /function clearRoomAttendance/);
   assert.match(hearthJs, /freshDeskButton\?\.addEventListener\('click', clearRoomAttendance\)/);
-  assert.match(hearthJs, /function renderWhyTodayPanel\(briefing = null, status = 'loaded'\)\{\n  return;/);
+  assert.match(hearthJs, /function renderWhyTodayPanel\(briefing = null, status = 'loaded'\)/);
+  assert.match(hearthJs, /data-home-evidence-action="board">Full Context/);
+  assert.match(hearthJs, /data-home-evidence-action="alignment">Open Action/);
+  assert.match(hearthJs, /data-home-evidence-action="leverage">Open Prepared Work/);
 });
 
 test('Hearth Home removes static architecture filler from the welcome area', () => {
@@ -2421,7 +2429,8 @@ test('Hearth Home removes static architecture filler from the welcome area', () 
   assert.doesNotMatch(hearthHtml, /Generic risk language should not drive Home/);
   assert.doesNotMatch(hearthHtml, /Today stands here/);
   assert.doesNotMatch(hearthHtml, /Supporting drawers stay available without owning Home/);
-  assert.match(hearthHtml, /Home should update from Velocity, Alignment, and Leverage packets/);
+  assert.match(hearthHtml, /The Chief of Staff is listening across the Board of Observers/);
+  assert.match(hearthHtml, /If one Observer has the signal that matters most, it will enter Home/);
   assert.match(hearthJs, /function hydrateGreetingFromBriefing/);
 });
 
@@ -2510,6 +2519,8 @@ test('VAL drawer opens the Witnessing Session before operating agreements', () =
   assert.match(hearthJs, /witness_never_compromised/);
   assert.match(hearthJs, /witness_support_style/);
   assert.match(hearthJs, /witness_partnership_useful/);
+  assert.match(hearthJs, /witness_chief_priorities/);
+  assert.match(hearthJs, /Chief priorities/);
   assert.match(hearthJs, /witness_connect_sources/);
   assert.match(hearthJs, /witness_source_review/);
   assert.match(hearthJs, /witness_key_relationships/);
@@ -3059,12 +3070,17 @@ test('First Look turns approved source scans into reviewable relationship and pr
   assert.match(valFirstLookCandidateReview, /cannot save a proposed map until every completed Witnessing answer has a coverage receipt/i);
 });
 
-test('Alignment and Leverage always create a reviewable draft surface', () => {
+test('Alignment stays action-only while Leverage creates reviewable draft surfaces', () => {
   assert.match(hearthJs, /function alignmentDraftFromWorkspace/);
   assert.match(hearthJs, /VAL has created a review packet from the current Alignment context/);
   assert.match(hearthJs, /Review the source, decide the next move, then approve, revise, or hold/);
-  assert.match(hearthJs, /const canLoadDraft = true/);
-  assert.match(hearthJs, /data-alignment-load-draft aria-expanded="false">Load Draft/);
+  assert.match(hearthJs, /home\.alignment_card/);
+  assert.match(hearthJs, /Do not draft, send, create tasks, or expose Leverage prepared work from Alignment/);
+  assert.match(hearthJs, /data-home-action="alignment_done">Done/);
+  assert.match(hearthJs, /data-home-action="cowork_card_context">Co-work with VAL/);
+  assert.match(hearthJs, /data-home-action="approve_prepared"/);
+  assert.match(hearthJs, /data-home-action="save_prepared_edits"/);
+  assert.match(hearthJs, /data-home-action="hold_prepared"/);
   assert.doesNotMatch(hearthJs, /preparedDraftCount/);
   assert.doesNotMatch(hearthJs, /\(draft \? '<button type="button" class="alignment-room-draft-button" data-alignment-load-draft/);
 });
