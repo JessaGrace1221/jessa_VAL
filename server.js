@@ -31190,7 +31190,7 @@ valBoardPackets = registerValBoardPacketsRoutes(app,{
         nextStep:''
       };
     }
-    const session=await getTeachValWitnessingSession();
+    const session=await getTeachValWitnessingResumeSession();
     const imports=session?.id ? await listTeachValImports(session.id).catch(()=>[]) : [];
     const stage=String(session?.state?.stage||'');
     return {
