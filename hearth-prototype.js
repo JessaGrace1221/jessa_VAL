@@ -27297,7 +27297,10 @@ function observerBoardCardMarkup(observer = null, position = {}){
   const chatLabel = isChief ? 'Chat with Chief of Staff' : 'Chat with ' + name;
   return [
     '<aside class="observer-selected-card" aria-label="' + escapeHtml(name) + ' Observer context" data-observer-selected-card>',
-      '<span>' + escapeHtml(name) + '</span>',
+      '<header>',
+        '<span>' + escapeHtml(name) + '</span>',
+        '<button type="button" aria-label="Close ' + escapeHtml(name) + ' context" data-observer-card-close>×</button>',
+      '</header>',
       '<button type="button" aria-label="' + escapeHtml(chatLabel) + '" data-observer-cowork="' + escapeHtml(observerId) + '" data-observer-role="' + escapeHtml(role) + '">' + escapeHtml(chatLabel) + '</button>',
       '<div><em>Currently Seeing</em><p>' + escapeHtml(currentlySeeing) + '</p></div>',
       '<div><em>What I’m Watching</em><p>' + escapeHtml(watching) + '</p></div>',
@@ -27373,6 +27376,11 @@ function updateObserverSelectedCard(observerId = ''){
     if(y > 62) slot.classList.add('near-bottom');
     slot.innerHTML = observerBoardCardMarkup(observer, position);
     slot.hidden = false;
+    slot.querySelector('[data-observer-card-close]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dismissObserverSelectedCard();
+    });
     workspaceInputPanel.querySelector('.observer-graph-field')?.classList.add('observer-card-open');
     requestAnimationFrame(updateObserverCardObscuredLabels);
   }else{

@@ -563,6 +563,7 @@ test('Board front end prefers live Board context over prototype packets',()=>{
   assert.match(frontend,/completed source-backed review/);
   assert.match(frontend,/A concise source-backed deduction has not completed yet/);
   assert.match(frontend,/function observerReviewEvidenceLine/);
+  assert.match(frontend,/data-observer-card-close/);
   assert.match(frontend,/Open any Observer to inspect what it received and why it responded/);
   assert.match(frontend,/Holding space for Analytical and Relational Context/);
 });
